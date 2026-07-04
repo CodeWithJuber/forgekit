@@ -8,8 +8,9 @@ const COMMANDS = {
   sync: "recompile the canonical source into each tool's native config files",
   doctor: "health-check installed tools, guards, MCP auth, and config drift",
   taste: "enable one UI-taste tool for this repo (no arg = list)",
-  atlas: "build / query the code-graph (what-calls-X, where-is-Y)",
-  recall: "manage cross-session memory (list / consolidate)",
+  atlas: "build / query the code-graph (where-is-Y, has-symbol)",
+  recall: "manage cross-session memory (list / add / consolidate)",
+  catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   brand: "print the active brand token map",
 };
 
@@ -36,6 +37,41 @@ async function run(argv) {
     return console.log(
       JSON.stringify({ brand, cli, pkg, version, layers }, null, 2),
     );
+  }
+  if (cmd === "init") {
+    const { init } = await import("./init.js");
+    const { report, bytes } = init({ targetRoot: process.cwd() });
+    const wrote = report
+      .filter((r) => r.action === "written")
+      .map((r) => r.target);
+    console.log(
+      `${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`,
+    );
+    console.log(
+      `  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`,
+    );
+    console.log(
+      `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
+    );
+    console.log(
+      `  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``,
+    );
+    console.log(`  verify:   \`${BRAND.cli} doctor\``);
+    return;
+  }
+  if (cmd === "catalog") {
+    const { catalog } = await import("./init.js");
+    const c = catalog();
+    console.log(`${BRAND.brand} catalog — Start Here\n`);
+    console.log("  TOOLS (model-invoked skills)");
+    for (const t of c.tools)
+      console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
+    console.log(`\n  CREW (isolated sub-agents)   ${c.crew.join(" · ")}`);
+    console.log(`  GUARDS (enforced hooks)      ${c.guards.join(" · ")}`);
+    console.log(
+      `\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``,
+    );
+    return;
   }
   if (cmd === "sync") {
     const { sync } = await import("./sync.js");
