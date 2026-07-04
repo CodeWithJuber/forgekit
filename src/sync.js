@@ -1,6 +1,6 @@
 // forge sync — compile the one canonical source (source/rules.json, plus an
 // optional per-repo .forge/rules.json) into every tool's native config target.
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import * as shared from "./emit/_shared.js";
@@ -50,7 +50,12 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   const bytes = Buffer.byteLength(canonical);
 
   // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed.
+  // If the repo already has a hand-written (unmanaged) AGENTS.md, never destroy it
+  // silently — back it up first so no rules are lost when adopting Forge.
   const agentsPath = join(targetRoot, "AGENTS.md");
+  const existingAgents = shared.readIfExists(agentsPath);
+  const backedUp = existingAgents !== null && !shared.isManaged(existingAgents);
+  if (backedUp) writeFileSync(`${agentsPath}.forge-bak`, existingAgents);
   const agentsAction = shared.writeManaged(
     agentsPath,
     shared.mdHeader(hash),
@@ -89,11 +94,15 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   }
 
   const warnings = [];
+  if (backedUp)
+    warnings.push(
+      "existing AGENTS.md was not Forge-managed — backed up to AGENTS.md.forge-bak; move any custom rules into source/rules.json or a per-repo .forge/rules.json",
+    );
   if (bytes > SIZE_BUDGET_BYTES)
     warnings.push(
       `canonical is ${bytes} B (> ${SIZE_BUDGET_BYTES} B budget) — trim source/rules.json`,
     );
-  return { hash, bytes, report, warnings };
+  return { hash, bytes, report, warnings, backedUp };
 }
 
 /** The assembled canonical body for a repo (shared source + any per-repo override). */

@@ -24,7 +24,10 @@ forge_lock() {
     trap 'rmdir "'"$dir"'" 2>/dev/null || true' EXIT
     return 0
   fi
-  if [ -n "$(find "$dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+  # Reclaim only locks older than 10 min — safely longer than any guard's real
+  # hold (the session-learner model call is capped at ~90s), so we never steal a
+  # lock that's still legitimately held.
+  if [ -n "$(find "$dir" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
     rmdir "$dir" 2>/dev/null || true
     mkdir "$dir" 2>/dev/null && { trap 'rmdir "'"$dir"'" 2>/dev/null || true' EXIT; return 0; }
   fi
