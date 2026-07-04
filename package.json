@@ -1,0 +1,38 @@
+{
+  "name": "forgekit",
+  "version": "0.1.0",
+  "description": "One config, every AI coding tool — a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
+  "type": "module",
+  "bin": {
+    "forge": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "source",
+    "global",
+    "templates",
+    "plugin",
+    "bin",
+    "brand.json",
+    "install.sh",
+    "README.md",
+    "ARCHITECTURE.md"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "forge": "node src/cli.js"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "agents-md",
+    "ai-coding",
+    "config",
+    "cross-tool"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,15 @@
+{
+  "brand": "Forge",
+  "cli": "forge",
+  "pkg": "forgekit",
+  "tagline": "One config, every AI coding tool.",
+  "home": "~/.forge",
+  "layers": {
+    "tools": "skills (model-invoked capabilities)",
+    "crew": "agents (isolated-context sub-agents)",
+    "guards": "hooks (deterministic, enforced)",
+    "atlas": "code-graph (symbol/call index)",
+    "lean": "minimalism discipline",
+    "recall": "cross-session memory"
+  }
+}
