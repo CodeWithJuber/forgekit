@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/recall-load.sh"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|Bash",
@@ -7,6 +18,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/protect-paths.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cost-budget.sh"
           }
         ]
       }
@@ -22,13 +37,16 @@
         ]
       }
     ],
-    "SessionStart": [
+    "Stop": [
       {
-        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/memory-load.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/lean-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/session-learner.sh"
           }
         ]
       }

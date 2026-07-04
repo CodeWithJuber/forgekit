@@ -9,6 +9,10 @@
 #          (default haiku), SESSION_LEARN_MAXBYTES (default 60000).
 set -uo pipefail
 
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$DIR/_guardlib.sh"
+
 # Gate 1: opt-in only.
 [ "${ENABLE_SESSION_LEARNING:-0}" = "1" ] || exit 0
 # Gate 2: need the claude CLI.
@@ -41,6 +45,8 @@ proj="$(basename "${cwd:-$PWD}")"
 
 # Run detached so session exit is never delayed.
 (
+  # Re-entrancy lock held for the whole model call — never two learners at once.
+  forge_lock "session-learner" || exit 0
   transcript="$(tail -c "$MAXBYTES" "$tp")"
   prompt="You are reviewing the tail of a Claude Code session transcript.
 Extract AT MOST 3 durable, reusable lessons that would help future sessions in
