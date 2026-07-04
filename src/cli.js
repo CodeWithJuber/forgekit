@@ -62,6 +62,82 @@ async function run(argv) {
     if (failed) process.exitCode = 1;
     return;
   }
+  if (cmd === "recall") {
+    const r = await import("./recall.js");
+    const store = r.defaultStore();
+    const sub = argv[1] || "list";
+    if (sub === "list") {
+      const items = r.list(store);
+      console.log(
+        items.length
+          ? items.map((s) => `  - ${s}`).join("\n")
+          : "  (no memories yet)",
+      );
+    } else if (sub === "add") {
+      const name = argv[2];
+      const body = argv.slice(3).join(" ");
+      if (!name || !body) {
+        console.error('usage: forge recall add "<name>" "<fact>"');
+        process.exitCode = 1;
+        return;
+      }
+      const res = r.add(store, name, body);
+      console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
+      if (!res.ok) process.exitCode = 1;
+    } else if (sub === "consolidate") {
+      const { removed, kept } = r.consolidate(store);
+      console.log(
+        `  consolidated: ${removed} duplicate(s) removed, ${kept} kept`,
+      );
+    } else {
+      console.error(
+        `recall: unknown subcommand "${sub}" (list | add | consolidate)`,
+      );
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (cmd === "atlas") {
+    const a = await import("./atlas.js");
+    const sub = argv[1] || "build";
+    const need = () => {
+      if (a.load()) return a.load();
+      console.error("  no index — run `forge atlas build` first");
+      process.exitCode = 1;
+      return null;
+    };
+    if (sub === "build") {
+      const at = a.build({ root: process.cwd() });
+      console.log(
+        `  indexed ${at.symbols.length} symbols in ${at.files} files → .forge/atlas.json${at.capped ? " (capped)" : ""}`,
+      );
+    } else if (sub === "query") {
+      const at = need();
+      if (!at) return;
+      const hits = a.query(at, argv.slice(2).join(" "));
+      console.log(
+        hits.length
+          ? hits
+              .slice(0, 30)
+              .map((s) => `  ${s.file}:${s.line}  ${s.kind} ${s.name}`)
+              .join("\n")
+          : "  no match",
+      );
+    } else if (sub === "has") {
+      const at = need();
+      if (!at) return;
+      const name = argv[2];
+      const yes = a.has(at, name);
+      console.log(
+        `  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`,
+      );
+      if (!yes) process.exitCode = 1;
+    } else {
+      console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
+      process.exitCode = 1;
+    }
+    return;
+  }
   if (!(cmd in COMMANDS)) {
     console.error(
       `Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`,
