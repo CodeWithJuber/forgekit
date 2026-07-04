@@ -1,0 +1,69 @@
+{
+  "title": "engineering rules",
+  "intro": "Shared rules for every AI coding tool in this repo. Generated into each tool's native format by `forge sync` — edit this source, not the generated files. Keep lean (tools cap the combined size).",
+  "sections": [
+    {
+      "id": "workflow",
+      "title": "Workflow",
+      "rules": [
+        "Explore -> plan -> code -> verify. For multi-file or unfamiliar changes, plan first; skip planning for one-line fixes.",
+        "Never call work done without a check you can run: tests, build exit code, lint, or a diff against expected. Show the command + output, don't just assert success.",
+        "Fix root causes, not symptoms. Never suppress an error to make a check pass."
+      ]
+    },
+    {
+      "id": "reuse",
+      "title": "Reuse & dependencies",
+      "rules": [
+        "Reuse an existing util/component/pattern before writing new; the smallest change that fits wins.",
+        "Before adding a dependency, verify the current best option from live sources (docs, GitHub health) — prefer what the project already uses.",
+        "Only build from scratch when reuse genuinely doesn't fit, and say why."
+      ]
+    },
+    {
+      "id": "code",
+      "title": "Code style",
+      "rules": [
+        "Match the surrounding file's conventions over any personal default.",
+        "Comment the non-obvious \"why\", never restate the \"what\".",
+        "Guard array/object access; wrap fallible async in try/catch; handle errors explicitly (no empty catch).",
+        "Keep functions small and single-purpose; separate pure logic from I/O so it's testable."
+      ]
+    },
+    {
+      "id": "testing",
+      "title": "Testing",
+      "rules": [
+        "Write tests with the code. For a bug fix, write the failing test first, then fix.",
+        "Cover the edge cases the task names: empty, error, boundary. Prefer real inputs over heavy mocking.",
+        "Run the suite + typecheck + lint and show the output before claiming done."
+      ]
+    },
+    {
+      "id": "security",
+      "title": "Security",
+      "rules": [
+        "Never write secrets, tokens, or keys into code or commits. `.env*` and key files are guard-protected — don't work around it.",
+        "Validate and sanitize input at trust boundaries; use parameterized queries, never string-concatenated SQL.",
+        "Check paths for traversal before file operations; prefer HTTPS for external requests."
+      ]
+    },
+    {
+      "id": "git",
+      "title": "Git",
+      "rules": [
+        "Conventional commits: `type(scope): description` (feat, fix, refactor, docs, test, chore, perf).",
+        "Stage specific files, not `git add .`. Never force-push shared branches.",
+        "Ask before: push, commit, PR merge, history rewrite, `rm -rf`, dropping DB tables, or touching production."
+      ]
+    },
+    {
+      "id": "ui",
+      "title": "UI",
+      "rules": [
+        "Build and check mobile AND desktop. Include clear loading/empty/error states; avoid layout shift.",
+        "Follow DESIGN.md if present; keep one visual direction per project."
+      ]
+    }
+  ]
+}
