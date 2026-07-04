@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { sync } from "./sync.js";
+import { list as tasteList } from "./taste.js";
 
 /** Scaffold this repo's cross-tool config (emit every tool) in one step. */
 export function init({ targetRoot = process.cwd() } = {}) {
@@ -35,5 +36,6 @@ export function catalog() {
     guards: dir(join(g, "guards"))
       .filter((f) => f.endsWith(".sh") && !f.startsWith("_"))
       .map((f) => f.replace(/\.sh$/, "")),
+    taste: tasteList(),
   };
 }

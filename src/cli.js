@@ -68,9 +68,37 @@ async function run(argv) {
       console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
     console.log(`\n  CREW (isolated sub-agents)   ${c.crew.join(" · ")}`);
     console.log(`  GUARDS (enforced hooks)      ${c.guards.join(" · ")}`);
+    if (c.taste?.length)
+      console.log(
+        `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
+      );
     console.log(
       `\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``,
     );
+    return;
+  }
+  if (cmd === "taste") {
+    const t = await import("./taste.js");
+    const style = argv[1];
+    if (!style) {
+      console.log(
+        `${BRAND.brand} taste — pick ONE visual direction per repo (every tool then follows it):\n`,
+      );
+      for (const s of t.list()) console.log(`  ${s}`);
+      console.log(
+        `\n  apply: \`${BRAND.cli} taste <style>\`  (writes a managed DESIGN.md)`,
+      );
+      return;
+    }
+    const res = t.apply(style, process.cwd());
+    if (res.ok) {
+      console.log(
+        `  DESIGN.md ${res.action} → taste: ${res.style}. Every AI tool now builds in this direction.`,
+      );
+    } else {
+      console.error(`  ${res.reason}`);
+      process.exitCode = 1;
+    }
     return;
   }
   if (cmd === "sync") {
