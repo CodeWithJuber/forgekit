@@ -1,0 +1,16 @@
+# OS / editor
+.DS_Store
+*.swp
+
+# Node
+node_modules/
+npm-debug.log*
+*.tgz
+
+# Forge runtime artifacts (generated, never committed)
+.forge/
+*.log
+.remember/logs/
+
+# Local backups the installer creates
+.backup-*/

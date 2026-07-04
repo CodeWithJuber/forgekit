@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(npm run migrate:status)",
+      "Bash(psql:* -c \\\"SELECT*)"
+    ],
+    "ask": [
+      "Bash(npm run migrate:*)",
+      "Bash(psql:*)",
+      "Bash(docker compose:*)",
+      "Bash(ssh:*)"
+    ],
+    "deny": [
+      "Read(./widget/keys/**)",
+      "Bash(psql:* DROP *)",
+      "Bash(psql:* TRUNCATE *)",
+      "Bash(psql:* DELETE FROM *)"
+    ]
+  }
+}
