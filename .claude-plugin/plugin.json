@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "forgekit",
+  "displayName": "Forge",
+  "version": "0.1.0",
+  "description": "One config, every AI coding tool — tools, crew, guards, atlas, lean, recall from one source.",
+  "author": { "name": "CodeWithJuber" },
+  "license": "MIT",
+  "keywords": ["config", "cross-tool", "agents-md", "ai-coding", "claude-code"],
+  "skills": "./global/tools",
+  "agents": "./global/crew",
+  "hooks": "./hooks/hooks.json"
+}

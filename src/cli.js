@@ -51,6 +51,17 @@ async function run(argv) {
     console.log(`\n${written} file(s) written · canonical ${bytes} B`);
     return;
   }
+  if (cmd === "doctor") {
+    const { doctor } = await import("./doctor.js");
+    const { results, failed } = doctor({ targetRoot: process.cwd() });
+    const icon = { ok: "✓", warn: "!", fail: "✗" };
+    console.log(`${BRAND.brand} doctor\n`);
+    for (const r of results)
+      console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
+    console.log(`\n${failed === 0 ? "all clear" : failed + " problem(s)"}`);
+    if (failed) process.exitCode = 1;
+    return;
+  }
   if (!(cmd in COMMANDS)) {
     console.error(
       `Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`,

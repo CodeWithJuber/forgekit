@@ -1,81 +1,86 @@
 #!/usr/bin/env bash
-# ADDITIVE installer. Adds skills, agents, rules, hooks + statusline to ~/.claude
-# WITHOUT touching your existing CLAUDE.md, settings.json, memory, or rules you
-# already have. Backs up any same-named file it would replace.
-#
-# It does NOT edit settings.json — hooks/statusline need a one-time manual merge.
-# See the snippet this script prints at the end (also in RECONCILE.md).
+# Forge installer — idempotent, reversible, offline.
+#   bash install.sh              install (symlink global/ into ~/.forge and ~/.claude, put `forge` on PATH)
+#   bash install.sh --dry-run    print what it would do, change nothing
+#   bash install.sh --uninstall  remove Forge's own symlinks (never touches your other files)
+# It never downloads anything and never edits settings.json for you — it prints the
+# hook/statusline block to merge by hand, so your existing config is untouched.
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/global"
-DEST="$HOME/.claude"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FORGE_HOME="${FORGE_HOME:-$HOME/.forge}"
+CLAUDE_DIR="$HOME/.claude"
+BIN_DIR="$HOME/.local/bin"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BK="$DEST/.backup-$STAMP"
 
-# Whitelist of additive items (relative to global/). Intentionally excludes
-# CLAUDE.md, settings.json, memory/ (you already have those), and the
-# memory-keeper skill + memory-load hook (you already run remember/episodic-memory).
-ITEMS=(
-  "skills/tech-selector"
-  "skills/reuse-first"
-  "skills/ui-workflow"
-  "skills/design-md"
-  "skills/dev-radar"
-  "skills/code-modernization"
-  "skills/cost-guard"
-  "skills/explore-plan-code"
-  "skills/self-improve"
-  "agents/scout.md"
-  "agents/verifier.md"
-  "agents/frontend-verifier.md"
-  "rules/tech-currency.md"
-  "rules/stack-notes.md"
-  "rules/self-correction.md"
-  "hooks/protect-paths.sh"
-  "hooks/format-on-edit.sh"
-  "hooks/learn-session.sh"
-  "statusline.sh"
-  "bin/claude-init.sh"
-  "bin/learn-consolidate.sh"
-  "bin/claude-taste.sh"
-)
+DRY=0; MODE=install
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY=1 ;;
+    --uninstall) MODE=uninstall ;;
+    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    *) echo "unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
 
-echo "→ Additive install into $DEST (existing config untouched)"
+say() { printf '  %s\n' "$*"; }
+act() { if [ "$DRY" = 1 ]; then say "[dry-run] $*"; else eval "$*"; fi; }
 
-copy_item() {
-  local rel="$1" s="$SRC/$1" d="$DEST/$1"
-  [ -e "$s" ] || { echo "  skip (missing in bundle): $rel"; return; }
-  if [ -e "$d" ]; then
-    mkdir -p "$BK/$(dirname "$rel")"; cp -R "$d" "$BK/$rel"
-    echo "  backed up existing $rel"
+# link SRC DEST — back up an existing real file/dir, then symlink.
+link() {
+  local src="$1" dest="$2"
+  [ -e "$src" ] || { say "skip (missing in bundle): $src"; return; }
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    act "mv \"$dest\" \"$dest.forge-bak-$STAMP\""; say "backed up existing $dest"
   fi
-  mkdir -p "$(dirname "$d")"
-  cp -R "$s" "$d"
-  echo "  installed $rel"
+  act "mkdir -p \"$(dirname "$dest")\""
+  act "ln -sfn \"$src\" \"$dest\""
+  say "linked $dest -> $src"
 }
 
-for i in "${ITEMS[@]}"; do copy_item "$i"; done
+# unlink DEST — remove only if it is a symlink pointing back into this repo.
+unlink_ours() {
+  local dest="$1"
+  if [ -L "$dest" ] && case "$(readlink "$dest")" in "$REPO"/*) true;; *) false;; esac; then
+    act "rm -f \"$dest\""; say "removed $dest"
+  fi
+}
 
-chmod +x "$DEST"/hooks/*.sh "$DEST"/statusline.sh 2>/dev/null || true
+install_forge() {
+  say "Installing Forge from $REPO"
+  link "$REPO/global" "$FORGE_HOME"
+  for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && link "$d" "$CLAUDE_DIR/skills/$(basename "$d")"; done
+  for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && link "$f" "$CLAUDE_DIR/agents/$(basename "$f")"; done
+  link "$REPO/src/cli.js" "$BIN_DIR/forge"
+  [ "$DRY" = 1 ] || chmod +x "$REPO/src/cli.js" 2>/dev/null || true
 
-echo
-echo "✓ Added 5 skills, 3 agents, 1 rule, 2 hooks, 1 statusline."
-[ -d "$BK" ] && echo "  Backups: $BK"
-cat <<'EOF'
+  case ":$PATH:" in *":$BIN_DIR:"*) : ;; *) say "note: add $BIN_DIR to PATH (e.g. echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc)";; esac
 
-── ONE manual step: wire hooks + statusline into ~/.claude/settings.json ──
-Merge these keys (you have none of them yet). Keep your existing keys as-is:
+  cat <<EOF
 
-  "statusLine": { "type": "command", "command": "bash ~/.claude/statusline.sh" },
-  "hooks": {
-    "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
-      "hooks": [ { "type": "command", "command": "bash ~/.claude/hooks/protect-paths.sh" } ] } ],
-    "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",
-      "hooks": [ { "type": "command", "command": "bash ~/.claude/hooks/format-on-edit.sh" } ] } ]
-  }
+  Done. Guards + statusline need ONE manual merge into $CLAUDE_DIR/settings.json
+  (kept manual so your existing settings are never clobbered):
 
-NOTE: you already have a Stop hook (continuous-learning). If you add the block
-above, keep that Stop entry inside the same "hooks" object.
+    "statusLine": { "type": "command", "command": "bash $FORGE_HOME/statusline.sh" },
+    "hooks": {
+      "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/protect-paths.sh" } ] } ],
+      "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",
+        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/format-on-edit.sh" } ] } ]
+    }
 
-See RECONCILE.md for the full audit and recommended settings/CLAUDE.md changes.
+  Or install the plugin instead (guards auto-wire): /plugin marketplace add <this-repo> then /plugin install forgekit.
+  Run \`forge doctor\` to verify.
 EOF
+}
+
+uninstall_forge() {
+  say "Uninstalling Forge (symlinks only; your files are untouched)"
+  for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && unlink_ours "$CLAUDE_DIR/skills/$(basename "$d")"; done
+  for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && unlink_ours "$CLAUDE_DIR/agents/$(basename "$f")"; done
+  unlink_ours "$BIN_DIR/forge"
+  unlink_ours "$FORGE_HOME"
+  say "Done. Any backed-up files remain as *.forge-bak-* next to their originals."
+}
+
+[ "$MODE" = uninstall ] && uninstall_forge || install_forge

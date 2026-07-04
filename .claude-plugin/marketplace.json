@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "forge",
+  "owner": { "name": "CodeWithJuber" },
+  "plugins": [
+    {
+      "name": "forgekit",
+      "source": ".",
+      "description": "One config, every AI coding tool. Cross-tool rules emitter, enforced guards, code-graph, memory, and cost governor."
+    }
+  ]
+}
