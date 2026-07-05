@@ -47,6 +47,7 @@ forge atlas build                       # once: index symbols so impact/scope wo
 # then, for any non-trivial change:
 forge substrate "<what you want to do>" # is it clear? which model? what breaks? split?
 # …make the edit…
+forge anchor "<the goal>"               # still on track? flags changed files that drifted off-goal
 forge verify                            # prove it — real tests + hallucinated-symbol check
 ```
 
@@ -180,6 +181,27 @@ Forge scope — task decomposition
       ! also coupled (you didn't name): src/session.js, src/login.js
   [2] src/report.js
 ```
+
+### `forge anchor "<goal>"` — are your changes still on the stated goal?
+
+Goal-anchoring (the paper's M4): it re-reads your original objective against the files
+you've *actually* changed (`git diff HEAD` + untracked, minus forge's own generated
+config), and flags work that wandered off-goal. Quiet on a clean tree — it only speaks
+once there's a diff to compare, so it's a mid-session "am I still on track?" check.
+
+```console
+$ forge anchor "harden verifyToken in src/auth.js"
+Forge anchor — goal-drift check
+
+  changed: 2 file(s) · on-goal 1 · off-goal 1
+
+  off-goal (unrelated to the stated goal — intended, or drift?):
+    - src/report.js
+```
+
+`src/auth.js` maps to the goal (named file + where `verifyToken` lives); `src/report.js`
+doesn't — so it's surfaced as drift to confirm or undo. Coarse and advisory by design
+(path/keyword match, not semantic). `forge substrate` folds this in automatically.
 
 ### `forge verify` — did it actually work?
 

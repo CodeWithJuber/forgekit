@@ -24,6 +24,7 @@ const COMMANDS = {
   impact: "predict blast radius for a symbol or file from the atlas graph",
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
+  anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
 };
@@ -462,6 +463,22 @@ async function run(argv) {
     );
     console.log("\n  advisory · auto-routing: `forge route gateway`");
     return;
+  }
+  if (cmd === "anchor") {
+    const { goalDrift, renderAnchor } = await import("./anchor.js");
+    const json = argv.includes("--json");
+    const goal = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!goal) {
+      console.error('usage: forge anchor "<original goal>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = goalDrift(process.cwd(), goal);
+    console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
+    return; // advisory — never fails the process
   }
   if (cmd === "scope") {
     const { decompose } = await import("./scope.js");

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { goalDrift } from "./anchor.js";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
 import { matchingLessons } from "./cortex.js";
 import { load as loadLessons } from "./lessons_store.js";
@@ -108,6 +109,9 @@ export function substrateCheck(
       })),
     },
     minimality: { warnings: minimalityWarnings(text, route, preflight) },
+    // M4 goal-anchoring: re-read the stated goal against files already changed this session.
+    // Quiet pre-action (clean tree → no drift); speaks mid-session when work wandered off-goal.
+    goalAnchor: goalDrift(root, text),
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
     guarantees: {
@@ -121,6 +125,7 @@ export function substrateCheck(
       advisory: [
         "model capability fit",
         "scope minimality",
+        "goal-drift check",
         "memory/learning relevance",
         "verification completeness",
       ],
@@ -152,6 +157,13 @@ export function renderSubstrate(result) {
     lines.push("", "  minimality warnings:");
     for (const w of result.minimality.warnings) lines.push(`    - ${w}`);
   }
+  if (result.goalAnchor?.drift) {
+    lines.push(
+      "",
+      `  goal drift: ${result.goalAnchor.offGoal.length} changed file(s) off the stated goal:`,
+    );
+    for (const f of result.goalAnchor.offGoal.slice(0, 8)) lines.push(`    - ${f}`);
+  }
   lines.push("", "  verify:");
   for (const c of result.verification.checklist) lines.push(`    - ${c}`);
   return lines.join("\n");
@@ -166,6 +178,7 @@ export function substrateContext(result) {
     result.assumption.shouldAsk ||
     result.impact.impactedFiles.length > 0 ||
     result.minimality.warnings.length > 0 ||
+    result.goalAnchor?.drift ||
     ["opus", "fable"].includes(result.route.key);
   if (!worthSaying) return "";
   const lines = ["Forge substrate — pre-action advisory (advisory, never blocks):"];
@@ -185,6 +198,10 @@ export function substrateContext(result) {
     );
   }
   for (const w of result.minimality.warnings) lines.push(`- Minimality: ${w}`);
+  if (result.goalAnchor?.drift)
+    lines.push(
+      `- Goal drift: ${result.goalAnchor.offGoal.length} changed file(s) off the stated goal (${result.goalAnchor.offGoal.slice(0, 5).join(", ")}). Intended, or wandering?`,
+    );
   if (result.memory.matchingLessons)
     lines.push(`- ${result.memory.matchingLessons} past lesson(s) match this area (advisory).`);
   lines.push(`- Verify with: ${result.verification.checklist.join(" · ")}`);
