@@ -9,11 +9,7 @@
 //           pre-edit        (PreToolUse Edit|Write)       — advise on lessons/risk before an edit
 //           stop            (Stop)                        — distill the session into lessons
 //           session-start   (SessionStart)               — inject learned lessons as context
-import {
-  applyDistillation,
-  lessonsForContext,
-  startupBlock,
-} from "./cortex.js";
+import { applyDistillation, lessonsForContext, startupBlock } from "./cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -73,20 +69,14 @@ async function main() {
     const block = startupBlock(root, today);
     if (block) emit("SessionStart", block);
   } else if (mode === "pre-edit") {
-    const advice = await preEditAdvisory(
-      root,
-      hook.tool_input?.file_path,
-      today,
-    );
+    const advice = await preEditAdvisory(root, hook.tool_input?.file_path, today);
     if (advice) emit("PreToolUse", advice);
   } else if (mode === "preflight") {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
-      const advisory = substrateContext(
-        substrateCheck(root, hook.prompt, { allowBuild: false }),
-      );
+      const advisory = substrateContext(substrateCheck(root, hook.prompt, { allowBuild: false }));
       if (advisory) emit("UserPromptSubmit", advisory);
     }
   }
