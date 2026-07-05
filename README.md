@@ -25,7 +25,17 @@ forge doctor             # verify everything is wired
 ```
 
 Prefer a plugin? `/plugin marketplace add <this-repo>` then `/plugin install forgekit`.
-Prefer npm? `npx forgekit init`. All three channels drive the **same** `global/` tree.
+Prefer npm? Forge publishes to **GitHub Packages** as `@codewithjuber/forgekit`. Point the
+scope at the registry and authenticate once (GitHub Packages requires a token even for public
+installs), then run it:
+
+```bash
+echo "@codewithjuber:registry=https://npm.pkg.github.com" >> ~/.npmrc
+echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc   # token needs read:packages
+npx @codewithjuber/forgekit init
+```
+
+All three channels drive the **same** `global/` tree.
 
 ## Why
 

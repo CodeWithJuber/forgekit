@@ -1,6 +1,6 @@
 {
-  "name": "forgekit",
-  "version": "0.3.0",
+  "name": "@codewithjuber/forgekit",
+  "version": "0.3.1",
   "description": "One config, every AI coding tool — a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
   "type": "module",
   "bin": {
@@ -22,8 +22,8 @@
   "funding": "https://github.com/sponsors/CodeWithJuber",
   "sideEffects": false,
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   },
   "files": [
     "src",

@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-05
+
+### Changed
+
+- **Publish to GitHub Packages** instead of npmjs. Package renamed to the scoped
+  `@codewithjuber/forgekit`; `publishConfig.registry` → `https://npm.pkg.github.com`. The
+  release workflow now authenticates with the built-in `GITHUB_TOKEN` (`packages: write`) — no
+  external `NPM_TOKEN` secret. A committed `.npmrc` maps the scope to the registry and sets
+  `min-release-age=7` (supply-chain cooldown). Note: GitHub Packages requires consumers to
+  authenticate even for public installs, so the `bash install.sh` clone path stays the
+  friction-free primary channel.
+
 ## [0.3.0] - 2026-07-05
 
 ### Added
