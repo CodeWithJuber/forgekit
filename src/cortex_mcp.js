@@ -6,9 +6,10 @@ import { argv } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { lessonsForContext, summary } from "./cortex.js";
-import { clarifyBlock, preflightRepo } from "./preflight.js";
+import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
+import { predictImpact, substrateCheck } from "./substrate.js";
 
 const root = process.env.FORGE_ROOT || process.cwd();
 const today = () => Math.floor(Date.now() / 86400000);
@@ -59,6 +60,40 @@ const TOOLS = [
       required: ["task"],
     },
   },
+
+  {
+    name: "assumption_gate",
+    description:
+      "Score specification completeness before work starts. Returns shouldAsk, risk, missing dimensions, and concrete questions.",
+    inputSchema: {
+      type: "object",
+      properties: { task: { type: "string", description: "the task/prompt" } },
+      required: ["task"],
+    },
+  },
+  {
+    name: "predict_impact",
+    description:
+      "Predict blast radius for a symbol or file using Forge atlas reverse-dependency traversal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "symbol name, qualified name, or file" },
+        threshold: { type: "number", description: "confidence threshold, default 0.1" },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "substrate_check",
+    description:
+      "Full Forge cognitive-substrate pre-action check: assumption gate, route, impact, scope, memory, minimality, and verification checklist.",
+    inputSchema: {
+      type: "object",
+      properties: { task: { type: "string", description: "the task/prompt" } },
+      required: ["task"],
+    },
+  },
   {
     name: "scope_files",
     description:
@@ -91,6 +126,17 @@ function callTool(name, args = {}) {
     const rec = routeTask(root, String(args.task ?? ""));
     return `Recommended: ${rec.model.name} (${rec.tier}). complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` — ${rec.reasons.join(", ")}` : ""}.`;
   }
+
+  if (name === "assumption_gate")
+    return JSON.stringify(assessTask(String(args.task ?? "")), null, 2);
+  if (name === "predict_impact")
+    return JSON.stringify(
+      predictImpact(root, String(args.target ?? ""), { threshold: Number(args.threshold ?? 0.1) }),
+      null,
+      2,
+    );
+  if (name === "substrate_check")
+    return JSON.stringify(substrateCheck(root, String(args.task ?? "")), null, 2);
   if (name === "scope_files") {
     const d = decompose(root, args.files ?? []);
     return JSON.stringify(d, null, 2);

@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Forge Cognitive Substrate** — one pre-action command (`forge substrate`) and MCP surface (`substrate_check`, `predict_impact`, `assumption_gate`) that combines assumption gating, transparent model routing, impact prediction, scope decomposition, Cortex lessons, minimality warnings, and verification planning.
+- **Atlas v2 graph** — dependency nodes/edges, file hashes, and reverse-dependency impact traversal while preserving the old symbol query API.
+- Codex plugin manifest and `cognitive-substrate` skill so Forge can be installed/used from Codex-style extension surfaces as well as Claude/NPM.
+
 ## [0.3.1] - 2026-07-05
 
 ### Changed
@@ -76,7 +82,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/CodeWithJuber/forgekit/releases/tag/v0.1.0

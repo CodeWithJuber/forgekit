@@ -21,6 +21,8 @@ const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
+  impact: "predict blast radius for a symbol or file from the atlas graph",
+  substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
@@ -381,12 +383,52 @@ async function run(argv) {
     const r = preflightRepo(process.cwd(), task);
     console.log(`${BRAND.brand} preflight — assumption check\n`);
     console.log(
-      `  info-gap: ${r.gap.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
+      `  info-gap: ${r.gap.toFixed(2)}  · completeness ${r.assumption.completeness.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
     );
     const block = clarifyBlock(r);
     console.log(
       block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
     );
+    return;
+  }
+  if (cmd === "impact") {
+    const { predictImpact } = await import("./substrate.js");
+    const json = argv.includes("--json");
+    const target = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!target) {
+      console.error("usage: forge impact <symbol|file> [--json]");
+      process.exitCode = 1;
+      return;
+    }
+    const r = predictImpact(process.cwd(), target);
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    console.log(`${BRAND.brand} impact — blast radius\n`);
+    console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
+    console.log(`  impacted files: ${r.impactedFiles.length}`);
+    for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
+    if (r.impactedFiles.length > 20) console.log(`    … ${r.impactedFiles.length - 20} more`);
+    return;
+  }
+  if (cmd === "substrate") {
+    const { renderSubstrate, substrateCheck } = await import("./substrate.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge substrate "<task>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = substrateCheck(process.cwd(), task);
+    console.log(json ? JSON.stringify(r, null, 2) : renderSubstrate(r));
     return;
   }
   if (cmd === "route") {

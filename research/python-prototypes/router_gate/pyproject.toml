@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "router-gate"
+version = "0.2.0"
+description = "Production-ready complexity router and assumption gate for agentic coding workflows"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "router_gate authors" }]
+license = { text = "MIT" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+router-gate = "router_gate.cli:main"
+router-gate-mcp = "router_gate.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["router_gate*"]

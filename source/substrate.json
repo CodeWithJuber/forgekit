@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "summary": "Forge cognitive substrate wraps a frozen model with deterministic pre-action gates, repo state, memory, routing, impact simulation, and verification discipline.",
+  "faculties": [
+    { "id": "memory", "forge": "recall + cortex", "status": "partial", "guarantee": "facts and lessons are persisted as auditable files; relevance is advisory" },
+    { "id": "learning", "forge": "cortex lessons", "status": "partial", "guarantee": "external outcomes update lesson confidence; no model weights are changed" },
+    { "id": "imagination", "forge": "impact graph", "status": "operational-v1", "guarantee": "reverse dependency traversal predicts possible blast radius" },
+    { "id": "self-correction", "forge": "verify + doom-loop guard", "status": "partial", "guarantee": "tests/builds are trusted over model claims" },
+    { "id": "impact-awareness", "forge": "atlas + impact", "status": "operational-v1", "guarantee": "known symbols/files and likely dependents are surfaced before edits" }
+  ],
+  "mechanisms": [
+    { "id": "M1", "name": "complexity-aware routing", "command": "forge route", "status": "solved-with-transparency-layer" },
+    { "id": "M2", "name": "assumption gate", "command": "forge preflight", "status": "operational-v1" },
+    { "id": "M3", "name": "task/session decomposition", "command": "forge scope", "status": "solved-with-boundary-helper" },
+    { "id": "M4", "name": "goal anchoring", "command": "forge substrate", "status": "partial" },
+    { "id": "M5", "name": "scope minimality", "command": "forge substrate", "status": "operational-v1-advisory" },
+    { "id": "M6", "name": "inline verification", "command": "forge verify", "status": "partial" }
+  ],
+  "defaults": { "askThreshold": 0.6, "impactThreshold": 0.1 },
+  "policies": {
+    "preAction": "Run substrate before ambiguous, expensive, multi-file, or mutating work.",
+    "escalation": "Start with the cheapest capable tier and escalate only after an external verifier failure.",
+    "hookEnforcement": "Block or warn only on deterministic risks; keep research-edge judgments advisory.",
+    "honesty": "Label memory relevance, routing fit, and minimality as advisory unless verified by tests, graph membership, or explicit user scope."
+  },
+  "limits": [
+    "Graph edges are static and conservative; dynamic dispatch and generated code may be missed.",
+    "Memory and learning are external file-backed lessons, not weight-level learning.",
+    "Non-hook editors receive advisory MCP/context only; Forge cannot enforce hooks where the host has no hook surface."
+  ]
+}

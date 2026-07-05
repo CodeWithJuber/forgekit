@@ -1,0 +1,19 @@
+ask_threshold = 0.6
+allow_escalation = true
+executor_command = "./my-agent-call --model {model}"
+executor_timeout_seconds = 120
+
+[tiers.cheap]
+model_id = "claude-haiku-4-5-20251001"
+usd_in_per_mtok = 1.0
+usd_out_per_mtok = 5.0
+
+[tiers.mid]
+model_id = "claude-sonnet-5"
+usd_in_per_mtok = 3.0
+usd_out_per_mtok = 15.0
+
+[tiers.premium]
+model_id = "claude-opus-4-8"
+usd_in_per_mtok = 15.0
+usd_out_per_mtok = 75.0

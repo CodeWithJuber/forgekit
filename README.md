@@ -91,6 +91,18 @@ On **Claude Code** it's fully ambient (hooks). Other tools read the lessons from
 and a zero-dependency MCP server (`forge cortex-mcp`). Everything lives in `.forge/lessons/`
 — git-committable and auditable. Try it: `node examples/cortex-demo.mjs`.
 
+## Forge Cognitive Substrate — one pre-action gate
+
+Forge now wraps the agent loop with the paper's cognitive-substrate controls. Run one command before ambiguous, expensive, or mutating work:
+
+```bash
+forge substrate "Fix the checkout bug in `src/payments.ts` and add tests"
+forge substrate "Refactor auth" --json
+forge impact computeTax
+```
+
+`substrate` returns the assumption gate, model route, impact radius, scope clusters, relevant Cortex lessons, minimality warnings, and a verification checklist. MCP-capable extensions get the same flow through `substrate_check`, `predict_impact`, and `assumption_gate`. Deterministic checks are asserted; memory relevance, routing fit, and minimality remain advisory where the research is not a hard guarantee.
+
 ## Forge Preflight — size the work before spending tokens
 
 An LLM is a fixed-capacity stochastic predictor. Most of the cost/quality bleed comes from

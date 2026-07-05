@@ -1,0 +1,29 @@
+{
+  "name": "forgekit",
+  "version": "0.3.1",
+  "description": "One config, every AI coding tool — cognitive substrate, MCP tools, guards, atlas, recall, and routing from one source.",
+  "author": { "name": "CodeWithJuber", "url": "https://github.com/CodeWithJuber" },
+  "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
+  "repository": "https://github.com/CodeWithJuber/forgekit",
+  "license": "MIT",
+  "keywords": ["codex", "mcp", "ai-coding", "agents-md", "cognitive-substrate"],
+  "skills": "skills",
+  "mcpServers": ".mcp.json",
+  "interface": {
+    "displayName": "Forge",
+    "shortDescription": "Cognitive substrate and one config for every AI coding tool.",
+    "longDescription": "Forge adds a pre-action cognitive substrate for coding agents: assumption gating, transparent model routing, impact prediction, scope decomposition, memory/learning context, and verification checklists. It also emits shared rules and MCP config for Codex, Claude Code, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, and Roo.",
+    "developerName": "CodeWithJuber",
+    "category": "Productivity",
+    "capabilities": ["MCP", "Skills", "Code Review", "Verification"],
+    "websiteURL": "https://github.com/CodeWithJuber/forgekit",
+    "privacyPolicyURL": "https://github.com/CodeWithJuber/forgekit/blob/master/SECURITY.md",
+    "termsOfServiceURL": "https://github.com/CodeWithJuber/forgekit/blob/master/LICENSE",
+    "defaultPrompt": [
+      "Run Forge substrate before this edit.",
+      "Predict impact for this symbol.",
+      "Route this task to the right model tier."
+    ],
+    "brandColor": "#137A72"
+  }
+}
