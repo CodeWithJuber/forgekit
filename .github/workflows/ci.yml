@@ -60,9 +60,9 @@ jobs:
     name: Dependency review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    # Advisory: requires the repo's Dependency graph to be enabled (Settings → Security &
-    # analysis). Non-blocking — this project has zero runtime dependencies anyway.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
+      # Advisory: needs the repo's Dependency graph enabled (Settings → Security & analysis).
+      # continue-on-error keeps the CHECK green until then — this project has zero runtime deps.
       - uses: actions/dependency-review-action@v4
+        continue-on-error: true
