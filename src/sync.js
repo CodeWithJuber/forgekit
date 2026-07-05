@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { brainBlock } from "./brain.js";
 import { BRAND } from "./brand.js";
+import { cortexBlock } from "./cortex.js";
 import * as shared from "./emit/_shared.js";
 import aider from "./emit/aider.js";
 import claude from "./emit/claude.js";
@@ -43,11 +44,17 @@ function loadRules(targetRoot) {
   return base;
 }
 
-export function sync({ targetRoot = process.cwd() } = {}) {
+/** Full canonical body: rules + portable memory + learned lessons — one source of truth. */
+function buildCanonical(targetRoot) {
   const rules = loadRules(targetRoot);
-  // Inline the portable project memory (capped) so every AGENTS.md-reading tool shares it.
-  const brain = brainBlock(targetRoot);
-  const canonical = assemble(rules) + (brain ? "\n" + brain : "");
+  const brain = brainBlock(targetRoot); // durable facts (forge brain)
+  const lessons = cortexBlock(targetRoot); // learned corrections (forge cortex)
+  return assemble(rules) + (brain ? `\n${brain}` : "") + (lessons ? `\n${lessons}` : "");
+}
+
+export function sync({ targetRoot = process.cwd() } = {}) {
+  // Inline portable memory + learned lessons so every AGENTS.md-reading tool shares them.
+  const canonical = buildCanonical(targetRoot);
   const hash = shared.hashContent(canonical);
   const bytes = Buffer.byteLength(canonical);
 
@@ -119,7 +126,7 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   return { hash, bytes, report, warnings, backedUp };
 }
 
-/** The assembled canonical body for a repo (shared source + any per-repo override). */
+/** The assembled canonical body for a repo — same builder sync writes, so drift-check matches. */
 export function canonical(targetRoot = process.cwd()) {
-  return assemble(loadRules(targetRoot));
+  return buildCanonical(targetRoot);
 }

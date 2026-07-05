@@ -168,6 +168,11 @@ export function startupBlock(root, nowDay = 0, budget = 8) {
   ].join("\n");
 }
 
+/** The lessons block to inline into AGENTS.md so non-Claude tools see them (empty if none). */
+export function cortexBlock(targetRoot = process.cwd()) {
+  return startupBlock(targetRoot, Math.floor(Date.now() / 86400000));
+}
+
 /** Auditable snapshot for `forge cortex status`. */
 export function summary(root, nowDay = 0) {
   const lessons = load(root);
