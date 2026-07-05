@@ -13,8 +13,20 @@ import aider from "./emit/aider.js";
 import copilot from "./emit/copilot.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
+import continueTool from "./emit/continue.js";
+import { emitMcp } from "./emit/mcp.js";
 
-const MODULES = [codex, cursor, copilot, windsurf, zed, claude, gemini, aider];
+const MODULES = [
+  codex,
+  cursor,
+  copilot,
+  windsurf,
+  zed,
+  claude,
+  gemini,
+  aider,
+  continueTool,
+];
 
 // Soft budget: Codex hard-truncates at 32 KiB, Windsurf caps ~12k chars. Warn early.
 const SIZE_BUDGET_BYTES = 12 * 1024;
@@ -86,6 +98,22 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     } catch (err) {
       report.push({
         tool: mod.tool,
+        target: "-",
+        action: "error",
+        note: err.message,
+      });
+    }
+  }
+
+  // MCP servers — emit the canonical set into each tool's MCP config (real formats).
+  const mcpFile = join(BRAND.root, "source", "mcp.json");
+  if (existsSync(mcpFile)) {
+    try {
+      const servers = JSON.parse(readFileSync(mcpFile, "utf8"));
+      for (const row of emitMcp({ targetRoot, servers })) report.push(row);
+    } catch (err) {
+      report.push({
+        tool: "MCP",
         target: "-",
         action: "error",
         note: err.message,
