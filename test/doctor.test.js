@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { processSession } from "../src/cortex_hook.js";
 import { doctor } from "../src/doctor.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-"));
@@ -25,4 +26,24 @@ test("doctor is ok with a small MCP set", () => {
   );
   const mcp = doctor({ targetRoot: root }).results.find((r) => r.label === "MCP servers");
   assert.equal(mcp.status, "ok");
+});
+
+test("doctor reports 'no lessons yet' on a fresh repo, and counts once learning happens", () => {
+  const fresh = fixture();
+  const c0 = doctor({ targetRoot: fresh }).results.find((r) => r.label === "cortex");
+  assert.ok(c0);
+  assert.match(c0.note, /no lessons yet/);
+
+  const learned = fixture();
+  const s = () => [
+    { type: "bash", command: "npm test", exitCode: 1 },
+    { type: "edit", file: "src/a.ts" },
+    { type: "edit", file: "src/a.ts" },
+    { type: "edit", file: "src/a.ts" },
+    { type: "bash", command: "npm test", exitCode: 0 },
+  ];
+  processSession(learned, s(), 1);
+  processSession(learned, s(), 2); // → active lesson
+  const c1 = doctor({ targetRoot: learned }).results.find((r) => r.label === "cortex");
+  assert.match(c1.note, /1 active/);
 });

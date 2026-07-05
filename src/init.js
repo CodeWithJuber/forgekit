@@ -35,5 +35,7 @@ export function catalog() {
       .filter((f) => f.endsWith(".sh") && !f.startsWith("_"))
       .map((f) => f.replace(/\.sh$/, "")),
     taste: tasteList(),
+    cortex:
+      "self-correcting project memory — learns from your mistakes on this repo (`forge cortex`)",
   };
 }

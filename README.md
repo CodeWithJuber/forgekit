@@ -58,13 +58,37 @@ the token budget, keep diffs small) out of `CLAUDE.md` prose and into guards, an
 keeps the prose thin and single-sourced. Guards _reduce_ the "ignored my rules"
 problem to the semantic rules that genuinely can't be a hook — and says so plainly.
 
+## Forge Cortex — self-correcting project memory
+
+An LLM is stateless: it relearns your repo every session and repeats the correction you
+gave it last week. **Cortex** is the layer that fixes that. It watches for a _genuine_
+recurring mistake on this repo — a test that failed then passed after edits, a `git revert`,
+repeated edits to the same symbol, an explicit "undo" — distills a durable lesson, and
+re-confirms it against fresh outcomes. Next time you touch that file, the lesson is there.
+
+What keeps it trustworthy (this is the hard part, and it's built in):
+
+- **Injection is never confirmation.** Only independent outcomes (tests, builds, a human)
+  move a lesson's confidence — it can't grade its own homework.
+- **A green build / human reversal always wins.** A mistake is a bad _outcome_, not
+  "differs from a lesson"; change your mind and the lesson retires instead of fighting you.
+- **A wrong lesson decays out.** Confidence is a time-decayed `Beta` posterior; unconfirmed
+  or contradicted lessons quarantine, then retire. It can't ossify.
+- **Advisory, never blocking.** The hooks are fail-safe by construction — worst case, they
+  do nothing.
+
+On **Claude Code** it's fully ambient (hooks). Other tools read the lessons from `AGENTS.md`
+and a zero-dependency MCP server (`forge cortex-mcp`). Everything lives in `.forge/lessons/`
+— git-committable and auditable. Try it: `node examples/cortex-demo.mjs`.
+
 ## Commands
 
 ```
 forge init        emit this repo's config for every tool (one command)
 forge sync        recompile source/ → each tool's native files (idempotent)
-forge doctor      pass/fail health check (layers, install, drift)
+forge doctor      pass/fail health check (layers, install, drift, cortex)
 forge catalog     Start-Here index of every tool/crew/guard
+forge cortex      self-correcting memory — status / why <symbol>
 forge atlas       build/query the code-graph (where-is-X, has-symbol)
 forge recall      cross-session memory (list/add/consolidate)
 forge brand       show the brand token map
@@ -78,6 +102,9 @@ forge brand       show the brand token map
   fine-tuning. Consolidation is deterministic (exact-dupe prune), not a model call.
 - **`atlas` v1 indexes symbol definitions + membership**, not a full call graph.
   It flags likely-hallucinated symbols; it does not certify correctness.
+- **Cortex is new and unproven on your repo.** The signal thresholds are hand-tuned and the
+  learned predictor starts with zero data — it holds itself to the heuristic until it earns
+  more. It's advisory memory, not a guarantee; judge it after a couple of weeks of real use.
 
 ## Layout
 

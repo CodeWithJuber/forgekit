@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { summary as cortexSummary } from "./cortex.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
 import { canonical } from "./sync.js";
 
@@ -89,6 +90,19 @@ function checkMcp(out, targetRoot) {
   );
 }
 
+// Cortex: report the self-correcting memory's state for this repo (always informational).
+function checkCortex(out, targetRoot) {
+  const s = cortexSummary(targetRoot, Math.floor(Date.now() / 86400000));
+  out.push(
+    s.total === 0
+      ? ok("cortex", "no lessons yet — learns from corrections as you work")
+      : ok(
+          "cortex",
+          `${s.active} active · ${s.candidate} candidate · ${s.quarantined} quarantined · ${s.retired} retired`,
+        ),
+  );
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -97,5 +111,6 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkInstall(results);
   checkDrift(results, targetRoot);
   checkMcp(results, targetRoot);
+  checkCortex(results, targetRoot);
   return { results, failed: results.filter((r) => r.status === "fail").length };
 }

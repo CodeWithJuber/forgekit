@@ -73,6 +73,7 @@ async function run(argv) {
       console.log(
         `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
       );
+    if (c.cortex) console.log(`\n  CORTEX (self-correcting memory)  ${c.cortex}`);
     console.log(`\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``);
     return;
   }
