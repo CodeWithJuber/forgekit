@@ -1,0 +1,28 @@
+name: Accessibility issue
+description: Report an accessibility barrier (CLI output, docs, or generated UI)
+labels: [accessibility]
+body:
+  - type: markdown
+    attributes:
+      value: "We treat accessibility bugs as regular bugs. See [ACCESSIBILITY.md](../blob/master/ACCESSIBILITY.md)."
+  - type: textarea
+    id: barrier
+    attributes:
+      label: The barrier
+      description: What is inaccessible, and for whom?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - CLI output
+        - Docs
+        - Generated UI (taste / landing page)
+        - Other
+  - type: input
+    id: at
+    attributes:
+      label: Assistive tech / environment
+      description: e.g. screen reader (which one), keyboard-only, high-contrast, reduced-motion

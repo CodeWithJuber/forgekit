@@ -24,3 +24,21 @@ you; there's no formal application.
 ## Releases
 Semantic versioning. `package.json` and `.claude-plugin/plugin.json` versions are bumped
 together and tagged `vX.Y.Z`; release notes come from [CHANGELOG.md](./CHANGELOG.md).
+
+## Contributor ladder
+
+**User** → **Contributor** (a merged PR / triaged issues) → **Triager** (trusted to label and
+close duplicates) → **Committer** (merge rights on reviewed PRs) → **Maintainer** (release +
+direction). You move up through sustained, trusted contribution; a maintainer invites you.
+
+## Bus factor
+
+To avoid a single point of failure, the project aims for **at least two admins** with publish
+rights and access to the release process (`NPM_TOKEN`). If you'd like to help maintain, say so
+in a Discussion.
+
+## Triage
+
+Issues are triaged best-effort (see [SUPPORT.md](./SUPPORT.md) for the response expectation).
+`good first issue` / `help wanted` mark entry points; `needs discussion` means an approach must
+be agreed before code.

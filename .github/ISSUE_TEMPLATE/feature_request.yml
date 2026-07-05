@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement, needs discussion]
+body:
+  - type: markdown
+    attributes:
+      value: "For larger ideas, please open a [Discussion](https://github.com/CodeWithJuber/forgekit/discussions) first."
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that forgekit makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer does this touch?
+      options:
+        - tool (skill)
+        - crew (agent)
+        - guard (hook)
+        - mcp / emitter
+        - verify
+        - brain (memory)
+        - cost
+        - other

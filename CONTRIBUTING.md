@@ -66,3 +66,17 @@ Add a `Signed-off-by` line to each commit (`git commit -s`), certifying you wrot
 or can contribute it.
 
 By contributing you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md).
+
+## AI-assisted contributions
+
+AI-assisted PRs are welcome **if you understand and stand behind the change** and it meets the
+same bar as any other PR (tests, passes CI, in scope). We close AI-generated PRs that are
+unreviewed, cosmetic-only, or clearly not run/tested — reviewer time is the scarce resource.
+If an AI wrote it, you are still the author: sign off (DCO) and be ready to explain it.
+
+## Dependency policy
+
+- **Runtime:** none — see [ADR 0001](./docs/adr/0001-zero-runtime-dependencies.md).
+- **Dev dependencies:** permissive licenses only (MIT / Apache-2.0 / BSD / ISC). No GPL/AGPL or
+  source-available (BSL/SSPL) dev deps. Dependabot proposes weekly updates with a 7-day cooldown;
+  the `dependency-review` CI job enforces the license + vulnerability rules on PRs.

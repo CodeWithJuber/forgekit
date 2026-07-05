@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "id": "project",
+      "title": "This project",
+      "rules": [
+        "Deploy target is a VPS behind Cloudflare — never hardcode a single LLM provider; use the configured routing.",
+        "Prices/plans in customer-facing replies must come from the verified KB, never guessed."
+      ]
+    }
+  ]
+}

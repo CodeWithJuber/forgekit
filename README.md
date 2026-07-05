@@ -8,6 +8,9 @@
 
 **One config, every AI coding tool.**
 
+> **Status: beta.** The core (`sync`, `verify`, `brain`, `scan`, `cost`, guards) is tested
+> and in daily use; some flags/APIs may still change before `1.0`.
+
 Forge is a cross-tool configuration layer for agentic AI coding assistants. You
 author your rules and workflow **once**; Forge emits each tool's native config,
 enforces the non-negotiables as deterministic guards, and adds a code-graph,
