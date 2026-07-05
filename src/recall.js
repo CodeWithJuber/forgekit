@@ -9,7 +9,7 @@ import { join } from "node:path";
 // Conservative (over-refusal is the safe direction for a memory tool). Covers the
 // key formats this tool's own users paste most: Anthropic sk-ant-, OpenAI sk-,
 // GitHub ghp_/github_pat_, Slack xox*, Google AIza/ya29, AWS AKIA, JWTs, PEM blocks.
-const SECRET_RE =
+export const SECRET_RE =
   /(-----BEGIN |api[_-]?key|secret|passwd|password|\bghp_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bsk-[A-Za-z0-9_-]{16,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{20,}|\bya29\.[A-Za-z0-9._-]+|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AKIA[0-9A-Z]{16})/i;
 
 export function defaultStore() {
