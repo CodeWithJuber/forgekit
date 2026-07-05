@@ -19,6 +19,7 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + the cost ceiling",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
+  preflight: "assumption check — what a task names that the repo doesn't define",
   brand: "print the active brand token map",
 };
 
@@ -363,6 +364,25 @@ async function run(argv) {
       console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
     }
     console.log("\n  stored in .forge/lessons/ (git-committable, auditable)");
+    return;
+  }
+  if (cmd === "preflight") {
+    const { preflightRepo, clarifyBlock } = await import("./preflight.js");
+    const task = argv.slice(1).join(" ");
+    if (!task) {
+      console.error('usage: forge preflight "<task description>"');
+      process.exitCode = 1;
+      return;
+    }
+    const r = preflightRepo(process.cwd(), task);
+    console.log(`${BRAND.brand} preflight — assumption check\n`);
+    console.log(
+      `  info-gap: ${r.gap.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
+    );
+    const block = clarifyBlock(r);
+    console.log(
+      block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
+    );
     return;
   }
   if (!(cmd in COMMANDS)) {
