@@ -1,0 +1,23 @@
+# Keep devDependencies and GitHub Actions up to date (security best practice).
+# https://opensource.guide/security-best-practices-for-your-project/
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: ["dependencies", "github-actions"]
+    commit-message:
+      prefix: "chore(ci)"

@@ -51,3 +51,11 @@ jobs:
       - uses: actions/checkout@v5
       - run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
       - run: npm pack --dry-run
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/dependency-review-action@v4

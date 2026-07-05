@@ -1,0 +1,13 @@
+# Route questions and big ideas to Discussions BEFORE an issue/PR — this is the main
+# lever against low-value issues and PRs. Blank issues are disabled on purpose.
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & ideas (Discussions)
+    url: https://github.com/CodeWithJuber/forgekit/discussions
+    about: Ask "how do I…", propose larger changes, or share what you built — start here before opening an issue or PR.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/CodeWithJuber/forgekit/security/advisories/new
+    about: Report privately. Do NOT open a public issue for security problems.
+  - name: 📖 Read the contributing guide
+    url: https://github.com/CodeWithJuber/forgekit/blob/master/CONTRIBUTING.md
+    about: Scope, the zero-dependency rule, and how to get a PR merged.

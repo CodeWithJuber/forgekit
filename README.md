@@ -83,6 +83,13 @@ all point at `global/` and `source/` (no duplication). See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the full map, and [ONBOARDING.md](ONBOARDING.md)
 to get productive in five minutes.
 
+## Community & support
+
+- **Get help / ask questions** → [SUPPORT.md](./SUPPORT.md) · [Discussions](https://github.com/CodeWithJuber/forgekit/discussions)
+- **Contribute** → [CONTRIBUTING.md](./CONTRIBUTING.md) · [Code of Conduct](./CODE_OF_CONDUCT.md)
+- **Direction & decisions** → [ROADMAP.md](./ROADMAP.md) · [GOVERNANCE.md](./GOVERNANCE.md)
+- **Security** → [SECURITY.md](./SECURITY.md) (report privately) · **Accessibility** → [ACCESSIBILITY.md](./ACCESSIBILITY.md)
+
 ## Rebranding
 
 The name lives in one place: `brand.json` (`FORGE_BRAND`). Change it there (plus the

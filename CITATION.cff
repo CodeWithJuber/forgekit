@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use forgekit, please cite it using this metadata."
+title: forgekit
+abstract: >-
+  One config, every AI coding tool — a cross-tool configuration layer for agentic
+  coding assistants with an independent verification gate, portable memory, a
+  security-vetting skill-gate, and a cost governor.
+type: software
+authors:
+  - name: CodeWithJuber
+license: MIT
+repository-code: "https://github.com/CodeWithJuber/forgekit"
+url: "https://github.com/CodeWithJuber/forgekit"
+keywords:
+  - claude-code
+  - agents-md
+  - ai-coding
+  - cross-tool
