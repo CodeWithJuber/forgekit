@@ -13,10 +13,18 @@ test("handle: initialize advertises the forge-cortex server", () => {
   assert.equal(r.result.serverInfo.name, "forge-cortex");
 });
 
-test("handle: tools/list exposes cortex_lessons + cortex_status", () => {
+test("handle: tools/list exposes the cortex + preflight tools", () => {
   const r = handle({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  const names = r.result.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["cortex_lessons", "cortex_status"]);
+  const names = r.result.tools.map((t) => t.name);
+  for (const t of [
+    "cortex_lessons",
+    "cortex_status",
+    "preflight_check",
+    "route_task",
+    "scope_files",
+  ]) {
+    assert.ok(names.includes(t), `exposes ${t}`);
+  }
 });
 
 test("handle: notifications get no response; unknown methods error", () => {

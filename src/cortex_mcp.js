@@ -6,6 +6,9 @@ import { argv } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { lessonsForContext, summary } from "./cortex.js";
+import { clarifyBlock, preflightRepo } from "./preflight.js";
+import { routeTask } from "./route.js";
+import { decompose } from "./scope.js";
 
 const root = process.env.FORGE_ROOT || process.cwd();
 const today = () => Math.floor(Date.now() / 86400000);
@@ -36,6 +39,36 @@ const TOOLS = [
     description: "Summary of learned lessons on this repo (counts by state, top by confidence).",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "preflight_check",
+    description:
+      "BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME. Returns a clarify list or an all-clear. Ask instead of assuming.",
+    inputSchema: {
+      type: "object",
+      properties: { task: { type: "string", description: "the task/prompt" } },
+      required: ["task"],
+    },
+  },
+  {
+    name: "route_task",
+    description:
+      "Recommend the cheapest CAPABLE model for a task by code-task complexity (files, fan-out, churn, past mistakes, ambiguity). Advisory — don't burn a top model on a trivial task.",
+    inputSchema: {
+      type: "object",
+      properties: { task: { type: "string" } },
+      required: ["task"],
+    },
+  },
+  {
+    name: "scope_files",
+    description:
+      "Decompose files into INDEPENDENT clusters (run as separate sessions) vs coupled, and surface coupled files you didn't name (the 'forgot the related module' guard).",
+    inputSchema: {
+      type: "object",
+      properties: { files: { type: "array", items: { type: "string" } } },
+      required: ["files"],
+    },
+  },
 ];
 
 function callTool(name, args = {}) {
@@ -50,6 +83,18 @@ function callTool(name, args = {}) {
     return block || "No lessons recorded for these files/symbols yet.";
   }
   if (name === "cortex_status") return JSON.stringify(summary(root, today()), null, 2);
+  if (name === "preflight_check") {
+    const r = preflightRepo(root, String(args.task ?? ""));
+    return clarifyBlock(r) || "All clear — everything this task names is grounded in the codebase.";
+  }
+  if (name === "route_task") {
+    const rec = routeTask(root, String(args.task ?? ""));
+    return `Recommended: ${rec.model.name} (${rec.tier}). complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` — ${rec.reasons.join(", ")}` : ""}.`;
+  }
+  if (name === "scope_files") {
+    const d = decompose(root, args.files ?? []);
+    return JSON.stringify(d, null, 2);
+  }
   return null;
 }
 
