@@ -61,7 +61,8 @@ export function scan(target) {
 
   if (isPath && process.env.FORGE_SKILLGATE_NOEXTERNAL !== "1") {
     try {
-      const out = execFileSync("uvx", ["snyk-agent-scan@latest", target], {
+      // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+      const out = execFileSync("uvx", ["snyk-agent-scan==0.5.12", target], {
         encoding: "utf8",
         stdio: "pipe",
         timeout: 90000,

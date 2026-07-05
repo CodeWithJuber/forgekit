@@ -273,7 +273,8 @@ async function run(argv) {
       try {
         out = run("ccusage", ["daily"]);
       } catch {
-        out = run("npx", ["-y", "ccusage@latest", "daily"]);
+        // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+        out = run("npx", ["-y", "ccusage@20.0.14", "daily"]);
       }
       console.log(out.trim());
     } catch {
@@ -292,7 +293,8 @@ async function run(argv) {
     if (sub === "init") {
       const { execFileSync } = await import("node:child_process");
       try {
-        execFileSync("npx", ["-y", "@fission-ai/openspec@latest", "init"], {
+        // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+        execFileSync("npx", ["-y", "@fission-ai/openspec@1.5.0", "init"], {
           stdio: "inherit",
         });
       } catch {
