@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Portable memory: `forge brain` / `forge remember`, inlined (capped) into AGENTS.md
   so every tool shares it.
 - Design-taste menu (`forge taste`) with five directions.
+- `forge spec` — spec-as-contract drift detection (spec-lock) + OpenSpec wiring.
+- `forge doctor` MCP ~6-server hygiene check; `npm run coverage`; type-checking (`tsc --checkJs`).
+- 2026 production-standard rules emitted via `forge sync`; OWASP-LLM / NIST SSDF / SLSA control mapping.
 
 ## [0.1.0] - 2026-07-05
 

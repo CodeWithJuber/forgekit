@@ -2,23 +2,12 @@
 // spec framework (OpenSpec / Spec Kit do that); it snapshots which code symbols each
 // spec CLAIMS (via the atlas index) and later flags a spec that still claims a symbol
 // the code no longer defines — i.e. the code moved on and the spec didn't.
-import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  readdirSync,
-  mkdirSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { build as buildAtlas, has } from "./atlas.js";
 import { hashContent } from "./emit/_shared.js";
 
-const SPEC_DIRS = [
-  "specs",
-  "openspec/changes",
-  "openspec/specs",
-  ".kiro/steering",
-];
+const SPEC_DIRS = ["specs", "openspec/changes", "openspec/specs", ".kiro/steering"];
 
 function walk(dir, files) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -40,8 +29,7 @@ function specFiles(root) {
 /** Pure: code-identifier tokens a spec references — `backtick` tokens, 3+ chars. */
 export function referencedSymbols(text) {
   const out = new Set();
-  for (const m of String(text).matchAll(/`([A-Za-z_$][\w$]{2,})`/g))
-    out.add(m[1]);
+  for (const m of String(text).matchAll(/`([A-Za-z_$][\w$]{2,})`/g)) out.add(m[1]);
   return [...out];
 }
 
@@ -55,10 +43,7 @@ export function snapshot(root = process.cwd()) {
     specs[relative(root, f)] = { hash: hashContent(text), claimed };
   }
   mkdirSync(join(root, ".forge"), { recursive: true });
-  writeFileSync(
-    join(root, ".forge", "spec-lock.json"),
-    JSON.stringify(specs, null, 2),
-  );
+  writeFileSync(join(root, ".forge", "spec-lock.json"), JSON.stringify(specs, null, 2));
   return { specs, count: Object.keys(specs).length };
 }
 

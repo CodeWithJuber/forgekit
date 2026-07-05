@@ -68,6 +68,27 @@ function checkDrift(out, targetRoot) {
   );
 }
 
+// MCP hygiene: past ~6 servers, tool-selection accuracy drops and the context bloats.
+function checkMcp(out, targetRoot) {
+  const path = join(targetRoot, ".mcp.json");
+  if (!existsSync(path)) return;
+  let servers = {};
+  try {
+    servers = JSON.parse(readFileSync(path, "utf8")).mcpServers || {};
+  } catch {
+    return;
+  }
+  const n = Object.keys(servers).length;
+  out.push(
+    n > 6
+      ? warn(
+          "MCP servers",
+          `${n} in .mcp.json — over ~6; tool-selection accuracy drops, trim or defer`,
+        )
+      : ok("MCP servers", `${n} in .mcp.json`),
+  );
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -75,5 +96,6 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkLayers(results);
   checkInstall(results);
   checkDrift(results, targetRoot);
+  checkMcp(results, targetRoot);
   return { results, failed: results.filter((r) => r.status === "fail").length };
 }

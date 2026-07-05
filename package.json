@@ -49,6 +49,7 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
+    "coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\"",
     "forge": "node src/cli.js"
   },
   "keywords": [
