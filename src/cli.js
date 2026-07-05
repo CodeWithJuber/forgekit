@@ -21,6 +21,7 @@ const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
+  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   brand: "print the active brand token map",
 };
 
@@ -415,6 +416,33 @@ async function run(argv) {
       `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
     );
     console.log("\n  advisory · auto-routing: `forge route gateway`");
+    return;
+  }
+  if (cmd === "scope") {
+    const { decompose } = await import("./scope.js");
+    const files = argv.slice(1);
+    if (!files.length) {
+      console.error("usage: forge scope <file> [file...]");
+      process.exitCode = 1;
+      return;
+    }
+    const d = decompose(process.cwd(), files);
+    console.log(`${BRAND.brand} scope — task decomposition\n`);
+    if (d.independentGroups > 1) {
+      console.log(
+        `  ${d.independentGroups} independent groups → consider a separate session per group:\n`,
+      );
+    }
+    d.clusters.forEach((c, i) => {
+      console.log(`  [${i + 1}] ${c.touched.join(", ")}`);
+      if (c.coupled.length) {
+        const shown = c.coupled.slice(0, 8).join(", ");
+        console.log(
+          `      ! also coupled (you didn't name): ${shown}${c.coupled.length > 8 ? " …" : ""}`,
+        );
+      }
+    });
+    if (d.independentGroups === 1) console.log("\n  all coupled — keep as one change.");
     return;
   }
   if (!(cmd in COMMANDS)) {
