@@ -22,6 +22,7 @@ const COMMANDS = {
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
+  uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
 };
 
@@ -443,6 +444,28 @@ async function run(argv) {
       }
     });
     if (d.independentGroups === 1) console.log("\n  all coupled — keep as one change.");
+    return;
+  }
+  if (cmd === "uicheck") {
+    const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
+      "./uicheck.js"
+    );
+    const [fg, bg] = [argv[1], argv[2]];
+    console.log(`${BRAND.brand} uicheck — deterministic UI review\n`);
+    if (fg && bg) {
+      try {
+        const g = wcagLevel(contrastRatio(fg, bg));
+        console.log(
+          `  contrast ${fg} on ${bg}: ${g.ratio}:1  →  ${g.level}${g.passesAA ? " (passes AA)" : " (FAILS AA)"}`,
+        );
+      } catch (e) {
+        console.error(`  ${e.message}`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
+    console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
     return;
   }
   if (!(cmd in COMMANDS)) {
