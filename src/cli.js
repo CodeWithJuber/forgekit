@@ -39,6 +39,11 @@ async function run(argv) {
   const [cmd] = argv;
   if (!cmd || cmd === "-h" || cmd === "--help") return printHelp();
   if (cmd === "-v" || cmd === "--version") return printVersion();
+  if (cmd === "cortex-mcp") {
+    const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
+    serve();
+    return;
+  }
   if (cmd === "brand") {
     const { brand, cli, pkg, version, layers } = BRAND;
     return console.log(JSON.stringify({ brand, cli, pkg, version, layers }, null, 2));
