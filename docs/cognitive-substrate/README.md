@@ -17,13 +17,12 @@ In Claude Code it runs **automatically**. In other tools you (or the agent) run 
 ## Install (about 2 minutes)
 
 ```bash
-# Claude Code / Codex — install as a plugin
+# Claude Code / Codex — the plugin (recommended; the check then runs on every prompt)
 /plugin marketplace add CodeWithJuber/forgekit
 /plugin install forgekit
 
-# …or clone and run the installer (puts `forge` on your PATH)
-git clone https://github.com/CodeWithJuber/forgekit.git
-cd forgekit && bash install.sh
+# …or the CLI, any tool (no token, no clone)
+npm install -g github:CodeWithJuber/forgekit
 ```
 
 Then, inside any project:
