@@ -18,6 +18,7 @@ const COMMANDS = {
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + the cost ceiling",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
+  cortex: "self-correcting project memory — status / why <symbol>",
   brand: "print the active brand token map",
 };
 
@@ -320,6 +321,40 @@ async function run(argv) {
     console.log(
       `  sandbox settings:    ${r.sandbox} — merge into ~/.claude/settings.json to enable (84% fewer prompts)`,
     );
+    return;
+  }
+  if (cmd === "cortex") {
+    const c = await import("./cortex.js");
+    const root = process.cwd();
+    const nowDay = Math.floor(Date.now() / 86400000);
+    const sub = argv[1] || "status";
+    if (sub === "why") {
+      const key = argv[2];
+      if (!key) {
+        console.error("usage: forge cortex why <symbol|file>");
+        process.exitCode = 1;
+        return;
+      }
+      const { block, selected } = c.lessonsForContext(
+        root,
+        { symbols: [key], files: [key], keywords: [key] },
+        { nowDay },
+      );
+      console.log(selected.length ? block : `  no lessons for ${key} yet`);
+      return;
+    }
+    const s = c.summary(root, nowDay);
+    console.log(`${BRAND.brand} cortex — self-correcting project memory\n`);
+    console.log(
+      `  lessons: ${s.total}  (active ${s.active} · candidate ${s.candidate} · quarantined ${s.quarantined} · retired ${s.retired})`,
+    );
+    if (s.topActive.length) {
+      console.log("\n  top active (by confidence):");
+      for (const t of s.topActive) console.log(`    ${t.confidence.toFixed(2)}  ${t.id}`);
+    } else {
+      console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
+    }
+    console.log("\n  stored in .forge/lessons/ (git-committable, auditable)");
     return;
   }
   if (!(cmd in COMMANDS)) {
