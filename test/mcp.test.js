@@ -1,8 +1,8 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test } from "node:test";
 import { sync } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-mcp-"));
@@ -10,31 +10,19 @@ const fixture = () => mkdtempSync(join(tmpdir(), "forge-mcp-"));
 test("sync emits MCP config into each tool's real format", () => {
   const root = fixture();
   sync({ targetRoot: root });
-  assert.match(
-    readFileSync(join(root, ".mcp.json"), "utf8"),
-    /"mcpServers"[\s\S]*context7/,
-  );
-  assert.match(
-    readFileSync(join(root, ".cursor", "mcp.json"), "utf8"),
-    /context7/,
-  );
+  assert.match(readFileSync(join(root, ".mcp.json"), "utf8"), /"mcpServers"[\s\S]*context7/);
+  assert.match(readFileSync(join(root, ".cursor", "mcp.json"), "utf8"), /context7/);
   assert.match(
     readFileSync(join(root, ".zed", "settings.json"), "utf8"),
     /"context_servers"[\s\S]*context7/,
   );
-  assert.match(
-    readFileSync(join(root, ".vscode", "mcp.json"), "utf8"),
-    /"servers"[\s\S]*context7/,
-  );
+  assert.match(readFileSync(join(root, ".vscode", "mcp.json"), "utf8"), /"servers"[\s\S]*context7/);
   assert.match(
     readFileSync(join(root, ".codex", "config.toml"), "utf8"),
     /\[mcp_servers\.context7\]/,
   );
   assert.match(
-    readFileSync(
-      join(root, ".continue", "mcpServers", "forge-mcp.yaml"),
-      "utf8",
-    ),
+    readFileSync(join(root, ".continue", "mcpServers", "forge-mcp.yaml"), "utf8"),
     /mcpServers:/,
   );
 });
@@ -52,14 +40,8 @@ test("sync emits Continue rules (Continue does not read AGENTS.md)", () => {
 test("MCP + rules emit is idempotent (second sync writes nothing new)", () => {
   const root = fixture();
   sync({ targetRoot: root });
-  const written = sync({ targetRoot: root }).report.filter(
-    (r) => r.action === "written",
-  );
-  assert.equal(
-    written.length,
-    0,
-    `second sync wrote: ${written.map((r) => r.target)}`,
-  );
+  const written = sync({ targetRoot: root }).report.filter((r) => r.action === "written");
+  assert.equal(written.length, 0, `second sync wrote: ${written.map((r) => r.target)}`);
 });
 
 test("MCP merge preserves a user's own server", () => {

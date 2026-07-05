@@ -4,9 +4,9 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { load as loadAtlas, build as buildAtlas, has } from "./atlas.js";
+import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
 
 // Called identifiers that are language/runtime built-ins, not project symbols.
 const IGNORE = new Set([
@@ -104,10 +104,7 @@ function runTests(cwd) {
       execFileSync("npm", ["test"], { cwd, encoding: "utf8", stdio: "pipe" });
       return { ran: true, passed: true, runner: "npm test" };
     }
-    if (
-      existsSync(join(cwd, "pyproject.toml")) ||
-      existsSync(join(cwd, "pytest.ini"))
-    ) {
+    if (existsSync(join(cwd, "pyproject.toml")) || existsSync(join(cwd, "pytest.ini"))) {
       execFileSync("pytest", ["-q"], { cwd, encoding: "utf8", stdio: "pipe" });
       return { ran: true, passed: true, runner: "pytest" };
     }
@@ -130,9 +127,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
     .map((l) => l.slice(1))
     .join("\n");
-  const changedFiles = git(["diff", "--name-only", base], targetRoot)
-    .split("\n")
-    .filter(Boolean);
+  const changedFiles = git(["diff", "--name-only", base], targetRoot).split("\n").filter(Boolean);
 
   const atlas = loadAtlas(targetRoot) || buildAtlas({ root: targetRoot });
   const symbols = extractCalledSymbols(added);
@@ -147,10 +142,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     unknownSymbols: unknown,
   };
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
-  writeFileSync(
-    join(targetRoot, ".forge", "provenance.json"),
-    JSON.stringify(provenance, null, 2),
-  );
+  writeFileSync(join(targetRoot, ".forge", "provenance.json"), JSON.stringify(provenance, null, 2));
 
   // Hard gate = the project's own tests. Unknown symbols are advisory (heuristic).
   const ok = tests.ran ? tests.passed === true : true;

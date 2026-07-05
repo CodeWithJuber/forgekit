@@ -1,7 +1,7 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,10 +16,7 @@ test("plugin channel points at global/ (no duplication)", () => {
 });
 
 test("plugin name matches the distributable id (brand pkg)", () => {
-  assert.equal(
-    readJson(".claude-plugin/plugin.json").name,
-    readJson("brand.json").pkg,
-  );
+  assert.equal(readJson(".claude-plugin/plugin.json").name, readJson("brand.json").pkg);
 });
 
 test("marketplace lists the plugin at the repo root", () => {

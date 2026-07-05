@@ -1,15 +1,9 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  mkdirSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sync, assemble } from "../src/sync.js";
+import { test } from "node:test";
+import { assemble, sync } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-sync-"));
 
@@ -29,17 +23,9 @@ test("emitter writes each tool target", () => {
   assert.ok(existsSync(join(root, "AGENTS.md")), "AGENTS.md");
   assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /## Workflow/);
   assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /^@AGENTS\.md/m);
-  const gemini = JSON.parse(
-    readFileSync(join(root, ".gemini/settings.json"), "utf8"),
-  );
-  assert.ok(
-    gemini.context.fileName.includes("AGENTS.md"),
-    "gemini context.fileName",
-  );
-  assert.match(
-    readFileSync(join(root, ".aider.conf.yml"), "utf8"),
-    /read:\n\s+- AGENTS\.md/,
-  );
+  const gemini = JSON.parse(readFileSync(join(root, ".gemini/settings.json"), "utf8"));
+  assert.ok(gemini.context.fileName.includes("AGENTS.md"), "gemini context.fileName");
+  assert.match(readFileSync(join(root, ".aider.conf.yml"), "utf8"), /read:\n\s+- AGENTS\.md/);
 });
 
 test("re-running is idempotent (nothing rewritten)", () => {
@@ -47,11 +33,7 @@ test("re-running is idempotent (nothing rewritten)", () => {
   sync({ targetRoot: root });
   const second = sync({ targetRoot: root });
   const written = second.report.filter((r) => r.action === "written");
-  assert.equal(
-    written.length,
-    0,
-    `second sync wrote ${written.map((r) => r.target)}`,
-  );
+  assert.equal(written.length, 0, `second sync wrote ${written.map((r) => r.target)}`);
 });
 
 test("does not clobber an existing unmanaged CLAUDE.md", () => {
@@ -60,10 +42,7 @@ test("does not clobber an existing unmanaged CLAUDE.md", () => {
   const res = sync({ targetRoot: root });
   const row = res.report.find((r) => r.target === "CLAUDE.md");
   assert.equal(row.action, "skipped");
-  assert.match(
-    readFileSync(join(root, "CLAUDE.md"), "utf8"),
-    /my own claude file/,
-  );
+  assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /my own claude file/);
 });
 
 test("warns when a legacy .cursorrules would shadow AGENTS.md", () => {

@@ -1,11 +1,11 @@
 // forge doctor — turn silent misconfiguration into an actionable pass/fail list
 // (chezmoi-doctor pattern). Exits non-zero only on hard failures, not warnings.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { extractHash, hashContent } from "./emit/_shared.js";
 import { canonical } from "./sync.js";
-import { hashContent, extractHash } from "./emit/_shared.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
 const warn = (label, note = "") => ({ status: "warn", label, note });
@@ -28,10 +28,7 @@ function checkBrandConsistency(out) {
     out.push(
       plugin.name === BRAND.pkg
         ? ok("brand↔plugin", `${plugin.name} v${plugin.version}`)
-        : warn(
-            "brand↔plugin",
-            `plugin.json name "${plugin.name}" != brand pkg "${BRAND.pkg}"`,
-          ),
+        : warn("brand↔plugin", `plugin.json name "${plugin.name}" != brand pkg "${BRAND.pkg}"`),
     );
   } catch {
     out.push(warn("brand↔plugin", "plugin.json missing or invalid"));
@@ -67,9 +64,7 @@ function checkDrift(out, targetRoot) {
   const current = hashContent(canonical(targetRoot));
   const onDisk = extractHash(readFileSync(agents, "utf8"));
   out.push(
-    current === onDisk
-      ? ok("AGENTS.md", "in sync")
-      : warn("AGENTS.md", "stale — run `forge sync`"),
+    current === onDisk ? ok("AGENTS.md", "in sync") : warn("AGENTS.md", "stale — run `forge sync`"),
   );
 }
 

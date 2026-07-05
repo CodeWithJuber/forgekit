@@ -1,16 +1,9 @@
 // forge recall — file-based cross-session memory: one fact per file + a MEMORY.md
 // index. Refuses to persist secrets. Consolidation is deterministic (exact-dupe
 // prune) — honest: no model call, so it can't hallucinate a "merged" memory.
-import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-} from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 // Anything matching this is refused — store a pointer to where the secret lives instead.
 // Conservative (over-refusal is the safe direction for a memory tool). Covers the
@@ -34,8 +27,7 @@ export function add(store, name, body) {
   if (SECRET_RE.test(`${name}\n${body}`)) {
     return {
       ok: false,
-      reason:
-        "refused: looks like a secret/credential — store a pointer, not the value",
+      reason: "refused: looks like a secret/credential — store a pointer, not the value",
     };
   }
   const dir = factsDir(store);
@@ -60,9 +52,7 @@ export function reindex(store) {
   mkdirSync(store, { recursive: true });
   writeFileSync(
     join(store, "MEMORY.md"),
-    ["# Durable memory index", "", ...items.map((s) => `- ${s}`), ""].join(
-      "\n",
-    ),
+    ["# Durable memory index", "", ...items.map((s) => `- ${s}`), ""].join("\n"),
   );
   return items.length;
 }
@@ -79,9 +69,7 @@ export function consolidate(store) {
     // different names but identical content collapse to one.
     const raw = readFileSync(join(dir, file), "utf8");
     const sep = raw.indexOf("\n\n");
-    const key = (sep >= 0 ? raw.slice(sep + 2) : raw)
-      .replace(/\s+/g, " ")
-      .trim();
+    const key = (sep >= 0 ? raw.slice(sep + 2) : raw).replace(/\s+/g, " ").trim();
     if (seen.has(key)) {
       rmSync(join(dir, file));
       removed += 1;

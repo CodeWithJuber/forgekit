@@ -6,6 +6,8 @@
   "description": "One config, every AI coding tool — tools, crew, guards, atlas, lean, recall from one source.",
   "author": { "name": "CodeWithJuber" },
   "license": "MIT",
+  "repository": "https://github.com/CodeWithJuber/forgekit",
+  "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
   "keywords": ["config", "cross-tool", "agents-md", "ai-coding", "claude-code"],
   "skills": "./global/tools",
   "agents": "./global/crew",

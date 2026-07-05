@@ -5,15 +5,8 @@
 // lean: v1 indexes symbol DEFINITIONS (where-is-X) + membership (hallucination
 // check) via per-language regex. The richer "what-calls-Z" call graph is the
 // documented upgrade — back it with an LSP/serena export when that's needed.
-import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  statSync,
-} from "node:fs";
-import { join, relative, extname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { extname, join, relative } from "node:path";
 
 const IGNORE = new Set([
   "node_modules",
@@ -60,9 +53,7 @@ const RULES = {
     { re: /\bfn\s+([A-Za-z_]\w*)/, kind: "function" },
     { re: /\b(?:struct|enum|trait)\s+([A-Za-z_]\w*)/, kind: "type" },
   ],
-  ".java": [
-    { re: /\b(?:class|interface|enum)\s+([A-Za-z_]\w*)/, kind: "type" },
-  ],
+  ".java": [{ re: /\b(?:class|interface|enum)\s+([A-Za-z_]\w*)/, kind: "type" }],
 };
 
 function walk(dir, files, cap) {

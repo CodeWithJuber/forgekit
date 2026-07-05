@@ -1,9 +1,9 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { init, catalog } from "../src/init.js";
+import { test } from "node:test";
+import { catalog, init } from "../src/init.js";
 
 test("init emits the shared config for a fresh repo in one call", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));

@@ -1,9 +1,9 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { build, load, query, has } from "../src/atlas.js";
+import { test } from "node:test";
+import { build, has, load, query } from "../src/atlas.js";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
@@ -11,10 +11,7 @@ function fixture() {
     join(root, "a.js"),
     "export function computeTax(x){ return x*0.2 }\nclass Ledger {}\n",
   );
-  writeFileSync(
-    join(root, "b.py"),
-    "def load_config():\n    pass\nclass Store:\n    pass\n",
-  );
+  writeFileSync(join(root, "b.py"), "def load_config():\n    pass\nclass Store:\n    pass\n");
   return root;
 }
 

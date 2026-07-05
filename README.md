@@ -1,5 +1,11 @@
 # Forge
 
+[![CI](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml/badge.svg)](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/forgekit.svg)](https://www.npmjs.com/package/forgekit)
+[![license: MIT](https://img.shields.io/npm/l/forgekit.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/forgekit.svg)](https://www.npmjs.com/package/forgekit)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](./package.json)
+
 **One config, every AI coding tool.**
 
 Forge is a cross-tool configuration layer for agentic AI coding assistants. You

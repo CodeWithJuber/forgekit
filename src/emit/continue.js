@@ -17,11 +17,7 @@ export default {
         note: "existing unmanaged rules file",
       };
     }
-    const action = ctx.shared.writeManaged(
-      path,
-      ctx.shared.mdHeader(ctx.hash),
-      ctx.canonical,
-    );
+    const action = ctx.shared.writeManaged(path, ctx.shared.mdHeader(ctx.hash), ctx.canonical);
     return {
       tool: this.tool,
       target: rel,

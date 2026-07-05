@@ -1,7 +1,7 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,10 +25,7 @@ test("lean skill has valid frontmatter and the Lean Path", () => {
 });
 
 test("recall skill has valid frontmatter", () => {
-  assert.equal(
-    frontmatter(read("global/tools/recall/SKILL.md"))?.name,
-    "recall",
-  );
+  assert.equal(frontmatter(read("global/tools/recall/SKILL.md"))?.name, "recall");
 });
 
 test("every crew agent declares name + description", () => {

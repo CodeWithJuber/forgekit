@@ -2,8 +2,8 @@
 // in that tool's REAL format (all verified 2026-07). Always MERGE — never clobber a
 // user's own servers. JSON tools differ only by their top-level key; Codex is TOML and
 // Continue is a YAML block file. (Windsurf is global-only — no per-repo file to emit.)
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const JSON_TARGETS = [
   { tool: "Claude Code", file: ".mcp.json", key: "mcpServers" },
@@ -53,19 +53,9 @@ function emitCodexToml(path, servers) {
 
 function emitContinueYaml(dir, servers) {
   const path = join(dir, "forge-mcp.yaml");
-  const lines = [
-    "name: Forge MCP",
-    "version: 0.0.1",
-    "schema: v1",
-    "mcpServers:",
-  ];
+  const lines = ["name: Forge MCP", "version: 0.0.1", "schema: v1", "mcpServers:"];
   for (const [name, def] of Object.entries(servers)) {
-    lines.push(
-      `  - name: ${name}`,
-      "    type: stdio",
-      `    command: ${def.command}`,
-      "    args:",
-    );
+    lines.push(`  - name: ${name}`, "    type: stdio", `    command: ${def.command}`, "    args:");
     for (const a of def.args || []) lines.push(`      - ${JSON.stringify(a)}`);
   }
   const content = lines.join("\n") + "\n";
@@ -86,20 +76,14 @@ export function emitMcp({ targetRoot, servers }) {
       note: r.note,
     };
   });
-  const codex = emitCodexToml(
-    join(targetRoot, ".codex", "config.toml"),
-    servers,
-  );
+  const codex = emitCodexToml(join(targetRoot, ".codex", "config.toml"), servers);
   rows.push({
     tool: "Codex MCP",
     target: ".codex/config.toml",
     action: codex.action,
     note: codex.note,
   });
-  const cont = emitContinueYaml(
-    join(targetRoot, ".continue", "mcpServers"),
-    servers,
-  );
+  const cont = emitContinueYaml(join(targetRoot, ".continue", "mcpServers"), servers);
   rows.push({
     tool: "Continue MCP",
     target: ".continue/mcpServers/forge-mcp.yaml",

@@ -1,21 +1,15 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { list, apply } from "../src/taste.js";
+import { test } from "node:test";
+import { apply, list } from "../src/taste.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "forge-taste-"));
 
 test("list returns the full style menu", () => {
   const styles = list();
-  for (const s of [
-    "minimalist",
-    "brutalist",
-    "editorial",
-    "playful",
-    "corporate",
-  ]) {
+  for (const s of ["minimalist", "brutalist", "editorial", "playful", "corporate"]) {
     assert.ok(styles.includes(s), `menu has ${s}`);
   }
 });

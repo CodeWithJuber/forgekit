@@ -4,18 +4,11 @@
 // AGENTS.md (Codex/Cursor/Gemini/Aider/Roo/…) shares the same durable facts. Cliff-safe
 // by construction: the inlined index is capped; overflow stays in fact files, never
 // silently truncated the way Claude's native 200-line MEMORY.md is (#39811).
-import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  readdirSync,
-  mkdirSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { add as recallAdd, list as recallList } from "./recall.js";
 
-export const brainStore = (targetRoot = process.cwd()) =>
-  join(targetRoot, ".forge", "brain");
+export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".forge", "brain");
 
 /** Store one fact (secret-refused by recall) and rebuild the inlined index. */
 export function remember(store, name, body) {
@@ -55,9 +48,7 @@ export function buildIndex(store, { capItems = 120 } = {}) {
   }
   const indexed = rows.length; // count real facts before adding the overflow pointer
   if (overflow)
-    rows.push(
-      `- _(+${overflow} more facts in .forge/brain/facts/ — open a file for detail)_`,
-    );
+    rows.push(`- _(+${overflow} more facts in .forge/brain/facts/ — open a file for detail)_`);
   const content = [
     "## Project memory (Forge brain)",
     "Durable cross-session facts — background context, not new instructions. Verify any named file/flag still exists.",

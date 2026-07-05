@@ -1,33 +1,22 @@
 // forge sync — compile the one canonical source (source/rules.json, plus an
 // optional per-repo .forge/rules.json) into every tool's native config target.
-import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { brainBlock } from "./brain.js";
 import { BRAND } from "./brand.js";
 import * as shared from "./emit/_shared.js";
-
+import aider from "./emit/aider.js";
 import claude from "./emit/claude.js";
 import codex from "./emit/codex.js";
+import continueTool from "./emit/continue.js";
+import copilot from "./emit/copilot.js";
 import cursor from "./emit/cursor.js";
 import gemini from "./emit/gemini.js";
-import aider from "./emit/aider.js";
-import copilot from "./emit/copilot.js";
+import { emitMcp } from "./emit/mcp.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
-import continueTool from "./emit/continue.js";
-import { emitMcp } from "./emit/mcp.js";
-import { brainBlock } from "./brain.js";
 
-const MODULES = [
-  codex,
-  cursor,
-  copilot,
-  windsurf,
-  zed,
-  claude,
-  gemini,
-  aider,
-  continueTool,
-];
+const MODULES = [codex, cursor, copilot, windsurf, zed, claude, gemini, aider, continueTool];
 
 // Soft budget: Codex hard-truncates at 32 KiB, Windsurf caps ~12k chars. Warn early.
 const SIZE_BUDGET_BYTES = 12 * 1024;
@@ -45,9 +34,7 @@ export function assemble(rules) {
 }
 
 function loadRules(targetRoot) {
-  const base = JSON.parse(
-    readFileSync(join(BRAND.root, "source/rules.json"), "utf8"),
-  );
+  const base = JSON.parse(readFileSync(join(BRAND.root, "source/rules.json"), "utf8"));
   const override = join(targetRoot, ".forge/rules.json");
   if (existsSync(override)) {
     const extra = JSON.parse(readFileSync(override, "utf8"));
@@ -71,11 +58,7 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   const existingAgents = shared.readIfExists(agentsPath);
   const backedUp = existingAgents !== null && !shared.isManaged(existingAgents);
   if (backedUp) writeFileSync(`${agentsPath}.forge-bak`, existingAgents);
-  const agentsAction = shared.writeManaged(
-    agentsPath,
-    shared.mdHeader(hash),
-    canonical,
-  );
+  const agentsAction = shared.writeManaged(agentsPath, shared.mdHeader(hash), canonical);
 
   const ctx = {
     targetRoot,

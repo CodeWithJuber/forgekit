@@ -9,30 +9,60 @@
   "engines": {
     "node": ">=18"
   },
+  "author": "CodeWithJuber",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeWithJuber/forgekit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CodeWithJuber/forgekit/issues"
+  },
+  "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
+  "funding": "https://github.com/sponsors/CodeWithJuber",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "files": [
     "src",
     "source",
     "global",
     "templates",
     "plugin",
+    "hooks",
+    ".claude-plugin",
     "bin",
     "brand.json",
     "install.sh",
     "README.md",
-    "ARCHITECTURE.md"
+    "ARCHITECTURE.md",
+    "ONBOARDING.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
     "forge": "node src/cli.js"
   },
   "keywords": [
     "claude-code",
+    "claude-code-plugin",
     "codex",
     "cursor",
     "agents-md",
     "ai-coding",
     "config",
-    "cross-tool"
+    "cross-tool",
+    "cli",
+    "zero-dependencies"
   ],
-  "license": "MIT"
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0"
+  }
 }

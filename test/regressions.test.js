@@ -1,27 +1,21 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sync } from "../src/sync.js";
+import { test } from "node:test";
 import { add, list } from "../src/recall.js";
+import { sync } from "../src/sync.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "forge-reg-"));
 
 // Regression (verifier finding #1): sync must NOT silently destroy a hand-written AGENTS.md.
 test("sync backs up a pre-existing unmanaged AGENTS.md instead of clobbering it", () => {
   const root = dir();
-  writeFileSync(
-    join(root, "AGENTS.md"),
-    "# my hand-written rules\n- do the thing\n",
-  );
+  writeFileSync(join(root, "AGENTS.md"), "# my hand-written rules\n- do the thing\n");
   const res = sync({ targetRoot: root });
   assert.equal(res.backedUp, true);
   assert.ok(existsSync(join(root, "AGENTS.md.forge-bak")), "backup exists");
-  assert.match(
-    readFileSync(join(root, "AGENTS.md.forge-bak"), "utf8"),
-    /hand-written rules/,
-  );
+  assert.match(readFileSync(join(root, "AGENTS.md.forge-bak"), "utf8"), /hand-written rules/);
   assert.ok(
     res.warnings.some((w) => /backed up/.test(w)),
     "warns about the backup",
@@ -40,11 +34,7 @@ test("recall refuses Anthropic / Slack / Google / JWT key formats", () => {
   ];
   for (const value of cases) {
     const store = dir();
-    assert.equal(
-      add(store, "creds", value).ok,
-      false,
-      `should refuse: ${value}`,
-    );
+    assert.equal(add(store, "creds", value).ok, false, `should refuse: ${value}`);
     assert.deepEqual(list(store), []);
   }
 });

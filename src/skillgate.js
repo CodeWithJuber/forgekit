@@ -2,8 +2,9 @@
 // found ~36% of skills flawed / 13.4% critical, ~60% of the risk in the instruction
 // (markdown) layer — so string prose matters as much as code. Prefer a real scanner
 // (Snyk agent-scan) when present; otherwise a built-in heuristic catches the loud cases.
-import { readFileSync, existsSync } from "node:fs";
+
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 
 // Instruction-layer + tool-layer red flags. `critical` blocks install.
 const RULES = [
@@ -65,8 +66,7 @@ export function scan(target) {
         stdio: "pipe",
         timeout: 90000,
       });
-      const critical =
-        /\bcritical\b|tool poisoning|prompt injection|malicious/i.test(out);
+      const critical = /\bcritical\b|tool poisoning|prompt injection|malicious/i.test(out);
       return {
         ok: !critical,
         critical,

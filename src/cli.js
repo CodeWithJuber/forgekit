@@ -12,16 +12,14 @@ const COMMANDS = {
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
-  verify:
-    "independent verification gate — tests + hallucinated-symbol + provenance",
+  verify: "independent verification gate — tests + hallucinated-symbol + provenance",
   harden: "wire security controls — gitleaks pre-commit + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
   brand: "print the active brand token map",
 };
 
-const printVersion = () =>
-  console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
+const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
 function printHelp() {
   printVersion();
@@ -40,28 +38,18 @@ async function run(argv) {
   if (cmd === "-v" || cmd === "--version") return printVersion();
   if (cmd === "brand") {
     const { brand, cli, pkg, version, layers } = BRAND;
-    return console.log(
-      JSON.stringify({ brand, cli, pkg, version, layers }, null, 2),
-    );
+    return console.log(JSON.stringify({ brand, cli, pkg, version, layers }, null, 2));
   }
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const { report, bytes } = init({ targetRoot: process.cwd() });
-    const wrote = report
-      .filter((r) => r.action === "written")
-      .map((r) => r.target);
-    console.log(
-      `${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`,
-    );
-    console.log(
-      `  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`,
-    );
+    const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
+    console.log(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
+    console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
-    console.log(
-      `  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``,
-    );
+    console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
     return;
   }
@@ -70,17 +58,14 @@ async function run(argv) {
     const c = catalog();
     console.log(`${BRAND.brand} catalog — Start Here\n`);
     console.log("  TOOLS (model-invoked skills)");
-    for (const t of c.tools)
-      console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
+    for (const t of c.tools) console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
     console.log(`\n  CREW (isolated sub-agents)   ${c.crew.join(" · ")}`);
     console.log(`  GUARDS (enforced hooks)      ${c.guards.join(" · ")}`);
     if (c.taste?.length)
       console.log(
         `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
       );
-    console.log(
-      `\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``,
-    );
+    console.log(`\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``);
     return;
   }
   if (cmd === "taste") {
@@ -91,9 +76,7 @@ async function run(argv) {
         `${BRAND.brand} taste — pick ONE visual direction per repo (every tool then follows it):\n`,
       );
       for (const s of t.list()) console.log(`  ${s}`);
-      console.log(
-        `\n  apply: \`${BRAND.cli} taste <style>\`  (writes a managed DESIGN.md)`,
-      );
+      console.log(`\n  apply: \`${BRAND.cli} taste <style>\`  (writes a managed DESIGN.md)`);
       return;
     }
     const res = t.apply(style, process.cwd());
@@ -126,8 +109,7 @@ async function run(argv) {
     const { results, failed } = doctor({ targetRoot: process.cwd() });
     const icon = { ok: "✓", warn: "!", fail: "✗" };
     console.log(`${BRAND.brand} doctor\n`);
-    for (const r of results)
-      console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
+    for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
     console.log(`\n${failed === 0 ? "all clear" : failed + " problem(s)"}`);
     if (failed) process.exitCode = 1;
     return;
@@ -138,11 +120,7 @@ async function run(argv) {
     const sub = argv[1] || "list";
     if (sub === "list") {
       const items = r.list(store);
-      console.log(
-        items.length
-          ? items.map((s) => `  - ${s}`).join("\n")
-          : "  (no memories yet)",
-      );
+      console.log(items.length ? items.map((s) => `  - ${s}`).join("\n") : "  (no memories yet)");
     } else if (sub === "add") {
       const name = argv[2];
       const body = argv.slice(3).join(" ");
@@ -156,13 +134,9 @@ async function run(argv) {
       if (!res.ok) process.exitCode = 1;
     } else if (sub === "consolidate") {
       const { removed, kept } = r.consolidate(store);
-      console.log(
-        `  consolidated: ${removed} duplicate(s) removed, ${kept} kept`,
-      );
+      console.log(`  consolidated: ${removed} duplicate(s) removed, ${kept} kept`);
     } else {
-      console.error(
-        `recall: unknown subcommand "${sub}" (list | add | consolidate)`,
-      );
+      console.error(`recall: unknown subcommand "${sub}" (list | add | consolidate)`);
       process.exitCode = 1;
     }
     return;
@@ -198,9 +172,7 @@ async function run(argv) {
       if (!at) return;
       const name = argv[2];
       const yes = a.has(at, name);
-      console.log(
-        `  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`,
-      );
+      console.log(`  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`);
       if (!yes) process.exitCode = 1;
     } else {
       console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
@@ -294,17 +266,13 @@ async function run(argv) {
     return;
   }
   if (!(cmd in COMMANDS)) {
-    console.error(
-      `Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`,
-    );
+    console.error(`Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`);
     process.exitCode = 1;
     return;
   }
   // ponytail: remaining subcommands land in their build phases; the stub keeps the
   // command surface honest and testable now.
-  console.log(
-    `${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`,
-  );
+  console.log(`${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`);
 }
 
 run(process.argv.slice(2)).catch((err) => {

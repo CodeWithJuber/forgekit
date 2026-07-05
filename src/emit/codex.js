@@ -2,14 +2,16 @@
 const CAP = 32 * 1024;
 
 export default {
-  tool: 'Codex',
+  tool: "Codex",
   emit(ctx) {
     const over = ctx.bytes > CAP;
     return {
       tool: this.tool,
-      target: 'AGENTS.md',
-      action: over ? 'warn' : 'relies-on-agents',
-      note: over ? `${ctx.bytes} B exceeds 32 KiB cap — will truncate` : `native (${ctx.bytes}/${CAP} B)`,
+      target: "AGENTS.md",
+      action: over ? "warn" : "relies-on-agents",
+      note: over
+        ? `${ctx.bytes} B exceeds 32 KiB cap — will truncate`
+        : `native (${ctx.bytes}/${CAP} B)`,
     };
   },
 };

@@ -1,6 +1,6 @@
 // forge init / catalog — the onboarding surface. init gets a repo to a working
 // state in one command; catalog is the "Start Here" index of everything active.
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { sync } from "./sync.js";
@@ -13,9 +13,7 @@ export function init({ targetRoot = process.cwd() } = {}) {
 
 function skillDescription(dir) {
   try {
-    const match = readFileSync(join(dir, "SKILL.md"), "utf8").match(
-      /description:\s*(.*)/,
-    );
+    const match = readFileSync(join(dir, "SKILL.md"), "utf8").match(/description:\s*(.*)/);
     return match ? match[1].trim() : "";
   } catch {
     return "";

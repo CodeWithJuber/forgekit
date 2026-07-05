@@ -2,13 +2,13 @@
 // (consistency) chosen from the menu (optionality) by writing a managed DESIGN.md.
 // The shared rules already tell every tool to "follow DESIGN.md", so one choice
 // steers Claude, Cursor, Codex, Gemini, and the rest.
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import {
   hashContent,
-  markerString,
   isManaged,
+  markerString,
   readIfExists,
   writeIfChanged,
 } from "./emit/_shared.js";

@@ -2,8 +2,9 @@
 // own: enable the Claude Code sandbox (84% fewer prompts, per Anthropic) and install
 // a Gitleaks pre-commit hook. We never auto-edit ~/.claude/settings.json (no clobber)
 // — we write the sandbox block for the user to merge, and only touch the repo's own hooks.
-import { existsSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+
 import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 function have(cmd) {
@@ -28,8 +29,7 @@ export function harden({ targetRoot = process.cwd() } = {}) {
   if (!existsSync(join(targetRoot, ".git"))) {
     report.gitleaks = "not a git repo — skipped";
   } else if (!have("gitleaks")) {
-    report.gitleaks =
-      "gitleaks not installed — `brew install gitleaks` then re-run";
+    report.gitleaks = "gitleaks not installed — `brew install gitleaks` then re-run";
   } else {
     const hooks = join(targetRoot, ".git", "hooks");
     mkdirSync(hooks, { recursive: true });
@@ -47,10 +47,7 @@ export function harden({ targetRoot = process.cwd() } = {}) {
 
   // Sandbox settings (WIRE — Anthropic owns the sandbox; we write the block to merge).
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
-  writeFileSync(
-    join(targetRoot, ".forge", "sandbox.json"),
-    JSON.stringify(SANDBOX, null, 2),
-  );
+  writeFileSync(join(targetRoot, ".forge", "sandbox.json"), JSON.stringify(SANDBOX, null, 2));
   report.sandbox = "written to .forge/sandbox.json";
   return report;
 }
