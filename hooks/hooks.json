@@ -21,6 +21,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh prompt"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh preflight"
           }
         ]
       }

@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-05
+
+### Added
+
+- **Forge Preflight** — a deterministic, math-first layer that runs BEFORE tokens are spent,
+  on the premise that an LLM is a fixed-capacity stochastic predictor: size the task to the
+  model, fill the context, detect assumptions. All advisory, never blocks.
+  - **Assumption detector** (`forge preflight`, UserPromptSubmit hook): scans a task for code
+    identifiers/files the repo doesn't define — what the model would otherwise ASSUME — and
+    surfaces the known-unknowns so it asks instead of confabulating. The research whitespace.
+  - **Complexity routing** (`forge route`): recommends the cheapest CAPABLE model
+    (Haiku → Sonnet → Opus → Fable) from code-task signals (files, fan-out, churn, past-mistake
+    density, ambiguity). `forge route gateway` emits a LiteLLM config for real auto-routing.
+  - **Decomposition** (`forge scope`): a zero-dep import graph → connected components →
+    independent clusters (run as separate sessions) + the coupled files you didn't name.
+  - **Design-quality**: emitted AI-UX rules (anti-slop, WCAG, functional empty states, specific
+    errors, confidence/transparency, pattern selection) + `forge uicheck` (exact WCAG contrast
+    math) + a calibrated frontend-verifier that ASSERTS only the deterministic and keeps
+    hierarchy/taste ADVISORY (the fix for hallucinated UI audits).
+  - Cross-tool via `preflight_check` / `route_task` / `scope_files` MCP tools.
+
 ## [0.2.0] - 2026-07-05
 
 ### Added
@@ -43,6 +64,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/CodeWithJuber/forgekit/releases/tag/v0.1.0

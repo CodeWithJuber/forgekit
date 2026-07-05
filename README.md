@@ -81,6 +81,29 @@ On **Claude Code** it's fully ambient (hooks). Other tools read the lessons from
 and a zero-dependency MCP server (`forge cortex-mcp`). Everything lives in `.forge/lessons/`
 — git-committable and auditable. Try it: `node examples/cortex-demo.mjs`.
 
+## Forge Preflight — size the work before spending tokens
+
+An LLM is a fixed-capacity stochastic predictor. Most of the cost/quality bleed comes from
+feeding it the wrong-sized task with the wrong-sized context and then over-trusting the output.
+**Preflight** is the cheap, deterministic layer that runs _before_ the tokens — no LLM, no guessing:
+
+- **`forge preflight "<task>"`** — the assumption detector. Scans the task for symbols/files the
+  repo doesn't define — the things the model would otherwise _assume_ — and surfaces them so it
+  asks instead of confabulating. Also fires on `UserPromptSubmit`. (The research whitespace: no
+  shipping tool pre-scans the repo before acting.)
+- **`forge route "<task>"`** — recommends the cheapest _capable_ model (Haiku → Sonnet → Opus →
+  Fable) from code-task complexity (files, fan-out, churn, past-mistake density, ambiguity). A
+  prime-finder gets Haiku, not Fable. `forge route gateway` emits a LiteLLM config for real
+  auto-routing.
+- **`forge scope <file…>`** — a zero-dep import graph → independent clusters (“run these as
+  separate sessions”) + the coupled files you didn't mention.
+- **`forge uicheck <fg> <bg>`** — exact WCAG contrast math. The design rules (anti-slop, empty
+  states, specific errors, AI-UX patterns) emit to every tool; the frontend-verifier _asserts_
+  only the deterministic and keeps taste _advisory_ — so AI UI-audits stop hallucinating.
+
+Everything is advisory and never blocks. Cross-tool via the `preflight_check` / `route_task` /
+`scope_files` MCP tools.
+
 ## Commands
 
 ```
@@ -89,6 +112,10 @@ forge sync        recompile source/ → each tool's native files (idempotent)
 forge doctor      pass/fail health check (layers, install, drift, cortex)
 forge catalog     Start-Here index of every tool/crew/guard
 forge cortex      self-correcting memory — status / why <symbol>
+forge preflight   assumption check — what a task names that the repo doesn't define
+forge route       cheapest capable model for a task (+ gateway config)
+forge scope       decompose files into independent clusters
+forge uicheck     deterministic WCAG contrast check
 forge atlas       build/query the code-graph (where-is-X, has-symbol)
 forge recall      cross-session memory (list/add/consolidate)
 forge brand       show the brand token map

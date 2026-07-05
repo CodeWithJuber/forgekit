@@ -1,6 +1,6 @@
 {
   "name": "forgekit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One config, every AI coding tool — a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
   "type": "module",
   "bin": {
@@ -43,13 +43,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test test/*.test.js",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
-    "coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\"",
+    "coverage": "node --test --experimental-test-coverage test/*.test.js",
     "forge": "node src/cli.js"
   },
   "keywords": [

@@ -19,6 +19,10 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + the cost ceiling",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
+  preflight: "assumption check — what a task names that the repo doesn't define",
+  route: "recommend the cheapest capable model for a task (+ gateway config)",
+  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
+  uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
 };
 
@@ -74,6 +78,7 @@ async function run(argv) {
         `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
       );
     if (c.cortex) console.log(`\n  CORTEX (self-correcting memory)  ${c.cortex}`);
+    if (c.preflight) console.log(`  PREFLIGHT (before you spend tokens)  ${c.preflight}`);
     console.log(`\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``);
     return;
   }
@@ -273,7 +278,8 @@ async function run(argv) {
       try {
         out = run("ccusage", ["daily"]);
       } catch {
-        out = run("npx", ["-y", "ccusage@latest", "daily"]);
+        // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+        out = run("npx", ["-y", "ccusage@20.0.14", "daily"]);
       }
       console.log(out.trim());
     } catch {
@@ -292,7 +298,8 @@ async function run(argv) {
     if (sub === "init") {
       const { execFileSync } = await import("node:child_process");
       try {
-        execFileSync("npx", ["-y", "@fission-ai/openspec@latest", "init"], {
+        // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+        execFileSync("npx", ["-y", "@fission-ai/openspec@1.5.0", "init"], {
           stdio: "inherit",
         });
       } catch {
@@ -361,6 +368,106 @@ async function run(argv) {
       console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
     }
     console.log("\n  stored in .forge/lessons/ (git-committable, auditable)");
+    return;
+  }
+  if (cmd === "preflight") {
+    const { preflightRepo, clarifyBlock } = await import("./preflight.js");
+    const task = argv.slice(1).join(" ");
+    if (!task) {
+      console.error('usage: forge preflight "<task description>"');
+      process.exitCode = 1;
+      return;
+    }
+    const r = preflightRepo(process.cwd(), task);
+    console.log(`${BRAND.brand} preflight — assumption check\n`);
+    console.log(
+      `  info-gap: ${r.gap.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
+    );
+    const block = clarifyBlock(r);
+    console.log(
+      block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
+    );
+    return;
+  }
+  if (cmd === "route") {
+    const r = await import("./route.js");
+    if (argv[1] === "gateway") {
+      const path = r.emitGatewayConfig(process.cwd());
+      console.log(`  wrote ${path} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
+      console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
+      console.log(
+        "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
+      );
+      return;
+    }
+    const task = argv.slice(1).join(" ");
+    if (!task) {
+      console.error('usage: forge route "<task>"   |   forge route gateway');
+      process.exitCode = 1;
+      return;
+    }
+    const rec = r.routeTask(process.cwd(), task);
+    console.log(`${BRAND.brand} route — cheapest capable model\n`);
+    console.log(
+      `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+    );
+    console.log(`    ${rec.model.use}`);
+    console.log(
+      `    complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
+    );
+    console.log(
+      `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
+    );
+    console.log("\n  advisory · auto-routing: `forge route gateway`");
+    return;
+  }
+  if (cmd === "scope") {
+    const { decompose } = await import("./scope.js");
+    const files = argv.slice(1);
+    if (!files.length) {
+      console.error("usage: forge scope <file> [file...]");
+      process.exitCode = 1;
+      return;
+    }
+    const d = decompose(process.cwd(), files);
+    console.log(`${BRAND.brand} scope — task decomposition\n`);
+    if (d.independentGroups > 1) {
+      console.log(
+        `  ${d.independentGroups} independent groups → consider a separate session per group:\n`,
+      );
+    }
+    d.clusters.forEach((c, i) => {
+      console.log(`  [${i + 1}] ${c.touched.join(", ")}`);
+      if (c.coupled.length) {
+        const shown = c.coupled.slice(0, 8).join(", ");
+        console.log(
+          `      ! also coupled (you didn't name): ${shown}${c.coupled.length > 8 ? " …" : ""}`,
+        );
+      }
+    });
+    if (d.independentGroups === 1) console.log("\n  all coupled — keep as one change.");
+    return;
+  }
+  if (cmd === "uicheck") {
+    const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
+      "./uicheck.js"
+    );
+    const [fg, bg] = [argv[1], argv[2]];
+    console.log(`${BRAND.brand} uicheck — deterministic UI review\n`);
+    if (fg && bg) {
+      try {
+        const g = wcagLevel(contrastRatio(fg, bg));
+        console.log(
+          `  contrast ${fg} on ${bg}: ${g.ratio}:1  →  ${g.level}${g.passesAA ? " (passes AA)" : " (FAILS AA)"}`,
+        );
+      } catch (e) {
+        console.error(`  ${e.message}`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
+    console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
     return;
   }
   if (!(cmd in COMMANDS)) {

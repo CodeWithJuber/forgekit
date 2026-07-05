@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { newLesson } from "../src/lessons.js";
 import { appendEpisode, load, parse, readEpisodes, save, serialize } from "../src/lessons_store.js";
+import { fakeAnthropic } from "./_fixtures.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-lessons-"));
 
@@ -64,7 +65,7 @@ test("save refuses secret-like content (never persist a credential)", () => {
   const leak = {
     ...sample(),
     id: "lsn_leak",
-    correctedBehavior: "use REDACTED_FIXTURE as the key",
+    correctedBehavior: `use ${fakeAnthropic("abcdefghijklmnop")} as the key`,
   };
   const res = save(root, leak);
   assert.equal(res.ok, false, "must refuse");

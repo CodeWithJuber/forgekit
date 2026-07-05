@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced helpers for Forge guards. Not executable on its own.
 # Provides field extraction (jq or grep) and an atomic re-entrancy lock so a
 # guard can never recurse — the class of bug behind the runaway-loop cost

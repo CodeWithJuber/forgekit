@@ -77,6 +77,18 @@
         "Build and check mobile AND desktop. Include clear loading/empty/error states; avoid layout shift.",
         "Follow DESIGN.md if present; keep one visual direction per project."
       ]
+    },
+    {
+      "id": "ai-ux",
+      "title": "AI interfaces & design quality",
+      "rules": [
+        "Commit to an aesthetic before coding; avoid AI-slop defaults (Inter/Roboto/Arial/system fonts, purple-gradient-on-white, generic card grids). Pick 2–3 typefaces and a 4–6 color palette with semantic roles.",
+        "Meet WCAG: body text ≥4.5:1 contrast (large/UI ≥3:1), visible :focus-visible on every interactive element, tap targets ≥24×24px, alt text + form labels, and wrap animations ≥200ms in prefers-reduced-motion.",
+        "Empty states are never dead ends: show a plain-language message + a clear next step. Error messages name the field, explain the problem, and suggest a fix — never 'Something went wrong'.",
+        "For AI-driven UIs: show model confidence/uncertainty, make chain-of-thought and tool actions visible, give live preview/feedback over blind prompting, and provide fallback paths when the model fails.",
+        "Pick the interaction pattern deliberately — a co-editing canvas or inline controls beat a wall-of-text chatbot when the user is steering structured output.",
+        "When AI audits a UI, only ASSERT the deterministic (contrast math, missing focus ring/alt/label) — keep hierarchy/taste/pattern-fit advisory so the audit doesn't hallucinate false positives."
+      ]
     }
   ]
 }

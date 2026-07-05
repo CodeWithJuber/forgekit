@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { brainBlock, brainStore, buildIndex, remember } from "../src/brain.js";
 import { sync } from "../src/sync.js";
+import { fakeAnthropic } from "./_fixtures.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-brain-"));
 
@@ -18,10 +19,7 @@ test("remember stores a fact and builds the inlined index", () => {
 
 test("remember refuses secrets", () => {
   const root = fixture();
-  assert.equal(
-    remember(brainStore(root), "creds", "token REDACTED_FIXTURE").ok,
-    false,
-  );
+  assert.equal(remember(brainStore(root), "creds", `token ${fakeAnthropic()}`).ok, false);
 });
 
 test("brain is inlined into AGENTS.md by sync (so every tool shares it)", () => {

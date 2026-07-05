@@ -16,6 +16,7 @@ import {
   readSession,
 } from "./cortex_hook.js";
 import { load } from "./lessons_store.js";
+import { clarifyBlock, preflightRepo } from "./preflight.js";
 
 // Opt-in: distill newly-created lessons into real prose via a cheap model call. Off by
 // default (deterministic template is used); fail-safe (any error → keep the template).
@@ -68,6 +69,12 @@ async function main() {
   } else if (mode === "pre-edit") {
     const advice = await preEditAdvisory(root, hook.tool_input?.file_path, today);
     if (advice) emit("PreToolUse", advice);
+  } else if (mode === "preflight") {
+    // Assumption detector: does the task name things the repo doesn't define?
+    if (typeof hook.prompt === "string" && hook.prompt.trim()) {
+      const block = clarifyBlock(preflightRepo(root, hook.prompt, { allowBuild: false }));
+      if (block) emit("UserPromptSubmit", block);
+    }
   }
 }
 
