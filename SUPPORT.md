@@ -6,6 +6,9 @@ Thanks for using forgekit. Here's where to get help.
 - **Bugs** → open an issue with the bug template (include `forge doctor` output + `node --version`).
 - **Feature ideas** → the feature-request template; for larger changes, start a Discussion first.
 - **Security vulnerabilities** → **do not** open a public issue — see [SECURITY.md](./SECURITY.md).
+- **Cognitive substrate questions** → start with
+  [docs/cognitive-substrate/](./docs/cognitive-substrate/) and include
+  `forge substrate "<task>" --json` output when reporting a bad ask/route/impact decision.
 
 Before opening an issue: run `forge doctor`, search existing issues/discussions, and
 confirm you're on the latest version (`forge --version` vs `npm view forgekit version`).

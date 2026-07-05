@@ -1,0 +1,504 @@
+{
+  "summary": {
+    "mode": "live",
+    "models": {
+      "cheap": "claude-haiku-4-5",
+      "mid": "claude-sonnet-5",
+      "premium": "claude-opus-4-8"
+    },
+    "n_tasks": 30,
+    "gate": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion": {
+        "tp": 9,
+        "fp": 0,
+        "tn": 21,
+        "fn": 0
+      },
+      "n_halted": 9
+    },
+    "routing": {
+      "n_scored": 21,
+      "exact_accuracy": 1.0,
+      "within_1_tier_accuracy": 1.0
+    },
+    "cost": {
+      "total_input_tokens": 28954,
+      "total_output_tokens": 13122,
+      "routed_cost_usd": 0.537756,
+      "always_premium_cost_usd": 1.41846,
+      "cost_saved_usd": 0.880704,
+      "cost_saved_pct": 62.1
+    },
+    "verification_subexperiment": {
+      "description": "For 3 tasks, the pipeline verifier EXECUTED the generated code against real test cases.",
+      "results": [
+        {
+          "task": "is_prime",
+          "routed": "cheap",
+          "verified": true,
+          "final_tier": "cheap"
+        },
+        {
+          "task": "factorial",
+          "routed": "cheap",
+          "verified": true,
+          "final_tier": "cheap"
+        },
+        {
+          "task": "merge_sorted",
+          "routed": "mid",
+          "verified": true,
+          "final_tier": "mid"
+        }
+      ],
+      "finding": "Routing down still produced code that passed execution-based verification; no escalation needed."
+    },
+    "honesty": "30-task hand-labeled DEMONSTRATION set; rubric thresholds were tuned against it. Perfect accuracy shows the rubric can SEPARATE the cases, not a field benchmark. Cost figures are exact arithmetic on REAL measured token counts (live host.llm calls) and approximate public list prices for the 4.x tier ladder. Same tokens repriced at premium = the counterfactual baseline; savings come purely from tier selection."
+  },
+  "rows": [
+    {
+      "task": "Write a Python function is_even(n) that returns True if n is even. Example: is_even(4) -> True.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3520,
+      "out_tok": 156,
+      "routed_cost": 0.0043,
+      "premium_cost": 0.0645,
+      "output": "Here's a simple Python function that checks if a number is even:\n\n```python\ndef is_even(n):\n    return n % 2 == 0\n```\n\n**How it works:**\n- The modulo operator `%` returns the remainder after division\n- If `n % 2 == 0`, the number is even (no remainder when divided by 2)\n- Otherwise, it's odd\n\n**Examples:**\n```python\nis_even(4)   # True\nis_even(7)   # False\nis_even(0)   # True\nis_even(-2)  # True\n`",
+      "questions": []
+    },
+    {
+      "task": "Reverse a string in Python. Input: 'abc' -> Output: 'cba'. Provide the function.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.87,
+      "in_tok": 3517,
+      "out_tok": 336,
+      "routed_cost": 0.005197,
+      "premium_cost": 0.077955,
+      "output": "# Reverse a String in Python\n\nHere are several ways to reverse a string:\n\n## 1. **Slicing (Most Pythonic)**\n```python\ndef reverse_string(s):\n    return s[::-1]\n\n# Usage\nprint(reverse_string('abc'))  # Output: 'cba'\n```\n\n## 2. **Using `reversed()` Function**\n```python\ndef reverse_string(s):\n    return ''.join(reversed(s))\n\n# Usage\nprint(reverse_string('abc'))  # Output: 'cba'\n```\n\n## 3. **Loop-Base",
+      "questions": []
+    },
+    {
+      "task": "Write factorial(n) in Python returning n!. factorial(5) -> 120.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3510,
+      "out_tok": 261,
+      "routed_cost": 0.004815,
+      "premium_cost": 0.072225,
+      "output": "# Factorial Function in Python\n\nHere's a simple recursive implementation:\n\n```python\ndef factorial(n):\n    if n < 0:\n        raise ValueError(\"Factorial is not defined for negative numbers\")\n    if n == 0 or n == 1:\n        return 1\n    return n * factorial(n - 1)\n```\n\n**Usage:**\n```python\nfactorial(5)  # Returns 120\n```\n\n---\n\n## Alternative: Iterative Approach\n\nIf you prefer to avoid recursion (u",
+      "questions": []
+    },
+    {
+      "task": "Capitalize the first letter of each word in a string. Input 'hello world' -> 'Hello World'.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.81,
+      "in_tok": 3515,
+      "out_tok": 259,
+      "routed_cost": 0.00481,
+      "premium_cost": 0.07215,
+      "output": "I'll create a function that capitalizes the first letter of each word in a string.\n\n```python\ndef capitalize_words(text):\n    \"\"\"Capitalize the first letter of each word in a string.\"\"\"\n    return ' '.join(word.capitalize() for word in text.split())\n\n# Test with your example\nresult = capitalize_words('hello world')\nprint(result)\n```\n\n**Output:**\n```\nHello World\n```\n\nThis function works by:\n1. **`.",
+      "questions": []
+    },
+    {
+      "task": "Return the sum of a list of integers. sum_list([1,2,3]) -> 6. Python.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3516,
+      "out_tok": 192,
+      "routed_cost": 0.004476,
+      "premium_cost": 0.06714,
+      "output": "# Sum of a List\n\nHere's a Python function to sum a list of integers:\n\n```python\ndef sum_list(numbers):\n    return sum(numbers)\n```\n\n**Usage:**\n```python\nsum_list([1, 2, 3])  # Returns 6\n```\n\n**Alternative implementations:**\n\nIf you want to avoid the built-in `sum()` function:\n\n```python\ndef sum_list(numbers):\n    total = 0\n    for num in numbers:\n        total += num\n    return total\n```\n\nOr using",
+      "questions": []
+    },
+    {
+      "task": "Write a function that checks if a number is prime. is_prime(7) -> True, is_prime(8) -> False. Python.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3522,
+      "out_tok": 363,
+      "routed_cost": 0.005337,
+      "premium_cost": 0.080055,
+      "output": "```python\ndef is_prime(n):\n    \"\"\"\n    Check if a number is prime.\n    \n    Args:\n        n: An integer to check for primality\n        \n    Returns:\n        True if n is prime, False otherwise\n    \"\"\"\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    \n    # Check odd divisors up to sqrt(n)\n    for i in range(3, int(n**0.5) + 1, 2):\n  ",
+      "questions": []
+    },
+    {
+      "task": "Convert a temperature in Celsius to Fahrenheit. c_to_f(0) -> 32.0. Python function.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3519,
+      "out_tok": 121,
+      "routed_cost": 0.004124,
+      "premium_cost": 0.06186,
+      "output": "```python\ndef c_to_f(celsius):\n    \"\"\"Convert temperature from Celsius to Fahrenheit.\"\"\"\n    return (celsius * 9/5) + 32\n```\n\n**Usage:**\n```python\nc_to_f(0)    # \u2192 32.0\nc_to_f(100)  # \u2192 212.0\nc_to_f(-40)  # \u2192 -40.0\n```\n\nThe formula is: **F = (C \u00d7 9/5) + 32**",
+      "questions": []
+    },
+    {
+      "task": "Count vowels in a string. count_vowels('apple') -> 2. Python.",
+      "gold_tier": "cheap",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "cheap",
+      "completeness": 0.96,
+      "in_tok": 3511,
+      "out_tok": 258,
+      "routed_cost": 0.004801,
+      "premium_cost": 0.072015,
+      "output": "I'll write a Python function to count vowels in a string:\n\n```python\ndef count_vowels(s):\n    \"\"\"Count the number of vowels in a string.\"\"\"\n    vowels = 'aeiouAEIOU'\n    return sum(1 for char in s if char in vowels)\n\n# Test with your example\nprint(count_vowels('apple'))  # Output: 2\n```\n\nThis function:\n- Defines vowels as both lowercase and uppercase letters\n- Iterates through each character in th",
+      "questions": []
+    },
+    {
+      "task": "Implement an LRU cache class in Python with get(key) and put(key, value), capacity fixed at construction, O(1) operations. Include a docstring.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.99,
+      "in_tok": 53,
+      "out_tok": 900,
+      "routed_cost": 0.013659,
+      "premium_cost": 0.06829500000000001,
+      "output": "```python\nfrom collections import OrderedDict\nfrom typing import Any, Optional\n\n\nclass LRUCache:\n    \"\"\"\n    A fixed-capacity Least Recently Used (LRU) cache.\n\n    Both `get` and `put` run in O(1) average time. When the cache is at\n    capacity and a new key is inserted, the least recently used entry\n    (the one that hasn't been accessed or inserted for the longest time)\n    is evicted to make ro",
+      "questions": []
+    },
+    {
+      "task": "Parse a CSV string into a list of dicts using the header row as keys. Handle quoted fields containing commas. Python, standard library only.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.67,
+      "in_tok": 48,
+      "out_tok": 900,
+      "routed_cost": 0.013644,
+      "premium_cost": 0.06822,
+      "output": "Here's a straightforward implementation using the standard library `csv` module, which already handles quoted fields containing commas (per RFC 4180 rules):\n\n```python\nimport csv\nimport io\n\n\ndef parse_csv_to_dicts(csv_string: str) -> list[dict]:\n    \"\"\"\n    Parse a CSV string into a list of dicts using the header row as keys.\n\n    Handles quoted fields containing commas, embedded newlines, and esc",
+      "questions": []
+    },
+    {
+      "task": "Write a function that merges two sorted integer lists into one sorted list without using sorted(). Return the merged list. Python.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.69,
+      "in_tok": 42,
+      "out_tok": 775,
+      "routed_cost": 0.011751,
+      "premium_cost": 0.058754999999999995,
+      "output": "## Merge Two Sorted Lists\n\nHere's a standard two-pointer merge implementation that runs in O(n + m) time without relying on `sorted()`:\n\n```python\ndef merge_sorted_lists(list1, list2):\n    \"\"\"\n    Merge two sorted integer lists into a single sorted list.\n\n    Args:\n        list1: A sorted list of integers.\n        list2: A sorted list of integers.\n\n    Returns:\n        A new sorted list containing",
+      "questions": []
+    },
+    {
+      "task": "Implement debounce(fn, wait_ms) in JavaScript that delays calling fn until wait_ms has elapsed since the last call. Return the debounced function.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.69,
+      "in_tok": 57,
+      "out_tok": 813,
+      "routed_cost": 0.012366,
+      "premium_cost": 0.06183,
+      "output": "Here's a standard implementation of `debounce`:\n\n```javascript\nfunction debounce(fn, wait_ms) {\n  let timeoutId = null;\n\n  function debounced(...args) {\n    const context = this;\n\n    // Clear any pending call \u2014 restarts the timer\n    clearTimeout(timeoutId);\n\n    timeoutId = setTimeout(() => {\n      timeoutId = null;\n      fn.apply(context, args);\n    }, wait_ms);\n  }\n\n  // Optional: allow manual",
+      "questions": []
+    },
+    {
+      "task": "Given a binary tree node class with .left/.right/.val, write an in-order traversal returning a list of values. Python.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.63,
+      "in_tok": 41,
+      "out_tok": 588,
+      "routed_cost": 0.008943,
+      "premium_cost": 0.044715,
+      "output": "## In-order traversal of a binary tree\n\nAssuming a node class like:\n\n```python\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n```\n\n### Recursive approach\n\n```python\ndef inorder_traversal(root):\n    result = []\n\n    def _visit(node):\n        if node is None:\n            return\n        _visit(node.left)",
+      "questions": []
+    },
+    {
+      "task": "Validate an email address with a regex in Python and return True/False. Must reject 'a@b' and accept 'a@b.com'.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.93,
+      "in_tok": 45,
+      "out_tok": 900,
+      "routed_cost": 0.013635,
+      "premium_cost": 0.068175,
+      "output": "Here's a Python function that validates email addresses with a regex, requiring at least one dot in the domain part (which is why it rejects `a@b` but accepts `a@b.com`):\n\n```python\nimport re\n\nEMAIL_REGEX = re.compile(\n    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,}$'\n)\n\ndef is_valid_email(email: str) -> bool:\n    return bool(EMAIL_REGEX.match(email))\n\n\n# Quick tests\nif __na",
+      "questions": []
+    },
+    {
+      "task": "Write a retry decorator in Python: retry(times=3, delay=0.1) that re-runs the wrapped function on exception up to `times`, then re-raises.",
+      "gold_tier": "mid",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "mid",
+      "completeness": 0.96,
+      "in_tok": 56,
+      "out_tok": 900,
+      "routed_cost": 0.013668,
+      "premium_cost": 0.06834,
+      "output": "Here's a straightforward implementation using `functools.wraps` to preserve the wrapped function's metadata:\n\n```python\nimport functools\nimport time\n\n\ndef retry(times=3, delay=0.1):\n    \"\"\"\n    Decorator that re-runs the wrapped function on exception.\n\n    Args:\n        times: Maximum number of attempts (including the first call).\n        delay: Seconds to wait between attempts.\n\n    Re-raises the",
+      "questions": []
+    },
+    {
+      "task": "Design and implement a thread-safe bounded blocking queue in Python supporting put() and get() from multiple producer and consumer threads, with proper condition-variable signaling and no busy-waiting. Include tests for the empty and full boundary conditions.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.95,
+      "in_tok": 84,
+      "out_tok": 900,
+      "routed_cost": 0.06876,
+      "premium_cost": 0.06876,
+      "output": "Here's a thread-safe bounded blocking queue with condition-variable signaling.\n\n```python\nimport threading\nfrom collections import deque\n\n\nclass BoundedBlockingQueue:\n    \"\"\"A thread-safe, bounded FIFO queue that blocks producers when full\n    and consumers when empty. Uses two condition variables over a single\n    lock so producers and consumers are woken selectively (no busy-waiting,\n    no thun",
+      "questions": []
+    },
+    {
+      "task": "Implement Dijkstra's shortest-path algorithm on a weighted directed graph given as an adjacency dict, returning the distance map and the predecessor map. Handle unreachable nodes. Optimize with a binary heap. Python.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.85,
+      "in_tok": 81,
+      "out_tok": 900,
+      "routed_cost": 0.068715,
+      "premium_cost": 0.068715,
+      "output": "Here's a clean, efficient implementation using `heapq` (Python's binary heap):\n\n```python\nimport heapq\nfrom math import inf\n\n\ndef dijkstra(graph, source):\n    \"\"\"\n    Dijkstra's shortest-path algorithm on a weighted directed graph.\n\n    Parameters\n    ----------\n    graph : dict[node, dict[node, float]]\n        Adjacency dict. graph[u][v] = weight of edge u -> v.\n        Edge weights must be non-n",
+      "questions": []
+    },
+    {
+      "task": "Refactor a synchronous data pipeline into an async architecture: design the module boundaries, define back-pressure between stages, ensure at-least-once processing under failure, and document the consistency trade-offs. Target Python asyncio.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.77,
+      "in_tok": 78,
+      "out_tok": 900,
+      "routed_cost": 0.06867000000000001,
+      "premium_cost": 0.06867000000000001,
+      "output": "Here's a complete design for refactoring a synchronous pipeline into an async architecture with explicit back-pressure, at-least-once semantics, and documented consistency trade-offs.\n\n## Module boundaries\n\nSplit along failure and scaling boundaries, not just logical steps. Each stage is independently testable and can fail without corrupting neighbors.\n\n```\npipeline/\n  sources/        # ingest: pu",
+      "questions": []
+    },
+    {
+      "task": "Write a recursive-descent parser for a small arithmetic grammar (numbers, + - * /, parentheses, correct precedence and associativity) that returns an AST, plus an evaluator. Include error handling for malformed input. Python.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.77,
+      "in_tok": 80,
+      "out_tok": 900,
+      "routed_cost": 0.06870000000000001,
+      "premium_cost": 0.06870000000000001,
+      "output": "Here's a complete recursive-descent parser and evaluator for arithmetic expressions.\n\n```python\n\"\"\"\nRecursive-descent parser + evaluator for arithmetic expressions.\n\nGrammar (standard precedence, left-associative binary operators):\n\n    expr    := term   (('+' | '-') term)*\n    term    := factor (('*' | '/') factor)*\n    factor  := ('+' | '-') factor        # unary plus/minus\n             | primar",
+      "questions": []
+    },
+    {
+      "task": "Implement a distributed rate limiter using a token-bucket algorithm backed by Redis, correct under concurrent access from multiple app instances, with configurable rate and burst. Explain the atomicity guarantees. Python.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.83,
+      "in_tok": 76,
+      "out_tok": 900,
+      "routed_cost": 0.06864,
+      "premium_cost": 0.06864,
+      "output": "Here's a production-grade distributed rate limiter using the token-bucket algorithm backed by Redis, with correctness under concurrent access as the central design goal.\n\n## The core problem\n\nA token bucket has two state variables: the current token count and the timestamp of the last refill. Under concurrent access, a naive implementation does read \u2192 compute \u2192 write in three round-trips, which is",
+      "questions": []
+    },
+    {
+      "task": "Design a schema migration system that applies and rolls back ordered migrations, records applied state, is idempotent on partial failure, and is safe to run concurrently from multiple deployers. Describe the locking strategy and implement the core. Python + SQL.",
+      "gold_tier": "premium",
+      "gold_ask": false,
+      "asked": false,
+      "routed_tier": "premium",
+      "completeness": 0.77,
+      "in_tok": 83,
+      "out_tok": 900,
+      "routed_cost": 0.068745,
+      "premium_cost": 0.068745,
+      "output": "# Schema Migration System\n\nA migration runner that's ordered, idempotent, rollback-capable, and concurrency-safe. Let me walk through the design, then the implementation.\n\n## Design Overview\n\n### State tracking\nA `schema_migrations` table records what's been applied. Each row is a completed migration. The presence of a row is the source of truth \u2014 never file mtimes or a \"current version\" integer.\n",
+      "questions": []
+    },
+    {
+      "task": "Fix the bug.",
+      "gold_tier": "cheap",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.23,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "Which specific file, module, or component should this change touch?",
+        "How will we know it's correct -- a test, an acceptance criterion, or a reference behavior?"
+      ]
+    },
+    {
+      "task": "Make the API faster.",
+      "gold_tier": "mid",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.23,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "What are the exact input and output (types, an example, or the expected return value)?"
+      ]
+    },
+    {
+      "task": "Add authentication to the app.",
+      "gold_tier": "premium",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.23,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "What exactly should this produce, and how will we know it's correct?"
+      ]
+    },
+    {
+      "task": "Write a function to process the data and handle everything appropriately.",
+      "gold_tier": "mid",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.01,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "What are the exact input and output (types, an example, or the expected return value)?"
+      ]
+    },
+    {
+      "task": "Refactor this module to be cleaner.",
+      "gold_tier": "mid",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.01,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "Are there constraints I must respect (performance, allowed dependencies, style, backward-compat)?"
+      ]
+    },
+    {
+      "task": "Build the reporting feature the way we discussed.",
+      "gold_tier": "premium",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.23,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "How will we know it's correct -- a test, an acceptance criterion, or a reference behavior?"
+      ]
+    },
+    {
+      "task": "Optimize it.",
+      "gold_tier": "mid",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.23,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "How will we know it's correct -- a test, an acceptance criterion, or a reference behavior?"
+      ]
+    },
+    {
+      "task": "Integrate the payment thing and make it work properly.",
+      "gold_tier": "premium",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.0,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "Which specific file, module, or component should this change touch?",
+        "How will we know it's correct -- a test, an acceptance criterion, or a reference behavior?"
+      ]
+    },
+    {
+      "task": "Update the config as needed and clean it up.",
+      "gold_tier": "cheap",
+      "gold_ask": true,
+      "asked": true,
+      "routed_tier": null,
+      "completeness": 0.01,
+      "in_tok": 0,
+      "out_tok": 0,
+      "routed_cost": 0,
+      "premium_cost": 0,
+      "output": "",
+      "questions": [
+        "Which specific file, module, or component should this change touch?"
+      ]
+    }
+  ]
+}

@@ -55,3 +55,19 @@ test("MCP merge preserves a user's own server", () => {
   assert.ok(j.mcpServers.mine, "user server preserved");
   assert.ok(j.mcpServers.context7, "forge server added");
 });
+
+test("cortex MCP exposes substrate tools", async () => {
+  const { handle } = await import("../src/cortex_mcp.js");
+  const listed = handle({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+  const names = listed.result.tools.map((tool) => tool.name);
+  assert.ok(names.includes("substrate_check"));
+  assert.ok(names.includes("predict_impact"));
+  assert.ok(names.includes("assumption_gate"));
+  const called = handle({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "assumption_gate", arguments: { task: "Fix the bug." } },
+  });
+  assert.match(called.result.content[0].text, /shouldAsk/);
+});

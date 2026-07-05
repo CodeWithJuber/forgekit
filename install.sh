@@ -63,6 +63,8 @@ install_forge() {
 
     "statusLine": { "type": "command", "command": "bash $FORGE_HOME/statusline.sh" },
     "hooks": {
+      "UserPromptSubmit": [ { "hooks": [ { "type": "command",
+        "command": "bash $FORGE_HOME/guards/cortex.sh preflight" } ] } ],
       "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
         "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/protect-paths.sh" } ] } ],
       "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",

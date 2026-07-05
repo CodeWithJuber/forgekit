@@ -41,6 +41,8 @@ npm run check     # Biome lint + format check
 - `source/` — the single rule + MCP source that `forge sync` compiles.
 - `global/` — what installs into `~/.forge`: `tools/` (skills), `crew/` (agents),
   `guards/` (hooks).
+- `docs/cognitive-substrate/` — the committed paper bundle, evidence maps, and prototype
+  artifacts that explain `forge substrate` and `forge impact`.
 - `test/` — `node --test` suites.
 
 ## Before you open a PR
@@ -55,6 +57,10 @@ diffs with no tests) will be closed. To get merged:
   header, or files under `.forge/`. Change the source (`source/`) instead.
 - **Include tests and pass CI.** A small green diff a maintainer can verify beats a large
   one they can't.
+- **Substrate changes need docs.** If you change `forge substrate`, `forge impact`,
+  router/gate rubrics, or MCP substrate tools, update
+  [docs/cognitive-substrate/README.md](./docs/cognitive-substrate/README.md) and
+  `CHANGELOG.md`.
 
 We'd rather give a clear "not now" than merge something that adds maintenance burden — see
 [GOVERNANCE.md](./GOVERNANCE.md).

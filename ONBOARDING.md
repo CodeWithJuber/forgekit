@@ -28,7 +28,19 @@ Edit `source/rules.json` (or drop a per-repo `.forge/rules.json`), then:
 forge sync                 # recompiles into every tool; idempotent (only rewrites what changed)
 ```
 
-## 4. Use the extras
+## 4. Use the cognitive substrate
+
+```bash
+forge substrate "<task>"      # ask/route/impact/scope/memory/verify in one pass
+forge substrate "<task>" --json
+forge impact <symbol-or-file>
+```
+
+If `forge substrate` says `ASK FIRST`, ask the returned questions before editing. Read predicted impacted files before making mutating changes.
+
+Paper and evidence package: [docs/cognitive-substrate/](docs/cognitive-substrate/).
+
+## 5. Use the extras
 
 ```bash
 forge atlas build          # index this repo's symbols → .forge/atlas.json

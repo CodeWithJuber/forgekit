@@ -13,6 +13,77 @@ import { preflightRepo, referencedEntities } from "./preflight.js";
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
+
+const ALGO_TERMS =
+  /\b(recursion|recursive|recursive-?descent|dynamic programming|dijkstra|a\*|concurren|thread-?safe|mutex|race condition|deadlock|distributed|consensus|parser|compiler|cryptograph|np-hard|state machine|invariant|numerical stability|back-?pressure|token[- ]bucket|rate limiter|idempoten|migration|producer|consumer|blocking queue|condition[- ]variable)\b/i;
+const ARCH_TERMS =
+  /\b(architect|\bdesign\b|trade-?off|refactor a|migrate|scal(e|able|ing)|schema (migration|design)|api design|multi-?module|cross-?module|end-?to-?end|consistency (guarantee|trade)|locking strategy|module boundaries)\b/i;
+const MODERATE_TERMS =
+  /\b(class\b|cache|lru|queue|stack|heap|linked list|binary tree|tree|traversal|graph|decorator|regex|debounce|throttle|merge|sort(ed|ing)?|parse|o\(\s*\d|o\(n|o\(1|thread|async|lock|validate|in-?order|adjacency)\b/i;
+const TRIVIAL_TERMS =
+  /\b(hello world|rename|typo|indent|add a comment|reverse a string|reverse the string|is[_ ]?even|is[_ ]?odd|factorial|fibonacci|is[_ ]?prime|prime\b|sum of|sum_list|capitalize|count vowels|celsius|fahrenheit|lower ?case|upper ?case)\b/i;
+const MULTISTEP =
+  /\b(and then|after that|first.*then|step \d|multiple|several|each of|for every)\b/i;
+
+export function rubricSignals(task = "") {
+  const text = String(task);
+  return {
+    lengthTokens: Math.max(1, Math.floor(text.length / 4)),
+    hasAlgorithmicTerms: ALGO_TERMS.test(text),
+    hasArchitecturalTerms: ARCH_TERMS.test(text),
+    hasModerateTerms: MODERATE_TERMS.test(text),
+    hasTrivialMarkers: TRIVIAL_TERMS.test(text),
+    hasMultistep: MULTISTEP.test(text),
+    hasCodeContext: /```/.test(text),
+    nConstraints: (text.match(/(^\s*[-*\d.]|\b(must|should|ensure|require|constraint)\b)/gim) || [])
+      .length,
+  };
+}
+
+export function rubricComplexity(task = "") {
+  const sig = rubricSignals(task);
+  const reasons = [{ weight: 1.5, reason: "base cost of any task" }];
+  let score = 1.5;
+  if (sig.hasAlgorithmicTerms) {
+    score += 4;
+    reasons.push({ weight: 4, reason: "algorithmic/systems difficulty" });
+  }
+  if (sig.hasArchitecturalTerms) {
+    score += 4;
+    reasons.push({ weight: 4, reason: "architectural/design scope" });
+  }
+  if (sig.hasModerateTerms) {
+    score += 2;
+    reasons.push({ weight: 2, reason: "data-structure/class/library-level work" });
+  }
+  if (sig.hasMultistep) {
+    score += 1;
+    reasons.push({ weight: 1, reason: "multi-step request" });
+  }
+  if (sig.hasCodeContext) {
+    score += 1;
+    reasons.push({ weight: 1, reason: "carries code context" });
+  }
+  if (sig.lengthTokens > 120) {
+    score += 1.5;
+    reasons.push({ weight: 1.5, reason: `long spec (~${sig.lengthTokens} tok)` });
+  } else if (sig.lengthTokens > 55) {
+    score += 0.7;
+    reasons.push({ weight: 0.7, reason: `medium spec (~${sig.lengthTokens} tok)` });
+  }
+  if (sig.nConstraints >= 5) {
+    score += 1;
+    reasons.push({ weight: 1, reason: `${sig.nConstraints} explicit constraints` });
+  }
+  if (sig.hasTrivialMarkers && !sig.hasAlgorithmicTerms && !sig.hasArchitecturalTerms) {
+    score -= 3;
+    reasons.push({ weight: -3, reason: "trivial-task marker" });
+  }
+  const rawScore = Math.max(0, score);
+  const band = rawScore < 3 ? "cheap" : rawScore <= 6 ? "mid" : "premium";
+  return { rawScore, band, signals: sig, reasons };
+}
+
 const WEIGHTS = {
   files: 0.22,
   fanout: 0.22,
@@ -69,8 +140,24 @@ export function routeTask(root, task) {
     ambiguity,
     sizeWords,
   };
-  const { score, norm } = complexity(signals);
-  return { score, signals, ...recommend(score, norm) };
+  const { score: repoScore, norm } = complexity(signals);
+  const rubric = rubricComplexity(task);
+  const rubricScore = Math.min(1, rubric.rawScore / 10);
+  const score = Math.max(repoScore, rubricScore);
+  const recommended = recommend(score, norm);
+  return {
+    score,
+    repoScore,
+    signals,
+    rubric,
+    ...recommended,
+    reasons: [
+      ...new Set([
+        ...(recommended.reasons || []),
+        ...rubric.reasons.filter((r) => r.weight > 0).map((r) => r.reason),
+      ]),
+    ],
+  };
 }
 
 /** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks). */
