@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Substrate now auto-runs in Claude Code.** The `UserPromptSubmit` hook injects the full substrate advisory (assumption gate + model routing + blast radius + memory + verify) when it matters, silent otherwise. Load-only — never builds/writes `.forge/` from a hook, fail-safe, never blocks.
+- **Cross-tool auto-use.** Added a `substrate` section to `source/rules.json` so `forge init` emits the "run substrate before risky work" rule into every tool's config (AGENTS.md, .cursor/rules, …).
+- **Docs rewritten** — `docs/cognitive-substrate/README.md` is a professional, example-rich guide (real command output, auto-use setup, extension points); README/SKILL aligned.
+
+### Fixed
+
+- **Security (research prototype): removed pickle-based cache** in `impact_oracle/world_model.py` — it was an insecure-deserialization (RCE) vector on a caller-supplied `cache_dir`. Now JSON node-link only, with `cache_dir` containment inside `root`.
+- **Smaller npm package** — stopped publishing `docs/cognitive-substrate` (a ~2 MB whitepaper + zips); tarball dropped to ~280 KB. Removed the redundant `*_src.zip` binaries (source lives unzipped in `research/`).
+- **Perf** — `substrateCheck` no longer recomputes the assumption assessment.
+
 ### Added
 
 - **Forge Cognitive Substrate** — one pre-action command (`forge substrate`) and MCP surface (`substrate_check`, `predict_impact`, `assumption_gate`) that combines assumption gating, transparent model routing, impact prediction, scope decomposition, Cortex lessons, minimality warnings, and verification planning.

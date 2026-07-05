@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
 import { matchingLessons } from "./cortex.js";
 import { load as loadLessons } from "./lessons_store.js";
-import { assessTask, clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
+import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 
@@ -65,15 +65,22 @@ export function predictImpact(root, target, { threshold = 0.1 } = {}) {
   return impactGraph(atlas, target, { threshold });
 }
 
-export function substrateCheck(root, task, { threshold = 0.1, askThreshold = 0.6 } = {}) {
+export function substrateCheck(
+  root,
+  task,
+  { threshold = 0.1, askThreshold = 0.6, allowBuild = true } = {},
+) {
   const text = String(task || "");
   const entities = referencedEntities(text);
-  const preflight = preflightRepo(root, text, { askThreshold });
-  const assumption = assessTask(text, { askThreshold });
+  const preflight = preflightRepo(root, text, { askThreshold, allowBuild });
   const route = routeTask(root, text);
-  const atlas = loadAtlas(root) || buildAtlas({ root });
+  // allowBuild:false (ambient hooks) uses the atlas only if one is already cached — never
+  // builds or writes .forge/atlas.json from a hook. Impact is then best-effort.
+  const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
   const impactTargets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
-  const impacts = impactTargets.map((target) => impactGraph(atlas, target, { threshold }));
+  const impacts = atlas
+    ? impactTargets.map((target) => impactGraph(atlas, target, { threshold }))
+    : [];
   const impactedFiles = [...new Set(impacts.flatMap((r) => r.impactedFiles || []))].sort();
   const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
   const scope = scopedFiles.length
@@ -84,9 +91,9 @@ export function substrateCheck(root, task, { threshold = 0.1, askThreshold = 0.6
     symbols: entities.symbols,
   });
   const result = {
-    okToProceed: !preflight.assumption.shouldAsk && !assumption.shouldAsk,
+    okToProceed: !preflight.assumption.shouldAsk,
     task: text,
-    assumption: preflight.assumption.shouldAsk ? preflight.assumption : assumption,
+    assumption: preflight.assumption,
     clarify: clarifyBlock(preflight),
     route,
     entities,
@@ -94,9 +101,11 @@ export function substrateCheck(root, task, { threshold = 0.1, askThreshold = 0.6
     scope,
     memory: {
       matchingLessons: lessons.length,
-      advisory: lessons
-        .slice(0, 5)
-        .map((lesson) => ({ id: lesson.id, status: lesson.status, scope: lesson.scope })),
+      advisory: lessons.slice(0, 5).map((lesson) => ({
+        id: lesson.id,
+        status: lesson.status,
+        scope: lesson.scope,
+      })),
     },
     minimality: { warnings: minimalityWarnings(text, route, preflight) },
     verification: { checklist: verificationChecklist(root) },
@@ -145,5 +154,39 @@ export function renderSubstrate(result) {
   }
   lines.push("", "  verify:");
   for (const c of result.verification.checklist) lines.push(`    - ${c}`);
+  return lines.join("\n");
+}
+
+// Compact advisory for AMBIENT injection (Claude Code UserPromptSubmit additionalContext).
+// Returns "" unless there is something worth surfacing — never nags on a well-specified,
+// low-impact task. Gated on: must-ask assumptions, a premium model recommendation,
+// predicted blast radius, or a minimality warning.
+export function substrateContext(result) {
+  const worthSaying =
+    result.assumption.shouldAsk ||
+    result.impact.impactedFiles.length > 0 ||
+    result.minimality.warnings.length > 0 ||
+    ["opus", "fable"].includes(result.route.key);
+  if (!worthSaying) return "";
+  const lines = ["Forge substrate — pre-action advisory (advisory, never blocks):"];
+  if (result.assumption.shouldAsk) {
+    lines.push(
+      `- Under-specified (${result.assumption.risk} risk). Ask before editing:`,
+      ...result.assumption.questions.map((q) => `    • ${q}`),
+    );
+  }
+  lines.push(
+    `- Suggested model: ${result.route.model.name} (${result.route.tier}); escalate only on a verifier failure.`,
+  );
+  if (result.impact.impactedFiles.length) {
+    const files = result.impact.impactedFiles;
+    lines.push(
+      `- Predicted blast radius (${files.length}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
+    );
+  }
+  for (const w of result.minimality.warnings) lines.push(`- Minimality: ${w}`);
+  if (result.memory.matchingLessons)
+    lines.push(`- ${result.memory.matchingLessons} past lesson(s) match this area (advisory).`);
+  lines.push(`- Verify with: ${result.verification.checklist.join(" · ")}`);
   return lines.join("\n");
 }

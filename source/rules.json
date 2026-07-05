@@ -12,6 +12,18 @@
       ]
     },
     {
+      "id": "substrate",
+      "title": "Cognitive substrate (run before acting)",
+      "rules": [
+        "Before ambiguous, expensive, multi-file, or mutating work, run `forge substrate \"<task>\" --json` (or call the MCP tool `substrate_check`). In Claude Code this fires automatically on each prompt; in other tools invoke it yourself.",
+        "If it returns `okToProceed:false`, ask the returned `assumption.questions` before editing — do not guess an under-specified task.",
+        "Start at the recommended `route.tier` (cheapest capable model); escalate only after an external verifier fails, never preemptively.",
+        "Read `impact.impactedFiles` (predicted blast radius) before editing a named symbol/file, and split `scope.clusters` of independent work into separate sessions.",
+        "Treat `memory.advisory` and minimality warnings as advisory; tests, graph membership, and human corrections always override the model.",
+        "Run `verification.checklist` and show the output before claiming done."
+      ]
+    },
+    {
       "id": "reuse",
       "title": "Reuse & dependencies",
       "rules": [

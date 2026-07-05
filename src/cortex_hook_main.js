@@ -5,9 +5,15 @@
 //
 //   modes:  capture         (PostToolUse Edit|Write|Bash) — log a signal event
 //           prompt          (UserPromptSubmit)            — log a user-utterance event
+//           preflight       (UserPromptSubmit)            — inject the substrate pre-action advisory
+//           pre-edit        (PreToolUse Edit|Write)       — advise on lessons/risk before an edit
 //           stop            (Stop)                        — distill the session into lessons
 //           session-start   (SessionStart)               — inject learned lessons as context
-import { applyDistillation, lessonsForContext, startupBlock } from "./cortex.js";
+import {
+  applyDistillation,
+  lessonsForContext,
+  startupBlock,
+} from "./cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -16,7 +22,7 @@ import {
   readSession,
 } from "./cortex_hook.js";
 import { load } from "./lessons_store.js";
-import { clarifyBlock, preflightRepo } from "./preflight.js";
+import { substrateCheck, substrateContext } from "./substrate.js";
 
 // Opt-in: distill newly-created lessons into real prose via a cheap model call. Off by
 // default (deterministic template is used); fail-safe (any error → keep the template).
@@ -67,13 +73,21 @@ async function main() {
     const block = startupBlock(root, today);
     if (block) emit("SessionStart", block);
   } else if (mode === "pre-edit") {
-    const advice = await preEditAdvisory(root, hook.tool_input?.file_path, today);
+    const advice = await preEditAdvisory(
+      root,
+      hook.tool_input?.file_path,
+      today,
+    );
     if (advice) emit("PreToolUse", advice);
   } else if (mode === "preflight") {
-    // Assumption detector: does the task name things the repo doesn't define?
+    // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)
+    // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
+    // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
-      const block = clarifyBlock(preflightRepo(root, hook.prompt, { allowBuild: false }));
-      if (block) emit("UserPromptSubmit", block);
+      const advisory = substrateContext(
+        substrateCheck(root, hook.prompt, { allowBuild: false }),
+      );
+      if (advisory) emit("UserPromptSubmit", advisory);
     }
   }
 }
