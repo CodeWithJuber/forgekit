@@ -39,6 +39,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/format-on-edit.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/secret-redact.sh"
+          }
+        ]
       }
     ],
     "Stop": [

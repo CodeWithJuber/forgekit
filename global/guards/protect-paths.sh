@@ -16,7 +16,14 @@ else
   cmd="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
 fi
 
-deny() { echo "BLOCKED by protect-paths hook: $1" >&2; exit 2; }
+deny() {
+  # Structured decision for current Claude Code; exit-2 + stderr as the version-agnostic fallback.
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  fi
+  echo "BLOCKED by protect-paths guard: $1" >&2
+  exit 2
+}
 
 # Protect secret/credential files from writes.
 case "$fpath" in

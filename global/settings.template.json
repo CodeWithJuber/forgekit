@@ -115,6 +115,15 @@
             "command": "bash ~/.forge/guards/format-on-edit.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/secret-redact.sh"
+          }
+        ]
       }
     ],
     "Stop": [

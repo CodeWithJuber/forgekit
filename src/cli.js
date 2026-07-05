@@ -11,8 +11,10 @@ const COMMANDS = {
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
+  scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
   verify:
     "independent verification gate — tests + hallucinated-symbol + provenance",
+  harden: "wire security controls — gitleaks pre-commit + sandbox settings",
   brand: "print the active brand token map",
 };
 
@@ -204,6 +206,29 @@ async function run(argv) {
     }
     return;
   }
+  if (cmd === "scan") {
+    const { scan } = await import("./skillgate.js");
+    const target = argv[1];
+    if (!target) {
+      console.error("usage: forge scan <SKILL.md | .mcp.json | path>");
+      process.exitCode = 1;
+      return;
+    }
+    const r = scan(target);
+    console.log(`${BRAND.brand} scan — skill-gate (${r.scanner})\n`);
+    if (r.findings && r.findings.length) {
+      for (const f of r.findings) console.log(`  [${f.sev}] ${f.msg}`);
+    } else if (r.raw) {
+      console.log("  " + r.raw.trim().split("\n").slice(-6).join("\n  "));
+    } else {
+      console.log("  no obvious red flags");
+    }
+    console.log(
+      `\n  ${r.critical ? "BLOCKED — critical finding, do not install" : "ok to install"}`,
+    );
+    if (r.critical) process.exitCode = 1;
+    return;
+  }
   if (cmd === "verify") {
     const { verify } = await import("./verify.js");
     const r = verify({ targetRoot: process.cwd() });
@@ -220,6 +245,16 @@ async function run(argv) {
     console.log(`  provenance:       .forge/provenance.json`);
     console.log(`\n  ${r.ok ? "PASS" : "BLOCKED — tests failing"}`);
     if (!r.ok) process.exitCode = 1;
+    return;
+  }
+  if (cmd === "harden") {
+    const { harden } = await import("./harden.js");
+    const r = harden({ targetRoot: process.cwd() });
+    console.log(`${BRAND.brand} harden\n`);
+    console.log(`  gitleaks pre-commit: ${r.gitleaks}`);
+    console.log(
+      `  sandbox settings:    ${r.sandbox} — merge into ~/.claude/settings.json to enable (84% fewer prompts)`,
+    );
     return;
   }
   if (!(cmd in COMMANDS)) {
