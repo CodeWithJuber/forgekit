@@ -11,6 +11,8 @@ const COMMANDS = {
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
+  verify:
+    "independent verification gate — tests + hallucinated-symbol + provenance",
   brand: "print the active brand token map",
 };
 
@@ -200,6 +202,24 @@ async function run(argv) {
       console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
       process.exitCode = 1;
     }
+    return;
+  }
+  if (cmd === "verify") {
+    const { verify } = await import("./verify.js");
+    const r = verify({ targetRoot: process.cwd() });
+    console.log(`${BRAND.brand} verify\n`);
+    console.log(`  changed files:    ${r.changedFiles.length}`);
+    console.log(
+      `  tests:            ${r.tests.ran ? (r.tests.passed ? "✓ pass" : "✗ FAIL") : "— none detected"}`,
+    );
+    console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
+    if (r.unknown.length)
+      console.log(
+        `  ! not in codebase (possible hallucination): ${r.unknown.slice(0, 12).join(", ")}`,
+      );
+    console.log(`  provenance:       .forge/provenance.json`);
+    console.log(`\n  ${r.ok ? "PASS" : "BLOCKED — tests failing"}`);
+    if (!r.ok) process.exitCode = 1;
     return;
   }
   if (!(cmd in COMMANDS)) {
