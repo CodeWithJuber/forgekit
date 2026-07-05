@@ -146,6 +146,28 @@ export function lessonsForContext(root, context, opts = {}) {
   return selectForInjection(load(root), context, opts);
 }
 
+/** Repo-wide top active lessons — what a SessionStart hook injects (no file context yet). */
+export function startupBlock(root, nowDay = 0, budget = 8) {
+  const active = load(root).filter((l) => l.status === "active");
+  if (!active.length) return "";
+  const ranked = active
+    .map((l) => ({ lesson: l, conf: confidenceOf(l, nowDay) }))
+    .sort((a, b) => b.conf - a.conf);
+  const shown = ranked.slice(0, budget);
+  const rows = shown.map((x) =>
+    `- **${x.lesson.id}** — ${x.lesson.correctedBehavior}`.slice(0, 200),
+  );
+  const overflow = active.length - shown.length;
+  if (overflow > 0) rows.push(`- _(+${overflow} more active lessons — run \`forge cortex\`)_`);
+  return [
+    "## Lessons learned on this repo (Forge Cortex)",
+    "Background context from past corrections on this repo — verify before acting, don't blindly obey.",
+    "",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
 /** Auditable snapshot for `forge cortex status`. */
 export function summary(root, nowDay = 0) {
   const lessons = load(root);

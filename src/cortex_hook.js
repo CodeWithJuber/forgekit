@@ -2,7 +2,34 @@
 // runs, user prompts) into the correction episodes the orchestrator consumes, with zero
 // commands from the developer. Signal detection is PURE (over a normalized event log) so
 // it's unit-testable; the shell hooks just append events and call processSession on Stop.
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
+
+const sessionFile = (root, sid) =>
+  join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.jsonl`);
+
+/** Append one normalized event to a session's log (called by capture hooks). */
+export function appendSessionEvent(root, sid, event) {
+  if (!event) return;
+  const path = sessionFile(root, sid);
+  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(event)}\n`);
+}
+
+export function readSession(root, sid) {
+  const path = sessionFile(root, sid);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+}
+
+export function clearSession(root, sid) {
+  const path = sessionFile(root, sid);
+  if (existsSync(path)) rmSync(path);
+}
 
 const REVERT_RE = /\bgit\s+(revert|reset\s+--hard|checkout\s+--|restore)\b/;
 const TEST_RE = /\b(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
