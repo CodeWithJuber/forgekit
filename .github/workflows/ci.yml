@@ -64,5 +64,5 @@ jobs:
       - uses: actions/checkout@v5
       # Advisory: needs the repo's Dependency graph enabled (Settings → Security & analysis).
       # continue-on-error keeps the CHECK green until then — this project has zero runtime deps.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         continue-on-error: true
