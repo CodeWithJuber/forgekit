@@ -20,6 +20,7 @@ const COMMANDS = {
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   preflight: "assumption check — what a task names that the repo doesn't define",
+  route: "recommend the cheapest capable model for a task (+ gateway config)",
   brand: "print the active brand token map",
 };
 
@@ -383,6 +384,37 @@ async function run(argv) {
     console.log(
       block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
     );
+    return;
+  }
+  if (cmd === "route") {
+    const r = await import("./route.js");
+    if (argv[1] === "gateway") {
+      const path = r.emitGatewayConfig(process.cwd());
+      console.log(
+        `  wrote ${path} — LiteLLM auto-routes simple tasks to Haiku (gateway traffic only).`,
+      );
+      console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it.");
+      return;
+    }
+    const task = argv.slice(1).join(" ");
+    if (!task) {
+      console.error('usage: forge route "<task>"   |   forge route gateway');
+      process.exitCode = 1;
+      return;
+    }
+    const rec = r.routeTask(process.cwd(), task);
+    console.log(`${BRAND.brand} route — cheapest capable model\n`);
+    console.log(
+      `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+    );
+    console.log(`    ${rec.model.use}`);
+    console.log(
+      `    complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
+    );
+    console.log(
+      `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
+    );
+    console.log("\n  advisory · auto-routing: `forge route gateway`");
     return;
   }
   if (!(cmd in COMMANDS)) {
