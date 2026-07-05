@@ -37,5 +37,7 @@ export function catalog() {
     taste: tasteList(),
     cortex:
       "self-correcting project memory — learns from your mistakes on this repo (`forge cortex`)",
+    preflight:
+      "size the work before spending tokens — assumption-check / model-route / decompose (`forge preflight` · `route` · `scope`)",
   };
 }

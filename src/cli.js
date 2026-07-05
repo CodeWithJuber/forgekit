@@ -78,6 +78,7 @@ async function run(argv) {
         `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
       );
     if (c.cortex) console.log(`\n  CORTEX (self-correcting memory)  ${c.cortex}`);
+    if (c.preflight) console.log(`  PREFLIGHT (before you spend tokens)  ${c.preflight}`);
     console.log(`\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``);
     return;
   }
