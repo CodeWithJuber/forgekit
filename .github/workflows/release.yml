@@ -16,7 +16,7 @@ jobs:
       contents: write # create the GitHub release
       id-token: write # npm provenance (OIDC)
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 22

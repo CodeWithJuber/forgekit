@@ -17,7 +17,7 @@ jobs:
       matrix:
         node: [18, 20, 22]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
@@ -29,7 +29,7 @@ jobs:
     name: Lint & format (Biome)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -43,7 +43,7 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Fail only on errors; the guards trip style/warning false-positives (e.g. SC2034 on
       # vars used cross-file via the sourced _guardlib.sh).
       - run: shellcheck --severity=error $(git ls-files '*.sh')
@@ -52,7 +52,7 @@ jobs:
     name: Assert zero runtime dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
       - run: npm pack --dry-run
 
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Advisory: needs the repo's Dependency graph enabled (Settings → Security & analysis).
       # continue-on-error keeps the CHECK green until then — this project has zero runtime deps.
       - uses: actions/dependency-review-action@v5
