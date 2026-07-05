@@ -16,6 +16,7 @@ const COMMANDS = {
   harden: "wire security controls — gitleaks pre-commit + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
+  cost: "real per-day spend via ccusage + the cost ceiling",
   brand: "print the active brand token map",
 };
 
@@ -252,6 +253,28 @@ async function run(argv) {
     );
     console.log(
       `\n  ${idx.indexed} inlined into AGENTS.md${idx.overflow ? `, ${idx.overflow} in overflow` : ""} · stored in .forge/brain/`,
+    );
+    return;
+  }
+  if (cmd === "cost") {
+    const { execFileSync } = await import("node:child_process");
+    const run = (bin, args) => execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
+    console.log(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
+    try {
+      let out;
+      try {
+        out = run("ccusage", ["daily"]);
+      } catch {
+        out = run("npx", ["-y", "ccusage@latest", "daily"]);
+      }
+      console.log(out.trim());
+    } catch {
+      console.log(
+        "  ccusage not found. Install for real spend (reads local JSONL, nothing leaves your machine):\n    npm i -g ccusage    # then: forge cost",
+      );
+    }
+    console.log(
+      `\n  ceiling: FORGE_COST_CEILING (default $10) — the cost-budget guard warns when a day exceeds it.`,
     );
     return;
   }
