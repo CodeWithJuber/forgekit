@@ -38,7 +38,9 @@ forge impact <symbol-or-file>
 
 If `forge substrate` says `ASK FIRST`, ask the returned questions before editing. Read predicted impacted files before making mutating changes.
 
-## 4. Use the extras
+Paper and evidence package: [docs/cognitive-substrate/](docs/cognitive-substrate/).
+
+## 5. Use the extras
 
 ```bash
 forge atlas build          # index this repo's symbols → .forge/atlas.json

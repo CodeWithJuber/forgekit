@@ -21,6 +21,7 @@ Cursor, Gemini CLI, Aider, Copilot, Windsurf/Devin, and Zed**.
 # clone, then:
 bash install.sh          # symlinks into ~/.forge + ~/.claude, puts `forge` on PATH
 forge init               # in any repo: emit every tool's config from one source
+forge substrate "task"   # assumption gate + route + impact + scope + verify
 forge doctor             # verify everything is wired
 ```
 
@@ -103,6 +104,10 @@ forge impact computeTax
 
 `substrate` returns the assumption gate, model route, impact radius, scope clusters, relevant Cortex lessons, minimality warnings, and a verification checklist. MCP-capable extensions get the same flow through `substrate_check`, `predict_impact`, and `assumption_gate`. Deterministic checks are asserted; memory relevance, routing fit, and minimality remain advisory where the research is not a hard guarantee.
 
+Full paper bundle and original artifacts live in
+[`docs/cognitive-substrate/`](docs/cognitive-substrate/): PDF, HTML, evidence map,
+ecosystem map, and the original router-gate / impact-oracle prototype packages.
+
 ## Forge Preflight — size the work before spending tokens
 
 An LLM is a fixed-capacity stochastic predictor. Most of the cost/quality bleed comes from
@@ -134,6 +139,8 @@ forge sync        recompile source/ → each tool's native files (idempotent)
 forge doctor      pass/fail health check (layers, install, drift, cortex)
 forge catalog     Start-Here index of every tool/crew/guard
 forge cortex      self-correcting memory — status / why <symbol>
+forge substrate   full pre-action cognitive-substrate check
+forge impact      predict blast radius for a symbol or file
 forge preflight   assumption check — what a task names that the repo doesn't define
 forge route       cheapest capable model for a task (+ gateway config)
 forge scope       decompose files into independent clusters

@@ -9,6 +9,11 @@
 Grounded in a verified multi-source research pass (Reddit/HN/dev.to, GitHub issue
 trackers, official vendor docs). Evidence + config-format verdicts in the appendix.
 
+The cognitive-substrate paper bundle is committed under
+[`docs/cognitive-substrate/`](docs/cognitive-substrate/). It includes the full PDF/HTML
+paper, deliverable overview, evidence map, ecosystem map, and the original prototype
+packages; the production runtime remains Node-only and zero-dependency.
+
 ## Locked decisions
 - **Brand = `Forge`** — CLI `forge`; layer names: skills→**tools**, agents→**crew**,
   hooks→**guards**, code-graph→**atlas**, minimalism→**lean**, memory→**recall**.
@@ -57,6 +62,10 @@ Layers map onto the Claude Code substrate, brand-named, and are emitted cross-to
 
 Cross-cutting: **atlas** (code-graph), **lean** (shipped as *both* a tool and a
 Stop-guard, so it works whether or not the model invokes it), **recall** (memory).
+
+**cognitive substrate** (`forge substrate`, `forge impact`, and MCP tools
+`substrate_check` / `predict_impact` / `assumption_gate`) composes atlas, preflight,
+route, scope, cortex, and verify into one pre-action contract before mutating work.
 
 ## Component map — the reuse ledger (30 components)
 

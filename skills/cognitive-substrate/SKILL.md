@@ -27,3 +27,5 @@ Use the result this way:
 6. Run the `verification.checklist` before claiming completion.
 
 For details, read `references/capability-map.md` only when you need to explain how the paper's faculties map to Forge commands.
+
+The full paper bundle is in `docs/cognitive-substrate/` when the repository is available: PDF, HTML, evidence map, ecosystem map, and original prototype packages.

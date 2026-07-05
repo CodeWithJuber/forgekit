@@ -9,6 +9,7 @@
 - [ ] Conventional commit message (`feat:`/`fix:`/`docs:` …)
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`
 - [ ] No new runtime dependency (dev deps ok)
+- [ ] Substrate/docs updated if this changes `forge substrate`, `forge impact`, router/gate, or MCP substrate tools
 
 ## Risk & rollback
 - Risk level: low / medium / high

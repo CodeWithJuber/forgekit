@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Forge Cognitive Substrate** — one pre-action command (`forge substrate`) and MCP surface (`substrate_check`, `predict_impact`, `assumption_gate`) that combines assumption gating, transparent model routing, impact prediction, scope decomposition, Cortex lessons, minimality warnings, and verification planning.
 - **Atlas v2 graph** — dependency nodes/edges, file hashes, and reverse-dependency impact traversal while preserving the old symbol query API.
 - Codex plugin manifest and `cognitive-substrate` skill so Forge can be installed/used from Codex-style extension surfaces as well as Claude/NPM.
+- Cognitive-substrate paper bundle under `docs/cognitive-substrate/`: full PDF/HTML paper, deliverable overview, evidence map, ecosystem map, and original prototype packages.
 
 ## [0.3.1] - 2026-07-05
 

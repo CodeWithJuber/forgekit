@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>A Cognitive Substrate for Coding Agents</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --mute:#5c5c5c; --faint:#8a8a8a; --rule:#e2e2e2;
+    --llm:#3C6E9C; --mem:#3f7d57; --learn:#c26a35; --imag:#6b5d97;
+    --oracle:#137a72; --meta:#9a7d10; --eth:#54606b; --alarm:#b5433f;
+    --quran:#6d5327; --quranbg:#f7f2e7; --litbg:#eef2f6; --page:#ffffff;
+    --code:#f4f4f2;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    color:var(--ink); background:#f0f0ee; line-height:1.62; margin:0;
+    font-size:16.5px; -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:860px; margin:0 auto; background:var(--page); padding:64px 72px 96px;
+        box-shadow:0 1px 4px rgba(0,0,0,.08);}
+  h1{font-size:2.05rem; line-height:1.2; margin:0 0 .3em; letter-spacing:-.01em;}
+  h2{font-size:1.42rem; margin:2.6em 0 .6em; padding-bottom:.22em; border-bottom:2px solid var(--rule);
+     letter-spacing:-.01em;}
+  h3{font-size:1.13rem; margin:1.9em 0 .5em; color:#111;}
+  h4{font-size:1.0rem; margin:1.4em 0 .35em; color:#222; text-transform:uppercase; letter-spacing:.04em; font-size:.86rem; color:var(--mute);}
+  p{margin:.7em 0;}
+  a{color:var(--llm); text-decoration:none;} a:hover{text-decoration:underline;}
+  .subtitle{font-size:1.16rem; color:var(--mute); font-weight:400; margin:.2em 0 1.1em; line-height:1.45;}
+  .byline{font-size:.9rem; color:var(--faint); border-top:1px solid var(--rule);
+          border-bottom:1px solid var(--rule); padding:12px 0; margin:1.4em 0 0;}
+  .byline b{color:var(--mute); font-weight:600;}
+  sup.cite{color:var(--llm); font-weight:600; font-size:.72em; padding:0 1px; cursor:default;}
+  .abstract{background:#fafafa; border:1px solid var(--rule); border-left:3px solid var(--llm);
+            padding:18px 24px; margin:1.6em 0; font-size:.97rem;}
+  .abstract h4{margin-top:0;}
+  .toc{background:#fafafa; border:1px solid var(--rule); padding:16px 26px; margin:1.8em 0; font-size:.93rem; columns:2; column-gap:36px;}
+  .toc a{color:var(--ink);} .toc div{margin:.22em 0; break-inside:avoid;}
+  .toc .num{color:var(--faint); font-variant-numeric:tabular-nums; margin-right:.5em;}
+  figure{margin:1.8em 0; text-align:center;}
+  figure img{max-width:100%; border:1px solid var(--rule); border-radius:4px;}
+  figcaption{font-size:.86rem; color:var(--mute); margin-top:.7em; text-align:left; line-height:1.5;}
+  figcaption b{color:var(--ink);}
+  .eq{background:#fcfcfb; border:1px solid var(--rule); border-radius:5px; padding:14px 20px;
+      margin:1.1em 0; font-family:"Georgia",serif; font-size:1.02rem; overflow-x:auto; text-align:center;}
+  .eq .lbl{float:right; color:var(--faint); font-family:sans-serif; font-size:.85rem;}
+  var{font-style:italic; font-family:"Georgia",serif;}
+  .sub{vertical-align:-.3em; font-size:.75em;} .sup{vertical-align:.5em; font-size:.75em;}
+  blockquote{margin:1.2em 0; padding:2px 0 2px 20px; border-left:3px solid var(--rule); color:var(--mute);}
+  table{border-collapse:collapse; width:100%; margin:1.4em 0; font-size:.88rem;}
+  th,td{border:1px solid var(--rule); padding:8px 11px; text-align:left; vertical-align:top;}
+  th{background:#f4f4f2; font-weight:600;}
+  td code{font-size:.86em;}
+  code{background:var(--code); padding:1px 5px; border-radius:3px; font-size:.86em;
+       font-family:"SF Mono",Menlo,Consolas,monospace;}
+  .quran{background:var(--quranbg); border:1px solid #e6dcc4; border-left:3px solid var(--quran);
+         border-radius:4px; padding:16px 22px; margin:1.5em 0;}
+  .quran .tag{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--quran);
+              font-weight:700; margin-bottom:.4em;}
+  .quran .ar{font-size:1.35rem; line-height:1.9; direction:rtl; text-align:right; color:#3a2e18;
+             font-family:"Traditional Arabic","Scheherazade New","Amiri",serif; margin:.2em 0;}
+  .quran .tr{font-style:italic; color:#4a3c22; margin:.3em 0;}
+  .quran .map{font-size:.92rem; color:var(--ink); margin-top:.6em; padding-top:.6em; border-top:1px dotted #d8ccae;}
+  .quran .map b{color:var(--quran);}
+  .quran .grounding{font-size:.74rem; color:var(--faint); margin-top:.5em; font-family:monospace;}
+  .lit{background:var(--litbg); border:1px solid #d9e2ea; border-radius:4px; padding:6px 14px; margin:1.1em 0; font-size:.9rem;}
+  .callout{border:1px solid var(--rule); border-radius:5px; padding:14px 20px; margin:1.4em 0; background:#fcfcfc;}
+  .callout.key{border-left:3px solid var(--oracle); background:#f2f9f8;}
+  .callout.warn{border-left:3px solid var(--alarm); background:#fbf3f2;}
+  .callout .h{font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:var(--mute); margin-bottom:.3em;}
+  .metrics{display:flex; gap:14px; flex-wrap:wrap; margin:1.4em 0;}
+  .metric{flex:1; min-width:120px; border:1px solid var(--rule); border-radius:6px; padding:12px 14px; text-align:center; background:#fafafa;}
+  .metric .v{font-size:1.7rem; font-weight:700; color:var(--oracle); line-height:1;}
+  .metric .l{font-size:.78rem; color:var(--mute); margin-top:.4em;}
+  .faculty-badge{display:inline-block; font-size:.7rem; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.04em; padding:2px 8px; border-radius:10px; color:#fff; vertical-align:middle;}
+  ol.refs{font-size:.85rem; color:var(--mute); line-height:1.5; padding-left:2.2em;}
+  ol.refs li{margin:.45em 0;} ol.refs li b{color:var(--ink); font-weight:600;}
+  hr.sec{border:none; border-top:1px solid var(--rule); margin:2.4em 0;}
+  .foot{font-size:.82rem; color:var(--faint); margin-top:3em; border-top:1px solid var(--rule); padding-top:16px;}
+  @media print{ body{background:#fff;} .page{box-shadow:none; max-width:none; padding:0;} .toc{columns:2;} }
+  @media (max-width:720px){ .page{padding:32px 22px;} .toc{columns:1;} h1{font-size:1.6rem;} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>A Cognitive Substrate for Coding Agents</h1>
+<div class="subtitle"><b>Theory &rarr; Evidence &rarr; Build&#8209;Map edition.</b> Why a frozen language model structurally lacks memory, learning, imagination, self&#8209;correction, and impact&#8209;awareness &mdash; plus six metacognitive deficits the field's evidence names &mdash; and how to re&#8209;wrap its input&rarr;process&rarr;output loop to supply them, with two runnable prototypes as evidence.</div>
+
+<div class="byline">
+<b>A first&#8209;principles design study, grounded in field evidence.</b> The five faculties are argued from the shape of a frozen model and grounded in 32 primary sources (memory&#8209;augmentation, continual&#8209;learning, self&#8209;correction, world&#8209;model, and program&#8209;analysis literatures). This edition adds an <b>evidence layer</b> &mdash; twelve load&#8209;bearing pain&#8209;point statistics independently re&#8209;grounded from primary sources and graded <em>confirmed / vendor&#8209;reported / unverifiable</em> &mdash; <b>six mechanisms</b> (routing, assumption gate, decomposition, goal&#8209;anchoring, anti&#8209;over&#8209;engineering, inline verification), a <b>build&#8209;opportunity map</b> against the real 2026 Claude&#8209;Code stack, and a <b>second prototype</b> (a complexity&#8209;aware router + assumption gate, evaluated live on real models). An epistemological and ethical lens drawn from Qur'anic sources runs throughout, used as design framing, never as technical authority. &nbsp;|&nbsp; Companion artifacts: evidence map, ecosystem map, gap&#8209;map, reference list, Qur'anic&#8209;lens table, and two runnable packages (<code>impact&#8209;oracle</code>, <code>router&#8209;gate</code>).
+</div>
+
+<div class="abstract">
+<h4>Abstract</h4>
+<p>A large language model at inference time is, mathematically, a fixed function <var>y</var>&nbsp;=&nbsp;<var>f</var><span class="sub">&theta;</span>(<var>x</var>) with frozen parameters&nbsp;<var>&theta;</var> and a bounded input window. From this single fact, five apparent &ldquo;cognitive&rdquo; deficits of a coding agent follow as <em>structural consequences</em>, not incidental weaknesses: it cannot <b>remember</b> across sessions, cannot <b>learn</b> from outcomes, cannot <b>imagine</b> the consequences of an action before taking it, cannot reliably <b>correct itself</b>, and does not <b>know what already exists in a codebase or what an edit will affect</b>. We show that neither better prompting nor additional tools (skills, MCP servers) remove these deficits, because they leave <var>f</var><span class="sub">&theta;</span> and the open&#8209;loop pipeline intact. We then specify a <b>cognitive substrate</b>: an external architecture that keeps the LLM frozen but re&#8209;wraps its input&rarr;process&rarr;output loop into a closed, stateful cycle over persistent stores &mdash; an episodic/semantic memory, an online&#8209;updatable learning layer, a consequence simulator, a metacognitive verification gate, and a persistent structural model of the codebase &mdash; all under an explicit stewardship boundary. For each faculty we identify precisely what the existing literature solves and what residual gap remains for a coding agent. To turn the weakest&#8209;evidenced claim into something testable, we build and evaluate the <b>impact&#8209;awareness</b> faculty as a runnable prototype: a Codebase World&#8209;Model that parses a repository into a persistent dependency graph, and an Impact Oracle that predicts the <em>blast radius</em> of a proposed edit. Against mutation&#8209;derived ground truth, the oracle is the only method that never misses an affected file (recall&nbsp;=&nbsp;1.00 across five tested edits), where a text&#8209;search baseline misses transitive dependents and an edited&#8209;file&#8209;only baseline misses 47% of impact. Throughout, a Qur'anic epistemic lens supplies the design's vocabulary of obligation &mdash; know what exists before acting (2:31&ndash;32), verify before you act (49:6), pursue not that of which you have no knowledge (17:36), and hold what you can damage as a trust (33:72).</p>
+</div>
+
+<div class="toc">
+<div><span class="num">1</span><a href="#intro">The problem, from the ground</a></div>
+<div><span class="num">2</span><a href="#root">The root cause, formally</a></div>
+<div><span class="num">3</span><a href="#faculties">Five faculties and their gaps</a></div>
+<div><span class="num">4</span><a href="#evidence">The evidence: what the field measures</a></div>
+<div><span class="num">5</span><a href="#lens">The Qur'anic epistemic lens</a></div>
+<div><span class="num">6</span><a href="#mechanisms">Six mechanisms the frozen loop lacks</a></div>
+<div><span class="num">7</span><a href="#substrate">The cognitive substrate</a></div>
+<div><span class="num">8</span><a href="#prototype">Prototype&nbsp;I: world&#8209;model &amp; impact oracle</a></div>
+<div><span class="num">9</span><a href="#prototype2">Prototype&nbsp;II: router &amp; assumption gate</a></div>
+<div><span class="num">10</span><a href="#buildmap">The build&#8209;opportunity map</a></div>
+<div><span class="num">11</span><a href="#newvsold">Genuinely new vs. reinvented</a></div>
+<div><span class="num">12</span><a href="#limits">Limitations &amp; threats to validity</a></div>
+<div><span class="num">13</span><a href="#conclusion">Conclusion</a></div>
+<div><span class="num">&mdash;</span><a href="#refs">References</a>, <a href="#evidence-appendix">evidence</a> &amp; <a href="#appendix">lens</a> appendices</div>
+</div>
+
+<h2 id="intro">1&ensp;The problem, from the ground</h2>
+
+<p>Start with a scene any developer knows. You open an unfamiliar file. Before you change a line, a great deal happens that you barely notice: you recognize what the file <em>is</em> and how it connects to the rest of the system; you recall that you touched something similar last week and how that went; you silently simulate &mdash; &ldquo;if I rename this, the three callers over there break&rdquo; &mdash; and you feel the weight of the fact that this code runs in production. You are, in one glance, exercising <b>memory</b>, a <b>world&#8209;model</b>, <b>imagination</b>, and a sense of <b>consequence</b>. Only then do you type.</p>
+
+<p>A coding agent built on a language model does none of this by default, and the reason is not that the model is small or under&#8209;trained. It is that the model has the wrong <em>shape</em> for the job. This paper is an attempt to go to the root of that shape&nbsp;&mdash; to ask what the input to the model actually is, what happens to it, what comes out, and why that pipeline cannot, on its own, hold the faculties above &mdash; and then to design a supporting structure that can, without pretending to rebuild the model or to mimic a human brain. We do not claim to make a machine that thinks like a person. We claim something narrower and buildable: that the specific faculties a coding agent is missing can be given precise mathematical form, and supplied by an external architecture wrapped around a frozen model.</p>
+
+<p>Two commitments run through the paper. First, <b>honesty about what is known.</b> Some of these faculties &mdash; notably persistent memory with a real forgetting policy, and online learning without catastrophic forgetting &mdash; are open research problems; we say so, and we say exactly where the open edge is. Others &mdash; notably impact&#8209;awareness &mdash; turn out to be mostly an <em>engineering</em> gap: the tools have existed since the 1980s but were never wired into a language model's loop. We prototype that one, because it is the one where a single session can produce real evidence rather than a promise. Second, a <b>lens</b>. This project was asked to think with the Qur'an as a source of epistemology and ethics &mdash; not as authority for any engineering claim, but as a disciplined vocabulary for naming what an agent that acts on real systems <em>owes</em>: to know before it acts, to verify what it is told, to treat a capability it can misuse as a trust. That vocabulary turns out to map cleanly onto architectural decisions, and we let it guide the design while keeping every technical claim standing on its own merits.</p>
+
+<h2 id="root">2&ensp;The root cause, formally</h2>
+
+<p>It is tempting to describe an agent's memory or learning problems as things that will improve with scale or a cleverer prompt. That framing is wrong, and being precise about why is the whole foundation of the design. Consider what one turn of an LLM&#8209;based agent actually computes. Let the input be a token sequence <var>x</var> drawn from a context window of bounded size <var>W</var>. The model applies fixed parameters <var>&theta;</var> and produces a distribution over the next token; sampling and repeating yields the output <var>y</var>. Abstractly:</p>
+
+<div class="eq"><span class="lbl">(1)</span>
+<var>y</var> = <var>f</var><span class="sub">&theta;</span>(<var>x</var>),&emsp; <var>x</var> &isin; &#120143;<span class="sup">&le;W</span>,&emsp; &theta; fixed for all inferences.
+</div>
+
+<p>Three properties of Equation&nbsp;(1) are the source of everything that follows. They are not bugs; they are what a deployed transformer <em>is</em>.</p>
+
+<p><b>(P1) Statelessness.</b> The function has no argument that carries information from one call to the next except <var>x</var> itself. Whatever the agent &ldquo;knew&rdquo; during turn <var>t</var> is gone at turn <var>t</var>+1 unless it was serialized back into the token string. There is no hidden variable <var>s</var><span class="sub">t</span> that persists; formally, the map is memoryless: <var>y</var><span class="sub">t</span> depends on <var>x</var><span class="sub">t</span> alone, not on the history (<var>x</var><span class="sub">1</span>,&hellip;,<var>x</var><span class="sub">t&minus;1</span>).</p>
+
+<p><b>(P2) Frozen parameters.</b> <var>&theta;</var> does not change as a function of what happens at inference. There is no term in Equation&nbsp;(1) of the form <var>&theta;</var> &larr; <var>&theta;</var> &minus; <var>&eta;</var>&nabla;<var>L</var>: the gradient step that constitutes <em>learning</em> happens only in an offline training loop the deployed agent never enters. An outcome in session <var>N</var> &mdash; a test that failed, an edit the developer reverted &mdash; therefore has no path by which it can alter behavior in session <var>N</var>+1.</p>
+
+<p><b>(P3) Bounded, undifferentiated context.</b> <var>x</var> must fit in <var>W</var> tokens, and every fact competes for the same space on equal terms. There is no separate, larger store the model can address; &ldquo;give it more context&rdquo; is bounded by <var>W</var> and, even within <var>W</var>, provides no structure, no provenance, and no persistence.</p>
+
+<p>Now watch the five faculties fall out of P1&ndash;P3 by deduction, not observation:</p>
+
+<table>
+<thead><tr><th style="width:20%">Faculty</th><th style="width:44%">Why it is <em>structurally</em> absent</th><th>Follows from</th></tr></thead>
+<tbody>
+<tr><td><b>Memory</b> (across sessions)</td><td>By P1, nothing survives a turn but the token string; by P3, the string is bounded and lost at session end. There is no addressable store that outlives <var>x</var>.</td><td>P1, P3</td></tr>
+<tr><td><b>Learning</b> (from outcomes)</td><td>By P2, no inference&#8209;time event writes to <var>&theta;</var>. In&#8209;context &ldquo;learning&rdquo; is real optimization<sup class="cite">14,15</sup> but lives only inside the current <var>x</var> and vanishes with it (P1) &mdash; a <em>simulation</em> of learning, not learning.</td><td>P2, P1</td></tr>
+<tr><td><b>Imagination</b> (simulate before acting)</td><td>Equation&nbsp;(1) maps tokens to tokens. There is no separate forward model of &ldquo;what happens to the world (or codebase) if I take action <var>a</var>&rdquo; distinct from emitting more tokens; the model cannot roll out and score a hypothetical it does not also have to narrate.</td><td>P1</td></tr>
+<tr><td><b>Self&#8209;correction</b></td><td>Any &ldquo;check&rdquo; the model runs is another evaluation of the same <var>f</var><span class="sub">&theta;</span> with the same blind spots. There is no independent verifier inside Equation&nbsp;(1); the literature confirms intrinsic self&#8209;correction is unreliable without an external signal.<sup class="cite">21</sup></td><td>P2</td></tr>
+<tr><td><b>Impact&#8209;awareness</b></td><td>By P3, the model sees only the tokens in <var>x</var>. A million&#8209;line repository does not fit; therefore it cannot know, unaided, what elsewhere depends on the symbol it is about to change.</td><td>P3</td></tr>
+</tbody>
+</table>
+
+<div class="callout warn">
+<div class="h">Why prompting and tools do not close the gap</div>
+<p>A better prompt changes <var>x</var>. More tools (skills, MCP servers, function calls) let the agent fetch new <var>x</var> or emit richer <var>y</var>. Both operate <em>inside</em> Equation&nbsp;(1) and leave P1&ndash;P3 untouched: the composed system is still a stateless map with frozen weights and a bounded window. A tool call retrieves a document into context, but nothing decides what was worth keeping, consolidates it, or updates the agent's priors for next time. The deficits are properties of the <em>loop shape</em> &mdash; open, memoryless, one&#8209;directional &mdash; not of the model's knowledge. To remove them you must change the shape of the loop, which is precisely what an external substrate can do while <var>&theta;</var> stays frozen.</p>
+</div>
+
+<p>This reframing is the paper's pivot. If the deficits came from the loop shape, then the remedy is to <em>re&#8209;wrap the loop</em>: keep <var>f</var><span class="sub">&theta;</span> exactly as it is, and surround it with state and update so that the composite system is no longer memoryless, no longer open, and no longer blind beyond&nbsp;<var>W</var>. Figure&nbsp;1 states the whole thesis in one picture.</p>
+
+<figure>
+<img src="{{artifact:art_e2776474-3d1e-48c6-9490-55d4d927a301}}" alt="Two-panel schematic: (a) the frozen LLM today as a stateless input-process-output pipe with a broken write-back loop; (b) the same LLM re-wrapped as a closed, stateful cognitive cycle."/>
+<figcaption><b>Figure&nbsp;1. Re&#8209;wrapping the input&rarr;process&rarr;output loop.</b> <b>(a)</b> Today: input enters a bounded window, the frozen model maps it to output, and at session end all state is discarded &mdash; there is no path from an outcome back to weights or memory. <b>(b)</b> The proposed substrate keeps the identical frozen model (same blue block) but closes the loop into a cycle &mdash; perceive (read memory + world&#8209;model), reason, imagine/reflect, verify/act, then write back and consolidate &mdash; so state persists across turns and sessions. Nothing inside the model changes; the shape around it does.</figcaption>
+</figure>
+
+<h2 id="faculties">3&ensp;Five faculties and their gaps</h2>
+
+<p>Before designing anything, we asked what the research literature has already built for each faculty, and &mdash; precisely &mdash; what it does not yet give a coding agent. This section is deliberately not a survey for its own sake: for each faculty we state the structural lack (from &sect;2), the best existing approaches with citations, and the <b>residual gap</b> that the substrate must actually close. The discipline throughout is to separate what is <em>solved</em> from what is merely <em>named</em>. All 32 sources are listed in the <a href="#refs">references</a>; the full structured gap&#8209;map is a companion artifact.</p>
+
+<h3><span class="faculty-badge" style="background:var(--mem)">Memory</span>&ensp;Persistent experience across sessions</h3>
+<p><b>The lack.</b> A transformer's only state is its weights (frozen) and its context window (bounded, discarded at session end); every apparent memory is either baked into pretraining or re&#8209;supplied as tokens.</p>
+<p><b>What exists.</b> The idea of an explicit, addressable external memory read and written by a neural controller goes back to Memory Networks<sup class="cite">1</sup> and End&#8209;to&#8209;End Memory Networks<sup class="cite">2</sup>, and to the Neural Turing Machine<sup class="cite">3</sup> and Differentiable Neural Computer<sup class="cite">4</sup>, which showed a network can learn to read/write an external matrix via differentiable addressing. But those memories are trained <em>jointly</em> with the model and cannot be bolted onto an already&#8209;frozen LLM. The pattern that <em>can</em> attach to a frozen model is Retrieval&#8209;Augmented Generation<sup class="cite">5</sup>: pair the generator with a retriever over an external index. For deployed agents, MemGPT<sup class="cite">6</sup> adds an OS&#8209;style paging scheme (the model issues calls to move information between context and external storage), and Generative Agents<sup class="cite">7</sup> add a timestamped memory stream with periodic reflection that synthesizes higher&#8209;level memories.</p>
+<p><b>Residual gap.</b> None of these gives a coding agent a memory that is simultaneously (a) persistent across sessions without retraining, (b) structured enough to answer &ldquo;have I seen this bug/pattern before and what happened,&rdquo; (c) governed by a principled <em>forget/consolidate</em> policy rather than unbounded growth, and (d) tied to <em>verifiable</em> software artifacts (commits, test outcomes, diffs) rather than free&#8209;text the model wrote about itself. RAG is stateless per&#8209;query lookup; MemGPT and Generative Agents self&#8209;manage paging and reflection with <em>no ground&#8209;truth check</em> on what is kept or discarded. This is a genuine research gap, not just integration.</p>
+
+<h3><span class="faculty-badge" style="background:var(--learn)">Learning</span>&ensp;Durable update from outcomes</h3>
+<p><b>The lack.</b> By P2, nothing at inference writes to <var>&theta;</var>; in&#8209;session adaptation is prompt conditioning that vanishes when context clears.</p>
+<p><b>What exists.</b> Neuroscience offers the shape of an answer: Complementary Learning Systems theory<sup class="cite">8,9</sup> argues intelligence needs <em>two</em> systems &mdash; a fast, instance&#8209;based (hippocampal) learner and a slow, structured (neocortical) one &mdash; because a single fast learner catastrophically overwrites old knowledge. On the engineering side, Elastic Weight Consolidation<sup class="cite">10</sup> directly mitigates catastrophic forgetting by protecting parameters important to earlier tasks; LoRA<sup class="cite">13</sup> makes cheap, modular weight updates feasible by freezing the base and training small low&#8209;rank adapters; Test&#8209;Time Training<sup class="cite">11</sup> shows weights <em>can</em> be adapted per&#8209;input via a self&#8209;supervised loss; Fast Weights<sup class="cite">12</sup> give a genuine intermediate timescale of adaptation. And the theory of in&#8209;context learning<sup class="cite">14,15</sup> shows prompting can implement implicit gradient descent &mdash; real optimization, but session&#8209;local.</p>
+<p><b>Residual gap.</b> There is no accepted, low&#8209;cost, always&#8209;on pathway that takes a concrete outcome (a test failure, a human revert, a review comment) and durably changes future behavior &mdash; either by writing to persistent non&#8209;parametric state or by cheaply updating parameters &mdash; <em>without</em> a full offline retraining cycle and <em>without</em> catastrophic forgetting. Existing mechanisms are either real&#8209;but&#8209;deliberate retraining (EWC, LoRA, decoupled from the interaction loop) or real&#8209;but&#8209;ephemeral in&#8209;context simulation. Bridging them into a fast, safe, incremental loop is unsolved.</p>
+
+<h3><span class="faculty-badge" style="background:var(--imag)">Imagination</span>&ensp;Simulating consequences before acting</h3>
+<p><b>The lack.</b> Equation&nbsp;(1) is token&rarr;token; there is no forward model of action consequences and no rollout loop.</p>
+<p><b>What exists.</b> Model&#8209;based RL has built exactly this &mdash; for other domains. World Models<sup class="cite">22</sup> learn a compressed generative model of an environment and train a controller inside the &ldquo;dream.&rdquo; MuZero<sup class="cite">23</sup> plans with a learned latent model of only the quantities relevant to planning (reward, value, policy). Dreamer/DreamerV3<sup class="cite">24,25</sup> learn behaviors purely from imagined latent rollouts across many domains. The free&#8209;energy principle / active inference<sup class="cite">26</sup> gives the deepest theoretical grounding for why an agent must predict the sensory consequences of hypothetical actions and act to minimize expected surprise.</p>
+<p><b>Residual gap.</b> Every one of these targets a <em>continuous perception&#8209;action</em> domain (pixels, physics, game boards) with a learnable dynamics model and a dense reward. None target the <em>discrete, symbolic</em> domain of source code, where the dynamics to imagine are &ldquo;which call sites break,&rdquo; &ldquo;does this still type&#8209;check,&rdquo; &ldquo;do the tests still pass.&rdquo; A coding agent's imagination faculty needs a fast surrogate simulator over code&#8209;change consequences &mdash; static analysis, symbolic execution, or an approximate learned model of compile/test outcomes &mdash; and no general, reusable such component exists. This is an open build target.</p>
+
+<h3><span class="faculty-badge" style="background:var(--meta)">Self-correction</span>&ensp;An independent check on one's own output</h3>
+<p><b>The lack.</b> Any check the model runs re&#8209;evaluates the same frozen weights that produced the error.</p>
+<p><b>What exists.</b> Reflexion<sup class="cite">18</sup> has the agent verbally reflect on task feedback and store it to condition the next attempt; Self&#8209;Refine<sup class="cite">19</sup> alternates generator and critic roles on the same model; Self&#8209;Consistency<sup class="cite">20</sup> marginalizes over many sampled reasoning paths. Crucially, trained <em>verifiers</em><sup class="cite">16</sup> and process&#8209;level reward models<sup class="cite">17</sup> decouple checking from generating by using a separately trained model &mdash; escaping the same&#8209;weights blind spot.</p>
+<div class="callout">
+<div class="h">The honest negative result</div>
+<p>Huang et&nbsp;al.<sup class="cite">21</sup> evaluated <em>intrinsic</em> self&#8209;correction &mdash; no external feedback &mdash; and found it frequently makes correct answers <em>worse</em>. The approaches that <em>do</em> work (Reflexion, verifiers, process reward models) all inject something the frozen transformer lacks on its own: an external oracle (unit tests, human labels, a separately trained reward model). The lesson for our design is unambiguous: self&#8209;correction must be built as an <em>external verification signal</em>, not more self&#8209;prompting.</p>
+</div>
+<p><b>Residual gap.</b> For code specifically, no existing system supplies a cheap, general, always&#8209;available correctness oracle equivalent to a proof checker: tests exist for some repos but are incomplete, and an LLM&#8209;based verifier trained once cannot track an evolving, project&#8209;specific notion of correctness. Building that external, evolving check is the open problem &mdash; and it is <em>partly</em> addressable now, because two concrete external signals already exist for code: the type/compile system and the test suite. Our prototype leans on exactly those.</p>
+
+<h3><span class="faculty-badge" style="background:var(--oracle)">Impact-awareness</span>&ensp;Knowing what exists and what an edit affects</h3>
+<p><b>The lack.</b> By P3 the model sees only tokens in <var>x</var>; a whole repository does not fit, so it cannot know what depends on a symbol it changes.</p>
+<p><b>What exists &mdash; and this is the key observation.</b> The tools to compute exact structural impact are <em>mature and decades old</em>. The Program Dependence Graph<sup class="cite">30</sup> (1987) combines control and data dependence in one structure; interprocedural slicing<sup class="cite">28</sup> (1990) computes what code affects, or is affected by, a given point across function boundaries; program slicing was surveyed as a mature toolbox by 1994<sup class="cite">29</sup>. The Code Property Graph<sup class="cite">31</sup> merges AST, control&#8209;flow, and dependence into one queryable graph. On the learned side, &ldquo;Learning to Represent Programs with Graphs&rdquo;<sup class="cite">27</sup> and code2vec<sup class="cite">32</sup> let neural models see code <em>structure</em>, not just token sequences.</p>
+<div class="callout key">
+<div class="h">The gap here is engineering, not science</div>
+<p>None of these exact tools are wired into the loop of an LLM coding agent. Today's agents either re&#8209;read raw file text inside a bounded window or rely on the model's own <em>unverified guess</em> about what a change affects. The residual gap is a missing <em>bridge</em>: (a) maintain a live, incrementally&#8209;updated structural graph of the whole repository, (b) let the agent query &ldquo;what depends on this symbol&rdquo; as a fast, sound lookup <em>before</em> proposing an edit, and (c) feed the result back into context in a form the model reliably uses. Because this gap is engineering&#8209;shaped rather than an open research question, it is the faculty we can honestly <em>build and evaluate</em> in one sitting &mdash; which is exactly what &sect;8 does.</p>
+</div>
+
+<p>The pattern across all five is worth stating plainly. Memory, learning, and imagination for code are <b>genuine research gaps</b>; self&#8209;correction is <b>partly solved</b> given an external oracle; impact&#8209;awareness is <b>an integration gap over mature tools.</b> A credible substrate therefore does not claim to solve all five &mdash; it provides the <em>architecture</em> into which solved components drop in now and open ones drop in as they mature, and it demonstrates the faculty that is buildable today.</p>
+
+<h2 id="evidence">4&ensp;The evidence: what the field actually measures</h2>
+
+<p>The first edition of this paper argued the five deficits from first principles &mdash; from the
+<em>shape</em> of a frozen model, before looking at a single usage statistic. That argument stands on
+its own. But a design study that only reasons from first principles invites a fair question: <em>does the
+field's own evidence agree that these are the real problems?</em> This edition answers it. We took the
+load&#8209;bearing pain&#8209;point statistics that circulate in the 2026 discourse and
+<b>independently re&#8209;grounded each one from its primary source</b> &mdash; because the project's
+governing discipline is that a probabilistically&#8209;generated number, repeated often enough to sound
+settled, is still an assumption until you have seen where it comes from.</p>
+
+<div class="callout warn">
+<p><b>How we grade evidence &mdash; and why it matters here.</b> Each claim below carries a status:
+<b>confirmed</b> (traceable to an independent primary source &mdash; a peer&#8209;reviewed paper, the
+original survey, an official announcement), <b>vendor&#8209;reported</b> (real and sourced, but only to a
+company with a commercial stake in the finding, not independently reproduced), or <b>unverifiable</b>
+(we could not corroborate it in primary form). This is the paper's own thesis applied to itself: we do not
+ask you to trust a figure because it is widely repeated. The re&#8209;grounding <em>changed</em> what we
+are willing to assert &mdash; and caught three numbers that turned out to be misattributed.</p>
+</div>
+
+<h3>4.1&ensp;What the strongest evidence confirms</h3>
+
+<p>Five findings survived re&#8209;grounding to an independent primary source, and they are enough to
+carry the argument. The most important is not a vendor's dashboard metric but a
+<b>randomized controlled trial</b>. METR studied sixteen experienced open&#8209;source developers across
+246 tasks in mature repositories they knew well; the developers <em>forecast</em> a 24&#8239;% speedup,
+<em>believed afterward</em> they had worked about 20&#8239;% faster, and were in fact
+<b>19&#8239;% slower</b> with early&#8209;2025 AI tools <span class="lit">[C1&ensp;confirmed &middot;
+arXiv:2507.09089]</span>. That single result is the empirical heart of this paper: the gap between the
+<em>felt</em> productivity and the <em>measured</em> productivity is exactly the gap a system opens when it
+has no calibrated sense of its own uncertainty (mechanism&nbsp;M2 below), and it is why &ldquo;the model
+felt confident&rdquo; is not evidence of anything.</p>
+
+<p>The trend evidence is equally well&#8209;sourced. Stack Overflow's 2025 survey of more than 49,000
+developers records trust in AI accuracy <b>falling from 40&#8239;% to 29&#8239;%</b> even as adoption rose
+to 84&#8239;%, with the top&#8209;ranked frustration &mdash; cited by <b>66&#8239;%</b> &mdash; being code
+that is <em>&ldquo;almost right, but not quite&rdquo;</em>, which the survey ties directly to the
+second&#8209;ranked frustration, that debugging AI code is more time&#8209;consuming (45&#8239;%)
+<span class="lit">[C2&ensp;confirmed]</span>. Google's DORA program (~5,000 professionals) frames AI as an
+<b>&ldquo;amplifier&rdquo;</b> &mdash; magnifying the strengths of strong teams and the dysfunctions of
+weak ones &mdash; and still finds it <em>increasing delivery instability</em> at near&#8209;universal
+adoption <span class="lit">[C5&ensp;confirmed]</span>. On the trustworthiness of the benchmarks
+themselves, OpenAI <b>retired SWE&#8209;bench Verified</b> in 2026 after auditing found at least
+<b>59.4&#8239;% of the hard problems it examined had flawed test cases</b> or training&#8209;data
+contamination <span class="lit">[C6&ensp;confirmed]</span> &mdash; a caution that applies squarely to our
+own prototype's numbers, and one reason we report them the way we do. And the reason an agent
+<em>cannot</em> be its own sole judge is not rhetorical: Panickssery&nbsp;et&nbsp;al. (NeurIPS&nbsp;2024,
+Oral) show LLM evaluators <b>recognize and systematically favor their own generations</b>
+<span class="lit">[C12&ensp;confirmed &middot; arXiv:2404.13076]</span> &mdash; the empirical foundation for
+insisting that verification be <em>external</em>.</p>
+
+<div class="callout key">
+<p><b>These five are enough.</b> A randomized trial (miscalibration), a 49,000&#8209;person survey
+(&ldquo;almost right&rdquo;), a 5,000&#8209;person study (instability), a benchmark retirement (don't trust
+the metrics), and a peer&#8209;reviewed result (an LLM favors its own output). Each maps onto a specific
+deficit this paper's architecture supplies &mdash; and none depends on a vendor's self&#8209;report.</p>
+</div>
+
+<h3>4.2&ensp;What is real but vendor&#8209;reported &mdash; and what did not survive</h3>
+
+<p>Several widely&#8209;cited figures are <em>real and sourced</em> but trace only to a company selling a
+remedy for the problem the figure describes; we use them as corroboration, not proof, and we say so.
+Veracode reports <b>45&#8239;% of AI&#8209;generated samples introduce an OWASP&#8209;Top&#8209;10
+vulnerability</b> <span class="lit">[C3&ensp;vendor]</span>; Faros' telemetry across 22,000 developers
+reports median PR&#8209;review time up <b>441.5&#8239;%</b> and <b>31.3&#8239;% of PRs merged with no
+review</b> <span class="lit">[C7&ensp;vendor]</span>; Sonar reports the sharpest single number in the
+whole discourse &mdash; <b>96&#8239;% of developers do not fully trust AI code, yet only 48&#8239;% always
+verify it</b>, a 48&#8209;point <em>&ldquo;verification gap&rdquo;</em>
+<span class="lit">[C9&ensp;vendor]</span>. These are consistent with the confirmed evidence and with each
+other, which is why we cite them &mdash; but a reader should weigh them as vendor telemetry, not as
+independent science.</p>
+
+<p>The discipline earned its keep on three claims that <b>did not survive</b>, and which this paper
+therefore <em>does not repeat as fact</em>:</p>
+<ul>
+<li>The widely&#8209;quoted <b>&ldquo;2.74&times; more vulnerabilities&rdquo;</b> figure could not be
+traced to Veracode's own report; it appears to be conflated with a separate study. Only the 45&#8239;%
+figure is genuinely Veracode's. We drop the multiplier.</li>
+<li>The claim that <b>&ldquo;Anthropic's 400,000&#8209;session study found 17&#8239;% lower
+comprehension&rdquo;</b> merges two different studies &mdash; the session study contains no comprehension
+finding. We do not use the number.</li>
+<li>GitClear's code&#8209;duplication rise is quoted as both <b>4&times; and 8&times;</b> in the vendor's
+own title versus body, and JetBrains' &ldquo;77&#8239;% correct conventions every session&rdquo; could not
+be located in the primary report at all. We cite the direction (duplication is rising) without the disputed
+multiplier.</li>
+</ul>
+
+<p>That a re&#8209;grounding pass changed our own claims is the point, not an embarrassment. It is the
+same move the architecture in&nbsp;&sect;7 makes structural: <em>a stored fact is provisional until an
+independent check confirms it</em>. A full source&#8209;by&#8209;source table &mdash; every claim, its
+primary citation, and its status &mdash; is in the <b>Evidence appendix</b>. The mechanisms that follow are
+each motivated by a <em>confirmed</em> finding wherever one exists, and lean on vendor evidence only where
+that is the best the field currently offers.</p>
+
+<h2 id="lens">5&ensp;The Qur'anic epistemic lens</h2>
+
+<div class="callout warn">
+<div class="h">How this lens is used &mdash; and how it is not</div>
+<p>The Qur'an is used here as a <b>framing lens and ethics source</b>, never as technical authority for an engineering claim. No verse is cited to prove that an algorithm works or that a data structure is correct &mdash; those claims stand on their engineering merits alone (&sect;3, &sect;8). What the lens supplies is threefold: (1) a precise <em>vocabulary of obligation</em> for what an agent that acts on real systems owes &mdash; to truthfulness, to verification, to stewardship; (2) a <em>hierarchy of knowledge</em> (&lsquo;ilm &rarr; fahm &rarr; &#7717;ikma: knowledge &rarr; understanding &rarr; wisdom) that motivates a <em>layered</em> memory architecture rather than a flat vector store; and (3) <em>ethical constraints on autonomy</em> that translate into concrete safeguards. Where a mapping is marked <em>load&#8209;bearing</em>, the concept motivates a specific design decision (e.g. a <em>mandatory</em>, not optional, verification gate); where marked <em>metaphor</em>, it is illustrative. Canonical text below is presented directly and attributed; it is not paraphrased. Arabic and translations were retrieved from quran.ai; the full 14&#8209;row mapping table is in the <a href="#appendix">appendix</a>.</p>
+</div>
+
+<p>The lens earns its place because the deepest failure modes of an autonomous coding agent are not computational but <em>epistemic and ethical</em>: acting without knowing, trusting a report without checking it, and treating a granted capability as license. The Qur'anic vocabulary names these with unusual precision, and three verses in particular map so directly onto architectural decisions that they shaped the design rather than decorating it.</p>
+
+<div class="quran">
+<div class="tag">17:36 &mdash; l&#257; taqfu &middot; the root of impact&#8209;awareness &nbsp;<span style="color:#0d5c56">[load&#8209;bearing]</span></div>
+<div class="ar">وَلَا تَقْفُ مَا لَيْسَ لَكَ بِهِ عِلْمٌ ۚ إِنَّ السَّمْعَ وَالْبَصَرَ وَالْفُؤَادَ كُلُّ أُولَٰئِكَ كَانَ عَنْهُ مَسْئُولًا</div>
+<div class="tr">&ldquo;Do not follow blindly what you do not know to be true: ears, eyes, and heart, you will be questioned about all these.&rdquo;</div>
+<div class="map"><b>&rarr; Design principle.</b> Before any mutation (write, delete, refactor), a pre&#8209;action gate must establish what the agent actually knows: which entities the change affects, whether the relevant files/tests/dependents were actually read, and whether the predicted outcome rests on evidence rather than a pattern&#8209;matched guess. Actions taken without verified knowledge are <em>blocked</em>, not merely flagged. The verse's own structure &mdash; &ldquo;ears, eyes, heart&hellip; questioned about all these&rdquo; &mdash; maps to an <b>audit trail</b>: every channel the agent used (what it read, inferred, assumed) is logged so the decision can be reconstructed and questioned. This is precisely the impact oracle of &sect;8.</div>
+<div class="grounding">Grounded with quran.ai: fetch_translation(17:36, en-abdel-haleem); fetch_tafsir(17:36, en-ibn-kathir)</div>
+</div>
+
+<div class="quran">
+<div class="tag">49:6 &mdash; tabayyun &middot; the verification gate &nbsp;<span style="color:#0d5c56">[load&#8209;bearing]</span></div>
+<div class="ar">يَا أَيُّهَا الَّذِينَ آمَنُوا إِن جَاءَكُمْ فَاسِقٌ بِنَبَإٍ فَتَبَيَّنُوا أَن تُصِيبُوا قَوْمًا بِجَهَالَةٍ فَتُصْبِحُوا عَلَىٰ مَا فَعَلْتُمْ نَادِمِينَ</div>
+<div class="tr">&ldquo;Believers, if a troublemaker brings you news, check it first, in case you wrong others unwittingly and later regret what you have done.&rdquo;</div>
+<div class="map"><b>&rarr; Design principle.</b> The architecture places a verification step between <em>receiving information</em> (from context, tool output, or its own prior reasoning) and <em>acting on it</em>. The operative term <em>tabayyun</em> demands active investigation, not passive acceptance: before applying a fix based on an error report or its own diagnosis, the agent re&#8209;reads the current file state, confirms the issue still exists, and checks the fix introduces no new breakage detectable by types or tests. The gate is <em>architectural and mandatory</em> &mdash; the verse's command is categorical, not conditional on the reporter's trustworthiness &mdash; which is exactly the design lesson the self&#8209;correction literature reached empirically<sup class="cite">21</sup>: a real external check, not more self&#8209;prompting.</div>
+<div class="grounding">Grounded with quran.ai: fetch_translation(49:6, en-abdel-haleem); fetch_tafsir(49:6, en-ibn-kathir)</div>
+</div>
+
+<div class="quran">
+<div class="tag">2:31&ndash;32 &mdash; ta&lsquo;l&#299;m al&#8209;asm&#257;' &middot; the world&#8209;model &nbsp;<span style="color:#0d5c56">[load&#8209;bearing]</span></div>
+<div class="ar">وَعَلَّمَ آدَمَ الْأَسْمَاءَ كُلَّهَا ... قَالُوا سُبْحَانَكَ لَا عِلْمَ لَنَا إِلَّا مَا عَلَّمْتَنَا</div>
+<div class="tr">&ldquo;He taught Adam all the names [of things]&hellip; They said, &lsquo;May You be glorified! We have knowledge only of what You have taught us.&rsquo;&rdquo;</div>
+<div class="map"><b>&rarr; Design principle.</b> Knowledge begins with <em>naming</em> &mdash; identifying entities and their relations. The agent must hold a structured map of what exists in the codebase (files, functions, classes, dependencies), not a flat listing: knowing that <var>A</var> calls <var>B</var>, that module <var>X</var> depends on <var>Y</var>, that test <var>T</var> covers class <var>C</var>. The angels' admission &mdash; &ldquo;we have knowledge only of what You have taught us&rdquo; &mdash; is a startlingly exact description of the LLM's own situation under P3: it knows only what is in its window. The external world&#8209;model supplies the &ldquo;names&rdquo; of entities that exceed context capacity.</div>
+<div class="grounding">Grounded with quran.ai: fetch_translation(2:31-32, en-abdel-haleem)</div>
+</div>
+
+<div class="quran">
+<div class="tag">33:72 &mdash; al&#8209;am&#257;na &middot; stewardship &amp; bounded autonomy &nbsp;<span style="color:#0d5c56">[load&#8209;bearing]</span></div>
+<div class="ar">إِنَّا عَرَضْنَا الْأَمَانَةَ عَلَى السَّمَاوَاتِ وَالْأَرْضِ وَالْجِبَالِ فَأَبَيْنَ أَن يَحْمِلْنَهَا ... وَحَمَلَهَا الْإِنسَانُ ۖ إِنَّهُ كَانَ ظَلُومًا جَهُولًا</div>
+<div class="tr">&ldquo;We offered the Trust to the heavens, the earth, and the mountains, yet they refused to undertake it and were afraid of it; mankind undertook it &mdash; they have always been inept and foolish.&rdquo;</div>
+<div class="map"><b>&rarr; Design principle.</b> An agent that can modify a codebase bears an <em>am&#257;na</em> &mdash; accepted responsibility for something it can damage. The verse's structure is the design: the heavens declined the trust, recognizing its weight; the human bore it and is called <em>&#7827;al&#363;man jah&#363;l&#257;</em> (given to wrong and ignorance). So the architecture (a) operates under <b>least privilege</b> &mdash; a granted capability is never blanket permission; and (b) <em>assumes the agent will err</em> and builds in <b>reversibility</b> (sandboxing, staged commits, rollback), <b>audit</b>, and <b>scope bounds</b> as structural safeguards. The trust is not &ldquo;the agent is trustworthy&rdquo;; it is &ldquo;the agent has accepted accountability for a domain it can harm, and the architecture must respect that weight.&rdquo; This is the governance boundary enclosing the entire system in Figure&nbsp;2.</div>
+<div class="grounding">Grounded with quran.ai: fetch_translation(33:72, en-abdel-haleem); fetch_tafsir(33:72, en-ibn-kathir)</div>
+</div>
+
+<p>Four further anchors complete the mapping (full text in the <a href="#appendix">appendix</a>). <b>20:114</b> &mdash; <em>&ldquo;rabbi zidn&#299; &lsquo;ilm&#257;,&rdquo;</em> &ldquo;My Lord, increase me in knowledge&rdquo; &mdash; frames knowledge as perpetually incomplete and growing, motivating the continual&#8209;learning store that accumulates across sessions. <b>96:1&ndash;5</b> &mdash; <em>iqra'</em> and the teaching &ldquo;by the pen&rdquo; (<em>al&#8209;qalam</em>) &mdash; is the principle of <b>externalized memory</b>: the pen turns ephemeral thought into durable record, exactly the write&#8209;back mechanism a bounded context window requires. <b>4:82</b> and <b>47:24</b> &mdash; <em>tadabbur</em>, deep reflection, whose root <em>d&#8209;b&#8209;r</em> concerns &ldquo;what comes after&rdquo; / consequences &mdash; ground the metacognitive controller as a structured <em>trace&#8209;forward</em> through consequences (&ldquo;if I apply this, what breaks?&rdquo;), not a vague confidence score. And the classical epistemic ladder <b>&lsquo;ilm &rarr; fahm &rarr; &#7717;ikma</b> motivates the three&#8209;layer memory of &sect;7: raw logs, consolidated patterns, decision support &mdash; dumping everything into one flat store collapses the hierarchy and loses the distinction between fact and actionable understanding.</p>
+
+<p>The remarkable thing is not that these mappings are poetic; it is that they are <em>operational</em>. &ldquo;Verify before acting&rdquo; is not a sentiment here &mdash; it is a mandatory gate in the action pipeline. &ldquo;Know the names of things&rdquo; is not a metaphor &mdash; it is a dependency graph. The lens told us <em>which</em> safeguards are non&#8209;negotiable; the engineering told us how to build them.</p>
+
+<h2 id="mechanisms">6&ensp;Six mechanisms the frozen loop also lacks</h2>
+
+<p>The five faculties of the first edition answer &ldquo;what cognitive capabilities does a stateless model
+structurally lack?&rdquo; This edition adds a second family of deficits that the field's evidence forced
+into view &mdash; not <em>cognitive</em> faculties but <b>metacognitive and resource&#8209;allocation</b>
+ones: knowing how much effort a task deserves, knowing what you have not been told, knowing when to split
+work, when you have drifted, when you have over&#8209;built, and when to check. A frozen map
+<span class="eq">y = f<sub>&theta;</sub>(x)</span> lacks these for the same reason it lacks the first five:
+each requires <em>state</em> the model does not carry and a <em>decision about the computation itself</em>
+that a single forward pass cannot make. We formalize six.</p>
+
+<div class="callout">
+<p><b>A note on honesty before we start.</b> Two of these six are <em>already largely solved</em> by
+existing tooling, and we say which (M1, M3). Naming a mechanism is not claiming to have invented it. The
+contribution of this section is the <em>unified account</em> &mdash; showing that all six fall out of the
+same frozen&#8209;loop shape, and that the genuinely unsolved ones (M2, M5) are unsolved for a structural
+reason, not for lack of effort.</p>
+</div>
+
+<h3>5.1&ensp;M1 &mdash; Complexity&#8209;aware routing</h3>
+<p><b>The deficit.</b> A frozen model has no notion of its own running cost. The same
+<span class="eq">f<sub>&theta;</sub></span> is invoked whether the task is <code>is_prime(n)</code> or a
+distributed rate&#8209;limiter, and a premium model billed per token spends the same premium rate on both.
+The project stated it plainly: <em>&ldquo;a simple prime&#8209;number finder &mdash; if you use [a premium
+model] it will not give you extra.&rdquo;</em> <b>Formally</b>, let a task <span class="eq">x</span> have
+an intrinsic complexity <span class="eq">c(x)</span> and let a tier ladder
+<span class="eq">T<sub>1</sub> &lt; &hellip; &lt; T<sub>k</sub></span> have costs
+<span class="eq">&kappa;<sub>1</sub> &lt; &hellip; &lt; &kappa;<sub>k</sub></span>. Routing selects the
+<em>cheapest</em> tier whose capability covers the task:</p>
+<div class="eq" style="text-align:center">
+route(x) = min&#123; T<sub>i</sub> : capable(T<sub>i</sub>, c(x)) &#125;,&emsp;then escalate T<sub>i</sub>
+&rarr; T<sub>i+1</sub> only if an <em>external</em> check on the output fails.
+</div>
+<p>The escalation clause is what makes this safe: the worst case is a cheap attempt plus a premium attempt,
+the common case is cheap alone, and the decision to spend more is driven by a <em>verified failure</em>,
+never by the model's self&#8209;assessment. <b>Ecosystem status: largely solved.</b> Model tiering and
+gateways (LiteLLM, OpenRouter, per&#8209;agent <code>model:</code> fields) already route by cost. What they
+do <em>not</em> give is a <em>transparent, per&#8209;task, auditable</em> complexity judgment the user can
+see and override before dispatch &mdash; that thin transparency layer is the only thing left to build, and
+our prototype (&sect;9) builds it. <span class="grounding">Anchor: 17:36, &ldquo;do not pursue what you
+have no knowledge of&rdquo; &mdash; spend capability in proportion to what the task actually requires.</span></p>
+
+<h3>5.2&ensp;M2 &mdash; The assumption / uncertainty gate <span class="tag">root failure</span></h3>
+<p><b>The deficit.</b> This is the failure the project named as central: <em>&ldquo;the biggest problem is
+Assumption. If it doesn't have enough context it will assume many things.&rdquo;</em> A model that computes
+<span class="eq">arg&#8202;max<sub>y</sub> P(y \mid x)</span> always returns <em>some</em> most&#8209;likely
+continuation, even when <span class="eq">x</span> under&#8209;determines the task &mdash; there is no term in
+the objective that fires when the input is <em>insufficient</em>. The model cannot distinguish &ldquo;I
+know this&rdquo; from &ldquo;this is merely the least&#8209;improbable guess.&rdquo; This is precisely what
+the METR trial measured from the outside: confident forecasts, slower reality
+<span class="lit">[C1&ensp;confirmed]</span>. <b>Formally</b>, define a specification&#8209;completeness
+functional <span class="eq">s(x) &isin; [0,1]</span> over the dimensions a task needs pinned down (inputs
+and outputs, target scope, success criteria). The gate interposes <em>before</em> execution:</p>
+<div class="eq" style="text-align:center">
+if s(x) &lt; &tau; : &nbsp;<b>halt</b> and emit the missing&#8209;information questions&emsp;|&emsp;else :
+proceed to route(x).
+</div>
+<p>The gate spends <em>zero</em> generation tokens on an under&#8209;specified request. Asking one question
+is cheaper than the &ldquo;almost right, but not quite&rdquo; rework loop that 66&#8239;% of developers
+report <span class="lit">[C2&ensp;confirmed]</span>. <b>Ecosystem status: residual gap &mdash; genuine
+whitespace.</b> Nothing in the 2026 stack supplies calibrated &ldquo;known&#8209;unknowns&rdquo;: the
+pain&#8209;point survey names it directly &mdash; <em>&ldquo;models rarely signal uncertainty or say
+&lsquo;I can't do this&rsquo;&rdquo;</em> &mdash; and spec&#8209;driven&#8209;development tools only help
+when the human already wrote a complete spec, which is the assumption the gate is meant to remove. Our
+prototype builds this too. <span class="grounding">Anchor: 49:6, <em>tabayyun</em> &mdash; &ldquo;if a
+source brings you news, verify it&rdquo;: the discipline of not acting on an unverified report is exactly a
+gate on insufficient input.</span></p>
+
+<h3>5.3&ensp;M3 &mdash; Task / session decomposition</h3>
+<p><b>The deficit.</b> A bounded, undifferentiated window (property&nbsp;P3) means a long session accretes
+unrelated sub&#8209;tasks that compete for attention and degrade retrieval. The project's remedy was exact:
+<em>&ldquo;instead of using multiple sessions for multiple independent tasks&hellip; we normally do full
+things in a single session.&rdquo;</em> <b>Formally</b>, given a task set with a dependency relation, the
+decomposition problem is to partition into contexts <span class="eq">C<sub>1</sub>, &hellip;,
+C<sub>m</sub></span> that minimize cross&#8209;context coupling while keeping each context's working set
+inside the window &mdash; independent components run in isolated sessions, dependent ones share state.
+<b>Ecosystem status: solved.</b> Subagents with isolated windows, the experimental Agent&#8209;Teams
+pattern, and git&#8209;worktree fan&#8209;out already implement this well; the only residue is that
+<em>choosing the partition boundary</em> is still a human heuristic. We flag it and move on &mdash; a paper
+that claimed to reinvent subagents would be exactly the over&#8209;selling this project forbids.
+<span class="grounding">Anchor: 20:114, &ldquo;do not hasten&hellip;&rdquo; &mdash; ordered, separated
+pursuit over one overloaded pass.</span></p>
+
+<h3>5.4&ensp;M4 &mdash; Goal&#8209;anchoring against drift</h3>
+<p><b>The deficit.</b> To a text model, <em>&ldquo;generation of a long story and code is the same
+concept&rdquo;</em> &mdash; both are just high&#8209;probability token sequences &mdash; so nothing
+intrinsic keeps output tethered to the <em>objective</em> rather than to local fluency. The project: the
+agent <em>&ldquo;diverts from the main goal.&rdquo;</em> <b>Formally</b>, let <span class="eq">g</span> be
+the goal representation fixed at <span class="eq">t=0</span> and <span class="eq">y<sub>t</sub></span> the
+work in progress; drift is a rising divergence <span class="eq">D(y<sub>t</sub>, g)</span>. Anchoring adds
+a periodic check that re&#8209;validates <span class="eq">y<sub>t</sub></span> against
+<span class="eq">g</span> and corrects when <span class="eq">D</span> exceeds a bound &mdash; the goal is
+<em>re&#8209;read</em>, not assumed to still be in view. <b>Ecosystem status: partial.</b> <code>CLAUDE.md</code>
+and <code>/goal</code> hold a static anchor, but the field documents it decaying within a session
+(&ldquo;context compression wiping scrollback&rdquo;), and the open gap is that <em>&ldquo;specs drift out
+of sync with code&rdquo;</em> with no tool continuously re&#8209;verifying the two. <span class="grounding">Anchor:
+the <em>&#7717;if&#7827;</em> / <em>mur&#257;ja&#8217;a</em> discipline &mdash; retention through active
+review, not one&#8209;time loading.</span></p>
+
+<h3>5.5&ensp;M5 &mdash; Anti&#8209;over&#8209;engineering <span class="tag">residual gap</span></h3>
+<p><b>The deficit.</b> The maximum&#8209;likelihood objective favors the <em>elaborate</em> completion: more
+abstraction, more defensive scaffolding, more &ldquo;production&#8209;ready&rdquo; ceremony than the task
+asked for. The project named the cost precisely: <em>&ldquo;the default version will be
+over&#8209;engineering &mdash; waste of tokens + time + quality and cost.&rdquo;</em> <b>Formally</b>, let a
+solution have footprint <span class="eq">&phi;(y)</span> (files touched, abstractions introduced,
+lines added) and let the task imply a minimal sufficient footprint
+<span class="eq">&phi;*(x)</span>. Over&#8209;engineering is <span class="eq">&phi;(y) &minus;
+&phi;*(x) &gt; 0</span>; the check flags scope the task did not request. <b>Ecosystem status: residual
+gap.</b> The one discipline that exists &mdash; the frontend&#8209;design skill's minimalism rule &mdash;
+is explicitly UI&#8209;only; no general tool measures unnecessary abstraction against the stated task, and
+the failure is invisible to the review agents that scan for bugs. <span class="grounding">Anchor: 7:31,
+&ldquo;&hellip;do not be excessive&rdquo; &mdash; sufficiency as a virtue; the least structure that meets
+the need.</span></p>
+
+<h3>5.6&ensp;M6 &mdash; Inline verification</h3>
+<p><b>The deficit.</b> A human <em>&ldquo;interprets logic while writing&hellip; its real&#8209;time
+verification&rdquo;</em>; a frozen model emits the whole sequence and only afterward can anything check it.
+Verification is <em>deferred</em>, and the field's sharpest statistic is the size of that deferral: the
+48&#8209;point gap between the 96&#8239;% who distrust AI code and the 48&#8239;% who always verify it
+<span class="lit">[C9&ensp;vendor]</span>, with the deferred review time itself up 441.5&#8239;%
+<span class="lit">[C7&ensp;vendor]</span>. And the verifier cannot be the same model, because an LLM favors
+its own output <span class="lit">[C12&ensp;confirmed]</span>. <b>Formally</b>, interleave an external check
+<span class="eq">v(&middot;)</span> at each meaningful step <span class="eq">j</span> rather than once at the
+end: <span class="eq">y = (y<sub>1</sub>, &hellip;, y<sub>n</sub>)</span> with
+<span class="eq">v(y<sub>j</sub>)</span> gating <span class="eq">y<sub>j+1</sub></span> &mdash; the same
+external&#8209;check principle the substrate uses at the architecture level (&sect;7, the mandatory
+verify&#8209;gate), pushed down to the generation step. <b>Ecosystem status: partial.</b> Streaming and PostToolUse hooks give passive
+visibility and post&#8209;edit linting, but no shipped mechanism forces an <em>interpretive</em> checkpoint
+<em>during</em> generation. <span class="grounding">Anchor: 49:6 again, and 17:36 &mdash; verification as a
+continuous obligation, not a final formality.</span></p>
+
+<div class="callout key">
+<p><b>The pattern across all six.</b> Each mechanism is a <em>decision about the computation</em> that a
+single forward pass cannot make: how much to spend (M1), whether to proceed (M2), how to split (M3),
+whether you have drifted (M4), whether you have over&#8209;built (M5), whether to check now (M6). None can
+live <em>inside</em> <span class="eq">f<sub>&theta;</sub></span>; all live in the stateful wrapper around it
+&mdash; which is the same conclusion the five faculties reached, arrived at from the direction of
+<em>resource and control</em> rather than <em>cognition</em>.</p>
+</div>
+
+<h2 id="substrate">7&ensp;The cognitive substrate</h2>
+
+<p>We now specify the architecture. The design rule is strict: <b>the LLM stays frozen.</b> We add no term that modifies <var>&theta;</var>. Everything is external state and external update, composed so that the <em>system</em> &mdash; not the model &mdash; acquires the missing faculties. Where &sect;2 wrote the agent as the memoryless map <var>y</var>&nbsp;=&nbsp;<var>f</var><span class="sub">&theta;</span>(<var>x</var>), the substrate replaces it with a <em>stateful</em> operator over a persistent store <var>M</var>:</p>
+
+<div class="eq"><span class="lbl">(2)</span>
+(<var>y</var><span class="sub">t</span>, <var>M</var><span class="sub">t+1</span>) = <var>F</var>&#8203;<big>(</big> <var>x</var><span class="sub">t</span>, <var>M</var><span class="sub">t</span>; <var>f</var><span class="sub">&theta;</span> <big>)</big>
+</div>
+
+<p>Read Equation&nbsp;(2) against P1&ndash;P3: it takes the previous store <var>M</var><span class="sub">t</span> as an explicit argument (defeating statelessness, P1), it returns an <em>updated</em> store <var>M</var><span class="sub">t+1</span> (a write&#8209;back path that P2 forbade for weights, now legal because it targets external state), and <var>M</var> can be arbitrarily larger than the window <var>W</var> (defeating P3). The frozen <var>f</var><span class="sub">&theta;</span> appears only as a subroutine. The composite <var>F</var> is what Figure&nbsp;1(b) draws and what the rest of this section defines.</p>
+
+<figure>
+<img src="{{artifact:art_d2be1b53-86ce-4069-b2aa-5be59836598e}}" alt="Layered architecture: input and output rails; a five-stage faculty pipeline (perceive, reason, imagine, verify/act) with a metacognition collar around the frozen LLM; four persistent stores beneath; a write-back/learn band; all enclosed in a stewardship boundary. Each faculty carries a Quranic anchor."/>
+<figcaption><b>Figure&nbsp;2. The cognitive substrate for a coding agent.</b> A five&#8209;stage faculty pipeline wraps the frozen LLM (&ldquo;REASON&rdquo;): <b>&#9312;&nbsp;perceive</b> reads memory and queries the world&#8209;model; <b>&#9313;&nbsp;reason</b> is the unchanged model; <b>&#9314;&nbsp;imagine</b> dry&#8209;runs consequences; <b>&#9315;&nbsp;metacognition</b> (the collar) checks self&#8209;consistency; <b>&#9316;&nbsp;verify/act</b> is the impact oracle plus the mandatory gate. Beneath sit four <b>persistent stores</b> (episodic/semantic memory, learned priors, the codebase world&#8209;model graph, the reflection log); the <b>&#9317;&nbsp;write&#8209;back/learn</b> band captures each outcome and consolidates it into those stores. The whole system runs under a <b>stewardship boundary</b> (least privilege, reversibility, audit, scope). Each faculty is tagged with its Qur'anic anchor (&sect;5) and targets a residual gap from &sect;3. The verify faculty (heavy border) is the one prototyped in &sect;8.</figcaption>
+</figure>
+
+<h3>7.1&ensp;The five faculties, formally</h3>
+
+<p><b>Perceive &mdash; memory as an addressable store.</b> Let the memory be a growing set of records <var>M</var>&nbsp;=&nbsp;{<var>m</var><span class="sub">i</span>}, each an embedding&#8209;keyed entry with provenance (a commit, a test outcome, a past edit) and metadata (timestamp, access count, validation status). Perception retrieves a relevant slice by a score that &mdash; following Generative Agents<sup class="cite">7</sup> but adding a validity term the literature lacks &mdash; combines relevance, recency, and <em>grounded importance</em>:</p>
+<div class="eq"><span class="lbl">(3)</span>
+retrieve(<var>x</var>, <var>M</var>) = top&#8209;<var>k</var><span class="sub">i</span>&nbsp; &#963;&#8203;<big>(</big> &alpha;&middot;rel(<var>x</var>,<var>m</var><span class="sub">i</span>) + &beta;&middot;rec(<var>m</var><span class="sub">i</span>) + &gamma;&middot;val(<var>m</var><span class="sub">i</span>) <big>)</big>
+</div>
+<p>The <em>val</em> term &mdash; did this memory's prediction later prove correct against a test or commit? &mdash; is the load&#8209;bearing addition: it is what lets memory be pruned by <em>ground truth</em> rather than by the model's own say&#8209;so, the gap named in &sect;3. This is the &lsquo;ilm layer of the epistemic ladder.</p>
+
+<p><b>Reason &mdash; the frozen model, unchanged.</b> The LLM receives an assembled context: the raw request plus the retrieved memory slice plus the world&#8209;model's answer to &ldquo;what does this touch?&rdquo; It contributes exactly what it is good at &mdash; synthesis, code generation, natural&#8209;language understanding &mdash; and nothing is asked of it that P1&ndash;P3 forbid.</p>
+
+<p><b>Imagine &mdash; a consequence simulator.</b> Define a surrogate dynamics model <var>g</var> that maps a proposed action <var>a</var> and current codebase state <var>C</var> to a predicted outcome without touching the real repository:</p>
+<div class="eq"><span class="lbl">(4)</span>
+&#265;&#8203;<sub>&nbsp;</sub> = <var>g</var>(<var>a</var>, <var>C</var>) &nbsp;&rarr;&nbsp; predicted &#123; broken call sites, type errors, failing tests &#125;
+</div>
+<p>Unlike World Models or MuZero<sup class="cite">22,23</sup>, <var>g</var> here need not be learned from pixels or reward: for code it can be <em>partly exact</em> &mdash; static analysis and the dependency graph give sound over&#8209;approximations of &ldquo;what breaks&rdquo; &mdash; and partly cheap simulation (run the affected tests in a sandbox). This is the faculty the literature has <em>not</em> built for the symbolic domain (&sect;3); the impact oracle of &sect;8 is a first, exact&#8209;analysis instance of <var>g</var>.</p>
+
+<p><b>Metacognition &mdash; a structured self&#8209;consistency pass.</b> Following the honest lesson of &sect;3&mdash;&sect;5 (self&#8209;critique on the same weights is unreliable<sup class="cite">21</sup>; a real external check is required), the controller does not ask the model &ldquo;are you sure?&rdquo; It runs a <em>tadabbur</em> trace&#8209;forward: it checks the proposed action against (i) the model's own stated plan, (ii) the type system, and (iii) the existing test suite &mdash; three signals at least two of which are external to <var>f</var><span class="sub">&theta;</span>. Inconsistency halts and backtracks rather than proceeds.</p>
+
+<p><b>Verify/act &mdash; the mandatory gate.</b> The <em>tabayyun</em> gate (49:6) is a hard predicate on the assembled evidence <var>E</var>(<var>a</var>): the action proceeds only if the impacted set has been computed, the relevant state re&#8209;read, and no external check contradicts the prediction.</p>
+<div class="eq"><span class="lbl">(5)</span>
+act(<var>a</var>) allowed &nbsp;&hArr;&nbsp; gate(<var>E</var>(<var>a</var>)) = &#10003; &nbsp;&and;&nbsp; scope(<var>a</var>) &sube; granted
+</div>
+
+<h3>7.2&ensp;Learning without touching &theta;</h3>
+<p>The write&#8209;back band closes the loop. After an action resolves, its outcome &mdash; test pass/fail, a human revert, a review comment &mdash; is a <em>labeled</em> training signal, the external oracle &sect;3 said learning requires. Two update channels, both leaving <var>&theta;</var> frozen, are available and are ordered by cost:</p>
+<ol>
+<li><b>Non&#8209;parametric (always&#8209;on):</b> write the outcome to <var>M</var> with its provenance, and update the <em>val</em> scores of the memories that informed the action. This is instant, reversible, and the primary path &mdash; the fast, hippocampal side of Complementary Learning Systems<sup class="cite">8,9</sup>.</li>
+<li><b>Parametric (deliberate, optional):</b> when a pattern recurs with high validated confidence, distill it into a small LoRA adapter<sup class="cite">13</sup> trained offline &mdash; the slow, neocortical side &mdash; with EWC&#8209;style protection<sup class="cite">10</sup> against forgetting. This never runs inside the interaction loop.</li>
+</ol>
+<p>The consolidation process between them is the <em>&#7717;if&#7827;&nbsp;+&nbsp;mur&#257;ja&lsquo;a</em> principle: periodic review that reinforces recurrent high&#8209;value patterns, decays stale entries, and resolves contradictions &mdash; the forgetting policy whose absence &sect;3 flagged in RAG and MemGPT. It is what keeps <var>M</var> from growing without bound and drowning signal in noise.</p>
+
+<div class="callout key">
+<div class="h">What is genuinely load&#8209;bearing here</div>
+<p>The architecture's one non&#8209;obvious commitment is that <em>learning and memory are anchored to verifiable software artifacts</em> &mdash; commits, type checks, test outcomes &mdash; rather than to the model's own summaries of itself. This is the single design choice that separates the substrate from &ldquo;RAG plus a scratchpad,&rdquo; and it is possible <em>only</em> in domains that have a cheap external oracle. Code is such a domain. That is why a coding agent, and not a general chat agent, is the right first target &mdash; and why the faculty we prototype next is the one where that oracle is exact. Figure&nbsp;3 draws the complete picture: the five faculties of this section governed by the six mechanisms of &sect;6 as a metacognitive control layer.</p>
+</div>
+
+<figure>
+<img src="{{artifact:art_8d9fa6dd-3554-49c7-9e76-ba667544a622}}" alt="The extended cognitive substrate: a six-mechanism metacognitive control layer (routing, assumption gate, decomposition, goal-anchoring, anti-over-engineering, inline verification) sits above the five-faculty pipeline, which reads and writes four persistent stores, all enclosed in a stewardship boundary. Each mechanism is marked solved, partial, or residual gap."/>
+<figcaption><b>Figure&nbsp;3. The substrate, extended with the six mechanisms of &sect;6.</b> The five&#8209;faculty pipeline of Figure&nbsp;2 (perceive&rarr;reason&rarr;imagine&rarr;verify/act) is now governed by a <b>metacognitive control layer</b> &mdash; the six mechanisms that decide <em>about the computation itself</em>: how much to spend (M1), whether to proceed (M2), how to split (M3), whether it has drifted (M4), whether it has over&#8209;built (M5), when to check (M6). Each is tagged with its ecosystem status &mdash; <span style="color:#4E9A6B">solved</span>, <span style="color:#DD8452">partial</span>, or <span style="color:#C44E52">residual gap</span> &mdash; and the two prototyped in this edition (M1 routing, M2 gate) are marked. Beneath sit the same four persistent stores; the whole runs under the stewardship boundary (<em>am&#257;na</em>, 33:72).</figcaption>
+</figure>
+
+<h2 id="prototype">8&ensp;Prototype: a Codebase World&#8209;Model &amp; Impact Oracle</h2>
+
+<p>Design papers are cheap; the discipline is to build the one faculty where a claim can be <em>tested</em> in a single sitting. That faculty is impact&#8209;awareness (&sect;3: mature tools, missing bridge). We implemented two of the substrate's components as a runnable Python package: the <b>Codebase World&#8209;Model</b> (the &ldquo;perceive&rdquo; store, 2:31&ndash;32) and the <b>Impact Oracle</b> (an exact instance of the &ldquo;imagine&rarr;verify&rdquo; simulator <var>g</var>, 17:36). The full source, demo, and tests are the companion artifact <code>impact_oracle_src.zip</code>.</p>
+
+<h3>8.1&ensp;What it does</h3>
+<p><b>World&#8209;model.</b> A parser walks a repository with Python's <code>ast</code> module and builds a directed graph whose nodes are symbols &mdash; modules, classes, functions, methods, module&#8209;level names &mdash; with stable qualified IDs (<code>pkg.mod.Class.method</code>) and metadata (file, line, kind, signature). Edges capture five structural relations: <code>imports</code>, <code>calls</code>, <code>inherits</code>, <code>references</code>, <code>contains</code>. The graph is <em>persisted</em> to disk keyed by a per&#8209;file content hash, so an unchanged file is never re&#8209;parsed &mdash; the &ldquo;persistent memory of what already exists,&rdquo; incremental by construction.</p>
+<p><b>Impact oracle.</b> Given a proposed change to a symbol <var>X</var>, the oracle traverses the graph along <em>reverse</em> dependency edges (who calls / imports / inherits / references <var>X</var>), transitively, assigning each reached node a confidence that decays with hop distance and edge type. The output is a ranked <em>blast radius</em> &mdash; the set of symbols and files predicted to be affected &mdash; each with an explanation path back to <var>X</var>, and a tunable confidence threshold. Figure&nbsp;4 shows one such propagation.</p>
+
+<figure>
+<img src="{{artifact:art_07bb9186-5e55-44f6-af3f-dde83d6b9e65}}" alt="Node-link graph of impact propagation from validate_positive to 27 symbols across 7 files, nodes colored by confidence (dark red = changed symbol, salmon = high confidence, pale = lower confidence), edges colored by relation type (calls, references, inherits, imports, contains)."/>
+<figcaption><b>Figure&nbsp;4. Predicted blast radius of one edit.</b> Changing <code>utils.validation.validate_positive</code> (dark red, center) propagates along reverse&#8209;dependency edges to 27 symbols across 7 files. Node shade encodes confidence (high&nbsp;&rarr;&nbsp;pale by hop distance); edge style encodes relation (calls, references, inherits, imports, contains). This is the &ldquo;imagine&rdquo; faculty made concrete: the consequence set is computed <em>before</em> any edit is applied.</figcaption>
+</figure>
+
+<h3>8.2&ensp;How we evaluated it &mdash; against ground truth, not self&#8209;grading</h3>
+<p>The temptation in a prototype is to let the system grade its own homework. We refused that. Ground truth comes from <b>mutation testing</b>, which is independent of the graph the oracle uses: we built a realistic 10&#8209;module demo package (classes, cross&#8209;module imports, inheritance, call chains) with a 36&#8209;test <code>pytest</code> suite; then for each of five target symbols we <em>actually mutated the symbol to break its contract</em> and ran the suite. The set of files whose tests then failed is the <em>true</em> behavioral blast radius &mdash; observed, not predicted. We compared three predictors against it:</p>
+<ul>
+<li><b>Graph Oracle</b> &mdash; our reverse&#8209;dependency traversal.</li>
+<li><b>Grep baseline</b> &mdash; text&#8209;search for the symbol name (what an LLM agent does today when it &ldquo;greps around&rdquo;).</li>
+<li><b>Edited&#8209;file&#8209;only</b> &mdash; assume impact stops at the file you edited (the implicit assumption of a narrow&#8209;context agent).</li>
+</ul>
+
+<div class="metrics">
+<div class="metric"><div class="v">1.00</div><div class="l">Oracle recall<br/>(mean over 5 edits)</div></div>
+<div class="metric"><div class="v">0.63</div><div class="l">Oracle precision<br/>(threshold&#8209;tunable)</div></div>
+<div class="metric"><div class="v">0.94</div><div class="l">Grep recall<br/>(misses transitive)</div></div>
+<div class="metric"><div class="v">0.53</div><div class="l">Edited&#8209;file recall<br/>(misses 47% of impact)</div></div>
+</div>
+
+<figure>
+<img src="{{artifact:art_392e293d-be93-4efe-81c1-e9612a711ac4}}" alt="Two panels. Left: grouped bars of precision, recall, F1 for Graph Oracle, Grep, and Edited-file-only. Oracle has recall 1.00; edited-file-only has precision 1.00 but recall 0.53. Right: precision, recall, F1 vs confidence threshold, with best F1 0.79 at threshold 0.4."/>
+<figcaption><b>Figure&nbsp;5. Honest evaluation against mutation&#8209;derived ground truth.</b> <b>(left)</b> The oracle is the <em>only</em> method with perfect recall (1.00) &mdash; it never misses an affected file &mdash; at a precision cost (0.63) versus grep (0.73). Edited&#8209;file&#8209;only achieves perfect precision but catastrophic recall (0.53), missing nearly half of all real impact. <b>(right)</b> Precision and recall trade off with the confidence threshold; best F1&nbsp;=&nbsp;0.79 at threshold&nbsp;0.4. The chart title states the result plainly, including where grep leads on F1 &mdash; we do not oversell.</figcaption>
+</figure>
+
+<h3>8.3&ensp;Reading the result honestly</h3>
+<p>The oracle does <em>not</em> dominate every metric, and the paper is stronger for saying so. On F1 at the default threshold, the grep baseline (0.79) slightly edges the oracle (0.75). What the oracle uniquely provides is <b>guaranteed recall</b>: across all five mutations it never once missed a file that actually broke, whereas grep missed transitive dependents (a caller that never mentions the symbol by name) and edited&#8209;file&#8209;only missed 47% of real impact. For the question that matters when you are about to change production code &mdash; &ldquo;show me everything that could break&rdquo; &mdash; a false negative (a silent breakage) is far more costly than a false positive (an extra file to glance at), and only the structural oracle drives false negatives to zero. Its precision, moreover, is <em>tunable</em>: Figure&nbsp;5(right) shows the operating point can be moved along the curve, where neither text baseline offers such a control.</p>
+
+<p><b>It also scales.</b> Beyond the toy package, the same parser handled real standard&#8209;library code: it built a 303&#8209;node graph of the <code>json</code> package in 18&nbsp;ms and a 1,903&#8209;node graph of the <code>http</code> package in 91&nbsp;ms, answering impact queries in under a millisecond. The approach is not a toy that only works on toys; it is a mature technique that simply had not been placed in the agent's loop.</p>
+
+<div class="callout">
+<div class="h">What this proves, and what it does not</div>
+<p><b>Proves:</b> the impact&#8209;awareness faculty of the substrate is buildable today, runs on a laptop, persists its world&#8209;model, and beats the two strategies a context&#8209;bounded LLM agent actually uses &mdash; on the metric (recall) that governs safety &mdash; against independent ground truth. <b>Does not prove:</b> that the other four faculties are equally easy (they are not &mdash; &sect;3), that this Python&#8209;<code>ast</code> analysis handles dynamic dispatch, reflection, or cross&#8209;language repos (it does not yet &mdash; &sect;12), or that the whole substrate has been built end&#8209;to&#8209;end (it has not). This is one faculty, demonstrated; the rest is specified and argued.</p>
+</div>
+
+<h2 id="prototype2">9&ensp;Prototype II: a complexity&#8209;aware router and an assumption gate</h2>
+
+<p>The impact oracle prototyped one faculty. This second prototype builds the top of the
+build&#8209;opportunity map from the other direction &mdash; the two mechanisms whose pain the field's
+evidence supports most directly: <b>M1 complexity&#8209;aware routing</b> and <b>M2 the assumption gate</b>.
+They compose into a single decision loop, and the whole thing runs live on the real model ladder, so the
+numbers below are measured, not asserted.</p>
+
+<p style="text-align:center; margin:1.4em 0">
+<img src="{{artifact:art_5b206b7b-c90e-417f-b1e8-48b0ec389cb8}}" alt="The request decision loop" style="max-width:100%">
+<br><span class="foot"><b>Figure&nbsp;6.</b> The composed loop: an incoming request first meets the
+<em>assumption gate</em>, which halts and asks if the specification is incomplete (M2); a well&#8209;specified
+request is scored by the <em>router</em> and sent to the cheapest capable tier (M1); the output is checked by
+an <em>external</em> verifier, and only a verified failure escalates one tier up. Every decision is a
+transparent rubric &mdash; never another opaque model call.</span></p>
+
+<h3>9.1&ensp;The design commitment: transparent rubrics, external trust</h3>
+<p>The project's discipline &mdash; <em>&ldquo;never trust AI output; it is mathematically&#8209;calculated
+probability&rdquo;</em> &mdash; rules out the obvious lazy design. We do <b>not</b> ask a second LLM
+&ldquo;how hard is this task?&rdquo; or &ldquo;is this well specified?&rdquo;, because that merely moves the
+untrusted probability up a level and hides it. Instead both the router and the gate are
+<b>transparent, additive rubrics over explicit features</b>. The router scores algorithmic and
+architectural signals, moderate&#8209;complexity markers, multi&#8209;step structure, and length, and
+<em>subtracts</em> for trivial&#8209;task markers &mdash; every point attributable to a named feature the
+user can inspect and override. The gate scores <em>information content</em>: concreteness anchors (a code
+fence, a call signature, a worked <code>input&rarr;output</code> example, a named file), specific named
+technologies, minus vague fillers and brevity. Neither delegates its judgment to a model. And escalation
+&mdash; the only path that spends premium tokens &mdash; is driven by an <em>external</em> check on the
+output, the same principle the substrate uses at the architecture level (the mandatory verify&#8209;gate,
+&sect;7) and M6 uses at the generation step.</p>
+
+<h3>9.2&ensp;How we evaluated it &mdash; live, on real models</h3>
+<p>We hand&#8209;labeled a <b>30&#8209;task set</b>: eight trivial, seven moderate, six complex (each with a
+gold tier), and nine deliberately under&#8209;specified (gold label: <em>should ask</em>). We ran every task
+through the full loop <b>live</b> on the actual ladder &mdash; cheap&nbsp;=&nbsp;<code>claude&#8209;haiku&#8209;4&#8209;5</code>,
+mid&nbsp;=&nbsp;<code>claude&#8209;sonnet&#8209;5</code>, premium&nbsp;=&nbsp;<code>claude&#8209;opus&#8209;4&#8209;8</code>
+&mdash; measuring <em>real</em> token counts from each call. Cost is exact arithmetic on those measured
+tokens against published per&#8209;tier list prices; the always&#8209;premium baseline reprices the
+<em>identical</em> tokens at the top tier, so any saving comes purely from tier selection.</p>
+
+<p style="text-align:center; margin:1.4em 0">
+<img src="{{artifact:art_ac78be07-be03-4560-bb9f-f5fe2f16d7ef}}" alt="Router and gate live evaluation" style="max-width:100%">
+<br><span class="foot"><b>Figure&nbsp;7.</b> Live evaluation. <b>(a)</b> Real cost for the 21 executed tasks:
+complexity&#8209;routing spends <b>62&#8239;% less</b> than always&#8209;premium on the same measured tokens,
+with most tasks served by the cheap and mid tiers. <b>(b)</b> All 30 decisions: every well&#8209;specified
+task routed to its gold tier (green/orange/red by tier), every under&#8209;specified task halted by the gate
+(purple &times;). No errors on either axis.</span></p>
+
+<div class="metrics">
+<div class="metric"><div class="v">30/30</div><div class="l">gate accuracy<br>(P = R = 1.00)</div></div>
+<div class="metric"><div class="v">21/21</div><div class="l">routing exact&#8209;tier<br>(well&#8209;specified)</div></div>
+<div class="metric"><div class="v">62.1%</div><div class="l">real cost saved<br>vs always&#8209;premium</div></div>
+<div class="metric"><div class="v">3/3</div><div class="l">routed&#8209;down outputs<br>passed execution tests</div></div>
+</div>
+
+<p>The gate halted all nine under&#8209;specified tasks (<em>&ldquo;Fix the bug.&rdquo;</em>,
+<em>&ldquo;Optimize it.&rdquo;</em>) with concrete clarifying questions and spent zero generation tokens on
+them; it passed all 21 well&#8209;specified tasks through. The router placed every one of those 21 on its
+gold tier. Across the executed workload the loop spent <b>&#36;0.54</b> versus <b>&#36;1.42</b> for
+always&#8209;premium &mdash; a genuine <b>62.1&#8239;%</b> reduction on real tokens.</p>
+
+<h3>9.3&ensp;Reading this result honestly</h3>
+<div class="callout warn">
+<p><b>What this proves, and what it does not.</b> Routing <em>down</em> only counts as a win if the cheap
+tier is still <em>correct</em>. So for three tasks we let the pipeline's verifier <b>actually execute</b> the
+generated code against real test cases: <code>is_prime</code> and <code>factorial</code> passed on the cheap
+tier, <code>merge_sorted</code> passed on the mid tier &mdash; no escalation needed, the saving was real and
+the output worked. That is the honest core of the demonstration.</p>
+<p>What it is <b>not</b>: a benchmark. The 30&#8209;task set is small, hand&#8209;labeled, and the rubric
+thresholds were <em>tuned against it</em> &mdash; so the perfect separation shows the rubric <em>can</em>
+distinguish these cases, not that it will generalize to an arbitrary task distribution. The
+&ldquo;retired SWE&#8209;bench Verified&rdquo; finding <span class="lit">[C6&ensp;confirmed]</span> is a
+standing warning we apply to ourselves: a clean number on a self&#8209;built set is a proof of
+<em>mechanism</em>, not of field accuracy. A production version would calibrate on a large held&#8209;out
+distribution and likely <em>learn</em> the rubric weights rather than hand&#8209;set them. We report the
+demonstration for what it is: evidence that the two mechanisms are <em>buildable</em> and that they
+<em>behave as designed</em> on cases you can inspect one by one.</p>
+</div>
+
+<h2 id="buildmap">10&ensp;The build&#8209;opportunity map: what to build, what to skip</h2>
+
+<p>Eleven capabilities &mdash; five faculties, six mechanisms &mdash; and a real 2026 ecosystem to measure
+them against. The point of cross&#8209;referencing them is not to claim all eleven as open territory; it is
+the opposite. A design study earns trust by saying <em>what not to build</em> as clearly as what to build.
+We graded each capability against the actual Claude&#8209;Code stack &mdash; skills, hooks, plugins, MCP
+servers, memory backends, subagent and Agent&#8209;Teams orchestration, model&#8209;tiering gateways
+&mdash; as <b>solved</b>, <b>partial</b>, or <b>residual gap</b>. The full item&#8209;by&#8209;item table is
+the <b>Ecosystem appendix</b>; here is the decision it implies.</p>
+
+<div class="callout warn">
+<p><b>Already solved &mdash; do not rebuild.</b> Two of the six mechanisms are covered well by existing
+tooling. <b>Complexity&#8209;aware routing (M1)</b> is handled by model tiering and gateways
+(LiteLLM, OpenRouter, per&#8209;agent <code>model:</code>); the only residue is transparency, not routing.
+<b>Task decomposition (M3)</b> is handled by subagents, Agent&#8209;Teams, and worktree fan&#8209;out.
+Building a new router or a new subagent framework would be reinventing shipped infrastructure &mdash;
+exactly the waste this project set out to avoid.</p>
+</div>
+
+<h3>10.1&ensp;The whitespace, ranked</h3>
+<p>Ranking by <em>(evidence strength for the pain) &times; (how unsolved it is) &times; (buildability)</em>,
+the genuine opportunities are:</p>
+
+<table class="map">
+<tr class="h"><td>Rank</td><td>What to build</td><td>Why (grounded)</td><td>Status</td></tr>
+<tr><td><b>1</b></td><td><b>Assumption / uncertainty gate</b> (M2)</td>
+<td>The project's named root failure and the field's named gap &mdash; <em>&ldquo;models rarely signal
+uncertainty&rdquo;</em>; the METR miscalibration result <span class="lit">[C1]</span> is its clearest
+evidence. <b>Nothing in the stack supplies calibrated known&#8209;unknowns.</b></td>
+<td class="v" style="color:#C44E52">residual gap</td></tr>
+<tr><td><b>2</b></td><td><b>Validity&#8209;anchored memory</b> (Memory faculty)</td>
+<td>Backends store notes (Mem0, claude&#8209;mem, Auto&#8209;Memory) but none tracks whether a stored fact
+was later <em>invalidated by a correction</em>; Auto&#8209;Memory's own &ldquo;memory cliff&rdquo; is
+documented. The write&#8209;back&#8209;only&#8209;confirmed&#8209;lessons idea is unbuilt.</td>
+<td class="v" style="color:#DD8452">partial</td></tr>
+<tr><td><b>3</b></td><td><b>Mandatory pre&#8209;action impact gate</b> (Impact&#8209;awareness)</td>
+<td><em>&ldquo;One change to a shared utility can break dozens of packages with no cross&#8209;package
+awareness.&rdquo;</em> Indexers retrieve; none is a <em>deterministic, hook&#8209;enforced</em> blast&#8209;radius
+check before every edit. <b>This paper's first prototype builds exactly this.</b></td>
+<td class="v" style="color:#DD8452">partial</td></tr>
+<tr><td><b>4</b></td><td><b>Outcome&#8209;validated learning loop</b> (Learning faculty)</td>
+<td>No tool closes the loop from a task's <em>actual outcome</em> (did the fix hold, did the PR revert)
+back into changed future behavior. Frozen weights guarantee it must be external.</td>
+<td class="v" style="color:#C44E52">residual gap</td></tr>
+<tr><td><b>5</b></td><td><b>Root&#8209;cause correction gate</b> (Self&#8209;correction)</td>
+<td>Hooks retry; the field documents the <em>&ldquo;doom loop&rdquo;</em> &mdash; thrash that patches
+symptoms and can delete its own work while declaring success. Detecting a repeating failure signature and
+escalating with a diagnosis is unsolved.</td>
+<td class="v" style="color:#DD8452">partial</td></tr>
+<tr><td><b>6</b></td><td><b>Scope&#8209;minimality check</b> (M5)</td>
+<td>Over&#8209;engineering is untracked outside UI; measuring footprint against the task's minimal
+sufficient footprint is genuine whitespace.</td>
+<td class="v" style="color:#C44E52">residual gap</td></tr>
+<tr><td><b>7</b></td><td><b>Inline verification checkpoint</b> (M6) &middot; <b>goal&#8209;drift check</b> (M4)</td>
+<td>Passive streaming and static anchors exist; a forced interpretive checkpoint during generation, and a
+continuous goal&#8209;vs&#8209;output re&#8209;check, do not.</td>
+<td class="v" style="color:#DD8452">partial</td></tr>
+</table>
+
+<div class="callout key">
+<p><b>What this paper actually builds, against that map.</b> Two prototypes, targeting the top of the list
+where a single session can produce real evidence. The <b>impact oracle</b> (&sect;8) builds opportunity&nbsp;#3.
+The <b>router + assumption gate</b> (&sect;6) builds opportunity&nbsp;#1 &mdash; and, honestly, the
+already&#8209;solved M1, whose only residue is the transparency layer we add. We prototype these two because
+they are the ones where <em>ground truth is checkable now</em>: an edit's blast radius against a mutation
+oracle, a routing decision against a hand&#8209;labeled tier, an under&#8209;specified request against a
+&ldquo;should&#8209;ask&rdquo; label. The remaining opportunities &mdash; memory validity, outcome learning,
+doom&#8209;loop diagnosis &mdash; are the harder research gaps, and we mark them as such rather than
+gesturing at them with a demo.</p>
+</div>
+
+<h2 id="newvsold">11&ensp;Genuinely new vs. reinvented</h2>
+<p>Intellectual honesty demands separating what this proposal <em>invents</em> from what it <em>assembles</em>. Almost every component exists somewhere; the contribution is the composition, the anchoring, and the target.</p>
+<table>
+<thead><tr><th style="width:26%">Element</th><th style="width:15%">Status</th><th>Assessment</th></tr></thead>
+<tbody>
+<tr><td>External memory for a frozen model</td><td style="color:var(--mute)">Reinvented</td><td>RAG, MemGPT, Generative Agents<sup class="cite">5,6,7</sup> already attach stores to frozen models. We add nothing to the retrieval mechanism itself.</td></tr>
+<tr><td>Fast/slow (non&#8209;parametric + LoRA) learning split</td><td style="color:var(--mute)">Reinvented framing</td><td>The CLS fast/slow split<sup class="cite">8,9</sup> and LoRA<sup class="cite">13</sup> are established; combining them as an agent's two learning channels is a synthesis, not a new mechanism.</td></tr>
+<tr><td>Structural code graph &amp; impact analysis</td><td style="color:var(--mute)">Reinvented (decades old)</td><td>PDG, slicing, CPG<sup class="cite">30,28,31</sup> are mature. Our parser is a modern, persistent re&#8209;implementation, not new theory.</td></tr>
+<tr><td><b>Validity&#8209;anchored memory</b> (the <em>val</em> term, Eq.&nbsp;3)</td><td style="color:var(--oracle)">Novel emphasis</td><td>Scoring and pruning memory by whether its past prediction was <em>confirmed by an external oracle</em> (test/commit), not by the model's own judgment, is the design's sharpest departure from RAG/MemGPT's self&#8209;managed stores.</td></tr>
+<tr><td><b>Wiring exact impact analysis into the agent's pre&#8209;action gate</b></td><td style="color:var(--oracle)">Novel composition</td><td>The bridge &mdash; live graph &rarr; &ldquo;what depends on X&rdquo; &rarr; mandatory gate before the edit &mdash; is the integration &sect;3 showed nobody has shipped, and the one we prototyped.</td></tr>
+<tr><td><b>Epistemic&#8209;obligation anchoring (the lens)</b></td><td style="color:var(--oracle)">Novel framing</td><td>Deriving <em>which</em> safeguards are mandatory (verify&#8209;before&#8209;acting, least privilege) from a coherent epistemology, rather than bolting them on ad&nbsp;hoc, is a contribution of stance and organization.</td></tr>
+</tbody>
+</table>
+<p>In one line: <b>the components are largely borrowed; the loop shape, the validity anchoring, and the coding&#8209;agent target are the contribution.</b> That is a defensible and useful kind of novelty &mdash; it is what turns five scattered literatures into one buildable architecture.</p>
+
+<h2 id="limits">12&ensp;Limitations &amp; threats to validity</h2>
+<ul>
+<li><b>One faculty, not five.</b> Only impact&#8209;awareness is prototyped. Memory, learning, and imagination for code remain specified&#8209;but&#8209;unbuilt, and &sect;3 is explicit that three of them are open research problems, not weekend engineering.</li>
+<li><b>Static analysis has known blind spots.</b> The <code>ast</code>&#8209;based world&#8209;model is sound for static Python structure but conservative&#8209;to&#8209;wrong on dynamic dispatch, monkey&#8209;patching, reflection, <code>eval</code>, and dependency injection. It is single&#8209;language. Precision (0.63) reflects partly that it over&#8209;approximates; recall is its strength precisely because it errs toward inclusion.</li>
+<li><b>Small, self&#8209;built evaluation.</b> Five mutations on a 10&#8209;module package plus two stdlib scale checks is a demonstration, not a benchmark. The mutation&#8209;derived ground truth is only as complete as the test suite (an untested consequence is invisible to it) &mdash; so true recall could be lower than measured. A convincing evaluation needs many real repositories with rich test suites and real historical edits.</li>
+<li><b>The hard faculties may not yield to this architecture.</b> The substrate <em>assumes</em> that anchoring memory/learning to external oracles is sufficient; for domains or tasks without a cheap oracle, the whole premise weakens. Code is favorable; much agent work is not.</li>
+<li><b>The lens is framing, not proof.</b> As stated throughout, no verse validates an engineering claim. A reader who rejects the lens loses the organizing vocabulary but none of the technical content, which stands on &sect;3 and &sect;8 alone.</li>
+</ul>
+
+<h2 id="conclusion">13&ensp;Conclusion</h2>
+<p>The faculties a coding agent seems to lack &mdash; memory, learning, imagination, self&#8209;correction, impact&#8209;awareness &mdash; are not deficiencies of knowledge that scale will cure. They are structural consequences of what a frozen transformer <em>is</em>: a stateless map with fixed weights and a bounded window (Eq.&nbsp;1, P1&ndash;P3). Because they follow from the <em>shape</em> of the loop, they cannot be prompted or tooled away; they can only be removed by re&#8209;wrapping the loop into a closed, stateful cycle over persistent stores, with the model left frozen inside it (Eq.&nbsp;2, Fig.&nbsp;1&ndash;2). We specified that substrate faculty by faculty, said honestly which parts are open research and which are engineering, and &mdash; for the one faculty that is buildable today &mdash; shipped a running impact oracle that, against independent ground truth, never misses an affected file where the strategies a context&#8209;bounded agent actually uses miss up to half. The Qur'anic lens gave the work its spine of obligation: <em>know what exists before you act, verify what you are told, and hold what you can damage as a trust.</em> Those are not just good engineering defaults; here they are the architecture. The next step is to build the memory and learning layers against the same discipline &mdash; anchored to what can be verified, not to what the model says of itself &mdash; and to evaluate the whole loop on real repositories with real histories.</p>
+
+<hr class="sec"/>
+<h2 id="refs">References</h2>
+<ol class="refs">
+<li id="ref-weston2014"><b>Weston, Chopra, Bordes</b> (2014). Memory Networks. <a href="https://arxiv.org/abs/1410.3916">arXiv:1410.3916</a>. <span style="color:#9a9a9a">Proposes an explicit, addressable long-term memory component read/written by a neural controller, separate from model parameters.</span></li>
+<li id="ref-sukhbaatar2015"><b>Sukhbaatar, Szlam, Weston, Fergus</b> (2015). End-To-End Memory Networks. <a href="https://arxiv.org/abs/1503.08895">arXiv:1503.08895</a>. <span style="color:#9a9a9a">Makes memory-network read/write fully differentiable and trainable end-to-end with weaker supervision than the original Memory Networks.</span></li>
+<li id="ref-graves2014ntm"><b>Graves, Wayne, Danihelka</b> (2014). Neural Turing Machines. <a href="https://arxiv.org/abs/1410.5401">arXiv:1410.5401</a>. <span style="color:#9a9a9a">Couples a neural controller to an external memory matrix via differentiable attention, enabling learned algorithms like copy and sort.</span></li>
+<li id="ref-graves2016dnc"><b>Graves et al.</b> (2016). Hybrid computing using a neural network with dynamic external memory. <a href="https://doi.org/10.1038/nature20101">Nature</a>. <span style="color:#9a9a9a">The Differentiable Neural Computer adds dynamic memory allocation and temporal link tracking, letting a network solve graph traversal and reasoning tasks that require variable-sized structured memory.</span></li>
+<li id="ref-lewis2020rag"><b>Lewis et al.</b> (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. <a href="https://arxiv.org/abs/2005.11401">arXiv:2005.11401 / NeurIPS</a>. <span style="color:#9a9a9a">Combines a parametric seq2seq model with a non-parametric retriever over an external corpus so generation is grounded in retrieved documents rather than frozen weights alone.</span></li>
+<li id="ref-packer2023memgpt"><b>Packer et al.</b> (2023). MemGPT: Towards LLMs as Operating Systems. <a href="https://arxiv.org/abs/2310.08560">arXiv:2310.08560</a>. <span style="color:#9a9a9a">Treats the LLM context window like virtual memory, using an OS-style paging scheme (self-directed function calls) to move information between a bounded context and external storage to give the illusion of unbounded memory.</span></li>
+<li id="ref-park2023genagents"><b>Park et al.</b> (2023). Generative Agents: Interactive Simulacra of Human Behavior. <a href="https://arxiv.org/abs/2304.03442">arXiv:2304.03442</a>. <span style="color:#9a9a9a">Introduces a memory stream of observations plus a reflection mechanism that periodically synthesizes higher-level memories, retrieved and used to condition believable agent behavior.</span></li>
+<li id="ref-mcclelland1995cls"><b>McClelland, McNaughton, O'Reilly</b> (1995). Why there are complementary learning systems in the hippocampus and neocortex. Psychological Review. <span style="color:#9a9a9a">Argues the brain needs two learning systems — a fast hippocampal one for episodic recall and a slow neocortical one for structured, interleaved consolidation — to avoid catastrophic interference.</span></li>
+<li id="ref-kumaran2016cls"><b>Kumaran, Hassabis, McClelland</b> (2016). What Learning Systems do Intelligent Agents Need? Complementary Learning Systems Theory Updated. <a href="https://doi.org/10.1016/j.tics.2016.05.004">Trends in Cognitive Sciences, 10.1016/j.tics.2016.05.004</a>. <span style="color:#9a9a9a">Updates complementary learning systems theory in light of deep RL and episodic-memory findings, motivating fast/slow-learning-system architectures as a computational analogue of hippocampal-neocortical interaction.</span></li>
+<li id="ref-kirkpatrick2017ewc"><b>Kirkpatrick et al.</b> (2017). Overcoming catastrophic forgetting in neural networks. <a href="https://arxiv.org/abs/1612.00796">PNAS / arXiv:1612.00796</a>. <span style="color:#9a9a9a">Elastic Weight Consolidation penalizes changes to parameters important for earlier tasks (via a Fisher-information-weighted quadratic penalty) to mitigate catastrophic forgetting during sequential training.</span></li>
+<li id="ref-sun2020ttt"><b>Sun et al.</b> (2020). Test-Time Training with Self-Supervision for Generalization under Distribution Shifts. <a href="https://arxiv.org/abs/1909.13231">arXiv:1909.13231 / ICML 2020</a>. <span style="color:#9a9a9a">Updates model parameters at test time via a self-supervised auxiliary task on each new input, adapting to distribution shift without labeled data.</span></li>
+<li id="ref-ba2016fastweights"><b>Ba, Hinton, Mnih, Leibo, Ionescu</b> (2016). Using Fast Weights to Attend to the Recent Past. <a href="https://arxiv.org/abs/1610.06258">arXiv:1610.06258</a>. <span style="color:#9a9a9a">Introduces a fast-changing weight matrix, updated by a Hebbian-like rule from recent activity, that lets a network attend to its own recent history at a timescale between slow weights and short-term activity.</span></li>
+<li id="ref-hu2021lora"><b>Hu et al.</b> (2021). LoRA: Low-Rank Adaptation of Large Language Models. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a>. <span style="color:#9a9a9a">Freezes pretrained weights and injects trainable low-rank update matrices per layer, making targeted, cheap fine-tuning/adaptation of large models feasible without touching the full parameter set.</span></li>
+<li id="ref-vonoswald2022icl"><b>von Oswald et al.</b> (2022). Transformers Learn In-Context by Gradient Descent. <a href="https://arxiv.org/abs/2212.07677">arXiv:2212.07677</a>. <span style="color:#9a9a9a">Shows constructively that a transformer's forward pass over a prompt can implement steps of gradient descent on an implicit in-context loss, giving a mechanistic account of in-context learning.</span></li>
+<li id="ref-dai2022icl"><b>Dai et al.</b> (2022). Why Can GPT Learn In-Context? Language Models Implicitly Perform Gradient Descent as Meta-Optimizers. <a href="https://arxiv.org/abs/2212.10559">arXiv:2212.10559</a>. <span style="color:#9a9a9a">Draws a formal duality between attention and gradient-descent-based finetuning, framing in-context learning as an implicit, weight-unchanging optimization process.</span></li>
+<li id="ref-cobbe2021verifiers"><b>Cobbe et al.</b> (2021). Training Verifiers to Solve Math Word Problems. <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a>. <span style="color:#9a9a9a">Trains a separate verifier model to score candidate solutions and select among generator samples, offloading correctness-checking to a distinct learned model rather than the generator itself.</span></li>
+<li id="ref-lightman2023verify"><b>Lightman et al.</b> (2023). Let's Verify Step by Step. <a href="https://arxiv.org/abs/2305.20050">arXiv:2305.20050</a>. <span style="color:#9a9a9a">Shows a process-level reward model, trained on human step-by-step correctness labels, outperforms outcome-level supervision for catching reasoning errors.</span></li>
+<li id="ref-shinn2023reflexion"><b>Shinn et al.</b> (2023). Reflexion: Language Agents with Verbal Reinforcement Learning. <a href="https://arxiv.org/abs/2303.11366">arXiv:2303.11366</a>. <span style="color:#9a9a9a">Has an agent verbally reflect on task feedback/failures and stores that reflection in an episodic memory buffer used to condition subsequent attempts, substituting for gradient-based RL updates.</span></li>
+<li id="ref-madaan2023selfrefine"><b>Madaan et al.</b> (2023). Self-Refine: Iterative Refinement with Self-Feedback. <a href="https://arxiv.org/abs/2303.17651">arXiv:2303.17651</a>. <span style="color:#9a9a9a">Uses the same frozen LLM to generate output, critique it, and refine it iteratively in a feedback loop, with no parameter updates or external training signal.</span></li>
+<li id="ref-wang2022selfconsistency"><b>Wang et al.</b> (2022). Self-Consistency Improves Chain of Thought Reasoning in Language Models. <a href="https://arxiv.org/abs/2203.11171">arXiv:2203.11171</a>. <span style="color:#9a9a9a">Samples multiple diverse reasoning chains and marginalizes over them by majority vote on the final answer, improving reasoning accuracy without any self-correction step per se.</span></li>
+<li id="ref-huang2023cannot"><b>Huang et al.</b> (2023). Large Language Models Cannot Self-Correct Reasoning Yet. <a href="https://arxiv.org/abs/2310.01798">arXiv:2310.01798</a>. <span style="color:#9a9a9a">Finds that without external, ground-truth feedback, LLMs prompted to self-critique and revise their own reasoning frequently make correct answers worse, undercutting claims of intrinsic self-correction.</span></li>
+<li id="ref-ha2018worldmodels"><b>Ha, Schmidhuber</b> (2018). World Models. <a href="https://arxiv.org/abs/1803.10122">arXiv:1803.10122</a>. <span style="color:#9a9a9a">Trains a compressed generative model of an environment (VAE + RNN) and evolves a small controller entirely inside that learned latent 'dream' simulation before transferring to the real environment.</span></li>
+<li id="ref-schrittwieser2020muzero"><b>Schrittwieser et al.</b> (2020). Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model. <a href="https://arxiv.org/abs/1911.08265">arXiv:1911.08265 / Nature</a>. <span style="color:#9a9a9a">MuZero learns a model of only the quantities relevant to planning (reward, value, policy) without reconstructing observations, and plans with MCTS purely in that learned latent model.</span></li>
+<li id="ref-hafner2023dreamerv3"><b>Hafner et al.</b> (2023). Mastering Diverse Domains through World Models. <a href="https://arxiv.org/abs/2301.04104">arXiv:2301.04104</a>. <span style="color:#9a9a9a">DreamerV3 learns a world model from experience and trains a policy purely from imagined rollouts inside it, achieving strong performance across many domains with one fixed set of hyperparameters.</span></li>
+<li id="ref-hafner2019dreamer"><b>Hafner et al.</b> (2019). Dream to Control: Learning Behaviors by Latent Imagination. <a href="https://arxiv.org/abs/1912.01603">arXiv:1912.01603</a>. <span style="color:#9a9a9a">Backpropagates value gradients directly through imagined multi-step latent trajectories of a learned world model to learn behaviors efficiently, without interacting with the real environment.</span></li>
+<li id="ref-friston2010freeenergy"><b>Friston</b> (2010). The free-energy principle: a unified brain theory?. <a href="https://doi.org/10.1038/nrn2787">Nature Reviews Neuroscience</a>. <span style="color:#9a9a9a">Proposes that brains (and action) minimize variational free energy, unifying perception, learning, and action under a single generative-model / predictive-coding framework — active inference.</span></li>
+<li id="ref-allamanis2018graphs"><b>Allamanis, Brockschmidt, Khademi</b> (2018). Learning to Represent Programs with Graphs. <a href="https://arxiv.org/abs/1711.00740">arXiv:1711.00740 / ICLR 2018</a>. <span style="color:#9a9a9a">Represents source code as a graph capturing syntax, control flow, and data flow, and applies gated graph neural networks to tasks like variable-misuse detection, giving a structural rather than purely textual code representation.</span></li>
+<li id="ref-horwitz1990dependence"><b>Horwitz, Reps, Binkley</b> (1990). Interprocedural Slicing Using Dependence Graphs. <a href="https://doi.org/10.1145/77606.77608">ACM TOPLAS</a>. <span style="color:#9a9a9a">Extends program dependence graphs across procedure boundaries to compute interprocedural slices, the structural basis for determining what code is affected by / affects a given statement.</span></li>
+<li id="ref-tip1994survey"><b>Tip</b> (1994). A Survey of Program Slicing Techniques. Journal of Programming Languages. <span style="color:#9a9a9a">Surveys the family of static and dynamic program-slicing techniques used to identify the subset of a program that can influence (or is influenced by) a given point — a core building block of change-impact analysis.</span></li>
+<li id="ref-ferrante1987pdg"><b>Ferrante, Ottenstein, Warren</b> (1987). The Program Dependence Graph and Its Use in Optimization. <a href="https://doi.org/10.1145/24039.24041">ACM TOPLAS</a>. <span style="color:#9a9a9a">Introduces the program dependence graph combining control and data dependence in one structure, the ancestor representation behind most modern static change-impact and slicing tools.</span></li>
+<li id="ref-yamaguchi2014cpg"><b>Yamaguchi, Golde, Arp, Rieck</b> (2014). Modeling and Discovering Vulnerabilities with Code Property Graphs. <a href="https://doi.org/10.1109/sp.2014.44">IEEE S&P 2014</a>. <span style="color:#9a9a9a">Introduces the code property graph, merging AST, control-flow graph, and program-dependence graph into one joint representation, queryable to discover vulnerability patterns across a codebase.</span></li>
+<li id="ref-alon2019code2vec"><b>Alon, Zilberstein, Levy, Yahav</b> (2019). code2vec: Learning Distributed Representations of Code. <a href="https://doi.org/10.1145/3290353">POPL 2019 / PACMPL</a>. <span style="color:#9a9a9a">Represents a code snippet as a bag of AST paths and learns a distributed embedding that predicts semantic properties such as method names, giving a learned structural fingerprint of code.</span></li>
+</ol>
+
+<hr class="sec"/>
+<h2 id="evidence-appendix">Appendix&ensp;Evidence map &mdash; the twelve statistics, re&#8209;grounded</h2>
+<p class="foot">Each load&#8209;bearing pain&#8209;point statistic in the 2026 discourse, traced to its
+primary source and graded. <b>Confirmed</b> = independent primary source; <b>vendor&#8209;reported</b> =
+real but sourced only to a party with a commercial stake; <b>unverifiable</b> = could not corroborate in
+primary form. Full source records and paper&#8209;use recommendations are in <code>evidence_map.json</code>.</p>
+<table class="map">
+<tr class="h"><td>ID</td><td>Claim</td><td>Primary source</td><td>Supports</td><td>Status</td></tr>
+<tr>
+<td style="white-space:nowrap"><b>C1</b></td>
+<td>Experienced open-source developers were 19% SLOWER with AI while believing they were ~20% faster (also forecast 24% speedup beforehand).</td>
+<td style="font-size:0.85em"><a href="https://arxiv.org/abs/2507.09089">Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity</a></td>
+<td style="font-size:0.85em">M2 (assumption/uncertainty - miscalibration), P3/self-correc</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">confirmed</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C2</b></td>
+<td>Trust in AI accuracy fell from 40% to 29% (or 46% actively distrust vs 33% trust per detailed breakdown); favorability 72%-&gt;60%; 66% say AI answers are &#x27;almost right, but not quite</td>
+<td style="font-size:0.85em"><a href="https://survey.stackoverflow.co/2025">2025 Stack Overflow Developer Survey (49,000+ respondents, 177 countries)</a></td>
+<td style="font-size:0.85em">M2 uncertainty/calibration; M6 inline verification; overall </td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">confirmed</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C3</b></td>
+<td>45% of AI-generated code samples introduce an OWASP Top-10 vulnerability; a widely-repeated &#x27;2.74x more vulnerabilities than human-written code&#x27; figure.</td>
+<td style="font-size:0.85em"><a href="https://www.veracode.com/resources/analyst-reports/2025-genai-code-security-report/">2025 GenAI Code Security Report</a></td>
+<td style="font-size:0.85em">M5 anti-over-engineering / code-quality thesis; security-ver</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">vendor&#8209;reported</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C4</b></td>
+<td>~8x rise (2024 vs prior years) in frequency of duplicated/copy-pasted code blocks; copy-paste overtaking refactored (&#x27;moved&#x27;) code for the first time.</td>
+<td style="font-size:0.85em"><a href="https://www.gitclear.com/ai_assistant_code_quality_2025_research">AI Copilot Code Quality: 2025 Data Suggests 4x Growth in Code Clones / AI Copilot Code Qua</a></td>
+<td style="font-size:0.85em">M5 anti-over-engineering; long-term codebase impact-awarenes</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">vendor&#8209;reported</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C5</b></td>
+<td>AI&#x27;s primary role is as an &#x27;amplifier&#x27; - magnifying high performers&#x27; strengths and low performers&#x27; dysfunctions; AI continues to increase delivery instability even as adoption beco</td>
+<td style="font-size:0.85em"><a href="https://dora.dev/dora-report-2025/">State of AI-assisted Software Development 2025 (DORA Report)</a></td>
+<td style="font-size:0.85em">Systemic framing for all six mechanisms (org context matters</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">confirmed</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C6</b></td>
+<td>OpenAI retired SWE-bench Verified (Feb 2026) after finding at least 59.4% of audited (hard/failed) problems had flawed test cases and/or training-data contamination; large score ga</td>
+<td style="font-size:0.85em"><a href="https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/">Why SWE-bench Verified no longer measures frontier coding capabilities</a></td>
+<td style="font-size:0.85em">M6 inline verification / benchmark-trust thesis; supports &#x27;A</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">confirmed</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C7</b></td>
+<td>Median time in PR review up 441.5%; incidents-per-PR up 242.7%; bugs per developer up 54%; 31.3% more PRs merged with no review at all.</td>
+<td style="font-size:0.85em"><a href="https://pages.faros.ai/hubfs/AI_Engineering_Report_2026_The_Acceleration_Whiplash_Faros.pdf">The AI Engineering Report 2026: The Acceleration Whiplash</a></td>
+<td style="font-size:0.85em">M6 inline verification; review-bottleneck / verification-lay</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">vendor&#8209;reported</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C8</b></td>
+<td>Developers who delegate code generation to AI score 17% lower on comprehension tests, based on &#x27;Anthropic&#x27;s own research (~400,000 Claude Code sessions)&#x27;.</td>
+<td style="font-size:0.85em">TWO DIFFERENT STUDIES ARE BEING CONFLATED: (a) &#x27;How AI Impacts Skill Formation&#x27; by Judy Ha</td>
+<td style="font-size:0.85em">M6 inline verification / skill-atrophy thesis (comprehension</td>
+<td style="white-space:nowrap;color:#C44E52;font-weight:600">unverifiable</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C9</b></td>
+<td>96% of developers don&#x27;t fully trust AI-generated code is functionally correct, yet only 48% always verify it before committing (a 48-point &#x27;verification gap&#x27;/&#x27;verification debt&#x27;).</td>
+<td style="font-size:0.85em"><a href="https://www.sonarsource.com/company/press-releases/sonar-data-reveals-critical-verification-gap-in-ai-coding/">State of Code Developer Survey report 2026</a></td>
+<td style="font-size:0.85em">M6 inline verification - the central named gap the mechanism</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">vendor&#8209;reported</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C10</b></td>
+<td>JetBrains&#x27; 2025 survey found 77% of developers still manually correct AI output for project conventions every session.</td>
+<td style="font-size:0.85em"><a href="https://blog.jetbrains.com/research/2025/10/state-of-developer-ecosystem-2025/">The State of Developer Ecosystem 2025</a></td>
+<td style="font-size:0.85em">M4 goal-anchoring / M5 anti-over-engineering (convention dri</td>
+<td style="white-space:nowrap;color:#C44E52;font-weight:600">unverifiable</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C11</b></td>
+<td>A standard MCP setup (few servers) can consume ~72% of a 200K-token context window before work begins; tool-selection accuracy drops from ~43% to below ~14% as tool count scales (&#x27;</td>
+<td style="font-size:0.85em">(a) 72%-context-window claim: no formal paper found, only recurring blog anecdotes (Scott </td>
+<td style="font-size:0.85em">M1 complexity-aware routing / M3 task decomposition (context</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">vendor&#8209;reported</td>
+</tr>
+<tr>
+<td style="white-space:nowrap"><b>C12</b></td>
+<td>LLM evaluators recognize and favor their own generations - self-preference bias correlates with self-recognition ability - motivating why &#x27;AI verifying AI&#x27; is structurally weak.</td>
+<td style="font-size:0.85em"><a href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/7f1f0218e45f5414c79c0679633e47bc-Abstract-Conference.html">LLM Evaluators Recognize and Favor Their Own Generations</a></td>
+<td style="font-size:0.85em">M6 inline verification (why an LLM cannot be its own sole ve</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">confirmed</td>
+</tr>
+</table>
+
+<hr class="sec"/>
+<h2 id="ecosystem-appendix">Appendix&ensp;Ecosystem map &mdash; faculties &amp; mechanisms vs. the real stack</h2>
+<p class="foot">Each faculty and mechanism graded against the actual 2026 Claude&#8209;Code stack (skills, hooks,
+plugins, MCP servers, memory backends, subagent/Agent&#8209;Teams orchestration, model&#8209;tiering
+gateways). <b>Solved</b> = covered well by existing tooling; <b>partial</b> = tooling exists but leaves a
+named gap; <b>residual&#8209;gap</b> = genuine whitespace. Full tool lists and citations are in
+<code>ecosystem_map.json</code>.</p>
+<table class="map">
+<tr class="h"><td>Capability</td><td>Existing tooling (sample)</td><td>Status</td><td>Residual gap</td><td>What we'd add</td></tr>
+<tr>
+<td><b>Memory (across sessions)</b><br><span style="font-size:0.8em;color:#888">faculty</span></td>
+<td style="font-size:0.85em">CLAUDE.md; Auto Memory; Mem0; claude-mem; Hindsight</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">Pain-points report names this directly: &#x27;no standard, tool-agnostic, durable memory layer that reliably persists project knowledge, decisions, and corrections across sessions, tools, and teammates&#x27; (Open gap #2), with JetBrains finding 77% </td>
+<td style="font-size:0.85em"><em>Validity-anchored memory: stored facts carry a confirmed/discredited state updated by verified outcomes, not a static note-dump -- addresses the correction dime</em></td>
+</tr>
+<tr>
+<td><b>Learning (from outcomes)</b><br><span style="font-size:0.8em;color:#888">faculty</span></td>
+<td style="font-size:0.85em">Auto Memory &#x27;feedback&#x27; memory type; Superpowers subagent-driven-development two-stage review; ccusage / usage trackers</td>
+<td style="white-space:nowrap;color:#C44E52;font-weight:600">residual-gap</td>
+<td style="font-size:0.85em">No tool in the stack closes the loop from a task&#x27;s actual outcome (did the fix hold, did the test stay green, was the PR reverted) back into changed future behavior. Auto Memory&#x27;s feedback type is note storage, not an evaluated lesson; froz</td>
+<td style="font-size:0.85em"><em>Outcome-validated learning loop: capture a task&#x27;s actual downstream result, verify it independently, and write back only confirmed lessons (not raw logs) into t</em></td>
+</tr>
+<tr>
+<td><b>Imagination (simulate consequences before acting)</b><br><span style="font-size:0.8em;color:#888">faculty</span></td>
+<td style="font-size:0.85em">Plan mode / built-in Plan subagent; Explore subagent; Superpowers brainstorm -&gt; plan -&gt; TDD -&gt; subagent-dev -&gt; review</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">These are textual/symbolic planning steps within the stack itself, not a simulation of an edit&#x27;s actual downstream effects -- no hook, skill, or MCP server in the stack landscape traces a dependency graph before a change is made. (The pain-</td>
+<td style="font-size:0.85em"><em>A pre-action impact simulation step -- dependency-graph/call-graph traversal that predicts affected files/tests before code is written, feeding predicted blast </em></td>
+</tr>
+<tr>
+<td><b>Self-correction</b><br><span style="font-size:0.8em;color:#888">faculty</span></td>
+<td style="font-size:0.85em">Stop hooks; PreToolUse blocking hooks; Playwright&#x27;s healer agent; TDD RED-GREEN-REFACTOR; /security-review and pr-review-toolkit</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">These are retry/gate mechanisms, not diagnosis. The pain-points report documents the &#x27;doom loop&#x27; by name -- an agent that &#x27;makes a mistake, tries to fix it, makes it worse&#x27; and can even delete its own changes while declaring success -- and </td>
+<td style="font-size:0.85em"><em>A root-cause-aware correction gate that distinguishes genuine progress from thrash (same failure signature repeating), halts and escalates with a diagnosis inst</em></td>
+</tr>
+<tr>
+<td><b>Impact-awareness (what exists in the codebase / what an edit affects)</b><br><span style="font-size:0.8em;color:#888">faculty</span></td>
+<td style="font-size:0.85em">filesystem and memory; Context7; sequential-thinking MCP server; sandboxing&#x27;s &#x27;trust verification for new codebases/MCP servers&#x27;</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">These stack primitives expose retrieval (docs, a memory graph, filesystem access) that the model may or may not consult -- none is a deterministic, mandatory gate run before every edit, and none computes blast radius. (The pain-points repor</td>
+<td style="font-size:0.85em"><em>A MANDATORY pre-action impact gate -- a hook-enforced (not LLM-judged) dependency-graph query that runs before every edit is applied, not an optional retrieval </em></td>
+</tr>
+<tr>
+<td><b>M1 Complexity-aware routing</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">Model tiering; Per-agent model: field in .claude/agents/; LLM gateways: LiteLLM, Portkey, OpenRouter; Named orchestration pattern: &#x27;orchestrator-classifies-then-routes to Haiku/Sonnet/Opus by complexity&#x27;</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">solved</td>
+<td style="font-size:0.85em">The routing decision is set at config time (a developer picks model: haiku for an agent) or by the gateway&#x27;s own cost logic -- it is not a transparent, per-task, auditable classification the user can see and override before dispatch.</td>
+<td style="font-size:0.85em"><em>A transparent complexity classification surfaced to the user before dispatch, making the routing decision auditable rather than a silent config default.</em></td>
+</tr>
+<tr>
+<td><b>M2 Assumption / uncertainty</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">Reasoning models acting as an internal review pass; Context7; Spec-driven development</td>
+<td style="white-space:nowrap;color:#C44E52;font-weight:600">residual-gap</td>
+<td style="font-size:0.85em">Named directly and unsolved in the pain-points report: &#x27;Models rarely signal uncertainty or say I can&#x27;t do this&#x27; -- the report&#x27;s own build opportunity is &#x27;calibrated-confidence and known-unknowns tooling -- agents that flag low-confidence r</td>
+<td style="font-size:0.85em"><em>This is the paper&#x27;s named root failure: an assumption/uncertainty gate that requires the model to enumerate its unstated assumptions and ask before proceeding w</em></td>
+</tr>
+<tr>
+<td><b>M3 Task / session decomposition</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">Subagents; Agent Teams; git worktrees for parallel-agent isolation; Parallel fan-out orchestration pattern; Superpowers subagent-driven-development</td>
+<td style="white-space:nowrap;color:#4E9A6B;font-weight:600">solved</td>
+<td style="font-size:0.85em">Mature, well-tooled pattern. The remaining gap is small: deciding the decomposition boundary itself (what counts as independent vs. needs shared context) is still a manual/heuristic judgment call by the developer, not something any listed t</td>
+<td style="font-size:0.85em"><em>Automatic decomposition-boundary detection -- deciding when to fork a subagent/session vs. keep work in one context, rather than leaving that call to developer </em></td>
+</tr>
+<tr>
+<td><b>M4 Goal-anchoring</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">CLAUDE.md; Spec-driven development; /goal command; Task lists in Agent Teams</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">These anchors are loaded once and are static. The report documents the anchor decaying over a session: &#x27;circular reasoning at 20% [context usage], context compression wiping scrollback at 40%,&#x27; and Open gap #1 states plainly that &#x27;specs dri</td>
+<td style="font-size:0.85em"><em>A continuous goal-drift check that periodically re-validates in-progress output against the original stated objective, rather than loading the goal once and tru</em></td>
+</tr>
+<tr>
+<td><b>M5 Anti-over-engineering</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">frontend-design skill&#x27;s minimalism discipline; TDD RED-GREEN-REFACTOR; pr-review-toolkit / CodeRabbit / Greptile review agents</td>
+<td style="white-space:nowrap;color:#C44E52;font-weight:600">residual-gap</td>
+<td style="font-size:0.85em">The frontend-design skill&#x27;s discipline is explicitly UI-only; no general-purpose backend/architecture tool measures unnecessary abstraction, premature generalization, or scope creep against the stated task. GitClear&#x27;s tracked defects (8x du</td>
+<td style="font-size:0.85em"><em>A scope-minimality check that compares an implementation&#x27;s footprint (files touched, abstractions introduced) against the stated task requirement and flags addi</em></td>
+</tr>
+<tr>
+<td><b>M6 Inline verification</b><br><span style="font-size:0.8em;color:#888">mechanism</span></td>
+<td style="font-size:0.85em">Real-time thinking/tool-call streaming; Self-QA pattern; PostToolUse hooks; Plan mode human-in-the-loop gating</td>
+<td style="white-space:nowrap;color:#DD8452;font-weight:600">partial</td>
+<td style="font-size:0.85em">Streaming and immediate post-edit hooks give passive visibility but do not require a human interpretive checkpoint DURING generation. The pain-points report&#x27;s central statistic is the &#x27;48-point gap&#x27;: &#x27;Sonar&#x27;s 2026 report: 96% of developers </td>
+<td style="font-size:0.85em"><em>A mandatory inline checkpoint that surfaces a human-checkable claim or diff at each meaningful generation step, shifting verification earlier instead of batchin</em></td>
+</tr>
+</table>
+
+<h2 id="appendix">Appendix&ensp;Qur'anic&#8209;lens mapping table</h2>
+<p style="font-size:.92rem;color:var(--mute)">The complete 14&#8209;row mapping (12 load&#8209;bearing, 2 metaphor). Canonical Arabic and translations retrieved from quran.ai; full text, tafsir references, and design principles in the companion artifact <code>quran_lens.json</code>. Caveat: this table is a design lens, not technical or theological authority &mdash; see &sect;5.</p>
+<table>
+<thead><tr><th style="width:22%">Concept / verse</th><th style="width:30%">Retrieved gloss</th><th style="width:16%">Faculty</th><th style="width:22%">Design principle (abbrev.)</th><th style="width:10%">Type</th></tr></thead>
+<tbody>
+<tr><td><b>17:36 — lā taqfu (do not pursue without knowledge)</b></td><td>Do not follow blindly what you do not know to be true: ears, eyes, and heart, you will be questioned about all these.</td><td>IMPACT-AWARENESS</td><td>Before any code mutation (file write, delete, refactor), the agent must run a pre-action verification gate that checks: (1) what entities in the codebase wil…</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>49:6 — tabayyun (verify reports before acting)</b></td><td>Believers, if a troublemaker brings you news, check it first, in case you wrong others unwittingly and later regret what you have done,</td><td>SELF-CORRECTION</td><td>The agent architecture must include a verification gate between receiving information (from context, tool output, or its own prior reasoning) and acting on it</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>2:31-32 — taʿlīm al-asmāʾ (He taught Adam the names of all things)</b></td><td>(2:31) He taught Adam all the names [of things], then He showed them to the angels and said, ‘Tell me the names of these if you truly [think you can].’ (2:32) They sai…</td><td>WORLD-MODEL (codebase graph)</td><td>The agent must maintain a structured representation of what exists in the codebase — a graph of files, functions, classes, dependencies, and their relationsh…</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>20:114 — rabbi zidnī ʿilmā (My Lord, increase me in knowledge)</b></td><td>exalted be God, the one who is truly in control. [Prophet], do not rush to recite before the revelation is fully complete but say, ‘Lord, increase me in knowledge!’</td><td>CONTINUAL LEARNING</td><td>The agent&#x27;s knowledge must be treated as perpetually incomplete, with an explicit mechanism for incremental growth</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>96:1-5 — iqraʾ / ʿallama bi-l-qalam (Read; taught by the pen)</b></td><td>(96:1) Read! In the name of your Lord who created: (96:2) He created manfrom a clinging form. (96:3) Read! Your Lord is the Most Bountiful One (96:4) who taught by [me…</td><td>PERSISTENT MEMORY</td><td>Knowledge must be externalized to survive beyond the moment of computation</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>39:9 — hal yastawī lladhīna yaʿlamūna wa-lladhīna lā yaʿlamūn (are those who know equal to those who do not know?)</b></td><td>What about someone who worships devoutly during the night, bowing down, standing in prayer, ever mindful of the life to come, hoping for his Lord’s mercy? Say, ‘How ca…</td><td>MEMORY + LEARNING (epistemic grounding)</td><td>An agent that retains and learns from experience is categorically more capable and more trustworthy than one that does not — this is not a nice-to-have but a…</td><td style="color:#9a7d10;font-weight:600">metaphor</td></tr>
+<tr><td><b>4:82 — tadabbur al-Qurʾān (do they not reflect deeply upon the Quran; inconsistency as a sign of non-divine origin)</b></td><td>Will they not think about this Quran? If it had been from anyone other than God, they would have found much inconsistency in it.</td><td>SELF-CORRECTION (metacognitive controller)</td><td>The agent must run self-consistency checks on its own output before committing it</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>47:24 — tadabbur / aqfāl ʿalā qulūb (do they not ponder, or are there locks on their hearts?)</b></td><td>Will they not contemplate the Quran? Do they have locks on their hearts?</td><td>SELF-CORRECTION (iterative refinement)</td><td>Reflection must be a deliberate, repeatable operation, not a one-pass judgment</td><td style="color:#9a7d10;font-weight:600">metaphor</td></tr>
+<tr><td><b>33:72 — al-amāna (the Trust offered to heavens, earth, mountains; borne by the human)</b></td><td>We offered the Trust to the heavens, the earth, and the mountains, yet they refused to undertake it and were afraid of it; mankind undertook it- they have always been …</td><td>STEWARDSHIP ETHICS (bounded autonomy)</td><td>An agent that can modify a codebase bears a trust (amāna) — it has accepted responsibility for something it can damage</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>CONCEPT: ʿilm → fahm → ḥikma (knowledge → understanding → wisdom)</b></td><td>A classical epistemological hierarchy: ʿilm is raw knowledge (facts, data, observations); fahm is comprehension (grasping the relations between facts, seeing why); ḥik…</td><td>MEMORY + LEARNING (data architecture)</td><td>The agent&#x27;s memory/learning stack must be layered, not flat</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>CONCEPT: ḥifẓ + murājaʿa (preservation + spaced review/revision)</b></td><td>The classical Quranic memorization discipline: ḥifẓ is initial encoding and faithful preservation of the text; murājaʿa is the regular, spaced revision that prevents d…</td><td>PERSISTENT MEMORY (consolidation &amp; maintenance)</td><td>Memory is not write-once</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>CONCEPT: tadabbur (deep, structured reflection — returning to examine consequences)</b></td><td>Tadabbur is not casual thought; its root d-b-r relates to &#x27;what is behind&#x27; or &#x27;what follows&#x27; — examining the consequences and deeper implications of something. In Qura…</td><td>SELF-CORRECTION (metacognitive controller)</td><td>The metacognitive controller is a tadabbur loop: after the agent generates a plan or action, the controller examines what comes after (d-b-r) — what are the …</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>CONCEPT: tabayyun (verification of reports before acting on them)</b></td><td>Tabayyun is the act of seeking clarity and verification before acting on received information. In 49:6, it is commanded as a mandatory step between receiving a report …</td><td>SELF-CORRECTION (verification gate)</td><td>The verification gate is the architectural realization of tabayyun</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+<tr><td><b>CONCEPT: amāna (trust, stewardship, accepted responsibility)</b></td><td>Amāna is the trust or responsibility that is accepted voluntarily and carries accountability. In 33:72, it is described as something so weighty that the heavens, earth…</td><td>STEWARDSHIP ETHICS (safe operation)</td><td>When an agent is granted access to a codebase, it accepts an amāna — a trust that carries accountability proportional to its capability</td><td style="color:#0d5c56;font-weight:600">load-bearing</td></tr>
+</tbody></table>
+
+<div class="foot">
+<p><b>Companion artifacts.</b> This paper is accompanied by: the runnable <code>impact_oracle_src.zip</code> (world&#8209;model + oracle + demo + 36&#8209;test suite); the impact&#8209;graph and evaluation figures; the structured literature <code>gap_map.json</code> and 32&#8209;entry <code>references.json</code>; and the <code>quran_lens.json</code> mapping table. All results are reproducible via the included <code>demo.py</code>.</p>
+<p><b>On the lens.</b> Qur'anic text throughout was retrieved from the quran.ai service and presented directly, not paraphrased. It is used as an epistemological and ethical design lens only; every technical claim rests on the cited literature and the prototype evaluation, independent of the lens.</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -30,6 +30,7 @@
     "source",
     "global",
     "templates",
+    "docs/cognitive-substrate",
     "plugin",
     "hooks",
     ".claude-plugin",
