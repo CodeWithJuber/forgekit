@@ -7,7 +7,7 @@
 //           prompt          (UserPromptSubmit)            — log a user-utterance event
 //           stop            (Stop)                        — distill the session into lessons
 //           session-start   (SessionStart)               — inject learned lessons as context
-import { startupBlock } from "./cortex.js";
+import { applyDistillation, startupBlock } from "./cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -15,6 +15,25 @@ import {
   processSession,
   readSession,
 } from "./cortex_hook.js";
+import { load } from "./lessons_store.js";
+
+// Opt-in: distill newly-created lessons into real prose via a cheap model call. Off by
+// default (deterministic template is used); fail-safe (any error → keep the template).
+async function enrichCreated(root, results) {
+  if (process.env.ENABLE_CORTEX_DISTILL !== "1") return;
+  const created = results.filter((r) => r?.action === "created" && r.id);
+  if (!created.length) return;
+  const { distill } = await import("./cortex_distill.js");
+  for (const r of created) {
+    const lesson = load(root).find((l) => l.id === r.id);
+    if (!lesson) continue;
+    const better = distill({
+      context: lesson.trigger,
+      signals: lesson.provenance?.signals ?? [],
+    });
+    if (better) applyDistillation(root, r.id, better);
+  }
+}
 
 async function readStdin() {
   const chunks = [];
@@ -39,8 +58,9 @@ async function main() {
   } else if (mode === "stop") {
     const events = readSession(root, sid);
     if (events.length) {
-      processSession(root, events, today);
+      const results = processSession(root, events, today);
       clearSession(root, sid);
+      await enrichCreated(root, results);
     }
   } else if (mode === "session-start") {
     const block = startupBlock(root, today);

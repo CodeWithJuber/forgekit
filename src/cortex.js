@@ -168,6 +168,19 @@ export function startupBlock(root, nowDay = 0, budget = 8) {
   ].join("\n");
 }
 
+/** Replace a lesson's body with a model-distilled version (returns false if not found). */
+export function applyDistillation(root, lessonId, distilled) {
+  if (!distilled) return false;
+  const lesson = load(root).find((l) => l.id === lessonId);
+  if (!lesson) return false;
+  save(root, {
+    ...lesson,
+    whatWentWrong: distilled.whatWentWrong,
+    correctedBehavior: distilled.correctedBehavior,
+  });
+  return true;
+}
+
 /** The lessons block to inline into AGENTS.md so non-Claude tools see them (empty if none). */
 export function cortexBlock(targetRoot = process.cwd()) {
   return startupBlock(targetRoot, Math.floor(Date.now() / 86400000));
