@@ -1,0 +1,152 @@
+// forge cortex — orchestration that ties the pure core (lessons.js) to storage
+// (lessons_store.js). This is what the hooks (Layer 0) call: a scored signal-cluster
+// becomes a created/confirmed lesson; an independent human reversal becomes a
+// contradiction. Kept fs-thin and deterministic (day + ids passed in) so it's testable
+// without any hook wiring.
+import {
+  confidenceOf,
+  confirm,
+  contradict,
+  matchScore,
+  newLesson,
+  scoreMistake,
+  selectForInjection,
+} from "./lessons.js";
+import { appendEpisode, load, save } from "./lessons_store.js";
+
+const slug = (s) =>
+  String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+const lessonIdFor = (ctx) => `lsn_${slug(ctx.symbols?.[0] || ctx.files?.[0] || "ctx") || "ctx"}`;
+
+/** Lessons whose trigger overlaps the current context, in the given lifecycle states. */
+export function matchingLessons(
+  lessons,
+  context,
+  statuses = ["active", "candidate", "quarantined"],
+) {
+  return lessons.filter((l) => statuses.includes(l.status) && matchScore(l, context) > 0);
+}
+
+// Deterministic fallback when no LLM distiller ran (the Stop-hook distiller replaces this).
+function templateDistill(context) {
+  const sym = context.symbols?.[0];
+  const where = sym ? `\`${sym}\`` : context.files?.[0] ? `\`${context.files[0]}\`` : "this code";
+  return {
+    whatWentWrong: `An edit to ${where} was corrected (repeated / reverted / broke a check).`,
+    correctedBehavior: sym
+      ? `Before editing ${where}, check its callers and tests first.`
+      : `Slow down on ${where}: re-read and check impact before editing.`,
+  };
+}
+
+/**
+ * Record a correction episode. If the signals clear the mistake bar, create a new
+ * candidate lesson (first occurrence) or confirm the matching one (a recurrence — the
+ * only thing that promotes a lesson toward `active`). Always logs the episode.
+ * @returns {{action:string, id?:string, status?:string, p:number, fires:boolean}}
+ */
+export function recordMistake(root, { signals, context, nowDay, episodeId, distilled }) {
+  const { p, fires } = scoreMistake(signals);
+  appendEpisode(root, {
+    id: episodeId,
+    kind: "mistake",
+    signals: signals.map((s) => s.signal),
+    p,
+    context,
+    day: nowDay,
+  });
+  if (!(fires && p >= 0.7)) return { action: "logged", p, fires };
+
+  const existing = matchingLessons(load(root), context)[0];
+  if (existing) {
+    const c = confirm(existing, nowDay);
+    const updated = {
+      ...c,
+      provenance: {
+        ...c.provenance,
+        episodes: [...(c.provenance?.episodes ?? []), episodeId],
+      },
+    };
+    save(root, updated);
+    return {
+      action: "confirmed",
+      id: updated.id,
+      status: updated.status,
+      p,
+      fires,
+    };
+  }
+
+  const d = distilled ?? templateDistill(context);
+  const lesson = newLesson(
+    {
+      id: lessonIdFor(context),
+      trigger: {
+        symbols: context.symbols ?? [],
+        files: context.files ?? [],
+        keywords: context.keywords ?? [],
+        action: "edit",
+      },
+      scope: context.symbols?.length ? "symbol" : "repo",
+      whatWentWrong: d.whatWentWrong,
+      correctedBehavior: d.correctedBehavior,
+      provenance: {
+        episodes: [episodeId],
+        signals: signals.map((s) => s.signal),
+      },
+    },
+    nowDay,
+  );
+  save(root, lesson);
+  return { action: "created", id: lesson.id, status: lesson.status, p, fires };
+}
+
+/**
+ * An independent human reversal (e.g. `git revert` of what a lesson advised) contradicts
+ * every matching active/quarantined lesson — the anti-self-reinforcement path.
+ */
+export function recordContradiction(root, { context, nowDay, episodeId }) {
+  appendEpisode(root, {
+    id: episodeId,
+    kind: "contradiction",
+    context,
+    day: nowDay,
+  });
+  const targets = matchingLessons(load(root), context, ["active", "quarantined"]);
+  const results = targets.map((l) => {
+    const updated = contradict(l, nowDay);
+    save(root, updated);
+    return { id: updated.id, status: updated.status };
+  });
+  return { action: "contradicted", results };
+}
+
+/** The injection block for the current context — what a SessionStart/PreToolUse hook emits. */
+export function lessonsForContext(root, context, opts = {}) {
+  return selectForInjection(load(root), context, opts);
+}
+
+/** Auditable snapshot for `forge cortex status`. */
+export function summary(root, nowDay = 0) {
+  const lessons = load(root);
+  const by = (s) => lessons.filter((l) => l.status === s).length;
+  return {
+    total: lessons.length,
+    active: by("active"),
+    candidate: by("candidate"),
+    quarantined: by("quarantined"),
+    retired: by("retired"),
+    topActive: lessons
+      .filter((l) => l.status === "active")
+      .map((l) => ({
+        id: l.id,
+        confidence: Number(confidenceOf(l, nowDay).toFixed(2)),
+      }))
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 10),
+  };
+}
