@@ -1,7 +1,7 @@
 {
   "name": "@codewithjuber/forgekit",
   "version": "0.3.1",
-  "description": "One config, every AI coding tool — a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
+  "description": "One config, every AI coding tool \u2014 a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
   "type": "module",
   "bin": {
     "forge": "src/cli.js"
@@ -30,7 +30,6 @@
     "source",
     "global",
     "templates",
-    "docs/cognitive-substrate",
     "plugin",
     "hooks",
     ".claude-plugin",
@@ -69,7 +68,7 @@
     "zero-dependencies"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
+    "@biomejs/biome": "2.5.2",
     "@types/node": "^26",
     "typescript": "^6"
   }

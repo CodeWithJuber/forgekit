@@ -2,24 +2,22 @@
 
 Builds and maintains a directed graph whose nodes are symbols and whose
 edges are structural dependencies.  The graph is persisted to disk as
-JSON (node-link format) plus a NetworkX pickle.  On subsequent runs only
-files whose content hash has changed are re-parsed (incremental update).
+JSON (node-link format) only — never pickle, which would execute arbitrary
+code on load.  On subsequent runs only files whose content hash has changed
+are re-parsed (incremental update).
 """
 
 from __future__ import annotations
 
 import json
 import os
-import pickle
 from pathlib import Path
 from typing import Any
 
 import networkx as nx
 
 from impact_oracle.parser import (
-    DependencyEdge,
     ParseResult,
-    SymbolNode,
     content_hash,
     discover_python_files,
     parse_file,
@@ -43,7 +41,17 @@ class WorldModel:
             Directory to persist the graph.  Defaults to ``<root>/.impact_oracle_cache``.
         """
         self.root = os.path.abspath(root)
-        self.cache_dir = cache_dir or os.path.join(self.root, ".impact_oracle_cache")
+        # Defense-in-depth: a caller-supplied cache_dir must resolve inside root, so a
+        # hostile MCP argument cannot point persistence I/O at an arbitrary location.
+        if cache_dir is None:
+            self.cache_dir = os.path.join(self.root, ".impact_oracle_cache")
+        else:
+            resolved = os.path.abspath(cache_dir)
+            if os.path.commonpath([resolved, self.root]) != self.root:
+                raise ValueError(
+                    f"cache_dir {cache_dir!r} must be inside root {self.root!r}"
+                )
+            self.cache_dir = resolved
         self.graph: nx.DiGraph = nx.DiGraph()
         # content-hash cache: filepath (relative) -> hash
         self._file_hashes: dict[str, str] = {}
@@ -174,29 +182,26 @@ class WorldModel:
 
     def _save_cache(self):
         os.makedirs(self.cache_dir, exist_ok=True)
-        # 1. JSON node-link (portable)
+        # JSON node-link is the ONLY persistence format. Pickle was removed: loading a
+        # pickle executes arbitrary code, and cache_dir can be caller-supplied, which made
+        # graph.pkl an insecure-deserialization (RCE) vector. JSON is data-only and safe.
         data = nx.node_link_data(self.graph)
         with open(os.path.join(self.cache_dir, "graph.json"), "w") as f:
             json.dump(data, f, indent=1)
-        # 2. Pickle (fast reload)
-        with open(os.path.join(self.cache_dir, "graph.pkl"), "wb") as f:
-            pickle.dump(self.graph, f, protocol=pickle.HIGHEST_PROTOCOL)
-        # 3. File hashes
         with open(os.path.join(self.cache_dir, "file_hashes.json"), "w") as f:
             json.dump(self._file_hashes, f)
-        # 4. File-node mapping
         with open(os.path.join(self.cache_dir, "file_nodes.json"), "w") as f:
             json.dump(self._file_nodes, f)
 
     def _load_cache(self):
-        pkl_path = os.path.join(self.cache_dir, "graph.pkl")
+        json_path = os.path.join(self.cache_dir, "graph.json")
         hash_path = os.path.join(self.cache_dir, "file_hashes.json")
         fn_path = os.path.join(self.cache_dir, "file_nodes.json")
 
-        if os.path.exists(pkl_path):
+        if os.path.exists(json_path):
             try:
-                with open(pkl_path, "rb") as f:
-                    self.graph = pickle.load(f)
+                with open(json_path) as f:
+                    self.graph = nx.node_link_graph(json.load(f))
             except Exception:
                 self.graph = nx.DiGraph()
 
@@ -221,8 +226,11 @@ class WorldModel:
 
         for edge in result.edges:
             self.graph.add_edge(
-                edge.source, edge.target,
-                kind=edge.kind, confidence=edge.confidence, lineno=edge.lineno,
+                edge.source,
+                edge.target,
+                kind=edge.kind,
+                confidence=edge.confidence,
+                lineno=edge.lineno,
             )
 
         self._file_nodes[result.file] = node_names
@@ -251,15 +259,30 @@ class WorldModel:
                 continue
             # Try parent.v as a resolution
             # e.g. target 'utils.helper_func' might live as 'demo_package.utils.helper_func'
-            candidates = [n for n in existing if n.endswith(f".{v}") or n.endswith(f".{v.split('.')[-1]}")]
+            candidates = [
+                n
+                for n in existing
+                if n.endswith(f".{v}") or n.endswith(f".{v.split('.')[-1]}")
+            ]
             if len(candidates) == 1:
                 edges_to_remove.append((u, v))
-                edges_to_add.append((u, candidates[0], {**data, "confidence": data.get("confidence", 1.0) * 0.9}))
+                edges_to_add.append(
+                    (
+                        u,
+                        candidates[0],
+                        {**data, "confidence": data.get("confidence", 1.0) * 0.9},
+                    )
+                )
             elif len(candidates) > 1:
                 # ambiguous: pick the best match (longest common suffix)
-                best = max(candidates, key=lambda c: len(os.path.commonprefix([c[::-1], v[::-1]])))
+                best = max(
+                    candidates,
+                    key=lambda c: len(os.path.commonprefix([c[::-1], v[::-1]])),
+                )
                 edges_to_remove.append((u, v))
-                edges_to_add.append((u, best, {**data, "confidence": data.get("confidence", 1.0) * 0.7}))
+                edges_to_add.append(
+                    (u, best, {**data, "confidence": data.get("confidence", 1.0) * 0.7})
+                )
 
         for u, v in edges_to_remove:
             if self.graph.has_edge(u, v):

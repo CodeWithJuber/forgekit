@@ -17,26 +17,41 @@ enforces the non-negotiables as deterministic guards, and adds a code-graph,
 cross-session memory, and a cost governor. Works with **Claude Code, Codex,
 Cursor, Gemini CLI, Aider, Copilot, Windsurf/Devin, and Zed**.
 
+**Install** — pick one:
+
 ```bash
-# clone, then:
-bash install.sh          # symlinks into ~/.forge + ~/.claude, puts `forge` on PATH
-forge init               # in any repo: emit every tool's config from one source
+# A) Claude Code / Codex — as a plugin (recommended)
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+
+# B) Clone and run the installer (puts `forge` on your PATH)
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit && bash install.sh
+```
+
+**Use** — in any repository:
+
+```bash
+forge init               # emit every tool's config from one source
 forge substrate "task"   # assumption gate + route + impact + scope + verify
 forge doctor             # verify everything is wired
 ```
 
-Prefer a plugin? `/plugin marketplace add <this-repo>` then `/plugin install forgekit`.
-Prefer npm? Forge publishes to **GitHub Packages** as `@codewithjuber/forgekit`. Point the
-scope at the registry and authenticate once (GitHub Packages requires a token even for public
-installs), then run it:
+<details>
+<summary>CI / devcontainer install via npm (GitHub Packages)</summary>
+
+Forge publishes to GitHub Packages as `@codewithjuber/forgekit`. GitHub Packages requires a
+token even for public installs, so authenticate the scope once, then run it:
 
 ```bash
 echo "@codewithjuber:registry=https://npm.pkg.github.com" >> ~/.npmrc
-echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc   # token needs read:packages
+echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc   # needs read:packages
 npx @codewithjuber/forgekit init
 ```
 
-All three channels drive the **same** `global/` tree.
+</details>
+
+All channels drive the **same** `global/` tree.
 
 ## Why
 
@@ -92,44 +107,44 @@ On **Claude Code** it's fully ambient (hooks). Other tools read the lessons from
 and a zero-dependency MCP server (`forge cortex-mcp`). Everything lives in `.forge/lessons/`
 — git-committable and auditable. Try it: `node examples/cortex-demo.mjs`.
 
-## Forge Cognitive Substrate — one pre-action gate
+## Forge Cognitive Substrate — the check that runs before every edit
 
-Forge now wraps the agent loop with the paper's cognitive-substrate controls. Run one command before ambiguous, expensive, or mutating work:
+A frozen model can't remember, can't foresee, and can't see what an edit will break. The
+**cognitive substrate** supplies those faculties from the outside: a fast, mostly-deterministic
+check (no extra LLM call) that runs _before_ the agent touches code. One command does it all:
 
 ```bash
-forge substrate "Fix the checkout bug in `src/payments.ts` and add tests"
-forge substrate "Refactor auth" --json
-forge impact computeTax
+forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
 ```
 
-`substrate` returns the assumption gate, model route, impact radius, scope clusters, relevant Cortex lessons, minimality warnings, and a verification checklist. MCP-capable extensions get the same flow through `substrate_check`, `predict_impact`, and `assumption_gate`. Deterministic checks are asserted; memory relevance, routing fit, and minimality remain advisory where the research is not a hard guarantee.
+It returns, in one contract: the **assumption gate** (is the task clear enough to start?),
+the cheapest **capable model**, the predicted **blast radius** (which files an edit breaks),
+**scope** clusters (what to split into separate sessions), relevant **Cortex lessons**,
+**minimality** warnings, and a **verification** checklist.
 
-Full paper bundle and original artifacts live in
-[`docs/cognitive-substrate/`](docs/cognitive-substrate/): PDF, HTML, evidence map,
-ecosystem map, and the original router-gate / impact-oracle prototype packages.
+**It runs itself.** In Claude Code a `UserPromptSubmit` hook fires the substrate on every
+prompt and adds a short advisory only when something needs attention — never blocking, never
+nagging on a clean task. Other tools (Codex, Cursor, Gemini, Aider…) get a rule in their
+config telling the agent to run it, plus the MCP tools `substrate_check`, `assumption_gate`,
+`predict_impact`, `route_task`, and `scope_files`.
 
-## Forge Preflight — size the work before spending tokens
+Each check is also its own command:
 
-An LLM is a fixed-capacity stochastic predictor. Most of the cost/quality bleed comes from
-feeding it the wrong-sized task with the wrong-sized context and then over-trusting the output.
-**Preflight** is the cheap, deterministic layer that runs _before_ the tokens — no LLM, no guessing:
+| Command                       | Answers                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `forge preflight "<task>"`    | Is this clear enough to start? (flags unknown names + vague words) |
+| `forge route "<task>"`        | Cheapest capable model — Haiku → Sonnet → Opus → Fable             |
+| `forge impact <symbol\|file>` | What will this edit break? (reverse-dependency blast radius)       |
+| `forge scope <file…>`         | Independent vs. coupled files → separate sessions                  |
+| `forge uicheck <fg> <bg>`     | Exact WCAG contrast math for UI work                               |
 
-- **`forge preflight "<task>"`** — the assumption detector. Scans the task for symbols/files the
-  repo doesn't define — the things the model would otherwise _assume_ — and surfaces them so it
-  asks instead of confabulating. Also fires on `UserPromptSubmit`. (The research whitespace: no
-  shipping tool pre-scans the repo before acting.)
-- **`forge route "<task>"`** — recommends the cheapest _capable_ model (Haiku → Sonnet → Opus →
-  Fable) from code-task complexity (files, fan-out, churn, past-mistake density, ambiguity). A
-  prime-finder gets Haiku, not Fable. `forge route gateway` emits a LiteLLM config for real
-  auto-routing.
-- **`forge scope <file…>`** — a zero-dep import graph → independent clusters (“run these as
-  separate sessions”) + the coupled files you didn't mention.
-- **`forge uicheck <fg> <bg>`** — exact WCAG contrast math. The design rules (anti-slop, empty
-  states, specific errors, AI-UX patterns) emit to every tool; the frontend-verifier _asserts_
-  only the deterministic and keeps taste _advisory_ — so AI UI-audits stop hallucinating.
+Deterministic checks (repo grounding, graph traversal, routing arithmetic) are **asserted**;
+model fit, minimality, and memory relevance stay **advisory**. Everything is advisory overall
+and never blocks — tests and human corrections always win.
 
-Everything is advisory and never blocks. Cross-tool via the `preflight_check` / `route_task` /
-`scope_files` MCP tools.
+**→ Full guide with worked examples, auto-use setup, and how to extend it:
+[`docs/cognitive-substrate/`](docs/cognitive-substrate/)** (also holds the white paper,
+evidence map, and ecosystem map).
 
 ## Commands
 
