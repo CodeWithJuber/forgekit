@@ -49,6 +49,19 @@
       ]
     },
     {
+      "id": "production",
+      "title": "Production standards (2026)",
+      "rules": [
+        "Validate at trust boundaries with a schema (e.g. Zod): parse untrusted input (API, env, file, LLM output) into typed values before use — never trust it raw.",
+        "Keep business logic in use-cases/domain, not controllers; hide the DB/ORM behind a repository interface; return DTOs, never raw DB models.",
+        "Check ownership/authorization on every object access (OWASP API #1 — never trust a user-supplied ID); paginate every list; make retried mutations idempotent.",
+        "Use a typed error model: typed codes, safe public messages, internal detail logged with a requestId. Never swallow errors or leak stack traces to clients.",
+        "Emit structured logs (level, message, requestId, service, durationMs); for services add metrics/traces (OpenTelemetry) and track error rate, p95 latency, and AI token cost.",
+        "Treat AI/LLM output as untrusted (OWASP LLM Top 10): verify it, never execute it directly, never put secrets/PII in prompts, give agent tools least privilege + human approval for destructive actions.",
+        "Prefer boring, typed, maintained tech; contract-first APIs (OpenAPI 3.1) with a new version for every breaking change; don't over-pattern simple code."
+      ]
+    },
+    {
       "id": "git",
       "title": "Git",
       "rules": [

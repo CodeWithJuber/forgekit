@@ -52,3 +52,26 @@ itself a sandbox.
   PRs that introduce known-vulnerable or disallowed-license dependencies.
 - Releases publish from CI with npm provenance (OIDC) + a scoped `NPM_TOKEN` — never a
   long-lived token in code.
+
+## Standards mapping
+
+forgekit's controls map to the 2026 baselines:
+
+**OWASP LLM Top 10**
+- Prompt injection / supply chain (LLM01/03/05): `forge scan` (skill-gate) blocks injection /
+  RCE / exfil in a skill or MCP config **before** install.
+- Insecure output handling / sensitive-info disclosure (LLM02/06): the `secret-redact` guard
+  masks keys in tool output; `protect-paths` blocks secret-file reads/writes.
+- Excessive agency (LLM08): guards enforce least privilege + human-in-the-loop
+  (`permissionDecision` deny/ask); `forge harden` wires the OS sandbox.
+- Unbounded consumption / model DoS (LLM10): the cost governor + doom-loop breaker cap runaway
+  spend and thrash.
+- Output integrity: `forge verify` (tests + hallucinated-symbol + provenance) treats AI output
+  as untrusted and requires evidence before merge.
+
+**NIST SSDF (SP 800-218):** *prepare* (this policy + GOVERNANCE); *protect* (zero-dep, signed
+provenance, branch protection); *produce* (CI gate: lint / type / test / audit / dependency-review);
+*respond* (this reporting process + Dependabot).
+
+**SLSA:** releases publish from CI with npm **provenance** (build attestation). Pin third-party
+GitHub Actions to commit SHAs before adding any.
