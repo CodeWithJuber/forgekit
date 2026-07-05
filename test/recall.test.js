@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { add, consolidate, list } from "../src/recall.js";
+import { fakeGithubPat } from "./_fixtures.js";
 
 const store = () => mkdtempSync(join(tmpdir(), "forge-recall-"));
 
@@ -17,7 +18,7 @@ test("add stores a fact and updates the index", () => {
 
 test("add refuses secrets (stores nothing)", () => {
   const s = store();
-  const res = add(s, "api creds", "token is REDACTED_FIXTURE");
+  const res = add(s, "api creds", `token is ${fakeGithubPat()}`);
   assert.equal(res.ok, false);
   assert.match(res.reason, /refused/);
   assert.deepEqual(list(s), []);

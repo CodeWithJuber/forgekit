@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { add, list } from "../src/recall.js";
 import { sync } from "../src/sync.js";
+import { fakeAnthropic, fakeGoogle, fakeJwt, fakeSlack } from "./_fixtures.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "forge-reg-"));
 
@@ -27,10 +28,10 @@ test("sync backs up a pre-existing unmanaged AGENTS.md instead of clobbering it"
 // Regression (verifier finding #2): secret detection catches common real key formats.
 test("recall refuses Anthropic / Slack / Google / JWT key formats", () => {
   const cases = [
-    "REDACTED_FIXTURE",
-    "REDACTED_FIXTURE",
-    "REDACTED_FIXTURE",
-    "REDACTED_FIXTURE",
+    fakeAnthropic("AAAAbbbbCCCCddddEEEEffffGGGG"),
+    fakeSlack(),
+    fakeGoogle(),
+    fakeJwt(),
   ];
   for (const value of cases) {
     const store = dir();

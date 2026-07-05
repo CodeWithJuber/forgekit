@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { fakeAnthropic } from "./_fixtures.js";
 
 const guard = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -22,12 +23,12 @@ function run(input) {
 
 test("secret-redact masks a leaked key and emits updatedToolOutput", () => {
   const r = run({
-    tool_response: "the key is REDACTED_FIXTURE and more",
+    tool_response: `the key is ${fakeAnthropic("AAAAbbbbCCCCddddEEEEffff")} and more`,
   });
   assert.equal(r.code, 0);
   assert.match(r.out, /REDACTED/);
   assert.match(r.out, /updatedToolOutput/);
-  assert.doesNotMatch(r.out, /REDACTED_FIXTURE/);
+  assert.doesNotMatch(r.out, /AAAAbbbbCCCCddddEEEE/); // the key's payload is gone from output
 });
 
 test("secret-redact stays silent when nothing matches", () => {

@@ -7,6 +7,7 @@ import { applyDistillation } from "../src/cortex.js";
 import { buildPrompt, distill, parseDistilled } from "../src/cortex_distill.js";
 import { processSession } from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
+import { fakeAnthropic } from "./_fixtures.js";
 
 test("buildPrompt names the location and asks for strict JSON", () => {
   const p = buildPrompt({
@@ -31,7 +32,10 @@ test("parseDistilled extracts fields, tolerates surrounding prose, rejects junk"
 });
 
 test("parseDistilled refuses a secret-bearing lesson", () => {
-  const leak = '{"whatWentWrong":"leaked","correctedBehavior":"use REDACTED_FIXTURE"}';
+  const leak = JSON.stringify({
+    whatWentWrong: "leaked",
+    correctedBehavior: `use ${fakeAnthropic("abcdefghijklmnop")}`,
+  });
   assert.equal(parseDistilled(leak), null);
 });
 
