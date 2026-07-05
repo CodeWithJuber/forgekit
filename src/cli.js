@@ -15,6 +15,8 @@ const COMMANDS = {
   verify:
     "independent verification gate — tests + hallucinated-symbol + provenance",
   harden: "wire security controls — gitleaks pre-commit + sandbox settings",
+  remember: "add a durable fact to this repo's portable memory (forge brain)",
+  brain: "show / rebuild the portable project memory index",
   brand: "print the active brand token map",
 };
 
@@ -245,6 +247,40 @@ async function run(argv) {
     console.log(`  provenance:       .forge/provenance.json`);
     console.log(`\n  ${r.ok ? "PASS" : "BLOCKED — tests failing"}`);
     if (!r.ok) process.exitCode = 1;
+    return;
+  }
+  if (cmd === "remember") {
+    const b = await import("./brain.js");
+    const name = argv[1];
+    const body = argv.slice(2).join(" ");
+    if (!name || !body) {
+      console.error('usage: forge remember "<name>" "<fact>"');
+      process.exitCode = 1;
+      return;
+    }
+    const res = b.remember(b.brainStore(process.cwd()), name, body);
+    console.log(
+      res.ok
+        ? `  remembered: ${res.slug} — run \`forge sync\` to inline it into every tool`
+        : `  ${res.reason}`,
+    );
+    if (!res.ok) process.exitCode = 1;
+    return;
+  }
+  if (cmd === "brain") {
+    const b = await import("./brain.js");
+    const store = b.brainStore(process.cwd());
+    const idx = b.buildIndex(store);
+    const items = b.list(store);
+    console.log(`${BRAND.brand} brain — portable project memory\n`);
+    console.log(
+      items.length
+        ? items.map((s) => `  - ${s}`).join("\n")
+        : '  (no facts yet — forge remember "<name>" "<fact>")',
+    );
+    console.log(
+      `\n  ${idx.indexed} inlined into AGENTS.md${idx.overflow ? `, ${idx.overflow} in overflow` : ""} · stored in .forge/brain/`,
+    );
     return;
   }
   if (cmd === "harden") {

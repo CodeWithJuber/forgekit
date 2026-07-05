@@ -15,6 +15,7 @@ import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import continueTool from "./emit/continue.js";
 import { emitMcp } from "./emit/mcp.js";
+import { brainBlock } from "./brain.js";
 
 const MODULES = [
   codex,
@@ -57,7 +58,9 @@ function loadRules(targetRoot) {
 
 export function sync({ targetRoot = process.cwd() } = {}) {
   const rules = loadRules(targetRoot);
-  const canonical = assemble(rules);
+  // Inline the portable project memory (capped) so every AGENTS.md-reading tool shares it.
+  const brain = brainBlock(targetRoot);
+  const canonical = assemble(rules) + (brain ? "\n" + brain : "");
   const hash = shared.hashContent(canonical);
   const bytes = Buffer.byteLength(canonical);
 
