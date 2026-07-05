@@ -44,6 +44,7 @@ const tryExec = (bin, args, root) => {
     return execFileSync(bin, args, {
       cwd: root,
       encoding: "utf8",
+      timeout: 1500, // bound latency — this runs in a PreToolUse hook on every edit
       stdio: ["ignore", "pipe", "ignore"],
     });
   } catch {

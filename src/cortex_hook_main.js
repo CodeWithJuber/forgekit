@@ -7,7 +7,7 @@
 //           prompt          (UserPromptSubmit)            — log a user-utterance event
 //           stop            (Stop)                        — distill the session into lessons
 //           session-start   (SessionStart)               — inject learned lessons as context
-import { applyDistillation, startupBlock } from "./cortex.js";
+import { applyDistillation, lessonsForContext, startupBlock } from "./cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -64,17 +64,40 @@ async function main() {
     }
   } else if (mode === "session-start") {
     const block = startupBlock(root, today);
-    if (block) {
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "SessionStart",
-            additionalContext: block,
-          },
-        }),
-      );
-    }
+    if (block) emit("SessionStart", block);
+  } else if (mode === "pre-edit") {
+    const advice = await preEditAdvisory(root, hook.tool_input?.file_path, today);
+    if (advice) emit("PreToolUse", advice);
   }
+}
+
+function emit(hookEventName, additionalContext) {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName, additionalContext },
+    }),
+  );
+}
+
+// Advisory before an edit: surface matching lessons (cheap), and — only if none matched —
+// a one-line high-risk note from the predictor. Advisory only, never blocks. Low-nag by
+// design: nothing is emitted unless there's a real lesson or genuinely high risk.
+async function preEditAdvisory(root, file, today) {
+  if (!file) return "";
+  const { block, selected } = lessonsForContext(
+    root,
+    { files: [file], symbols: [], keywords: [file] },
+    { nowDay: today, budget: 3 },
+  );
+  if (selected.length) return block; // learned lessons for this file win
+  const { featuresForEdit } = await import("./cortex_features.js");
+  const { riskFor } = await import("./predictor.js");
+  const { band } = riskFor(featuresForEdit(root, { file }, { nowDay: today }), {
+    mode: "heuristic",
+  });
+  return band === "high"
+    ? `Forge Cortex — ${file} looks high-risk (churn / prior mistakes here). Re-read and check impact before editing.`
+    : "";
 }
 
 main()
