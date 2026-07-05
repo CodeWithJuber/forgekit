@@ -2,13 +2,22 @@
 
 ## 1. Install (once)
 
+Pick one — no `curl | bash`, no clone required for either:
+
 ```bash
-bash install.sh            # symlink global/ → ~/.forge + ~/.claude, put `forge` on PATH
-# then merge the printed hooks/statusline block into ~/.claude/settings.json
-# — or skip that and install the plugin, which auto-wires the guards:
-#   /plugin marketplace add <this-repo>   →   /plugin install forgekit
+# A) Claude Code / Codex — the plugin (recommended; guards auto-wire, nothing to merge)
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+
+# B) Any tool — the CLI (no token, no clone)
+npm install -g github:CodeWithJuber/forgekit
+
 forge doctor               # everything green?
 ```
+
+Hacking on Forge itself? Clone and `npm link`, or `bash install.sh` to symlink the
+tree into `~/.claude` (idempotent, reversible, prints the hook block to merge). See
+[README → Install](README.md#install) for the full matrix.
 
 ## 2. Configure a repo (once per repo)
 
@@ -120,5 +129,6 @@ file memory, not weight-level learning.
 - **Add a guard** → `global/guards/<name>.sh` (source `_guardlib.sh` for fields + the lock), then wire it in `global/settings.template.json` and `hooks/hooks.json`.
 - **Rebrand** → edit `brand.json` (+ `package.json` bin, `.claude-plugin/plugin.json` name).
 
-Full architecture, the pain-point evidence, and the cross-tool matrix live in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+Every command with worked examples and the full extension guide live in
+[docs/GUIDE.md](docs/GUIDE.md); the architecture, pain-point evidence, and cross-tool
+matrix live in [ARCHITECTURE.md](ARCHITECTURE.md).

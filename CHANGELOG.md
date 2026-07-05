@@ -11,6 +11,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Substrate now auto-runs in Claude Code.** The `UserPromptSubmit` hook injects the full substrate advisory (assumption gate + model routing + blast radius + memory + verify) when it matters, silent otherwise. Load-only — never builds/writes `.forge/` from a hook, fail-safe, never blocks.
 - **Cross-tool auto-use.** Added a `substrate` section to `source/rules.json` so `forge init` emits the "run substrate before risky work" rule into every tool's config (AGENTS.md, .cursor/rules, …).
 - **Docs rewritten** — `docs/cognitive-substrate/README.md` is a professional, example-rich guide (real command output, auto-use setup, extension points); README/SKILL aligned.
+- **README restructured** to a professional standard — clear value prop, an install matrix, quickstart, a "how it works" three-layer table, an auto-use section, a full command list, honest limits, and a docs index.
+- **Install story fixed.** The recommended paths are now the **plugin** (Claude Code / Codex) and a token-free CLI install, `npm install -g github:CodeWithJuber/forgekit` — no `curl | bash`, no clone. `bash install.sh` is documented as the symlink/dev path and the GitHub Packages route as CI-only. Updated across README, ONBOARDING, `docs/cognitive-substrate/README.md`, and the landing page.
+- **New `docs/GUIDE.md`** — the complete guide: every command with a worked example and its real output, the everyday workflow, auto-use inside an agent, recipes, and how to extend each layer (rules, tools, guards, crew, routing signals, emitters, rebrand).
+- **Landing page** — install snippet uses the token-free CLI command; version string corrected to 0.3.1.
 
 ### Fixed
 
