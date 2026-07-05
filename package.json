@@ -43,13 +43,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test test/*.test.js",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
-    "coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\"",
+    "coverage": "node --test --experimental-test-coverage test/*.test.js",
     "forge": "node src/cli.js"
   },
   "keywords": [
