@@ -393,10 +393,11 @@ async function run(argv) {
     const r = await import("./route.js");
     if (argv[1] === "gateway") {
       const path = r.emitGatewayConfig(process.cwd());
+      console.log(`  wrote ${path} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
+      console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
       console.log(
-        `  wrote ${path} — LiteLLM auto-routes simple tasks to Haiku (gateway traffic only).`,
+        "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
       );
-      console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it.");
       return;
     }
     const task = argv.slice(1).join(" ");

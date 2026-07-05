@@ -95,6 +95,10 @@ export function components(graph) {
  * @returns {{clusters:{touched:string[], coupled:string[]}[], independentGroups:number}}
  */
 export function decompose(root, touched) {
+  // Normalize to repo-relative (the graph's key form) so `./src/a.js` or an absolute path
+  // still matches — otherwise a coupled file is missed and reported as an independent solo.
+  const norm = touched.map((t) => relative(root, resolve(root, t)));
+  const normSet = new Set(norm);
   const comps = components(importGraph(root));
   const compOf = new Map();
   comps.forEach((comp, i) => {
@@ -102,12 +106,12 @@ export function decompose(root, touched) {
   });
   const buckets = new Map();
   let singleton = 0;
-  for (const t of touched) {
+  for (const t of norm) {
     const id = compOf.has(t) ? compOf.get(t) : `solo:${singleton++}`;
     if (!buckets.has(id)) buckets.set(id, { touched: [], coupled: new Set() });
     buckets.get(id).touched.push(t);
     if (typeof id === "number") {
-      for (const f of comps[id]) if (!touched.includes(f)) buckets.get(id).coupled.add(f);
+      for (const f of comps[id]) if (!normSet.has(f)) buckets.get(id).coupled.add(f);
     }
   }
   const clusters = [...buckets.values()].map((b) => ({

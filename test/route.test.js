@@ -57,4 +57,10 @@ test("emitGatewayConfig writes a LiteLLM config that never pins @latest", () => 
   const yaml = readFileSync(path, "utf8");
   assert.match(yaml, /model_list/);
   assert.doesNotMatch(yaml, /@latest|:latest/);
+  assert.match(yaml, /forge-simple/, "tier aliases present");
+  assert.match(
+    yaml,
+    /model_name: claude-haiku/,
+    "passthrough for real model names so plain claude-* traffic works",
+  );
 });

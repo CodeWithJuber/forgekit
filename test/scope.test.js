@@ -39,3 +39,11 @@ test("decompose: editing a.js surfaces the coupled file you didn't mention (b.js
   assert.equal(d.clusters.length, 1);
   assert.deepEqual(d.clusters[0].coupled, ["src/b.js"], "the forgot-related-module guard");
 });
+
+test("decompose normalizes ./ and absolute paths so coupling still resolves", () => {
+  const root = repo();
+  // shell-style ./ prefix and an absolute path — both must map to the repo-relative graph key
+  assert.deepEqual(decompose(root, ["./src/a.js"]).clusters[0].coupled, ["src/b.js"]);
+  const d = decompose(root, [join(root, "src/a.js"), "./src/b.js"]);
+  assert.equal(d.independentGroups, 1, "two coupled files are NOT reported as independent");
+});

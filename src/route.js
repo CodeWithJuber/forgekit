@@ -1,7 +1,7 @@
 // forge route — complexity-based model routing. Generic routers score prompt difficulty;
 // this scores CODE-TASK complexity from signals Forge already computes (files in scope, impact
 // fan-out, churn/fragility, past-mistake density here, ambiguity, task size) → cheapest capable
-// tier. Advisory by default; a LiteLLM config emit gives real auto-routing for gateway traffic.
+// tier. Advisory by default; a LiteLLM config emit exposes the tiers as gateway aliases you request.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { matchingLessons } from "./cortex.js";
@@ -73,20 +73,31 @@ export function routeTask(root, task) {
   return { score, signals, ...recommend(score, norm) };
 }
 
-/** Emit a LiteLLM gateway config so simple tasks can auto-route to Haiku (opt-in, gateway-only). */
+/** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks). */
 export function emitGatewayConfig(root = process.cwd()) {
   const path = join(root, "litellm.config.yaml");
   const body = `# Forge Preflight — LiteLLM routing config (complexity tier -> model).
-# Auto-routes ONLY traffic sent through the gateway. Advisory 'forge route' works with no gateway.
+# HOW ROUTING WORKS: LiteLLM routes by the REQUESTED model name; it cannot infer task
+# complexity on its own. So 'forge route' tells you the tier, and your tool REQUESTS the
+# matching alias (forge-simple/medium/complex). A normal claude-* request passes through
+# unchanged — pointing ANTHROPIC_BASE_URL here never breaks existing traffic.
 #   pip install "litellm[proxy]==<pin an exact verified version>"   # supply-chain: pin exact, no floating tag
 #   litellm --config litellm.config.yaml       # then export ANTHROPIC_BASE_URL=http://localhost:4000
 # Models verified 2026-07-05; re-verify via dev-radar.
 model_list:
+  # Tier aliases — request one of these (per 'forge route') to pick a model by complexity.
   - model_name: forge-simple   # ${MODELS.haiku.name} — ${MODELS.haiku.use}
     litellm_params: { model: anthropic/${MODELS.haiku.id} }
   - model_name: forge-medium   # ${MODELS.sonnet.name} — default
     litellm_params: { model: anthropic/${MODELS.sonnet.id} }
   - model_name: forge-complex  # ${MODELS.opus.name}
+    litellm_params: { model: anthropic/${MODELS.opus.id} }
+  # Passthrough — a normal claude-* request still works when pointed at the gateway.
+  - model_name: ${MODELS.haiku.id}
+    litellm_params: { model: anthropic/${MODELS.haiku.id} }
+  - model_name: ${MODELS.sonnet.id}
+    litellm_params: { model: anthropic/${MODELS.sonnet.id} }
+  - model_name: ${MODELS.opus.id}
     litellm_params: { model: anthropic/${MODELS.opus.id} }
 router_settings:
   routing_strategy: simple-shuffle
