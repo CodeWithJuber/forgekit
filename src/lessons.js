@@ -11,13 +11,16 @@
 //    developer changing their mind retires a lesson instead of fighting it.
 
 /** Signal taxonomy: weight = prior that a real mistake occurred; family gates false positives. */
+// `solo: true` = trustworthy enough to fire a lesson on its own (only an explicit human
+// undo qualifies). Everything else needs a second signal from a different family — this is
+// what stops a stray "no problem" (S5) or a lone thrash (S3) from minting a false lesson.
 export const SIGNALS = {
   S1: { weight: 0.45, family: "outcome" }, // test-fail then pass on same files
   S2: { weight: 0.25, family: "behavioral" }, // agent edits code it just wrote
   S3: { weight: 0.3, family: "behavioral" }, // repeated edits to same symbol
   S4: { weight: 0.4, family: "outcome" }, // file/hunk reverted
-  S5: { weight: 0.35, family: "human" }, // user negative utterance (weak, never solo-behavioral)
-  S6: { weight: 0.5, family: "human" }, // explicit undo (git revert/checkout)
+  S5: { weight: 0.35, family: "human" }, // user negative utterance (weak, noisy — never solo)
+  S6: { weight: 0.5, family: "human", solo: true }, // explicit undo (git revert/checkout) — trusted solo
   S7: { weight: 0.35, family: "outcome" }, // lint/type/build regression introduced
 };
 
@@ -38,8 +41,8 @@ export function scoreMistake(events) {
   }, 1);
   const p = 1 - product;
   const families = [...new Set(valid.map((e) => SIGNALS[e.signal].family))];
-  const hasHuman = families.includes("human");
-  const fires = families.length >= 2 || hasHuman;
+  const soloOk = valid.some((e) => SIGNALS[e.signal].solo);
+  const fires = families.length >= 2 || soloOk;
   return { p, fires, families };
 }
 

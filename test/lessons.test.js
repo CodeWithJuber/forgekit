@@ -16,13 +16,19 @@ test("scoreMistake: a lone behavioral signal never fires (thrash is not a lesson
   assert.equal(r.fires, false, "one behavioral family cannot create a lesson");
 });
 
-test("scoreMistake: two different families fire; one human signal fires solo", () => {
+test("scoreMistake: two families fire; S6 solo fires; weak S5 solo does NOT", () => {
   assert.equal(
     scoreMistake([{ signal: "S1" }, { signal: "S2" }]).fires,
     true,
     "outcome+behavioral",
   );
   assert.equal(scoreMistake([{ signal: "S6" }]).fires, true, "explicit undo trusted solo");
+  assert.equal(scoreMistake([{ signal: "S5" }]).fires, false, "a stray 'no' never mints a lesson");
+  assert.equal(
+    scoreMistake([{ signal: "S5" }, { signal: "S1" }]).fires,
+    true,
+    "human + outcome (2 families) fires",
+  );
 });
 
 test("scoreMistake: noisy-OR is bounded and monotonic, anti-signal scales down", () => {

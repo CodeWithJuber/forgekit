@@ -12,7 +12,7 @@ import {
   scoreMistake,
   selectForInjection,
 } from "./lessons.js";
-import { appendEpisode, load, save } from "./lessons_store.js";
+import { appendEpisode, load, readEpisodes, save } from "./lessons_store.js";
 
 const slug = (s) =>
   String(s)
@@ -21,6 +21,13 @@ const slug = (s) =>
     .replace(/(^-|-$)/g, "");
 
 const lessonIdFor = (ctx) => `lsn_${slug(ctx.symbols?.[0] || ctx.files?.[0] || "ctx") || "ctx"}`;
+
+/** Two contexts overlap if they share any file or symbol. */
+const overlaps = (a, b) => {
+  const files = new Set(a.files ?? []);
+  const symbols = new Set(a.symbols ?? []);
+  return (b.files ?? []).some((f) => files.has(f)) || (b.symbols ?? []).some((s) => symbols.has(s));
+};
 
 /** Lessons whose trigger overlaps the current context, in the given lifecycle states. */
 export function matchingLessons(
@@ -47,10 +54,17 @@ function templateDistill(context) {
  * Record a correction episode. If the signals clear the mistake bar, create a new
  * candidate lesson (first occurrence) or confirm the matching one (a recurrence — the
  * only thing that promotes a lesson toward `active`). Always logs the episode.
+ * @param {string} root
+ * @param {{signals:{signal:string}[], context:object, nowDay:number, episodeId:string, distilled?:{whatWentWrong:string, correctedBehavior:string}}} opts
  * @returns {{action:string, id?:string, status?:string, p:number, fires:boolean}}
  */
 export function recordMistake(root, { signals, context, nowDay, episodeId, distilled }) {
   const { p, fires } = scoreMistake(signals);
+  // A weak-but-firing episode (0.4–0.7) only earns a lesson if the same context already
+  // misfired before — recurrence, not a single shot. Check BEFORE logging this episode.
+  const recurredWeak = readEpisodes(root).some(
+    (e) => e.kind === "mistake" && overlaps(e.context ?? {}, context),
+  );
   appendEpisode(root, {
     id: episodeId,
     kind: "mistake",
@@ -59,7 +73,9 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
     context,
     day: nowDay,
   });
-  if (!(fires && p >= 0.7)) return { action: "logged", p, fires };
+  const strong = fires && p >= 0.7;
+  const accumulated = fires && p >= 0.4 && recurredWeak;
+  if (!strong && !accumulated) return { action: "logged", p, fires };
 
   const existing = matchingLessons(load(root), context)[0];
   if (existing) {
