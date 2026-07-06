@@ -423,6 +423,17 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | the verify checklist | `src/substrate.js` → `verificationChecklist()` |
 | when the ambient hook speaks | `src/substrate.js` → `substrateContext()` |
 | the cross-tool rule wording | `source/rules.json` → `substrate` section (then `forge init`) |
+| opt-in LLM adjudication | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm` |
+
+### Opt into LLM-assisted judgments
+By default every judgment is a deterministic rubric. `FORGE_LLM=1` adds a thin **proposer**
+layer (`src/adjudicate.js`) — one shared `claude -p` primitive used by M2/M1/impact/M4. The
+model never decides: each proposal is verified against the rubric, the code graph, or a grep
+before it can move a verdict (routing raise-only; the gate tightens-only; impact edges must be
+real + grep-confirmed; goal-drift off→on only). Any failure falls back to the deterministic
+path, so the flag is safe to leave off or on. `--json` exposes `llm.provenance` per faculty.
+Each faculty pairs a pure `*LLM` proposer with a `reconcile` step — extend by adding both,
+never by trusting the model's answer directly.
 
 ### Support a new tool
 Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like

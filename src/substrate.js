@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildRunner, llmEnabled } from "./adjudicate.js";
 import { goalDrift } from "./anchor.js";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
 import { matchingLessons } from "./cortex.js";
@@ -61,26 +62,90 @@ function minimalityWarnings(task, route, preflight) {
   return warnings;
 }
 
-export function predictImpact(root, target, { threshold = 0.1 } = {}) {
-  const atlas = loadAtlas(root) || buildAtlas({ root });
-  return impactGraph(atlas, target, { threshold });
+// Grep-style verify for the LLM impact pass: a proposed dependent is only kept if the target
+// symbol/file name actually appears in the candidate file's source. External check, not trust.
+function makeImpactVerify(root) {
+  const base = (t) =>
+    String(t)
+      .split(/[/\\]/)
+      .pop()
+      .replace(/\.[^.]+$/, "");
+  return (file, target) => {
+    try {
+      const src = readFileSync(join(root, file), "utf8");
+      const name = base(target);
+      return name.length > 1 && new RegExp(`\\b${name.replace(/[^\w$]/g, "")}\\b`).test(src);
+    } catch {
+      return false;
+    }
+  };
 }
 
+/**
+ * @param {string} root
+ * @param {string} target
+ * @param {object} [opts]
+ * @param {number} [opts.threshold]
+ * @param {boolean} [opts.llm]
+ * @param {string} [opts.model]
+ * @param {number} [opts.timeoutMs]
+ */
+export function predictImpact(root, target, { threshold = 0.1, llm, model, timeoutMs } = {}) {
+  const atlas = loadAtlas(root) || buildAtlas({ root });
+  const useLLM = llmEnabled({ llm });
+  return impactGraph(atlas, target, {
+    threshold,
+    llm: useLLM,
+    run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
+    verify: makeImpactVerify(root),
+  });
+}
+
+/**
+ * @param {string} root
+ * @param {string} task
+ * @param {object} [opts]
+ * @param {number} [opts.threshold]
+ * @param {number} [opts.askThreshold]
+ * @param {boolean} [opts.allowBuild]
+ * @param {boolean} [opts.llm]
+ * @param {string} [opts.model]
+ * @param {number} [opts.timeoutMs]
+ */
 export function substrateCheck(
   root,
   task,
-  { threshold = 0.1, askThreshold = 0.6, allowBuild = true } = {},
+  { threshold = 0.1, askThreshold = 0.6, allowBuild = true, llm, model, timeoutMs } = {},
 ) {
   const text = String(task || "");
+  // LLM adjudication is opt-in. On the ambient hook path (allowBuild:false) it stays OFF unless
+  // FORGE_LLM_AMBIENT=1, so the per-prompt hook never pays model latency by default. An explicit
+  // `llm` option always wins. Every faculty is fail-safe: a null proposal keeps the rubric.
+  const useLLM =
+    typeof llm === "boolean"
+      ? llm
+      : allowBuild
+        ? llmEnabled()
+        : process.env.FORGE_LLM_AMBIENT === "1";
+  const llmOpts = { llm: useLLM, model, timeoutMs };
   const entities = referencedEntities(text);
-  const preflight = preflightRepo(root, text, { askThreshold, allowBuild });
-  const route = routeTask(root, text);
+  const preflight = preflightRepo(root, text, { askThreshold, allowBuild, ...llmOpts });
+  const route = routeTask(root, text, llmOpts);
   // allowBuild:false (ambient hooks) uses the atlas only if one is already cached — never
   // builds or writes .forge/atlas.json from a hook. Impact is then best-effort.
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
   const impactTargets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
+  const impactRun = useLLM ? buildRunner({ model, timeoutMs }) : undefined;
+  const impactVerify = makeImpactVerify(root);
   const impacts = atlas
-    ? impactTargets.map((target) => impactGraph(atlas, target, { threshold }))
+    ? impactTargets.map((target) =>
+        impactGraph(atlas, target, {
+          threshold,
+          llm: useLLM,
+          run: impactRun,
+          verify: impactVerify,
+        }),
+      )
     : [];
   const impactedFiles = [...new Set(impacts.flatMap((r) => r.impactedFiles || []))].sort();
   const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
@@ -111,9 +176,21 @@ export function substrateCheck(
     minimality: { warnings: minimalityWarnings(text, route, preflight) },
     // M4 goal-anchoring: re-read the stated goal against files already changed this session.
     // Quiet pre-action (clean tree → no drift); speaks mid-session when work wandered off-goal.
-    goalAnchor: goalDrift(root, text),
+    goalAnchor: goalDrift(root, text, llmOpts),
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
+    // Which faculties, if any, had a model proposal survive external verification this run.
+    llm: {
+      enabled: useLLM,
+      provenance: {
+        assumption: preflight.assumption.provenance?.path ?? "deterministic",
+        route: route.provenance?.path ?? "deterministic",
+        impact: impacts.some((r) => (r.llmVerified || []).length)
+          ? "llm-verified"
+          : "deterministic",
+        goalAnchor: undefined, // set below once goalAnchor is in scope
+      },
+    },
     guarantees: {
       deterministic: [
         "assumption rubric",
@@ -121,6 +198,14 @@ export function substrateCheck(
         "model routing rubric",
         "impact graph traversal",
         "scope decomposition",
+      ],
+      // Proposed by a model, then checked against the repo/graph/tests before it could move a
+      // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
+      llmVerified: [
+        "assumption refinement (bounded by the rubric)",
+        "routing escalation (raise-only)",
+        "impact edges (graph + grep verified)",
+        "goal-drift rescue (off→on, goal-referenced)",
       ],
       advisory: [
         "model capability fit",
@@ -131,6 +216,7 @@ export function substrateCheck(
       ],
     },
   };
+  result.llm.provenance.goalAnchor = result.goalAnchor?.provenance?.path ?? "deterministic";
   return result;
 }
 

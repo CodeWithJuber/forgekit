@@ -73,14 +73,27 @@ export function newLesson(fields, nowDay = 0) {
   };
 }
 
-/** Time-decayed Beta posterior mean. Unconfirmed lessons fade out of the injection set. */
-export function confidenceOf(lesson, nowDay) {
-  const alpha = 1 + lesson.evidenceCount;
-  const beta = 1 + lesson.contradictionCount;
-  const mean = alpha / (alpha + beta);
+/**
+ * Validity — the paper's `val` term (Eq. retrieve, §7.1). The Laplace-smoothed Beta posterior
+ * mean over GROUND-TRUTH outcomes: how much independent evidence upholds this lesson vs.
+ * contradicts it, with NO time decay. This is what makes a memory pruned by whether its
+ * prediction later held (a test/commit), not by the model's own say-so.
+ */
+export function validity(lesson) {
+  const alpha = 1 + (lesson.evidenceCount ?? 0);
+  const beta = 1 + (lesson.contradictionCount ?? 0);
+  return alpha / (alpha + beta);
+}
+
+/** Freshness — the paper's `rec` term: exponential recency decay since last confirmation. */
+export function freshness(lesson, nowDay) {
   const age = Math.max(0, nowDay - lesson.lastConfirmedDay);
-  const decay = 0.5 ** (age / lesson.halfLifeDays);
-  return decay * mean;
+  return 0.5 ** (age / lesson.halfLifeDays);
+}
+
+/** Time-decayed Beta posterior mean = freshness × validity. Unconfirmed lessons fade out. */
+export function confidenceOf(lesson, nowDay) {
+  return freshness(lesson, nowDay) * validity(lesson);
 }
 
 /** Independent outcome re-confirmed this lesson. Raises confidence with diminishing returns. */
@@ -138,10 +151,15 @@ export function selectForInjection(lessons, context, { budget = 12, nowDay = 0 }
     .map((l) => ({ lesson: l, m: matchScore(l, context) }))
     .filter((x) => x.m > 0)
     .map((x) => {
-      const conf = confidenceOf(x.lesson, nowDay);
-      const recency = 1 + (nowDay - x.lesson.lastConfirmedDay <= 14 ? 0.2 : 0);
+      // The paper's retrieval score, decomposed into named terms: relevance (match) ×
+      // freshness (rec) × validity (val, ground-truth outcomes) × scope, with a small recency
+      // boost. Making `val` explicit ranks outcome-confirmed lessons above merely-recent ones.
+      const rel = x.m;
+      const rec = freshness(x.lesson, nowDay);
+      const val = validity(x.lesson);
       const scopeW = SCOPE_WEIGHT[x.lesson.scope] ?? 0.5;
-      return { lesson: x.lesson, score: conf * x.m * recency * scopeW };
+      const recencyBoost = 1 + (nowDay - x.lesson.lastConfirmedDay <= 14 ? 0.2 : 0);
+      return { lesson: x.lesson, score: rel * rec * val * scopeW * recencyBoost };
     })
     .sort((a, b) => b.score - a.score);
 

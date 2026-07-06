@@ -3,6 +3,7 @@
 // will silently ASSUME. The richer assumption gate also scores specification completeness.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
 
 const CODE_EXT =
@@ -203,12 +204,92 @@ export function assessTask(text, { askThreshold = 0.6 } = {}) {
     completeness,
     risk,
     shouldAsk,
+    hardUnderspecified,
     missing,
     questions: (shouldAsk && !questions.length
       ? ["What exactly should this produce, and how will we know it is correct?"]
       : questions
     ).slice(0, 3),
     reasons,
+  };
+}
+
+// M2 assumption gate — LLM proposer. Scores the paper's s(x) completeness functional over the
+// same four dimensions the rubric names, and may add clarifying questions. PROPOSER ONLY:
+// reconcileAssumption() bounds it against the deterministic score and grounds every question.
+const DIM_KEYS = DIMENSIONS.map((d) => d.key);
+
+export function buildAssumptionPrompt(task) {
+  return `A coding agent received this task. Judge how completely it is specified BEFORE any code is written.
+Task: """${String(task).slice(0, 1200)}"""
+Score specification completeness in [0,1] over these dimensions: inputs_outputs, target_scope,
+success_criteria, constraints. List the concrete missing-information questions a careful engineer
+would ask first. Respond with STRICT JSON and nothing else:
+{"completeness":<0..1>,"missing":["<dimension name>"...],"questions":["<question>"...]}
+Do not echo credentials or personal data. No text outside the JSON object.`;
+}
+
+export function parseAssumptionProposal(obj) {
+  const completeness = asUnit(obj.completeness);
+  if (completeness == null) return null;
+  const missing = Array.isArray(obj.missing)
+    ? obj.missing.map((m) => asText(m, 40)).filter((m) => DIM_KEYS.includes(m))
+    : [];
+  const questions = Array.isArray(obj.questions)
+    ? [...new Set(obj.questions.map((q) => asText(q, 200)).filter(Boolean))].slice(0, 5)
+    : [];
+  return { completeness, missing, questions };
+}
+
+/** Ask the model for an assumption reading (proposer). Returns null when off/unavailable. */
+export function assessTaskLLM(task, { run = buildRunner() } = {}) {
+  return adjudicate({ prompt: buildAssumptionPrompt(task), parse: parseAssumptionProposal, run });
+}
+
+/**
+ * Verify-don't-trust reconcile for M2. The model may only move completeness within ±band of the
+ * deterministic score (so a clearly-specified/vague task can't be flipped), and may only ADD an
+ * ask, never clear a deterministic one. Extra questions survive only if they map to a rubric-
+ * flagged dimension or (via `grounded`) reference a real repo entity.
+ * @param {object} det - assessTask() result
+ * @param {{completeness:number, missing:string[], questions:string[]}|null} proposal
+ * @param {object} [opts]
+ * @param {number} [opts.askThreshold]
+ * @param {number} [opts.band]
+ * @param {(q:string)=>boolean} [opts.grounded]
+ */
+export function reconcileAssumption(
+  det,
+  proposal,
+  { askThreshold = 0.6, band = 0.25, grounded = () => false } = {},
+) {
+  if (!proposal) return { ...det, provenance: { path: "deterministic" } };
+  const bounded = Math.max(
+    det.completeness - band,
+    Math.min(det.completeness + band, proposal.completeness),
+  );
+  const completeness = Math.max(0, Math.min(1, bounded));
+  const flaggedDims = new Set(det.missing.map((m) => m.key));
+  const extraQuestions = proposal.questions.filter(
+    (q) => proposal.missing.some((m) => flaggedDims.has(m)) || grounded(q),
+  );
+  const questions = [...new Set([...det.questions, ...extraQuestions])].slice(0, 3);
+  // The gate only ever tightens: an ask stands if the rubric asked, the task is hard-
+  // underspecified, or the reconciled completeness is below threshold.
+  const shouldAsk = det.shouldAsk || det.hardUnderspecified || completeness < askThreshold;
+  const risk = completeness < 0.45 ? "high" : completeness < 0.7 ? "medium" : "low";
+  const moved =
+    Math.abs(completeness - det.completeness) > 1e-9 || questions.length !== det.questions.length;
+  return {
+    ...det,
+    completeness,
+    risk,
+    shouldAsk,
+    questions:
+      shouldAsk && !questions.length
+        ? ["What exactly should this produce, and how will we know it is correct?"]
+        : questions,
+    provenance: { path: moved ? "llm-verified" : "llm-agreed", detCompleteness: det.completeness },
   };
 }
 
@@ -251,11 +332,37 @@ export function clarifyBlock(result, { threshold = 0.5 } = {}) {
   return lines.join("\n");
 }
 
-export function preflightRepo(root, text, { allowBuild = true, askThreshold = 0.6 } = {}) {
+/**
+ * @param {string} root
+ * @param {string} text
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowBuild]
+ * @param {number} [opts.askThreshold]
+ * @param {boolean} [opts.llm]
+ * @param {string} [opts.model]
+ * @param {number} [opts.timeoutMs]
+ * @param {(p:string)=>string} [opts.run]
+ */
+export function preflightRepo(
+  root,
+  text,
+  { allowBuild = true, askThreshold = 0.6, llm, model, timeoutMs, run } = {},
+) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
+  const hasSymbol = atlas ? (name) => has(atlas, name) : () => true;
   const gap = informationGap(text, {
-    hasSymbol: atlas ? (name) => has(atlas, name) : () => true,
+    hasSymbol,
     fileExists: (f) => existsSync(join(root, f)),
   });
-  return { ...gap, assumption: assessTask(text, { askThreshold }) };
+  const det = assessTask(text, { askThreshold });
+  // M2 proposer: only when opted in. The rubric is the external judge; the model refines it
+  // within bounds and can add grounded questions. Fail-safe: null proposal keeps `det`.
+  if (!llmEnabled({ llm }))
+    return { ...gap, assumption: { ...det, provenance: { path: "deterministic" } } };
+  const proposal = assessTaskLLM(text, { run: run || buildRunner({ model, timeoutMs }) });
+  const grounded = (q) => {
+    const { symbols, files } = referencedEntities(q);
+    return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));
+  };
+  return { ...gap, assumption: reconcileAssumption(det, proposal, { askThreshold, grounded }) };
 }
