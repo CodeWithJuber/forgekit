@@ -123,8 +123,9 @@ export function recommend(score, norm = {}) {
 }
 
 // M1 routing — LLM proposer. Estimates task complexity c(x) as a coarse band. PROPOSER ONLY:
-// reconcile takes the MAX with the deterministic score, so the model can only RAISE the tier
-// (never under-provision on its own word); escalation still gates on a verified failure.
+// the reconcile in routeTask() lets a RAISE through freely but bounds any LOWER (within one band
+// and never below a strong-signal floor), so the model can escalate on hidden complexity yet can
+// never under-provision a genuinely hard task; escalation still gates on a verified failure.
 const BAND_FLOOR = { cheap: 0.15, mid: 0.4, premium: 0.65 };
 
 export function buildComplexityPrompt(task) {
@@ -156,8 +157,15 @@ export function complexityLLM(task, { run = buildRunner() } = {}) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
+ * @param {boolean} [opts.bidirectional]
+ * @param {number} [opts.routingBand]
+ * @param {number} [opts.signalFloor]
  */
-export function routeTask(root, task, { llm, model, timeoutMs, run } = {}) {
+export function routeTask(
+  root,
+  task,
+  { llm, model, timeoutMs, run, bidirectional = true, routingBand = 0.2, signalFloor = 0.4 } = {},
+) {
   const { symbols, files } = referencedEntities(task);
   const fanout = symbols.reduce((m, sym) => Math.max(m, grepFanout(root, sym)), 0);
   const churn = files.reduce((m, f) => Math.max(m, gitChurn(root, f)), 0);
@@ -178,27 +186,49 @@ export function routeTask(root, task, { llm, model, timeoutMs, run } = {}) {
   const { score: repoScore, norm } = complexity(signals);
   const rubric = rubricComplexity(task);
   const rubricScore = Math.min(1, rubric.rawScore / 10);
-  // M1 proposer (opt-in): the model may only RAISE the tier — max() with the deterministic
-  // scores — so it never routes down on its own word. Fail-safe: null proposal is ignored.
+  const detScore = Math.max(repoScore, rubricScore);
+  // M1 proposer (opt-in): the model PROPOSES a complexity band. A RAISE is free (spotting hidden
+  // complexity costs at most a bigger model). A LOWER is bounded — never more than one `band`
+  // below the rubric, and never below `signalFloor` when the rubric detected algorithmic or
+  // architectural terms, so a "distributed rate-limiter" can't be talked down to the cheap tier.
+  // With `bidirectional:false` it stays raise-only. Fail-safe: a null proposal is ignored.
   const proposal = llmEnabled({ llm })
     ? complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) })
     : null;
-  const score = Math.max(repoScore, rubricScore, proposal?.score ?? 0);
+  const strongSignal = rubric.signals.hasAlgorithmicTerms || rubric.signals.hasArchitecturalTerms;
+  let score = detScore;
+  let path = proposal ? "llm-agreed" : "deterministic";
+  if (proposal) {
+    if (proposal.score > detScore) {
+      score = proposal.score; // free raise
+      path = "llm-raised";
+    } else if (bidirectional && proposal.score < detScore) {
+      const floor = Math.max(detScore - routingBand, strongSignal ? signalFloor : 0);
+      const lowered = Math.max(floor, proposal.score);
+      if (lowered < detScore) {
+        score = lowered; // bounded lower
+        path = "llm-lowered";
+      }
+    }
+  }
   const recommended = recommend(score, norm);
-  const raisedByLLM = proposal != null && proposal.score > Math.max(repoScore, rubricScore);
   return {
     score,
     repoScore,
     signals,
     rubric,
-    llm: proposal ? { band: proposal.band, reason: proposal.reason, raised: raisedByLLM } : null,
-    provenance: { path: raisedByLLM ? "llm-verified" : proposal ? "llm-agreed" : "deterministic" },
+    llm: proposal
+      ? { band: proposal.band, reason: proposal.reason, direction: path.replace("llm-", "") }
+      : null,
+    provenance: { path },
     ...recommended,
     reasons: [
       ...new Set([
         ...(recommended.reasons || []),
         ...rubric.reasons.filter((r) => r.weight > 0).map((r) => r.reason),
-        ...(raisedByLLM ? [`model judged ${proposal.band}: ${proposal.reason}`] : []),
+        ...(path === "llm-raised" || path === "llm-lowered"
+          ? [`model judged ${proposal.band} (${path.replace("llm-", "")}): ${proposal.reason}`]
+          : []),
       ]),
     ],
   };

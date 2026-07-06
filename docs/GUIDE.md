@@ -429,11 +429,15 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 By default every judgment is a deterministic rubric. `FORGE_LLM=1` adds a thin **proposer**
 layer (`src/adjudicate.js`) — one shared `claude -p` primitive used by M2/M1/impact/M4. The
 model never decides: each proposal is verified against the rubric, the code graph, or a grep
-before it can move a verdict (routing raise-only; the gate tightens-only; impact edges must be
-real + grep-confirmed; goal-drift off→on only). Any failure falls back to the deterministic
-path, so the flag is safe to leave off or on. `--json` exposes `llm.provenance` per faculty.
-Each faculty pairs a pure `*LLM` proposer with a `reconcile` step — extend by adding both,
-never by trusting the model's answer directly.
+before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
+a verified reading can *clear* a false ask or route a task *down* a tier, not only add caution,
+but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
+routing floor). Impact edges must be real + grep-confirmed; goal-drift moves off→on only. Any
+failure falls back to the deterministic path, so the flag is safe to leave off or on. `--json`
+exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` / `llm-raised` /
+`llm-lowered` / …). Set `llm.bidirectional: false` in `source/substrate.json` for the
+conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer with a
+`reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
 ### Support a new tool
 Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like

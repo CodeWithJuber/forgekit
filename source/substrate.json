@@ -21,7 +21,11 @@
     "enabled": false,
     "model": "haiku",
     "timeoutMs": 20000,
-    "note": "Opt-in (FORGE_LLM=1). The model PROPOSES; the deterministic rubric + repo grounding + tests VERIFY. Any failure falls back to the deterministic path — never blind, never blocking."
+    "bidirectional": true,
+    "band": 0.25,
+    "routingBand": 0.2,
+    "signalFloor": 0.4,
+    "note": "Opt-in (FORGE_LLM=1). The model PROPOSES; the deterministic rubric + repo grounding + tests VERIFY. Any failure falls back to the deterministic path — never blind, never blocking. `bidirectional` (default true) lets a verified reading also clear a false ask / route a tier down, within `band`/`routingBand` and never past the hard floors (`signalFloor`, repo grounding, no-anchor). Set false for the conservative tighten/raise-only mode."
   },
   "policies": {
     "preAction": "Run substrate before ambiguous, expensive, multi-file, or mutating work.",
