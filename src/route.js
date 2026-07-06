@@ -138,7 +138,9 @@ algorithmic/systems/architectural/multi-module work. No text outside the JSON ob
 }
 
 export function parseComplexityProposal(obj) {
-  const band = String(obj.band ?? "").toLowerCase();
+  const band = String(obj.band ?? "")
+    .trim()
+    .toLowerCase();
   if (!(band in BAND_FLOOR)) return null;
   return { band, score: BAND_FLOOR[band], reason: asText(obj.reason) };
 }
@@ -160,11 +162,21 @@ export function complexityLLM(task, { run = buildRunner() } = {}) {
  * @param {boolean} [opts.bidirectional]
  * @param {number} [opts.routingBand]
  * @param {number} [opts.signalFloor]
+ * @param {number} [opts.ambiguity] precomputed information-gap (skips a duplicate preflight pass)
  */
 export function routeTask(
   root,
   task,
-  { llm, model, timeoutMs, run, bidirectional = true, routingBand = 0.2, signalFloor = 0.4 } = {},
+  {
+    llm,
+    model,
+    timeoutMs,
+    run,
+    bidirectional = true,
+    routingBand = 0.2,
+    signalFloor = 0.4,
+    ambiguity,
+  } = {},
 ) {
   const { symbols, files } = referencedEntities(task);
   const fanout = symbols.reduce((m, sym) => Math.max(m, grepFanout(root, sym)), 0);
@@ -173,14 +185,20 @@ export function routeTask(
     files,
     symbols,
   }).length;
-  const ambiguity = preflightRepo(root, task, { allowBuild: false }).gap;
+  // The routing signal only needs the DETERMINISTIC gap. Accept a precomputed one (substrate
+  // already has it) and, when computing our own, force llm:false — the gap never depends on the
+  // model, so an LLM assumption call here would be pure wasted latency.
+  const ambiguityScore =
+    typeof ambiguity === "number"
+      ? ambiguity
+      : preflightRepo(root, task, { allowBuild: false, llm: false }).gap;
   const sizeWords = task.trim().split(/\s+/).filter(Boolean).length;
   const signals = {
     files: files.length,
     fanout,
     churn,
     pastMistakes,
-    ambiguity,
+    ambiguity: ambiguityScore,
     sizeWords,
   };
   const { score: repoScore, norm } = complexity(signals);

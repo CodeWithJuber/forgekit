@@ -101,3 +101,16 @@ test("a human reversal contradicts the matching lesson (anti-self-reinforcement 
   const s = summary(root, 3);
   assert.equal(s.total, 1);
 });
+
+test("recordMistake reports 'refused' (not 'created') when the save is rejected", () => {
+  const root = fixture();
+  const r = recordMistake(root, {
+    signals: [{ signal: "S1" }, { signal: "S6" }], // strong: fires + p >= 0.7
+    context: { symbols: ["loadCreds"], files: ["src/auth.js"] },
+    nowDay: 1,
+    episodeId: "ep_leak",
+    distilled: { whatWentWrong: "leaked a value", correctedBehavior: 'password = "hunter2xyz"' },
+  });
+  assert.equal(r.action, "refused", "a refused save must not be reported as created");
+  assert.equal(load(root).length, 0, "nothing was persisted");
+});

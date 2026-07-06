@@ -20,10 +20,14 @@ export function appendSessionEvent(root, sid, event) {
 export function readSession(root, sid) {
   const path = sessionFile(root, sid);
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
+  const out = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line) continue;
+    try {
+      out.push(JSON.parse(line)); // a single corrupt line must not lose the whole session log
+    } catch {}
+  }
+  return out;
 }
 
 export function clearSession(root, sid) {

@@ -24,6 +24,25 @@ test("add refuses secrets (stores nothing)", () => {
   assert.deepEqual(list(s), []);
 });
 
+test("add refuses a secret-ish key ASSIGNED to a value", () => {
+  const s = store();
+  for (const body of [
+    'password = "hunter2xyz"',
+    "SECRET_KEY: djangoInsecure9",
+    "api_key=abcdef12",
+  ]) {
+    assert.equal(add(s, "k", body).ok, false, `should refuse: ${body}`);
+  }
+});
+
+test("add allows a bare mention of secret/password/api key (a pointer, not a value)", () => {
+  const s = store();
+  // These are the legitimate notes the over-broad word match used to reject.
+  assert.equal(add(s, "auth note", "implement password hashing with argon2 in auth.js").ok, true);
+  assert.equal(add(s, "rotate note", "rotate the api key helper before release").ok, true);
+  assert.equal(add(s, "vault note", "the secret lives in the vault, not the repo").ok, true);
+});
+
 test("consolidate removes exact-duplicate bodies", () => {
   const s = store();
   add(s, "rule one", "always run migrations before deploy");

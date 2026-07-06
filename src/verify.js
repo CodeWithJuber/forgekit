@@ -6,7 +6,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
+import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 
 // Called identifiers that are language/runtime built-ins, not project symbols.
 const IGNORE = new Set([
@@ -129,9 +129,15 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     .join("\n");
   const changedFiles = git(["diff", "--name-only", base], targetRoot).split("\n").filter(Boolean);
 
-  const atlas = loadAtlas(targetRoot) || buildAtlas({ root: targetRoot });
+  // Verify runs AFTER edits — a cached, stale atlas would miss newly-added-but-undefined symbols
+  // (false negatives) or flag just-defined ones (false positives). Rebuild when stale; the
+  // incremental build only re-parses the files that changed, so this stays cheap.
+  const cached = loadAtlas(targetRoot);
+  const atlas = cached && !isStale(targetRoot, cached) ? cached : buildAtlas({ root: targetRoot });
   const symbols = extractCalledSymbols(added);
-  const unknown = findUnknownSymbols(atlas, symbols);
+  // When the graph was capped (huge repo, files dropped), "defined nowhere" is unreliable — a
+  // symbol may live in a dropped file — so don't assert hallucinations.
+  const unknown = atlas.capped ? [] : findUnknownSymbols(atlas, symbols);
   const tests = runTests(targetRoot);
 
   const provenance = {

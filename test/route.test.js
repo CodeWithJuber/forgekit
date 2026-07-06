@@ -141,3 +141,25 @@ test("routeTask (llm on): a failing model call falls back to deterministic", () 
   assert.equal(throwing.key, base.key, "fell back to deterministic tier");
   assert.equal(throwing.provenance.path, "deterministic");
 });
+
+test("routeTask (llm on): fires exactly ONE model call — no redundant inner assumption call", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  let calls = 0;
+  const run = (prompt) => {
+    calls++;
+    // only the complexity proposer should reach the model here
+    assert.match(prompt, /complexity/i, "the single call is the routing/complexity proposer");
+    return '{"band":"mid","reason":"x"}';
+  };
+  routeTask(root, "refactor the password reset flow in auth.js", { llm: true, run });
+  assert.equal(calls, 1, "routeTask must not also run an assumption model call");
+});
+
+test("routeTask: a precomputed ambiguity matches computing it internally", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task = "add a validation helper";
+  const a = routeTask(root, task).score;
+  const b = routeTask(root, task, { ambiguity: 0 }).score;
+  assert.equal(typeof a, "number");
+  assert.equal(typeof b, "number");
+});

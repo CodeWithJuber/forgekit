@@ -77,6 +77,27 @@ test("adjudicate: refuses a reply that leaks a secret back", () => {
   assert.equal(adjudicate({ prompt: "clean", parse: parseScore, run }), null);
 });
 
+test("adjudicate: a task that merely mentions password/secret still runs (not gutted)", () => {
+  // Regression for the over-broad SECRET_RE word match: these prompts carry no assigned value,
+  // so the proposer must actually run rather than silently fall back to deterministic.
+  let calls = 0;
+  const run = () => {
+    calls++;
+    return '{"score":0.4,"reason":"ok"}';
+  };
+  assert.ok(
+    adjudicate({ prompt: "implement password hashing in auth.js", parse: parseScore, run }),
+  );
+  assert.ok(
+    adjudicate({
+      prompt: "rotate the api key helper and the secret loader",
+      parse: parseScore,
+      run,
+    }),
+  );
+  assert.equal(calls, 2, "the model ran for both auth-related prompts");
+});
+
 test("asUnit clamps to [0,1]; asText trims and caps", () => {
   assert.equal(asUnit(1.7), 1);
   assert.equal(asUnit(-3), 0);

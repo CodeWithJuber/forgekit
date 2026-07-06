@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Secret-refusal no longer guts auth-related work.** `SECRET_RE` matched the bare words
+  `secret`/`password`/`api key`, so any task or lesson merely mentioning them was silently
+  refused — disabling the LLM proposer (`adjudicate`) and blocking memory persistence
+  (`recall`/`lessons`) for exactly the high-risk code you most want help on. The word arm now
+  requires a value-shaped assignment (`password = "…"`, `SECRET_KEY: …`); credential *formats*
+  (`sk-…`, `ghp_…`, JWTs, …) are still refused.
+- **One malformed file no longer takes down memory.** `lessons_store.load`/`readEpisodes` and
+  `cortex_hook.readSession` now skip a corrupt lesson file / JSONL line instead of throwing
+  (which previously broke retrieval, routing, and the pre-edit advisory everywhere `load` is used).
+- **`recordMistake` reports `refused` (not `created`) when a save is rejected**, so the Stop hook
+  never tries to distill a phantom lesson; `applyDistillation`/`recordContradiction` surface the
+  real write result too.
+- **Atlas emits `inherits` edges** (`class X extends Y`; Python `class X(Base)`) — the weight was
+  defined but never produced, so base-class changes were invisible to blast-radius.
+- **Atlas is incremental + staleness-aware.** `build()` reuses per-file extraction by content
+  hash (a sidecar cache) instead of re-parsing the whole repo; `isStale()` lets `verify` rebuild
+  when the cached graph is out of date (post-edit hallucination detection was running on a stale
+  atlas). A capped graph now degrades to "uncertain" rather than raising false "unknown symbol".
+- **Performance:** `resolveEdges` is O(E) (was O(E·N) — a full node scan per edge); `impact()`
+  reuses one memoized reverse-adjacency map across the up-to-8 calls per `substrate` run.
+- **`substrate` no longer recomputes preflight twice** (or fires a redundant assumption model
+  call): the gap is computed once and threaded into routing.
+
 ### Added
 
 - **Opt-in LLM adjudication for the substrate (`FORGE_LLM=1`)** — one shared, fail-safe `claude -p` proposer (`src/adjudicate.js`) wired thinly into the assumption gate (M2), model routing (M1), impact/blast-radius, and goal-drift (M4). The model only *proposes*; every proposal is verified against the deterministic rubric, the code graph, or a grep before it can move a verdict. Off by default — behaviour is unchanged unless enabled — never blocks, and the ambient Claude Code hook stays deterministic unless `FORGE_LLM_AMBIENT=1`. `forge substrate --json` carries an `llm.provenance` map per faculty for auditability.

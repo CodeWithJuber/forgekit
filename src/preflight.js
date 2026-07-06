@@ -379,7 +379,9 @@ export function preflightRepo(
   } = {},
 ) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
-  const hasSymbol = atlas ? (name) => has(atlas, name) : () => true;
+  // When the graph is capped (files were dropped) we can't be sure a symbol is truly absent, so
+  // treat everything as resolvable rather than raising false "not found in the code" clarifications.
+  const hasSymbol = atlas && !atlas.capped ? (name) => has(atlas, name) : () => true;
   const gap = informationGap(text, {
     hasSymbol,
     fileExists: (f) => existsSync(join(root, f)),
