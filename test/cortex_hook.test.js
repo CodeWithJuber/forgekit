@@ -3,7 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { classifyEvent, detectEpisodes, processSession } from "../src/cortex_hook.js";
+import {
+  classifyEvent,
+  detectDoomLoop,
+  detectEpisodes,
+  doomLoopAdvisory,
+  processSession,
+} from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-hook-"));
@@ -106,4 +112,71 @@ test("end-to-end (weak pattern): a 0.4–0.7 episode is ignored once, earns a le
     "candidate",
     "recurrence promotes the weak episode to a candidate",
   );
+});
+
+test("classifyEvent attaches an output signature only to a FAILED bash run", () => {
+  const failed = classifyEvent({
+    tool_name: "Bash",
+    tool_input: { command: "npm test" },
+    exitCode: 1,
+    tool_response: "AssertionError: expected 3 to equal 4\n  at test.js:12:5",
+  });
+  assert.ok(failed.outputSig, "failed run carries a signature");
+  const passed = classifyEvent({
+    tool_name: "Bash",
+    tool_input: { command: "npm test" },
+    exitCode: 0,
+    tool_response: "all good",
+  });
+  assert.equal(passed.outputSig, undefined, "a passing run carries none");
+});
+
+test("detectDoomLoop fires when the SAME failure signature recurs past the threshold", () => {
+  // same normalized failure three times, with different edits in between
+  const fail = (n) => ({
+    type: "bash",
+    command: "npm test",
+    exitCode: 1,
+    outputSig: "sameSig",
+    _n: n,
+  });
+  const events = [
+    { type: "edit", file: "a.js" },
+    fail(1),
+    { type: "edit", file: "a.js" },
+    fail(2),
+    { type: "edit", file: "b.js" },
+    fail(3),
+  ];
+  const r = detectDoomLoop(events, { threshold: 3 });
+  assert.equal(r.loop, true);
+  assert.equal(r.count, 3);
+  assert.ok(r.files.includes("a.js"));
+  assert.match(doomLoopAdvisory(events, { threshold: 3 }), /doom loop/i);
+});
+
+test("detectDoomLoop stays quiet when failures differ or are below threshold", () => {
+  const events = [
+    { type: "bash", command: "npm test", exitCode: 1, outputSig: "sigA" },
+    { type: "bash", command: "npm test", exitCode: 1, outputSig: "sigB" },
+    { type: "bash", command: "npm test", exitCode: 1, outputSig: "sigA" },
+  ];
+  assert.equal(detectDoomLoop(events, { threshold: 3 }).loop, false, "no single signature hit 3×");
+  assert.equal(doomLoopAdvisory(events), "");
+});
+
+test("outputSignature normalizes line numbers/timings so the same error matches across runs", () => {
+  const e1 = classifyEvent({
+    tool_name: "Bash",
+    tool_input: { command: "pytest" },
+    exitCode: 1,
+    tool_response: "FAILED test_x.py:41 in 0.3s — assert 1 == 2",
+  });
+  const e2 = classifyEvent({
+    tool_name: "Bash",
+    tool_input: { command: "pytest" },
+    exitCode: 1,
+    tool_response: "FAILED test_x.py:57 in 1.1s — assert 1 == 2",
+  });
+  assert.equal(e1.outputSig, e2.outputSig, "line/timing noise is normalized out");
 });

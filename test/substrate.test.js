@@ -131,3 +131,23 @@ test("substrateCheck: an explicit bidirectional:false threads through", () => {
   const r = substrateCheck(root, "Refactor computeTax in math.js", { bidirectional: false });
   assert.equal(r.llm.bidirectional, false, "explicit override wins over the config default");
 });
+
+test("predictFailingTests: impacted test files + siblings of impacted source", async () => {
+  const { predictFailingTests, isTestFile } = await import("../src/substrate.js");
+  const root = mkdtempSync(join(tmpdir(), "forge-pt-"));
+  writeFileSync(join(root, "math.js"), "export function computeTax(x){return x}\n");
+  writeFileSync(join(root, "math.test.js"), "import './math.js'\n");
+  writeFileSync(join(root, "helper.js"), "export function h(){}\n");
+  assert.equal(isTestFile("a.test.js"), true);
+  assert.equal(isTestFile("src/a.js"), false);
+  const pred = predictFailingTests(root, ["math.js", "helper.js", "math.test.js"]);
+  assert.ok(pred.includes("math.test.js"), "direct impacted test + sibling of math.js");
+  assert.ok(!pred.includes("helper.js"), "a source file with no sibling test is not predicted");
+});
+
+test("substrateCheck surfaces impact.predictedTests", () => {
+  const root = repo();
+  writeFileSync(join(root, "math.test.js"), "import './math.js'\n");
+  const r = substrateCheck(root, "Update `computeTax` in `math.js`");
+  assert.ok(Array.isArray(r.impact.predictedTests), "predictedTests present");
+});
