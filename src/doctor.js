@@ -1,11 +1,14 @@
 // forge doctor — turn silent misconfiguration into an actionable pass/fail list
 // (chezmoi-doctor pattern). Exits non-zero only on hard failures, not warnings.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { accessSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
+import { PRICING_VERIFIED } from "./model_tiers.js";
 import { canonical } from "./sync.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -13,6 +16,79 @@ const warn = (label, note = "") => ({ status: "warn", label, note });
 const fail = (label, note = "") => ({ status: "fail", label, note });
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+
+const hasBin = (bin) => {
+  try {
+    execFileSync(bin, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// External tools the guards/commands depend on. jq is the important one — several guards
+// (secret-redact, protect-paths) degrade to a naive parse or a no-op without it.
+function checkTooling(out) {
+  out.push(
+    hasBin("jq")
+      ? ok("jq", "found — guards parse hook JSON safely")
+      : warn("jq", "not found — secret-redact/protect-paths degrade without it; install jq"),
+  );
+  out.push(
+    hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),
+  );
+}
+
+// Every guard the manifests reference must exist and be executable, or a hook silently no-ops.
+function checkGuardsExecutable(out) {
+  const dir = join(BRAND.root, "global", "guards");
+  if (!existsSync(dir)) return; // absence is already reported by checkLayers
+  const scripts = readdirSync(dir).filter((f) => f.endsWith(".sh"));
+  const notExec = scripts.filter((f) => {
+    try {
+      accessSync(join(dir, f), constants.X_OK);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  out.push(
+    notExec.length
+      ? warn(
+          "guards exec",
+          `${notExec.length} not executable (chmod +x): ${notExec.slice(0, 3).join(", ")}`,
+        )
+      : ok("guards exec", `${scripts.length} guard(s) executable`),
+  );
+}
+
+// Model prices drift; a stale table quietly misinforms the cost/route commands.
+function checkPricing(out) {
+  const days = Math.floor((Date.now() - Date.parse(`${PRICING_VERIFIED}T00:00:00Z`)) / 86400000);
+  out.push(
+    Number.isFinite(days) && days > 90
+      ? warn(
+          "model pricing",
+          `verified ${PRICING_VERIFIED} (${days}d ago) — re-verify via dev-radar`,
+        )
+      : ok("model pricing", `verified ${PRICING_VERIFIED}`),
+  );
+}
+
+// The atlas backs impact/verify. A missing or STALE graph gives wrong blast-radius / hallucination
+// results silently — surface it so the user rebuilds.
+function checkAtlas(out, targetRoot) {
+  const atlas = loadAtlas(targetRoot);
+  if (!atlas) {
+    out.push(ok("atlas", "not built — run `forge atlas build` for impact/verify"));
+    return;
+  }
+  out.push(
+    isStale(targetRoot, atlas)
+      ? warn("atlas", "stale (files changed since build) — run `forge atlas build`")
+      : ok("atlas", `${atlas.symbols?.length ?? 0} symbols, fresh`),
+  );
+}
 
 function checkNode(out) {
   const major = Number(process.versions.node.split(".")[0]);
@@ -108,8 +184,12 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkNode(results);
   checkBrandConsistency(results);
   checkLayers(results);
+  checkGuardsExecutable(results);
+  checkTooling(results);
   checkInstall(results);
   checkDrift(results, targetRoot);
+  checkAtlas(results, targetRoot);
+  checkPricing(results);
   checkMcp(results, targetRoot);
   checkCortex(results, targetRoot);
   return { results, failed: results.filter((r) => r.status === "fail").length };

@@ -26,3 +26,14 @@ test("extractCalledSymbols dedupes", () => {
   const syms = extractCalledSymbols("foo()\nfoo()\nbar()");
   assert.equal(syms.filter((s) => s === "foo").length, 1);
 });
+
+test("shared extractor: atlas and verify use the same call-site extraction (no drift)", async () => {
+  const { extractCalledSymbols, CALL_IGNORE } = await import("../src/extract.js");
+  // Calls must be separated — the leading-boundary regex consumes the separator, so adjacent
+  // calls like foo(bar()) only yield the outer one (shared, pre-existing behaviour).
+  const syms = extractCalledSymbols("const x = foo(); bar(); baz.method(); JSON.parse(y)");
+  assert.ok(syms.includes("foo") && syms.includes("bar"), "top-level calls captured");
+  assert.ok(!syms.includes("method"), "member call .method( is skipped");
+  assert.ok(!syms.includes("JSON"), "builtins ignored");
+  assert.ok(CALL_IGNORE.has("console"));
+});

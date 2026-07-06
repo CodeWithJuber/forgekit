@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
+import { CALL_RE } from "./extract.js";
 
 const IGNORE = new Set([
   "node_modules",
@@ -48,7 +49,6 @@ const RULES = {
   ".java": [{ re: /\b(?:class|interface|enum)\s+([A-Za-z_]\w*)/g, kind: "type" }],
 };
 
-const CALL_RE = /(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
 const IMPORT_RE =
   /(?:import\s+(?:[^"'\n]+\s+from\s+)?["']([^"']+)["']|require\(["']([^"']+)["']\)|^\s*(?:from\s+([\w.]+)\s+)?import\s+([\w*,\s]+))/gm;
 const BUILTINS = new Set([

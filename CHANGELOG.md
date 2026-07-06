@@ -8,6 +8,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Uniform `--json`.** `doctor`, `route`, `preflight`, `verify`, and `scope` now accept `--json`
+  (previously only `impact`/`substrate`/`anchor` did) — so CI and scripts can gate on the health
+  check, the routed tier, the assumption gap, and the verification result.
+- **`forge doctor` sees more silent misconfiguration.** New checks: guard scripts present **and
+  executable**, `jq`/`git` availability (several guards degrade without `jq`), atlas
+  **presence + freshness** (a stale graph misleads impact/verify), and **model-pricing staleness**
+  (warns when the verified date is >90 days old).
+- **Evaluation harness (`src/eval.js`).** The deterministic core of the prototype's mutation-testing
+  idea: score the impact oracle's precision/recall/F1 over labeled cases and against the
+  edited-file-only baseline the paper measured against — so the graph-quality claim is checkable in CI.
+
+### Changed
+
+- **Model tiers carry a currency + a verified date.** `model_tiers.js` exports `PRICING_CURRENCY`
+  ("USD") and `PRICING_VERIFIED`, which `forge doctor` uses for the staleness warning.
+- **One shared call-site extractor (`src/extract.js`).** `atlas.js` and `verify.js` each kept their
+  own copy of the call regex + builtins ignore-list; they now share one module so the two can't
+  drift apart.
+
 - **Opt-in enforcing gate (`FORGE_ENFORCE=1`).** The substrate's assumption gate can now be a real
   *halt* (the paper's Eq 5 / M2 "block on insufficient input"), not just advice. On the Claude Code
   ambient path it blocks a prompt with **no concrete anchor at all** ("fix it", "make it better") —

@@ -125,6 +125,11 @@ async function run(argv) {
   if (cmd === "doctor") {
     const { doctor } = await import("./doctor.js");
     const { results, failed } = doctor({ targetRoot: process.cwd() });
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify({ results, failed }, null, 2));
+      if (failed) process.exitCode = 1;
+      return;
+    }
     const icon = { ok: "✓", warn: "!", fail: "✗" };
     console.log(`${BRAND.brand} doctor\n`);
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
@@ -223,7 +228,13 @@ async function run(argv) {
   }
   if (cmd === "verify") {
     const { verify } = await import("./verify.js");
+    const json = argv.includes("--json");
     const r = verify({ targetRoot: process.cwd() });
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
     console.log(`${BRAND.brand} verify\n`);
     console.log(`  changed files:    ${r.changedFiles.length}`);
     console.log(
@@ -376,13 +387,21 @@ async function run(argv) {
   }
   if (cmd === "preflight") {
     const { preflightRepo, clarifyBlock } = await import("./preflight.js");
-    const task = argv.slice(1).join(" ");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
     if (!task) {
-      console.error('usage: forge preflight "<task description>"');
+      console.error('usage: forge preflight "<task description>" [--json]');
       process.exitCode = 1;
       return;
     }
     const r = preflightRepo(process.cwd(), task);
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
     console.log(`${BRAND.brand} preflight — assumption check\n`);
     console.log(
       `  info-gap: ${r.gap.toFixed(2)}  · completeness ${r.assumption.completeness.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
@@ -444,13 +463,21 @@ async function run(argv) {
       );
       return;
     }
-    const task = argv.slice(1).join(" ");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
     if (!task) {
-      console.error('usage: forge route "<task>"   |   forge route gateway');
+      console.error('usage: forge route "<task>" [--json]   |   forge route gateway');
       process.exitCode = 1;
       return;
     }
     const rec = r.routeTask(process.cwd(), task);
+    if (json) {
+      console.log(JSON.stringify(rec, null, 2));
+      return;
+    }
     console.log(`${BRAND.brand} route — cheapest capable model\n`);
     console.log(
       `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
@@ -501,13 +528,18 @@ async function run(argv) {
   }
   if (cmd === "scope") {
     const { decompose } = await import("./scope.js");
-    const files = argv.slice(1);
+    const json = argv.includes("--json");
+    const files = argv.slice(1).filter((a) => a !== "--json");
     if (!files.length) {
-      console.error("usage: forge scope <file> [file...]");
+      console.error("usage: forge scope <file> [file...] [--json]");
       process.exitCode = 1;
       return;
     }
     const d = decompose(process.cwd(), files);
+    if (json) {
+      console.log(JSON.stringify(d, null, 2));
+      return;
+    }
     console.log(`${BRAND.brand} scope — task decomposition\n`);
     if (d.independentGroups > 1) {
       console.log(

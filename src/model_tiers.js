@@ -1,6 +1,12 @@
 // forge model tiers — the routing target table. Cheapest capable model per complexity tier.
-// Costs are $/million tokens (input/output), verified 2026-07-05; re-verify via dev-radar.
-// The premise: a prime-number finder does not need Fable 5. Size the model to the task.
+// Costs are per-million tokens (input/output) in PRICING_CURRENCY. The premise: a prime-number
+// finder does not need Fable 5. Size the model to the task.
+
+/** Currency for every inCost/outCost below. */
+export const PRICING_CURRENCY = "USD";
+/** Date the prices were last checked. `forge doctor` warns when this goes stale (re-verify via dev-radar). */
+export const PRICING_VERIFIED = "2026-07-05";
+
 export const MODELS = {
   haiku: {
     id: "claude-haiku-4-5-20251001",
