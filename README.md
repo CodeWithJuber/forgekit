@@ -27,6 +27,21 @@ a cost governor, and a **cognitive substrate** that checks a task *before* the a
 touches your code. Works with **Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
 Windsurf, Zed, and Continue** (plus MCP config for Roo and VS Code).
 
+```mermaid
+flowchart LR
+    S["source/rules.json<br/>(author once)"] -->|forge sync| E{{emit}}
+    E --> C["CLAUDE.md"]
+    E --> A["AGENTS.md"]
+    E --> R[".cursor / .gemini<br/>.aider / …"]
+    E --> M["MCP config"]
+    S -.->|forge substrate| G["pre-action gate<br/>assumptions · route · impact · verify"]
+    G -.-> Agent(("your AI agent"))
+    C --> Agent
+    A --> Agent
+    R --> Agent
+    M --> Agent
+```
+
 > **Status: beta.** The core (`init`, `sync`, `substrate`, `impact`, `cortex`, guards)
 > is tested and in daily use; some flags may change before `1.0`.
 
