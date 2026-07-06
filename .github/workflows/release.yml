@@ -1,5 +1,5 @@
-# Tag v* -> test -> publish to GitHub Packages, then cut a GitHub release.
-# GitHub Packages auth uses the built-in GITHUB_TOKEN (packages: write) — no external secret.
+# Push a v* tag -> test -> publish to public npm (with provenance) -> cut a GitHub Release.
+# Requires one repo secret: NPM_TOKEN (an npm "Automation" token). See docs/RELEASING.md.
 name: Release
 
 on:
@@ -10,25 +10,29 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # create the GitHub release
-      packages: write # publish to GitHub Packages (npm.pkg.github.com)
+      contents: write # create the GitHub Release
+      id-token: write # npm provenance (supply-chain attestation)
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history so release notes can diff from the last tag
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          registry-url: "https://npm.pkg.github.com"
+          registry-url: "https://registry.npmjs.org"
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm publish
+      - run: npm publish --provenance --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create GitHub release
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --notes-from-tag --verify-tag
+        # --generate-notes builds notes from merged PRs/commits since the previous tag,
+        # so it works with lightweight OR annotated tags (unlike --notes-from-tag).
+        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag

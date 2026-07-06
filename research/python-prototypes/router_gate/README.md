@@ -1,6 +1,8 @@
 # router_gate
 
-Production-ready **assumption gate + complexity-aware model router** for coding agents.
+A research prototype of an **assumption gate + complexity-aware model router** for coding
+agents (the auditable Python original of `forge preflight` / `forge route`; a demonstration,
+not a benchmark).
 
 It is designed to sit in front of Claude Code, MCP clients, custom agent CLIs, internal LLM gateways, or any workflow where you want two safety checks before spending premium model tokens:
 

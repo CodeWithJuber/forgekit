@@ -22,7 +22,7 @@ traverses reverse dependencies to predict what will break.
 │  ┌─────────────┐   ┌──────────────┐   ┌───────────┐  │
 │  │  AST Parser  │──▶│  Dependency  │──▶│ Persistent │  │
 │  │  (parser.py) │   │    Graph     │   │   Cache    │  │
-│  └─────────────┘   │  (NetworkX)  │   │ (JSON+pkl) │  │
+│  └─────────────┘   │  (NetworkX)  │   │  (JSON)    │  │
 │                     └──────────────┘   └───────────┘  │
 └───────────────┬───────────────────────────────────────┘
                 │
@@ -50,8 +50,8 @@ traverses reverse dependencies to predict what will break.
 ### Incremental update
 
 Files are content-hashed (SHA-256).  On subsequent builds, only changed files
-are re-parsed.  The graph is persisted as both JSON (portable) and pickle
-(fast reload).
+are re-parsed.  The graph is persisted as JSON (portable node-link) — the earlier
+pickle cache was removed as an insecure-deserialization vector.
 
 ## Quick start
 
@@ -87,8 +87,8 @@ The evaluation uses **mutation testing** as ground truth:
 | Grep baseline     | 0.733     | 0.943  | 0.787 |
 | Edited-file only  | **1.000** | 0.529  | 0.650 |
 
-The oracle achieves **perfect recall** (never misses a truly affected module)
-with an F1 of 0.83 at the optimal threshold (t=0.4).
+The oracle achieves **perfect recall** (never misses a truly affected module),
+with its best F1 of 0.79 at the optimal threshold (t=0.4).
 
 ## File structure
 

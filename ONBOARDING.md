@@ -1,23 +1,26 @@
 # Onboarding — five minutes to productive
 
+> **Forge** is a cross-tool config layer plus a cognitive substrate for AI coding
+> agents (Claude Code, Codex, Cursor, Gemini, Aider…). Author your rules once; it
+> configures every tool and adds memory, blast-radius checks, and guardrails.
+
 ## 1. Install (once)
 
-Pick one — no `curl | bash`, no clone required for either:
+The recommended paths need no token and no clone:
 
 ```bash
-# A) Claude Code / Codex — the plugin (recommended; guards auto-wire, nothing to merge)
+# Claude Code / Codex — the plugin (guards auto-wire, nothing to merge)
 /plugin marketplace add CodeWithJuber/forgekit
 /plugin install forgekit
 
-# B) Any tool — the CLI (no token, no clone)
-npm install -g github:CodeWithJuber/forgekit
+# Any tool — the CLI, from public npm
+npm install -g @codewithjuber/forgekit
 
 forge doctor               # everything green?
 ```
 
-Hacking on Forge itself? Clone and `npm link`, or `bash install.sh` to symlink the
-tree into `~/.claude` (idempotent, reversible, prints the hook block to merge). See
-[README → Install](README.md#install) for the full matrix.
+Full matrix (no-registry `github:` install, symlink dev setup) →
+[README → Install](README.md#install).
 
 ## 2. Configure a repo (once per repo)
 
@@ -26,8 +29,8 @@ cd ~/your-project
 forge init                 # emits AGENTS.md, CLAUDE.md, .gemini/settings.json, .aider.conf.yml …
 ```
 
-Now Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, and Zed all read
-the **same** rules — each from its own native file.
+Now Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and Continue all
+read the **same** rules — each from its own native file (plus MCP config for Roo and VS Code).
 
 ## 3. Change a rule
 
@@ -62,7 +65,7 @@ forge catalog              # the Start-Here index of everything
 
 ---
 
-# Forge principles
+## Forge principles
 
 Forge is opinionated. These are the ideas every part of it is built on — the "why"
 behind the mechanisms.
@@ -116,9 +119,7 @@ originate here.
 
 Every deliberate simplification states its limit and upgrade path, in code and in
 docs. Forge would rather ship an honest subset with a clear boundary than a vague
-claim. It reduces the "ignored my rules" problem; it does not eliminate it. It
-flags likely-hallucinated symbols; it does not certify correctness. `recall` is
-file memory, not weight-level learning.
+claim — see [the honest limits](docs/GUIDE.md#honest-limits).
 
 ---
 

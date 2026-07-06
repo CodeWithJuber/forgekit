@@ -14,26 +14,19 @@ In Claude Code it runs **automatically**. In other tools you (or the agent) run 
 
 ---
 
-## Install (about 2 minutes)
+## Install
 
-```bash
-# Claude Code / Codex — the plugin (recommended; the check then runs on every prompt)
-/plugin marketplace add CodeWithJuber/forgekit
-/plugin install forgekit
-
-# …or the CLI, any tool (no token, no clone)
-npm install -g github:CodeWithJuber/forgekit
-```
-
-Then, inside any project:
+Install Forge (plugin · npm · `github:`) per [README → Install](../../README.md#install),
+then inside any project:
 
 ```bash
 forge init      # writes each AI tool's native config from one source
-forge atlas     # builds the code graph (needed for blast-radius checks)
+forge atlas     # build the code graph (needed for blast-radius checks)
 ```
 
-That's it. `forge init` configures Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Zed,
-Continue, and Roo where supported.
+`forge init` configures Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
+and Continue (plus MCP config for Roo and VS Code). On Claude Code the check then runs on
+every prompt automatically.
 
 ---
 
@@ -173,57 +166,26 @@ Code, and agent-invoked everywhere else.
 
 ---
 
-## Use it in a script
+## Use it in a script & extend it
 
-```bash
-forge substrate "update verifyToken in src/auth.js" --json
-```
-
-```jsonc
-{
-  "okToProceed": false,
-  "assumption": { "risk": "high", "shouldAsk": true, "questions": ["…"] },
-  "route":      { "tier": "simple", "model": { "name": "Haiku 4.5" } },
-  "impact":     { "impactedFiles": ["src/auth.js", "src/login.js"] },
-  "verification": { "checklist": ["npm test", "npm run typecheck"] }
-}
-```
-
-Gate your agent's next step on `okToProceed`; feed `route.tier` to your model picker; read
-`impact.impactedFiles` before editing.
-
----
-
-## Extend it
-
-Small, pure functions — change the one piece you need, then run `npm test`.
-
-| To change… | Edit |
-| --- | --- |
-| how often it asks | `source/substrate.json` → `defaults.askThreshold` (0.6) |
-| blast-radius sensitivity | `source/substrate.json` → `defaults.impactThreshold` (0.1) |
-| a routing signal | `src/route.js` → `rubricComplexity()` |
-| an assumption question | `src/preflight.js` → `DIMENSIONS[]` |
-| the verify checklist | `src/substrate.js` → `verificationChecklist()` |
-| when the ambient hook speaks | `src/substrate.js` → `substrateContext()` |
-| the cross-tool wording | `source/rules.json` → `substrate` section (then `forge init`) |
+Add `--json` to any command for machine-readable output — gate your agent's next step on
+`okToProceed`, feed `route.tier` to your model picker, read `impact.impactedFiles` before
+editing. Every knob (ask threshold, blast-radius sensitivity, routing signals, assumption
+questions, the verify checklist, the ambient hook wording) is a small pure function or a
+JSON default. Full JSON shape and the extension table:
+[docs/GUIDE.md → Use it in a script](../GUIDE.md#use-it-in-a-script) ·
+[Extending Forge](../GUIDE.md#extending-forge).
 
 ---
 
 ## Honest limits
 
-- **Heuristic, not benchmarked.** Rubrics were tuned on small hand-labeled sets. Judge after
-  real use.
-- **The graph is regex-approximate.** Dynamic dispatch / DI / generated code can be missed —
-  impact is *conservative* (catches the obvious dependents), not a sound call graph.
-- **Assumption detection is lexical.** It catches unclear *names and wording*, not wrong
-  *intent*.
-- **Auto-run needs a hook surface** — fully ambient on Claude Code; agent-invoked elsewhere.
-
-What's **asserted** (safe to gate on): repo symbol/file grounding, graph traversal, scope
-decomposition, the routing arithmetic, and the test/build commands. What's **advisory**
-(flagged, never asserted): whether the model is capable enough, whether a change is
-over-engineered, and whether a past lesson is relevant. Tests and human corrections always win.
+Heuristic, not benchmarked; the graph is regex-approximate (conservative, not a sound call
+graph); assumption detection is lexical; auto-run needs a hook surface (ambient on Claude
+Code, agent-invoked elsewhere). What's *asserted* is safe to gate on (repo grounding, graph
+traversal, scope, routing arithmetic, test commands); everything else is *advisory*. Tests
+and human corrections always win. Full list:
+[docs/GUIDE.md → Honest limits](../GUIDE.md#honest-limits).
 
 ---
 

@@ -32,18 +32,14 @@
 - [`research/python-prototypes/router_gate/`](../../research/python-prototypes/router_gate/) — the two mechanisms at the top of the build-map, composed as `gate → route → execute → verify → escalate`. Both are **transparent additive rubrics**, not opaque LLM calls; escalation is driven by an external check. `python demo.py`, `pytest` → **19 tests pass**, `python evaluate.py --live` reproduces the live numbers. (Shipped in production as `forge route` / `forge preflight`.)
 - **`eval_results.json`** — the live evaluation record (real measured tokens).
 
-### 4. Evidence & ecosystem maps _(new)_
+### 4. Evidence & ecosystem maps
 
-- **`evidence_map.json`** / **`evidence_map.md`** — every load-bearing statistic, its primary source, and its status.
-- **`ecosystem_map.json`** / **`ecosystem_map.md`** — every faculty & mechanism vs. the real stack, with residual gap and proposed contribution.
+- [`evidence_map.md`](./evidence_map.md) — every load-bearing statistic, its primary source, and its status (5 confirmed, 5 vendor-reported, 2 dropped).
+- [`ecosystem_map.md`](./ecosystem_map.md) — every faculty & mechanism vs. the real 2026 stack, with the residual gap and the proposed contribution.
 
-### 5. Figures & schematics
+### 5. Figures & appendices
 
-- **`schematic_loop.png`** (Fig 1) · **`schematic_system.png`** (Fig 2) · **`schematic_extended.png`** (Fig 3, _new_ — the six-mechanism control layer) · **`impact_graph.png`** (Fig 4) · **`eval_precision_recall.png`** (Fig 5) · **`schematic_router_loop.png`** (Fig 6, _new_) · **`router_eval.png`** (Fig 7, _new_).
-
-### 6. Supporting artifacts (from v1)
-
-- **`gap_map.json`/`.md`**, **`references.json`** (32 sources), **`quran_lens.json`/`.md`** (14-row concept→faculty→design-principle mapping).
+The seven figures (the frozen loop; the substrate; the six-mechanism control layer; an impact blast-radius graph; the precision/recall evaluation; the router loop; the live router evaluation), the 32-source reference list, and the Qur'anic-lens table are all in the white paper itself ([PDF](./cognitive_substrate_whitepaper.pdf) · [HTML](./cognitive_substrate_whitepaper.html)).
 
 ---
 
