@@ -152,7 +152,9 @@ export function substrateCheck(
   };
   const entities = referencedEntities(text);
   const preflight = preflightRepo(root, text, { askThreshold, allowBuild, ...llmOpts });
-  const route = routeTask(root, text, llmOpts);
+  // Reuse the gap preflight already computed — routeTask would otherwise recompute it (and, with
+  // FORGE_LLM on, fire a second, redundant assumption model call whose result it discards).
+  const route = routeTask(root, text, { ...llmOpts, ambiguity: preflight.gap });
   // allowBuild:false (ambient hooks) uses the atlas only if one is already cached — never
   // builds or writes .forge/atlas.json from a hook. Impact is then best-effort.
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);

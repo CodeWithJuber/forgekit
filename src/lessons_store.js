@@ -96,14 +96,23 @@ export function save(root, lesson) {
   return { ok: true };
 }
 
-/** Load every persisted lesson (episodes.jsonl is skipped — only .md files are lessons). */
+/** Load every persisted lesson (episodes.jsonl is skipped — only .md files are lessons).
+ *  A single malformed/half-written file is skipped, not fatal — one bad file must never take
+ *  down memory retrieval, routing, and the pre-edit advisory (everywhere `load` is called). */
 export function load(root) {
   const dir = lessonsDir(root);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  const out = [];
+  for (const f of readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
-    .sort()
-    .map((f) => parse(readFileSync(join(dir, f), "utf8")));
+    .sort()) {
+    try {
+      out.push(parse(readFileSync(join(dir, f), "utf8")));
+    } catch {
+      // skip an unreadable / front-matter-less lesson file rather than throwing
+    }
+  }
+  return out;
 }
 
 /** Append a correction episode to the audit log (independent evidence, never overwritten). */
@@ -116,8 +125,12 @@ export function appendEpisode(root, episode) {
 export function readEpisodes(root) {
   const path = join(lessonsDir(root), "episodes.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
+  const out = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line) continue;
+    try {
+      out.push(JSON.parse(line)); // one corrupt JSONL line must not discard the whole log
+    } catch {}
+  }
+  return out;
 }

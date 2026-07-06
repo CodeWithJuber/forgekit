@@ -6,11 +6,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 // Anything matching this is refused — store a pointer to where the secret lives instead.
-// Conservative (over-refusal is the safe direction for a memory tool). Covers the
-// key formats this tool's own users paste most: Anthropic sk-ant-, OpenAI sk-,
-// GitHub ghp_/github_pat_, Slack xox*, Google AIza/ya29, AWS AKIA, JWTs, PEM blocks.
+// Two arms, both high-precision:
+//   1) Known credential FORMATS this tool's users paste most — Anthropic sk-ant-, OpenAI sk-,
+//      GitHub ghp_/github_pat_, Slack xox*, Google AIza/ya29, AWS AKIA, JWTs, PEM blocks.
+//   2) A secret-ish key ASSIGNED to a value — `password = "x"`, `SECRET_KEY: y`, `api_key=z`.
+// The second arm deliberately requires the `: `/`=` + value, so a bare English mention
+// ("implement password hashing", "rotate the secret", "the api key helper") is NOT refused —
+// that over-broad word match previously gutted both the LLM proposer (adjudicate) and the
+// memory store (recall/lessons) for a whole class of legitimate auth-related work.
 export const SECRET_RE =
-  /(-----BEGIN |api[_-]?key|secret|passwd|password|\bghp_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bsk-[A-Za-z0-9_-]{16,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{20,}|\bya29\.[A-Za-z0-9._-]+|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AKIA[0-9A-Z]{16})/i;
+  /(-----BEGIN |\bghp_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bsk-[A-Za-z0-9_-]{16,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{20,}|\bya29\.[A-Za-z0-9._-]+|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AKIA[0-9A-Z]{16}|\b[\w-]*(?:api[_-]?key|secret|passwd|password|token)[\w-]*["']?\s*[:=]\s*["']?\S)/i;
 
 export function defaultStore() {
   return join(process.env.FORGE_HOME || join(homedir(), ".forge"), "recall");

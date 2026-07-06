@@ -129,15 +129,17 @@ function nearestSource(nodes, line, fallback) {
   return best;
 }
 
-function extractFile(path, root) {
+function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
   const rel = relative(root, path);
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return { symbols: [], nodes: [], edges: [], hash: "" };
+  let text = preRead;
+  if (text == null) {
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      return { symbols: [], nodes: [], edges: [], hash: "" };
+    }
   }
 
   const mod = {
@@ -168,6 +170,32 @@ function extractFile(path, root) {
       symbols.push({ name, kind, file: rel, line, id: node.id, qname: node.qname });
       nodes.push(node);
       edges.push({ source: mod.id, target: node.id, kind: "contains", confidence: 1, line });
+    }
+  }
+
+  // Inheritance edges — `class X extends Y` (JS/TS) and `class X(Base, …)` (Python). Without
+  // these the `inherits` edge weight was dead and a base-class change never appeared in blast
+  // radius. The base is a bare name; resolveEdges links it to a real node if one exists.
+  const classNodes = new Map(nodes.filter((n) => n.kind === "class").map((n) => [n.name, n]));
+  const INHERIT_RES = [
+    /\bclass\s+([A-Za-z_$][\w$]*)\s+extends\s+([A-Za-z_$][\w$.]*)/g, // JS/TS
+    /^\s*class\s+([A-Za-z_]\w*)\s*\(([^)]*)\)/gm, // Python
+  ];
+  for (const re of INHERIT_RES) {
+    re.lastIndex = 0;
+    let cm;
+    while ((cm = re.exec(text))) {
+      const child = classNodes.get(cm[1]);
+      if (!child) continue;
+      const line = lineOf(text, cm.index);
+      const bases = cm[2]
+        .split(",")
+        .map((b) => b.trim())
+        .filter((b) => b && !b.includes("=")) // drop Python kwargs like metaclass=ABCMeta
+        .map((b) => b.split(".").pop()) // module.Base → Base
+        .filter((b) => b && b !== cm[1] && b.toLowerCase() !== "object");
+      for (const base of bases)
+        edges.push({ source: child.id, target: base, kind: "inherits", confidence: 0.9, line });
     }
   }
 
@@ -217,7 +245,9 @@ function extractFile(path, root) {
 function resolveEdges(nodes, edges) {
   const byName = new Map();
   const byQname = new Map();
+  const idSet = new Set();
   for (const n of nodes) {
+    idSet.add(n.id);
     if (n.name) {
       const arr = byName.get(n.name) || [];
       arr.push(n);
@@ -226,7 +256,8 @@ function resolveEdges(nodes, edges) {
     if (n.qname) byQname.set(n.qname, n);
   }
   return edges.map((edge) => {
-    if (nodes.some((n) => n.id === edge.target)) return edge;
+    // O(1) membership — this was a full nodes.some() scan per edge (O(E·N) on real repos).
+    if (idSet.has(edge.target)) return edge;
     const direct = byQname.get(edge.target);
     if (direct) return { ...edge, target: direct.id, resolved: true };
     const short = String(edge.target).split(".").pop();
@@ -237,19 +268,45 @@ function resolveEdges(nodes, edges) {
   });
 }
 
+const cachePath = (root) => join(root, ".forge", "atlas.cache.json");
+
+function readCache(root) {
+  try {
+    return existsSync(cachePath(root)) ? JSON.parse(readFileSync(cachePath(root), "utf8")) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function build({ root = process.cwd(), cap = 20000 } = {}) {
   const files = [];
   walk(root, files, cap);
+  // Incremental: reuse the prior per-file extraction when the content hash is unchanged, so a
+  // rebuild only re-parses edited files instead of re-running every regex over the whole repo.
+  const prev = readCache(root);
+  const cache = {};
   const symbols = [];
   const nodes = [];
   const rawEdges = [];
   const fileHashes = {};
   for (const f of files) {
-    const parsed = extractFile(f, root);
-    symbols.push(...parsed.symbols);
-    nodes.push(...parsed.nodes);
-    rawEdges.push(...parsed.edges);
-    fileHashes[relative(root, f)] = parsed.hash;
+    const rel = relative(root, f);
+    let text;
+    try {
+      text = readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    const h = hash(text);
+    const reused = prev[rel]?.hash === h ? prev[rel].data : null;
+    const data =
+      reused ||
+      (({ symbols, nodes, edges }) => ({ symbols, nodes, edges }))(extractFile(f, root, text));
+    cache[rel] = { hash: h, data };
+    symbols.push(...data.symbols);
+    nodes.push(...data.nodes);
+    rawEdges.push(...data.edges);
+    fileHashes[rel] = h;
   }
   const edges = resolveEdges(nodes, rawEdges);
   const atlas = {
@@ -263,7 +320,23 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
   };
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(join(root, ".forge", "atlas.json"), JSON.stringify(atlas));
+  writeFileSync(cachePath(root), JSON.stringify(cache));
   return atlas;
+}
+
+/** True if any tracked file's current content hash differs from the atlas (or a file vanished). */
+export function isStale(root, atlas) {
+  if (!atlas?.fileHashes) return true;
+  for (const [rel, h] of Object.entries(atlas.fileHashes)) {
+    let text;
+    try {
+      text = readFileSync(join(root, rel), "utf8");
+    } catch {
+      return true; // a tracked file was deleted
+    }
+    if (hash(text) !== h) return true;
+  }
+  return false;
 }
 
 export function load(root = process.cwd()) {
@@ -296,6 +369,25 @@ function targetIds(atlas, target) {
 }
 
 const EDGE_WEIGHT = { calls: 0.95, imports: 0.85, inherits: 0.92, references: 0.7, contains: 0.45 };
+
+// Reverse-adjacency (node id → incoming edges) + node lookup, built once per atlas and memoized.
+// substrateCheck calls impact() up to 8× on the same atlas; without this each call rebuilt both.
+const ADJ_CACHE = new WeakMap();
+function adjacency(atlas) {
+  const cached = ADJ_CACHE.get(atlas);
+  if (cached) return cached;
+  const nodeById = new Map((atlas.nodes || []).map((n) => [n.id, n]));
+  const incoming = new Map();
+  for (const e of atlas.edges || []) {
+    if (e.unresolved) continue;
+    const arr = incoming.get(e.target) || [];
+    arr.push(e);
+    incoming.set(e.target, arr);
+  }
+  const built = { nodeById, incoming };
+  ADJ_CACHE.set(atlas, built);
+  return built;
+}
 
 // Imagination (§8) — LLM proposer for the edges the regex graph structurally misses: dynamic
 // dispatch, DI, reflection, string-keyed lookups. PROPOSER ONLY. Every candidate is then
@@ -342,14 +434,7 @@ export function impact(
   { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
 ) {
   const starts = targetIds(atlas, target);
-  const nodeById = new Map((atlas.nodes || []).map((n) => [n.id, n]));
-  const incoming = new Map();
-  for (const e of atlas.edges || []) {
-    if (e.unresolved) continue;
-    const arr = incoming.get(e.target) || [];
-    arr.push(e);
-    incoming.set(e.target, arr);
-  }
+  const { nodeById, incoming } = adjacency(atlas);
   const visited = new Map();
   const queue = starts.map((id) => ({ id, confidence: 1, hop: 0, path: [id], edgeKinds: [] }));
   while (queue.length) {

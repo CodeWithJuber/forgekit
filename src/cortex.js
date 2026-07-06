@@ -87,7 +87,7 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
         episodes: [...(c.provenance?.episodes ?? []), episodeId],
       },
     };
-    save(root, updated);
+    if (!save(root, updated).ok) return { action: "refused", p, fires };
     return {
       action: "confirmed",
       id: updated.id,
@@ -117,7 +117,9 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
     },
     nowDay,
   );
-  save(root, lesson);
+  // Report "created" only when the write actually landed — a refused save (e.g. secret-bearing
+  // body) must not make the hook believe a lesson exists and try to distill a phantom.
+  if (!save(root, lesson).ok) return { action: "refused", p, fires };
   return { action: "created", id: lesson.id, status: lesson.status, p, fires };
 }
 
@@ -135,8 +137,8 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
   const targets = matchingLessons(load(root), context, ["active", "quarantined"]);
   const results = targets.map((l) => {
     const updated = contradict(l, nowDay);
-    save(root, updated);
-    return { id: updated.id, status: updated.status };
+    const saved = save(root, updated).ok;
+    return { id: updated.id, status: updated.status, saved };
   });
   return { action: "contradicted", results };
 }
@@ -168,17 +170,17 @@ export function startupBlock(root, nowDay = 0, budget = 8) {
   ].join("\n");
 }
 
-/** Replace a lesson's body with a model-distilled version (returns false if not found). */
+/** Replace a lesson's body with a model-distilled version (false if not found or the save was
+ *  refused — e.g. the distilled text tripped secret-refusal). */
 export function applyDistillation(root, lessonId, distilled) {
   if (!distilled) return false;
   const lesson = load(root).find((l) => l.id === lessonId);
   if (!lesson) return false;
-  save(root, {
+  return save(root, {
     ...lesson,
     whatWentWrong: distilled.whatWentWrong,
     correctedBehavior: distilled.correctedBehavior,
-  });
-  return true;
+  }).ok;
 }
 
 /** The lessons block to inline into AGENTS.md so non-Claude tools see them (empty if none). */
