@@ -1,7 +1,7 @@
 {
   "name": "@codewithjuber/forgekit",
-  "version": "0.3.1",
-  "description": "One config, every AI coding tool \u2014 a cross-tool configuration layer for agentic coding assistants (Claude Code, Codex, Cursor, Gemini, Aider, and more).",
+  "version": "0.4.0",
+  "description": "One config for every AI coding agent \u2014 a cross-tool config layer plus a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more.",
   "type": "module",
   "bin": {
     "forge": "src/cli.js"
@@ -22,8 +22,8 @@
   "funding": "https://github.com/sponsors/CodeWithJuber",
   "sideEffects": false,
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "files": [
     "src",
@@ -62,6 +62,9 @@
     "cursor",
     "agents-md",
     "ai-coding",
+    "ai-agents",
+    "cognitive-substrate",
+    "mcp",
     "config",
     "cross-tool",
     "cli",

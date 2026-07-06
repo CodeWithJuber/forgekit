@@ -6,32 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-06
+
 ### Added
 
-- **M4 goal-anchoring (`forge anchor`)** — the one paper capability that was mapped in the docs but never implemented. A deterministic goal-drift check: it re-reads the stated objective against the files actually changed (`git diff HEAD` + untracked, minus forge's own generated config) and flags work that wandered off-goal. Reuses `referencedEntities` + the atlas; folded into `forge substrate` (quiet on a clean tree, speaks mid-session on drift). All 11 paper capabilities now ship a real mechanism.
+- **Forge Cognitive Substrate** — one pre-action command (`forge substrate`) plus an MCP surface (`substrate_check`, `predict_impact`, `assumption_gate`, `route_task`, `scope_files`): assumption gate, transparent model routing, impact/blast-radius, scope decomposition, Cortex lessons, minimality, and a verification checklist.
+- **M4 goal-anchoring (`forge anchor`)** — a deterministic goal-drift check that flags changed files off the stated goal. All 11 white-paper capabilities now ship a real mechanism.
+- **Atlas v2 graph** — dependency nodes/edges + reverse-dependency impact traversal (the symbol-query API is preserved).
+- **`docs/GUIDE.md`** (the complete command guide) and **`docs/RELEASING.md`** (release runbook).
+- **Repo automation** — `repo-settings.yml` (About/topics/Discussions as code) and `labels.yml` (label sync) workflows; a Codex plugin manifest and `cognitive-substrate` skill; the paper bundle under `docs/cognitive-substrate/`.
 
 ### Changed
 
-- **Substrate now auto-runs in Claude Code.** The `UserPromptSubmit` hook injects the full substrate advisory (assumption gate + model routing + blast radius + memory + verify) when it matters, silent otherwise. Load-only — never builds/writes `.forge/` from a hook, fail-safe, never blocks.
-- **Cross-tool auto-use.** Added a `substrate` section to `source/rules.json` so `forge init` emits the "run substrate before risky work" rule into every tool's config (AGENTS.md, .cursor/rules, …).
-- **Docs rewritten** — `docs/cognitive-substrate/README.md` is a professional, example-rich guide (real command output, auto-use setup, extension points); README/SKILL aligned.
-- **README restructured** to a professional standard — clear value prop, an install matrix, quickstart, a "how it works" three-layer table, an auto-use section, a full command list, honest limits, and a docs index.
-- **Install story fixed.** The recommended paths are now the **plugin** (Claude Code / Codex) and a token-free CLI install, `npm install -g github:CodeWithJuber/forgekit` — no `curl | bash`, no clone. `bash install.sh` is documented as the symlink/dev path and the GitHub Packages route as CI-only. Updated across README, ONBOARDING, `docs/cognitive-substrate/README.md`, and the landing page.
-- **New `docs/GUIDE.md`** — the complete guide: every command with a worked example and its real output, the everyday workflow, auto-use inside an agent, recipes, and how to extend each layer (rules, tools, guards, crew, routing signals, emitters, rebrand).
-- **Landing page** — install snippet uses the token-free CLI command; version string corrected to 0.3.1.
+- **Publish to public npm.** `@codewithjuber/forgekit` now publishes to npmjs with provenance, so `npm install -g @codewithjuber/forgekit` needs no token (replacing the GitHub Packages route, which required auth even for public installs). The release workflow was fixed to trigger on a tag, publish, and cut a GitHub Release with generated notes.
+- **Substrate auto-runs in Claude Code** via a `UserPromptSubmit` hook — it surfaces only when something needs attention and never blocks — and `forge init` emits a "run substrate before risky work" rule into every other tool's config.
+- **Docs overhaul** — README rewritten (problem → solution → how, npm-first, SEO-friendly); the install, honest-limits, frozen-model, and substrate blocks are single-sourced instead of copied across files; the supported-tool list is reconciled everywhere.
 
 ### Fixed
 
-- **Security (research prototype): removed pickle-based cache** in `impact_oracle/world_model.py` — it was an insecure-deserialization (RCE) vector on a caller-supplied `cache_dir`. Now JSON node-link only, with `cache_dir` containment inside `root`.
-- **Smaller npm package** — stopped publishing `docs/cognitive-substrate` (a ~2 MB whitepaper + zips); tarball dropped to ~280 KB. Removed the redundant `*_src.zip` binaries (source lives unzipped in `research/`).
+- **Security (research prototype):** removed the pickle-based cache in `impact_oracle/world_model.py` — an insecure-deserialization (RCE) vector on a caller-supplied `cache_dir`. Now JSON node-link only, with `cache_dir` contained inside `root`.
+- **Smaller npm package** — stopped publishing the ~2 MB paper bundle and the redundant `*_src.zip` (source lives unzipped under `research/`).
 - **Perf** — `substrateCheck` no longer recomputes the assumption assessment.
-
-### Added
-
-- **Forge Cognitive Substrate** — one pre-action command (`forge substrate`) and MCP surface (`substrate_check`, `predict_impact`, `assumption_gate`) that combines assumption gating, transparent model routing, impact prediction, scope decomposition, Cortex lessons, minimality warnings, and verification planning.
-- **Atlas v2 graph** — dependency nodes/edges, file hashes, and reverse-dependency impact traversal while preserving the old symbol query API.
-- Codex plugin manifest and `cognitive-substrate` skill so Forge can be installed/used from Codex-style extension surfaces as well as Claude/NPM.
-- Cognitive-substrate paper bundle under `docs/cognitive-substrate/`: full PDF/HTML paper, deliverable overview, evidence map, ecosystem map, and original prototype packages.
 
 ## [0.3.1] - 2026-07-05
 

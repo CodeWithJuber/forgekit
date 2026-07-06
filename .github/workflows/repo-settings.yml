@@ -1,0 +1,41 @@
+# Repo "About" as code: description, homepage, topics, and Discussions.
+# Run manually: Actions -> "Repo settings" -> Run workflow.
+#
+# NOTE: editing repo settings needs an ADMIN-scoped token. The default GITHUB_TOKEN
+# cannot be granted `administration`, so add a fine-grained PAT (Administration: write,
+# Metadata: read) as the repo secret ADMIN_TOKEN. Without it the job will 403 — in that
+# case just run the two `gh` commands below locally once (they need no workflow):
+#
+#   gh repo edit CodeWithJuber/forgekit \
+#     --description "One config for every AI coding agent — cross-tool config + a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more." \
+#     --homepage "https://github.com/CodeWithJuber/forgekit#readme" \
+#     --add-topic claude-code --add-topic ai-coding --add-topic ai-agents --add-topic mcp \
+#     --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate \
+#     --add-topic developer-tools --add-topic cli --add-topic codex --add-topic cursor
+#   gh api --method PATCH /repos/CodeWithJuber/forgekit -F has_discussions=true
+name: Repo settings
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  settings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply About, topics, and Discussions
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          gh repo edit "$REPO" \
+            --description "One config for every AI coding agent — cross-tool config + a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more." \
+            --homepage "https://github.com/CodeWithJuber/forgekit#readme" \
+            --add-topic claude-code --add-topic ai-coding --add-topic ai-agents --add-topic mcp \
+            --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate \
+            --add-topic developer-tools --add-topic cli --add-topic codex --add-topic cursor
+          gh api --method PATCH "/repos/$REPO" -F has_discussions=true
+          echo "Applied About, topics, and Discussions for $REPO."

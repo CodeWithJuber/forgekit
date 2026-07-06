@@ -4,10 +4,10 @@
 
 Only the latest release of forgekit receives security updates.
 
-| Version | Supported |
-| ------- | --------- |
-| latest  | ✅        |
-| < latest | ❌       |
+| Version  | Supported |
+| -------- | --------- |
+| latest   | ✅ Yes    |
+| < latest | ❌ No     |
 
 ## Reporting a Vulnerability
 

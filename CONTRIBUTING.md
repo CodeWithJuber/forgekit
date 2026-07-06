@@ -65,6 +65,11 @@ diffs with no tests) will be closed. To get merged:
 We'd rather give a clear "not now" than merge something that adds maintenance burden — see
 [GOVERNANCE.md](./GOVERNANCE.md).
 
+## Releasing (maintainers)
+
+Cutting a release is one command plus a tag — the full runbook (and the one-time
+`NPM_TOKEN` setup) is in [docs/RELEASING.md](./docs/RELEASING.md).
+
 ## Sign your work (DCO)
 
 This project uses the [Developer Certificate of Origin](https://developercertificate.org/).

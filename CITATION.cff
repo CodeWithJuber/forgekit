@@ -1,10 +1,14 @@
 cff-version: 1.2.0
 message: "If you use forgekit, please cite it using this metadata."
-title: forgekit
+title: "Forge (forgekit)"
+version: 0.4.0
+date-released: "2026-07-06"
 abstract: >-
-  One config, every AI coding tool — a cross-tool configuration layer for agentic
-  coding assistants with an independent verification gate, portable memory, a
-  security-vetting skill-gate, and a cost governor.
+  One config for every AI coding agent — a cross-tool configuration layer plus a
+  cognitive substrate that gives a frozen model the memory, blast-radius awareness, and
+  guardrails it structurally lacks: an independent verification gate, self-correcting
+  project memory, portable memory, a security-vetting skill-gate, and a cost governor,
+  emitted natively to Claude Code, Codex, Cursor, Gemini, Aider, and more.
 type: software
 authors:
   - name: CodeWithJuber
@@ -15,4 +19,10 @@ keywords:
   - claude-code
   - agents-md
   - ai-coding
+  - ai-agents
   - cross-tool
+  - cognitive-substrate
+  - mcp
+  - codex
+  - cursor
+  - cli

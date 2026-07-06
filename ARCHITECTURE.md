@@ -1,10 +1,10 @@
-# Forge — architecture & production plan
+# Forge — architecture
 
 > Cross-tool configuration layer for agentic AI coding assistants. One source of
 > truth, emitted natively into every tool; a small set of *enforced* guards; a
 > lean discipline; a code-graph (`atlas`); cross-session memory (`recall`); and a
-> token-budget cost governor. Install once (Claude plugin **or** installer **or**
-> `forgekit` npm CLI). Near-zero learning curve.
+> token-budget cost governor. Install as a Claude Code plugin, from public npm
+> (`@codewithjuber/forgekit`), or from source. Near-zero learning curve.
 
 Grounded in a verified multi-source research pass (Reddit/HN/dev.to, GitHub issue
 trackers, official vendor docs). Evidence + config-format verdicts in the appendix.
@@ -116,6 +116,10 @@ only as the AST/chunking fallback for files with no language server.
 | **Copilot** | root `AGENTS.md` (since 2025-08-28) + `.github/copilot-instructions.md` | Rely on root `AGENTS.md`; optional generated `.github` pointer |
 | **Windsurf/Devin** | `AGENTS.md` auto-discovered; caps 6k/12k chars; mid-rebrand to Devin | Root `AGENTS.md` under caps; detect `.windsurf` vs `.devin` at init |
 | **Zed** | first match of a precedence list incl. `AGENTS.md` | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it |
+| **Continue** | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml` | Emit a rules file plus the Forge MCP server config |
+
+Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.json`,
+`.vscode/mcp.json`) rather than a rules file.
 
 ## Repo layout — one tree, three front doors
 ```
@@ -127,7 +131,7 @@ forgekit/
     cli.js                # init | sync | doctor | taste | learn-consolidate | brand
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
-    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed)
+    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
   source/
     AGENTS.md             # THE canonical source
     rules/                # git.md, testing.md, security.md, style.md → assembled
@@ -141,18 +145,6 @@ forgekit/
 plugin.json, install.sh, and the npm bin **all reference `global/` + `source/`** —
 no duplication; each channel just runs `forge sync` at the end. A test asserts all
 three resolve to `global/`.
-
-## Build phases (each = a shippable slice, with a runnable exit check)
-
-| Phase | Deliverables | Exit check |
-|-------|-------------|------------|
-| **0. Repo + brand spine** | git init; `brand.json` one-token; rename to `forgekit/`; `forge` bin stub | `forge --version` prints brand+version; grep proves brand defined once |
-| **1. Emitter** | `source/AGENTS.md` from fragments; `sync.js` + all 8 emit modules; hash headers | `forge sync` in a fixture emits every target; idempotent re-run; golden-file tests pass |
-| **2. Install + doctor** | hardened `install.sh`; `plugin.json`+`marketplace.json`; `forge doctor` | fresh-machine sim → doctor all-green; `npm pack` exposes `forge`; plugin loads w/o inflating skill count |
-| **3. Guards** | rebranded protect-paths/format/recall-load; `cost-budget` w/ lock; `lean-guard`; session-learner gate | guard harness: blocks `.env` write; lock prevents re-entry; fires from subdir + worktree; settings validates |
-| **4. lean + recall + crew** | `lean` tool; unified `recall`; rebranded crew | recall: write→new-session load→consolidate dedupes; secret write refused; verifier runs diff-scoped |
-| **5. atlas** | serena/LSP-backed `atlas` build/query/update; portable artifact; hallucinated-symbol flag; lazy MCP | indexes a sample repo; nonexistent symbol → not-found; reuse-first consumes atlas; MCP responds |
-| **6. Onboarding polish** | `forge init` wizard + active-summary; Start-Here catalog; docs | clean-env `forge init` → working in one command; catalog lists every item w/ one-line why; smoke test needs no external doc |
 
 ## Risks & honest boundaries
 - **Enforcement ceiling** — guards enforce only what's expressible as a hook (paths,
@@ -169,17 +161,6 @@ three resolve to `global/`.
   the minimum graph that powers reuse + hallucination-flag, not a code-intel product.
 - **Three channels triple drift surface** — mitigated by "one tree" + the resolve test.
 
-## Open decisions → recommended resolutions
-| Decision | Recommendation |
-|----------|----------------|
-| atlas: existing indexer vs hand-roll | **serena/LSP** (resolved by tech-selector) |
-| Gemini: 2nd copy vs settings opt-in | **settings `context.fileName` opt-in** |
-| Windsurf `.windsurf` vs `.devin` | **detect at init + confirm** |
-| recall consolidation cadence | **opt-in Stop-hook**, optional `forge learn-consolidate` cron |
-| cost-budget: block vs warn | **warn** (blocking re-creates permission fatigue) |
-| atlas MCP always-on vs lazy | **lazy-start** |
-| convert semantic rules → guards | **incrementally**, only where a deterministic check is clean |
-
 ---
-*Appendix: config-format verdicts confirmed against vendor docs; single/secondhand
-stats (Cursor "1/3 ignore", arXiv 42/96/48) flagged and not hardcoded into user copy.*
+See [ROADMAP.md](ROADMAP.md) for direction and [`docs/adr/`](docs/adr/) for the recorded
+architecture decisions (zero runtime deps, the SKILL.md standard, guard-over-prose).
