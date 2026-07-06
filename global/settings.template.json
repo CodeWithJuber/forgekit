@@ -81,6 +81,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh prompt"
+          },
+          {
+            "type": "command",
             "command": "bash ~/.forge/guards/cortex.sh preflight"
           }
         ]
@@ -93,6 +97,10 @@
           {
             "type": "command",
             "command": "bash ~/.forge/guards/recall-load.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh session-start"
           }
         ]
       }
@@ -114,6 +122,15 @@
             "command": "bash ~/.forge/guards/doom-loop.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh pre-edit"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -123,6 +140,10 @@
           {
             "type": "command",
             "command": "bash ~/.forge/guards/format-on-edit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh capture"
           }
         ]
       },
@@ -132,6 +153,10 @@
           {
             "type": "command",
             "command": "bash ~/.forge/guards/secret-redact.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh capture"
           }
         ]
       }
@@ -146,6 +171,10 @@
           {
             "type": "command",
             "command": "bash ~/.forge/guards/session-learner.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.forge/guards/cortex.sh stop"
           }
         ]
       }

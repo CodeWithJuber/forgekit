@@ -19,7 +19,7 @@ import {
   readSession,
 } from "./cortex_hook.js";
 import { load } from "./lessons_store.js";
-import { substrateCheck, substrateContext } from "./substrate.js";
+import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
 
 // Opt-in: distill newly-created lessons into real prose via a cheap model call. Off by
 // default (deterministic template is used); fail-safe (any error → keep the template).
@@ -80,7 +80,15 @@ async function main() {
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
-      const advisory = substrateContext(substrateCheck(root, hook.prompt, { allowBuild: false }));
+      const result = substrateCheck(root, hook.prompt, { allowBuild: false });
+      // Opt-in enforcing mode (FORGE_ENFORCE=1) turns the gate from advisory into a real halt on
+      // a vacuous prompt. Default: advisory, never blocks.
+      const gate = enforceDecision(result);
+      if (gate.block) {
+        process.stdout.write(JSON.stringify({ decision: "block", reason: gate.reason }));
+        return;
+      }
+      const advisory = substrateContext(result);
       if (advisory) emit("UserPromptSubmit", advisory);
     }
   }

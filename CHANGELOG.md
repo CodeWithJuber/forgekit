@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Opt-in enforcing gate (`FORGE_ENFORCE=1`).** The substrate's assumption gate can now be a real
+  *halt* (the paper's Eq 5 / M2 "block on insufficient input"), not just advice. On the Claude Code
+  ambient path it blocks a prompt with **no concrete anchor at all** ("fix it", "make it better") —
+  or an action into a very large predicted blast radius — and returns the clarifying questions.
+  Deliberately low-false-positive: a specified task is never blocked, and it's **off by default**
+  (`enforceDecision()` in `src/substrate.js`).
 - **M5 anti-over-engineering is now measured, not guessed (`forge lean`).** The paper's
   `φ(y) − φ*(x)` check replaces the old three-keyword stub: `src/lean.js` reads the working diff
   and flags the footprint beyond what the task asked for — new abstractions the task never named,
@@ -33,6 +39,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Cortex capture/learn loop now works in the dotfile install too.** `global/settings.template.json`
+  wired only `cortex.sh preflight` (1 of 6 modes), so dotfile users got the substrate advisory but
+  **never captured events or distilled lessons** — the learning loop was dead for them while plugin
+  users had it. The template now wires all six modes (`session-start`, `prompt`, `preflight`,
+  `pre-edit`, `capture`, `stop`), matching `hooks/hooks.json`.
+- **`forge verify` can't hang.** `runTests` now bounds the test run with a timeout
+  (`FORGE_VERIFY_TIMEOUT_MS`, default 10 min); a timeout is reported honestly as "did not complete",
+  never as a pass.
 - **Secret-refusal no longer guts auth-related work.** `SECRET_RE` matched the bare words
   `secret`/`password`/`api key`, so any task or lesson merely mentioning them was silently
   refused — disabling the LLM proposer (`adjudicate`) and blocking memory persistence
