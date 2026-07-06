@@ -97,19 +97,27 @@ function git(args, cwd) {
   }
 }
 
-// Run the project's own tests (JS or Python). The gate trusts these, not a benchmark.
+// Run the project's own tests (JS or Python). The gate trusts these, not a benchmark. Bounded by
+// a timeout (FORGE_VERIFY_TIMEOUT_MS, default 10 min) so a hanging test can't hang the gate — a
+// timeout is reported as an honest "did not complete", never as a pass.
 function runTests(cwd) {
+  const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || 600000;
+  const run = (cmd, args) =>
+    execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: "pipe", timeout });
   try {
     if (existsSync(join(cwd, "package.json"))) {
-      execFileSync("npm", ["test"], { cwd, encoding: "utf8", stdio: "pipe" });
+      run("npm", ["test"]);
       return { ran: true, passed: true, runner: "npm test" };
     }
     if (existsSync(join(cwd, "pyproject.toml")) || existsSync(join(cwd, "pytest.ini"))) {
-      execFileSync("pytest", ["-q"], { cwd, encoding: "utf8", stdio: "pipe" });
+      run("pytest", ["-q"]);
       return { ran: true, passed: true, runner: "pytest" };
     }
     return { ran: false };
   } catch (e) {
+    if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
+      return { ran: true, passed: false, timedOut: true, output: `test run exceeded ${timeout}ms` };
+    }
     return {
       ran: true,
       passed: false,

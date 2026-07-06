@@ -296,6 +296,38 @@ export function substrateCheck(
   return result;
 }
 
+/**
+ * Opt-in mandatory gate (the paper's Eq 5 / M2 "halt on insufficient input"). Turns the advisory
+ * assumption gate into an actual BLOCK — but only on the strongest, lowest-false-positive signals,
+ * so it halts a vacuous prompt ("fix it", "make it better") or an edit into a very large blast
+ * radius, and never a specified task. Off unless `FORGE_ENFORCE=1` (or `enforce:true`); default
+ * behaviour is unchanged. `reason` is written to be shown to the agent.
+ * @param {object} result - substrateCheck() result
+ * @param {object} [opts]
+ * @param {boolean} [opts.enforce]
+ * @param {number} [opts.blastThreshold]
+ */
+export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
+  const on = typeof enforce === "boolean" ? enforce : process.env.FORGE_ENFORCE === "1";
+  if (!on || !result) return { block: false };
+  const tail = "\n(Set FORGE_ENFORCE=0 to make Forge advisory again.)";
+  if (result.assumption?.hardUnderspecified) {
+    const qs = (result.assumption.questions || []).map((q) => `  • ${q}`).join("\n");
+    return {
+      block: true,
+      reason: `Forge gate (enforcing): this task has no concrete anchor to act on — clarify before I start:\n${qs}${tail}`,
+    };
+  }
+  const blast = result.impact?.impactedFiles?.length ?? 0;
+  if (blast >= blastThreshold) {
+    return {
+      block: true,
+      reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
+    };
+  }
+  return { block: false };
+}
+
 export function renderSubstrate(result) {
   const lines = ["Forge substrate — pre-action check", ""];
   lines.push(`  proceed: ${result.okToProceed ? "yes" : "ASK FIRST"}`);

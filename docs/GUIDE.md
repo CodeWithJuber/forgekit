@@ -424,6 +424,8 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | when the ambient hook speaks | `src/substrate.js` → `substrateContext()` |
 | the cross-tool rule wording | `source/rules.json` → `substrate` section (then `forge init`) |
 | opt-in LLM adjudication | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm` |
+| opt-in enforcing gate (halt, don't just advise) | `FORGE_ENFORCE=1` — blocks a no-anchor prompt or a very-large-blast action; `src/substrate.js` → `enforceDecision()`. Off by default. |
+| verify test timeout | `FORGE_VERIFY_TIMEOUT_MS` (default 600000) |
 
 ### Opt into LLM-assisted judgments
 By default every judgment is a deterministic rubric. `FORGE_LLM=1` adds a thin **proposer**

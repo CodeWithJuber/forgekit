@@ -151,3 +151,39 @@ test("substrateCheck surfaces impact.predictedTests", () => {
   const r = substrateCheck(root, "Update `computeTax` in `math.js`");
   assert.ok(Array.isArray(r.impact.predictedTests), "predictedTests present");
 });
+
+test("enforceDecision: off by default → never blocks", async () => {
+  const { enforceDecision } = await import("../src/substrate.js");
+  const r = {
+    assumption: { hardUnderspecified: true, questions: ["what?"] },
+    impact: { impactedFiles: [] },
+  };
+  assert.equal(enforceDecision(r, { enforce: false }).block, false);
+});
+
+test("enforceDecision (enforcing): blocks a vacuous prompt, not a specified one", async () => {
+  const { enforceDecision } = await import("../src/substrate.js");
+  const vacuous = {
+    assumption: { hardUnderspecified: true, questions: ["What should this produce?"] },
+    impact: { impactedFiles: [] },
+  };
+  const g = enforceDecision(vacuous, { enforce: true });
+  assert.equal(g.block, true);
+  assert.match(g.reason, /no concrete anchor/);
+  const specified = {
+    assumption: { hardUnderspecified: false, questions: [] },
+    impact: { impactedFiles: ["a.js"] },
+  };
+  assert.equal(enforceDecision(specified, { enforce: true }).block, false);
+});
+
+test("enforceDecision (enforcing): blocks an edit into a large blast radius", async () => {
+  const { enforceDecision } = await import("../src/substrate.js");
+  const big = {
+    assumption: { hardUnderspecified: false, questions: [] },
+    impact: { impactedFiles: Array.from({ length: 30 }, (_, i) => `f${i}.js`) },
+  };
+  const g = enforceDecision(big, { enforce: true, blastThreshold: 25 });
+  assert.equal(g.block, true);
+  assert.match(g.reason, /large blast radius/);
+});
