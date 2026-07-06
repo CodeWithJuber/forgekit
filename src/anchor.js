@@ -3,6 +3,7 @@
 // changed (git) against the area the goal named. Flags work that has wandered off it.
 // Advisory — a stated goal is re-read against real diffs, not trusted to stay in view.
 import { execFileSync } from "node:child_process";
+import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { load as loadAtlas, query as queryAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
 
@@ -66,10 +67,47 @@ function goalTargetFiles(root, symbols, files) {
   return [...targets];
 }
 
+// M4 goal-drift — LLM proposer. Semantically classifies the files the coarse keyword match
+// flagged as off-goal. PROPOSER ONLY, and one-directional: the model may only move a file
+// off→on (never on→off), and only with a reason that references the goal — so it can quiet a
+// false drift flag but can never hide a real one. Preserves the "errs toward on-goal" invariant.
+export function buildDriftPrompt(goal, offGoalFiles) {
+  const list = offGoalFiles
+    .slice(0, 40)
+    .map((f) => `- ${f}`)
+    .join("\n");
+  return `A developer's stated goal is: """${String(goal).slice(0, 400)}"""
+These changed files did NOT obviously match the goal by name:
+${list}
+For each, decide if the change is plausibly IN SERVICE of that goal. Answer with STRICT JSON and
+nothing else, listing only files from above that genuinely serve the goal:
+{"onGoal":[{"file":"<path>","reason":"<why it serves the goal>"}]}
+Omit files that do not serve the goal. No text outside the JSON object.`;
+}
+
+export function parseDriftProposal(obj) {
+  const onGoal = Array.isArray(obj.onGoal)
+    ? obj.onGoal
+        .map((e) => ({ file: asText(e?.file, 240), reason: asText(e?.reason, 200) }))
+        .filter((e) => e.file && e.reason)
+    : [];
+  return { onGoal };
+}
+
+export function driftLLM(goal, offGoalFiles, { run = buildRunner() } = {}) {
+  if (!offGoalFiles.length) return { onGoal: [] };
+  return adjudicate({
+    prompt: buildDriftPrompt(goal, offGoalFiles),
+    parse: parseDriftProposal,
+    run,
+  });
+}
+
 /**
  * @param {string} root
  * @param {string} goal
- * @param {{ changed?: string[] }} [opts] inject changed to skip git (used in tests)
+ * @param {{ changed?: string[], llm?:boolean, run?:(p:string)=>string, model?:string, timeoutMs?:number }} [opts]
+ *   inject `changed` to skip git; inject `run` to stub the model (used in tests).
  */
 export function goalDrift(root, goal, opts = {}) {
   const { keywords, symbols, files } = goalKeywords(goal);
@@ -84,8 +122,47 @@ export function goalDrift(root, goal, opts = {}) {
     const named = targets.some((t) => lf === t || lf.endsWith(`/${t}`));
     (named || keywords.some((k) => lf.includes(k)) ? onGoal : offGoal).push(f);
   }
+
+  // Opt-in semantic pass: rescue files the keyword match missed, but only off→on and only when
+  // the model gives a goal-referencing reason. Verified, not trusted; fail-safe on any error.
+  let provenance = { path: "deterministic" };
+  if (llmEnabled({ llm: opts.llm }) && offGoal.length) {
+    const goalTerms = new Set([...keywords, ...symbols.map((s) => s.toLowerCase())]);
+    const grounded = (reason) => {
+      const words = String(reason).toLowerCase();
+      return goalTerms.size === 0 || [...goalTerms].some((t) => words.includes(t));
+    };
+    const proposal = driftLLM(goal, offGoal, {
+      run: opts.run || buildRunner({ model: opts.model, timeoutMs: opts.timeoutMs }),
+    });
+    const rescued = new Set(
+      (proposal?.onGoal || [])
+        .filter((e) => offGoal.includes(e.file) && grounded(e.reason))
+        .map((e) => e.file),
+    );
+    if (rescued.size) {
+      for (const f of [...offGoal]) {
+        if (rescued.has(f)) {
+          offGoal.splice(offGoal.indexOf(f), 1);
+          onGoal.push(f);
+        }
+      }
+      provenance = { path: "llm-verified", rescued: [...rescued] };
+    } else if (proposal) {
+      provenance = { path: "llm-agreed" };
+    }
+  }
+
   const drift = changedFiles.length > 0 && (offGoal.length > 0 || onGoal.length === 0);
-  return { goal: String(goal), keywords, changed: changedFiles, onGoal, offGoal, drift };
+  return {
+    goal: String(goal),
+    keywords,
+    changed: changedFiles,
+    onGoal,
+    offGoal,
+    drift,
+    provenance,
+  };
 }
 
 export function renderAnchor(r) {

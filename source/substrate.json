@@ -17,6 +17,12 @@
     { "id": "M6", "name": "inline verification", "command": "forge verify", "status": "partial" }
   ],
   "defaults": { "askThreshold": 0.6, "impactThreshold": 0.1 },
+  "llm": {
+    "enabled": false,
+    "model": "haiku",
+    "timeoutMs": 20000,
+    "note": "Opt-in (FORGE_LLM=1). The model PROPOSES; the deterministic rubric + repo grounding + tests VERIFY. Any failure falls back to the deterministic path — never blind, never blocking."
+  },
   "policies": {
     "preAction": "Run substrate before ambiguous, expensive, multi-file, or mutating work.",
     "escalation": "Start with the cheapest capable tier and escalate only after an external verifier failure.",

@@ -47,6 +47,33 @@ test("atlas impact follows reverse dependencies", () => {
   assert.ok(r.impactedFiles.includes("invoice.js"), JSON.stringify(r, null, 2));
 });
 
+test("impact (llm on): a proposed edge is kept only if it is a real file AND grep-verified", () => {
+  const root = repo();
+  const atlas = build({ root });
+  // Model proposes a real repo file (invoice.js) plus a fabricated one (ghost.js).
+  const run = () => '{"files":["invoice.js","ghost.js"]}';
+  const verify = (file) => file === "invoice.js"; // grep only confirms the real reference
+  const r = impact(atlas, "computeTax", { llm: true, run, verify });
+  assert.ok(r.llmVerified.includes("invoice.js") || r.impactedFiles.includes("invoice.js"));
+  assert.ok(!r.impactedFiles.includes("ghost.js"), "a fabricated file is never added");
+});
+
+test("impact (llm on): without a verify predicate, nothing is added blind", () => {
+  const root = repo();
+  const atlas = build({ root });
+  const run = () => '{"files":["invoice.js"]}';
+  const r = impact(atlas, "computeTax", { llm: true, run }); // no verify → cannot confirm
+  assert.deepEqual(r.llmVerified, [], "no external check available → no blind edges");
+});
+
+test("impact (llm off): behavior is unchanged and carries no llm fields effect", () => {
+  const root = repo();
+  const atlas = build({ root });
+  const base = impact(atlas, "computeTax");
+  const off = impact(atlas, "computeTax", { llm: false, run: () => '{"files":["ghost.js"]}' });
+  assert.deepEqual(off.impactedFiles, base.impactedFiles);
+});
+
 test("substrateCheck returns one professional pre-action contract", () => {
   const root = repo();
   const r = substrateCheck(
@@ -70,4 +97,24 @@ test("preflightRepo includes assumption report", () => {
   const root = repo();
   const r = preflightRepo(root, "Optimize it.");
   assert.equal(r.assumption.shouldAsk, true);
+});
+
+test("substrateCheck (llm off by default): provenance is deterministic across faculties", () => {
+  const root = repo();
+  const r = substrateCheck(root, "Refactor computeTax in math.js", { allowBuild: true });
+  assert.equal(r.llm.enabled, false);
+  assert.equal(r.llm.provenance.assumption, "deterministic");
+  assert.equal(r.llm.provenance.route, "deterministic");
+  assert.ok(Array.isArray(r.guarantees.llmVerified), "llmVerified bucket is present");
+});
+
+test("substrateCheck (llm on, explicit): opt-in flag threads through and stays fail-safe", () => {
+  const root = repo();
+  // No `run` injection reaches the real CLI here, but the substrate must not throw and must
+  // still return a coherent contract regardless of whether the CLI exists.
+  const r = substrateCheck(root, "Update computeTax in math.js", { llm: true });
+  assert.equal(r.llm.enabled, true);
+  assert.ok(r.route.model.id, "still returns a routed model");
+  assert.equal(typeof r.okToProceed, "boolean");
+  assert.ok(["deterministic", "llm-verified", "llm-agreed"].includes(r.llm.provenance.goalAnchor));
 });

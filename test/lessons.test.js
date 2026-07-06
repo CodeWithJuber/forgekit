@@ -5,10 +5,12 @@ import {
   confidenceOf,
   confirm,
   contradict,
+  freshness,
   matchScore,
   newLesson,
   scoreMistake,
   selectForInjection,
+  validity,
 } from "../src/lessons.js";
 
 test("scoreMistake: a lone behavioral signal never fires (thrash is not a lesson)", () => {
@@ -114,4 +116,23 @@ test("selectForInjection: candidates and non-matching lessons are excluded; empt
   const candidate = newLesson({ id: "c", trigger: { symbols: ["foo"] } }, 0); // still 'candidate'
   const { block } = selectForInjection([candidate], { symbols: ["foo"] }, {});
   assert.equal(block, "", "only active lessons inject; no noise when nothing qualifies");
+});
+
+test("validity/freshness decompose confidence (val = ground truth, rec = decay)", () => {
+  const l = newLesson({ id: "v", trigger: { symbols: ["foo"] } }, 0);
+  // Laplace-smoothed Beta mean starts at 0.5; confidence = freshness × validity.
+  assert.equal(validity(l), 0.5);
+  assert.equal(freshness(l, 0), 1);
+  assert.ok(Math.abs(confidenceOf(l, 0) - validity(l) * freshness(l, 0)) < 1e-9);
+});
+
+test("val term ranks an outcome-confirmed lesson above a merely-recent one", () => {
+  const ctx = { symbols: ["foo"] };
+  let confirmed = newLesson({ id: "confirmed", trigger: { symbols: ["foo"] } }, 0);
+  confirmed = confirm(confirmed, 0); // one independent outcome → higher validity
+  confirmed = confirm(confirmed, 0);
+  let recentOnly = newLesson({ id: "recent", trigger: { symbols: ["foo"] } }, 0);
+  recentOnly = confirm(recentOnly, 0); // active but minimally confirmed
+  const { selected } = selectForInjection([recentOnly, confirmed], ctx, { budget: 2, nowDay: 0 });
+  assert.equal(selected[0].id, "confirmed", "ground-truth validity wins the ranking");
 });

@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { complexity, emitGatewayConfig, recommend, routeTask } from "../src/route.js";
+import {
+  complexity,
+  complexityLLM,
+  emitGatewayConfig,
+  recommend,
+  routeTask,
+} from "../src/route.js";
 
 test("complexity is monotonic and bounded", () => {
   const trivial = complexity({ files: 0, fanout: 0, sizeWords: 4 }).score;
@@ -63,4 +69,41 @@ test("emitGatewayConfig writes a LiteLLM config that never pins @latest", () => 
     /model_name: claude-haiku/,
     "passthrough for real model names so plain claude-* traffic works",
   );
+});
+
+test("complexityLLM: parses a band into a score floor, rejects junk", () => {
+  const cheap = complexityLLM("x", { run: () => '{"band":"cheap","reason":"trivial"}' });
+  assert.equal(cheap.band, "cheap");
+  const premium = complexityLLM("x", { run: () => '{"band":"premium","reason":"distributed"}' });
+  assert.ok(premium.score > cheap.score, "premium floors higher than cheap");
+  assert.equal(complexityLLM("x", { run: () => '{"band":"???"}' }), null);
+  assert.equal(complexityLLM("x", { run: () => "not json" }), null);
+});
+
+test("routeTask (llm on): the model may only RAISE the tier, never lower it", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task = "write a function to check if a number is prime";
+  // Model says 'premium' on a trivial task → routing escalates (safe direction).
+  const up = routeTask(root, task, { llm: true, run: () => '{"band":"premium","reason":"x"}' });
+  assert.ok(["opus", "fable"].includes(up.key), `raised to ${up.key}`);
+  assert.equal(up.provenance.path, "llm-verified");
+  assert.equal(up.llm.raised, true);
+  // Model says 'cheap' → cannot pull a task below the deterministic floor.
+  const down = routeTask(root, task, { llm: true, run: () => '{"band":"cheap","reason":"x"}' });
+  const base = routeTask(root, task);
+  assert.ok(down.score >= base.score, "cheap band never routes below deterministic");
+});
+
+test("routeTask (llm on): a failing model call falls back to deterministic", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task = "write a function to check if a number is prime";
+  const throwing = routeTask(root, task, {
+    llm: true,
+    run: () => {
+      throw new Error("no cli");
+    },
+  });
+  const base = routeTask(root, task);
+  assert.equal(throwing.key, base.key, "fell back to deterministic tier");
+  assert.equal(throwing.provenance.path, "deterministic");
 });

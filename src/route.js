@@ -4,6 +4,7 @@
 // tier. Advisory by default; a LiteLLM config emit exposes the tiers as gateway aliases you request.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
 import { load as loadLessons } from "./lessons_store.js";
@@ -121,8 +122,42 @@ export function recommend(score, norm = {}) {
   return { key, model: MODELS[key], tier: MODELS[key].tier, reasons };
 }
 
-/** Repo wrapper: gather the real signals for a task and route it. */
-export function routeTask(root, task) {
+// M1 routing — LLM proposer. Estimates task complexity c(x) as a coarse band. PROPOSER ONLY:
+// reconcile takes the MAX with the deterministic score, so the model can only RAISE the tier
+// (never under-provision on its own word); escalation still gates on a verified failure.
+const BAND_FLOOR = { cheap: 0.15, mid: 0.4, premium: 0.65 };
+
+export function buildComplexityPrompt(task) {
+  return `Judge the intrinsic complexity of this coding task for model selection (not how to do it).
+Task: """${String(task).slice(0, 1200)}"""
+Answer with STRICT JSON and nothing else:
+{"band":"cheap|mid|premium","reason":"<short why>"}
+cheap = trivial/boilerplate; mid = a data structure, class, or library-level change; premium =
+algorithmic/systems/architectural/multi-module work. No text outside the JSON object.`;
+}
+
+export function parseComplexityProposal(obj) {
+  const band = String(obj.band ?? "").toLowerCase();
+  if (!(band in BAND_FLOOR)) return null;
+  return { band, score: BAND_FLOOR[band], reason: asText(obj.reason) };
+}
+
+/** Ask the model for a complexity band (proposer). Returns null when off/unavailable. */
+export function complexityLLM(task, { run = buildRunner() } = {}) {
+  return adjudicate({ prompt: buildComplexityPrompt(task), parse: parseComplexityProposal, run });
+}
+
+/**
+ * Repo wrapper: gather the real signals for a task and route it. `run` is injectable for tests.
+ * @param {string} root
+ * @param {string} task
+ * @param {object} [opts]
+ * @param {boolean} [opts.llm]
+ * @param {string} [opts.model]
+ * @param {number} [opts.timeoutMs]
+ * @param {(p:string)=>string} [opts.run]
+ */
+export function routeTask(root, task, { llm, model, timeoutMs, run } = {}) {
   const { symbols, files } = referencedEntities(task);
   const fanout = symbols.reduce((m, sym) => Math.max(m, grepFanout(root, sym)), 0);
   const churn = files.reduce((m, f) => Math.max(m, gitChurn(root, f)), 0);
@@ -143,18 +178,27 @@ export function routeTask(root, task) {
   const { score: repoScore, norm } = complexity(signals);
   const rubric = rubricComplexity(task);
   const rubricScore = Math.min(1, rubric.rawScore / 10);
-  const score = Math.max(repoScore, rubricScore);
+  // M1 proposer (opt-in): the model may only RAISE the tier — max() with the deterministic
+  // scores — so it never routes down on its own word. Fail-safe: null proposal is ignored.
+  const proposal = llmEnabled({ llm })
+    ? complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) })
+    : null;
+  const score = Math.max(repoScore, rubricScore, proposal?.score ?? 0);
   const recommended = recommend(score, norm);
+  const raisedByLLM = proposal != null && proposal.score > Math.max(repoScore, rubricScore);
   return {
     score,
     repoScore,
     signals,
     rubric,
+    llm: proposal ? { band: proposal.band, reason: proposal.reason, raised: raisedByLLM } : null,
+    provenance: { path: raisedByLLM ? "llm-verified" : proposal ? "llm-agreed" : "deterministic" },
     ...recommended,
     reasons: [
       ...new Set([
         ...(recommended.reasons || []),
         ...rubric.reasons.filter((r) => r.weight > 0).map((r) => r.reason),
+        ...(raisedByLLM ? [`model judged ${proposal.band}: ${proposal.reason}`] : []),
       ]),
     ],
   };

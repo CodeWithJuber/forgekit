@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
+import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 
 const IGNORE = new Set([
   "node_modules",
@@ -296,7 +297,50 @@ function targetIds(atlas, target) {
 
 const EDGE_WEIGHT = { calls: 0.95, imports: 0.85, inherits: 0.92, references: 0.7, contains: 0.45 };
 
-export function impact(atlas, target, { threshold = 0.1, maxHops = 6, decay = 0.85 } = {}) {
+// Imagination (§8) — LLM proposer for the edges the regex graph structurally misses: dynamic
+// dispatch, DI, reflection, string-keyed lookups. PROPOSER ONLY. Every candidate is then
+// verified twice — it must resolve to a REAL node in the graph AND (via the caller's `verify`
+// predicate, a grep) actually reference the target in source. Unverifiable → dropped, never added.
+export function buildImpactPrompt(atlas, target) {
+  const files = [...new Set((atlas.nodes || []).map((n) => n.file).filter(Boolean))].slice(0, 60);
+  return `A code symbol/file is about to change. Name the OTHER files in this repo that most
+likely break or depend on it through edges a regex misses: dynamic dispatch, dependency
+injection, reflection, string-keyed registries, event handlers.
+Changing target: ${String(target).slice(0, 120)}
+Files in repo:
+${files.map((f) => `- ${f}`).join("\n")}
+Answer with STRICT JSON and nothing else, listing only files from the list above:
+{"files":["<path>"...]}
+No text outside the JSON object.`;
+}
+
+export function parseImpactProposal(obj) {
+  const files = Array.isArray(obj.files)
+    ? [...new Set(obj.files.map((f) => asText(f, 240)).filter(Boolean))].slice(0, 20)
+    : [];
+  return { files };
+}
+
+export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
+  return adjudicate({ prompt: buildImpactPrompt(atlas, target), parse: parseImpactProposal, run });
+}
+
+/**
+ * @param {object} atlas
+ * @param {string} target
+ * @param {object} [opts]
+ * @param {number} [opts.threshold]
+ * @param {number} [opts.maxHops]
+ * @param {number} [opts.decay]
+ * @param {boolean} [opts.llm]
+ * @param {(p:string)=>string} [opts.run]
+ * @param {(file:string, target:string)=>boolean} [opts.verify]
+ */
+export function impact(
+  atlas,
+  target,
+  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
+) {
   const starts = targetIds(atlas, target);
   const nodeById = new Map((atlas.nodes || []).map((n) => [n.id, n]));
   const incoming = new Map();
@@ -337,12 +381,36 @@ export function impact(atlas, target, { threshold = 0.1, maxHops = 6, decay = 0.
     }
   }
   const impacted = [...visited.values()].sort((a, b) => b.confidence - a.confidence);
+  const deterministicFiles = new Set(impacted.map((x) => x.node.file).filter(Boolean));
+
+  // Opt-in imagination pass: model proposes missed edges, but only VERIFIED ones are kept.
+  const llmImpacted = [];
+  if (llmEnabled({ llm }) && run) {
+    const knownFiles = new Set((atlas.nodes || []).map((n) => n.file).filter(Boolean));
+    const proposal = impactLLM(atlas, target, { run });
+    for (const file of proposal?.files || []) {
+      if (deterministicFiles.has(file)) continue; // already found deterministically
+      if (!knownFiles.has(file)) continue; // must be a real file in the graph
+      if (typeof verify === "function" && !verify(file, target)) continue; // must grep-confirm the ref
+      if (typeof verify !== "function") continue; // no external check available → never add blind
+      llmImpacted.push({
+        id: `llm:${file}`,
+        node: { id: `llm:${file}`, name: file, kind: "module", file },
+        confidence: Number((threshold * 0.9).toFixed(4)),
+        hopDistance: null,
+        source: "llm-verified",
+      });
+    }
+  }
+
+  const all = [...impacted, ...llmImpacted];
   return {
     target,
     found: starts.length > 0,
     threshold,
-    impacted,
-    impactedFiles: [...new Set(impacted.map((x) => x.node.file).filter(Boolean))].sort(),
+    impacted: all,
+    impactedFiles: [...new Set(all.map((x) => x.node.file).filter(Boolean))].sort(),
+    llmVerified: llmImpacted.map((x) => x.node.file),
     totalGraphNodes: (atlas.nodes || []).length,
     totalGraphEdges: (atlas.edges || []).length,
   };

@@ -1,9 +1,9 @@
 // forge cortex distiller — turn a raw correction episode into a real, useful lesson via a
 // cheap model call, instead of the deterministic template. OPT-IN (ENABLE_CORTEX_DISTILL=1)
 // and fail-safe: any failure returns null and the caller keeps the template. Zero deps — it
-// shells out to the `claude` CLI (same pattern as session-learner.sh); the runner is
-// injectable so the pure prompt/parse logic is fully testable without the CLI.
-import { execFileSync } from "node:child_process";
+// shells out to the `claude` CLI via the shared adjudicate runner (same primitive every other
+// faculty uses); the runner is injectable so the pure prompt/parse logic is testable without it.
+import { buildRunner } from "./adjudicate.js";
 import { SECRET_RE } from "./recall.js";
 
 /**
@@ -43,13 +43,7 @@ export function parseDistilled(text) {
   return { whatWentWrong, correctedBehavior };
 }
 
-const claudeRun = (prompt, { model = "haiku", timeoutMs = 20000 } = {}) =>
-  execFileSync("claude", ["-p", "--model", model], {
-    input: prompt,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    stdio: ["pipe", "pipe", "ignore"],
-  });
+const claudeRun = (prompt, opts = {}) => buildRunner(opts)(prompt);
 
 /** Distill an episode into a lesson body. Returns null on any failure (caller keeps template). */
 export function distill(episode, { run = claudeRun } = {}) {

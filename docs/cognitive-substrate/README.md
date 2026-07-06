@@ -178,13 +178,39 @@ JSON default. Full JSON shape and the extension table:
 
 ---
 
+## Optional: LLM-assisted judgments (`FORGE_LLM=1`)
+
+The substrate's default judgments are deterministic rubrics — no model call, no dependency.
+Set **`FORGE_LLM=1`** to add a **thin, opt-in semantic layer** on top: a cheap `claude -p`
+call proposes a completeness reading (M2), a complexity band (M1), the coupled edges the
+regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
+
+The model is **never the judge — only a proposer.** Every proposal is *verified* before it can
+move a verdict, in the direction of the paper's *tabayyun* gate (49:6):
+
+- **routing** can only be *raised* (`max` with the rubric), never lowered on the model's word;
+- **the assumption gate only tightens** — it can add an ask, never clear a deterministic one;
+- **impact edges** are kept only if the file is real *and* a grep confirms the reference;
+- **goal-drift** rescues an off-goal file only with a goal-referencing reason (off→on only).
+
+It is **fail-safe**: any error, timeout, or unparseable reply falls back to the deterministic
+path (behaviour is byte-identical with the flag off), and it **never blocks**. `--json` output
+carries a `llm.provenance` map (`deterministic` / `llm-verified` / `llm-agreed`) per faculty so
+every model-touched decision is auditable. Off by default; the ambient Claude Code hook stays
+deterministic unless you also set `FORGE_LLM_AMBIENT=1`. Config lives in
+[`source/substrate.json`](../../source/substrate.json) → `llm`.
+
+---
+
 ## Honest limits
 
 Heuristic, not benchmarked; the graph is regex-approximate (conservative, not a sound call
-graph); assumption detection is lexical; auto-run needs a hook surface (ambient on Claude
-Code, agent-invoked elsewhere). What's *asserted* is safe to gate on (repo grounding, graph
-traversal, scope, routing arithmetic, test commands); everything else is *advisory*. Tests
-and human corrections always win. Full list:
+graph); assumption detection is lexical by default (opt into a verified LLM refinement with
+`FORGE_LLM=1` — see above); auto-run needs a hook surface (ambient on Claude Code,
+agent-invoked elsewhere). What's *asserted* is safe to gate on (repo grounding, graph
+traversal, scope, routing arithmetic, test commands); everything else is *advisory* — including
+every LLM proposal, which is verified against the repo/graph/tests before it counts and is
+never trusted blind. Tests and human corrections always win. Full list:
 [docs/GUIDE.md → Honest limits](../GUIDE.md#honest-limits).
 
 ---
