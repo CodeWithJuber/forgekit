@@ -36,13 +36,20 @@ test("re-running is idempotent (nothing rewritten)", () => {
   assert.equal(written.length, 0, `second sync wrote ${written.map((r) => r.target)}`);
 });
 
-test("does not clobber an existing unmanaged CLAUDE.md", () => {
+test("adopts an existing unmanaged CLAUDE.md: prepends @AGENTS.md, preserves content, idempotent", () => {
   const root = fixture();
-  writeFileSync(join(root, "CLAUDE.md"), "# my own claude file\n");
+  writeFileSync(join(root, "CLAUDE.md"), "# my own claude file\nkeep me\n");
   const res = sync({ targetRoot: root });
   const row = res.report.find((r) => r.target === "CLAUDE.md");
-  assert.equal(row.action, "skipped");
-  assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /my own claude file/);
+  assert.equal(row.action, "adopted", "existing CLAUDE.md is adopted, not skipped or clobbered");
+  const after = readFileSync(join(root, "CLAUDE.md"), "utf8");
+  assert.match(after, /^@AGENTS\.md/m, "shared import wired in");
+  assert.match(after, /my own claude file/, "original content preserved");
+  assert.match(after, /keep me/);
+  // Re-running does not re-prepend or rewrite.
+  const again = sync({ targetRoot: root });
+  assert.equal(again.report.find((r) => r.target === "CLAUDE.md").action, "unchanged");
+  assert.equal((after.match(/@AGENTS\.md/g) || []).length, 1, "import appears exactly once");
 });
 
 test("warns when a legacy .cursorrules would shadow AGENTS.md", () => {
