@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Visual flow diagrams in the entry-point docs.** A "one source → every tool + pre-action gate"
+  mermaid in `README.md` and a "your day with Forge" loop in `ONBOARDING.md` (alongside the
+  propose→verify diagram in the substrate README) — making the model easier to grasp at a glance,
+  while preserving the docs' existing dry-precise voice.
+
 ### Added
 
 - **Uniform `--json`.** `doctor`, `route`, `preflight`, `verify`, and `scope` now accept `--json`

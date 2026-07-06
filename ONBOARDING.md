@@ -4,6 +4,16 @@
 > agents (Claude Code, Codex, Cursor, Gemini, Aider…). Author your rules once; it
 > configures every tool and adds memory, blast-radius checks, and guardrails.
 
+```mermaid
+flowchart TD
+    I["forge init"] --> Cfg["every tool configured<br/>from one source"]
+    Cfg --> Work["you work as usual"]
+    Work --> Gate["substrate checks each task:<br/>ask first? · which model? · what breaks?"]
+    Gate --> Edit["agent edits, with guardrails"]
+    Edit --> Learn["cortex learns from corrections"]
+    Learn -.->|next task is smarter| Work
+```
+
 ## 1. Install (once)
 
 The recommended paths need no token and no clone:
