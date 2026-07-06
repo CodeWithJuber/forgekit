@@ -47,6 +47,25 @@ const slug = (s) =>
     .replace(/(^-|-$)/g, "")
     .slice(0, 40);
 
+// A cheap, dependency-free signature of a failing test's output. Line numbers, hex addresses,
+// timings, and temp paths are normalized out so "the same failure" hashes the same across runs
+// even as surrounding noise shifts — this is what lets us catch a same-error doom loop.
+function outputSignature(text) {
+  const norm = String(text)
+    .toLowerCase()
+    .replace(/0x[0-9a-f]+/g, "0xADDR")
+    .replace(/\b\d+(\.\d+)?(ms|s)\b/g, "T")
+    .replace(/:\d+:\d+/g, ":L:C")
+    .replace(/\b\d+\b/g, "N")
+    .replace(/\/tmp\/\S+/g, "/tmp/X")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 800);
+  let h = 5381;
+  for (let i = 0; i < norm.length; i++) h = ((h << 5) + h + norm.charCodeAt(i)) >>> 0;
+  return norm ? h.toString(36) : "";
+}
+
 /** Normalize a raw hook payload into a compact event, or null if it carries no signal. */
 export function classifyEvent(hook) {
   const tool = hook.tool_name;
@@ -55,10 +74,15 @@ export function classifyEvent(hook) {
     return { type: "edit", file: inp.file_path ?? "" };
   }
   if (tool === "Bash") {
+    const exitCode = hook.exitCode;
+    const failed = typeof exitCode === "number" && exitCode !== 0;
+    const out = hook.tool_response?.stdout ?? hook.tool_response ?? hook.output ?? "";
     return {
       type: "bash",
       command: inp.command ?? "",
-      exitCode: hook.exitCode,
+      exitCode,
+      // Only carry a signature for FAILED runs — that's all the doom-loop check needs.
+      ...(failed && out ? { outputSig: outputSignature(out) } : {}),
     };
   }
   if (hook.hook_event_name === "UserPromptSubmit" || typeof hook.prompt === "string") {
@@ -130,6 +154,45 @@ export function detectEpisodes(events, { nowDay = 0 } = {}) {
     });
   }
   return episodes;
+}
+
+/**
+ * Doom-loop breaker (self-correction #5). The shell guard catches the SAME action repeated;
+ * this catches the subtler loop the paper names — different edits that keep producing the SAME
+ * test failure. When one failure signature recurs ≥ `threshold` times, the agent is stuck: halt
+ * and escalate with a diagnosis rather than burning more attempts. Pure + advisory.
+ * @returns {{loop:boolean, signature?:string, count?:number, files?:string[]}}
+ */
+export function detectDoomLoop(events, { threshold = 3 } = {}) {
+  const counts = new Map(); // outputSig -> occurrences
+  const filesAround = new Map(); // outputSig -> Set(files edited between failures)
+  let editsSinceFail = [];
+  for (const e of events) {
+    if (e.type === "edit" && e.file) {
+      editsSinceFail.push(e.file);
+    } else if (e.type === "bash" && e.outputSig) {
+      counts.set(e.outputSig, (counts.get(e.outputSig) ?? 0) + 1);
+      const set = filesAround.get(e.outputSig) ?? new Set();
+      for (const f of editsSinceFail) set.add(f);
+      filesAround.set(e.outputSig, set);
+      editsSinceFail = [];
+    }
+  }
+  let worst = null;
+  for (const [sig, count] of counts) {
+    if (count >= threshold && (!worst || count > worst.count)) {
+      worst = { signature: sig, count, files: [...(filesAround.get(sig) ?? [])] };
+    }
+  }
+  return worst ? { loop: true, ...worst } : { loop: false };
+}
+
+/** The advisory string for a detected doom loop (empty when there's no loop). */
+export function doomLoopAdvisory(events, opts = {}) {
+  const r = detectDoomLoop(events, opts);
+  if (!r.loop) return "";
+  const where = r.files.length ? ` around ${r.files.slice(0, 5).join(", ")}` : "";
+  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. Different edits aren't fixing it. Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.`;
 }
 
 /** Drive the orchestrator from a session's events (called by the Stop hook). */

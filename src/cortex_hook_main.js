@@ -14,6 +14,7 @@ import {
   appendSessionEvent,
   classifyEvent,
   clearSession,
+  doomLoopAdvisory,
   processSession,
   readSession,
 } from "./cortex_hook.js";
@@ -69,7 +70,10 @@ async function main() {
     const block = startupBlock(root, today);
     if (block) emit("SessionStart", block);
   } else if (mode === "pre-edit") {
-    const advice = await preEditAdvisory(root, hook.tool_input?.file_path, today);
+    // A doom loop (the same failure recurring) is the loudest thing to say — it means "stop",
+    // so it takes precedence over lesson/risk advice.
+    const loop = doomLoopAdvisory(readSession(root, sid));
+    const advice = loop || (await preEditAdvisory(root, hook.tool_input?.file_path, today));
     if (advice) emit("PreToolUse", advice);
   } else if (mode === "preflight") {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)

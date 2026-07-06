@@ -25,6 +25,7 @@ const COMMANDS = {
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
+  lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
 };
@@ -478,6 +479,24 @@ async function run(argv) {
     }
     const r = goalDrift(process.cwd(), goal);
     console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
+    return; // advisory — never fails the process
+  }
+  if (cmd === "lean") {
+    const { leanRepo, renderLean } = await import("./lean.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error(
+        'usage: forge lean "<task>" [--json]   (measures the working diff vs the task)',
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const r = leanRepo(process.cwd(), task);
+    console.log(json ? JSON.stringify(r, null, 2) : renderLean(r));
     return; // advisory — never fails the process
   }
   if (cmd === "scope") {

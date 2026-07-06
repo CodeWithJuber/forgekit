@@ -9,6 +9,7 @@ import { buildRunner, llmEnabled } from "./adjudicate.js";
 import { goalDrift } from "./anchor.js";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
 import { matchingLessons } from "./cortex.js";
+import { leanRepo } from "./lean.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { routeTask } from "./route.js";
@@ -60,6 +61,43 @@ function minimalityWarnings(task, route, preflight) {
     warnings.push("Production-sensitive task lacks explicit constraints or acceptance criteria.");
   }
   return warnings;
+}
+
+const TEST_FILE_RE =
+  /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[jt]sx?$|_test\.(py|go|rs)$|(^|\/)test_[^/]+\.py$/i;
+
+export const isTestFile = (f) => TEST_FILE_RE.test(String(f));
+
+// Candidate sibling-test paths for a source file: foo.js → foo.test.js / foo.spec.js /
+// __tests__/foo.js / test(s)/foo.js, and foo.py → test_foo.py / tests/test_foo.py.
+function siblingTestCandidates(file) {
+  const s = String(file);
+  const slash = s.lastIndexOf("/");
+  const dir = slash >= 0 ? s.slice(0, slash + 1) : "";
+  const nameExt = s.slice(slash + 1);
+  const dot = nameExt.lastIndexOf(".");
+  const base = dot > 0 ? nameExt.slice(0, dot) : nameExt;
+  const ext = dot > 0 ? nameExt.slice(dot) : "";
+  if (ext === ".py")
+    return [`${dir}test_${base}.py`, `${dir}tests/test_${base}.py`, `tests/test_${base}.py`];
+  const out = [];
+  for (const suf of [".test", ".spec"]) out.push(`${dir}${base}${suf}${ext}`);
+  for (const d of ["__tests__/", "test/", "tests/"])
+    out.push(`${dir}${d}${base}${ext}`, `${d}${base}${ext}`);
+  return out;
+}
+
+/** Predict the tests likely to fail if the impacted files change (impacted tests + siblings). */
+export function predictFailingTests(root, impactedFiles) {
+  const out = new Set();
+  for (const f of impactedFiles) {
+    if (isTestFile(f)) {
+      out.add(f);
+      continue;
+    }
+    for (const c of siblingTestCandidates(f)) if (existsSync(join(root, c))) out.add(c);
+  }
+  return [...out].sort();
 }
 
 // Grep-style verify for the LLM impact pass: a proposed dependent is only kept if the target
@@ -172,6 +210,10 @@ export function substrateCheck(
       )
     : [];
   const impactedFiles = [...new Set(impacts.flatMap((r) => r.impactedFiles || []))].sort();
+  // Consequence simulation (Eq 4), class "failing tests": which tests likely break if the
+  // impacted files change — the impacted files that ARE tests, plus each impacted source file's
+  // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
+  const predictedTests = predictFailingTests(root, impactedFiles);
   const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
   const scope = scopedFiles.length
     ? decompose(root, scopedFiles)
@@ -187,7 +229,7 @@ export function substrateCheck(
     clarify: clarifyBlock(preflight),
     route,
     entities,
-    impact: { targets: impactTargets, reports: impacts, impactedFiles },
+    impact: { targets: impactTargets, reports: impacts, impactedFiles, predictedTests },
     scope,
     memory: {
       matchingLessons: lessons.length,
@@ -197,7 +239,14 @@ export function substrateCheck(
         scope: lesson.scope,
       })),
     },
-    minimality: { warnings: minimalityWarnings(text, route, preflight) },
+    // M5 anti-over-engineering: the pre-action keyword heuristics PLUS a measured footprint check
+    // (φ(y) − φ*(x)) against the working diff once one exists — abstractions/files/lines the task
+    // never asked for. `lean` is diff-based, so it's quiet until there's something to measure.
+    minimality: (() => {
+      const pre = minimalityWarnings(text, route, preflight);
+      const lean = allowBuild ? leanRepo(root, text) : { warnings: [], footprint: null };
+      return { warnings: [...pre, ...lean.warnings], footprint: lean.footprint };
+    })(),
     // M4 goal-anchoring: re-read the stated goal against files already changed this session.
     // Quiet pre-action (clean tree → no drift); speaks mid-session when work wandered off-goal.
     goalAnchor: goalDrift(root, text, llmOpts),
@@ -266,6 +315,11 @@ export function renderSubstrate(result) {
   for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
   if (result.impact.impactedFiles.length > 10)
     lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
+  const tests = result.impact.predictedTests || [];
+  if (tests.length) {
+    lines.push("", `  likely-affected tests (${tests.length}) — run these first:`);
+    for (const t of tests.slice(0, 8)) lines.push(`    - ${t}`);
+  }
   if (result.minimality.warnings.length) {
     lines.push("", "  minimality warnings:");
     for (const w of result.minimality.warnings) lines.push(`    - ${w}`);
@@ -310,6 +364,11 @@ export function substrateContext(result) {
       `- Predicted blast radius (${files.length}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
     );
   }
+  const predTests = result.impact.predictedTests || [];
+  if (predTests.length)
+    lines.push(
+      `- Likely-affected tests (${predTests.length}): ${predTests.slice(0, 6).join(", ")}${predTests.length > 6 ? " …" : ""}. Run these first.`,
+    );
   for (const w of result.minimality.warnings) lines.push(`- Minimality: ${w}`);
   if (result.goalAnchor?.drift)
     lines.push(

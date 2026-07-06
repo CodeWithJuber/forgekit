@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **M5 anti-over-engineering is now measured, not guessed (`forge lean`).** The paper's
+  `φ(y) − φ*(x)` check replaces the old three-keyword stub: `src/lean.js` reads the working diff
+  and flags the footprint beyond what the task asked for — new abstractions the task never named,
+  a large diff for a short ask, files touched beyond the stated scope. Folded into
+  `forge substrate` (a `minimality.footprint` field) and available standalone as `forge lean "<task>"`.
+- **Doom-loop breaker (self-correction).** Complements the shell guard (which catches the *same
+  action* repeated) by catching the subtler loop the paper names — *different edits that keep
+  producing the same test failure*. `cortex_hook` now captures a normalized signature of failing
+  test output; `detectDoomLoop` fires when one signature recurs past a threshold, and the
+  pre-edit hook surfaces a "stop and find the root cause" advisory with the diagnosis.
+- **Consequence simulation — failing-tests class (Eq 4).** `forge substrate` now predicts the
+  tests likely to break *before* an edit (`impact.predictedTests`): the impacted files that are
+  tests, plus each impacted source file's sibling test — surfaced so you run the narrowest
+  affected tests first, not after the fact.
+
 ### Changed
 
 - **`forge sync` now adopts an existing project `CLAUDE.md` instead of skipping it.** Previously a
