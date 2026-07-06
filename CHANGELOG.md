@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`forge sync` now adopts an existing project `CLAUDE.md` instead of skipping it.** Previously a
+  repo with its own `CLAUDE.md` was left untouched — which meant Forge's shared rules never
+  reached Claude Code there. Sync now prepends the one-line `@AGENTS.md` import (idempotent,
+  every original line preserved) and reports `adopted`. `AGENTS.md` keeps its back-up-then-write
+  behaviour; your skills and other tool files are untouched.
+
 ### Fixed
 
 - **Secret-refusal no longer guts auth-related work.** `SECRET_RE` matched the bare words
