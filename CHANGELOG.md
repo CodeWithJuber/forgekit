@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **M4 goal-anchoring (`forge anchor`)** — the one paper capability that was mapped in the docs but never implemented. A deterministic goal-drift check: it re-reads the stated objective against the files actually changed (`git diff HEAD` + untracked, minus forge's own generated config) and flags work that wandered off-goal. Reuses `referencedEntities` + the atlas; folded into `forge substrate` (quiet on a clean tree, speaks mid-session on drift). All 11 paper capabilities now ship a real mechanism.
+
 ### Changed
 
 - **Substrate now auto-runs in Claude Code.** The `UserPromptSubmit` hook injects the full substrate advisory (assumption gate + model routing + blast radius + memory + verify) when it matters, silent otherwise. Load-only — never builds/writes `.forge/` from a hook, fail-safe, never blocks.

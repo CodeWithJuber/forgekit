@@ -165,6 +165,7 @@ forge preflight   assumption check — what a task names that the repo doesn't d
 forge route       cheapest capable model for a task (+ gateway config)
 forge impact      predict blast radius for a symbol or file
 forge scope       decompose files into independent clusters
+forge anchor      goal-drift check — are your git changes still on the stated goal?
 forge verify      independent verification — tests + hallucinated-symbol check
 forge uicheck     deterministic WCAG contrast check
 

@@ -103,7 +103,7 @@ output (see [Use it in a script](#use-it-in-a-script)).
 
 ---
 
-## The five checks (each is also its own command)
+## The checks (each is also its own command)
 
 `forge substrate` bundles these. Run any one on its own when that's all you need.
 
@@ -113,6 +113,7 @@ output (see [Use it in a script](#use-it-in-a-script)).
 | `forge route "<task>"` | Which model is cheapest-but-capable? | trivial → Haiku · hard → Opus/Fable |
 | `forge impact <symbol\|file>` | What will this edit break? | reverse-dependency blast radius |
 | `forge scope <file…>` | Can this be split into sessions? | independent vs. coupled files |
+| `forge anchor "<goal>"` | Are my changes still on the stated goal? | flags changed files that drifted off-goal |
 | `forge verify` | Did it actually work? | runs the real tests/build, not the model's word |
 
 Real output for the two most-used:
@@ -236,7 +237,8 @@ over-engineered, and whether a past lesson is relevant. Tests and human correcti
 - **[Ecosystem map](./ecosystem_map.md)** — each capability vs. the real 2026 tool stack
 - **[Prototype source](../../research/python-prototypes/)** — the auditable Python originals
 
-**How the paper maps to what ships:** memory → `recall`/`cortex` · learning → `cortex` ·
-imagination → `impact` · self-correction → `verify` · impact-awareness → `atlas`/`impact` ·
-M1 routing → `route` · M2 assumption gate → `preflight` · M3 decomposition → `scope` ·
-M4 goal-anchoring, M5 minimality, M6 verification → `substrate`.
+**How the paper maps to what ships (all 11):** memory → `recall`/`cortex` · learning →
+`cortex` · imagination → `impact` · self-correction → `verify`/`doom-loop` ·
+impact-awareness → `atlas`/`impact` · M1 routing → `route` · M2 assumption gate →
+`preflight` · M3 decomposition → `scope` · M4 goal-anchoring → `anchor` · M5 minimality →
+`lean`/`substrate` · M6 verification → `verify`/`substrate`.
