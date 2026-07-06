@@ -8,81 +8,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 
-// Called identifiers that are language/runtime built-ins, not project symbols.
-const IGNORE = new Set([
-  "if",
-  "for",
-  "while",
-  "switch",
-  "catch",
-  "return",
-  "function",
-  "typeof",
-  "await",
-  "super",
-  "new",
-  "delete",
-  "void",
-  "yield",
-  "import",
-  "export",
-  "require",
-  "print",
-  "range",
-  "len",
-  "str",
-  "int",
-  "float",
-  "list",
-  "dict",
-  "set",
-  "tuple",
-  "bool",
-  "console",
-  "Math",
-  "JSON",
-  "Object",
-  "Array",
-  "String",
-  "Number",
-  "Boolean",
-  "Promise",
-  "Set",
-  "Map",
-  "WeakMap",
-  "Date",
-  "Error",
-  "RegExp",
-  "Symbol",
-  "Buffer",
-  "parseInt",
-  "parseFloat",
-  "isNaN",
-  "isFinite",
-  "setTimeout",
-  "setInterval",
-  "clearTimeout",
-  "clearInterval",
-  "fetch",
-  "structuredClone",
-  "process",
-  "assert",
-]);
+// Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
+export { extractCalledSymbols } from "./extract.js";
 
-/** Pure: called identifiers in a block of source (skips `.method(` calls). */
-export function extractCalledSymbols(text) {
-  const found = new Set();
-  const re = /(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
-  for (const line of String(text).split("\n")) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(line))) {
-      const name = m[1];
-      if (!IGNORE.has(name)) found.add(name);
-    }
-  }
-  return [...found];
-}
+import { extractCalledSymbols } from "./extract.js";
 
 /** Pure: which called symbols are defined nowhere in the atlas (possible hallucinations). */
 export function findUnknownSymbols(atlas, symbols) {

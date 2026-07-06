@@ -47,3 +47,10 @@ test("doctor reports 'no lessons yet' on a fresh repo, and counts once learning 
   const c1 = doctor({ targetRoot: learned }).results.find((r) => r.label === "cortex");
   assert.match(c1.note, /1 active/);
 });
+
+test("doctor surfaces the new tooling / guards-exec / atlas / pricing checks", () => {
+  const labels = doctor({ targetRoot: fixture() }).results.map((r) => r.label);
+  for (const l of ["guards exec", "jq", "atlas", "model pricing"]) {
+    assert.ok(labels.includes(l), `doctor runs the '${l}' check`);
+  }
+});
