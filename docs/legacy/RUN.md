@@ -1,5 +1,10 @@
 # RUN — command sheet (current state)
 
+> ⚠️ **Archived — pre-Forge.** Kept for history; **not maintained**. It describes an older
+> hand-rolled `~/.claude` setup, not today's `forge` CLI. For the current workflow start at
+> **[ONBOARDING.md](../../ONBOARDING.md)** → **[docs/GUIDE.md](../GUIDE.md)**. Any credentials or
+> open action items below are historical and superseded — do not act on them.
+
 Bundle: `~/Downloads/claude-global-config/`. Most of this is **already applied
 live** on your machine. This is the accurate final command sheet.
 

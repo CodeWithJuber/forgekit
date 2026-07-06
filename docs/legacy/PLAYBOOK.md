@@ -1,5 +1,10 @@
 # Playbook — how to drive your Claude setup
 
+> ⚠️ **Archived — pre-Forge.** Kept for history; **not maintained**. It describes an older
+> hand-rolled `~/.claude` setup, not today's `forge` CLI. For the current workflow start at
+> **[ONBOARDING.md](../../ONBOARDING.md)** → **[docs/GUIDE.md](../GUIDE.md)**. Any credentials or
+> open action items below are historical and superseded — do not act on them.
+
 Your global config auto-loads skills/rules by what you ask; you rarely invoke them
 by name. Below: the exact prompt per situation, and what fires under the hood.
 

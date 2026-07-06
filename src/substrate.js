@@ -111,13 +111,23 @@ export function predictImpact(root, target, { threshold = 0.1, llm, model, timeo
  * @param {boolean} [opts.llm]
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
+ * @param {boolean} [opts.bidirectional]
  */
 export function substrateCheck(
   root,
   task,
-  { threshold = 0.1, askThreshold = 0.6, allowBuild = true, llm, model, timeoutMs } = {},
+  {
+    threshold = 0.1,
+    askThreshold = 0.6,
+    allowBuild = true,
+    llm,
+    model,
+    timeoutMs,
+    bidirectional,
+  } = {},
 ) {
   const text = String(task || "");
+  const spec = loadSubstrateSpec();
   // LLM adjudication is opt-in. On the ambient hook path (allowBuild:false) it stays OFF unless
   // FORGE_LLM_AMBIENT=1, so the per-prompt hook never pays model latency by default. An explicit
   // `llm` option always wins. Every faculty is fail-safe: a null proposal keeps the rubric.
@@ -127,7 +137,19 @@ export function substrateCheck(
       : allowBuild
         ? llmEnabled()
         : process.env.FORGE_LLM_AMBIENT === "1";
-  const llmOpts = { llm: useLLM, model, timeoutMs };
+  // Bidirectional (clear-a-false-ask / route-down, within rails) follows the JSON default unless
+  // the caller overrides it. The numeric bands/floor come from the same config block.
+  const bi =
+    typeof bidirectional === "boolean" ? bidirectional : (spec?.llm?.bidirectional ?? true);
+  const llmOpts = {
+    llm: useLLM,
+    model,
+    timeoutMs,
+    bidirectional: bi,
+    band: spec?.llm?.band,
+    routingBand: spec?.llm?.routingBand,
+    signalFloor: spec?.llm?.signalFloor,
+  };
   const entities = referencedEntities(text);
   const preflight = preflightRepo(root, text, { askThreshold, allowBuild, ...llmOpts });
   const route = routeTask(root, text, llmOpts);
@@ -179,9 +201,12 @@ export function substrateCheck(
     goalAnchor: goalDrift(root, text, llmOpts),
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
-    // Which faculties, if any, had a model proposal survive external verification this run.
+    // Which faculties, if any, had a model proposal survive external verification this run, and
+    // which direction it moved (…-cleared / …-tightened for the gate, …-raised / …-lowered for
+    // routing). Every non-deterministic value was checked before it counted.
     llm: {
       enabled: useLLM,
+      bidirectional: bi,
       provenance: {
         assumption: preflight.assumption.provenance?.path ?? "deterministic",
         route: route.provenance?.path ?? "deterministic",
@@ -202,8 +227,8 @@ export function substrateCheck(
       // Proposed by a model, then checked against the repo/graph/tests before it could move a
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
-        "assumption refinement (bounded by the rubric)",
-        "routing escalation (raise-only)",
+        "assumption refinement (bounded ±band; clears a false ask only past the no-anchor + repo-grounding floors)",
+        "routing (free raise; bounded lower, never below strong-signal floor)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],

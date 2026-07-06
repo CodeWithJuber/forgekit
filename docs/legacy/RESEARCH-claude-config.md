@@ -1,5 +1,9 @@
 # Deep research — best Claude Code configs vs. yours (2026)
 
+> ⚠️ **Archived — pre-Forge.** Kept for history; **not maintained**. Research notes from the
+> pre-Forge era. For the current design see **[docs/cognitive-substrate/README.md](../cognitive-substrate/README.md)**
+> and **[ARCHITECTURE.md](../../ARCHITECTURE.md)**.
+
 Multi-source, cross-checked. Verdict up front: **your config already matches or
 exceeds documented community best practice on ~90% of dimensions.** Two genuine
 gaps remain. Unbiased finding: the quality move now is *consolidation, not adding

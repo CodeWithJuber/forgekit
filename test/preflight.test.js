@@ -147,3 +147,85 @@ test("preflightRepo (llm on): fail-safe — a throwing runner keeps the determin
   assert.equal(withLlm.assumption.shouldAsk, base.assumption.shouldAsk);
   assert.equal(withLlm.assumption.provenance.path, "deterministic");
 });
+
+// --- Bidirectional M2 reconcile: clearing a false ask, guarded by hard floors ---
+const detStub = (over = {}) => ({
+  completeness: 0.5,
+  risk: "medium",
+  shouldAsk: true,
+  hardUnderspecified: false,
+  missing: [],
+  questions: ["What exactly should this produce?"],
+  reasons: [],
+  ...over,
+});
+
+test("bidirectional: a verified raise clears a borderline false ask", () => {
+  const det = detStub({ completeness: 0.5, shouldAsk: true });
+  const r = reconcileAssumption(
+    det,
+    { completeness: 0.85, missing: [], questions: [] },
+    { bidirectional: true, hasUnresolved: false },
+  );
+  assert.equal(r.shouldAsk, false, "bounded raise crosses the threshold → gate clears");
+  assert.equal(r.provenance.path, "llm-cleared");
+});
+
+test("bidirectional: a hard-underspecified task is NEVER cleared", () => {
+  const det = detStub({ completeness: 0.5, shouldAsk: true, hardUnderspecified: true });
+  const r = reconcileAssumption(det, { completeness: 1, missing: [], questions: [] }, {});
+  assert.equal(r.shouldAsk, true, "no concrete anchor → the model can't wave it through");
+});
+
+test("bidirectional: an unresolved-entity task is NEVER cleared (repo grounding floor)", () => {
+  const det = detStub({ completeness: 0.55, shouldAsk: true });
+  const r = reconcileAssumption(
+    det,
+    { completeness: 0.95, missing: [], questions: [] },
+    { hasUnresolved: true },
+  );
+  assert.equal(r.shouldAsk, true, "names symbols/files the repo lacks → still asks");
+});
+
+test("bidirectional: a genuinely vague task can't be lifted over the line (band clamp)", () => {
+  const det = detStub({ completeness: 0.2, shouldAsk: true });
+  const r = reconcileAssumption(
+    det,
+    { completeness: 1, missing: [], questions: [] },
+    { band: 0.25 },
+  );
+  assert.ok(r.completeness <= 0.45 + 1e-9, "clamped to det+band");
+  assert.equal(r.shouldAsk, true, "0.45 < 0.6 threshold → still asks");
+});
+
+test("bidirectional: the model can still TIGHTEN a rubric-proceed task into an ask", () => {
+  const det = detStub({ completeness: 0.7, shouldAsk: false, questions: [] });
+  const r = reconcileAssumption(
+    det,
+    { completeness: 0.4, missing: [], questions: [] },
+    { band: 0.25 },
+  );
+  assert.equal(r.shouldAsk, true, "lowered below threshold → now asks");
+  assert.equal(r.provenance.path, "llm-tightened");
+});
+
+test("bidirectional:false — the model can never clear a deterministic ask", () => {
+  const det = detStub({ completeness: 0.5, shouldAsk: true });
+  const r = reconcileAssumption(
+    det,
+    { completeness: 0.95, missing: [], questions: [] },
+    { bidirectional: false, hasUnresolved: false },
+  );
+  assert.equal(r.shouldAsk, true, "raise-only/tighten-only mode keeps the rubric's ask");
+});
+
+test("preflightRepo (bidirectional, integration): unresolved symbol floor blocks a clear", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-pre-"));
+  // Task names `ghostSymbol`, which the (empty) repo doesn't define → the grounding floor holds
+  // even though the model votes fully specified.
+  const r = preflightRepo(root, "refactor `ghostSymbol` to be faster", {
+    llm: true,
+    run: () => '{"completeness":0.95,"missing":[],"questions":[]}',
+  });
+  assert.equal(r.assumption.shouldAsk, true, "unresolved entity keeps the gate closed");
+});

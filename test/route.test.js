@@ -80,18 +80,52 @@ test("complexityLLM: parses a band into a score floor, rejects junk", () => {
   assert.equal(complexityLLM("x", { run: () => "not json" }), null);
 });
 
-test("routeTask (llm on): the model may only RAISE the tier, never lower it", () => {
+test("routeTask (llm on): a RAISE is free — the model can escalate a trivial-looking task", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-route-"));
   const task = "write a function to check if a number is prime";
-  // Model says 'premium' on a trivial task → routing escalates (safe direction).
   const up = routeTask(root, task, { llm: true, run: () => '{"band":"premium","reason":"x"}' });
   assert.ok(["opus", "fable"].includes(up.key), `raised to ${up.key}`);
-  assert.equal(up.provenance.path, "llm-verified");
-  assert.equal(up.llm.raised, true);
-  // Model says 'cheap' → cannot pull a task below the deterministic floor.
-  const down = routeTask(root, task, { llm: true, run: () => '{"band":"cheap","reason":"x"}' });
+  assert.equal(up.provenance.path, "llm-raised");
+  assert.equal(up.llm.direction, "raised");
+});
+
+test("routeTask (bidirectional): the model can LOWER an over-provisioned generic task, bounded", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  // A moderate task with no strong algorithmic/architectural signal — safe to route down.
+  const task = "add a small in-memory cache with get and set";
   const base = routeTask(root, task);
-  assert.ok(down.score >= base.score, "cheap band never routes below deterministic");
+  const down = routeTask(root, task, {
+    llm: true,
+    run: () => '{"band":"cheap","reason":"trivial"}',
+  });
+  assert.ok(down.score <= base.score, "cheap band pulls the score down");
+  assert.ok(down.score >= base.score - 0.2 - 1e-9, "but never more than one routing band");
+  assert.ok(["llm-lowered", "llm-agreed"].includes(down.provenance.path));
+});
+
+test("routeTask (bidirectional): a strong-signal task holds the floor even on a 'cheap' vote", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task =
+    "Design and implement a thread-safe distributed rate limiter with a token-bucket algorithm";
+  const base = routeTask(root, task);
+  const down = routeTask(root, task, {
+    llm: true,
+    run: () => '{"band":"cheap","reason":"looks easy"}',
+  });
+  assert.ok(down.score >= 0.4, "algorithmic/architectural floor keeps it off the cheap tier");
+  assert.ok(["opus", "fable"].includes(down.key) || down.score >= base.score - 0.2);
+});
+
+test("routeTask (bidirectional:false): reverts to raise-only — a 'cheap' vote can't lower", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task = "add a small in-memory cache with get and set";
+  const base = routeTask(root, task);
+  const down = routeTask(root, task, {
+    llm: true,
+    bidirectional: false,
+    run: () => '{"band":"cheap","reason":"trivial"}',
+  });
+  assert.ok(down.score >= base.score, "raise-only mode never routes below deterministic");
 });
 
 test("routeTask (llm on): a failing model call falls back to deterministic", () => {

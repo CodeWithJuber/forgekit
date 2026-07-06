@@ -1,3 +1,5 @@
+# CI gate for every push and PR: test matrix (Node 18/20/22), Biome lint+format, ShellCheck,
+# the zero-runtime-dependency assertion, and dependency review. All must pass to merge.
 name: CI
 
 on:

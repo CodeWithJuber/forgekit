@@ -185,19 +185,43 @@ Set **`FORGE_LLM=1`** to add a **thin, opt-in semantic layer** on top: a cheap `
 call proposes a completeness reading (M2), a complexity band (M1), the coupled edges the
 regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
 
-The model is **never the judge — only a proposer.** Every proposal is *verified* before it can
-move a verdict, in the direction of the paper's *tabayyun* gate (49:6):
+```mermaid
+flowchart LR
+    T[task / edit] --> R[deterministic rubric]
+    T --> P[LLM proposer]
+    R --> C{reconcile}
+    P --> V[verify: rubric band · repo grounding · grep · tests]
+    V --> C
+    C -->|passes checks| M[verdict moves\nllm-cleared / lowered / raised / verified]
+    C -->|fails / unavailable| D[verdict holds\ndeterministic]
+```
 
-- **routing** can only be *raised* (`max` with the rubric), never lowered on the model's word;
-- **the assumption gate only tightens** — it can add an ask, never clear a deterministic one;
-- **impact edges** are kept only if the file is real *and* a grep confirms the reference;
-- **goal-drift** rescues an off-goal file only with a goal-referencing reason (off→on only).
+The model **proposes**; the deterministic rubric, the code graph, and the tests **verify**.
+The verdict only moves when the proposal survives that check — otherwise it falls back, unchanged.
+
+The model is **never the judge — only a proposer.** Every proposal is *verified* before it can
+move a verdict, in the direction of the paper's *tabayyun* gate (49:6). By default the reconcile
+is **bidirectional but rail-guarded** — a verified reading can lower caution as well as raise it,
+but never past a hard floor:
+
+- **routing** — a *raise* is free (spotting hidden complexity costs at most a bigger model); a
+  *lower* is bounded to one band and never drops below a strong-signal (algorithmic/architectural)
+  floor, so a "distributed rate-limiter" can't be talked down to the cheap tier;
+- **the assumption gate** — can *clear* a false ask **or** *add* one, but never clears a task
+  with no concrete anchor, or one naming symbols/files the repo doesn't define;
+- **impact edges** — kept only if the file is real *and* a grep confirms the reference;
+- **goal-drift** — rescues an off-goal file only with a goal-referencing reason (off→on only).
+
+> **Note** — set `llm.bidirectional: false` in
+> [`source/substrate.json`](../../source/substrate.json) for the conservative tighten-/raise-only
+> mode (caution can only ever increase).
 
 It is **fail-safe**: any error, timeout, or unparseable reply falls back to the deterministic
 path (behaviour is byte-identical with the flag off), and it **never blocks**. `--json` output
-carries a `llm.provenance` map (`deterministic` / `llm-verified` / `llm-agreed`) per faculty so
-every model-touched decision is auditable. Off by default; the ambient Claude Code hook stays
-deterministic unless you also set `FORGE_LLM_AMBIENT=1`. Config lives in
+carries an `llm.provenance` map (`deterministic` / `llm-cleared` / `llm-tightened` /
+`llm-raised` / `llm-lowered` / `llm-verified`) per faculty so every model-touched decision is
+auditable. Off by default; the ambient Claude Code hook stays deterministic unless you also set
+`FORGE_LLM_AMBIENT=1`. Config lives in
 [`source/substrate.json`](../../source/substrate.json) → `llm`.
 
 ---

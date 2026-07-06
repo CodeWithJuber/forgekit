@@ -43,8 +43,8 @@ packages; the production runtime remains Node-only and zero-dependency.
 ## Architecture — a four-layer config compiler with ONE source
 
 ```
-                       source/AGENTS.md  (canonical rules: git · testing · security · style)
-                                │
+                       source/rules.json  (canonical rules: git · testing · security · style)
+                                │           (+ source/substrate.json, source/mcp.json)
                           forge sync  (emitter: content-hash + DO-NOT-EDIT headers)
         ┌───────────────┬───────┴───────┬───────────────┬─────────────┐
    Claude CLAUDE.md   Codex AGENTS.md  Cursor .mdc   Gemini settings  Aider .aider.conf.yml ...
@@ -133,8 +133,9 @@ forgekit/
     doctor.js             # health checks
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
   source/
-    AGENTS.md             # THE canonical source
-    rules/                # git.md, testing.md, security.md, style.md → assembled
+    rules.json            # THE canonical rules source (git · testing · security · style)
+    substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
+    mcp.json              # MCP server definitions emitted into each tool
   global/                 # installs into ~/.forge, symlinked into ~/.claude
     tools/ crew/ guards/ mcp/atlas/ recall/ lean/ statusline.sh settings.template.json
   templates/project-layer/  # per-repo template (was hostlelo-project-layer)

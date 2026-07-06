@@ -1,5 +1,10 @@
 # Audit of your live ~/.claude + how this bundle fits
 
+> ⚠️ **Archived — pre-Forge.** Kept for history; **not maintained**. It describes an older
+> hand-rolled `~/.claude` setup, not today's `forge` CLI. For the current workflow start at
+> **[ONBOARDING.md](../../ONBOARDING.md)** → **[docs/GUIDE.md](../GUIDE.md)**. Any credentials or
+> open action items below are historical and superseded — do not act on them.
+
 Read from your actual machine on 2026-07-04. Honest feedback, then what changed.
 
 ## 🔴 Fix now

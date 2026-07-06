@@ -248,20 +248,33 @@ export function assessTaskLLM(task, { run = buildRunner() } = {}) {
 
 /**
  * Verify-don't-trust reconcile for M2. The model may only move completeness within ±band of the
- * deterministic score (so a clearly-specified/vague task can't be flipped), and may only ADD an
- * ask, never clear a deterministic one. Extra questions survive only if they map to a rubric-
- * flagged dimension or (via `grounded`) reference a real repo entity.
+ * deterministic score, so a clearly-specified or clearly-vague task can never be flipped — only a
+ * borderline reading shifts. In `bidirectional` mode (default) the ask is recomputed purely from
+ * that bounded completeness, so a verified reading can also CLEAR a false ask — but two hard
+ * floors the model can never override still force the ask: a task with no concrete anchor
+ * (`hardUnderspecified`), or one naming symbols/files the repo doesn't define (`hasUnresolved`).
+ * With `bidirectional:false` the gate only ever tightens (the conservative pre-bidirectional
+ * behaviour). Extra questions survive only if they map to a rubric-flagged dimension or (via
+ * `grounded`) reference a real repo entity.
  * @param {object} det - assessTask() result
  * @param {{completeness:number, missing:string[], questions:string[]}|null} proposal
  * @param {object} [opts]
  * @param {number} [opts.askThreshold]
  * @param {number} [opts.band]
  * @param {(q:string)=>boolean} [opts.grounded]
+ * @param {boolean} [opts.bidirectional]
+ * @param {boolean} [opts.hasUnresolved]
  */
 export function reconcileAssumption(
   det,
   proposal,
-  { askThreshold = 0.6, band = 0.25, grounded = () => false } = {},
+  {
+    askThreshold = 0.6,
+    band = 0.25,
+    grounded = () => false,
+    bidirectional = true,
+    hasUnresolved = false,
+  } = {},
 ) {
   if (!proposal) return { ...det, provenance: { path: "deterministic" } };
   const bounded = Math.max(
@@ -274,12 +287,18 @@ export function reconcileAssumption(
     (q) => proposal.missing.some((m) => flaggedDims.has(m)) || grounded(q),
   );
   const questions = [...new Set([...det.questions, ...extraQuestions])].slice(0, 3);
-  // The gate only ever tightens: an ask stands if the rubric asked, the task is hard-
-  // underspecified, or the reconciled completeness is below threshold.
-  const shouldAsk = det.shouldAsk || det.hardUnderspecified || completeness < askThreshold;
+  // Bidirectional (default): the ask follows the bounded completeness, guarded by two floors the
+  // model can't override. Tighten-only: the rubric's ask always stands, the model can only add one.
+  const shouldAsk = bidirectional
+    ? det.hardUnderspecified || hasUnresolved || completeness < askThreshold
+    : det.shouldAsk || det.hardUnderspecified || completeness < askThreshold;
   const risk = completeness < 0.45 ? "high" : completeness < 0.7 ? "medium" : "low";
   const moved =
     Math.abs(completeness - det.completeness) > 1e-9 || questions.length !== det.questions.length;
+  let path;
+  if (shouldAsk && !det.shouldAsk) path = "llm-tightened";
+  else if (!shouldAsk && det.shouldAsk) path = "llm-cleared";
+  else path = moved ? "llm-verified" : "llm-agreed";
   return {
     ...det,
     completeness,
@@ -289,7 +308,7 @@ export function reconcileAssumption(
       shouldAsk && !questions.length
         ? ["What exactly should this produce, and how will we know it is correct?"]
         : questions,
-    provenance: { path: moved ? "llm-verified" : "llm-agreed", detCompleteness: det.completeness },
+    provenance: { path, detCompleteness: det.completeness },
   };
 }
 
@@ -342,11 +361,22 @@ export function clarifyBlock(result, { threshold = 0.5 } = {}) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
+ * @param {boolean} [opts.bidirectional]
+ * @param {number} [opts.band]
  */
 export function preflightRepo(
   root,
   text,
-  { allowBuild = true, askThreshold = 0.6, llm, model, timeoutMs, run } = {},
+  {
+    allowBuild = true,
+    askThreshold = 0.6,
+    llm,
+    model,
+    timeoutMs,
+    run,
+    bidirectional = true,
+    band,
+  } = {},
 ) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
   const hasSymbol = atlas ? (name) => has(atlas, name) : () => true;
@@ -364,5 +394,17 @@ export function preflightRepo(
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));
   };
-  return { ...gap, assumption: reconcileAssumption(det, proposal, { askThreshold, grounded }) };
+  // Repo grounding is a hard floor on clearing: if the task names entities the repo lacks, the
+  // model can never wave the gate through no matter how "complete" it judges the prose.
+  const hasUnresolved = gap.unresolved.symbols.length + gap.unresolved.files.length > 0;
+  return {
+    ...gap,
+    assumption: reconcileAssumption(det, proposal, {
+      askThreshold,
+      grounded,
+      bidirectional,
+      hasUnresolved,
+      ...(typeof band === "number" ? { band } : {}),
+    }),
+  };
 }

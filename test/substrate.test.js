@@ -118,3 +118,16 @@ test("substrateCheck (llm on, explicit): opt-in flag threads through and stays f
   assert.equal(typeof r.okToProceed, "boolean");
   assert.ok(["deterministic", "llm-verified", "llm-agreed"].includes(r.llm.provenance.goalAnchor));
 });
+
+test("substrateCheck: surfaces llm.bidirectional (defaults true from config)", () => {
+  const root = repo();
+  const r = substrateCheck(root, "Refactor computeTax in math.js");
+  assert.equal(r.llm.bidirectional, true, "config default is bidirectional");
+  assert.equal(typeof r.llm.provenance.assumption, "string");
+});
+
+test("substrateCheck: an explicit bidirectional:false threads through", () => {
+  const root = repo();
+  const r = substrateCheck(root, "Refactor computeTax in math.js", { bidirectional: false });
+  assert.equal(r.llm.bidirectional, false, "explicit override wins over the config default");
+});
