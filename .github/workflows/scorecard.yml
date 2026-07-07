@@ -25,7 +25,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false # scorecard checks for exactly this
-      - uses: ossf/scorecard-action@v2
+      # scorecard-action publishes exact tags only — there is no floating v2 major tag
+      # (they practice the pinning their own check preaches). Dependabot tracks updates.
+      - uses: ossf/scorecard-action@v2.4.0
         with:
           results_file: results.sarif
           results_format: sarif
