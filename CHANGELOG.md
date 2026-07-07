@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
+  "reuse already-generated code" from prose into a deterministic system: verified code
+  becomes an `artifact` claim keyed by a normalized task fingerprint (volatile literals →
+  typed placeholders; MinHash sketch + 16×8 LSH banding for near-match), looked up through
+  the exact → near → adapt → miss ladder. An artifact serves ONLY while its proof holds —
+  confidence above the 0.6 floor (an unverified mint sits at the 0.5 prior and does not
+  serve) and every declared dependency still resolving in the atlas; a failed revalidation
+  appends a `graph.reval` contradiction, so stale code demotes itself for the whole team.
+  `forge reuse query|mint|stats`, a reuse stage in `forge substrate` (read-only on the
+  ambient hook path), and `src/metrics.js` — the stage-tagged `.forge/metrics.jsonl` the
+  cost model's measured savings are computed from. The `reuse-first` skill now calls the
+  cache before advising a repo search.
+
 - **Team memory (P2 of the substrate-v2 plan).** The PCM ledger becomes shared:
   `forge ledger merge <path>` performs the conflict-free semilattice merge of any other
   ledger tree (a teammate's checkout, a worktree, a backup) — identical knowledge minted

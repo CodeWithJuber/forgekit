@@ -12,8 +12,10 @@ import { matchingLessons } from "./cortex.js";
 import { leanRepo } from "./lean.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
+import { reusePeek, reuseQuery } from "./reuse.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
+import { epochDay } from "./util.js";
 
 function loadSubstrateSpec() {
   const path = join(dirname(dirname(fileURLToPath(import.meta.url))), "source", "substrate.json");
@@ -214,6 +216,24 @@ export function substrateCheck(
   // impacted files change — the impacted files that ARE tests, plus each impacted source file's
   // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
   const predictedTests = predictFailingTests(root, impactedFiles);
+  // P3 reuse stage: has this team already built (and verified) this? The explicit gate
+  // meters + writes evidence (reuseQuery); the ambient hook path stays read-only
+  // (reusePeek) so a per-prompt hook never appends to the ledger or metrics.
+  const reuse = (() => {
+    try {
+      const opts = { atlas, nowDay: epochDay() };
+      const r = allowBuild ? reuseQuery(root, text, opts) : reusePeek(root, text, opts);
+      return {
+        tier: r.tier,
+        artifact: r.artifact
+          ? { id: r.artifact.id, path: r.artifact.body.code?.path, form: r.artifact.body.form }
+          : undefined,
+        jaccard: r.jaccard,
+      };
+    } catch {
+      return { tier: "miss" }; // cache trouble must never block the gate
+    }
+  })();
   const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
   const scope = scopedFiles.length
     ? decompose(root, scopedFiles)
@@ -229,6 +249,7 @@ export function substrateCheck(
     clarify: clarifyBlock(preflight),
     route,
     entities,
+    reuse,
     impact: { targets: impactTargets, reports: impacts, impactedFiles, predictedTests },
     scope,
     memory: {
@@ -343,6 +364,13 @@ export function renderSubstrate(result) {
     `  route: ${result.route.model.name} (${result.route.tier}) · complexity ${result.route.score.toFixed(2)}`,
   );
   if (result.route.reasons.length) lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
+  if (result.reuse && result.reuse.tier !== "miss") {
+    const a = result.reuse.artifact;
+    lines.push(
+      "",
+      `  reuse: ${result.reuse.tier.toUpperCase()} hit — verified ${a?.form ?? "artifact"}${a?.path ? ` at ${a.path}` : ""} (\`forge ledger show ${a?.id.slice(0, 8)}\`) — start from it, don't regenerate`,
+    );
+  }
   lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
   for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
   if (result.impact.impactedFiles.length > 10)

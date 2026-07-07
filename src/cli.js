@@ -20,6 +20,7 @@ const COMMANDS = {
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
+  reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
@@ -321,6 +322,107 @@ async function run(argv) {
     }
     console.error(
       `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | merge <path> | import) [--personal] [--json]`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (cmd === "reuse") {
+    const ru = await import("./reuse.js");
+    const { load: loadAtlas } = await import("./atlas.js");
+    const { epochDay } = await import("./util.js");
+    const root = process.cwd();
+    const nowDay = epochDay();
+    const json = argv.includes("--json");
+    const flagVal = (name) => {
+      const i = argv.indexOf(name);
+      return i >= 0 ? argv[i + 1] : undefined;
+    };
+    const args = argv.filter(
+      (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--ref",
+    );
+    const sub = args[1] || "stats";
+    if (sub === "query") {
+      const spec = args.slice(2).join(" ");
+      if (!spec) {
+        console.error('usage: forge reuse query "<what you are about to build>" [--json]');
+        process.exitCode = 1;
+        return;
+      }
+      const r = ru.reuseQuery(root, spec, { atlas: loadAtlas(root), nowDay });
+      if (json)
+        return console.log(
+          JSON.stringify(
+            { tier: r.tier, artifact: r.artifact?.id, jaccard: r.jaccard, reasons: r.reasons },
+            null,
+            2,
+          ),
+        );
+      if (r.tier === "miss") {
+        console.log("  miss — nothing verified matches; generate, then `forge reuse mint` it");
+      } else {
+        const a = r.artifact;
+        console.log(
+          `  ${r.tier.toUpperCase()} hit (similarity ${(r.jaccard ?? 1).toFixed(2)}) — ${a.body.form}${a.body.code?.path ? ` at ${a.body.code.path}` : ""}`,
+        );
+        console.log(
+          `    claim ${a.id.slice(0, 12)} — \`forge ledger blame ${a.id.slice(0, 8)}\` for its proof`,
+        );
+        if (r.tier === "adapt")
+          console.log(
+            "    adapt tier: inject as a verified starting point, generate only the delta",
+          );
+      }
+      for (const why of r.reasons) console.log(`    note: ${why}`);
+      return;
+    }
+    if (sub === "mint") {
+      const spec = args.slice(2).join(" ");
+      const file = flagVal("--file");
+      const ref = flagVal("--ref");
+      if (!spec || !file) {
+        console.error(
+          'usage: forge reuse mint "<task the code solves>" --file <path> [--ref <test-run/commit>] [--json]',
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const { repoLedger } = await import("./ledger_store.js");
+      const desc = ru.describeFile(root, file);
+      const r = ru.mintArtifact(
+        repoLedger(root),
+        { spec, form: "module", ...desc },
+        ref
+          ? { evidence: { oracle: "test.run", result: "confirm", ref }, t: nowDay }
+          : { t: nowDay },
+      );
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(
+        `  minted: ${r.id.slice(0, 12)} (${desc.iface.length} export(s), ${desc.deps.length} dep(s))`,
+      );
+      console.log(
+        r.serves
+          ? "  serving: yes — verification evidence attached"
+          : "  serving: NOT YET — no evidence; attach a verified test/commit ref (--ref) or it stays at the 0.5 prior",
+      );
+      return;
+    }
+    if (sub === "stats") {
+      const { summarize } = await import("./metrics.js");
+      const s = summarize(root).cache ?? { events: 0, byOutcome: {}, savedEstimate: 0 };
+      if (json) return console.log(JSON.stringify(s, null, 2));
+      console.log(`${BRAND.brand} reuse — proof-carrying code cache\n`);
+      console.log(`  lookups: ${s.events}`);
+      for (const [o, n] of Object.entries(s.byOutcome)) console.log(`    ${o}: ${n}`);
+      console.log(`  est. tokens saved: ${s.savedEstimate}`);
+      return;
+    }
+    console.error(
+      `reuse: unknown subcommand "${sub}" (query <spec> | mint <spec> --file <path> | stats)`,
     );
     process.exitCode = 1;
     return;
