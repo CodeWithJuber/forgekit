@@ -14,6 +14,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   full history), and OSSF Scorecard workflows; refreshed repo topics; SECURITY.md now
   states the supported line (0.5.x) and documents the ledger's forgery-resistance
   properties (content-hash verification; oracle weights never trusted from records).
+- **UI fingerprints resolve CSS `var()` indirection**, so design systems declared as
+  custom properties fingerprint fully (the dashboard now reads as a 6-value 4px scale
+  with two radius levels instead of one lonely spacing value), and the five taste
+  profiles gain machine-readable constraint JSONs (`global/taste/<name>.json`) wired
+  into `forge uicheck design --taste <name>` — with auto-pickup from a
+  `forge taste`-managed DESIGN.md. Prose steers generation; the JSON is what the gate
+  checks.
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
   drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
   signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
