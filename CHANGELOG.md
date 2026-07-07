@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge uicheck visual <file-or-url>`** — the Playwright visual loop
+  (07-ui-quality-gate §5): renders the page headless at two viewports, fingerprints
+  the **computed** styles of every visible element (what the cascade and runtime
+  theming actually painted, with used `auto`-margins and never-painted UA noise
+  filtered out), and runs the identical `design` gate over that rendered vector —
+  screenshots land in `.forge/ui/`. Playwright stays an optional tier (ADR-0005):
+  `package.json` gains no dependency, absence degrades to a "skipped (no browser
+  runtime)" note with exit 0 (`npm i -D playwright-core` or `FORGE_PLAYWRIGHT=…` to
+  enable), and non-loopback http(s) targets are refused by default (`--remote` to
+  override) — a gate that fetches arbitrary URLs is an exfiltration hazard.
+
 ### Changed
 
 - **Ledger read-path flip (P2).** Reads are now a merged view (legacy ∪ ledger) via the
