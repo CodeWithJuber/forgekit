@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-07
+
 ### Changed
 
 - Docs consolidation pass: deduplicated cross-doc prose into single canonical homes
@@ -393,7 +395,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...v0.5.0
 [Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...v0.4.0
