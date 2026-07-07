@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { mintClaim, outcomeRecord, val } from "../src/ledger.js";
+import { mintClaim, outcomeRecord, sealRecord, val } from "../src/ledger.js";
 import {
   appendEvidence,
+  getClaimByPrefix,
   importState,
   loadClaims,
   loadState,
@@ -19,7 +20,8 @@ import {
 } from "../src/ledger_store.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-ledger-"));
-const fact = (name, text, t = 0) => mintClaim({ kind: "fact", body: { name, text }, t }).claim;
+const fact = (name, text, t = 0) =>
+  mintClaim({ kind: "fact", body: { name, text }, provenance: { author: "tester" }, t }).claim;
 const ev = (result, ref, t = 0) => outcomeRecord({ oracle: "test.run", result, ref, t }).outcome;
 
 test("putClaim/loadClaims: roundtrip; rewrite of the same claim is a no-op", () => {
@@ -33,6 +35,34 @@ test("putClaim/loadClaims: roundtrip; rewrite of the same claim is a no-op", () 
   assert.deepEqual(loaded[0].body, c.body);
 });
 
+test("claim file bytes are pure content — two authors' mints are byte-identical, provenance goes to the log", () => {
+  const dirA = tmp();
+  const dirB = tmp();
+  const a = mintClaim({
+    kind: "fact",
+    body: { name: "x", text: "y" },
+    provenance: { author: "alice" },
+    t: 1,
+  }).claim;
+  const b = mintClaim({
+    kind: "fact",
+    body: { name: "x", text: "y" },
+    provenance: { author: "bob" },
+    t: 9,
+  }).claim;
+  putClaim(dirA, a);
+  putClaim(dirB, b);
+  const path = (d, c) => join(d, "claims", c.id.slice(0, 2), `${c.id}.json`);
+  assert.equal(
+    readFileSync(path(dirA, a), "utf8"),
+    readFileSync(path(dirB, b), "utf8"),
+    "same id ⇒ same bytes on every replica — git can never conflict on a claim file",
+  );
+  assert.ok(!readFileSync(path(dirA, a), "utf8").includes("alice"), "no provenance in claim bytes");
+  const viewA = loadClaims(dirA)[0];
+  assert.equal(viewA.provenance.author, "alice", "provenance preserved via its own log");
+});
+
 test("putClaim: refuses an id that doesn't match the content (no forged addresses)", () => {
   const dir = tmp();
   const c = { ...fact("a", "b"), id: "0".repeat(64) };
@@ -41,7 +71,20 @@ test("putClaim: refuses an id that doesn't match the content (no forged addresse
   assert.match(r.reason, /id does not match/);
 });
 
-test("appendEvidence: appends, dedupes by hash, requires the claim to exist", () => {
+test("putClaim: repairs a corrupt/truncated claim file instead of trusting existsSync", () => {
+  const dir = tmp();
+  const c = fact("healme", "important content");
+  putClaim(dir, c);
+  const path = join(dir, "claims", c.id.slice(0, 2), `${c.id}.json`);
+  writeFileSync(path, '{"kind":"fact","bo'); // killed mid-write
+  assert.equal(loadClaims(dir).length, 0, "corrupt claim is not trusted");
+  const again = putClaim(dir, c);
+  assert.equal(again.ok, true);
+  assert.equal(again.existed, false, "repair reported as a fresh write");
+  assert.equal(loadClaims(dir).length, 1, "claim is loadable again");
+});
+
+test("appendEvidence: appends, dedupes by hash, requires the claim to exist and a valid outcome", () => {
   const dir = tmp();
   const c = fact("f", "text");
   putClaim(dir, c);
@@ -50,11 +93,16 @@ test("appendEvidence: appends, dedupes by hash, requires the claim to exist", ()
   assert.deepEqual(appendEvidence(dir, c.id, o), { ok: true, deduped: true });
   assert.equal(readEvidence(dir, c.id).length, 1);
   assert.equal(appendEvidence(dir, "f".repeat(64), o).ok, false, "evidence for a ghost claim");
+  assert.equal(
+    appendEvidence(dir, c.id, { oracle: "made.up", result: "confirm", ref: "x", h: "y" }).ok,
+    false,
+    "unknown oracle rejected at the store boundary too",
+  );
   const loaded = loadClaims(dir)[0];
   assert.ok(val(loaded, 3) > 0.5, "evidence is attached on load");
 });
 
-test("corrupt files are quarantined, not fatal: bad claim skipped, bad evidence line skipped", () => {
+test("corrupt files are quarantined, not fatal — and verify names what load skips", () => {
   const dir = tmp();
   const good = fact("good", "content");
   putClaim(dir, good);
@@ -73,18 +121,56 @@ test("corrupt files are quarantined, not fatal: bad claim skipped, bad evidence 
   assert.equal(loaded[0].evidence.length, 1, "corrupt evidence line skipped");
   const v = verify(dir);
   assert.equal(v.ok, false, "verify reports what load silently skips");
-  assert.ok(v.issues.some((i) => /id mismatch/.test(i)));
-  assert.ok(v.issues.some((i) => /invalid outcome/.test(i)));
+  assert.ok(v.issues.some((i) => /unparseable or id mismatch/.test(i)));
+  assert.ok(v.issues.some((i) => /unparseable or missing hash/.test(i)));
 });
 
-test("tombstone: retracts from stats' live view but the claim file stays for audit", () => {
+test("verify: catches forged evidence — wrong content hash, unknown oracle, inflated weight", () => {
+  const dir = tmp();
+  const c = fact("target", "forgery magnet");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", "run:legit"));
+  const logPath = join(dir, "evidence", `${c.id}.log`);
+  const forged = [
+    // real-looking record whose h doesn't match its content
+    '{"author":"","h":"deadbeef","oracle":"test.run","ref":"x","result":"confirm","t":0,"w":0.8}',
+    // correctly sealed record naming an oracle that doesn't exist
+    JSON.stringify(
+      sealRecord({ author: "", oracle: "made.up", ref: "x", result: "confirm", t: 0, w: 1 }),
+    ),
+  ].join("\n");
+  writeFileSync(logPath, `${readFileSync(logPath, "utf8")}${forged}\n`);
+  const v = verify(dir);
+  assert.equal(v.ok, false);
+  assert.ok(v.issues.some((i) => /content hash mismatch/.test(i)));
+  assert.ok(v.issues.some((i) => /invalid outcome/.test(i)));
+  assert.equal(v.outcomes, 1, "only the legit outcome counts");
+  // And the forged lines can't move confidence either (val ignores them):
+  const honest = val(loadClaims(dir)[0], 0);
+  assert.ok(honest > 0.5 && honest < 0.75, `val=${honest} reflects one real confirm only`);
+});
+
+test("tombstone: append-only records; concurrent retractions coexist; stats reflects it", () => {
   const dir = tmp();
   const c = fact("wrong", "this was retracted");
   putClaim(dir, c);
-  assert.equal(tombstone(dir, c.id, { reason: "superseded", t: 5 }).ok, true);
-  const loaded = loadClaims(dir);
-  assert.equal(loaded[0].tombstone.reason, "superseded");
+  assert.equal(tombstone(dir, c.id, { reason: "superseded", t: 5, author: "alice" }).ok, true);
+  assert.equal(tombstone(dir, c.id, { reason: "duplicate", t: 3, author: "bob" }).ok, true);
+  const loaded = loadClaims(dir)[0];
+  assert.equal(loaded.tombstone.author, "bob", "earliest record is the view");
   assert.equal(stats(dir).tombstoned, 1);
+});
+
+test("getClaimByPrefix: finds one claim via its shard without scanning the ledger", () => {
+  const dir = tmp();
+  const c = fact("needle", "in a stack of shards");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", "run:1"));
+  const hit = getClaimByPrefix(dir, c.id.slice(0, 8));
+  assert.equal(hit.id, c.id);
+  assert.equal(hit.evidence.length, 1);
+  assert.equal(getClaimByPrefix(dir, "zz"), null);
+  assert.equal(getClaimByPrefix(dir, "a"), null, "sub-shard prefixes are refused");
 });
 
 test("importState: semilattice import is idempotent and merges evidence", () => {
@@ -101,9 +187,9 @@ test("importState: semilattice import is idempotent and merges evidence", () => 
 
   const first = importState(a, loadState(b));
   assert.equal(first.claims, 1, "only bob's new claim is new");
-  assert.equal(first.outcomes, 1, "only the unseen outcome lands");
+  assert.ok(first.records >= 1, "the unseen outcome lands");
   const again = importState(a, loadState(b));
-  assert.deepEqual({ c: again.claims, o: again.outcomes }, { c: 0, o: 0 }, "re-import is a no-op");
+  assert.deepEqual({ c: again.claims, r: again.records }, { c: 0, r: 0 }, "re-import is a no-op");
   assert.equal(loadClaims(a).length, 2);
   assert.equal(readEvidence(a, shared.id).length, 2);
 });

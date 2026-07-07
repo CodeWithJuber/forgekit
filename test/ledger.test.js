@@ -3,7 +3,9 @@ import { test } from "node:test";
 import {
   canonicalize,
   claimId,
+  claimText,
   clusters,
+  isDormant,
   jaccard,
   liveClaims,
   mergeStates,
@@ -12,6 +14,8 @@ import {
   rec,
   retrieve,
   score,
+  sealRecord,
+  shingles,
   sketch,
   val,
 } from "../src/ledger.js";
@@ -54,6 +58,13 @@ test("claimId: provenance and evidence never affect the address (teammates conve
   assert.equal(a.claim.id, b.claim.id);
 });
 
+test("mintClaim: normalizes non-JSON values so different Dates can't collide on one id", () => {
+  const d1 = mintClaim({ kind: "fact", body: { name: "d", text: new Date(0) } });
+  const d2 = mintClaim({ kind: "fact", body: { name: "d", text: new Date(86400000) } });
+  assert.ok(d1.ok && d2.ok);
+  assert.notEqual(d1.claim.id, d2.claim.id, "Dates serialize to ISO strings, not {}");
+});
+
 test("mintClaim: refuses secrets, unknown kinds, and non-object bodies", () => {
   const s = mintClaim({ kind: "fact", body: { name: "k", text: fakeAnthropic() } });
   assert.equal(s.ok, false);
@@ -79,7 +90,7 @@ const mkClaim = (evidence = []) => {
   return { ...m.claim, evidence };
 };
 const ev = (result, t, oracle = "test.run") =>
-  outcomeRecord({ oracle, result, ref: `r:${result}:${t}`, t }).outcome;
+  outcomeRecord({ oracle, result, ref: `r:${result}:${t}:${oracle}`, t }).outcome;
 
 test("val: fresh claim sits at the 0.5 prior; confirms raise; contradictions lower", () => {
   assert.equal(val(mkClaim(), 0), 0.5);
@@ -90,14 +101,18 @@ test("val: fresh claim sits at the 0.5 prior; confirms raise; contradictions low
 test("val: monotone in confirmations (more independent evidence is never worse)", () => {
   let prev = 0.5;
   for (let n = 1; n <= 5; n++) {
-    const v = val(mkClaim(Array.from({ length: n }, () => ev("confirm", 0, "ci.run"))), 0);
+    const outs = Array.from(
+      { length: n },
+      (_, i) => outcomeRecord({ oracle: "ci.run", result: "confirm", ref: `r:${i}`, t: 0 }).outcome,
+    );
+    const v = val(mkClaim(outs), 0);
     assert.ok(v > prev, `val(${n} confirms)=${v} must exceed ${prev}`);
     prev = v;
   }
 });
 
 test("val: decays toward the PRIOR (uncertainty), never toward false", () => {
-  const confirmed = mkClaim([ev("confirm", 0), ev("confirm", 0)]);
+  const confirmed = mkClaim([ev("confirm", 0), ev("confirm", 0, "ci.run")]);
   const now = val(confirmed, 0);
   const later = val(confirmed, 90); // two half-lives
   const muchLater = val(confirmed, 900);
@@ -115,6 +130,27 @@ test("val: oracle weight matters — a human revert outweighs a behavioral signa
   assert.ok(human < behav, "stronger oracle pulls harder");
 });
 
+test("val: forged evidence buys nothing — weight comes from the ORACLES table, unknown oracles are ignored", () => {
+  // A hand-edited log line claiming w=50 on the strongest oracle:
+  const forgedWeight = { ...ev("confirm", 0, "human.revert"), w: 50 };
+  const honest = val(mkClaim([ev("confirm", 0, "human.revert")]), 0);
+  assert.equal(
+    val(mkClaim([forgedWeight]), 0),
+    honest,
+    "stored w is audit metadata, never trusted",
+  );
+  // A record naming an oracle that doesn't exist:
+  const ghost = sealRecord({
+    oracle: "made.up",
+    result: "confirm",
+    ref: "x",
+    t: 0,
+    w: 1,
+    author: "",
+  });
+  assert.equal(val(mkClaim([ghost]), 0), 0.5, "unknown oracle contributes nothing");
+});
+
 test("rec: recency keys on the latest evidence, else the mint day", () => {
   assert.equal(rec(mkClaim(), 0), 1);
   assert.ok(rec(mkClaim(), 45) < rec(mkClaim(), 1));
@@ -122,7 +158,24 @@ test("rec: recency keys on the latest evidence, else the mint day", () => {
   assert.ok(rec(fresh, 45) > rec(mkClaim(), 45), "new evidence refreshes recency");
 });
 
+test("isDormant: repeated strong contradictions sink a claim below the retrieval floor", () => {
+  assert.equal(isDormant(mkClaim(), 0), false, "the prior is not dormant");
+  const sunk = mkClaim([
+    ev("contradict", 0, "human.revert"),
+    ev("contradict", 0, "human.accept"),
+    ev("contradict", 0, "test.run"),
+    ev("contradict", 0, "ci.run"),
+  ]);
+  assert.equal(isDormant(sunk, 0), true);
+});
+
 // --- similarity ----------------------------------------------------------------------
+
+test("shingles: 4-token windows over normalized text; short texts fall back to tokens", () => {
+  assert.equal([...shingles("Check the CALLERS first, always")].length, 2);
+  assert.deepEqual([...shingles("two words")], ["two words"]);
+  assert.deepEqual([...shingles("")], []);
+});
 
 test("sketch/jaccard: identical text = 1, disjoint ≈ 0, near-duplicates score high", () => {
   const a = sketch("always run the impacted tests before editing shared utils");
@@ -134,6 +187,25 @@ test("sketch/jaccard: identical text = 1, disjoint ≈ 0, near-duplicates score 
 
 test("sketch: deterministic across calls (no randomness — ids and sketches are stable)", () => {
   assert.deepEqual(sketch("some stable text here"), sketch("some stable text here"));
+});
+
+test("claimText: every retrievable kind exposes its human text (not canonical JSON)", () => {
+  const lesson = mintClaim({
+    kind: "lesson",
+    body: {
+      whatWentWrong: "w",
+      correctedBehavior: "c",
+      trigger: { keywords: ["k"], symbols: ["s"] },
+    },
+  }).claim;
+  assert.equal(claimText(lesson), "w c k s");
+  const fact = mintClaim({ kind: "fact", body: { name: "n", text: "t" } }).claim;
+  assert.equal(claimText(fact), "n t");
+  const diag = mintClaim({
+    kind: "diagnosis",
+    body: { signature: "sig", note: "root cause" },
+  }).claim;
+  assert.equal(claimText(diag), "sig root cause");
 });
 
 test("clusters: near-duplicates group, distinct claims stay apart", () => {
@@ -177,7 +249,12 @@ test("score: outcome-confirmed claims outrank merely-similar unconfirmed ones", 
 test("retrieve: excludes tombstoned and dormant claims, caps at budget", () => {
   const alive = mkClaim([ev("confirm", 0)]);
   const dead = { ...mkClaim(), tombstone: { reason: "retracted", t: 0, author: "" } };
-  const dormant = mkClaim(Array.from({ length: 4 }, (_, i) => ev("contradict", 0, "human.revert")));
+  const dormant = mkClaim([
+    ev("contradict", 0, "human.revert"),
+    ev("contradict", 0, "human.accept"),
+    ev("contradict", 0, "test.run"),
+    ev("contradict", 0, "ci.run"),
+  ]);
   const out = retrieve("body", [alive, dead, dormant], { nowDay: 0, budget: 10 });
   assert.deepEqual(
     out.map((r) => r.claim.id),
@@ -188,9 +265,12 @@ test("retrieve: excludes tombstoned and dormant claims, caps at budget", () => {
 
 // --- the CRDT merge: the semilattice laws property-tested ----------------------------
 
-const state = (claims, evidence = {}, tombstones = {}) => ({
+const tomb = (reason, t, author = "") => sealRecord({ author, reason, t });
+const prov = (author, t) => sealRecord({ agent: "test", author, t });
+const state = (claims, evidence = {}, tombstones = {}, provenance = {}) => ({
   claims: Object.fromEntries(claims.map((c) => [c.id, c])),
   evidence,
+  provenance,
   tombstones,
 });
 
@@ -202,9 +282,14 @@ test("mergeStates: commutative, associative, idempotent — replicas converge in
     body: { whatWentWrong: "w", correctedBehavior: "c", trigger: {} },
     t: 3,
   }).claim;
-  const sA = state([c1, c2], { [c1.id]: [ev("confirm", 1)] });
-  const sB = state([c2, c3], { [c1.id]: [ev("confirm", 1), ev("contradict", 2)] });
-  const sC = state([c3], {}, { [c2.id]: { reason: "retracted", t: 4, author: "bob" } });
+  const sA = state([c1, c2], { [c1.id]: [ev("confirm", 1)] }, {}, { [c1.id]: [prov("alice", 1)] });
+  const sB = state(
+    [c2, c3],
+    { [c1.id]: [ev("confirm", 1), ev("contradict", 2)] },
+    { [c2.id]: [tomb("retracted", 4, "bob")] },
+    { [c1.id]: [prov("bob", 2)] },
+  );
+  const sC = state([c3], {}, { [c2.id]: [tomb("duplicate", 5, "carol")] });
 
   const canon = (s) => canonicalize(liveClaims(s));
   // commutativity
@@ -218,6 +303,21 @@ test("mergeStates: commutative, associative, idempotent — replicas converge in
   const m = mergeStates(sA, sB);
   assert.equal(canon(mergeStates(m, m)), canon(m));
   assert.equal(canon(mergeStates(m, sA)), canon(m), "absorbing a subset is a no-op");
+});
+
+test("mergeStates: concurrent retractions both survive; the view picks one deterministically", () => {
+  const c = mintClaim({ kind: "fact", body: { name: "x", text: "y" }, t: 0 }).claim;
+  const sA = state([c], {}, { [c.id]: [tomb("wrong", 3, "alice")] });
+  const sB = state([c], {}, { [c.id]: [tomb("stale", 2, "bob")] });
+  const ab = mergeStates(sA, sB);
+  const ba = mergeStates(sB, sA);
+  assert.equal(ab.tombstones[c.id].length, 2, "both retraction records kept (grow-only set)");
+  assert.equal(
+    canonicalize(liveClaims(ab)[0].tombstone),
+    canonicalize(liveClaims(ba)[0].tombstone),
+    "the single-record view is merge-order independent",
+  );
+  assert.equal(liveClaims(ab)[0].tombstone.author, "bob", "earliest by (t, h) wins the view");
 });
 
 test("mergeStates: evidence unions dedupe by hash; val is identical after any merge order", () => {

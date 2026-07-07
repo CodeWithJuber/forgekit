@@ -1,8 +1,9 @@
 // forge ledger storage — the on-disk PCM ledger (docs/plans/substrate-v2/02-team-memory.md):
-// one immutable canonical-JSON file per claim (sharded by id prefix), one append-only
-// evidence log per claim, tombstones as marker files, and a generated human index.
-// Every path is content-addressed, so two teammates' ledgers merge in git with zero
-// conflicts (evidence logs use the union merge driver; see .gitattributes note below).
+// one immutable canonical-JSON file per claim (sharded by id prefix, bytes = pure
+// content so every replica writes the identical file), plus three append-only logs per
+// claim — evidence, provenance, tombstones — that git union-merges without conflicts
+// (`forge init` emits the .gitattributes rule). Everything author- or time-varying is
+// a log line; nothing on disk is ever edited in place.
 import {
   appendFileSync,
   existsSync,
@@ -13,14 +14,39 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { canonicalize, claimId, liveClaims, mergeStates, SECRET_RE, val } from "./ledger.js";
+import {
+  canonicalize,
+  claimId,
+  DORMANT_VAL,
+  emptyState,
+  liveClaims,
+  mergeStates,
+  ORACLES,
+  SECRET_RE,
+  sealRecord,
+  sortRecords,
+  val,
+  validOutcome,
+} from "./ledger.js";
 
 /** The canonical repo ledger. (recall's global store keeps its own sibling ledger.) */
 export const repoLedger = (root = process.cwd()) => join(root, ".forge", "ledger");
 
+/** The union-merge rule consumer repos need for conflict-free ledger merges —
+ *  emitted into .gitattributes by `forge init` (see init.js). NOTE: .gitattributes
+ *  supports full-line comments only, so the rule ships with a comment line above it. */
+export const GITATTRIBUTES_RULE = [
+  "# PCM ledger logs are hash-deduped append-only sets - union merge is conflict-free (forge)",
+  ".forge/ledger/*/*.log merge=union",
+].join("\n");
+
+const LOGS = ["evidence", "provenance", "tombstones"];
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
-const evidencePath = (dir, id) => join(dir, "evidence", `${id}.log`);
-const tombPath = (dir, id) => join(dir, "tombstones", `${id}.json`);
+const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
+
+/** Claim file bytes: pure content only. Identical for the same id on every replica. */
+const claimBytes = (claim) =>
+  `${canonicalize({ body: claim.body, kind: claim.kind, scope: claim.scope ?? {}, v: claim.v ?? 1 })}\n`;
 
 const readJson = (path) => {
   try {
@@ -30,105 +56,127 @@ const readJson = (path) => {
   }
 };
 
+/** Parse an append-only log: one canonical-JSON record per line, deduped by content
+ *  hash, corrupt lines skipped. The single reader every log goes through. */
+function readLog(dir, log, id) {
+  const path = logPath(dir, log, id);
+  if (!existsSync(path)) return [];
+  const records = [];
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch {}
+  }
+  // sortRecords, not file order: after a git union merge the two replicas' logs hold
+  // the same set in different line orders — views must not depend on that.
+  return sortRecords(records);
+}
+
+/** Append one sealed record to a log iff its hash isn't already present. */
+function appendRecord(dir, log, id, record) {
+  if (!record?.h) return { ok: false, reason: "record missing content hash" };
+  if (!existsSync(claimPath(dir, id)))
+    return { ok: false, reason: `no such claim in ledger: ${id}` };
+  if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
+  mkdirSync(join(dir, log), { recursive: true });
+  appendFileSync(logPath(dir, log, id), `${canonicalize(record)}\n`);
+  return { ok: true, deduped: false };
+}
+
+/** Walk every claim file: yields {id, path, raw, claim(valid-or-null)}. Shared by
+ *  loadState (keep valid) and verify (report invalid) so the two can never drift. */
+function* walkClaimFiles(dir) {
+  const claimsRoot = join(dir, "claims");
+  if (!existsSync(claimsRoot)) return;
+  for (const shard of readdirSync(claimsRoot).sort()) {
+    for (const f of readdirSync(join(claimsRoot, shard))
+      .filter((f) => f.endsWith(".json"))
+      .sort()) {
+      const path = join(claimsRoot, shard, f);
+      const id = f.replace(/\.json$/, "");
+      const parsed = readJson(path);
+      // Verify the address: a tampered/corrupt claim is surfaced as claim:null.
+      const valid = parsed && claimId(parsed.kind, parsed.body, parsed.scope) === id;
+      yield { id, path, raw: readFileSync(path, "utf8"), claim: valid ? { ...parsed, id } : null };
+    }
+  }
+}
+
 /**
- * Persist a claim (idempotent — content-addressed, so rewriting the same claim is a
- * no-op). Refuses id mismatches and secrets; stores canonical bytes only (evidence and
- * tombstones live in their own append-only files, never inside the claim file).
+ * Persist a claim (idempotent — content-addressed). Bytes contain content only;
+ * the claim's provenance record (if any) is appended to the provenance log. A
+ * corrupt/truncated file at the claim's path is REPAIRED by rewriting the canonical
+ * bytes — a killed process must never leave a claim permanently unloadable.
  * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean}}
  */
 export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
     return { ok: false, reason: "claim id does not match canonical content hash" };
-  const text = canonicalize({
-    body: claim.body,
-    kind: claim.kind,
-    provenance: claim.provenance ?? {},
-    scope: claim.scope ?? {},
-    v: claim.v ?? 1,
-  });
+  const text = claimBytes(claim);
   if (SECRET_RE.test(text))
     return { ok: false, reason: "refused: claim looks like it contains a secret/credential" };
   const path = claimPath(dir, claim.id);
-  if (existsSync(path)) return { ok: true, id: claim.id, existed: true };
-  mkdirSync(join(dir, "claims", claim.id.slice(0, 2)), { recursive: true });
-  writeFileSync(path, `${text}\n`);
-  return { ok: true, id: claim.id, existed: false };
+  const already = existsSync(path);
+  const healthy = already && readJson(path) !== null && readFileSync(path, "utf8") === text;
+  if (!healthy) {
+    mkdirSync(join(dir, "claims", claim.id.slice(0, 2)), { recursive: true });
+    writeFileSync(path, text);
+  }
+  if (claim.provenance?.h) appendRecord(dir, "provenance", claim.id, claim.provenance);
+  return { ok: true, id: claim.id, existed: already && healthy };
 }
 
 /** Append one evidence outcome (deduped by its content hash — append is idempotent). */
 export function appendEvidence(dir, id, outcome) {
-  if (!outcome?.h) return { ok: false, reason: "outcome missing content hash (use outcomeRecord)" };
-  if (!existsSync(claimPath(dir, id)))
-    return { ok: false, reason: `no such claim in ledger: ${id}` };
-  const existing = readEvidence(dir, id);
-  if (existing.some((e) => e.h === outcome.h)) return { ok: true, deduped: true };
-  mkdirSync(join(dir, "evidence"), { recursive: true });
-  appendFileSync(evidencePath(dir, id), `${canonicalize(outcome)}\n`);
-  return { ok: true, deduped: false };
+  if (!validOutcome(outcome)) return { ok: false, reason: "invalid outcome (use outcomeRecord)" };
+  return appendRecord(dir, "evidence", id, outcome);
 }
 
 /** All evidence outcomes for a claim (corrupt lines skipped, duplicates dropped). */
 export function readEvidence(dir, id) {
-  const path = evidencePath(dir, id);
-  if (!existsSync(path)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const o = JSON.parse(line);
-      if (o?.h && !seen.has(o.h)) {
-        seen.add(o.h);
-        out.push(o);
-      }
-    } catch {}
-  }
-  return out;
+  return readLog(dir, "evidence", id);
 }
 
-/** Retract a claim (grow-only marker — the claim file stays, for audit). */
+/** Retract a claim — an append-only record, so two teammates retracting concurrently
+ *  both survive the merge (the view shows the earliest deterministically). */
 export function tombstone(dir, id, { author = "", reason = "", t = 0 } = {}) {
-  if (!existsSync(claimPath(dir, id)))
-    return { ok: false, reason: `no such claim in ledger: ${id}` };
-  mkdirSync(join(dir, "tombstones"), { recursive: true });
-  const path = tombPath(dir, id);
-  if (!existsSync(path)) writeFileSync(path, `${canonicalize({ author, reason, t })}\n`);
-  return { ok: true };
+  return appendRecord(dir, "tombstones", id, sealRecord({ author, reason, t }));
 }
 
-/** Load the full ledger state {claims, evidence, tombstones} from disk. */
+/** Load the full ledger state {claims, evidence, provenance, tombstones}. */
 export function loadState(dir) {
-  const state = { claims: {}, evidence: {}, tombstones: {} };
-  const claimsRoot = join(dir, "claims");
-  if (existsSync(claimsRoot)) {
-    for (const shard of readdirSync(claimsRoot).sort()) {
-      const shardDir = join(claimsRoot, shard);
-      for (const f of readdirSync(shardDir)
-        .filter((f) => f.endsWith(".json"))
-        .sort()) {
-        const c = readJson(join(shardDir, f));
-        const id = f.replace(/\.json$/, "");
-        // Verify the address on read: a tampered/corrupt claim is skipped, not trusted.
-        if (c && claimId(c.kind, c.body, c.scope) === id) {
-          state.claims[id] = { ...c, id };
-          state.evidence[id] = readEvidence(dir, id);
-        }
-      }
-    }
-  }
-  const tombsRoot = join(dir, "tombstones");
-  if (existsSync(tombsRoot)) {
-    for (const f of readdirSync(tombsRoot).filter((f) => f.endsWith(".json"))) {
-      const t = readJson(join(tombsRoot, f));
-      if (t) state.tombstones[f.replace(/\.json$/, "")] = t;
-    }
+  const state = emptyState();
+  for (const { id, claim } of walkClaimFiles(dir)) {
+    if (!claim) continue;
+    state.claims[id] = claim;
+    for (const log of LOGS) state[log][id] = readLog(dir, log, id);
   }
   return state;
 }
 
-/** All claims with evidence + tombstones attached (the retrieval input). */
+/** All claims with evidence/provenance/tombstone views attached (retrieval input). */
 export function loadClaims(dir) {
   return liveClaims(loadState(dir));
+}
+
+/** Find one claim by id prefix without scanning the whole ledger (ids are sharded by
+ *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). */
+export function getClaimByPrefix(dir, prefix) {
+  if (!prefix || prefix.length < 2) return null;
+  const shardDir = join(dir, "claims", prefix.slice(0, 2));
+  if (!existsSync(shardDir)) return null;
+  const f = readdirSync(shardDir)
+    .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
+    .sort()[0];
+  if (!f) return null;
+  const id = f.replace(/\.json$/, "");
+  const claim = readJson(join(shardDir, f));
+  if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
+  const state = emptyState();
+  state.claims[id] = { ...claim, id };
+  for (const log of LOGS) state[log][id] = readLog(dir, log, id);
+  return liveClaims(state)[0];
 }
 
 /** Semilattice import: merge another ledger state into this directory (P2's `forge
@@ -136,27 +184,27 @@ export function loadClaims(dir) {
 export function importState(dir, other) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;
-  let outcomes = 0;
+  let records = 0;
   for (const c of Object.values(merged.claims)) {
     const r = putClaim(dir, c);
     if (r.ok && !r.existed) claims++;
-    for (const o of merged.evidence[c.id] ?? []) {
-      const a = appendEvidence(dir, c.id, o);
-      if (a.ok && !a.deduped) outcomes++;
+    for (const log of LOGS) {
+      for (const rec of merged[log][c.id] ?? []) {
+        const a = appendRecord(dir, log, c.id, rec);
+        if (a.ok && !a.deduped) records++;
+      }
     }
   }
-  for (const [id, t] of Object.entries(merged.tombstones)) tombstone(dir, id, t);
   reindex(dir);
-  return { claims, outcomes };
+  return { claims, records };
 }
 
 /** Regenerate LEDGER.md — the human index (like recall's MEMORY.md). */
 export function reindex(dir, nowDay = 0) {
-  const claims = loadClaims(dir);
-  mkdirSync(dir, { recursive: true });
-  const rows = claims
+  const rows = loadClaims(dir)
     .filter((c) => !c.tombstone)
     .map((c) => `- \`${c.id.slice(0, 12)}\` ${c.kind} · val ${val(c, nowDay).toFixed(2)}`);
+  mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "LEDGER.md"),
     ["# Proof-Carrying Memory ledger", "", ...rows, ""].join("\n"),
@@ -165,43 +213,51 @@ export function reindex(dir, nowDay = 0) {
 }
 
 /**
- * Normal-form check (CI-friendly): every claim parses and matches its address, every
- * evidence line parses with a valid shape and a ref, no secrets anywhere.
+ * Normal-form check (CI-friendly): every claim parses and matches its address; every
+ * log line parses, carries a TRUE content hash, and (for evidence) names a known
+ * oracle with the table weight; no secrets anywhere. Everything loadState silently
+ * skips, verify names.
  * @returns {{ok:boolean, claims:number, outcomes:number, issues:string[]}}
  */
 export function verify(dir) {
   const issues = [];
   let claims = 0;
   let outcomes = 0;
-  const claimsRoot = join(dir, "claims");
-  if (existsSync(claimsRoot)) {
-    for (const shard of readdirSync(claimsRoot).sort()) {
-      for (const f of readdirSync(join(claimsRoot, shard))
-        .filter((f) => f.endsWith(".json"))
-        .sort()) {
-        const raw = readFileSync(join(claimsRoot, shard, f), "utf8");
-        const c = readJson(join(claimsRoot, shard, f));
-        const id = f.replace(/\.json$/, "");
-        if (!c) issues.push(`claim ${id}: unparseable`);
-        else if (claimId(c.kind, c.body, c.scope) !== id) issues.push(`claim ${id}: id mismatch`);
-        else claims++;
-        if (SECRET_RE.test(raw)) issues.push(`claim ${id}: contains secret-like content`);
-      }
+  const ids = [];
+  for (const { id, raw, claim } of walkClaimFiles(dir)) {
+    if (!claim) issues.push(`claim ${id}: unparseable or id mismatch`);
+    else {
+      claims++;
+      ids.push(id);
     }
+    if (SECRET_RE.test(raw)) issues.push(`claim ${id}: contains secret-like content`);
   }
-  const evRoot = join(dir, "evidence");
-  if (existsSync(evRoot)) {
-    for (const f of readdirSync(evRoot).filter((f) => f.endsWith(".log"))) {
+  for (const log of LOGS) {
+    const logRoot = join(dir, log);
+    if (!existsSync(logRoot)) continue;
+    for (const f of readdirSync(logRoot).filter((f) => f.endsWith(".log"))) {
       const id = f.replace(/\.log$/, "");
-      for (const [n, line] of readFileSync(join(evRoot, f), "utf8").split("\n").entries()) {
+      for (const [n, line] of readFileSync(join(logRoot, f), "utf8").split(/\r?\n/).entries()) {
         if (!line.trim()) continue;
+        const where = `${log} ${id}:${n + 1}`;
         let o = null;
         try {
           o = JSON.parse(line);
         } catch {}
-        if (!o?.h || !o.ref || !o.oracle) issues.push(`evidence ${id}:${n + 1}: invalid outcome`);
-        else outcomes++;
-        if (SECRET_RE.test(line)) issues.push(`evidence ${id}:${n + 1}: secret-like content`);
+        if (!o?.h) {
+          issues.push(`${where}: unparseable or missing hash`);
+          continue;
+        }
+        const { h, ...rest } = o;
+        if (sealRecord(rest).h !== h) {
+          issues.push(`${where}: content hash mismatch (forged/corrupt)`);
+        } else if (log === "evidence") {
+          if (!validOutcome(o)) issues.push(`${where}: invalid outcome (oracle/result/ref)`);
+          else if (o.w !== ORACLES[o.oracle].w)
+            issues.push(`${where}: recorded weight ${o.w} != oracle table ${ORACLES[o.oracle].w}`);
+          else outcomes++;
+        }
+        if (SECRET_RE.test(line)) issues.push(`${where}: secret-like content`);
       }
     }
   }
@@ -217,7 +273,8 @@ export function pruneToAttic(dir, id) {
   return { ok: true };
 }
 
-/** Counts + val distribution for `forge ledger stats` and the dashboard. */
+/** Counts + val distribution for `forge ledger stats` and the dashboard. Buckets use
+ *  the protocol's DORMANT_VAL threshold (and its mirror) — never a local literal. */
 export function stats(dir, nowDay = 0) {
   const claims = loadClaims(dir);
   const byKind = {};
@@ -225,8 +282,8 @@ export function stats(dir, nowDay = 0) {
   for (const c of claims) {
     byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     const v = val(c, nowDay);
-    if (v < 0.35) buckets.dormant++;
-    else if (v < 0.65) buckets.uncertain++;
+    if (v < DORMANT_VAL) buckets.dormant++;
+    else if (v < 1 - DORMANT_VAL) buckets.uncertain++;
     else buckets.trusted++;
   }
   return {

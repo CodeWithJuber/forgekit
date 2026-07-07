@@ -157,15 +157,24 @@ async function run(argv) {
       if (res.ok) {
         // Shadow the fact into the PERSONAL ledger beside the global store (repo
         // promotion stays an explicit act — docs/plans/substrate-v2/02-team-memory.md §3).
-        const { join } = await import("node:path");
-        const { recordFactEvent } = await import("./ledger_bridge.js");
-        const { epochDay } = await import("./util.js");
-        recordFactEvent(join(store, "ledger"), name, body, epochDay());
+        // Best-effort INCLUDING the imports: a broken bridge module must never turn an
+        // already-persisted fact into a CLI failure.
+        try {
+          const { join } = await import("node:path");
+          const { shadowFact } = await import("./ledger_bridge.js");
+          shadowFact(join(store, "ledger"), name, body);
+        } catch {}
       }
       console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
       if (!res.ok) process.exitCode = 1;
     } else if (sub === "consolidate") {
       const { removed, kept } = r.consolidate(store);
+      try {
+        // Deleted duplicates must not survive as live claims in the shadow ledger.
+        const { join } = await import("node:path");
+        const { reconcileFacts } = await import("./ledger_bridge.js");
+        reconcileFacts(store, join(store, "ledger"));
+      } catch {}
       console.log(`  consolidated: ${removed} duplicate(s) removed, ${kept} kept`);
     } else {
       console.error(`recall: unknown subcommand "${sub}" (list | add | consolidate)`);
@@ -177,8 +186,15 @@ async function run(argv) {
     const ls = await import("./ledger_store.js");
     const { epochDay } = await import("./util.js");
     const root = process.cwd();
-    const dir = ls.repoLedger(root);
-    const sub = argv[1] || "stats";
+    // --personal targets the ledger beside the global recall store (~/.forge/recall/
+    // ledger) — otherwise facts shadowed by `forge recall add` would be write-only,
+    // with no command able to inspect or verify them.
+    const personal = argv.includes("--personal");
+    const args = argv.filter((a) => a !== "--json" && a !== "--personal");
+    const dir = personal
+      ? (await import("node:path")).join((await import("./recall.js")).defaultStore(), "ledger")
+      : ls.repoLedger(root);
+    const sub = args[1] || "stats";
     const json = argv.includes("--json");
     const nowDay = epochDay();
     if (sub === "stats") {
@@ -202,10 +218,12 @@ async function run(argv) {
       return;
     }
     if (sub === "show") {
-      const id = argv[2];
-      const hit = id && ls.loadClaims(dir).find((c) => c.id.startsWith(id));
+      const id = args[2];
+      const hit = id && id.length >= 2 ? ls.getClaimByPrefix(dir, id) : null;
       if (!hit) {
-        console.error(id ? `  no claim matching ${id}` : "usage: forge ledger show <id-prefix>");
+        console.error(
+          id ? `  no claim matching ${id}` : "usage: forge ledger show <id-prefix (≥2 chars)>",
+        );
         process.exitCode = 1;
         return;
       }
@@ -213,13 +231,16 @@ async function run(argv) {
       return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
     }
     if (sub === "import") {
-      const { importLegacy } = await import("./ledger_bridge.js");
-      const { brainStore } = await import("./brain.js");
-      const r = importLegacy(root, {
-        recallStore: brainStore(root),
-        recallLedger: dir,
-        nowDay,
-      });
+      const b = await import("./ledger_bridge.js");
+      let r;
+      if (personal) {
+        // Personal import: facts from the global recall store into the personal ledger.
+        const { defaultStore } = await import("./recall.js");
+        r = { lessons: 0, outcomes: 0, ...b.importFacts(defaultStore(), dir, nowDay) };
+      } else {
+        const { brainStore } = await import("./brain.js");
+        r = b.importLegacy(root, { recallStore: brainStore(root), recallLedger: dir, nowDay });
+      }
       if (json) return console.log(JSON.stringify(r, null, 2));
       console.log(
         `  imported: ${r.lessons} lesson(s), ${r.facts} fact(s), ${r.outcomes} outcome(s)`,
@@ -227,7 +248,9 @@ async function run(argv) {
       for (const x of r.refused) console.log(`    refused: ${x}`);
       return;
     }
-    console.error(`ledger: unknown subcommand "${sub}" (stats | verify | show <id> | import)`);
+    console.error(
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | import) [--personal] [--json]`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -329,10 +352,11 @@ async function run(argv) {
     const res = b.remember(b.brainStore(process.cwd()), name, body);
     if (res.ok) {
       // Brain is repo-scoped and git-committable → shadow into the REPO ledger.
-      const { recordFactEvent } = await import("./ledger_bridge.js");
-      const { repoLedger } = await import("./ledger_store.js");
-      const { epochDay } = await import("./util.js");
-      recordFactEvent(repoLedger(process.cwd()), name, body, epochDay());
+      try {
+        const { shadowFact } = await import("./ledger_bridge.js");
+        const { repoLedger } = await import("./ledger_store.js");
+        shadowFact(repoLedger(process.cwd()), name, body);
+      } catch {}
     }
     console.log(
       res.ok

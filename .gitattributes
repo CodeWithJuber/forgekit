@@ -1,4 +1,5 @@
-# PCM ledger evidence logs are append-only sets deduped by content hash on read —
-# union merge is safe and makes teammate ledgers conflict-free by construction
-# (docs/plans/substrate-v2/02-team-memory.md §1).
-.forge/ledger/evidence/*.log merge=union
+# PCM ledger logs (evidence/provenance/tombstones) are append-only sets deduped by
+# content hash on read — union merge is safe and makes teammate ledgers conflict-free
+# by construction (docs/plans/substrate-v2/02-team-memory.md §1). `forge init` emits
+# this same rule into consumer repos.
+.forge/ledger/*/*.log merge=union
