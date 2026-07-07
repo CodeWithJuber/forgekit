@@ -1,215 +1,185 @@
 # Forge — one config for every AI coding agent
 
 [![CI](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml/badge.svg)](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@codewithjuber/forgekit.svg)](https://www.npmjs.com/package/@codewithjuber/forgekit)
+[![CodeQL](https://github.com/CodeWithJuber/forgekit/actions/workflows/codeql.yml/badge.svg)](https://github.com/CodeWithJuber/forgekit/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/CodeWithJuber/forgekit/badge)](https://scorecard.dev/viewer/?uri=github.com/CodeWithJuber/forgekit)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![node: >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](./package.json)
+[![node: >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](./package.json)
 [![runtime deps: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](./package.json)
 
-**The memory, foresight, and guardrails a frozen model structurally lacks — wired into
-every AI coding tool from one config.**
+**Author your rules once — Forge emits every AI coding tool's native config
+(`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, `GEMINI.md`, MCP…) and adds the one thing a
+frozen model structurally lacks: a proof-carrying memory your whole team shares, plus a
+pre-action check that predicts what an edit will break.**
 
-## The problem
+Works with **Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and
+Continue** (plus MCP config for Roo and VS Code). Zero runtime dependencies — one
+Node CLI, plain files in git, no server.
 
-You now juggle several AI coding assistants, and every one of them:
+> **Status: beta.** The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
+> is tested and in daily use; some flags may change before `1.0`.
 
-- reads a **different** config file (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, `GEMINI.md`…),
-- **acknowledges your rules, then ignores them** — especially after a context compaction,
-- has **no memory** across sessions and re-learns your repo every time,
-- **can't see what an edit breaks** beyond the handful of files in its window, and
-- can quietly run up a surprise token bill.
+## What you get (measured, not promised)
 
-## The solution
+Every number below is a median from `npm run bench` on this repo, recorded with its
+environment block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule
+is *a number is an assumption until measured*.
 
-Author your rules **once**. Forge emits each tool's native config, enforces the
-non-negotiables as deterministic **guards**, and adds cross-session memory, a code-graph,
-a cost governor, and a **cognitive substrate** that checks a task *before* the agent
-touches your code. Works with **Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
-Windsurf, Zed, and Continue** (plus MCP config for Roo and VS Code).
+- **Blast-radius analysis before the edit** — "what does changing `verifyToken`
+  break?" answers in **0.43 ms** (warm code-graph), including the coupled files you
+  didn't name. On 6 hand-labeled cases from this repo's real import graph: recall
+  **0.97** vs **0.33** for looking at the edited file alone.
+- **A full pre-action gate in 118 ms** — assumption check, model routing, reuse lookup,
+  context assembly, blast radius, scope, and goal anchor in one deterministic pass, no
+  LLM call. On Claude Code it runs on **every prompt, automatically**.
+- **Cheapest-capable model routing, visible before dispatch** — the white paper's live
+  prototype measured **62.1% cost saved vs always-premium** on real models (paper §9;
+  that's the paper's measurement, not this repo's — `forge cost --stages` reports only
+  *your* measured stages).
+- **A minimal dry-run test suite** — `forge imagine --run` selected 8 tests covering the
+  predicted breaks and ran them in **1.3 s** where this repo's full suite takes ~60 s
+  ([CHANGELOG 0.5.0](CHANGELOG.md)).
+- **Conflict-free team memory** — merging two 500-claim ledger replicas takes
+  **158 ms**; the merge is a property-tested join-semilattice, so teammate ledgers
+  converge in any order over plain git.
+- **Deterministic guards** for the rules a model must never break (protected paths, cost
+  budget, doom loops) — hooks can't be "forgotten" after a context compaction the way
+  `CLAUDE.md` prose can.
+
+## 60-second quickstart
+
+Install — pick one row (the recommended paths need no token and no clone):
+
+| You use… | Run this |
+| --- | --- |
+| **Claude Code / Codex** *(recommended — full plugin, ambient guards)* | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit` |
+| **Any tool, from the CLI** | `npm install -g @codewithjuber/forgekit` |
+| **No registry** | `npm install -g github:CodeWithJuber/forgekit` |
+| **Contributors / local dev** | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` — or `bash install.sh` for the symlink setup |
+
+Then, in your project:
+
+```bash
+forge init      # emit every AI tool's native config from one shared source
+forge doctor    # pass/fail health check: tools, guards, MCP, config drift
+
+# pre-action check before you (or your agent) edit anything:
+forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
+#   → assumption verdict · cheapest capable model · predicted blast radius
+#     (including files you didn't name) · scope clusters · verification checklist
+
+# team memory: fold in a teammate's ledger — conflict-free, any order
+git pull && forge ledger merge <path-to-their-ledger>
+```
+
+On Claude Code the substrate then runs on **every prompt automatically** via a
+`UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets a
+native config rule plus MCP tools (`substrate_check`, `predict_impact`,
+`assumption_gate`, `route_task`, `scope_files`) it can call itself.
+
+## How it works — the loop
+
+Every task passes a fast deterministic gate; every outcome flows back into a shared,
+proof-carrying memory:
 
 ```mermaid
 flowchart LR
-    S["source/rules.json<br/>(author once)"] -->|forge sync| E{{emit}}
-    E --> C["CLAUDE.md"]
-    E --> A["AGENTS.md"]
-    E --> R[".cursor / .gemini<br/>.aider / …"]
-    E --> M["MCP config"]
-    S -.->|forge substrate| G["pre-action gate<br/>assumptions · route · impact · verify"]
-    G -.-> Agent(("your AI agent"))
-    C --> Agent
-    A --> Agent
-    R --> Agent
-    M --> Agent
+    T["task"] --> G["substrate gate<br/>assume · route · reuse<br/>context · impact"]
+    G -->|unclear| Q["ask clarifying<br/>questions first"]
+    Q --> T
+    G -->|clear| A["agent acts"]
+    A --> O["oracles<br/>tests · CI · human"]
+    O --> L["ledger write-back<br/>claims + evidence"]
+    L --> M["team merge<br/>plain git, conflict-free"]
+    M -.->|lessons and verified reuse| G
 ```
 
-> **Status: beta.** The core (`init`, `sync`, `substrate`, `impact`, `cortex`, guards)
-> is tested and in daily use; some flags may change before `1.0`.
-
----
-
-## Install
-
-`forge` is a zero-dependency Node CLI. Pick the row that fits — the recommended paths
-need **no token and no clone**.
-
-| You use… | Run this | What you get |
-| --- | --- | --- |
-| **Claude Code / Codex** *(recommended)* | `/plugin marketplace add CodeWithJuber/forgekit`<br>`/plugin install forgekit` | The full plugin — tools, crew, and **ambient guards** wired automatically. |
-| **Any tool, from the CLI** | `npm install -g @codewithjuber/forgekit` | The `forge` command on your `PATH`, from public npm. |
-| **Contributors / local dev** | `git clone https://github.com/CodeWithJuber/forgekit.git`<br>`cd forgekit && npm link` | An editable checkout with `forge` linked to your working copy. |
-
-```bash
-forge doctor      # verify any install: tools, guards, MCP, config drift
-```
-
-<details>
-<summary>Other ways in (no-registry install · symlink dev setup)</summary>
-
-- **No registry at all:** `npm install -g github:CodeWithJuber/forgekit` installs `forge`
-  straight from the repo — no npm account, no token.
-- **Symlink dev setup:** from a clone, `bash install.sh` symlinks `global/` into
-  `~/.forge` + `~/.claude` and prints the hook block to merge. Idempotent, reversible
-  (`bash install.sh --uninstall`), offline. Prefer the plugin unless you're hacking on Forge.
-
-</details>
-
-## Quickstart
-
-```bash
-cd your-project
-forge init                 # emit every tool's native config from one shared source
-forge substrate "add rate limiting to the /login route"   # pre-action check before you edit
-```
-
-`forge init` writes each agent's native config from one source. On **Claude Code** the
-substrate then runs **on every prompt, automatically** — see [It runs itself](#it-runs-itself).
-
----
-
-## How it works — three layers
-
-| Layer | Is | What it does | Enforcement |
-| --- | --- | --- | --- |
-| **tools** | model-invoked skills | know-how loaded on demand: `lean`, `reuse-first`, `atlas`, `recall`, `cognitive-substrate` | the model opts in |
-| **crew** | isolated sub-agents | fresh-context specialists: `scout`, `verifier`, `frontend-verifier` | spawned per task |
-| **guards** | deterministic hooks | the **only** layer that *enforces*: `protect-paths`, `cost-budget`, `doom-loop`, `cortex` | runs no matter what the model "remembers" |
-
-**The one idea that matters:** rules a model can drift from live in prose; rules it must
-**never** break live in **guards** — shell hooks that can't be forgotten after a context
-compaction. So Forge moves enforceable invariants (don't touch `.env`, watch the budget,
-keep diffs small) out of `CLAUDE.md` prose and into guards, and keeps the prose thin.
-
-Two subsystems build on those layers:
-
-- **Cortex — self-correcting memory.** A model relearns your repo every session and
-  repeats last week's correction. Cortex spots a *genuine* recurring mistake (a test that
-  failed then passed, a `git revert`, an explicit "undo"), distills a durable lesson, and
-  re-confirms it against fresh outcomes. Only independent outcomes (tests, builds, a human)
-  move a lesson's confidence — so a wrong one decays out instead of ossifying. Advisory.
-
-- **Cognitive substrate — the check before every edit.** One fast, mostly-deterministic
-  command supplies what a frozen model can't: is the task clear enough to start
-  (**assumption gate**), which model is cheapest-but-capable (**route**), what an edit will
-  break (**impact / blast radius**), what to split into separate sessions (**scope**),
-  whether the work has drifted off-goal (**anchor**), and how to prove it worked
-  (**verify**) — from the repo you already have, with no extra LLM call.
-
-```bash
-forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
-```
-
-returns, in one pass: the assumption verdict, the cheapest capable model, the predicted
-blast radius (**including the coupled files you didn't name**), scope clusters, matching
-Cortex lessons, goal-drift, and a verification checklist.
-
-> **Why a "substrate"?** A language model at inference is a fixed function `y = f(x)` —
-> frozen weights, a bounded window, no state between calls. Memory, foresight, and
-> self-checking can't be prompted into that shape; they have to be supplied from outside.
-> The full argument, with evidence graded against primary sources, is the
-> [cognitive-substrate white paper](docs/cognitive-substrate/).
-
-## It runs itself
-
-You don't have to remember to use any of this.
-
-- **In Claude Code** — a `UserPromptSubmit` hook runs the substrate on **every prompt** and
-  adds a short advisory *only when something needs attention* (unclear task, big blast
-  radius, pricey model). It never blocks and never nags on a clean task.
-- **In every other tool** — `forge init` writes a rule into the tool's native config telling
-  the agent to run the check itself, and exposes it as MCP tools any agent can call
-  (`substrate_check`, `predict_impact`, `assumption_gate`, `route_task`, `scope_files`).
-
-Ambient on Claude Code, agent-invoked everywhere else — and Forge says so plainly rather
-than pretending it can force a hook into a tool that has none.
-
----
+Only independent oracles (tests, CI, a human accept/revert) move a memory's confidence —
+so a wrong lesson decays out instead of ossifying. Full design:
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Commands
 
-```
-forge init        emit this repo's config for every tool (one command)
-forge sync        recompile source/ → each tool's native files (idempotent)
-forge doctor      pass/fail health check (layers, install, drift, cortex)
-forge catalog     Start-Here index of every tool / crew / guard
+| Group | Command | Does |
+| --- | --- | --- |
+| **Config layer** (cross-tool `AGENTS.md` config) | `forge init` | emit this repo's config for every tool, one command |
+| | `forge sync` | recompile `source/` → each tool's native files (idempotent) |
+| | `forge doctor` | pass/fail health check (layers, install, drift, cortex) |
+| | `forge catalog` | Start-Here index of every tool / crew / guard |
+| **Pre-action gate** | `forge substrate` | the full pre-action check in one pass |
+| | `forge preflight` | assumption gate — what a task names that the repo doesn't define |
+| | `forge route` | cheapest capable model for a task (+ gateway config) |
+| | `forge impact` | blast radius for a symbol or file |
+| | `forge imagine` | predicted breaks + the minimal dry-run test suite (`--run` executes it sandboxed) |
+| | `forge context` | budgeted context assembly + completeness gate |
+| | `forge scope` | decompose files into independent clusters |
+| | `forge anchor` | goal-drift check on your git changes |
+| **Memory & team** | `forge ledger` | proof-carrying memory — stats / verify / show / blame / query / merge / import |
+| | `forge cortex` | self-correcting lessons from *genuine* recurring mistakes |
+| | `forge reuse` | proof-carrying code cache — served only while its proof holds |
+| | `forge atlas` | build / query the code graph |
+| | `forge recall` / `forge brain` | cross-session + portable project memory |
+| **Quality gates** | `forge verify` | independent verification — real tests + hallucinated-symbol check |
+| | `forge diagnose` | doom-loop check — 3× the same failure mints a diagnosis + escalation |
+| | `forge uicheck` | deterministic UI checks — WCAG contrast · design fingerprint · slop gate |
+| | `forge scan` / `forge harden` | vet a skill/MCP before install · wire secret-scan + sandbox |
+| **Observability** | `forge dash` | local read-only dashboard over ledger, metrics, blast radius |
+| | `forge cost` | real per-day spend · measured stage factors (`--stages`) |
 
-forge substrate   full pre-action cognitive-substrate check
-forge preflight   assumption check — what a task names that the repo doesn't define
-forge context     budgeted context assembly + completeness gate — what an edit NEEDS known
-forge route       cheapest capable model for a task (+ gateway config)
-forge impact      predict blast radius for a symbol or file
-forge imagine     consequence simulation — predicted breaks + the minimal dry-run test suite
-forge scope       decompose files into independent clusters
-forge anchor      goal-drift check — are your git changes still on the stated goal?
-forge diagnose    doom-loop check — 3× the same failure mints a diagnosis + escalation
-forge verify      independent verification — tests + hallucinated-symbol check
-forge uicheck     deterministic UI checks — WCAG contrast · fingerprint · design gate
-
-forge ledger      proof-carrying memory — stats / verify / show / blame / query / merge / import
-forge reuse       proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats
-forge cortex      self-correcting memory — status / why <symbol>
-forge atlas       build / query the code-graph (where-is-X, has-symbol)
-forge recall      cross-session memory (list / add / consolidate)
-forge brain       portable project memory inlined into AGENTS.md
-forge dash        local dashboard over the ledger, metrics, and blast radius
-forge cost        real per-day spend via ccusage · measured stage factors (--stages)
-forge scan        vet a skill/MCP for injection/RCE before install
-forge harden      wire gitleaks pre-commit + sandbox settings
-forge brand       print the active brand token map
-```
-
-**→ Every command with a worked example, real output, and how to extend it:
+**→ Every command with a worked example and real output:
 [`docs/GUIDE.md`](docs/GUIDE.md).**
 
-## Team memory in three commands
+## Team memory for AI agents, in three commands
 
-Everything the substrate learns — Cortex lessons, `forge remember` facts, verified
-reuse artifacts — lands as content-addressed claims in a git-native ledger
-(`.forge/ledger/`) built to merge without conflicts:
+Everything the substrate learns — Cortex lessons, `forge remember` facts, verified reuse
+artifacts — lands as content-addressed claims in a git-native ledger (`.forge/ledger/`)
+built to merge without conflicts:
 
 ```bash
 forge init                    # once — also emits the .gitattributes union-merge rule the ledger needs
 # …work normally: cortex and `forge remember` shadow claims into the ledger as you go…
-git pull && forge ledger merge <path-to-their-ledger>   # fold in a teammate's ledger — conflict-free, any order
+git pull && forge ledger merge <path-to-their-ledger>   # fold in a teammate's ledger — any order
 ```
 
 Identical knowledge minted independently converges to **one** claim with every author
 preserved in its provenance; `forge ledger blame <id>` shows who minted it, every oracle
 outcome, and per-author trust. No server, no sync service — it's just files in git.
 
+## How it compares — AI agent memory, LLM gateways, RAG
+
+Structural differences only — each row is checkable against the named source, and the
+full tables (including what each adjacent tool does *better*) are in
+[`reports/benchmarks.md` → Uniqueness](reports/benchmarks.md#uniqueness--structural-contrasts-with-adjacent-tools):
+
+| Property | Forge | Note stores / gateways / RAG |
+| --- | --- | --- |
+| Memory confidence moved **only by independent oracles** (tests, CI, human) | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`) | note stores keep notes as written |
+| Unreviewed knowledge decays toward *uncertainty*, not deletion | yes — time-decayed Beta posterior; dormant claims kept for audit | notes persist unchanged until deleted |
+| Conflict-free team merge over plain git | yes — join-semilattice, property-tested | per-machine SQLite or a hosted store |
+| Routing decision visible and diffable **before** dispatch | yes — deterministic rubric over `src/model_tiers.json` | gateways decide inside the proxy at request time |
+| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — `SERVE_FLOOR`, `revalidate()` in `src/reuse.js` | plain RAG serves on similarity alone |
+| **What they do better** | — | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually *move traffic* (failover, quotas). Forge is a transparency layer, not a replacement |
+
 ## Honest limits
 
-Forge states its own ceiling everywhere. In short: **guards reduce, don't eliminate** the
-"ignored my rules" problem; `recall`/`cortex` are file memory, **not** weight-level
-learning; the `atlas`/`impact` graph is regex-approximate (conservative, not a sound call
-graph); and the substrate's rubrics are heuristic, not benchmarked. The newer subsystems
-state theirs too: `forge reuse`'s MinHash near-match is weak on very short specs (a
-few words hash to too few shingles to rank reliably); the UI fingerprint doesn't resolve
-CSS `var()` indirection yet, so tokenized palettes are partially invisible to it; and
-`forge cost --stages` reports **measured stages only** — a stage with no events says "no
-data", never a default, and the ~90 % figure is a labeled *target*, not a claim. What's
-*asserted* is safe to gate on (repo grounding, graph traversal, routing arithmetic, the
-test commands); everything else is *advisory*. **Tests and human corrections always
-win.** Full list: [docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits).
+Forge states its own ceiling everywhere. In short: **guards reduce, don't eliminate**
+the "ignored my rules" problem; `recall`/`cortex` are file memory, **not** weight-level
+learning; the `atlas`/`impact` graph is regex-approximate (conservative, not a sound
+call graph — the impact numbers above are n = 6 hand-labeled cases on one JavaScript
+repo); the substrate's rubrics are heuristic; `forge reuse`'s near-match is weak on very
+short specs; and `forge cost --stages` reports **measured stages only** — a stage with
+no events says "no data", never a default. What's *asserted* is safe to gate on (repo
+grounding, graph traversal, routing arithmetic, test commands); everything else is
+*advisory*. **Tests and human corrections always win.** Full list:
+[docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits).
+
+## Why a "cognitive substrate"? The white paper
+
+A language model at inference is a fixed function `y = f(x)` — frozen weights, a bounded
+window, no state between calls. Memory, foresight, and self-checking can't be prompted
+into that shape; they have to be supplied from outside. The full argument, with every
+load-bearing statistic re-graded against primary sources, is the
+[cognitive-substrate white paper](docs/cognitive-substrate/).
 
 ## Documentation
 
@@ -217,6 +187,7 @@ win.** Full list: [docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits)
 | --- | --- |
 | [`ONBOARDING.md`](ONBOARDING.md) | Five minutes to productive + the design principles. |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Every command, worked examples, all cases, how to extend. |
+| [`reports/benchmarks.md`](reports/benchmarks.md) | Every measured number, methodology, and `npm run bench` to reproduce. |
 | [`docs/cognitive-substrate/`](docs/cognitive-substrate/) | The white paper, evidence map, ecosystem map, and prototype sources. |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | The four-layer compiler and the cross-tool emit matrix. |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | How releases are cut (tag → npm + GitHub Release). |
@@ -228,12 +199,6 @@ win.** Full list: [docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits)
 - **Contribute** → [CONTRIBUTING.md](./CONTRIBUTING.md) · [Code of Conduct](./CODE_OF_CONDUCT.md)
 - **Direction** → [ROADMAP.md](./ROADMAP.md) · [GOVERNANCE.md](./GOVERNANCE.md)
 - **Security** → [SECURITY.md](./SECURITY.md) (report privately) · **Accessibility** → [ACCESSIBILITY.md](./ACCESSIBILITY.md)
-
-## Rebranding
-
-The name lives in one place: `brand.json`. Change it there (plus the `bin` key in
-`package.json` and `name` in `.claude-plugin/plugin.json`) and the whole CLI, banner, and
-emitted headers follow.
 
 ---
 
