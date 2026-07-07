@@ -1,0 +1,30 @@
+# Secret scanning gate: gitleaks over the FULL git history on every push and PR.
+# Deliberately blocking — a real credential in the tree or history should fail the build,
+# not warn. (Rotate first, then rewrite/land; a red X is the cheap part of a leak.)
+#
+# Why this passes on our own redaction tests: test/_fixtures.js assembles secret-LOOKING
+# strings at RUNTIME via .join() precisely so no secret-format literal exists in any blob
+# for a scanner to match. Verified clean with gitleaks 8.16 across the whole history and
+# working tree before this workflow was added — no .gitleaks.toml allowlist is needed.
+name: Security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # gitleaks scans commit history, not just the checkout
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # PR comments / job summary
+          # GITLEAKS_LICENSE is only required for ORG-owned repos; this repo is user-owned.

@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Security & OSS hardening: CodeQL, gitleaks secret-scan (blocking; verified clean on the
+  full history), and OSSF Scorecard workflows; refreshed repo topics; SECURITY.md now
+  states the supported line (0.5.x) and documents the ledger's forgery-resistance
+  properties (content-hash verification; oracle weights never trusted from records).
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
   drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
   signature (line numbers, addresses, timestamps, and absolute paths normalized out) and

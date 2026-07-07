@@ -1,0 +1,32 @@
+# CodeQL static analysis for the JavaScript sources (src/, hooks/, test/). Findings land
+# in Security -> Code scanning. This is CodeQL "advanced setup": if the repo ever had
+# "default setup" enabled (Settings -> Code security), disable it there so the two don't
+# fight over the same analysis slot.
+name: CodeQL
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1" # weekly, Monday 04:23 UTC — catches new queries, not just new code
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF results to code scanning
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none # interpreted — nothing to compile
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"
