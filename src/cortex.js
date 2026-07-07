@@ -5,6 +5,7 @@
 // without any hook wiring.
 
 import { recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
+import { mergedLessons } from "./ledger_read.js";
 import {
   confidenceOf,
   confirm,
@@ -74,6 +75,13 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
   const accumulated = fires && p >= 0.4 && recurredWeak;
   if (!strong && !accumulated) return { action: "logged", p, fires };
 
+  // Deliberately LEGACY-ONLY (not mergedLessons): this lookup decides confirm-vs-create
+  // for a LOCAL write. A teammate's merged ledger claim has no local file, and letting it
+  // match would swallow a fresh local mistake into confirm() — which edits a legacy file
+  // that doesn't exist — and hang the shadow evidence ref (#n<count>) off counters this
+  // repo never owned. Creating locally is correct AND convergent: the new lesson's shadow
+  // claim content-addresses to the teammate's claim, so both sides' evidence lands on ONE
+  // claim at the next `forge ledger merge`.
   const existing = matchingLessons(load(root), context)[0];
   if (existing) {
     const c = confirm(existing, nowDay);
@@ -85,8 +93,8 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
       },
     };
     if (!save(root, updated).ok) return { action: "refused", p, fires };
-    // Shadow the confirmation into the PCM ledger (P1 bridge — legacy store stays the
-    // read path; best-effort by design, never blocks the hook). The evidence counter
+    // Shadow the confirmation into the PCM ledger (best-effort by design, never blocks
+    // the hook — reads are merged via ledger_read.js since P2). The evidence counter
     // rides in the ref because episode ids reset per session (ep_m0_…) — without it,
     // two same-day sessions confirming via the same file would hash identically and
     // the second real confirmation would be silently deduped away.
@@ -144,6 +152,9 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
     context,
     day: nowDay,
   });
+  // Legacy-only for the same reason as recordMistake: contradict() saves the legacy
+  // file, so only lessons that HAVE one are targets. A teammate's claim still converges
+  // — the same reversal, recurring locally, mints the local twin whose evidence merges.
   const targets = matchingLessons(load(root), context, ["active", "quarantined"]);
   const results = targets.map((l) => {
     const updated = contradict(l, nowDay);
@@ -163,14 +174,17 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
   return { action: "contradicted", results };
 }
 
-/** The injection block for the current context — what a SessionStart/PreToolUse hook emits. */
+/** The injection block for the current context — what a SessionStart/PreToolUse hook emits.
+ *  Reads the MERGED view (P2 read flip): teammate lessons that arrived via
+ *  `forge ledger merge` inject alongside local ones. */
 export function lessonsForContext(root, context, opts = {}) {
-  return selectForInjection(load(root), context, opts);
+  return selectForInjection(mergedLessons(root, opts.nowDay ?? 0), context, opts);
 }
 
-/** Repo-wide top active lessons — what a SessionStart hook injects (no file context yet). */
+/** Repo-wide top active lessons — what a SessionStart hook injects (no file context yet).
+ *  Merged view: a teammate's outcome-confirmed lesson surfaces here too. */
 export function startupBlock(root, nowDay = 0, budget = 8) {
-  const active = load(root).filter((l) => l.status === "active");
+  const active = mergedLessons(root, nowDay).filter((l) => l.status === "active");
   if (!active.length) return "";
   const ranked = active
     .map((l) => ({ lesson: l, conf: confidenceOf(l, nowDay) }))
@@ -194,6 +208,7 @@ export function startupBlock(root, nowDay = 0, budget = 8) {
  *  refused — e.g. the distilled text tripped secret-refusal). */
 export function applyDistillation(root, lessonId, distilled) {
   if (!distilled) return false;
+  // Legacy-only read: distillation EDITS the legacy file, so only file-backed lessons apply.
   const lesson = load(root).find((l) => l.id === lessonId);
   if (!lesson) return false;
   const updated = {
@@ -214,9 +229,9 @@ export function cortexBlock(targetRoot = process.cwd()) {
   return startupBlock(targetRoot, Math.floor(Date.now() / 86400000));
 }
 
-/** Auditable snapshot for `forge cortex status`. */
+/** Auditable snapshot for `forge cortex status` — merged view, like every read surface. */
 export function summary(root, nowDay = 0) {
-  const lessons = load(root);
+  const lessons = mergedLessons(root, nowDay);
   const by = (s) => lessons.filter((l) => l.status === s).length;
   return {
     total: lessons.length,

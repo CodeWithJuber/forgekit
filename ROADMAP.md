@@ -26,9 +26,12 @@ confidence only from independent oracles, and merges across teammates conflict-f
 (git-native CRDT ledger).
 
 ## Next
-- **Ledger read-path flip** — the ledger is the convergent *write* store today while
-  the legacy stores (`lessons/`, `recall`, `brain`) still serve reads; flip reads to be
-  ledger-first, then retire the legacy formats.
+- **Legacy store retirement** — the read-path flip has shipped: every read surface
+  (cortex injection/status, the substrate advisory, routing, `recall list`, brain's
+  AGENTS.md index) is now a merged view (legacy ∪ ledger) via `src/ledger_read.js`,
+  so teammate knowledge from `forge ledger merge` reaches injection. The legacy
+  formats (`lessons/*.md`, recall/brain fact files) are still written as the canonical
+  local state; the remaining step is retiring them so the ledger is the only store.
 - **Embeddings tier** — optional vector backend (ADR-0005 dependency tier, stdlib
   fallback kept) for Eq. 3 retrieval and `forge reuse` near-match, where MinHash is
   weak on short specs.
