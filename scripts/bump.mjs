@@ -98,8 +98,13 @@ export function extractUnreleased(changelog) {
  * Moves the [Unreleased] body under "## [newVersion] - date", leaves a fresh empty
  * [Unreleased], and rewrites the keep-a-changelog compare links at the bottom.
  */
+// Complete regex escape (CodeQL js/incomplete-sanitization): versions are semver-shaped
+// by the time main() calls this, but rotateChangelog is exported — escape EVERY
+// metacharacter, not just dots, so a direct caller can't smuggle a pattern in.
+const reEscape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export function rotateChangelog(changelog, newVersion, prevVersion, date) {
-  if (new RegExp(`^## \\[${newVersion.replace(/\./g, "\\.")}\\]`, "m").test(changelog)) {
+  if (new RegExp(`^## \\[${reEscape(newVersion)}\\]`, "m").test(changelog)) {
     throw new Error(`CHANGELOG.md already has a [${newVersion}] section`);
   }
   const body = extractUnreleased(changelog);
