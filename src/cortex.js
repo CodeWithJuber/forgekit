@@ -3,6 +3,8 @@
 // becomes a created/confirmed lesson; an independent human reversal becomes a
 // contradiction. Kept fs-thin and deterministic (day + ids passed in) so it's testable
 // without any hook wiring.
+
+import { recordLessonEvent } from "./ledger_bridge.js";
 import {
   confidenceOf,
   confirm,
@@ -83,6 +85,13 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
       },
     };
     if (!save(root, updated).ok) return { action: "refused", p, fires };
+    // Shadow the confirmation into the PCM ledger (P1 bridge — legacy store stays the
+    // read path; best-effort by design, never blocks the hook).
+    recordLessonEvent(root, updated, {
+      result: "confirm",
+      ref: `episode:${episodeId}`,
+      t: nowDay,
+    });
     return {
       action: "confirmed",
       id: updated.id,
@@ -115,6 +124,9 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
   // Report "created" only when the write actually landed — a refused save (e.g. secret-bearing
   // body) must not make the hook believe a lesson exists and try to distill a phantom.
   if (!save(root, lesson).ok) return { action: "refused", p, fires };
+  // Mint-only shadow: a freshly created lesson has zero evidence (creation is not
+  // confirmation — the ledger's val starts at the 0.5 prior, same as newLesson).
+  recordLessonEvent(root, lesson, { t: nowDay });
   return { action: "created", id: lesson.id, status: lesson.status, p, fires };
 }
 
@@ -133,6 +145,14 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
   const results = targets.map((l) => {
     const updated = contradict(l, nowDay);
     const saved = save(root, updated).ok;
+    // An explicit human reversal is the strongest oracle we have — shadow it.
+    if (saved)
+      recordLessonEvent(root, updated, {
+        result: "contradict",
+        oracle: "human.revert",
+        ref: `episode:${episodeId}`,
+        t: nowDay,
+      });
     return { id: updated.id, status: updated.status, saved };
   });
   return { action: "contradicted", results };
