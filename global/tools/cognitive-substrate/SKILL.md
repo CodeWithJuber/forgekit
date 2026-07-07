@@ -16,12 +16,9 @@ blast radius, decompose scope, surface past lessons, and plan verification — *
 
 ## When to run it
 
-Trigger on any ambiguous, expensive, multi-file, or mutating task: edit/refactor/fix/design
-production code, integrate a feature, choose model effort, inspect blast radius, or when a
-request is vague. Skip it for one-line, well-specified fixes.
-
-> In Claude Code this fires automatically on every prompt (UserPromptSubmit hook). In other
-> agents, run it yourself with the CLI, or call the MCP tool `substrate_check`.
+Any ambiguous, expensive, multi-file, or mutating task. Skip one-line, well-specified fixes.
+In Claude Code it fires automatically on every prompt (UserPromptSubmit hook); in other
+agents run the CLI yourself, or call the MCP tool `substrate_check`.
 
 ## Run
 
@@ -40,31 +37,19 @@ forge substrate "<task>" --json     # full contract; use the fields below
 
 ## Worked example
 
-```console
-$ forge substrate "make the auth better"
-  proceed: ASK FIRST
-  assumption: high risk · completeness 0.23
-  clarify:
-    - What exactly should this produce, and how will we know it is correct?
-```
+`forge substrate "make the auth better"` → `proceed: ASK FIRST` + clarify
+questions: ask them instead of editing. A clear task returns `proceed: yes` plus
+the impacted files — including importers you didn't name.
 
-→ Under-specified. Ask the clarify question instead of editing.
-
-```console
-$ forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
-  proceed: yes
-  impact: 3 file(s) predicted
-    - src/auth.js
-    - src/login.js      (importer you did not name)
-    - src/session.js    (importer you did not name)
-```
-
-→ Cleared to proceed, but review the two coupled importers first.
-
-## Single-mechanism commands
+## Deeper single checks
 
 `forge preflight "<task>"` (assumptions) · `forge route "<task>"` (model tier) ·
-`forge impact <symbol|file>` (blast radius) · `forge scope <file…>` (decomposition).
+`forge impact <symbol|file>` (blast radius) · `forge scope <file…>` (decomposition) ·
+`forge context "<task>"` (budgeted context assembly; *computes* what's missing) ·
+`forge imagine "<task>" [--run]` (predicted breaks + minimal covering test suite;
+`--run` dry-runs it in a sandboxed worktree) ·
+`forge diagnose "<error>"` (doom-loop: 3× the same failure signature = stop retrying,
+escalate one tier with the minted diagnosis claim at the head of the prompt).
 MCP equivalents: `assumption_gate`, `route_task`, `predict_impact`, `scope_files`.
 
 For the full guide (how it works, extending it, the honesty boundary) and the white paper,

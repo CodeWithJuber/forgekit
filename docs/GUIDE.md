@@ -39,6 +39,17 @@ substrate** (`forge substrate` — the pre-action check). The full argument is t
 
 ## The everyday workflow
 
+The daily loop — every outcome an oracle observes lands in the team ledger, and the
+ledger informs the next task:
+
+```mermaid
+flowchart LR
+    W["work — substrate pre-checks,<br/>then edit"] --> O["oracles — forge verify ·<br/>imagine --run · CI · human accept/revert"]
+    O -->|"outcomes move claim val"| L[("team ledger<br/>.forge/ledger/")]
+    L <-->|"git + forge ledger merge"| T["teammates' ledgers"]
+    L -->|"lessons · facts · reuse hits"| W
+```
+
 ```bash
 cd your-project
 forge init                              # once per repo: emit every tool's config
@@ -78,6 +89,8 @@ Forge substrate — pre-action check
 
   route: Haiku 4.5 (simple) · complexity 0.15
     driven by: base cost of any task
+
+  context: complete — 4 required item(s), 1840/12000 tokens (`forge context` for the assembly)
 
   impact: 3 file(s) predicted
     - src/auth.js
@@ -400,10 +413,14 @@ Forge imagine — consequence simulation (pre-action)
   minimal dry-run suite (1) — run these, in this order:
     - test/auth.test.js
 
-  (sandboxed worktree dry-run of this suite lands as the P5 follow-up)
+  (measure it: re-run with --run — sandboxed worktree dry-run of HEAD)
 ```
 
-It also flags predicted breaks **no test covers** — the risk you can't dry-run away.
+Add **`--run`** to actually execute that suite in a sandboxed worktree of HEAD — the
+dry-run result lands as oracle evidence on the prediction. It refuses a dirty working
+tree (your uncommitted changes wouldn't be in the run); commit/stash first or pass
+`--allow-dirty` to knowingly measure the last commit. It also flags predicted breaks
+**no test covers** — the risk you can't dry-run away.
 
 ### `forge uicheck` — deterministic UI checks
 
@@ -590,8 +607,10 @@ real spend; the `cost-budget` guard warns when a day exceeds `FORGE_COST_CEILING
 session. For learned-from-mistakes memory, just work: Cortex captures recurring
 corrections on its own.
 
-**UI work.** `forge uicheck <fg> <bg>` for exact contrast; the `ui-workflow` and
-`taste` tools for the rest.
+**UI work.** `forge uicheck contrast <fg> <bg>` for exact contrast; `forge uicheck
+design <files> --taste <style>` as the anti-slop gate (mint the project fingerprint
+first: `forge uicheck fingerprint <files> --mint`); the `ui-workflow` and `taste`
+tools for the rest.
 
 ---
 

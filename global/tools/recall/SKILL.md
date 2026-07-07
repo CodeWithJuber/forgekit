@@ -6,14 +6,15 @@ description: Forge's cross-session memory. Use when the user says "remember this
 # recall — durable cross-session memory
 
 File-based memory shared across every session and tool. The `recall-load` guard
-injects the index at session start — you don't fetch it.
+injects the index at session start — you don't fetch it. Facts also land as
+claims in the team ledger (`.forge/ledger/`): conflict-free merge across
+teammates, provenance via `forge ledger blame <id-prefix>`.
 
 ## When to record
 Only durable, non-obvious facts that will matter in a FUTURE session:
 - Environment quirks (required env vars, non-standard build/run commands).
 - Architectural decisions and the WHY behind them.
 - Gotchas that already bit someone ("X fails unless Y first").
-- Stable goals/constraints not derivable from the code.
 
 Never record: things obvious from the code, transient task state, or anything
 secret/PII. `forge recall add` refuses credential-looking content — store a pointer
