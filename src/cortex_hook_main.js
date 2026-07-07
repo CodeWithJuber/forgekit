@@ -20,6 +20,7 @@ import {
 } from "./cortex_hook.js";
 import { load } from "./lessons_store.js";
 import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
+import { epochDay } from "./util.js";
 
 // Opt-in: distill newly-created lessons into real prose via a cheap model call. Off by
 // default (deterministic template is used); fail-safe (any error → keep the template).
@@ -55,7 +56,7 @@ async function main() {
   }
   const root = hook.cwd || process.cwd();
   const sid = hook.session_id || "default";
-  const today = Math.floor(Date.now() / 86400000);
+  const today = epochDay();
 
   if (mode === "capture" || mode === "prompt") {
     appendSessionEvent(root, sid, classifyEvent(hook));
@@ -124,5 +125,8 @@ async function preEditAdvisory(root, file, today) {
 }
 
 main()
-  .catch(() => {})
+  .catch((err) => {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge cortex: ${err?.message ?? err}\n`);
+  })
   .finally(() => process.exit(0));

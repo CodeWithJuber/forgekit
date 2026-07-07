@@ -13,12 +13,7 @@ import {
   selectForInjection,
 } from "./lessons.js";
 import { appendEpisode, load, readEpisodes, save } from "./lessons_store.js";
-
-const slug = (s) =>
-  String(s)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+import { slug } from "./util.js";
 
 const lessonIdFor = (ctx) => `lsn_${slug(ctx.symbols?.[0] || ctx.files?.[0] || "ctx") || "ctx"}`;
 

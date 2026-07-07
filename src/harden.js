@@ -3,18 +3,9 @@
 // a Gitleaks pre-commit hook. We never auto-edit ~/.claude/settings.json (no clobber)
 // — we write the sandbox block for the user to merge, and only touch the repo's own hooks.
 
-import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-
-function have(cmd) {
-  try {
-    execFileSync(cmd, ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { hasBin as have } from "./util.js";
 
 // The sandbox config to merge into settings — deny the credential dirs an agent should never read.
 const SANDBOX = {

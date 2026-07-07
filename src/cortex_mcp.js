@@ -2,6 +2,7 @@
 // newline-delimited) that exposes this repo's LEARNED LESSONS to any MCP-capable tool
 // (Cursor, Codex, Gemini, Zed…). Claude gets lessons live via hooks; this is how the other
 // tools query them on demand. Launched as `forge cortex-mcp`, so the path resolves anywhere.
+import { readFileSync } from "node:fs";
 import { argv } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -10,9 +11,18 @@ import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
+import { epochDay } from "./util.js";
+
+const PKG_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 const root = process.env.FORGE_ROOT || process.cwd();
-const today = () => Math.floor(Date.now() / 86400000);
+const today = epochDay;
 
 const TOOLS = [
   {
@@ -155,7 +165,7 @@ export function handle(msg) {
       result: {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "forge-cortex", version: "0.1.0" },
+        serverInfo: { name: "forge-cortex", version: PKG_VERSION },
       },
     };
   }

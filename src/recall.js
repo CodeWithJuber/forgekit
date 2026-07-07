@@ -22,11 +22,8 @@ export function defaultStore() {
 }
 
 const factsDir = (store) => join(store, "facts");
-const slugify = (s) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+
+import { slug as slugify } from "./util.js";
 
 export function add(store, name, body) {
   if (SECRET_RE.test(`${name}\n${body}`)) {

@@ -1,6 +1,5 @@
 // forge doctor — turn silent misconfiguration into an actionable pass/fail list
 // (chezmoi-doctor pattern). Exits non-zero only on hard failures, not warnings.
-import { execFileSync } from "node:child_process";
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -15,16 +14,9 @@ const ok = (label, note = "") => ({ status: "ok", label, note });
 const warn = (label, note = "") => ({ status: "warn", label, note });
 const fail = (label, note = "") => ({ status: "fail", label, note });
 
-const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+import { hasBin } from "./util.js";
 
-const hasBin = (bin) => {
-  try {
-    execFileSync(bin, ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-};
+const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // External tools the guards/commands depend on. jq is the important one — several guards
 // (secret-redact, protect-paths) degrade to a naive parse or a no-op without it.

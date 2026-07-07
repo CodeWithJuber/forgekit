@@ -5,9 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
-
-const CODE_EXT =
-  /\.(js|ts|jsx|tsx|mjs|cjs|py|go|rs|java|rb|php|c|cc|cpp|h|hpp|cs|json|ya?ml|toml|md|css|scss|html|vue|svelte)$/i;
+import { CODE_EXT } from "./util.js";
 
 const STOP = new Set([
   "the",

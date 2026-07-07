@@ -21,7 +21,9 @@ export function findUnknownSymbols(atlas, symbols) {
 function git(args, cwd) {
   try {
     return execFileSync("git", args, { cwd, encoding: "utf8" });
-  } catch {
+  } catch (err) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge verify git: ${err?.message ?? err}\n`);
     return "";
   }
 }

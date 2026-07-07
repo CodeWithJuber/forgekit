@@ -61,12 +61,14 @@ export function adjudicate({ prompt, parse, run = buildRunner() }) {
     if (obj == null) return null;
     const parsed = parse(obj);
     return parsed ?? null;
-  } catch {
+  } catch (err) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge adjudicate: ${err?.message ?? err}\n`);
     return null;
   }
 }
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+import { clamp01 } from "./util.js";
 
 /** Coerce an unknown model field to a number in [0,1], or null if it isn't one. */
 export function asUnit(v) {

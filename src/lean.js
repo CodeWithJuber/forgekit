@@ -109,7 +109,9 @@ function gitDiff(root, base) {
         stdio: ["ignore", "pipe", "ignore"],
       })
     );
-  } catch {
+  } catch (err) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge lean gitDiff: ${err?.message ?? err}\n`);
     return "";
   }
 }
