@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **One-click release automation.** `scripts/bump.mjs` (node stdlib only, unit-tested)
+  bumps every version field in one shot — `package.json`, `package-lock.json`, both
+  plugin manifests, `CITATION.cff`, the landing page — rotates the CHANGELOG
+  `[Unreleased]` section under a dated heading, and prints the new version;
+  `npm run bump -- <patch|minor|major|auto>` (auto = conventional commits since the last
+  tag: BREAKING → major, feat → minor, else patch). The new `bump.yml` workflow makes a
+  release one click from the Actions tab (commit + tag + dispatch of `release.yml`);
+  `release.yml` now soft-skips npm publish when `NPM_TOKEN` is missing instead of
+  failing, and CI gained a version-drift guard (`node scripts/bump.mjs check`).
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
   drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
   signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
@@ -344,7 +353,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.1.0...v0.2.0

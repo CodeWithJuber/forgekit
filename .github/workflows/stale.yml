@@ -5,6 +5,7 @@ name: Stale
 on:
   schedule:
     - cron: "0 3 * * *"
+  workflow_dispatch: # allow a manual run to test the config
 
 permissions:
   issues: write
