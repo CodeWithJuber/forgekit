@@ -9,7 +9,14 @@ Default to reusing and following what exists. New code is a liability; the best
 change is the smallest one that fits the codebase.
 
 ## 1. Reuse before building
-- Search the repo first (`grep`/`glob`/serena LSP): is there an existing util,
+- **Ask the proof-carrying cache first**: `forge reuse query "<what you're about to
+  build>"`. A hit is code this team already generated AND verified — its test/accept
+  evidence travels with it (`forge ledger blame <id>` shows why to trust it):
+  - **EXACT / NEAR hit** → use that artifact; do not regenerate.
+  - **ADAPT hit** → read it, start from it, generate only the delta.
+  - **miss** → build it, then `forge reuse mint "<spec>" --file <path> --ref <test-run>`
+    so the next teammate (or session) gets the hit.
+- Search the repo next (`grep`/`glob`/serena LSP): is there an existing util,
   component, hook, service, or pattern that already does this? Extend it.
 - If not in-repo, is there a maintained library? Vet it with `tech-selector`
   (current best from Context7 + web + GitHub health) before adding a dependency.
