@@ -1,14 +1,31 @@
 // forge init / catalog — the onboarding surface. init gets a repo to a working
 // state in one command; catalog is the "Start Here" index of everything active.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
 
+/** Without the union merge driver, two teammates appending to the same ledger log get
+ *  a git conflict — the exact thing the ledger's design promises can't happen
+ *  (docs/plans/substrate-v2/02-team-memory.md §1). Idempotent append. */
+export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
+  const path = join(targetRoot, ".gitattributes");
+  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  if (existing.includes(".forge/ledger/")) return { written: false };
+  appendFileSync(
+    path,
+    `${existing && !existing.endsWith("\n") ? "\n" : ""}${GITATTRIBUTES_RULE}\n`,
+  );
+  return { written: true };
+}
+
 /** Scaffold this repo's cross-tool config (emit every tool) in one step. */
 export function init({ targetRoot = process.cwd() } = {}) {
-  return sync({ targetRoot });
+  const r = sync({ targetRoot });
+  ensureLedgerGitattributes(targetRoot);
+  return r;
 }
 
 function skillDescription(dir) {

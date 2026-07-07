@@ -4,7 +4,7 @@
 // contradiction. Kept fs-thin and deterministic (day + ids passed in) so it's testable
 // without any hook wiring.
 
-import { recordLessonEvent } from "./ledger_bridge.js";
+import { recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
 import {
   confidenceOf,
   confirm,
@@ -86,10 +86,13 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
     };
     if (!save(root, updated).ok) return { action: "refused", p, fires };
     // Shadow the confirmation into the PCM ledger (P1 bridge — legacy store stays the
-    // read path; best-effort by design, never blocks the hook).
+    // read path; best-effort by design, never blocks the hook). The evidence counter
+    // rides in the ref because episode ids reset per session (ep_m0_…) — without it,
+    // two same-day sessions confirming via the same file would hash identically and
+    // the second real confirmation would be silently deduped away.
     recordLessonEvent(root, updated, {
       result: "confirm",
-      ref: `episode:${episodeId}`,
+      ref: `episode:${episodeId}#n${updated.evidenceCount}`,
       t: nowDay,
     });
     return {
@@ -145,12 +148,14 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
   const results = targets.map((l) => {
     const updated = contradict(l, nowDay);
     const saved = save(root, updated).ok;
-    // An explicit human reversal is the strongest oracle we have — shadow it.
+    // Shadowed at the conservative bridge weight, NOT human.revert (w=1.0): the hook's
+    // revert detection is regex-based and matches routine `git restore`s, and a
+    // full-weight contradiction would permanently anchor the claim near dormancy in an
+    // append-only log. The counter in the ref keeps distinct same-day events distinct.
     if (saved)
       recordLessonEvent(root, updated, {
         result: "contradict",
-        oracle: "human.revert",
-        ref: `episode:${episodeId}`,
+        ref: `episode:${episodeId}#c${updated.contradictionCount}`,
         t: nowDay,
       });
     return { id: updated.id, status: updated.status, saved };
@@ -191,11 +196,17 @@ export function applyDistillation(root, lessonId, distilled) {
   if (!distilled) return false;
   const lesson = load(root).find((l) => l.id === lessonId);
   if (!lesson) return false;
-  return save(root, {
+  const updated = {
     ...lesson,
     whatWentWrong: distilled.whatWentWrong,
     correctedBehavior: distilled.correctedBehavior,
-  }).ok;
+  };
+  const ok = save(root, updated).ok;
+  // A body rewrite changes the content-addressed claim id — supersede in the ledger
+  // (mint the distilled claim, carry the evidence over, tombstone the template claim)
+  // or the lesson's history splits across two disjoint claims.
+  if (ok) supersedeLessonClaim(root, lesson, updated);
+  return ok;
 }
 
 /** The lessons block to inline into AGENTS.md so non-Claude tools see them (empty if none). */

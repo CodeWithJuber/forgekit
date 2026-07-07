@@ -6,6 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **PCM ledger hardened after an 8-angle adversarial review of the P1 merge.** The
+  conflict-free-merge guarantee is now structural: claim file bytes are a pure function of
+  (kind, body, scope) — byte-identical on every replica — while provenance and tombstones
+  move into per-claim append-only logs (hash-deduped, union-merged like evidence), so
+  concurrent mints and concurrent retractions can never produce a git conflict or a
+  merge-order-dependent state. Forged evidence is now powerless AND detectable: `val()`
+  takes oracle weights from the ORACLES table (never the stored record) and skips unknown
+  oracles, while `forge ledger verify` recomputes every record's content hash and flags
+  mismatches, ghost oracles, and inflated weights. `forge ledger import` is truly
+  idempotent (claims already tracked live are never re-synthesized — no double counting).
+  Cortex shadow-writes: distillation now supersedes (evidence carried over, template claim
+  tombstoned); evidence refs carry the confirmation counter so same-day sessions with
+  colliding episode ids stay distinct; regex-detected reverts contradict at the
+  conservative bridge weight instead of the full-weight human oracle. Fact claims: one
+  CRLF-tolerant parser (`recall.readFact`), trimmed bodies (shadow path and import path
+  mint one id), same-name updates supersede the stale claim, and `forge recall
+  consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/truncated
+  claim files instead of trusting `existsSync`. `forge ledger --personal` reaches the
+  personal ledger (previously write-only); `forge ledger show` resolves by shard instead
+  of scanning; `forge init` emits the union-merge `.gitattributes` rule into consumer
+  repos. `SCOPE_WEIGHT` has one home (ledger core; lessons re-exports).
+
 ### Documentation
 
 - **Substrate v2 plan: the whitepaper, completed (`docs/plans/substrate-v2/`).** Nine specs

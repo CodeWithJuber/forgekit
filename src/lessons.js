@@ -24,7 +24,12 @@ export const SIGNALS = {
   S7: { weight: 0.35, family: "outcome" }, // lint/type/build regression introduced
 };
 
-export const SCOPE_WEIGHT = { symbol: 1.0, dir: 0.8, repo: 0.6, global: 0.4 };
+// One source of truth for scope weighting — the PCM ledger core owns it now, so the
+// legacy injection path and Eq.-3 retrieval can never rank the same memory with
+// silently different weights during the bridge window.
+import { SCOPE_WEIGHT } from "./ledger.js";
+
+export { SCOPE_WEIGHT };
 
 /**
  * Score whether a cluster of signals reflects a real mistake.

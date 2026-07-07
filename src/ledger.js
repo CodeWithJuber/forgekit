@@ -7,8 +7,12 @@
 // Design invariants (shared with lessons.js, now protocol law for every stored thing):
 //  - Confidence is EARNED from independent oracles (tests, CI, human accept/revert),
 //    never from the model's self-assessment; retrieval/injection is never confirmation.
-//  - Claims are immutable by id; every mutable thing (evidence, tombstones) is an
-//    append-only record — which is what makes merge = set union a join-semilattice.
+//    val() takes oracle weights from the ORACLES table, NEVER from the stored record —
+//    a forged/corrupted evidence line cannot buy confidence it isn't entitled to.
+//  - A claim's persisted bytes are a pure function of (kind, body, scope): anything
+//    author- or time-varying (provenance, evidence, tombstones) lives in append-only
+//    logs. That is what makes every file either byte-identical across teammates or
+//    union-mergeable — the join-semilattice property is structural, not aspirational.
 //  - Unreviewed claims decay toward the PRIOR (0.5, uncertainty), not toward false.
 import { contentHash } from "./util.js";
 
@@ -37,7 +41,9 @@ export const KINDS = [
  * `family` powers the cross-family gate (a lone behavioral signal never moves a claim
  * on its own — same rule as lessons.js scoreMistake). The two `bridge: true` entries
  * exist only for the P1 migration seam (cortex episodes, legacy imports) and carry a
- * deliberately conservative weight.
+ * deliberately conservative weight — Stop-hook revert detection is regex-based and
+ * routinely matches innocent `git restore`s, so it must NOT ride the full-weight
+ * human.revert oracle (that one is reserved for explicit, unambiguous human signals).
  */
 export const ORACLES = {
   "human.revert": { w: 1.0, family: "human" },
@@ -51,13 +57,15 @@ export const ORACLES = {
   "legacy.import": { w: 0.5, family: "outcome", bridge: true },
 };
 
+/** One source of truth for scope weighting — lessons.js re-exports this. */
 export const SCOPE_WEIGHT = { symbol: 1.0, dir: 0.8, repo: 0.6, global: 0.4 };
 
 /** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity) — calibrated in P8. */
 export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3 };
 
 export const DEFAULT_HALF_LIFE_DAYS = 45;
-/** Below this val a claim is dormant: kept for audit, never retrieved. */
+/** Below this val a claim is dormant: kept for audit, never retrieved. The trusted
+ *  band starts at the mirror threshold (1 − DORMANT_VAL) — stats uses both. */
 export const DORMANT_VAL = 0.35;
 
 /**
@@ -90,18 +98,29 @@ export function claimId(kind, body, scope = {}) {
   return contentHash(canonicalize({ body, kind, scope }));
 }
 
+/** Stamp a record with its content hash (the dedupe key in every append-only log). */
+export function sealRecord(record) {
+  return { ...record, h: contentHash(canonicalize(record)) };
+}
+
 /**
  * Mint a claim. Refuses secrets and unknown kinds ({ok:false, reason} — same contract
- * as recall.add / lessons_store.save so callers keep one error shape).
+ * as recall.add / lessons_store.save so callers keep one error shape). The body/scope
+ * are normalized through JSON first (Dates → ISO strings, Maps/Sets → {}), so a
+ * non-JSON value can never make two different bodies collide on one address.
+ * `provenance` rides on the in-memory claim but is NEVER part of the id or the claim
+ * file bytes — the store appends it to a per-claim log instead.
  * @param {{kind:string, body:object, scope?:object, provenance?:object, t?:number}} f
  *   `t` is the mint day (epoch days) — passed in, never read from the clock here.
- * @returns {{ok:true, claim:object}|{ok:false, reason:string}}
+ * @returns {{ok:true, claim:any}|{ok:false, reason:string}}
  */
 export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
   if (!KINDS.includes(kind)) return { ok: false, reason: `unknown claim kind: ${kind}` };
   if (body === null || typeof body !== "object")
     return { ok: false, reason: "claim body must be an object" };
-  const canon = canonicalize({ body, kind, scope });
+  const nBody = JSON.parse(JSON.stringify(body));
+  const nScope = JSON.parse(JSON.stringify(scope));
+  const canon = canonicalize({ body: nBody, kind, scope: nScope });
   if (SECRET_RE.test(canon))
     return {
       ok: false,
@@ -111,11 +130,11 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
     ok: true,
     claim: {
       v: 1,
-      id: claimId(kind, body, scope),
+      id: claimId(kind, nBody, nScope),
       kind,
-      body,
-      scope,
-      provenance: { ...provenance, t },
+      body: nBody,
+      scope: nScope,
+      provenance: sealRecord({ ...provenance, t }),
       evidence: [],
     },
   };
@@ -123,9 +142,10 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
 
 /**
  * Build an evidence outcome. Evidence without a verifiable ref (commit SHA, test-run
- * id, episode id, CI URL) is rejected — "the model said so" is not evidence.
+ * id, episode id, CI URL) is rejected — "the model said so" is not evidence. The
+ * oracle's table weight is recorded for audit, but val() re-reads the table.
  * @param {{oracle:string, result:"confirm"|"contradict", ref:string, author?:string, t?:number}} f
- * @returns {{ok:true, outcome:object}|{ok:false, reason:string}}
+ * @returns {{ok:true, outcome:any}|{ok:false, reason:string}}
  */
 export function outcomeRecord({ oracle, result, ref, author = "", t = 0 }) {
   const o = ORACLES[oracle];
@@ -134,24 +154,34 @@ export function outcomeRecord({ oracle, result, ref, author = "", t = 0 }) {
     return { ok: false, reason: `result must be confirm|contradict, got: ${result}` };
   if (!ref || typeof ref !== "string")
     return { ok: false, reason: "evidence requires a verifiable ref" };
-  const outcome = { author, oracle, ref, result, t, w: o.w };
-  return { ok: true, outcome: { ...outcome, h: contentHash(canonicalize(outcome)) } };
+  return { ok: true, outcome: sealRecord({ author, oracle, ref, result, t, w: o.w }) };
 }
 
+/** An evidence record val() will count: known oracle, valid result, a ref, a hash. */
+export function validOutcome(e) {
+  return Boolean(
+    e && ORACLES[e.oracle] && (e.result === "confirm" || e.result === "contradict") && e.ref && e.h,
+  );
+}
+
+// Weight comes from the ORACLES table — a stored `w` is audit metadata, never trusted
+// (a hand-edited or forged log line must not be able to buy extra confidence).
 const decayed = (outcome, nowDay, halfLife) =>
-  outcome.w * 0.5 ** (Math.max(0, nowDay - (outcome.t ?? 0)) / halfLife);
+  ORACLES[outcome.oracle].w * 0.5 ** (Math.max(0, nowDay - (outcome.t ?? 0)) / halfLife);
 
 /**
  * Validity — the paper's `val` term as a time-decayed Beta posterior mean with a
  * Beta(1,1) prior:  (1 + Σ confirms·w·λ^Δt/T) / (2 + Σ all·w·λ^Δt/T).
  * Fresh claim → 0.5. Unreviewed evidence decays, pulling val back toward 0.5
  * (uncertainty), never toward 0 — review (new evidence) is what restores weight.
- * Pure function of the evidence set ⇒ identical after any merge order.
+ * Records that fail validOutcome (unknown oracle, malformed) are IGNORED, not
+ * trusted. Pure function of the evidence set ⇒ identical after any merge order.
  */
 export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
   let confirms = 0;
   let all = 0;
   for (const e of claim.evidence ?? []) {
+    if (!validOutcome(e)) continue;
     const d = decayed(e, nowDay, halfLife);
     all += d;
     if (e.result === "confirm") confirms += d;
@@ -257,6 +287,11 @@ export function claimText(claim) {
   }
 }
 
+// Memoize on the claim object — sketch(claimText) is deterministic per id and claims
+// are immutable, so first-use caching is safe and keeps retrieve()/clusters() from
+// re-hashing every claim on every call. (noAssignInExpressions is off in biome.json.)
+const sketchOf = (claim) => (claim._sketch ??= sketch(claimText(claim)));
+
 /**
  * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val) × scope weight.
  * `query` may be a string or a precomputed sketch. The `g·val` term is the protocol's
@@ -264,7 +299,7 @@ export function claimText(claim) {
  */
 export function score(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS } = {}) {
   const qs = Array.isArray(query) ? query : sketch(query);
-  const rel = jaccard(qs, claim._sketch ?? sketch(claimText(claim)));
+  const rel = jaccard(qs, sketchOf(claim));
   const x = weights.a * rel + weights.b * rec(claim, nowDay) + weights.g * val(claim, nowDay);
   const sigma = 1 / (1 + Math.exp(-x));
   const scopeW = SCOPE_WEIGHT[claim.scope?.level] ?? 0.5;
@@ -287,7 +322,7 @@ export function retrieve(query, claims, { nowDay = 0, budget = 12, weights = EQ3
  * the documented scale path. Returns clusters of ≥2 as arrays of claim ids.
  */
 export function clusters(claims, { tau = 0.7 } = {}) {
-  const items = claims.map((c) => ({ id: c.id, s: c._sketch ?? sketch(claimText(c)) }));
+  const items = claims.map((c) => ({ id: c.id, s: sketchOf(c) }));
   const parent = new Map(items.map((i) => [i.id, i.id]));
   const find = (x) => {
     while (parent.get(x) !== x) {
@@ -309,39 +344,68 @@ export function clusters(claims, { tau = 0.7 } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The CRDT merge. State = { claims: {id→claim}, evidence: {id→outcome[]}, tombstones:
-// {id→tomb} } — three grow-only maps keyed by content. Merge is set union with
-// evidence deduped by hash; (S, ⊔) is a join-semilattice (commutative, associative,
-// idempotent), so replicas converge under ANY merge order. Property-tested.
+// The CRDT merge. State = four grow-only maps:
+//   claims:     id → {v, kind, body, scope}        (bytes are pure content — identical
+//                                                   for the same id on every replica)
+//   evidence:   id → outcome[]                     (union by content hash)
+//   provenance: id → record[]                      (union by content hash — every
+//                                                   author's mint is kept, attribution
+//                                                   is a set, not a fight)
+//   tombstones: id → record[]                      (union by content hash — concurrent
+//                                                   retractions both survive)
+// Merge is set union throughout; (S, ⊔) is a join-semilattice (commutative,
+// associative, idempotent), so replicas converge under ANY merge order. The single-
+// record views (claim.provenance, claim.tombstone) are derived deterministically
+// (earliest by (t, h)), so they converge too. Property-tested.
 // ---------------------------------------------------------------------------
 
-const sortOutcomes = (arr) => {
+/** Dedupe by content hash and sort by (t, h) — the ONE record order everywhere, so a
+ *  log's on-disk line order (which differs across replicas after a union merge) can
+ *  never leak into views or derived values. */
+export const sortRecords = (arr) => {
   const byHash = new Map();
-  for (const o of arr) if (!byHash.has(o.h)) byHash.set(o.h, o);
+  for (const o of arr) if (o?.h && !byHash.has(o.h)) byHash.set(o.h, o);
   return [...byHash.values()].sort(
     (a, b) => (a.t ?? 0) - (b.t ?? 0) || (a.h < b.h ? -1 : a.h > b.h ? 1 : 0),
   );
 };
 
+const mergeLogMap = (m1 = {}, m2 = {}) => {
+  const out = {};
+  for (const id of new Set([...Object.keys(m1), ...Object.keys(m2)]))
+    out[id] = sortRecords([...(m1[id] ?? []), ...(m2[id] ?? [])]);
+  return out;
+};
+
+/** An empty ledger state. */
+export function emptyState() {
+  return { claims: {}, evidence: {}, provenance: {}, tombstones: {} };
+}
+
 /** Semilattice join of two ledger states. Pure; inputs are not mutated. */
 export function mergeStates(s1, s2) {
   const claims = { ...s1.claims };
+  // Claim values are pure content keyed by their own hash — identical bytes on every
+  // replica, so first-in is not a choice, it's a no-op.
   for (const [id, c] of Object.entries(s2.claims ?? {})) claims[id] ??= c;
-  const evidence = {};
-  for (const id of new Set([...Object.keys(s1.evidence ?? {}), ...Object.keys(s2.evidence ?? {})]))
-    evidence[id] = sortOutcomes([...(s1.evidence?.[id] ?? []), ...(s2.evidence?.[id] ?? [])]);
-  const tombstones = { ...(s1.tombstones ?? {}) };
-  for (const [id, t] of Object.entries(s2.tombstones ?? {})) tombstones[id] ??= t;
-  return { claims, evidence, tombstones };
+  return {
+    claims,
+    evidence: mergeLogMap(s1.evidence, s2.evidence),
+    provenance: mergeLogMap(s1.provenance, s2.provenance),
+    tombstones: mergeLogMap(s1.tombstones, s2.tombstones),
+  };
 }
 
-/** Materialize a state into claim objects with evidence + tombstones attached. */
+/** Materialize a state into claim views: evidence attached, provenance = earliest
+ *  mint record, tombstone = earliest retraction (deterministic across replicas). */
 export function liveClaims(state) {
   return Object.values(state.claims)
     .map((c) => ({
       ...c,
       evidence: state.evidence?.[c.id] ?? [],
-      tombstone: state.tombstones?.[c.id],
+      provenance: state.provenance?.[c.id]?.[0] ?? c.provenance ?? {},
+      provenanceAll: state.provenance?.[c.id] ?? [],
+      tombstone: state.tombstones?.[c.id]?.[0],
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1));
 }

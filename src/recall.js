@@ -36,6 +36,17 @@ export function add(store, name, body) {
   return { ok: true, slug };
 }
 
+/** Parse one stored fact back into {name, text} — THE parser for the fact format
+ *  (`# name\n\ntext`), CRLF-tolerant so a Windows checkout can't fork the format.
+ *  Everything that reads fact files (bridge import, consolidation) must use this. */
+export function readFact(store, slug) {
+  const path = join(factsDir(store), `${slug}.md`);
+  if (!existsSync(path)) return null;
+  const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const m = raw.match(/^# (.*)\n\n([\s\S]*)$/);
+  return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
+}
+
 export function list(store) {
   const dir = factsDir(store);
   if (!existsSync(dir)) return [];
