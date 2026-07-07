@@ -72,6 +72,18 @@ export const ASSERTABLE_CHECKS = [
     id: "reduced-motion",
     how: "animations ≥200ms are wrapped in @media (prefers-reduced-motion)",
   },
+  // Scale-conformance checks (P6): executable versions live in uifingerprint.js
+  // scaleChecks() under the SAME ids — a test pins the two lists together.
+  {
+    id: "spacing-scale",
+    how: "≥90% of spacing values are multiples of the declared base within ε=0.5px",
+  },
+  {
+    id: "radius-levels",
+    how: "≤3 distinct border-radius levels (a design system uses few, deliberately)",
+  },
+  { id: "shadow-levels", how: "≤3 distinct box-shadow levels (deliberate elevation steps)" },
+  { id: "palette-size", how: "≤8 distinct colors after HSL normalization" },
 ];
 
 export const ADVISORY_ONLY = [

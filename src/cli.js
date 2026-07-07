@@ -28,7 +28,8 @@ const COMMANDS = {
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
-  uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
+  uicheck:
+    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...>",
   brand: "print the active brand token map",
 };
 
@@ -830,10 +831,88 @@ async function run(argv) {
     return;
   }
   if (cmd === "uicheck") {
+    const sub = argv[1];
+    if (sub === "fingerprint" || sub === "design") {
+      const ui = await import("./uifingerprint.js");
+      const json = argv.includes("--json");
+      const files = argv.slice(2).filter((a) => !a.startsWith("--"));
+      if (!files.length) {
+        console.error(
+          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : ""}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const fp = ui.fingerprintFiles(process.cwd(), files);
+      if (sub === "fingerprint") {
+        let minted = null;
+        if (argv.includes("--mint")) {
+          const { epochDay } = await import("./util.js");
+          minted = ui.mintProjectFingerprint(process.cwd(), files, { t: epochDay() });
+        }
+        if (json) {
+          console.log(JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2));
+        } else {
+          console.log(`${BRAND.brand} uicheck fingerprint — the design feature vector\n`);
+          console.log(
+            `  palette:  ${fp.paletteSize} color(s), hue bins [${fp.hueBuckets.join(" ")}]`,
+          );
+          console.log(
+            `  spacing:  ${fp.spacing.join(", ") || "(none)"} px — base ${fp.spacingBase ?? "(none)"}, ${Math.round(fp.spacingOnScale * 100)}% on-scale`,
+          );
+          console.log(`  type:     ${fp.fontFamilies.join(", ") || "(none)"}`);
+          console.log(
+            `  shape:    radii ${fp.radii.join(", ") || "(none)"} (${fp.radiusLevels} level(s)) · ${fp.shadowLevels} shadow level(s)`,
+          );
+          if (minted) {
+            if (minted.ok)
+              console.log(
+                `\n  minted fingerprint claim ${minted.id.slice(0, 12)}${minted.existed ? " (already in ledger)" : ""} — the gate's "home"`,
+              );
+            else console.error(`\n  mint failed: ${"reason" in minted ? minted.reason : ""}`);
+          }
+        }
+        if (minted && !minted.ok) process.exitCode = 1;
+        return;
+      }
+      // design — the two-sided gate: fail when too close to generic OR (when the
+      // project has minted its fingerprint) too far from the project's own system.
+      const projectFp = ui.loadProjectFingerprint(process.cwd());
+      const gate = ui.uiGate(fp, { projectFp });
+      const checks = ui.scaleChecks(fp);
+      const fail = !gate.pass || checks.some((c) => !c.pass);
+      if (json) {
+        console.log(
+          JSON.stringify({ ...gate, checks, hasProjectFingerprint: !!projectFp }, null, 2),
+        );
+      } else {
+        const { tauSlop, tauConform } = ui.UI_GATE_DEFAULTS;
+        console.log(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
+        console.log(
+          `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
+        );
+        console.log(
+          projectFp
+            ? `  conformance:   ${gate.conform}  (need ≤ ${tauConform} — closer to the project system is better)`
+            : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
+        );
+        for (const v of gate.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+        console.log("");
+        for (const c of checks)
+          console.log(
+            `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
+          );
+        console.log(`\n  ${fail ? "✗ FAIL" : "✓ PASS"}`);
+      }
+      if (fail) process.exitCode = 1;
+      return;
+    }
     const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
       "./uicheck.js"
     );
-    const [fg, bg] = [argv[1], argv[2]];
+    // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
+    // supported (it predates the subcommands and hooks already call it).
+    const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
     console.log(`${BRAND.brand} uicheck — deterministic UI review\n`);
     if (fg && bg) {
       try {
