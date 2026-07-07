@@ -1,12 +1,13 @@
 // forge ledger bridge — the P1 migration seam between the legacy stores (lessons/*.md,
-// recall facts) and the PCM ledger. Legacy files stay the READ path (every existing
-// test, hook, and guard keeps working unchanged); the ledger shadows every write as
-// the new canonical, and `forge ledger import` back-fills pre-ledger history. P2 flips
-// the read path once merge/verify tooling lands. Spec: docs/plans/substrate-v2/01-pcm-protocol.md §7.
+// recall facts) and the PCM ledger. The ledger shadows every write as the new
+// canonical, and `forge ledger import` back-fills pre-ledger history. P2 (shipped —
+// see ledger_read.js) flipped READS to a merged view (legacy ∪ ledger); the legacy
+// files remain the canonical LOCAL state until full retirement.
+// Spec: docs/plans/substrate-v2/01-pcm-protocol.md §7.
 //
 // Every entry point here is BEST-EFFORT by design: the legacy store is still
-// canonical in P1, so a bridge failure returns {ok:false} and must never break a
-// hook or CLI write that already succeeded.
+// canonical for local state, so a bridge failure returns {ok:false} and must never
+// break a hook or CLI write that already succeeded.
 import { mintClaim, outcomeRecord } from "./ledger.js";
 import {
   appendEvidence,
@@ -18,7 +19,10 @@ import {
   tombstone,
 } from "./ledger_store.js";
 import { load as loadLessons } from "./lessons_store.js";
-import { list as listFacts, readFact } from "./recall.js";
+// listStored, NOT list: the bridge reconciles the FILE store against the ledger. The
+// merged `list` (P2 read flip) includes ledger-only teammate facts, which have no file
+// and would read here as "deleted from the store".
+import { listStored as listFacts, readFact } from "./recall.js";
 import { epochDay, gitAuthor } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
@@ -175,7 +179,13 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
     }
     let removed = 0;
     for (const c of loadClaims(ledgerDir)) {
-      if (c.kind === "fact" && !c.tombstone && !current.has(c.id)) {
+      // Only reconcile claims THIS author minted: a locally-authored claim with no
+      // backing file means the file was deleted (consolidate rm'd a duplicate). A
+      // teammate's claim (arrived via `forge ledger merge`) never had a local file —
+      // with the P2 read flip it IS the readable fact, and tombstoning it here would
+      // silently delete team knowledge on every consolidate.
+      const mine = (c.provenance?.author ?? "") === gitAuthor();
+      if (c.kind === "fact" && !c.tombstone && mine && !current.has(c.id)) {
         tombstone(ledgerDir, c.id, { author: gitAuthor(), reason: "removed-from-store", t });
         removed++;
       }

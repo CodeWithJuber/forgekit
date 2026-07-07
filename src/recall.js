@@ -10,6 +10,10 @@ import { join } from "node:path";
 // imported it from (lessons_store, guards, tests). See ledger.js for the precision
 // rationale (credential formats + key-assigned-to-value, never a bare English mention).
 import { SECRET_RE } from "./ledger.js";
+// The merged read helper (P2 read flip). Import cycle note: ledger_read → lessons_store
+// → recall is function-level only (no module-eval use on either side), so ESM resolves
+// it safely — same pattern as lessons_store's own SECRET_RE import from here.
+import { mergeFactSlugs } from "./ledger_read.js";
 
 export { SECRET_RE };
 
@@ -47,13 +51,23 @@ export function readFact(store, slug) {
   return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
 }
 
-export function list(store) {
+/** File-backed fact slugs ONLY — the store the write path (add/consolidate) manages.
+ *  The ledger bridge reconciles against THIS list: a merged teammate fact has no file,
+ *  and treating it as "deleted from the store" would tombstone it away. */
+export function listStored(store) {
   const dir = factsDir(store);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.replace(/\.md$/, ""))
     .sort();
+}
+
+/** The read view (P2 read flip): file facts ∪ live facts from the personal ledger this
+ *  store shadows into (`<store>/ledger` — see `forge recall add`). A file wins on slug
+ *  collision (the file is the canonical local value). */
+export function list(store) {
+  return mergeFactSlugs(listStored(store), join(store, "ledger"));
 }
 
 export function reindex(store) {

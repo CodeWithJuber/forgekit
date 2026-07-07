@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Ledger read-path flip (P2).** Reads are now a merged view (legacy ∪ ledger) via the
+  new `src/ledger_read.js`, so teammate knowledge that arrives with `forge ledger merge`
+  actually reaches injection and retrieval: cortex lesson surfaces
+  (`lessonsForContext`, `startupBlock`, `summary`, the substrate advisory and routing
+  past-mistake density) map ledger `lesson` claims onto the legacy lesson shape with an
+  evidence-derived status (tombstoned → retired, val ≥ 0.6 → active, val < 0.45 with a
+  contradiction → quarantined, else candidate), and fact surfaces (`recall list`/
+  `MEMORY.md`, brain's `AGENTS.md` index) include live ledger `fact` claims — always
+  deduped by legacy id/slug with the local file winning, and best-effort (a missing or
+  corrupt ledger degrades to legacy-only). Write paths (`recordMistake`'s
+  confirm-vs-create lookup, `recordContradiction`, `applyDistillation`) deliberately
+  keep reading the legacy store they edit; convergence comes from content-addressed
+  claim ids. `reconcileFacts` now only tombstones locally-authored claims, so a merged
+  teammate fact survives `forge recall consolidate`. Legacy formats are still written —
+  full retirement is the next step.
+
 ## [0.6.0] - 2026-07-07
 
 ### Changed
