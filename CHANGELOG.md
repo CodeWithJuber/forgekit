@@ -62,6 +62,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is tested without sockets, and corrupt/missing stores degrade to empty sections instead
   of taking down the lens. The ratify/retract POSTs are a follow-up; this phase never
   writes.
+- **Measured cost report (P8 of the substrate-v2 plan).** `forge cost --stages [--json]`
+  computes per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`
+  (`src/cost_report.js`): gate halt rate, tier-weighted cache hit rate (exact 1.0 / near
+  0.85 / adapt 0.5), route saving priced against the always-premium baseline, and context
+  assembly — then composes `C = C₀ · Π(1 − fᵢ)` over ONLY the measured stages. A stage with
+  no events reports "no data", never a default; the composed figure is a lower bound whose
+  caveats name every unmeasured stage; the paper's 62 % routing figure is cited as context,
+  and ~90 % appears only as a labeled target. `substrateCheck` now meters the assumption
+  gate on the explicit path (one `gate` halt/pass line per decision; ambient hooks stay
+  write-free), `recordGate`/`recordRoute` give future stage wiring one obvious call each,
+  and `reports/cost-eval.md` scaffolds the paired-run harness report with a truthful
+  empty state.
 
 - **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
   "reuse already-generated code" from prose into a deterministic system: verified code

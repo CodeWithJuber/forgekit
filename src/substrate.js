@@ -10,6 +10,7 @@ import { goalDrift } from "./anchor.js";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
 import { assemble as assembleContext } from "./context.js";
 import { matchingLessons } from "./cortex.js";
+import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
@@ -193,6 +194,14 @@ export function substrateCheck(
   };
   const entities = referencedEntities(text);
   const preflight = preflightRepo(root, text, { askThreshold, allowBuild, ...llmOpts });
+  // P8 gate metering: one metrics line per explicit gate decision (halt = spend avoided).
+  // Same write contract as reuseQuery vs reusePeek below — the ambient hook path
+  // (allowBuild:false) never appends. Best-effort: measurement must never block the gate.
+  if (allowBuild) {
+    try {
+      recordGate(root, { halted: preflight.assumption.shouldAsk });
+    } catch {}
+  }
   // Reuse the gap preflight already computed — routeTask would otherwise recompute it (and, with
   // FORGE_LLM on, fire a second, redundant assumption model call whose result it discards).
   const route = routeTask(root, text, { ...llmOpts, ambiguity: preflight.gap });
