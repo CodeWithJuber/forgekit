@@ -928,11 +928,16 @@ async function run(argv) {
     const sub = argv[1];
     if (sub === "fingerprint" || sub === "design") {
       const ui = await import("./uifingerprint.js");
-      const json = argv.includes("--json");
-      const files = argv.slice(2).filter((a) => !a.startsWith("--"));
-      if (!files.length) {
+      // `--taste <name>` (design only) takes a VALUE — splice it out before the
+      // file filter so the profile name is never mistaken for a file.
+      const args = argv.slice(2);
+      const tasteIdx = args.indexOf("--taste");
+      const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+      const json = args.includes("--json");
+      const files = args.filter((a) => !a.startsWith("--"));
+      if (!files.length || (tasteIdx >= 0 && !tasteArg)) {
         console.error(
-          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : ""}`,
+          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : " [--taste <name>]"}`,
         );
         process.exitCode = 1;
         return;
@@ -971,17 +976,43 @@ async function run(argv) {
       }
       // design — the two-sided gate: fail when too close to generic OR (when the
       // project has minted its fingerprint) too far from the project's own system.
+      // A taste profile (explicit --taste, else the style pinned by a
+      // `forge taste`-managed DESIGN.md) overrides thresholds + adds its checks.
+      const tasteName = tasteArg ?? ui.activeTasteStyle(process.cwd());
+      const profile = tasteName ? ui.loadTasteProfile(tasteName) : null;
+      if (tasteArg && !profile) {
+        // Explicit --taste must exist; an auto-picked style without a JSON sibling
+        // silently falls back to defaults (custom prose styles stay legal).
+        console.error(
+          `unknown taste profile "${tasteArg}" — run \`${BRAND.cli} taste\` to list styles`,
+        );
+        process.exitCode = 1;
+        return;
+      }
       const projectFp = ui.loadProjectFingerprint(process.cwd());
-      const gate = ui.uiGate(fp, { projectFp });
-      const checks = ui.scaleChecks(fp);
+      const tauSlop = profile?.gate?.tau_slop ?? ui.UI_GATE_DEFAULTS.tauSlop;
+      const tauConform = profile?.gate?.tau_conform ?? ui.UI_GATE_DEFAULTS.tauConform;
+      const gate = ui.uiGate(fp, { projectFp, tauSlop, tauConform });
+      const checks = [...ui.scaleChecks(fp), ...(profile ? ui.profileChecks(fp, profile) : [])];
       const fail = !gate.pass || checks.some((c) => !c.pass);
       if (json) {
         console.log(
-          JSON.stringify({ ...gate, checks, hasProjectFingerprint: !!projectFp }, null, 2),
+          JSON.stringify(
+            {
+              ...gate,
+              checks,
+              hasProjectFingerprint: !!projectFp,
+              taste: profile ? tasteName : null,
+              tauSlop,
+              tauConform,
+            },
+            null,
+            2,
+          ),
         );
       } else {
-        const { tauSlop, tauConform } = ui.UI_GATE_DEFAULTS;
         console.log(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
+        if (profile) console.log(`  taste:         ${tasteName} (thresholds from its profile)`);
         console.log(
           `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
         );

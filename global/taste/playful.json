@@ -1,0 +1,9 @@
+{
+  "name": "playful",
+  "why": "Friendly, energetic (playful.md): '2-3 saturated hues' -> max_hues 3, the most permissive palette of the five, with chroma pinned high but short of neon-on-neon (chroma = HSL saturation/100 proxy, 0-1); warm soft background neutrals; grid-aligned but generous -> geometric 1.25-1.5 on a 4/8 base; one rounded sans plus an optional display face -> max_families 2; 'rounded fills (radius 12-20px)' and soft shadows -> radius [1,3], shadow [1,2] (some rounding and lift is REQUIRED, not just allowed); default tau_slop 0.25 — playful legitimately lives nearer the card-and-radius territory templates also occupy.",
+  "palette": { "max_hues": 3, "chroma": [0.55, 1.0], "neutrals": "warm" },
+  "space": { "scale": "geometric", "ratio": [1.25, 1.5], "base": [4, 8] },
+  "type": { "max_families": 2 },
+  "shape": { "radius_levels": [1, 3], "shadow_levels": [1, 2] },
+  "gate": { "tau_slop": 0.25, "tau_conform": 0.5 }
+}
