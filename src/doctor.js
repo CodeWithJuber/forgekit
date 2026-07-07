@@ -7,6 +7,7 @@ import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
+import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { canonical } from "./sync.js";
 
@@ -171,6 +172,33 @@ function checkCortex(out, targetRoot) {
   );
 }
 
+// PCM ledger: a populated ledger with no union-merge driver WILL conflict the first
+// time two teammates append to the same evidence log — the exact failure the ledger's
+// design promises away. Also surface normal-form issues (forged/corrupt records).
+function checkLedger(out, targetRoot) {
+  const dir = repoLedger(targetRoot);
+  if (!existsSync(join(dir, "claims"))) {
+    out.push(ok("ledger", "empty — claims appear as cortex/recall learn (`forge ledger`)"));
+    return;
+  }
+  const attrs = join(targetRoot, ".gitattributes");
+  const hasRule = existsSync(attrs) && readFileSync(attrs, "utf8").includes(".forge/ledger/");
+  out.push(
+    hasRule
+      ? ok("ledger merge", "union-merge driver present in .gitattributes")
+      : warn(
+          "ledger merge",
+          "no union-merge rule — run `forge init` or teammate merges will conflict",
+        ),
+  );
+  const v = ledgerVerify(dir);
+  out.push(
+    v.ok
+      ? ok("ledger", `${v.claims} claim(s), ${v.outcomes} outcome(s) — normal form`)
+      : warn("ledger", `${v.issues.length} issue(s) — run \`forge ledger verify\` to list them`),
+  );
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -184,5 +212,6 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkPricing(results);
   checkMcp(results, targetRoot);
   checkCortex(results, targetRoot);
+  checkLedger(results, targetRoot);
   return { results, failed: results.filter((r) => r.status === "fail").length };
 }

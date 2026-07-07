@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  authorTrust,
   canonicalize,
   claimId,
   DORMANT_VAL,
@@ -179,8 +180,45 @@ export function getClaimByPrefix(dir, prefix) {
   return liveClaims(state)[0];
 }
 
-/** Semilattice import: merge another ledger state into this directory (P2's `forge
- *  ledger merge` core). Idempotent; safe to re-run. */
+/** `forge ledger merge <path>` — semilattice merge of another on-disk ledger into
+ *  this one. Idempotent and order-independent by the CRDT property, so merging a
+ *  teammate's checkout, a backup, or a branch worktree is always safe. */
+export function mergeDirs(dstDir, srcDir) {
+  return importState(dstDir, loadState(srcDir));
+}
+
+/**
+ * `forge ledger blame <id-prefix>` — the full accountability view of one claim: who
+ * minted it (every author, via the provenance log), every evidence record in (t, h)
+ * order, retractions, and the per-author trust the ledger has earned (17:36's audit
+ * trail: every channel the agent used can be questioned).
+ */
+export function blame(dir, prefix, nowDay = 0) {
+  const claim = getClaimByPrefix(dir, prefix);
+  if (!claim) return null;
+  const trust = authorTrust(loadClaims(dir));
+  return {
+    id: claim.id,
+    kind: claim.kind,
+    body: claim.body,
+    scope: claim.scope,
+    minted: claim.provenanceAll,
+    evidence: claim.evidence,
+    tombstones: readLog(dir, "tombstones", claim.id),
+    val: val(claim, nowDay),
+    valTrustWeighted: val(claim, nowDay, { trust }),
+    trust: Object.fromEntries(
+      [
+        ...new Set(
+          [...claim.provenanceAll, ...claim.evidence].map((r) => r.author).filter(Boolean),
+        ),
+      ].map((a) => [a, trust[a] ?? 1]),
+    ),
+  };
+}
+
+/** Semilattice import: merge another ledger state into this directory (the mergeDirs
+ *  core). Idempotent; safe to re-run. */
 export function importState(dir, other) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;

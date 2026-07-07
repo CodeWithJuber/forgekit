@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Team memory (P2 of the substrate-v2 plan).** The PCM ledger becomes shared:
+  `forge ledger merge <path>` performs the conflict-free semilattice merge of any other
+  ledger tree (a teammate's checkout, a worktree, a backup) — identical knowledge minted
+  independently converges to one claim with every author preserved in its provenance log.
+  `forge ledger blame <id>` is the accountability view (every mint, every oracle outcome,
+  every retraction, per-author trust). `forge ledger query "<text>"` ranks live claims by
+  the paper's Eq. 3. Every claim, evidence record, and tombstone now carries the git
+  identity (`FORGE_AUTHOR` override; cached; best-effort). **Per-author trust**
+  `u(author) ∈ [0.5, 1]` is computed from the oracle track record of the claims an author
+  minted — smoothed to 1.0 for new teammates, floored at 0.5, self-confirmation excluded —
+  and optionally weights `val()`. `forge doctor` now checks the union-merge driver is
+  present (a populated ledger without it WILL conflict) and the ledger's normal form.
+
 ### Fixed
 
 - **PCM ledger hardened after an 8-angle adversarial review of the P1 merge.** The

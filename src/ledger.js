@@ -175,18 +175,54 @@ const decayed = (outcome, nowDay, halfLife) =>
  * Fresh claim → 0.5. Unreviewed evidence decays, pulling val back toward 0.5
  * (uncertainty), never toward 0 — review (new evidence) is what restores weight.
  * Records that fail validOutcome (unknown oracle, malformed) are IGNORED, not
- * trusted. Pure function of the evidence set ⇒ identical after any merge order.
+ * trusted. Optional `trust` (author → u, see authorTrust) scales each record by its
+ * appender's earned reliability. Pure function of (evidence set, trust map) ⇒
+ * identical after any merge order.
+ * @param {any} claim
+ * @param {number} [nowDay]
+ * @param {{halfLife?: number, trust?: Record<string, number>}} [opts]
  */
-export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS, trust } = {}) {
   let confirms = 0;
   let all = 0;
   for (const e of claim.evidence ?? []) {
     if (!validOutcome(e)) continue;
-    const d = decayed(e, nowDay, halfLife);
+    const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1);
     all += d;
     if (e.result === "confirm") confirms += d;
   }
   return (1 + confirms) / (2 + all);
+}
+
+/**
+ * Per-author trust u(author) ∈ [0.5, 1] — the historical confirm rate of the claims
+ * an author MINTED (docs/plans/substrate-v2/02-team-memory.md §3): authors whose
+ * claims keep being contradicted by oracles contribute less evidence weight going
+ * forward. Smoothed so a no-history author starts at 1.0 (never punish the new
+ * teammate) and floored at 0.5 (never silence anyone).
+ *   u(a) = max(0.5, (confirms_a + s) / (confirms_a + contradictions_a + s)),  s = 2
+ * Counts are oracle-weighted, and an author's own evidence on their own claims is
+ * EXCLUDED — self-confirmation must not raise one's trust (C12 discipline).
+ * @returns {Record<string, number>} author → u
+ */
+export function authorTrust(claims) {
+  const tally = new Map(); // author → {c, m}
+  for (const claim of claims) {
+    const author = claim.provenance?.author ?? "";
+    if (!author) continue;
+    const t = tally.get(author) ?? { c: 0, m: 0 };
+    for (const e of claim.evidence ?? []) {
+      if (!validOutcome(e) || (e.author ?? "") === author) continue;
+      const w = ORACLES[e.oracle].w;
+      if (e.result === "confirm") t.c += w;
+      else t.m += w;
+    }
+    tally.set(author, t);
+  }
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [a, { c, m }] of tally) out[a] = Math.max(0.5, (c + 2) / (c + m + 2));
+  return out;
 }
 
 /** Recency — λ^(Δt/T) since the last evidence (or mint, if none). */

@@ -19,7 +19,7 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + the cost ceiling",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
-  ledger: "proof-carrying memory ledger — stats / verify / show <id> / import",
+  ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
@@ -230,6 +230,77 @@ async function run(argv) {
       const { val } = await import("./ledger.js");
       return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
     }
+    if (sub === "merge") {
+      const src = args[2];
+      const { existsSync } = await import("node:fs");
+      if (!src || !existsSync(src)) {
+        console.error(
+          src
+            ? `  no ledger at ${src}`
+            : "usage: forge ledger merge <path-to-ledger-dir>  (a teammate's checkout, a backup, a worktree)",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const r = ls.mergeDirs(dir, src);
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
+      return;
+    }
+    if (sub === "blame") {
+      const b = args[2] && args[2].length >= 2 ? ls.blame(dir, args[2], nowDay) : null;
+      if (!b) {
+        console.error(
+          args[2] ? `  no claim matching ${args[2]}` : "usage: forge ledger blame <id-prefix>",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (json) return console.log(JSON.stringify(b, null, 2));
+      console.log(`${BRAND.brand} ledger blame — ${b.kind} ${b.id.slice(0, 12)}\n`);
+      console.log(`  val ${b.val.toFixed(2)} (trust-weighted ${b.valTrustWeighted.toFixed(2)})`);
+      for (const p of b.minted)
+        console.log(
+          `  minted  day ${p.t}  by ${p.author || "(unknown)"}${p.agent ? ` · ${p.agent}` : ""}`,
+        );
+      for (const e of b.evidence)
+        console.log(
+          `  ${e.result === "confirm" ? "confirm " : "contradic"}  day ${e.t}  ${e.oracle} → ${e.ref}${e.author ? `  by ${e.author}` : ""}`,
+        );
+      for (const t of b.tombstones)
+        console.log(`  retract  day ${t.t}  ${t.reason}${t.author ? `  by ${t.author}` : ""}`);
+      const trusts = Object.entries(b.trust);
+      if (trusts.length) {
+        console.log("\n  author trust (earned from oracle outcomes on their claims):");
+        for (const [a, u] of trusts) console.log(`    ${u.toFixed(2)}  ${a}`);
+      }
+      return;
+    }
+    if (sub === "query") {
+      const q = args.slice(2).join(" ");
+      if (!q) {
+        console.error('usage: forge ledger query "<what you are about to do>"');
+        process.exitCode = 1;
+        return;
+      }
+      const { retrieve, claimText } = await import("./ledger.js");
+      const claims = ls.loadClaims(dir);
+      const ranked = retrieve(q, claims, { nowDay, budget: 8 });
+      if (json)
+        return console.log(
+          JSON.stringify(
+            ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+            null,
+            2,
+          ),
+        );
+      if (!ranked.length) return console.log("  no matching live claims");
+      for (const r of ranked)
+        console.log(
+          `  ${r.score.toFixed(3)}  ${r.claim.kind.padEnd(9)} ${r.claim.id.slice(0, 8)}  ${claimText(r.claim).slice(0, 90)}`,
+        );
+      return;
+    }
     if (sub === "import") {
       const b = await import("./ledger_bridge.js");
       let r;
@@ -249,7 +320,7 @@ async function run(argv) {
       return;
     }
     console.error(
-      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | import) [--personal] [--json]`,
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | merge <path> | import) [--personal] [--json]`,
     );
     process.exitCode = 1;
     return;
