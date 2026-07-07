@@ -47,6 +47,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claim ids. `reconcileFacts` now only tombstones locally-authored claims, so a merged
   teammate fact survives `forge recall consolidate`. Legacy formats are still written —
   full retirement is the next step.
+- **Professional redesign of the public site, gated by forge's own UI system.** The
+  landing page (`landing/index.html`) and the generated status page
+  (`scripts/build-pages.mjs` → `public/index.html`) are rebuilt on one design system —
+  the `forge dash` eight-color warm-ink/ember palette, a strict 4px spacing base, three
+  radius levels, one shadow — and both now pass `forge uicheck design` **and** the
+  rendered `forge uicheck visual` gate (the old pages failed with 15–19 accumulated
+  colors and 5–9 radius levels; a project fingerprint claim is minted so conformance is
+  checked too). Scroll-reveal is JS-gated progressive enhancement (no-JS UAs, crawlers,
+  and reduced-motion users see the full page), and the Pages workflow (`static.yml`) now
+  builds and deploys an assembled `_site/` — landing at the site root, status page at
+  `/status/` — instead of uploading the entire repository as the artifact.
 
 ## [0.6.0] - 2026-07-07
 
