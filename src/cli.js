@@ -28,6 +28,9 @@ const COMMANDS = {
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
+  diagnose:
+    "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
+  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
   brand: "print the active brand token map",
@@ -807,6 +810,59 @@ async function run(argv) {
     const r = goalDrift(process.cwd(), goal);
     console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
     return; // advisory — never fails the process
+  }
+  if (cmd === "diagnose") {
+    const { diagnose, THRASH_K } = await import("./diagnose.js");
+    const json = argv.includes("--json");
+    const flagVal = (name) => {
+      const i = argv.indexOf(name);
+      return i >= 0 ? argv[i + 1] : undefined;
+    };
+    const args = argv.filter(
+      (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--symbol",
+    );
+    const errorText = args.slice(1).join(" ");
+    if (!errorText) {
+      console.error('usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = diagnose(process.cwd(), {
+      errorText,
+      file: flagVal("--file"),
+      symbol: flagVal("--symbol"),
+    });
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    console.log(`${BRAND.brand} diagnose — doom-loop check\n`);
+    console.log(
+      `  signature: ${r.signature.slice(0, 12)} · seen ${r.count}× in the recent failure window`,
+    );
+    if (r.thrash) {
+      if (r.claimId)
+        console.log(
+          `  diagnosis claim: ${r.claimId.slice(0, 12)}  (\`forge ledger show ${r.claimId.slice(0, 8)}\`)`,
+        );
+      console.log(`\n  ${r.escalate ?? r.reason}`);
+    } else {
+      console.log(`  below the thrash threshold (${THRASH_K}) — recorded; keep going.`);
+    }
+    return; // advisory — halting the retry loop is the AGENT's move, not an exit code
+  }
+  if (cmd === "imagine") {
+    const { imagineTask, renderImagine } = await import("./imagine.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge imagine "<task>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = imagineTask(process.cwd(), task);
+    console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+    return;
   }
   if (cmd === "lean") {
     const { leanRepo, renderLean } = await import("./lean.js");

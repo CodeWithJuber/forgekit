@@ -57,6 +57,28 @@ function runTests(cwd) {
   }
 }
 
+/**
+ * M6 — checkpoint cadence as an optimal-stopping threshold rule (spec §6:
+ * docs/plans/substrate-v2/06-faculties-and-mechanisms.md). Insert a checkpoint once
+ * the expected loss of continuing-while-wrong exceeds the check's price:
+ * pErr·tokensPerStep·costPerToken·n > checkCost, i.e. check every
+ * n* = ⌈checkCost / (pErr · tokensPerStep · costPerToken)⌉ meaningful steps. No
+ * magic constants: pErr is measured per tier from ledger outcome history, the costs
+ * are priced — riskier/cheaper tiers get smaller n* automatically. Clamped to
+ * [1, 50]: even a near-free check shouldn't fire more than every step, and even a
+ * near-riskless run must still checkpoint eventually. Pure.
+ * @param {{pErr: number, tokensPerStep: number, costPerToken?: number, checkCost: number}} f
+ *   pErr = per-step error hazard; tokensPerStep = tokens put at risk per step;
+ *   checkCost priced in the same token-cost unit.
+ * @returns {number} integer steps between checkpoints, in [1, 50]
+ */
+export function checkpointCadence({ pErr, tokensPerStep, costPerToken = 1, checkCost }) {
+  const n = Math.ceil(checkCost / (pErr * tokensPerStep * costPerToken));
+  // Degenerate inputs (NaN from bad measurements) fail SAFE: check every step.
+  if (Number.isNaN(n)) return 1;
+  return Math.min(50, Math.max(1, n)); // zero risk → Infinity → the 50-step ceiling
+}
+
 export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   const diff =
     git(["diff", "--unified=0", base], targetRoot) ||

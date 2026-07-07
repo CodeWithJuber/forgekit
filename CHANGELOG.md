@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
+  drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
+  signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
+  counts recurrences in a 50-entry ring; the 3rd identical hit is thrash — it mints a
+  content-addressed `diagnosis` claim into the team ledger and tells the agent to STOP
+  retrying and escalate ONE model tier with the diagnosis as the prompt's head (the same
+  loop becomes a one-per-team event, not one-per-session). `forge imagine "<task>"` is the
+  static half of the consequence simulator (paper Eq. 4): entities → blast radius →
+  predicted breaks with confidence, plus the minimal dry-run test suite via weighted greedy
+  set cover (weight = file size as a duration proxy; classic ln-n approximation) and
+  `riskScore = Σ confidence` — the sandboxed worktree runner that executes the suite is the
+  P5 follow-up. `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
+  h = 1.0): sustained small drift alarms, a single exploratory spike drains back to zero.
+  `verify.checkpointCadence()` prices M6's "when to check?" as the optimal-stopping
+  threshold rule `n* = ⌈checkCost / (pErr·tokensPerStep·costPerToken)⌉`, clamped to
+  [1, 50] — every input measured or priced, no magic constants.
+
 - **Context assembly + completeness gate (P4 of the substrate-v2 plan).** `forge context
   "<task>"` makes what goes into the window a budgeted optimization and makes
   *sufficiency* a computed set. The required-knowledge set `R(edit)` — the target's
