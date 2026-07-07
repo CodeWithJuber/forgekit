@@ -341,16 +341,25 @@ async function run(argv) {
         return;
       }
       const { retrieve, claimText } = await import("./ledger.js");
+      // The embeddings tier (ADR-0005) is assembled HERE, not in ledger.js — the pure
+      // core stays provider-free. No FORGE_EMBED (or a failing provider) → sim is
+      // null and retrieval is the stock MinHash path.
+      const { claimSim, simLabel } = await import("./embed.js");
       const claims = ls.loadClaims(dir);
-      const ranked = retrieve(q, claims, { nowDay, budget: 8 });
+      const sim = claimSim(root, q, claims, claimText);
+      const ranked = retrieve(q, claims, { nowDay, budget: 8, sim });
       if (json)
         return console.log(
           JSON.stringify(
-            ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+            {
+              sim: simLabel(sim),
+              results: ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+            },
             null,
             2,
           ),
         );
+      console.log(`  sim: ${simLabel(sim)}`);
       if (!ranked.length) return console.log("  no matching live claims");
       for (const r of ranked)
         console.log(
@@ -408,17 +417,25 @@ async function run(argv) {
       if (json)
         return console.log(
           JSON.stringify(
-            { tier: r.tier, artifact: r.artifact?.id, jaccard: r.jaccard, reasons: r.reasons },
+            {
+              tier: r.tier,
+              artifact: r.artifact?.id,
+              jaccard: r.jaccard,
+              similarity: r.similarity,
+              sim: r.sim,
+              reasons: r.reasons,
+            },
             null,
             2,
           ),
         );
+      console.log(`  sim: ${r.sim}`);
       if (r.tier === "miss") {
         console.log("  miss — nothing verified matches; generate, then `forge reuse mint` it");
       } else {
         const a = r.artifact;
         console.log(
-          `  ${r.tier.toUpperCase()} hit (similarity ${(r.jaccard ?? 1).toFixed(2)}) — ${a.body.form}${a.body.code?.path ? ` at ${a.body.code.path}` : ""}`,
+          `  ${r.tier.toUpperCase()} hit (similarity ${(r.similarity ?? r.jaccard ?? 1).toFixed(2)}) — ${a.body.form}${a.body.code?.path ? ` at ${a.body.code.path}` : ""}`,
         );
         console.log(
           `    claim ${a.id.slice(0, 12)} — \`forge ledger blame ${a.id.slice(0, 8)}\` for its proof`,

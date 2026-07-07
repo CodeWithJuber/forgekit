@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Optional embeddings tier** (`src/embed.js`, ADR-0005; ROADMAP "Next"): set
+  `FORGE_EMBED=cmd:<command>` (stdin/stdout JSON protocol — any local model or script)
+  or `FORGE_EMBED=http:<url>` (OpenAI-compatible, `$FORGE_EMBED_MODEL` /
+  `$FORGE_EMBED_KEY`, key never logged) and `forge reuse query` + `forge ledger query`
+  replace the MinHash `rel` term with embedding cosine (near/adapt ≥ 0.85/0.7 — a
+  higher bar than Jaccard's 0.8/0.6 to match dense cosine's noise floor), fixing the
+  documented weak spot on very short specs. Vectors are disk-cached
+  (`.forge/embed-cache.jsonl`, content-hash keyed, corrupt-tolerant, truncate-oldest);
+  both commands print the backend that served (`sim: minhash` / `sim: embed(cmd)`);
+  any provider failure degrades silently to MinHash. `dependencies` stays empty —
+  the tier is configuration, not a package; the pure ledger core never imports it.
+
 ## [0.6.0] - 2026-07-07
 
 ### Changed
