@@ -16,7 +16,7 @@ const COMMANDS = {
   harden: "wire security controls — gitleaks pre-commit + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
-  cost: "real per-day spend via ccusage + the cost ceiling",
+  cost: "real per-day spend via ccusage + measured stage factors (--stages)",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
@@ -28,8 +28,13 @@ const COMMANDS = {
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
+  diagnose:
+    "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
+  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
-  uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
+  uicheck:
+    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...>",
+  dash: "local dashboard over the ledger, metrics, and blast radius",
   brand: "print the active brand token map",
 };
 
@@ -585,6 +590,14 @@ async function run(argv) {
     return;
   }
   if (cmd === "cost") {
+    // `--stages` is the P8 measured report (per-stage factors from .forge/metrics.jsonl);
+    // the default path stays the ccusage per-day spend view, untouched.
+    if (argv.includes("--stages")) {
+      const { renderCostReport, report } = await import("./cost_report.js");
+      const r = report(process.cwd());
+      console.log(argv.includes("--json") ? JSON.stringify(r, null, 2) : renderCostReport(r));
+      return;
+    }
     const { execFileSync } = await import("node:child_process");
     const run = (bin, args) => execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
     console.log(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
@@ -808,6 +821,59 @@ async function run(argv) {
     console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
     return; // advisory — never fails the process
   }
+  if (cmd === "diagnose") {
+    const { diagnose, THRASH_K } = await import("./diagnose.js");
+    const json = argv.includes("--json");
+    const flagVal = (name) => {
+      const i = argv.indexOf(name);
+      return i >= 0 ? argv[i + 1] : undefined;
+    };
+    const args = argv.filter(
+      (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--symbol",
+    );
+    const errorText = args.slice(1).join(" ");
+    if (!errorText) {
+      console.error('usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = diagnose(process.cwd(), {
+      errorText,
+      file: flagVal("--file"),
+      symbol: flagVal("--symbol"),
+    });
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    console.log(`${BRAND.brand} diagnose — doom-loop check\n`);
+    console.log(
+      `  signature: ${r.signature.slice(0, 12)} · seen ${r.count}× in the recent failure window`,
+    );
+    if (r.thrash) {
+      if (r.claimId)
+        console.log(
+          `  diagnosis claim: ${r.claimId.slice(0, 12)}  (\`forge ledger show ${r.claimId.slice(0, 8)}\`)`,
+        );
+      console.log(`\n  ${r.escalate ?? r.reason}`);
+    } else {
+      console.log(`  below the thrash threshold (${THRASH_K}) — recorded; keep going.`);
+    }
+    return; // advisory — halting the retry loop is the AGENT's move, not an exit code
+  }
+  if (cmd === "imagine") {
+    const { imagineTask, renderImagine } = await import("./imagine.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge imagine "<task>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = imagineTask(process.cwd(), task);
+    console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+    return;
+  }
   if (cmd === "lean") {
     const { leanRepo, renderLean } = await import("./lean.js");
     const json = argv.includes("--json");
@@ -859,10 +925,88 @@ async function run(argv) {
     return;
   }
   if (cmd === "uicheck") {
+    const sub = argv[1];
+    if (sub === "fingerprint" || sub === "design") {
+      const ui = await import("./uifingerprint.js");
+      const json = argv.includes("--json");
+      const files = argv.slice(2).filter((a) => !a.startsWith("--"));
+      if (!files.length) {
+        console.error(
+          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : ""}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const fp = ui.fingerprintFiles(process.cwd(), files);
+      if (sub === "fingerprint") {
+        let minted = null;
+        if (argv.includes("--mint")) {
+          const { epochDay } = await import("./util.js");
+          minted = ui.mintProjectFingerprint(process.cwd(), files, { t: epochDay() });
+        }
+        if (json) {
+          console.log(JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2));
+        } else {
+          console.log(`${BRAND.brand} uicheck fingerprint — the design feature vector\n`);
+          console.log(
+            `  palette:  ${fp.paletteSize} color(s), hue bins [${fp.hueBuckets.join(" ")}]`,
+          );
+          console.log(
+            `  spacing:  ${fp.spacing.join(", ") || "(none)"} px — base ${fp.spacingBase ?? "(none)"}, ${Math.round(fp.spacingOnScale * 100)}% on-scale`,
+          );
+          console.log(`  type:     ${fp.fontFamilies.join(", ") || "(none)"}`);
+          console.log(
+            `  shape:    radii ${fp.radii.join(", ") || "(none)"} (${fp.radiusLevels} level(s)) · ${fp.shadowLevels} shadow level(s)`,
+          );
+          if (minted) {
+            if (minted.ok)
+              console.log(
+                `\n  minted fingerprint claim ${minted.id.slice(0, 12)}${minted.existed ? " (already in ledger)" : ""} — the gate's "home"`,
+              );
+            else console.error(`\n  mint failed: ${"reason" in minted ? minted.reason : ""}`);
+          }
+        }
+        if (minted && !minted.ok) process.exitCode = 1;
+        return;
+      }
+      // design — the two-sided gate: fail when too close to generic OR (when the
+      // project has minted its fingerprint) too far from the project's own system.
+      const projectFp = ui.loadProjectFingerprint(process.cwd());
+      const gate = ui.uiGate(fp, { projectFp });
+      const checks = ui.scaleChecks(fp);
+      const fail = !gate.pass || checks.some((c) => !c.pass);
+      if (json) {
+        console.log(
+          JSON.stringify({ ...gate, checks, hasProjectFingerprint: !!projectFp }, null, 2),
+        );
+      } else {
+        const { tauSlop, tauConform } = ui.UI_GATE_DEFAULTS;
+        console.log(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
+        console.log(
+          `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
+        );
+        console.log(
+          projectFp
+            ? `  conformance:   ${gate.conform}  (need ≤ ${tauConform} — closer to the project system is better)`
+            : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
+        );
+        for (const v of gate.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+        console.log("");
+        for (const c of checks)
+          console.log(
+            `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
+          );
+        console.log(`\n  ${fail ? "✗ FAIL" : "✓ PASS"}`);
+      }
+      if (fail) process.exitCode = 1;
+      return;
+    }
     const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
       "./uicheck.js"
     );
-    const [fg, bg] = [argv[1], argv[2]];
+    // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
+    // supported (it predates the subcommands and hooks already call it).
+    const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
     console.log(`${BRAND.brand} uicheck — deterministic UI review\n`);
     if (fg && bg) {
       try {
@@ -879,6 +1023,27 @@ async function run(argv) {
     console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
     console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
     return;
+  }
+  if (cmd === "dash") {
+    const { serve } = await import("./dash.js");
+    const i = argv.indexOf("--port");
+    const port = i >= 0 ? Number(argv[i + 1]) : 4242;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error("usage: forge dash [--port N]");
+      process.exitCode = 1;
+      return;
+    }
+    const server = serve(process.cwd(), { port });
+    server.on("listening", () => {
+      const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+      console.log(`${BRAND.brand} dash — read-only lens on .forge/\n`);
+      console.log(`  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`);
+    });
+    server.on("error", (err) => {
+      console.error(`  ${err.message}`);
+      process.exitCode = 1;
+    });
+    return; // the process stays alive serving — that's the command
   }
   if (!(cmd in COMMANDS)) {
     console.error(`Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`);

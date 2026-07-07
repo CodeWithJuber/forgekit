@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
+  drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
+  signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
+  counts recurrences in a 50-entry ring; the 3rd identical hit is thrash — it mints a
+  content-addressed `diagnosis` claim into the team ledger and tells the agent to STOP
+  retrying and escalate ONE model tier with the diagnosis as the prompt's head (the same
+  loop becomes a one-per-team event, not one-per-session). `forge imagine "<task>"` is the
+  static half of the consequence simulator (paper Eq. 4): entities → blast radius →
+  predicted breaks with confidence, plus the minimal dry-run test suite via weighted greedy
+  set cover (weight = file size as a duration proxy; classic ln-n approximation) and
+  `riskScore = Σ confidence` — the sandboxed worktree runner that executes the suite is the
+  P5 follow-up. `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
+  h = 1.0): sustained small drift alarms, a single exploratory spike drains back to zero.
+  `verify.checkpointCadence()` prices M6's "when to check?" as the optimal-stopping
+  threshold rule `n* = ⌈checkCost / (pErr·tokensPerStep·costPerToken)⌉`, clamped to
+  [1, 50] — every input measured or priced, no magic constants.
+
 - **Context assembly + completeness gate (P4 of the substrate-v2 plan).** `forge context
   "<task>"` makes what goes into the window a budgeted optimization and makes
   *sufficiency* a computed set. The required-knowledge set `R(edit)` — the target's
@@ -20,6 +37,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   implements it?"), shown in `forge substrate` and — under `FORGE_ENFORCE=1` — blocking:
   acting on missing context is acting on a guess. Incomplete context stops being a
   feeling and starts being a set difference.
+- **Generated-UI quality gate (P6 of the substrate-v2 plan).** Taste becomes measurable:
+  `src/uifingerprint.js` extracts a deterministic design fingerprint from CSS/JSX/Tailwind
+  classes — pure static parsing, no LLM, no screenshots — covering palette (HSL + 12-bin hue
+  histogram), spacing (base unit by residual-minimization approximate GCD, on-scale
+  fraction), font families, radius and shadow levels. Two distances gate generated UI:
+  `slopDistance` to a shipped, rationale-documented generic-template signature set
+  (default-Tailwind blue/indigo, stock Bootstrap, the AI-landing gradient) must stay HIGH,
+  and `conformance` to the project's own fingerprint — stored as a shared `fingerprint`
+  ledger claim via `mintProjectFingerprint` — must stay LOW; `uiGate` failures are
+  actionable per-feature edits, never a bare score. Scale-conformance checks
+  (spacing-on-base, radius/shadow level caps, palette bound) join `ASSERTABLE_CHECKS`.
+  `forge uicheck` gains `fingerprint <file...> [--mint]` and `design <file...>` (exit 1 on
+  fail) alongside the unchanged contrast math.
+- **Local dashboard (P7 of the substrate-v2 plan).** `forge dash [--port N]` serves a
+  read-only lens on the substrate's state: a `node:http` stdlib server (localhost-only,
+  zero runtime deps) with ONE self-contained HTML page — inline CSS/JS, no CDN, no
+  framework, no build step. Panels: Ledger (claims with val bars, kind filter, contested
+  claims — val ∈ [0.4, 0.6] with ≥1 contradiction — and per-author trust), Cost/Cache
+  (stage counters + measured saved-token estimates from `.forge/metrics.jsonl`), and
+  Impact (atlas blast-radius explorer via `/api/impact?target=X`). Every claim row shows
+  its `forge ledger blame <id>` command — no unexplained scores anywhere in the UI. Data
+  is separated from serving (`dashData()` vs `serve()` in `src/dash.js`) so the payload
+  is tested without sockets, and corrupt/missing stores degrade to empty sections instead
+  of taking down the lens. The ratify/retract POSTs are a follow-up; this phase never
+  writes.
+- **Measured cost report (P8 of the substrate-v2 plan).** `forge cost --stages [--json]`
+  computes per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`
+  (`src/cost_report.js`): gate halt rate, tier-weighted cache hit rate (exact 1.0 / near
+  0.85 / adapt 0.5), route saving priced against the always-premium baseline, and context
+  assembly — then composes `C = C₀ · Π(1 − fᵢ)` over ONLY the measured stages. A stage with
+  no events reports "no data", never a default; the composed figure is a lower bound whose
+  caveats name every unmeasured stage; the paper's 62 % routing figure is cited as context,
+  and ~90 % appears only as a labeled target. `substrateCheck` now meters the assumption
+  gate on the explicit path (one `gate` halt/pass line per decision; ambient hooks stay
+  write-free), `recordGate`/`recordRoute` give future stage wiring one obvious call each,
+  and `reports/cost-eval.md` scaffolds the paired-run harness report with a truthful
+  empty state.
 
 - **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
   "reuse already-generated code" from prose into a deterministic system: verified code
