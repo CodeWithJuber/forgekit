@@ -1,19 +1,22 @@
 ---
 name: code-modernizer
 description: >-
-  Refactors and modernizes code, replacing hand-rolled logic with the standard
-  library, a native feature, an already-installed dependency, or (only after live
-  research) a well-vetted new package, then applies minimal design patterns to
-  whatever custom code remains. Confirms scope first (full-codebase, one
-  module/partial, or only the exact lines named) and flags file count, line count,
-  and breaking-change risk before generating a large diff, asking instead of
-  assuming when scope, a library choice, or a behavior change is unclear.
-  Use whenever the user asks to refactor, modernize, de-bloat, clean up, simplify,
-  upgrade, or audit code; asks "is there a library for this", "don't reinvent the
-  wheel", "replace with a framework", "reduce boilerplate", or "apply proper design
-  patterns"; wants a root-cause fix over a quick patch; says "full upgrade" vs
-  "partial upgrade" vs "just fix this one thing"; or wants a legacy-code/tech-debt
-  audit or a dependency-choice recommendation.
+  Modernize or refactor a legacy codebase incrementally while preserving business
+  logic. Replaces hand-rolled logic with the standard library, a native feature,
+  an already-installed dependency, or (only after live research) a well-vetted new
+  package, then applies minimal design patterns to whatever custom code remains.
+  Confirms scope first (full-codebase, one module/partial, or only the exact lines
+  named) and flags file count, line count, and breaking-change risk before
+  generating a large diff, asking instead of assuming when scope, a library choice,
+  or a behavior change is unclear.
+  Use for migrations (framework/language/version upgrades), killing tech debt,
+  refactoring an old project, or "bring this up to date". Use whenever the user
+  asks to refactor, modernize, de-bloat, clean up, simplify, upgrade, or audit
+  code; asks "is there a library for this", "don't reinvent the wheel", "replace
+  with a framework", "reduce boilerplate", or "apply proper design patterns"; wants
+  a root-cause fix over a quick patch; says "full upgrade" vs "partial upgrade" vs
+  "just fix this one thing"; or wants a legacy-code/tech-debt audit or a
+  dependency-choice recommendation.
 license: MIT
 attribution: >-
   This skill's ladder is adapted from DietrichGebert/ponytail (MIT licensed).
@@ -158,6 +161,46 @@ in `references/cost-impact-preflight.md`.
 - Batch logically related edits together instead of narrating each one separately.
 - Don't restate the ladder or the research trail in the final answer. The user
   needs the change and a one-line reason, not the process that produced it.
+
+## Incremental modernization methodology (Full/Partial scope)
+
+For legacy/dated codebases, modernize in safe, verifiable increments — never a
+big-bang rewrite. Keep a human in the loop at each gate.
+
+### Assess (read-only first)
+- Map dependencies and the module graph; identify dead code and the highest-churn,
+  highest-complexity, highest-business-value hotspots.
+- Use the `serena` LSP + `scout` subagent so this exploration doesn't fill main
+  context. Write findings to `MODERNIZATION.md`.
+- Verify target frameworks/versions with `tech-selector` (current best, not
+  training-data defaults).
+
+### Safety net before changing anything
+- Characterize current behavior with tests. If coverage is thin on the code you'll
+  touch, add regression tests that pin the *existing* output first — so a refactor
+  that changes behavior fails loudly.
+
+### Transform incrementally
+- One bounded slice at a time (a module, a route, a component). Preserve business
+  logic exactly; modernize the form around it.
+- After each slice: run tests + build + lint, and for UI use `ui-workflow`'s
+  screenshot check. Commit per slice with a conventional message so each step is
+  revertible.
+
+### Verify each slice
+- Tests green, build passes, behavior unchanged (diff against the pinned regression
+  output). Use the `verifier` subagent on non-trivial slices.
+- Patch security issues surfaced along the way (semgrep is installed) but keep them
+  as separate commits.
+
+### Document
+- Update `MODERNIZATION.md` with what changed and why; capture any institutional
+  knowledge recovered from the old code before it's lost.
+
+### Guardrails
+- Business continuity first: if a slice can't be proven behavior-preserving, stop
+  and surface it rather than guessing.
+- No scope creep — modernize what the slice covers, not everything you notice.
 
 ## Never lazy about (unchanged from ponytail)
 
