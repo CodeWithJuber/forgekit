@@ -912,19 +912,87 @@ async function run(argv) {
     return; // advisory — halting the retry loop is the AGENT's move, not an exit code
   }
   if (cmd === "imagine") {
-    const { imagineTask, renderImagine } = await import("./imagine.js");
+    const { dryRun, imagineTask, renderImagine } = await import("./imagine.js");
     const json = argv.includes("--json");
+    const doRun = argv.includes("--run");
+    const allowDirty = argv.includes("--allow-dirty");
+    const FLAGS = new Set(["--json", "--run", "--allow-dirty"]);
     const task = argv
       .slice(1)
-      .filter((a) => a !== "--json")
+      .filter((a) => !FLAGS.has(a))
       .join(" ");
     if (!task) {
-      console.error('usage: forge imagine "<task>" [--json]');
+      console.error('usage: forge imagine "<task>" [--run] [--allow-dirty] [--json]');
       process.exitCode = 1;
       return;
     }
-    const r = imagineTask(process.cwd(), task);
-    console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+    const root = process.cwd();
+    const r = imagineTask(root, task);
+    if (!doRun) {
+      console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+      return;
+    }
+    // --run: the static prediction first (always), then the measured half. The sandbox
+    // is a git worktree of HEAD — uncommitted changes are INVISIBLE to it — so a dirty
+    // tree is refused by default rather than silently dry-running the wrong code.
+    if (!json) console.log(renderImagine(r, { footer: false }));
+    if (!allowDirty) {
+      let dirty = "";
+      try {
+        const { execFileSync } = await import("node:child_process");
+        dirty = execFileSync("git", ["status", "--porcelain"], {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+      } catch {} // not a repo / no git → dryRun reports its own precondition failure
+      if (dirty) {
+        console.error(
+          "\n  imagine --run refused: the working tree is dirty and the sandbox runs HEAD,\n" +
+            "  so your uncommitted changes would NOT be in the dry-run. Commit or stash them,\n" +
+            "  or pass --allow-dirty to knowingly measure the last commit instead.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+    const d = dryRun(root, { tests: r.tests });
+    // Metrics are best-effort telemetry (05-cost-model.md) — never let recording
+    // failure break the verdict. Only a run that happened is worth counting.
+    try {
+      if (d.durationMs !== undefined) {
+        const { record } = await import("./metrics.js");
+        record(root, {
+          stage: "imagine",
+          outcome: d.ok && d.failed === 0 ? "clean" : "breaks",
+          ref: task.slice(0, 120),
+          durationMs: d.durationMs,
+        });
+      }
+    } catch {}
+    if (json) {
+      console.log(JSON.stringify({ ...r, dryRun: d }, null, 2));
+      return;
+    }
+    if (!d.ok) {
+      console.log(`\n  dry-run: did not produce a verdict — ${d.reason}`);
+      if (d.output) console.log(`\n${d.output.replace(/^/gm, "    ")}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`\n  dry-run (sandboxed worktree of HEAD · ${d.runner}):`);
+    console.log(
+      `    pass ${d.passed} · fail ${d.failed} · ${d.durationMs}ms · worktree ${d.worktree}`,
+    );
+    if (d.perFile)
+      for (const [t, s] of Object.entries(d.perFile))
+        console.log(`    ${s === "pass" ? "ok  " : "FAIL"} ${t}`);
+    if (d.failed > 0) {
+      console.log("\n  measured consequence: the selected suite BREAKS at HEAD — output tail:");
+      console.log(`\n${(d.output || "").replace(/^/gm, "    ")}`);
+    } else {
+      console.log("\n  measured consequence: the selected suite is green at HEAD.");
+    }
     return;
   }
   if (cmd === "lean") {
