@@ -266,14 +266,218 @@ Forge cortex — self-correcting project memory
 
 `forge cortex why <symbol>` shows the lessons that would be injected when you touch it.
 
-### `forge uicheck <fg> <bg>` — deterministic WCAG contrast
+### `forge ledger` — proof-carrying team memory
 
-Exact contrast math for UI work — asserted, never guessed.
+The convergent store behind cortex, `recall`, `brain`, and `reuse`: every stored unit is
+a content-addressed claim whose confidence (`val`) only independent oracles can move.
+Lives in `.forge/ledger/` — git-committable, conflict-free merge.
 
 ```console
-$ forge uicheck "#777" "#fff"
+$ forge ledger stats
+Forge ledger — proof-carrying memory
+
+  claims: 12  (tombstoned 1)
+    lesson: 7
+    fact: 4
+    artifact: 1
+  val: trusted 5 · uncertain 6 · dormant 1
+
+  stored in .forge/ledger/ (git-committable, conflict-free merge)
+```
+
+`forge ledger blame <id-prefix>` is the accountability view — every mint, every oracle
+outcome, every retraction, and per-author trust:
+
+```console
+$ forge ledger blame 3f2a
+Forge ledger blame — lesson 3f2a91c04d7e
+
+  val 0.82 (trust-weighted 0.84)
+  minted  day 20640  by juber
+  confirm   day 20641  test.run → npm-test#a41 by juber
+  confirm   day 20643  human.accept → pr-118 by sam
+
+  author trust (earned from oracle outcomes on their claims):
+    0.93  juber
+```
+
+The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
+tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
+record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
+paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `verify` recomputes
+every content hash (CI-friendly, exit 1 on tampering); `import` back-fills legacy
+lessons/facts idempotently. Add `--personal` to target the per-user ledger beside the
+global recall store, `--json` for scripts.
+
+### `forge reuse` — proof-carrying code cache
+
+Verified code becomes an `artifact` claim keyed by a normalized task fingerprint; a
+lookup walks exact → near → adapt → miss. An artifact serves **only while its proof
+holds** — confidence above the 0.6 floor and every declared dependency still in the atlas.
+
+```console
+$ forge reuse query "debounce user input before firing search"
+  NEAR hit (similarity 0.87) — module at src/lib/debounce.js
+    claim 9c41d2ab77e0 — `forge ledger blame 9c41d2ab` for its proof
+
+$ forge reuse query "quantum blockchain"
+  miss — nothing verified matches; generate, then `forge reuse mint` it
+```
+
+Mint after verification — without an evidence ref it sits at the 0.5 prior and does
+**not** serve:
+
+```console
+$ forge reuse mint "debounce helper for search input" --file src/lib/debounce.js --ref npm-test#green
+  minted: 9c41d2ab77e0 (1 export(s), 0 dep(s))
+  serving: yes — verification evidence attached
+```
+
+`forge reuse stats` shows lookups by outcome + estimated tokens saved (from
+`.forge/metrics.jsonl`). Honest limit: the MinHash near-match is weak on very short
+specs — a few words hash to too few shingles to rank reliably.
+
+### `forge context "<task>"` — budgeted assembly + completeness gate
+
+Derives the required-knowledge set for an edit (the target's definitions, hop-1
+dependents, sibling tests, trusted lessons), covers it under a token budget with a
+compression ladder (full → head → pointer), and computes what's *missing* as a set
+difference — not a feeling.
+
+```console
+$ forge context "change verifyToken in src/auth.js to reject short tokens"
+Forge context — budgeted assembly + completeness gate
+
+  budget: 1840/12000 tokens · required 4 · COMPLETE
+    + def:src/auth.js [full] 620t
+    + deps:verifyToken [head] 410t
+    + tests:test/auth.test.js [full] 480t
+    + fact:c1d2e3f4 [full] 330t
+```
+
+On an incomplete assembly it lists the missing items and derived clarifying questions
+("the task names `X` but the repo doesn't define it — which file implements it?") and
+exits 1. `--budget <tokens>` tightens the window; a tight budget downgrades granularity
+instead of silently dropping coverage.
+
+### `forge diagnose "<error>"` — doom-loop check
+
+Hashes a failure into a normalized signature (line numbers, addresses, timestamps,
+paths stripped) and counts recurrences. The 3rd identical hit is thrash: it mints a
+`diagnosis` claim into the team ledger and tells the agent to stop retrying.
+
+```console
+$ forge diagnose "TypeError: Cannot read properties of undefined (reading 'user')" --file src/session.js
+Forge diagnose — doom-loop check
+
+  signature: a41f7c20be91 · seen 3× in the recent failure window
+  diagnosis claim: 5d0e88c21f3a  (`forge ledger show 5d0e88c2`)
+
+  STOP retrying this fix. State the diagnosis out loud (claim 5d0e88c2 — `forge ledger show 5d0e88c2`, add what you already tried to its triedFixes), then escalate ONE model tier with the diagnosis as the head of the new prompt. The escalation must carry the diagnosis — never just "try again, but more expensive".
+```
+
+Below the threshold it just records and says keep going. Advisory — halting the retry
+loop is the agent's move, not an exit code. Because the claim rides the team ledger, the
+same loop becomes a one-per-team event, not one-per-session.
+
+### `forge imagine "<task>"` — consequence simulation
+
+The static half of the paper's Eq. 4: entities → blast radius → predicted breaks with
+confidence, plus the minimal test suite that covers them (weighted greedy set cover).
+
+```console
+$ forge imagine "change verifyToken in src/auth.js to reject short tokens"
+Forge imagine — consequence simulation (pre-action)
+
+  targets: verifyToken, src/auth.js
+  risk score: 2.30  (Σ confidence over predicted breaks)
+
+  predicted breaks (3):
+    0.90  src/auth.js
+    0.70  src/login.js
+    0.70  src/session.js
+
+  minimal dry-run suite (1) — run these, in this order:
+    - test/auth.test.js
+
+  (sandboxed worktree dry-run of this suite lands as the P5 follow-up)
+```
+
+It also flags predicted breaks **no test covers** — the risk you can't dry-run away.
+
+### `forge uicheck` — deterministic UI checks
+
+Three subcommands, all static parsing — no LLM, no screenshots.
+
+**`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
+`forge uicheck <fg> <bg>` still works):
+
+```console
+$ forge uicheck contrast "#777" "#fff"
   contrast #777 on #fff: 4.48:1  →  fail (FAILS AA)
 ```
+
+**`fingerprint <file...> [--mint]`** — the design feature vector of your UI files:
+palette (hue histogram), spacing base + on-scale fraction, fonts, radius/shadow levels.
+`--mint` stores it as a shared `fingerprint` ledger claim — the design gate's "home":
+
+```console
+$ forge uicheck fingerprint src/components/*.jsx --mint
+Forge uicheck fingerprint — the design feature vector
+
+  palette:  9 color(s), hue bins [2 0 0 1 3 0 0 0 0 2 1 0]
+  spacing:  4, 8, 16, 24 px — base 4, 96% on-scale
+  type:     Inter, ui-monospace
+  shape:    radii 6, 12 (2 level(s)) · 1 shadow level(s)
+
+  minted fingerprint claim e7a90b12cd34 — the gate's "home"
+```
+
+**`design <file...>`** — the two-sided gate for generated UI (exit 1 on fail): slop
+distance to known generic templates must stay HIGH, conformance to your minted project
+fingerprint must stay LOW, plus scale-conformance checks (spacing on base, level caps).
+Failures are actionable per-feature edits, never a bare score. Honest limit: the
+fingerprint doesn't resolve CSS `var()` indirection yet — fully tokenized palettes are
+partially invisible to it.
+
+### `forge dash [--port N]` — the local dashboard
+
+A read-only lens over `.forge/` — stdlib `node:http`, localhost-only, one
+self-contained HTML page (no CDN, no build step). Panels: Ledger (claims with val bars,
+contested claims, per-author trust), Cost/Cache (measured stage counters), and Impact
+(blast-radius explorer). Every claim row shows its `forge ledger blame` command.
+
+```console
+$ forge dash
+Forge dash — read-only lens on .forge/
+
+  http://127.0.0.1:4242  (localhost-only · Ctrl-C to stop)
+```
+
+### `forge cost --stages` — the measured cost report
+
+Per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`. A stage with no
+events says **no data** — never a default; the composed figure is a lower bound over
+measured stages only.
+
+```console
+$ forge cost --stages
+Forge cost — measured stage factors (.forge/metrics.jsonl)
+
+  stage     factor     events
+  gate      6.2%       16
+  cache     no data    0
+  route     no data    0
+  context   no data    0
+
+  composed measured reduction: 6.2% (from: gate) — lower bound, measured stages only
+  totals: 16 metric event(s) · ~0 tokens saved (stage self-estimates)
+
+  context (not a local measurement): the paper measured a 62% routing saving on live tokens (paper §9)
+  target (unmet until measured): the plan's composed target is ~90% (docs/plans/substrate-v2/05-cost-model.md)
+```
+
+Plain `forge cost` remains the per-day spend view via `ccusage`.
 
 ### The rest
 
@@ -284,7 +488,7 @@ $ forge uicheck "#777" "#fff"
 | `forge doctor` | Health check: layers, install, drift, cortex. |
 | `forge catalog` | Start-Here index of every tool / crew / guard. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`. |
-| `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling. |
+| `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report. |
 | `forge scan <path>` | Vet a skill/MCP for injection/RCE before install. |
 | `forge harden` | Wire gitleaks pre-commit + sandbox settings. |
 | `forge spec [init\|lock\|check]` | Spec-as-contract drift check. |
@@ -459,6 +663,13 @@ Edit `brand.json` (`FORGE_BRAND`), the `bin` key in `package.json`, and `name` i
 - **`recall` / `cortex` are file + prompt memory**, not weight-level learning.
 - **The atlas graph is regex-approximate** — conservative, not a sound call graph;
   dynamic dispatch and generated code can be missed.
+- **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
+  to too few shingles to rank reliably; write a sentence, not a keyword.
+- **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
+  tokenized palette is partially invisible to the design gate.
+- **`forge cost --stages` reports measured stages only** — a stage with no events says
+  "no data", never a default; the composed figure is a lower bound and ~90 % is a
+  labeled *target*, not a claim.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
   use. What's *asserted* (safe to gate on): repo grounding, graph traversal, scope
   decomposition, routing arithmetic, and the test/build commands. Everything else is

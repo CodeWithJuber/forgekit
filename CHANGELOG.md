@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-07
+
 ### Added
 
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
@@ -344,7 +346,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.1.0...v0.2.0
