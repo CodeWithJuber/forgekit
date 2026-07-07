@@ -108,8 +108,9 @@ export function load(root) {
     .sort()) {
     try {
       out.push(parse(readFileSync(join(dir, f), "utf8")));
-    } catch {
-      // skip an unreadable / front-matter-less lesson file rather than throwing
+    } catch (err) {
+      if (process.env.FORGE_DEBUG === "1")
+        process.stderr.write(`forge lessons: skipping ${f}: ${err?.message ?? err}\n`);
     }
   }
   return out;

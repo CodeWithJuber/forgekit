@@ -10,8 +10,7 @@ import { gitChurn, grepFanout } from "./cortex_features.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
-
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+import { clamp01 } from "./util.js";
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
 

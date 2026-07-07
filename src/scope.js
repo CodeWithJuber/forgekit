@@ -5,8 +5,8 @@
 // approximate (dynamic/DI edges missed) — a real call-graph MCP is the upgrade seam.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { IGNORE_DIRS, SRC_EXT } from "./util.js";
 
-const SRC = /\.(js|jsx|ts|tsx|mjs|cjs|py)$/;
 const IMPORT_RES = [
   /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g, // import x from "y"
   /import\s+['"]([^'"]+)['"]/g, // import "y"
@@ -18,10 +18,10 @@ const IMPORT_RES = [
 
 function walk(dir, root, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    if (IGNORE_DIRS.has(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walk(p, root, out);
-    else if (SRC.test(entry.name)) out.push(relative(root, p));
+    else if (SRC_EXT.test(entry.name)) out.push(relative(root, p));
   }
 }
 

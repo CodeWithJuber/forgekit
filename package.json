@@ -7,7 +7,12 @@
     "forge": "src/cli.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./src/cli.js",
+    "./model-tiers": "./src/model_tiers.js",
+    "./package.json": "./package.json"
   },
   "author": "CodeWithJuber",
   "license": "MIT",

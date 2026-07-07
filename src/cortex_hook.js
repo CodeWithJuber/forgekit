@@ -5,6 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
+import { contentHash, slug } from "./util.js";
 
 const sessionFile = (root, sid) =>
   join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.jsonl`);
@@ -40,14 +41,7 @@ const TEST_RE = /\b(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+te
 // Negation must be corrective, not incidental ("no problem"); require a corrective verb.
 const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
 
-const slug = (s) =>
-  String(s)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 40);
-
-// A cheap, dependency-free signature of a failing test's output. Line numbers, hex addresses,
+// A cheap signature of a failing test's output. Line numbers, hex addresses,
 // timings, and temp paths are normalized out so "the same failure" hashes the same across runs
 // even as surrounding noise shifts — this is what lets us catch a same-error doom loop.
 function outputSignature(text) {
@@ -61,9 +55,7 @@ function outputSignature(text) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 800);
-  let h = 5381;
-  for (let i = 0; i < norm.length; i++) h = ((h << 5) + h + norm.charCodeAt(i)) >>> 0;
-  return norm ? h.toString(36) : "";
+  return norm ? contentHash(norm).slice(0, 12) : "";
 }
 
 /** Normalize a raw hook payload into a compact event, or null if it carries no signal. */

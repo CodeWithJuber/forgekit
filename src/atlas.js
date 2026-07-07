@@ -1,26 +1,11 @@
 // forge atlas — a portable code graph. Build once, then query definitions, membership,
 // reverse dependents, and impact radius without asking a model to rediscover the repo.
 
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { CALL_RE } from "./extract.js";
-
-const IGNORE = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  ".next",
-  "out",
-  "target",
-  "__pycache__",
-  ".forge",
-  "coverage",
-  ".venv",
-  "vendor",
-]);
+import { contentHash, IGNORE_DIRS } from "./util.js";
 
 const JS_RULES = [
   { re: /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, kind: "function" },
@@ -88,19 +73,19 @@ const BUILTINS = new Set([
   "super",
 ]);
 
-function hash(text) {
-  return createHash("sha256").update(text).digest("hex");
-}
+const hash = contentHash;
 
 function walk(dir, files, cap) {
   let entries;
   try {
     entries = readdirSync(dir);
-  } catch {
+  } catch (err) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge atlas: skipping ${dir}: ${err?.message ?? err}\n`);
     return;
   }
   for (const name of entries) {
-    if (IGNORE.has(name) || name.startsWith(".")) continue;
+    if (IGNORE_DIRS.has(name) || name.startsWith(".")) continue;
     const path = join(dir, name);
     let st;
     try {

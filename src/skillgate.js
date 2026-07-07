@@ -75,8 +75,11 @@ export function scan(target) {
         findings: [],
         raw: out,
       };
-    } catch {
-      // scanner absent/offline → fall through to the built-in heuristic
+    } catch (err) {
+      if (process.env.FORGE_DEBUG === "1")
+        process.stderr.write(
+          `forge skillgate: scanner failed, using heuristic: ${err?.message ?? err}\n`,
+        );
     }
   }
 
