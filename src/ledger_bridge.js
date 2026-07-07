@@ -19,7 +19,7 @@ import {
 } from "./ledger_store.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { list as listFacts, readFact } from "./recall.js";
-import { epochDay } from "./util.js";
+import { epochDay, gitAuthor } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
 const bestEffort = (fn) => {
@@ -51,7 +51,7 @@ export function lessonClaim(lesson, t = 0) {
       whatWentWrong: lesson.whatWentWrong ?? "",
     },
     scope: { level: lesson.scope ?? "repo" },
-    provenance: { agent: "cortex", author: "", task: lesson.id ?? "" },
+    provenance: { agent: "cortex", author: gitAuthor(), task: lesson.id ?? "" },
     t,
   });
 }
@@ -64,7 +64,7 @@ export function factClaim(name, text, t = 0) {
     kind: "fact",
     body: { name: String(name).trim(), text: String(text).trim() },
     scope: { level: "repo" },
-    provenance: { agent: "recall", author: "" },
+    provenance: { agent: "recall", author: gitAuthor() },
     t,
   });
 }
@@ -90,6 +90,7 @@ export function recordLessonEvent(root, lesson, ev = {}) {
         oracle: ev.oracle ?? "cortex.episode",
         result: ev.result,
         ref: ev.ref,
+        author: gitAuthor(),
         t: ev.t ?? 0,
       });
       if (!o.ok) return { ok: false, reason: "reason" in o ? o.reason : "invalid outcome" };
@@ -117,6 +118,7 @@ export function supersedeLessonClaim(root, before, after, t = epochDay()) {
     if (oldC.ok && oldC.claim.id !== newC.claim.id) {
       for (const o of readEvidence(dir, oldC.claim.id)) appendEvidence(dir, newC.claim.id, o);
       tombstone(dir, oldC.claim.id, {
+        author: gitAuthor(),
         reason: `superseded-by:${newC.claim.id}`,
         t,
       });
@@ -144,7 +146,11 @@ export function shadowFact(ledgerDir, name, text, t = epochDay()) {
         c.id !== minted.claim.id &&
         c.body?.name === minted.claim.body.name
       )
-        tombstone(ledgerDir, c.id, { reason: `superseded-by:${minted.claim.id}`, t });
+        tombstone(ledgerDir, c.id, {
+          author: gitAuthor(),
+          reason: `superseded-by:${minted.claim.id}`,
+          t,
+        });
     }
     reindex(ledgerDir, t);
     return { ...put, id: minted.claim.id };
@@ -170,7 +176,7 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
     let removed = 0;
     for (const c of loadClaims(ledgerDir)) {
       if (c.kind === "fact" && !c.tombstone && !current.has(c.id)) {
-        tombstone(ledgerDir, c.id, { reason: "removed-from-store", t });
+        tombstone(ledgerDir, c.id, { author: gitAuthor(), reason: "removed-from-store", t });
         removed++;
       }
     }

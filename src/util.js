@@ -29,6 +29,27 @@ export function contentHash(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
+let cachedAuthor;
+/** The identity stamped on ledger provenance/evidence — FORGE_AUTHOR env override,
+ *  else the git identity, else "" (attribution is best-effort, never a hard fail).
+ *  Cached per process: hooks call this per event and `git config` is a subprocess. */
+export function gitAuthor() {
+  if (process.env.FORGE_AUTHOR !== undefined) return process.env.FORGE_AUTHOR;
+  if (cachedAuthor !== undefined) return cachedAuthor;
+  try {
+    const get = (k) =>
+      execFileSync("git", ["config", "--get", k], { stdio: ["ignore", "pipe", "ignore"] })
+        .toString()
+        .trim();
+    const name = get("user.name");
+    const email = get("user.email");
+    cachedAuthor = email ? `${name} <${email}>` : name;
+  } catch {
+    cachedAuthor = "";
+  }
+  return cachedAuthor;
+}
+
 export const IGNORE_DIRS = new Set([
   "node_modules",
   ".git",

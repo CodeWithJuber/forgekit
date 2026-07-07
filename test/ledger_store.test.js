@@ -3,13 +3,22 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { mintClaim, outcomeRecord, sealRecord, val } from "../src/ledger.js";
+import {
+  canonicalize,
+  liveClaims,
+  mintClaim,
+  outcomeRecord,
+  sealRecord,
+  val,
+} from "../src/ledger.js";
 import {
   appendEvidence,
+  blame,
   getClaimByPrefix,
   importState,
   loadClaims,
   loadState,
+  mergeDirs,
   pruneToAttic,
   putClaim,
   readEvidence,
@@ -212,4 +221,62 @@ test("pruneToAttic: moves the claim out of the live set but keeps the bytes", ()
   assert.equal(pruneToAttic(dir, c.id).ok, true);
   assert.equal(loadClaims(dir).length, 0);
   assert.ok(readFileSync(join(dir, "attic", `${c.id}.json`), "utf8").includes("long dormant"));
+});
+
+// --- team merge + blame (P2) -----------------------------------------------------------
+
+test("mergeDirs: two replicas converge to canonically identical state in either merge order", () => {
+  const mkReplica = () => tmp();
+  const a = mkReplica();
+  const b = mkReplica();
+  const shared = fact("shared", "both know this");
+  const onlyA = fact("only-a", "alice learned this");
+  const onlyB = fact("only-b", "bob learned this");
+  // Replica A: shared + own claim + a confirm + a retraction of its own claim.
+  putClaim(a, shared);
+  putClaim(a, onlyA);
+  appendEvidence(a, shared.id, ev("confirm", "run:a", 1));
+  tombstone(a, onlyA.id, { reason: "wrong", t: 2, author: "alice" });
+  // Replica B: shared + own claim + a different confirm + a retraction of the SAME shared claim.
+  putClaim(b, shared);
+  putClaim(b, onlyB);
+  appendEvidence(b, shared.id, ev("contradict", "run:b", 3));
+  tombstone(b, shared.id, { reason: "disputed", t: 4, author: "bob" });
+
+  mergeDirs(a, b); // A absorbs B
+  mergeDirs(b, a); // B absorbs (A ∪ B)
+  const canonState = (d) => canonicalize(liveClaims(loadState(d)));
+  assert.equal(canonState(a), canonState(b), "replicas are canonically identical");
+  // And a third replica merging in the opposite order reaches the same state:
+  const c = mkReplica();
+  mergeDirs(c, b);
+  mergeDirs(c, a);
+  assert.equal(canonState(c), canonState(a), "order of merges never matters");
+  assert.equal(mergeDirs(a, b).claims + mergeDirs(a, b).records, 0, "re-merge is a no-op");
+});
+
+test("blame: full accountability view — mints, evidence, retractions, per-author trust", () => {
+  const dir = tmp();
+  const c = mintClaim({
+    kind: "fact",
+    body: { name: "traced", text: "who said this and why do we believe it" },
+    provenance: { author: "alice" },
+    t: 1,
+  }).claim;
+  putClaim(dir, c);
+  appendEvidence(
+    dir,
+    c.id,
+    outcomeRecord({ oracle: "ci.run", result: "confirm", ref: "ci:42", author: "bob", t: 2 })
+      .outcome,
+  );
+  tombstone(dir, c.id, { reason: "superseded", t: 3, author: "carol" });
+  const b = blame(dir, c.id.slice(0, 8), 3);
+  assert.equal(b.id, c.id);
+  assert.equal(b.minted[0].author, "alice");
+  assert.equal(b.evidence[0].ref, "ci:42");
+  assert.equal(b.tombstones[0].author, "carol");
+  assert.ok(b.val > 0.5);
+  assert.ok(b.trust.alice >= 0.5 && b.trust.alice <= 1);
+  assert.equal(blame(dir, "zz", 3), null);
 });

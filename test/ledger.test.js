@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  authorTrust,
   canonicalize,
   claimId,
   claimText,
@@ -334,4 +335,46 @@ test("mergeStates: evidence unions dedupe by hash; val is identical after any me
     val(liveClaims(ba)[0], 10),
     "confidence is merge-order-independent",
   );
+});
+
+// --- per-author trust (P2) -------------------------------------------------------------
+
+test("authorTrust: bootstrap 1.0, degrades with contradicted claims, floors at 0.5, ignores self-confirmation", () => {
+  const mint = (name, author) =>
+    mintClaim({
+      kind: "fact",
+      body: { name, text: `${name} content` },
+      provenance: { author },
+      t: 0,
+    }).claim;
+  const out = (result, ref, author) =>
+    outcomeRecord({ oracle: "test.run", result, ref, author, t: 0 }).outcome;
+
+  const fresh = { ...mint("a", "newbie"), evidence: [] };
+  const good = {
+    ...mint("b", "alice"),
+    evidence: [out("confirm", "r1", "ci"), out("confirm", "r2", "ci")],
+  };
+  const selfServing = { ...mint("c", "bob"), evidence: [out("confirm", "r3", "bob")] };
+  const wrongOften = {
+    ...mint("d", "carol"),
+    evidence: Array.from({ length: 20 }, (_, i) => out("contradict", `r${i}`, "ci")),
+  };
+  const trust = authorTrust([fresh, good, selfServing, wrongOften]);
+  assert.equal(trust.newbie, 1, "no history → full trust (never punish the new teammate)");
+  assert.equal(trust.alice, 1, "only confirmations → full trust");
+  assert.equal(trust.bob, 1, "self-confirmation is excluded, so bob has NO history — bootstrap");
+  assert.equal(trust.carol, 0.5, "heavily contradicted → floored, never silenced");
+  assert.ok(!("" in trust), "anonymous claims don't accumulate trust");
+});
+
+test("val with trust: a distrusted author's evidence moves confidence less", () => {
+  const claim = mkClaim([
+    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "r", author: "carol", t: 0 })
+      .outcome,
+  ]);
+  const flat = val(claim, 0);
+  const weighted = val(claim, 0, { trust: { carol: 0.5 } });
+  assert.ok(weighted < flat, "trust scales the evidence weight down");
+  assert.ok(weighted > 0.5, "but a confirmation still counts for something");
 });
