@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { build } from "../src/atlas.js";
-import { imagineTask, renderImagine, selectTests, selectTestsReport } from "../src/imagine.js";
+import {
+  dryRun,
+  imagineTask,
+  renderImagine,
+  selectTests,
+  selectTestsReport,
+} from "../src/imagine.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-imagine-"));
 
@@ -123,5 +130,93 @@ test("renderImagine prints breaks, the suite, and the sandbox follow-up note", (
   assert.match(out, /minimal dry-run suite/);
   assert.match(out, /src\/app\.test\.js/);
   assert.match(out, /risk score/);
-  assert.match(out, /P5 follow-up/);
+  assert.match(out, /--run/, "footer points at the sandboxed dry-run flag");
+});
+
+// ---------------------------------------------------------------------------
+// dryRun — the sandboxed worktree runner (spec §2.2). One tiny fixture repo,
+// ONE commit: the sandbox is a worktree of HEAD, so everything must be committed.
+// ---------------------------------------------------------------------------
+
+function gitFixture() {
+  const root = fixture();
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  git("init", "-q");
+  git("config", "user.email", "forge@test.invalid");
+  git("config", "user.name", "forge-test");
+  // type:module so `import` in .js is unambiguous across node versions (no reliance
+  // on syntax detection); no test script → dryRun reports the default runner.
+  put(root, "package.json", '{ "name": "fx", "type": "module" }\n');
+  put(root, "src/val.js", "export const val = 1;\n");
+  put(
+    root,
+    "test/pass.test.js",
+    'import assert from "node:assert/strict";\n' +
+      'import { test } from "node:test";\n' +
+      'import { val } from "../src/val.js";\n' +
+      'test("val is 1", () => assert.equal(val, 1));\n',
+  );
+  put(
+    root,
+    "test/fail.test.js",
+    'import assert from "node:assert/strict";\n' +
+      'import { test } from "node:test";\n' +
+      'import { val } from "../src/val.js";\n' +
+      'test("val is 2", () => assert.equal(val, 2));\n',
+  );
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "fixture");
+  return { root, git };
+}
+
+const dryrunTmpEntries = () =>
+  new Set(readdirSync(tmpdir()).filter((d) => d.startsWith("forge-dryrun-")));
+
+test("dryRun executes the suite in an ephemeral worktree and removes it (pass + fail)", () => {
+  const { root, git } = gitFixture();
+  const before = dryrunTmpEntries();
+
+  const green = dryRun(root, { tests: ["test/pass.test.js"] });
+  assert.equal(green.ok, true, `dry-run should produce a verdict: ${green.reason ?? ""}`);
+  assert.equal(green.failed, 0);
+  assert.ok(green.passed >= 1, "the passing test actually ran");
+  assert.match(green.runner, /^node --test/);
+  assert.equal(green.worktree, "removed");
+  assert.ok(Number.isFinite(green.durationMs));
+  assert.deepEqual(green.perFile, { "test/pass.test.js": "pass" });
+
+  // ok:true with failed>0 is deliberate: the RUN succeeded — the sandbox built, the
+  // suite executed to a verdict — and the verdict is "these tests fail". ok:false is
+  // reserved for the run itself failing (no repo, timeout, runner crash).
+  const red = dryRun(root, { tests: ["test/pass.test.js", "test/fail.test.js"] });
+  assert.equal(red.ok, true, "a failing SUITE is still a successful RUN");
+  assert.ok(red.failed > 0, "the failure is measured, not hidden");
+  assert.equal(red.passed, 1);
+  assert.equal(red.worktree, "removed");
+  assert.deepEqual(red.perFile, {
+    "test/pass.test.js": "pass",
+    "test/fail.test.js": "fail",
+  });
+  assert.match(red.output, /# fail 1/, "TAP tail is preserved as evidence");
+
+  // The sandbox must actually be gone: no new forge-dryrun-* dirs in tmp, and the
+  // fixture repo's worktree bookkeeping is back to just the main checkout.
+  for (const d of dryrunTmpEntries())
+    assert.ok(before.has(d), `ephemeral worktree dir leaked: ${d}`);
+  const list = git("worktree", "list", "--porcelain").toString();
+  const count = (list.match(/^worktree /gm) || []).length;
+  assert.equal(count, 1, `git worktree list shows leftovers:\n${list}`);
+});
+
+test("dryRun refuses gracefully outside a git repo and on an empty suite", () => {
+  const plain = fixture(); // mkdtemp dir, never git-init'ed
+  const notRepo = dryRun(plain, { tests: ["test/pass.test.js"] });
+  assert.equal(notRepo.ok, false);
+  assert.match(notRepo.reason, /not a git repository/);
+
+  const { root } = gitFixture();
+  assert.equal(dryRun(root, { tests: [] }).ok, false);
+  assert.equal(dryRun(root).ok, false, "missing opts is a precondition failure, not a throw");
+  assert.ok(!existsSync(join(root, ".forge")), "refusal writes nothing into the repo");
 });

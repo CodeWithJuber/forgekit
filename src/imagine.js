@@ -2,15 +2,19 @@
 // docs/plans/substrate-v2/06-faculties-and-mechanisms.md §2). The atlas gives the
 // exact-structure half: entities → blast radius → predicted breaks with confidence.
 // This module adds impacted-test SELECTION — the minimal dry-run suite that makes
-// pre-action simulation affordable at all (minutes → seconds vs "run everything").
-// The sandboxed worktree runner that EXECUTES the suite against a proposed diff is
-// the P5 follow-up (spec §2.2) — selection had to exist first, and it is useful on
-// its own as "run these, in this order, before you touch anything".
-import { statSync } from "node:fs";
+// pre-action simulation affordable at all (minutes → seconds vs "run everything") —
+// and the sandboxed worktree runner (spec §2.2) that EXECUTES that suite: dryRun()
+// checks out HEAD into an ephemeral `git worktree`, runs the suite there, parses the
+// TAP summary, and always discards the sandbox. Selection stays useful on its own as
+// "run these, in this order"; dryRun turns the prediction into measured evidence.
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
 import { isTestFile, predictFailingTests } from "./substrate.js";
+import { hasBin } from "./util.js";
 
 /**
  * Weighted greedy set cover over the covers(test, source) relation: candidates are
@@ -78,6 +82,155 @@ export function selectTestsReport(root, impactedFiles) {
   return { tests, uncovered };
 }
 
+/** Strip a TAP `location: '/abs/file.js:1:2'` diagnostic down to its file path. */
+const locFile = (line) => {
+  const m = /^\s+location:\s*'(.+):\d+:\d+'/.exec(line);
+  return m ? m[1] : null;
+};
+
+/**
+ * @typedef {{ok: boolean, reason?: string, passed?: number, failed?: number,
+ *   perFile?: Record<string, "pass"|"fail">, durationMs?: number, runner?: string,
+ *   output?: string, worktree?: string}} DryRunVerdict
+ */
+
+/**
+ * Sandboxed dry-run of a selected suite — the simulation half of ĉ = g(a, C)
+ * (spec §2.2): run the tests in an EPHEMERAL `git worktree` of HEAD and discard it.
+ * The worktree is HEAD, not the working tree — worktrees share the object store,
+ * never uncommitted files — so callers MUST surface that a dirty tree dry-runs the
+ * last commit, not the in-flight proposal (the CLI refuses dirty trees by default).
+ * ok means the RUN completed and produced a verdict; failing tests are ok:true with
+ * failed>0 — that IS the imagined consequence, delivered as evidence. Never throws:
+ * unmet preconditions return { ok:false, reason }.
+ * @param {string} root
+ * @param {{tests?: string[], timeoutMs?: number}} [opts] repo-relative test paths
+ * @returns {DryRunVerdict}
+ */
+export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
+  if (!Array.isArray(tests) || tests.length === 0)
+    return { ok: false, reason: "no tests selected — nothing to dry-run" };
+  if (!hasBin("git")) return { ok: false, reason: "git not found — the sandbox is a git worktree" };
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" });
+  } catch {
+    return { ok: false, reason: `not a git repository: ${root}` };
+  }
+  // mkdtemp reserves a unique parent; the worktree goes one level down because
+  // `git worktree add` wants to create its target path itself.
+  const parent = mkdtempSync(join(tmpdir(), "forge-dryrun-"));
+  const wt = join(parent, "wt");
+  const started = Date.now();
+  // The body runs in a closure so every exit path — verdict, timeout, crash — flows
+  // through the same finally-cleanup AND the same verified `worktree` stamp below.
+  /** @returns {DryRunVerdict} */
+  const body = () => {
+    try {
+      execFileSync("git", ["worktree", "add", "--detach", wt, "HEAD"], {
+        cwd: root,
+        stdio: "pipe",
+      });
+    } catch (e) {
+      const msg = /** @type {{stderr?: Buffer}} */ (e).stderr?.toString().trim() || String(e);
+      return { ok: false, reason: `git worktree add failed: ${msg}` };
+    }
+    // Runner policy: always `node --test <files...>` — a custom package test script
+    // (jest, vitest, …) is a WHOLE-SUITE command that can't be scoped per-file safely,
+    // which would defeat minimal selection. We still run node --test and say so, so a
+    // surprising verdict is attributable to the runner mismatch.
+    let runner = "node --test";
+    try {
+      const pkg = JSON.parse(readFileSync(join(wt, "package.json"), "utf8"));
+      const script = pkg?.scripts?.test;
+      if (script && !/\bnode\s+(--[\w-]+\s+)*--test\b/.test(script))
+        runner = `node --test (package.json test script is custom: ${String(script).slice(0, 60)})`;
+    } catch {} // no/unreadable package.json → default runner
+    // TAP reporter is forced: the default reporter depends on TTY-ness, and the
+    // `# pass/# fail` summary below is the contract this parser relies on. The env
+    // must NOT leak a parent test-runner's context — when dryRun itself runs under
+    // `node --test` (our own tests, or an agent's), an inherited NODE_TEST_CONTEXT
+    // makes the child speak the runner's internal protocol instead of TAP.
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const run = spawnSync(
+      process.execPath,
+      ["--test", "--test-reporter=tap", ...tests.map(String)],
+      {
+        cwd: wt,
+        env,
+        encoding: "utf8",
+        timeout: timeoutMs,
+        killSignal: "SIGKILL", // node --test forks workers; SIGKILL is the reliable stop
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    const combined = `${run.stdout ?? ""}${run.stderr ? `\n${run.stderr}` : ""}`.trim();
+    const output = combined.length > 2000 ? `…${combined.slice(-2000)}` : combined;
+    const durationMs = Date.now() - started;
+    if (run.error || run.signal) {
+      const reason =
+        /** @type {{code?: string}} */ (run.error)?.code === "ETIMEDOUT" || run.signal
+          ? `dry-run timed out after ${timeoutMs}ms (killed with ${run.signal ?? "SIGKILL"})`
+          : `runner failed to start: ${run.error}`;
+      return { ok: false, reason, durationMs, runner, output };
+    }
+    const mPass = /^# pass (\d+)$/m.exec(run.stdout ?? "");
+    const mFail = /^# fail (\d+)$/m.exec(run.stdout ?? "");
+    if (!mPass || !mFail) {
+      // Non-zero exit with no TAP summary = the RUN failed (crash, bad flags), which
+      // is a different fact than "the tests failed" — report it as one.
+      return {
+        ok: false,
+        reason: `runner exited ${run.status} without a TAP summary`,
+        durationMs,
+        runner,
+        output,
+      };
+    }
+    // perFile is best-effort: node ≥20 TAP flattens per-TEST (no per-file points), but
+    // every failure block carries a `location: '<abs path>:l:c'` diagnostic — map those
+    // back to the requested files; anything never implicated passed. Omitted when a
+    // failure can't be attributed (partial attribution would misassign blame).
+    /** @type {Record<string, "pass"|"fail">} */
+    const perFile = Object.fromEntries(tests.map((t) => [String(t), "pass"]));
+    let attributable = true;
+    for (const block of (run.stdout ?? "").split(/^not ok /m).slice(1)) {
+      const file = block.split("\n").map(locFile).find(Boolean);
+      const t = file && tests.find((c) => file === join(wt, String(c)));
+      if (t) perFile[String(t)] = "fail";
+      else attributable = false;
+    }
+    return {
+      ok: true,
+      passed: Number(mPass[1]),
+      failed: Number(mFail[1]),
+      ...(attributable ? { perFile } : {}),
+      durationMs,
+      runner,
+      output,
+    };
+  };
+  let result;
+  try {
+    result = body();
+  } finally {
+    // ALWAYS discard the sandbox — a leaked worktree pins refs and litters
+    // `git worktree list` forever. remove --force, prune the bookkeeping, then
+    // belt-and-braces rm of the parent; the verdict below verifies, never assumes.
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: root, stdio: "ignore" });
+    } catch {}
+    try {
+      execFileSync("git", ["worktree", "prune"], { cwd: root, stdio: "ignore" });
+    } catch {}
+    try {
+      rmSync(parent, { recursive: true, force: true });
+    } catch {}
+  }
+  result.worktree = existsSync(wt) ? "leaked" : "removed";
+  return result;
+}
+
 /**
  * Imagine the consequences of a task before acting: entities → impact() blast
  * radius → predicted breaks (per-file max confidence across targets), the minimal
@@ -117,7 +270,9 @@ export function imagineTask(root, task, { atlas, threshold = 0.1 } = {}) {
   };
 }
 
-export function renderImagine(r) {
+/** @param {ReturnType<typeof imagineTask>} r
+ *  @param {{footer?: boolean}} [opts] footer=false when the caller runs the dry-run itself */
+export function renderImagine(r, { footer = true } = {}) {
   const lines = ["Forge imagine — consequence simulation (pre-action)", ""];
   lines.push(`  targets: ${r.targets.length ? r.targets.join(", ") : "(none named)"}`);
   if (!r.found) {
@@ -140,6 +295,7 @@ export function renderImagine(r) {
       "",
       `  ! no test covers: ${r.uncovered.slice(0, 6).join(", ")}${r.uncovered.length > 6 ? " …" : ""}`,
     );
-  lines.push("", "  (sandboxed worktree dry-run of this suite lands as the P5 follow-up)");
+  if (footer)
+    lines.push("", "  (measure it: re-run with --run — sandboxed worktree dry-run of HEAD)");
   return lines.join("\n");
 }

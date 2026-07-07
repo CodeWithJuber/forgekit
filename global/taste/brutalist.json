@@ -1,0 +1,9 @@
+{
+  "name": "brutalist",
+  "why": "Raw, honest, high-contrast (brutalist.md): pure #000/#FFF plus ONE loud accent -> max_hues 1 with chroma pinned high (chroma = HSL saturation/100 proxy, 0-1); 'DON'T round corners' -> radius_levels [0,0]; no SOFT shadows but a hard offset shadow is idiomatic brutalism -> shadow_levels [0,1]; visible size jumps -> wide geometric ratio; tau_slop is the highest of all profiles because brutalism must sit maximally far from the generic soft-template look.",
+  "palette": { "max_hues": 1, "chroma": [0.7, 1.0], "neutrals": "stark" },
+  "space": { "scale": "geometric", "ratio": [1.5, 2.0], "base": [4, 8] },
+  "type": { "max_families": 2 },
+  "shape": { "radius_levels": [0, 0], "shadow_levels": [0, 1] },
+  "gate": { "tau_slop": 0.45, "tau_conform": 0.5 }
+}

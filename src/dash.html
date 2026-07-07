@@ -124,6 +124,15 @@
   .blame:hover { color: var(--ember); }
   .blame.copied { color: var(--ember); }
 
+  /* the two writes (spec §2): small per-row actions, append-only on the server */
+  .act {
+    font: 11px var(--mono); color: var(--faint); cursor: pointer;
+    border: 1px solid var(--line); border-radius: var(--r-s);
+    padding: 0 var(--s1); white-space: nowrap; display: inline-block;
+  }
+  .act:hover { color: var(--ember); border-color: var(--ember); background: var(--ember-wash); }
+  td.acts { white-space: nowrap; }
+
   select, input[type="text"] {
     font: 12px var(--mono); color: var(--fg);
     background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-s);
@@ -185,7 +194,7 @@
     </section>
   </main>
 
-  <footer>read-only lens on .forge/ — every number traces to <span class="mono">forge ledger blame &lt;id&gt;</span>. ratify/retract land in a later phase.</footer>
+  <footer>lens on .forge/ — every number traces to <span class="mono">forge ledger blame &lt;id&gt;</span>. the only writes are ratify/retract (append-only; CLI twins: <span class="mono">forge ledger ratify|retract</span>).</footer>
 
 <script>
 "use strict";
@@ -202,6 +211,15 @@ const bar = (v, { dim = false } = {}) =>
 const blameCell = (id8) =>
   '<td><span class="blame" data-id8="' + esc(id8) + '">forge ledger blame ' + esc(id8) + "</span></td>";
 
+// The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
+// server stamps YOUR git identity as author); retract = tombstone with a reason.
+// A tombstoned row gets neither — retraction is already the terminal append.
+const actionsCell = (c) => c.tombstoned ? "<td></td>" :
+  '<td class="acts"><span class="act" data-act="ratify" data-id8="' + esc(c.id8) +
+  '" title="promote to hikma — mints a decision claim with you as author">ratify ▸</span> ' +
+  '<span class="act" data-act="retract" data-id8="' + esc(c.id8) +
+  '" title="tombstone this claim with a reason (append-only)">retract ✕</span></td>';
+
 const claimRows = (claims) => claims.map((c) =>
   '<tr class="' + (c.tombstoned ? "tomb" : "") + '">' +
   '<td class="mono faint">' + esc(c.id8) + "</td>" +
@@ -211,11 +229,11 @@ const claimRows = (claims) => claims.map((c) =>
   '<td class="num">' + c.evidenceCount + "</td>" +
   '<td class="muted">' + esc(c.author || "—") + "</td>" +
   '<td class="text">' + esc(c.text) + "</td>" +
-  blameCell(c.id8) + "</tr>").join("");
+  blameCell(c.id8) + actionsCell(c) + "</tr>").join("");
 
 const claimTable = (claims) =>
   "<table><thead><tr><th>id</th><th>kind</th><th>val</th><th>evid</th><th>author</th>" +
-  "<th>claim</th><th>provenance</th></tr></thead><tbody>" + claimRows(claims) + "</tbody></table>";
+  "<th>claim</th><th>provenance</th><th>actions</th></tr></thead><tbody>" + claimRows(claims) + "</tbody></table>";
 
 let DATA = null;
 
@@ -316,7 +334,31 @@ async function refresh() {
   renderCost(DATA);
 }
 
+// The two writes: POST then refresh — the ledger on disk is the only state, the page
+// just re-reads it. retract prompts for its reason (spec: tombstone WITH a reason).
+async function runWrite(act, id8) {
+  const body = { id: id8 };
+  if (act === "retract") {
+    const reason = prompt("retract " + id8 + " — reason (recorded in the tombstone):");
+    if (reason === null) return; // cancelled
+    body.reason = reason;
+  }
+  const res = await fetch("/api/" + act, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const r = await res.json().catch(() => ({}));
+  if (!res.ok) alert(act + " failed: " + (r.reason || r.error || res.status));
+  await refresh();
+}
+
 document.addEventListener("click", (ev) => {
+  const act = ev.target.closest(".act");
+  if (act) {
+    runWrite(act.dataset.act, act.dataset.id8).catch(() => {});
+    return;
+  }
   const el = ev.target.closest(".blame");
   if (!el) return;
   navigator.clipboard?.writeText("forge ledger blame " + el.dataset.id8).then(() => {

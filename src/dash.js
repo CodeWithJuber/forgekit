@@ -1,19 +1,28 @@
 // forge dash — the local dashboard (docs/plans/substrate-v2/08-dashboard-ux.md, P7):
-// a read-only lens on the .forge/ stores. DATA (dashData → one JSON payload) is
+// a read-mostly lens on the .forge/ stores. DATA (dashData → one JSON payload) is
 // separated from SERVING (serve → a node:http stdlib server) so the payload is
 // testable without sockets. One self-contained HTML page (src/dash.html — inline
 // CSS/JS, no CDN, no framework, no build step), localhost-only by default, zero
-// runtime deps. Read-mostly by design: the two writes the spec names (ratify /
-// retract POSTs) are a follow-up — this phase never writes anything.
+// runtime deps. Exactly the two writes the spec names (§2) exist — POST /api/ratify
+// (human-only ḥikma promotion, mints a decision claim) and POST /api/retract
+// (tombstone with a reason). Both are append-only, so the dashboard can never
+// corrupt the ledger; everything else stays read-only.
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { impact, load as loadAtlas } from "./atlas.js";
 import { authorTrust, claimText, val, validOutcome } from "./ledger.js";
-import { loadClaims, repoLedger, stats } from "./ledger_store.js";
+import {
+  getClaimByPrefix,
+  loadClaims,
+  ratify,
+  repoLedger,
+  stats,
+  tombstone,
+} from "./ledger_store.js";
 import { read as readMetrics, summarize } from "./metrics.js";
-import { epochDay } from "./util.js";
+import { epochDay, gitAuthor } from "./util.js";
 
 /** A claim is contested when its val sits in this band AND it carries ≥1 oracle
  *  contradiction — genuinely disputed, not merely fresh (a fresh claim is 0.5 with
@@ -107,9 +116,57 @@ const sendJson = (res, code, body) => {
   res.end(JSON.stringify(body));
 };
 
+/** Small JSON body reader for the two POSTs — capped so a runaway client can't buffer
+ *  unbounded bytes into a localhost convenience server. */
+const BODY_CAP = 64 * 1024;
+const readBody = (req) =>
+  new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > BODY_CAP) {
+        reject(new Error("body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+
+/** The two writes (08-dashboard-ux.md §2), both append-only: ratify mints a decision
+ *  claim with the HUMAN as author (gitAuthor — nothing auto-ratifies), retract appends
+ *  a tombstone record with a reason. Body: {id: <prefix ≥2 chars>, reason?}. */
+async function handleWrite(root, pathname, req, res) {
+  let body;
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return sendJson(res, 400, { error: "bad JSON body" });
+  }
+  const id = typeof body?.id === "string" ? body.id.trim() : "";
+  if (id.length < 2)
+    return sendJson(res, 400, { error: 'body must be {"id": "<claim id-prefix (≥2 chars)>"}' });
+  const dir = repoLedger(root);
+  const author = gitAuthor();
+  const t = epochDay();
+  if (pathname === "/api/ratify") {
+    const r = ratify(dir, id, { author, t });
+    return sendJson(res, r.ok ? 200 : 404, r);
+  }
+  const hit = getClaimByPrefix(dir, id);
+  if (!hit) return sendJson(res, 404, { ok: false, reason: `no claim matching ${id}` });
+  const reason = typeof body.reason === "string" ? body.reason : "";
+  const r = tombstone(dir, hit.id, { author, reason, t });
+  return sendJson(res, r.ok ? 200 : 400, { ...r, id: hit.id });
+}
+
+const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract"]);
+
 /**
  * The dashboard server: GET / → the page, GET /api/data → dashData, GET
- * /api/impact?target=X → blast radius (when an atlas exists). Everything else 404.
+ * /api/impact?target=X → blast radius (when an atlas exists), POST /api/ratify and
+ * POST /api/retract → the spec's two append-only writes. Everything else 404.
  * Localhost-only by default — pass a host explicitly to expose it, on your own head.
  * @param {string} root
  * @param {{port?: number, host?: string}} [opts]
@@ -119,8 +176,16 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
   const html = readFileSync(HTML_PATH, "utf8"); // read once at startup, self-contained
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    if (req.method === "POST" && WRITE_ROUTES.has(url.pathname)) {
+      handleWrite(root, url.pathname, req, res).catch(() =>
+        sendJson(res, 400, { error: "bad request body" }),
+      );
+      return;
+    }
     if (req.method !== "GET")
-      return sendJson(res, 404, { error: "read-only in this phase — GET only" });
+      return sendJson(res, 404, {
+        error: "GET only — the two writes are POST /api/ratify and POST /api/retract",
+      });
     if (url.pathname === "/") {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",

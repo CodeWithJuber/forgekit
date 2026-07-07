@@ -1,0 +1,35 @@
+# OSSF Scorecard: weekly supply-chain posture check (branch protection, token permissions,
+# pinned dependencies, ...). publish_results feeds the public viewer/API at
+# https://scorecard.dev/viewer/?uri=github.com/CodeWithJuber/forgekit — required for the
+# Scorecard badge. Results also land in Security -> Code scanning as SARIF.
+# Scorecard itself will flag tag-pinned actions; this repo pins to major tags and lets
+# Dependabot track them (see .github/dependabot.yml) — accepted trade-off, documented here.
+name: Scorecard
+
+on:
+  push:
+    branches: [master] # default branch only — publish_results requires it
+  schedule:
+    - cron: "30 5 * * 1" # weekly, Monday 05:30 UTC
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload SARIF to code scanning
+      id-token: write # sign results so scorecard.dev will publish them
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # scorecard checks for exactly this
+      - uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

@@ -12,6 +12,7 @@
 // the gate's job is to stop the template from ever reaching them.
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { BRAND } from "./brand.js";
 import { mintClaim } from "./ledger.js";
 import { loadClaims, putClaim, reindex, repoLedger } from "./ledger_store.js";
 import { gitAuthor } from "./util.js";
@@ -107,6 +108,65 @@ function parseColors(text) {
   }
   for (const [, bw] of text.matchAll(TW_BW_RE))
     out.push({ h: 0, s: 0, l: bw === "white" ? 100 : 0 });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Custom-property resolution — a token-driven stylesheet (`--s4: 16px` consumed as
+// `padding: var(--s4)`) carries its whole design system in var() indirections; the
+// extractors below only see literals, so var() must be substituted FIRST or the
+// fingerprint reads a 6-value scale as one value.
+// ---------------------------------------------------------------------------
+
+// `--name: value` declarations (value stops at `;`/`}` like every prop regex here).
+const VAR_DECL_RE = /(--[\w-]+)\s*:\s*([^;}]+)/g;
+// `var(--name)` / `var(--name, fallback)`; the fallback may contain ONE paren level
+// (rgba(...), nested var(...)) — deeper nesting stays unmatched and thus untouched.
+const VAR_USE_RE = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\s*\)/g;
+
+/**
+ * Substitute `var(--name[, fallback])` with the declared custom-property value
+ * (fallback when undeclared; left as-is when neither exists — the extractors ignore
+ * unresolved `var(` just as before). One level of nesting (a custom property whose
+ * value is itself a var()) resolves via a BOUNDED pass count, so declaration cycles
+ * terminate instead of recursing: cyclic values simply keep their `var(` text and
+ * stay invisible to the extractors.
+ * @param {string} text
+ * @returns {string}
+ */
+export function resolveCssVars(text) {
+  const t = String(text);
+  /** @type {Map<string,string>} */
+  const decls = new Map();
+  for (const [, name, value] of t.matchAll(VAR_DECL_RE)) decls.set(name, value.trim());
+  if (!decls.size && !t.includes("var(")) return t;
+  const substitute = (/** @type {string} */ s) =>
+    s.replace(VAR_USE_RE, (whole, name, fallback) => {
+      const v = decls.get(name);
+      if (v !== undefined) return v;
+      return fallback !== undefined ? String(fallback).trim() : whole;
+    });
+  // Resolve the declarations themselves first (--a: var(--b)); 4 passes covers the
+  // sane nesting depths and bounds a --a↔--b cycle to a fixed cost.
+  for (let i = 0; i < 4; i++) {
+    let changed = false;
+    for (const [name, value] of decls) {
+      if (!value.includes("var(")) continue;
+      const next = substitute(value);
+      if (next !== value) {
+        decls.set(name, next);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  // Then the whole text; extra passes let a fallback that is itself a var() land.
+  let out = t;
+  for (let i = 0; i < 3 && out.includes("var("); i++) {
+    const next = substitute(out);
+    if (next === out) break;
+    out = next;
+  }
   return out;
 }
 
@@ -207,7 +267,7 @@ const uniqSorted = (arr) => [...new Set(arr)].sort(sortNum);
  * @returns {Fingerprint}
  */
 export function fingerprintText(text) {
-  const t = String(text);
+  const t = resolveCssVars(String(text));
 
   const seen = new Set();
   /** @type {Hsl[]} */
@@ -634,6 +694,125 @@ export function scaleChecks(fingerprint, opts = {}) {
       hint:
         fp.paletteSize > o.maxPalette
           ? "consolidate to design tokens — a palette is a decision, not an accumulation"
+          : "",
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Taste profiles as constraint sets (spec §3) — each prose global/taste/<name>.md
+// keeps the *why* and steers generation; its JSON sibling is what the gate CHECKS.
+// `chroma` in the JSON is an HSL saturation/100 proxy in [0,1] (documented in each
+// profile's "why"); `ratio`/`chroma` bands steer generation but are not yet gated —
+// only the checks below are, until P8 fixtures show separation.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {{name:string, why:string,
+ *   palette:{max_hues:number, chroma:[number,number], neutrals:string},
+ *   space:{scale:string, ratio:[number,number], base:number[]},
+ *   type:{max_families:number},
+ *   shape:{radius_levels:[number,number], shadow_levels:[number,number]},
+ *   gate:{tau_slop:number, tau_conform:number}}} TasteProfile
+ */
+
+/**
+ * Load a taste-profile constraint set from global/taste/<name>.json (located
+ * relative to the installed module via BRAND.root, same as `forge taste` finds the
+ * prose files). Null when the name has no JSON sibling or it doesn't parse.
+ * @param {string} name
+ * @returns {TasteProfile|null}
+ */
+export function loadTasteProfile(name) {
+  if (!/^[\w-]+$/.test(String(name))) return null; // a name, never a path
+  try {
+    const p = JSON.parse(readFileSync(join(BRAND.root, "global", "taste", `${name}.json`), "utf8"));
+    return p && typeof p === "object" && p.gate ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The repo's pinned taste style, read from a `forge taste`-managed DESIGN.md (its
+ * header: `<!-- Forge taste: <style> — … forge:sync:<hash> -->`). Null when there is
+ * no DESIGN.md, it isn't Forge-managed, or it was written by hand.
+ * @param {string} root
+ * @returns {string|null}
+ */
+export function activeTasteStyle(root) {
+  try {
+    const head = readFileSync(join(root, "DESIGN.md"), "utf8").slice(0, 200);
+    const m = head.match(/<!--\s*Forge taste:\s*([\w-]+)\s.*forge:sync:/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deterministic profile-constraint checks — same {id, pass, detail, hint} shape as
+ * scaleChecks so the CLI/hooks render them identically. Hue count is OCCUPIED
+ * 30°-hue-bins (a warm palette of 8 near-identical h≈30 tints is ONE hue decision,
+ * not eight); features the input doesn't exhibit pass vacuously, mirroring
+ * sigFeatures' "don't judge what isn't there".
+ * @param {Fingerprint} fingerprint @param {TasteProfile} profile
+ * @returns {{id:string, pass:boolean, detail:string, hint:string}[]}
+ */
+export function profileChecks(fingerprint, profile) {
+  const fp = asFp(fingerprint);
+  const name = profile.name ?? "taste";
+  const hues = fp.hueBuckets.filter((n) => n > 0).length;
+  const [rLo, rHi] = profile.shape?.radius_levels ?? [0, Infinity];
+  const [sLo, sHi] = profile.shape?.shadow_levels ?? [0, Infinity];
+  const bases = profile.space?.base ?? [];
+  const maxHues = profile.palette?.max_hues ?? Infinity;
+  const maxFam = profile.type?.max_families ?? Infinity;
+  return [
+    {
+      id: "taste-palette",
+      pass: fp.paletteSize === 0 || hues <= maxHues,
+      detail: `${hues} distinct hue bin(s) of ${fp.paletteSize} color(s) (${name} allows ≤ ${maxHues})`,
+      hint: hues > maxHues ? `collapse accents to ${maxHues} hue(s) — ${name} palettes commit` : "",
+    },
+    {
+      id: "taste-type",
+      pass: fp.fontFamilies.length <= maxFam,
+      detail: `${fp.fontFamilies.length} font family(ies) (${name} allows ≤ ${maxFam})`,
+      hint:
+        fp.fontFamilies.length > maxFam
+          ? `drop to ≤${maxFam} families — [${fp.fontFamilies.join(", ")}] is more voices than ${name} speaks in`
+          : "",
+    },
+    {
+      id: "taste-radius",
+      pass: fp.radiusLevels >= rLo && fp.radiusLevels <= rHi,
+      detail: `${fp.radiusLevels} radius level(s) (${name} wants ${rLo}–${rHi})`,
+      hint:
+        fp.radiusLevels > rHi
+          ? `flatten [${fp.radii.join(", ")}] to ≤${rHi} level(s)${rHi === 0 ? " — square corners are the style" : ""}`
+          : fp.radiusLevels < rLo
+            ? `add rounding — ${name} expects at least ${rLo} radius level(s)`
+            : "",
+    },
+    {
+      id: "taste-shadow",
+      pass: fp.shadowLevels >= sLo && fp.shadowLevels <= sHi,
+      detail: `${fp.shadowLevels} shadow level(s) (${name} wants ${sLo}–${sHi})`,
+      hint:
+        fp.shadowLevels > sHi
+          ? `flatten elevation to ≤${sHi} level(s)`
+          : fp.shadowLevels < sLo
+            ? `add soft elevation — ${name} expects at least ${sLo} shadow level(s)`
+            : "",
+    },
+    {
+      id: "taste-spacing-base",
+      pass: !fp.spacing.length || fp.spacingBase === null || bases.includes(fp.spacingBase),
+      detail: `inferred spacing base ${fp.spacingBase ?? "(none)"}px (${name} allows [${bases.join(", ")}])`,
+      hint:
+        fp.spacing.length && fp.spacingBase !== null && !bases.includes(fp.spacingBase)
+          ? `re-grid spacing onto a ${bases.join("- or ")}px base`
           : "",
     },
   ];

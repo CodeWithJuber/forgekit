@@ -154,18 +154,24 @@ forge catalog     Start-Here index of every tool / crew / guard
 
 forge substrate   full pre-action cognitive-substrate check
 forge preflight   assumption check — what a task names that the repo doesn't define
+forge context     budgeted context assembly + completeness gate — what an edit NEEDS known
 forge route       cheapest capable model for a task (+ gateway config)
 forge impact      predict blast radius for a symbol or file
+forge imagine     consequence simulation — predicted breaks + the minimal dry-run test suite
 forge scope       decompose files into independent clusters
 forge anchor      goal-drift check — are your git changes still on the stated goal?
+forge diagnose    doom-loop check — 3× the same failure mints a diagnosis + escalation
 forge verify      independent verification — tests + hallucinated-symbol check
-forge uicheck     deterministic WCAG contrast check
+forge uicheck     deterministic UI checks — WCAG contrast · fingerprint · design gate
 
+forge ledger      proof-carrying memory — stats / verify / show / blame / query / merge / import
+forge reuse       proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats
 forge cortex      self-correcting memory — status / why <symbol>
 forge atlas       build / query the code-graph (where-is-X, has-symbol)
 forge recall      cross-session memory (list / add / consolidate)
 forge brain       portable project memory inlined into AGENTS.md
-forge cost        real per-day spend via ccusage + the cost ceiling
+forge dash        local dashboard over the ledger, metrics, and blast radius
+forge cost        real per-day spend via ccusage · measured stage factors (--stages)
 forge scan        vet a skill/MCP for injection/RCE before install
 forge harden      wire gitleaks pre-commit + sandbox settings
 forge brand       print the active brand token map
@@ -174,15 +180,36 @@ forge brand       print the active brand token map
 **→ Every command with a worked example, real output, and how to extend it:
 [`docs/GUIDE.md`](docs/GUIDE.md).**
 
+## Team memory in three commands
+
+Everything the substrate learns — Cortex lessons, `forge remember` facts, verified
+reuse artifacts — lands as content-addressed claims in a git-native ledger
+(`.forge/ledger/`) built to merge without conflicts:
+
+```bash
+forge init                    # once — also emits the .gitattributes union-merge rule the ledger needs
+# …work normally: cortex and `forge remember` shadow claims into the ledger as you go…
+git pull && forge ledger merge <path-to-their-ledger>   # fold in a teammate's ledger — conflict-free, any order
+```
+
+Identical knowledge minted independently converges to **one** claim with every author
+preserved in its provenance; `forge ledger blame <id>` shows who minted it, every oracle
+outcome, and per-author trust. No server, no sync service — it's just files in git.
+
 ## Honest limits
 
 Forge states its own ceiling everywhere. In short: **guards reduce, don't eliminate** the
 "ignored my rules" problem; `recall`/`cortex` are file memory, **not** weight-level
 learning; the `atlas`/`impact` graph is regex-approximate (conservative, not a sound call
-graph); and the substrate's rubrics are heuristic, not benchmarked. What's *asserted* is
-safe to gate on (repo grounding, graph traversal, routing arithmetic, the test commands);
-everything else is *advisory*. **Tests and human corrections always win.** Full list:
-[docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits).
+graph); and the substrate's rubrics are heuristic, not benchmarked. The newer subsystems
+state theirs too: `forge reuse`'s MinHash near-match is weak on very short specs (a
+few words hash to too few shingles to rank reliably); the UI fingerprint doesn't resolve
+CSS `var()` indirection yet, so tokenized palettes are partially invisible to it; and
+`forge cost --stages` reports **measured stages only** — a stage with no events says "no
+data", never a default, and the ~90 % figure is a labeled *target*, not a claim. What's
+*asserted* is safe to gate on (repo grounding, graph traversal, routing arithmetic, the
+test commands); everything else is *advisory*. **Tests and human corrections always
+win.** Full list: [docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits).
 
 ## Documentation
 

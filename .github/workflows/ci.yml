@@ -1,5 +1,6 @@
-# CI gate for every push and PR: test matrix (Node 18/20/22), Biome lint+format, ShellCheck,
-# the zero-runtime-dependency assertion, and dependency review. All must pass to merge.
+# CI gate for every push and PR: test matrix (Node 20/22 — matches the ">=20" engines
+# field; 18 is EOL), Biome lint+format, ShellCheck, the zero-runtime-dependency assertion,
+# the version-drift guard, and dependency review. All must pass to merge.
 name: CI
 
 on:
@@ -17,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -57,6 +58,15 @@ jobs:
       - uses: actions/checkout@v7
       - run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
       - run: npm pack --dry-run
+
+  version-drift:
+    name: Version fields agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # package.json, package-lock.json, .claude-plugin/plugin.json, .codex-plugin/plugin.json,
+      # and CITATION.cff must all carry the same version (scripts/bump.mjs keeps them in sync).
+      - run: node scripts/bump.mjs check
 
   dependency-review:
     name: Dependency review

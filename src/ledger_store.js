@@ -22,6 +22,7 @@ import {
   emptyState,
   liveClaims,
   mergeStates,
+  mintClaim,
   ORACLES,
   SECRET_RE,
   sealRecord,
@@ -143,6 +144,32 @@ export function readEvidence(dir, id) {
  *  both survive the merge (the view shows the earliest deterministically). */
 export function tombstone(dir, id, { author = "", reason = "", t = 0 } = {}) {
   return appendRecord(dir, "tombstones", id, sealRecord({ author, reason, t }));
+}
+
+/**
+ * Ratify a claim — the fahm→ḥikma promotion (08-dashboard-ux.md §2): mint a `decision`
+ * claim pointing at the ratified claim's full id. Promotion is HUMAN-ONLY by design:
+ * the caller supplies the author (a person's identity, via gitAuthor()); nothing in the
+ * substrate ever calls this automatically. Append-only and content-addressed, so
+ * ratifying the same claim twice converges on the same decision ({existed:true}).
+ * @param {string} dir
+ * @param {string} idPrefix
+ * @param {{author?: string, t?: number}} [opts]
+ * @returns {{ok:boolean, reason?:string, decisionId?:string, ratifies?:string, existed?:boolean}}
+ */
+export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
+  const target = getClaimByPrefix(dir, idPrefix);
+  if (!target) return { ok: false, reason: `no claim matching ${idPrefix}` };
+  const minted = mintClaim({
+    kind: "decision",
+    body: { ratifies: target.id, note: "" },
+    provenance: { agent: "dash", author },
+    t,
+  });
+  if (!minted.ok) return { ok: false, reason: "reason" in minted ? minted.reason : "mint failed" };
+  const put = putClaim(dir, minted.claim);
+  if (!put.ok) return { ok: false, reason: put.reason ?? "could not persist the decision claim" };
+  return { ok: true, decisionId: minted.claim.id, ratifies: target.id, existed: put.existed };
 }
 
 /** Load the full ledger state {claims, evidence, provenance, tombstones}. */

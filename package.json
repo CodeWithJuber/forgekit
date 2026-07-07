@@ -1,6 +1,6 @@
 {
   "name": "@codewithjuber/forgekit",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "One config for every AI coding agent \u2014 a cross-tool config layer plus a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more.",
   "type": "module",
   "bin": {
@@ -52,12 +52,14 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
+    "bench": "node bench/bench.mjs",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
     "coverage": "node --test --experimental-test-coverage test/*.test.js",
+    "bump": "node scripts/bump.mjs",
     "forge": "node src/cli.js"
   },
   "keywords": [

@@ -3,15 +3,18 @@
 #
 # NOTE: editing repo settings needs an ADMIN-scoped token. The default GITHUB_TOKEN
 # cannot be granted `administration`, so add a fine-grained PAT (Administration: write,
-# Metadata: read) as the repo secret ADMIN_TOKEN. Without it the job will 403 — in that
-# case just run the two `gh` commands below locally once (they need no workflow):
+# Metadata: read) as the repo secret ADMIN_TOKEN. Without it the job SKIPS with a
+# warning (soft fail) — in that case just run the two `gh` commands below locally once
+# (they need no workflow):
 #
 #   gh repo edit CodeWithJuber/forgekit \
 #     --description "One config for every AI coding agent — cross-tool config + a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more." \
 #     --homepage "https://github.com/CodeWithJuber/forgekit#readme" \
-#     --add-topic claude-code --add-topic ai-coding --add-topic ai-agents --add-topic mcp \
-#     --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate \
-#     --add-topic developer-tools --add-topic cli --add-topic codex --add-topic cursor
+#     --add-topic ai-agents --add-topic claude-code --add-topic codex --add-topic cursor \
+#     --add-topic developer-tools --add-topic llm --add-topic memory --add-topic mcp \
+#     --add-topic agent-memory --add-topic cost-optimization --add-topic code-quality \
+#     --add-topic cli --add-topic zero-dependency --add-topic crdt --add-topic team-memory \
+#     --add-topic ai-coding --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate
 #   gh api --method PATCH /repos/CodeWithJuber/forgekit -F has_discussions=true
 name: Repo settings
 
@@ -27,15 +30,22 @@ jobs:
     steps:
       - name: Apply About, topics, and Discussions
         env:
-          GH_TOKEN: ${{ secrets.ADMIN_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::ADMIN_TOKEN secret is not set — skipping. Editing repo settings needs a fine-grained PAT (Administration: write, Metadata: read) saved as the ADMIN_TOKEN repo secret; the default GITHUB_TOKEN cannot be granted 'administration'. Alternatively run the gh commands from this workflow's header comment locally."
+            exit 0
+          fi
           set -e
+          # 19 topics (GitHub caps at 20): discoverability terms first, project-specific last.
           gh repo edit "$REPO" \
             --description "One config for every AI coding agent — cross-tool config + a cognitive substrate (memory, blast-radius, guardrails) for Claude Code, Codex, Cursor, Gemini, Aider, and more." \
             --homepage "https://github.com/CodeWithJuber/forgekit#readme" \
-            --add-topic claude-code --add-topic ai-coding --add-topic ai-agents --add-topic mcp \
-            --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate \
-            --add-topic developer-tools --add-topic cli --add-topic codex --add-topic cursor
+            --add-topic ai-agents --add-topic claude-code --add-topic codex --add-topic cursor \
+            --add-topic developer-tools --add-topic llm --add-topic memory --add-topic mcp \
+            --add-topic agent-memory --add-topic cost-optimization --add-topic code-quality \
+            --add-topic cli --add-topic zero-dependency --add-topic crdt --add-topic team-memory \
+            --add-topic ai-coding --add-topic agents-md --add-topic cross-tool --add-topic cognitive-substrate
           gh api --method PATCH "/repos/$REPO" -F has_discussions=true
           echo "Applied About, topics, and Discussions for $REPO."

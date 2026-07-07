@@ -6,8 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-07
+
 ### Added
 
+- Security & OSS hardening: CodeQL, gitleaks secret-scan (blocking; verified clean on the
+  full history), and OSSF Scorecard workflows; refreshed repo topics; SECURITY.md now
+  states the supported line (0.5.x) and documents the ledger's forgery-resistance
+  properties (content-hash verification; oracle weights never trusted from records).
+- **UI fingerprints resolve CSS `var()` indirection**, so design systems declared as
+  custom properties fingerprint fully (the dashboard now reads as a 6-value 4px scale
+  with two radius levels instead of one lonely spacing value), and the five taste
+  profiles gain machine-readable constraint JSONs (`global/taste/<name>.json`) wired
+  into `forge uicheck design --taste <name>` — with auto-pickup from a
+  `forge taste`-managed DESIGN.md. Prose steers generation; the JSON is what the gate
+  checks.
+- **One-click release automation.** `scripts/bump.mjs` (node stdlib only, unit-tested)
+  bumps every version field in one shot — `package.json`, `package-lock.json`, both
+  plugin manifests, `CITATION.cff`, the landing page — rotates the CHANGELOG
+  `[Unreleased]` section under a dated heading, and prints the new version;
+  `npm run bump -- <patch|minor|major|auto>` (auto = conventional commits since the last
+  tag: BREAKING → major, feat → minor, else patch). The new `bump.yml` workflow makes a
+  release one click from the Actions tab (commit + tag + dispatch of `release.yml`);
+  `release.yml` now soft-skips npm publish when `NPM_TOKEN` is missing instead of
+  failing, and CI gained a version-drift guard (`node scripts/bump.mjs check`).
+- **Benchmark harness (`npm run bench`) + measured results doc.** `bench/bench.mjs`
+  (node stdlib only) measures the substrate primitives as medians of N runs after
+  warmup — atlas build/incremental/impact latency on this repo, ledger
+  mint+put/loadClaims/mergeDirs/val() on seeded synthetic fixtures, reuse fingerprint +
+  exact/near-LSH lookup at 100 and 1000 artifacts, `assemble()` and full
+  `substrateCheck` wall time — and writes the tables plus an environment block into
+  `reports/benchmarks.md`. The same run scores `impact()` precision/recall/F1 against a
+  committed, hand-labeled case set from this repo's real import graph
+  (`bench/impact_cases.mjs`, every reference cited; one known-miss alias case kept in on
+  purpose), reported next to — never blended with — the paper prototype's
+  mutation-derived numbers, plus a structural-only contrast with adjacent tools (note
+  stores, LLM gateways, plain RAG), every row checkable from the named source.
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
   drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
   signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
@@ -18,8 +52,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   static half of the consequence simulator (paper Eq. 4): entities → blast radius →
   predicted breaks with confidence, plus the minimal dry-run test suite via weighted greedy
   set cover (weight = file size as a duration proxy; classic ln-n approximation) and
-  `riskScore = Σ confidence` — the sandboxed worktree runner that executes the suite is the
-  P5 follow-up. `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
+  `riskScore = Σ confidence`. **`forge imagine --run` executes that minimal suite in a
+  sandboxed ephemeral git worktree** (HEAD-only — refused on a dirty tree unless
+  `--allow-dirty`), parses the TAP summary into per-file verdicts, always removes the
+  worktree (verified in a finally), and meters the run (`stage: "imagine"`); on this repo
+  the 8-test selected suite measured 1.3 s where the full suite takes ~60 s.
+  `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
   h = 1.0): sustained small drift alarms, a single exploratory spike drains back to zero.
   `verify.checkpointCadence()` prices M6's "when to check?" as the optimal-stopping
   threshold rule `n* = ⌈checkCost / (pErr·tokensPerStep·costPerToken)⌉`, clamped to
@@ -344,7 +382,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...v0.5.0
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.1.0...v0.2.0

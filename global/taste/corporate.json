@@ -1,0 +1,9 @@
+{
+  "name": "corporate",
+  "why": "Trustworthy, clear, accessible (corporate.md): one professional primary (#2563EB) plus three semantic states -> max_hues 4; mid-to-high but never neon chroma (chroma = HSL saturation/100 proxy, 0-1); cool slate neutrals; 'consistent 8px spacing' -> base [8], linear scale with modest ratio; one clean sans -> max_families 1; moderate rounding and subtle elevation -> radius [1,2] / shadow [0,2]; tau_slop is the LOWEST of all profiles because corporate deliberately stays near convention, and tau_conform is tight because consistency is the whole point.",
+  "palette": { "max_hues": 4, "chroma": [0.3, 0.9], "neutrals": "cool" },
+  "space": { "scale": "linear", "ratio": [1.25, 1.5], "base": [8] },
+  "type": { "max_families": 1 },
+  "shape": { "radius_levels": [1, 2], "shadow_levels": [0, 2] },
+  "gate": { "tau_slop": 0.2, "tau_conform": 0.4 }
+}

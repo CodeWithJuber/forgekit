@@ -19,7 +19,8 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
-  ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
+  ledger:
+    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
@@ -191,7 +192,7 @@ async function run(argv) {
   }
   if (cmd === "ledger") {
     const ls = await import("./ledger_store.js");
-    const { epochDay } = await import("./util.js");
+    const { epochDay, gitAuthor } = await import("./util.js");
     const root = process.cwd();
     // --personal targets the ledger beside the global recall store (~/.forge/recall/
     // ledger) — otherwise facts shadowed by `forge recall add` would be write-only,
@@ -283,6 +284,55 @@ async function run(argv) {
       }
       return;
     }
+    // The two writes (08-dashboard-ux.md §2) — CLI twins of the dashboard's POSTs, so
+    // the dashboard stays a convenience, never a requirement. Both append-only.
+    if (sub === "ratify") {
+      const id = args[2];
+      if (!id || id.length < 2) {
+        console.error("usage: forge ledger ratify <id-prefix (≥2 chars)>");
+        process.exitCode = 1;
+        return;
+      }
+      // Human-only promotion: the author is YOUR git identity, minted as a decision claim.
+      const r = ls.ratify(dir, id, { author: gitAuthor(), t: nowDay });
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      console.log(
+        `  ratified ${r.ratifies.slice(0, 12)} → decision ${r.decisionId.slice(0, 12)}${r.existed ? " (already ratified — same decision)" : ""}`,
+      );
+      return;
+    }
+    if (sub === "retract") {
+      const id = args[2];
+      const ri = args.indexOf("--reason");
+      const reason = ri >= 0 ? (args[ri + 1] ?? "") : "";
+      if (!id || id.length < 2 || id === "--reason" || !reason) {
+        console.error('usage: forge ledger retract <id-prefix> --reason "<why>"');
+        process.exitCode = 1;
+        return;
+      }
+      const hit = ls.getClaimByPrefix(dir, id);
+      if (!hit) {
+        console.error(`  no claim matching ${id}`);
+        process.exitCode = 1;
+        return;
+      }
+      const r = ls.tombstone(dir, hit.id, { author: gitAuthor(), reason, t: nowDay });
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (json) return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
+      console.log(
+        `  retracted ${hit.id.slice(0, 12)} — ${reason}${r.deduped ? " (already retracted with this record)" : ""}`,
+      );
+      return;
+    }
     if (sub === "query") {
       const q = args.slice(2).join(" ");
       if (!q) {
@@ -327,7 +377,7 @@ async function run(argv) {
       return;
     }
     console.error(
-      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | merge <path> | import) [--personal] [--json]`,
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | import) [--personal] [--json]`,
     );
     process.exitCode = 1;
     return;
@@ -787,6 +837,9 @@ async function run(argv) {
       return;
     }
     const rec = r.routeTask(process.cwd(), task);
+    // P8 route metering — explicit CLI path only (hooks that route stay write-free);
+    // best-effort, a metrics failure must never block the recommendation.
+    r.meterRoute(process.cwd(), task, rec);
     if (json) {
       console.log(JSON.stringify(rec, null, 2));
       return;
@@ -859,19 +912,87 @@ async function run(argv) {
     return; // advisory — halting the retry loop is the AGENT's move, not an exit code
   }
   if (cmd === "imagine") {
-    const { imagineTask, renderImagine } = await import("./imagine.js");
+    const { dryRun, imagineTask, renderImagine } = await import("./imagine.js");
     const json = argv.includes("--json");
+    const doRun = argv.includes("--run");
+    const allowDirty = argv.includes("--allow-dirty");
+    const FLAGS = new Set(["--json", "--run", "--allow-dirty"]);
     const task = argv
       .slice(1)
-      .filter((a) => a !== "--json")
+      .filter((a) => !FLAGS.has(a))
       .join(" ");
     if (!task) {
-      console.error('usage: forge imagine "<task>" [--json]');
+      console.error('usage: forge imagine "<task>" [--run] [--allow-dirty] [--json]');
       process.exitCode = 1;
       return;
     }
-    const r = imagineTask(process.cwd(), task);
-    console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+    const root = process.cwd();
+    const r = imagineTask(root, task);
+    if (!doRun) {
+      console.log(json ? JSON.stringify(r, null, 2) : renderImagine(r));
+      return;
+    }
+    // --run: the static prediction first (always), then the measured half. The sandbox
+    // is a git worktree of HEAD — uncommitted changes are INVISIBLE to it — so a dirty
+    // tree is refused by default rather than silently dry-running the wrong code.
+    if (!json) console.log(renderImagine(r, { footer: false }));
+    if (!allowDirty) {
+      let dirty = "";
+      try {
+        const { execFileSync } = await import("node:child_process");
+        dirty = execFileSync("git", ["status", "--porcelain"], {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+      } catch {} // not a repo / no git → dryRun reports its own precondition failure
+      if (dirty) {
+        console.error(
+          "\n  imagine --run refused: the working tree is dirty and the sandbox runs HEAD,\n" +
+            "  so your uncommitted changes would NOT be in the dry-run. Commit or stash them,\n" +
+            "  or pass --allow-dirty to knowingly measure the last commit instead.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+    const d = dryRun(root, { tests: r.tests });
+    // Metrics are best-effort telemetry (05-cost-model.md) — never let recording
+    // failure break the verdict. Only a run that happened is worth counting.
+    try {
+      if (d.durationMs !== undefined) {
+        const { record } = await import("./metrics.js");
+        record(root, {
+          stage: "imagine",
+          outcome: d.ok && d.failed === 0 ? "clean" : "breaks",
+          ref: task.slice(0, 120),
+          durationMs: d.durationMs,
+        });
+      }
+    } catch {}
+    if (json) {
+      console.log(JSON.stringify({ ...r, dryRun: d }, null, 2));
+      return;
+    }
+    if (!d.ok) {
+      console.log(`\n  dry-run: did not produce a verdict — ${d.reason}`);
+      if (d.output) console.log(`\n${d.output.replace(/^/gm, "    ")}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`\n  dry-run (sandboxed worktree of HEAD · ${d.runner}):`);
+    console.log(
+      `    pass ${d.passed} · fail ${d.failed} · ${d.durationMs}ms · worktree ${d.worktree}`,
+    );
+    if (d.perFile)
+      for (const [t, s] of Object.entries(d.perFile))
+        console.log(`    ${s === "pass" ? "ok  " : "FAIL"} ${t}`);
+    if (d.failed > 0) {
+      console.log("\n  measured consequence: the selected suite BREAKS at HEAD — output tail:");
+      console.log(`\n${(d.output || "").replace(/^/gm, "    ")}`);
+    } else {
+      console.log("\n  measured consequence: the selected suite is green at HEAD.");
+    }
     return;
   }
   if (cmd === "lean") {
@@ -928,11 +1049,16 @@ async function run(argv) {
     const sub = argv[1];
     if (sub === "fingerprint" || sub === "design") {
       const ui = await import("./uifingerprint.js");
-      const json = argv.includes("--json");
-      const files = argv.slice(2).filter((a) => !a.startsWith("--"));
-      if (!files.length) {
+      // `--taste <name>` (design only) takes a VALUE — splice it out before the
+      // file filter so the profile name is never mistaken for a file.
+      const args = argv.slice(2);
+      const tasteIdx = args.indexOf("--taste");
+      const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+      const json = args.includes("--json");
+      const files = args.filter((a) => !a.startsWith("--"));
+      if (!files.length || (tasteIdx >= 0 && !tasteArg)) {
         console.error(
-          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : ""}`,
+          `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : " [--taste <name>]"}`,
         );
         process.exitCode = 1;
         return;
@@ -971,17 +1097,43 @@ async function run(argv) {
       }
       // design — the two-sided gate: fail when too close to generic OR (when the
       // project has minted its fingerprint) too far from the project's own system.
+      // A taste profile (explicit --taste, else the style pinned by a
+      // `forge taste`-managed DESIGN.md) overrides thresholds + adds its checks.
+      const tasteName = tasteArg ?? ui.activeTasteStyle(process.cwd());
+      const profile = tasteName ? ui.loadTasteProfile(tasteName) : null;
+      if (tasteArg && !profile) {
+        // Explicit --taste must exist; an auto-picked style without a JSON sibling
+        // silently falls back to defaults (custom prose styles stay legal).
+        console.error(
+          `unknown taste profile "${tasteArg}" — run \`${BRAND.cli} taste\` to list styles`,
+        );
+        process.exitCode = 1;
+        return;
+      }
       const projectFp = ui.loadProjectFingerprint(process.cwd());
-      const gate = ui.uiGate(fp, { projectFp });
-      const checks = ui.scaleChecks(fp);
+      const tauSlop = profile?.gate?.tau_slop ?? ui.UI_GATE_DEFAULTS.tauSlop;
+      const tauConform = profile?.gate?.tau_conform ?? ui.UI_GATE_DEFAULTS.tauConform;
+      const gate = ui.uiGate(fp, { projectFp, tauSlop, tauConform });
+      const checks = [...ui.scaleChecks(fp), ...(profile ? ui.profileChecks(fp, profile) : [])];
       const fail = !gate.pass || checks.some((c) => !c.pass);
       if (json) {
         console.log(
-          JSON.stringify({ ...gate, checks, hasProjectFingerprint: !!projectFp }, null, 2),
+          JSON.stringify(
+            {
+              ...gate,
+              checks,
+              hasProjectFingerprint: !!projectFp,
+              taste: profile ? tasteName : null,
+              tauSlop,
+              tauConform,
+            },
+            null,
+            2,
+          ),
         );
       } else {
-        const { tauSlop, tauConform } = ui.UI_GATE_DEFAULTS;
         console.log(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
+        if (profile) console.log(`  taste:         ${tasteName} (thresholds from its profile)`);
         console.log(
           `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
         );
