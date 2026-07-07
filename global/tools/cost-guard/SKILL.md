@@ -25,28 +25,24 @@ deliberately.
 - **Scope investigations.** Never say "investigate X" unbounded — name the files
   or the question, or hand it to `scout`.
 
-## Model choice (balanced)
-- Default working model handles implementation.
-- Cheap model (`scout`) for search/triage/enumeration.
-- Reserve the top model for genuinely hard reasoning, not routine edits.
+## Model choice + measurement
+- `forge route "<task>"` names the cheapest capable tier before you pick a model;
+  escalate only after an external verifier fails.
+- Cheap model (`scout`) for search/triage/enumeration; reserve the top model for
+  genuinely hard reasoning, not routine edits.
+- `forge cost` shows real per-day spend; **`forge cost --stages`** shows the
+  measured per-stage savings (gate / cache / route / context) from
+  `.forge/metrics.jsonl` — a stage with no events says "no data", never a default.
+- `forge reuse query "<spec>"` before regenerating: a hit is verified code you
+  already paid for.
 
 ## Prompt-cache hygiene
-Claude Code caches by exact request *prefix* (system prompt → project context →
-conversation). A change high in the prefix recomputes everything after it — a
-slow, expensive turn. Keep the cache warm:
-- **Pick model + connect MCP servers at session start.** Switching model mid-task
-  (incl. `opusplan` plan-mode toggles) recomputes the whole history — each model
-  has its own cache. This config pins a fixed model to avoid that.
-- **Save `/compact` for natural breaks** between tasks, not mid-task. To abandon a
-  path, prefer `/rewind` (truncates to an already-cached prefix) over `/compact`
-  (builds a new one).
-- **Don't add bare-tool deny rules mid-session** (e.g. deny `Bash`/`WebFetch`) —
-  that changes the tool set and busts the system-prompt layer. Scoped rules like
-  `Bash(rm *)` are cache-safe.
-- **Editing CLAUDE.md/output-style mid-session** is cache-safe but *doesn't apply*
-  until `/clear` or restart — so edit, then restart to pick it up.
-- Watch the status line's `⚡NN%` cache indicator: green is healthy; if it stays
-  low turn after turn, something in your prefix keeps changing.
+Claude Code caches by exact request *prefix*; a change high in the prefix
+recomputes everything after it. Pick model + MCP servers at session start
+(switching mid-task busts the cache); save `/compact` for natural breaks and
+prefer `/rewind` to abandon a path; don't add bare-tool deny rules mid-session
+(scoped rules like `Bash(rm *)` are cache-safe); watch the status line's `⚡NN%`
+indicator — if it stays low turn after turn, your prefix keeps changing.
 
 ## Fan-out for big batches
 For repetitive edits across many files, generate the file list first, test the

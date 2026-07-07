@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Docs consolidation pass: deduplicated cross-doc prose into single canonical homes
+  (the substrate README now points at the GUIDE's command reference, output table, and
+  honest-limits list instead of repeating them), added orientation diagrams
+  (ARCHITECTURE four-layer compiler + ledger, substrate-v2 phase graph with all phases
+  marked shipped, the GUIDE daily loop), brought the ROADMAP current, and refreshed the
+  model-facing skills/crew guidance for the v0.5.0 surface (`forge context`,
+  `forge imagine --run`, `forge diagnose`, `forge ledger blame`, `forge cost --stages`,
+  `forge uicheck design --taste`) without growing the skills' context payload.
+
 ## [0.5.0] - 2026-07-07
 
 ### Added
