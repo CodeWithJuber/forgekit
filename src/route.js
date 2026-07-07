@@ -7,10 +7,11 @@ import { join } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
+import { recordRoute } from "./cost_report.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
-import { clamp01 } from "./util.js";
+import { clamp01, contentHash } from "./util.js";
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
 
@@ -249,6 +250,25 @@ export function routeTask(
       ]),
     ],
   };
+}
+
+/**
+ * Best-effort route-stage metering (05-cost-model.md) for EXPLICIT callers only — the
+ * `forge route` CLI and the explicit substrate gate call this AFTER a routing decision.
+ * Deliberately NOT called from routeTask itself: ambient hooks route on every prompt
+ * and must stay write-free, same rule as recordGate in substrate.js. One metrics line:
+ * the chosen tier + a short task hash as the ref (never the task text — metrics are
+ * telemetry, not a prompt log). No token counts here — this is an advisory routing
+ * decision, not a priced generation, and the cost report excludes unpriced events
+ * rather than estimating them.
+ * @param {string} root
+ * @param {string} task
+ * @param {{tier?: string}} rec the routeTask result (only .tier is read)
+ */
+export function meterRoute(root, task, rec) {
+  try {
+    recordRoute(root, { tier: rec?.tier, ref: contentHash(String(task)).slice(0, 12) });
+  } catch {}
 }
 
 /** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks). */

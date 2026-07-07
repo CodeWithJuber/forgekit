@@ -19,7 +19,8 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
-  ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
+  ledger:
+    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
@@ -191,7 +192,7 @@ async function run(argv) {
   }
   if (cmd === "ledger") {
     const ls = await import("./ledger_store.js");
-    const { epochDay } = await import("./util.js");
+    const { epochDay, gitAuthor } = await import("./util.js");
     const root = process.cwd();
     // --personal targets the ledger beside the global recall store (~/.forge/recall/
     // ledger) — otherwise facts shadowed by `forge recall add` would be write-only,
@@ -283,6 +284,55 @@ async function run(argv) {
       }
       return;
     }
+    // The two writes (08-dashboard-ux.md §2) — CLI twins of the dashboard's POSTs, so
+    // the dashboard stays a convenience, never a requirement. Both append-only.
+    if (sub === "ratify") {
+      const id = args[2];
+      if (!id || id.length < 2) {
+        console.error("usage: forge ledger ratify <id-prefix (≥2 chars)>");
+        process.exitCode = 1;
+        return;
+      }
+      // Human-only promotion: the author is YOUR git identity, minted as a decision claim.
+      const r = ls.ratify(dir, id, { author: gitAuthor(), t: nowDay });
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      console.log(
+        `  ratified ${r.ratifies.slice(0, 12)} → decision ${r.decisionId.slice(0, 12)}${r.existed ? " (already ratified — same decision)" : ""}`,
+      );
+      return;
+    }
+    if (sub === "retract") {
+      const id = args[2];
+      const ri = args.indexOf("--reason");
+      const reason = ri >= 0 ? (args[ri + 1] ?? "") : "";
+      if (!id || id.length < 2 || id === "--reason" || !reason) {
+        console.error('usage: forge ledger retract <id-prefix> --reason "<why>"');
+        process.exitCode = 1;
+        return;
+      }
+      const hit = ls.getClaimByPrefix(dir, id);
+      if (!hit) {
+        console.error(`  no claim matching ${id}`);
+        process.exitCode = 1;
+        return;
+      }
+      const r = ls.tombstone(dir, hit.id, { author: gitAuthor(), reason, t: nowDay });
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (json) return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
+      console.log(
+        `  retracted ${hit.id.slice(0, 12)} — ${reason}${r.deduped ? " (already retracted with this record)" : ""}`,
+      );
+      return;
+    }
     if (sub === "query") {
       const q = args.slice(2).join(" ");
       if (!q) {
@@ -327,7 +377,7 @@ async function run(argv) {
       return;
     }
     console.error(
-      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | merge <path> | import) [--personal] [--json]`,
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | import) [--personal] [--json]`,
     );
     process.exitCode = 1;
     return;
@@ -787,6 +837,9 @@ async function run(argv) {
       return;
     }
     const rec = r.routeTask(process.cwd(), task);
+    // P8 route metering — explicit CLI path only (hooks that route stay write-free);
+    // best-effort, a metrics failure must never block the recommendation.
+    r.meterRoute(process.cwd(), task, rec);
     if (json) {
       console.log(JSON.stringify(rec, null, 2));
       return;

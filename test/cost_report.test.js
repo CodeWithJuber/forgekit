@@ -207,6 +207,12 @@ test("substrateCheck meters the gate on the explicit path only — ambient hooks
   const gate = readMetrics(explicit, { stage: "gate" });
   assert.equal(gate.length, 1);
   assert.equal(gate[0].outcome, "pass");
+  // P8 route metering rides the same explicit-only contract: the routing decision
+  // lands as one "route" event carrying the chosen tier and a short task-hash ref.
+  const routed = readMetrics(explicit, { stage: "route" });
+  assert.equal(routed.length, 1);
+  assert.ok(["simple", "medium", "complex", "extreme"].includes(routed[0].tier));
+  assert.match(routed[0].ref, /^[0-9a-f]{12}$/);
 
   const ambient = tmp();
   writeFileSync(join(ambient, "math.js"), "export function computeTax(x){ return x * 0.2 }\n");
