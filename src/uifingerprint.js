@@ -506,7 +506,7 @@ export function conformance(fingerprint, projectFp) {
 export const UI_GATE_DEFAULTS = { tauSlop: 0.25, tauConform: 0.5 };
 
 const SLOP_HINTS = {
-  palette: (fp, near) =>
+  palette: (_fp, near) =>
     `palette hues sit in the ${near.id} band — pick a brand hue (or the project's accent) outside it`,
   spacing: (fp) =>
     `spacing is the uniform ${fp.spacingBase ?? 8}px template rhythm — use a deliberate scale (e.g. the project's 4-based scale with real jumps)`,

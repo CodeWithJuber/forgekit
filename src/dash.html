@@ -9,13 +9,13 @@
      own — not framework blue), a 4px-based spacing scale, exactly two radius levels,
      system sans + one mono. Palette matches the landing page = close to home. */
   :root {
-    --bg: #12131a;
-    --panel: #1b1d27;
-    --panel-2: #21242f;
-    --line: #2b2e3b;
-    --fg: #ecedf3;
-    --muted: #9a9dae;
-    --faint: #6b6e7e;
+    --bg: #171310;
+    --panel: #201a15;
+    --panel-2: #272019;
+    --line: #372c22;
+    --fg: #f2ede7;
+    --muted: #a99e90;
+    --faint: #7d7263;
     --ember: #f26430;
     --ember-wash: rgba(242, 100, 48, 0.14);
     --r-s: 4px;   /* radius level 1: chips, bars, inputs */
@@ -40,12 +40,12 @@
     position: sticky; top: 0; z-index: 5;
     display: flex; align-items: center; gap: var(--s3);
     padding: var(--s3) var(--s6);
-    background: rgba(18, 19, 26, 0.85); backdrop-filter: blur(8px);
+    background: rgba(23, 19, 16, 0.85); backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--line);
   }
   .spark {
     width: 8px; height: 8px; border-radius: var(--r-s);
-    background: var(--ember); box-shadow: 0 0 10px var(--ember);
+    background: var(--ember);
   }
   .brand { font-family: var(--mono); font-size: 13px; letter-spacing: 0.02em; }
   .brand b { color: var(--ember); font-weight: 600; }
