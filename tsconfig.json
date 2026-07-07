@@ -13,5 +13,5 @@
     "noUnusedLocals": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.js", "scripts/**/*.mjs", "bench/**/*.mjs"]
+  "include": ["src/**/*.js", "scripts/**/*.mjs"]
 }
