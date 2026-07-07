@@ -1,0 +1,9 @@
+{
+  "name": "minimalist",
+  "why": "Restraint (minimalist.md): near-monochrome with exactly ONE saturated accent for the primary action -> max_hues 1, chroma band around a committed accent like #2563EB (chroma = HSL saturation/100 proxy, 0-1); neutral near-white/ink base; '8px spacing scale' -> base [8], calm linear-to-wide steps; one sans, 2 weights -> max_families 1; hairlines only, 'no bounce, no shadow' / 'DON'T add drop shadows' -> shadow_levels [0,0], radius [0,1]; tau_slop 0.3 because minimal surfaces are CLOSE to flat templates by construction yet must still avoid the default-blue-card centroid, tau_conform tight because a minimal system tolerates zero drift.",
+  "palette": { "max_hues": 1, "chroma": [0.4, 0.9], "neutrals": "neutral" },
+  "space": { "scale": "linear", "ratio": [1.5, 2.0], "base": [8] },
+  "type": { "max_families": 1 },
+  "shape": { "radius_levels": [0, 1], "shadow_levels": [0, 0] },
+  "gate": { "tau_slop": 0.3, "tau_conform": 0.4 }
+}

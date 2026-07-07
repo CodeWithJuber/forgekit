@@ -8,15 +8,19 @@ import { fileURLToPath } from "node:url";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
 import { ASSERTABLE_CHECKS } from "../src/uicheck.js";
 import {
+  activeTasteStyle,
   conformance,
   fingerprintFiles,
   fingerprintText,
   GENERIC_SIGNATURES,
   inferSpacingBase,
   loadProjectFingerprint,
+  loadTasteProfile,
   mintProjectFingerprint,
   nearestGeneric,
   onScaleFraction,
+  profileChecks,
+  resolveCssVars,
   scaleChecks,
   slopDistance,
   UI_GATE_DEFAULTS,
@@ -95,6 +99,54 @@ test("fingerprintText: Tailwind-class JSX — classes map to px / hues without a
 
 test("fingerprintText is deterministic (same text → deep-equal vector)", () => {
   assert.deepEqual(fingerprintText(CUSTOM_CSS), fingerprintText(CUSTOM_CSS));
+});
+
+// A token-driven stylesheet: the whole 4px scale lives in custom properties and is
+// only ever consumed through var() — extraction must see the full scale anyway.
+const TOKEN_CSS = `
+:root { --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
+  --r: var(--s1); --accent: #e63946; }
+.card { padding: var(--s3) var(--s6); margin: var(--s2); gap: var(--s4);
+  border-radius: var(--r); color: var(--accent); }
+.hero { padding: var(--s8); margin-bottom: var(--s1); }
+`;
+
+test("resolveCssVars: declared tokens substitute into their var() uses", () => {
+  const out = resolveCssVars(":root { --pad: 12px; } .a { padding: var(--pad); }");
+  assert.match(out, /padding: 12px/);
+});
+
+test("fingerprintText: a var()-consumed 4px token scale fingerprints as the FULL scale", () => {
+  const fp = fingerprintText(TOKEN_CSS);
+  assert.deepEqual(fp.spacing, [4, 8, 12, 16, 24, 32], "all six token values extracted");
+  assert.equal(fp.spacingBase, 4);
+  assert.equal(fp.spacingOnScale, 1);
+  assert.deepEqual(fp.radii, [4], "one level of nesting: --r: var(--s1) resolves");
+  assert.ok(
+    fp.palette.some((c) => c.h === 355),
+    "the accent hex reaches color extraction through var()",
+  );
+});
+
+test("resolveCssVars: var() fallback used when undeclared; declared value beats fallback", () => {
+  const fp = fingerprintText(
+    ":root { --gap: 24px; } .a { padding: var(--nope, 12px); margin: var(--gap, 99px); }",
+  );
+  assert.deepEqual(fp.spacing, [12, 24]);
+  // A nested-var fallback resolves too (bounded extra text passes).
+  const nested = fingerprintText(":root { --s: 20px; } .a { gap: var(--nope, var(--s, 2px)); }");
+  assert.deepEqual(nested.spacing, [20]);
+});
+
+test("resolveCssVars: unresolvable var() left as-is and ignored by extractors", () => {
+  const fp = fingerprintText(".a { padding: var(--ghost); margin: 8px; }");
+  assert.deepEqual(fp.spacing, [8], "the unresolved var contributes nothing");
+});
+
+test("resolveCssVars: a custom-property cycle terminates (bounded loop, no hang)", () => {
+  const cyclic = ":root { --a: var(--b); --b: var(--a); } .x { padding: var(--a); gap: 16px; }";
+  const fp = fingerprintText(cyclic); // returning at all IS the test
+  assert.deepEqual(fp.spacing, [16], "cyclic values stay invisible to extraction");
 });
 
 test("inferSpacingBase: largest base that fits wins; off-scale falls back to argmin", () => {
@@ -226,6 +278,108 @@ test("cli: `uicheck design` exits 1 on the generic fixture, names the fixes", ()
   assert.match(r.stdout, /slop distance/);
   assert.match(r.stdout, /fix:/);
   assert.match(r.stdout, /FAIL/);
+});
+
+test("loadTasteProfile: all five profiles load with full constraint sets; unknown → null", () => {
+  for (const name of ["brutalist", "corporate", "editorial", "minimalist", "playful"]) {
+    const p = loadTasteProfile(name);
+    assert.ok(p, `${name}.json loads`);
+    assert.ok(p.why.length > 40, `${name} documents its rationale`);
+    assert.ok(p.palette.max_hues >= 1);
+    assert.ok(p.palette.chroma[0] >= 0 && p.palette.chroma[1] <= 1, "chroma is a 0-1 s-proxy");
+    assert.ok(p.space.base.every((b) => [4, 8].includes(b)));
+    assert.ok(p.type.max_families >= 1);
+    assert.ok(p.shape.radius_levels[0] <= p.shape.radius_levels[1]);
+    assert.ok(p.shape.shadow_levels[0] <= p.shape.shadow_levels[1]);
+    assert.ok(p.gate.tau_slop > 0 && p.gate.tau_conform > 0);
+  }
+  assert.equal(loadTasteProfile("nope"), null);
+  assert.equal(loadTasteProfile("../brand"), null, "a name, never a path");
+});
+
+test("taste profiles encode their prose: brutalist is square+strict, playful is rounder+looser", () => {
+  const brutalist = loadTasteProfile("brutalist");
+  const playful = loadTasteProfile("playful");
+  const corporate = loadTasteProfile("corporate");
+  assert.deepEqual(brutalist.shape.radius_levels, [0, 0], "DON'T round corners");
+  assert.ok(
+    brutalist.gate.tau_slop > UI_GATE_DEFAULTS.tauSlop,
+    "brutalist demands MORE distance from generic",
+  );
+  assert.ok(playful.palette.max_hues > brutalist.palette.max_hues, "playful allows more hues");
+  assert.ok(playful.shape.radius_levels[0] >= 1, "playful REQUIRES rounding");
+  assert.ok(
+    corporate.gate.tau_slop < UI_GATE_DEFAULTS.tauSlop,
+    "corporate deliberately sits near convention",
+  );
+});
+
+test("profileChecks: brutalist flags rounded/shadowed output; the custom fixture fits editorial", () => {
+  const generic = fingerprintText(GENERIC_CSS); // rounded-12, one shadow, 8px base
+  const byId = Object.fromEntries(
+    profileChecks(generic, loadTasteProfile("brutalist")).map((c) => [c.id, c]),
+  );
+  assert.equal(byId["taste-radius"].pass, false, "12px radius breaks radius_levels [0,0]");
+  assert.match(byId["taste-radius"].hint, /square corners/);
+  assert.equal(byId["taste-spacing-base"].pass, true, "8 is in brutalist's base list");
+  const custom = fingerprintText(CUSTOM_CSS); // ink/paper + one accent, 4-base, 2 faces
+  assert.ok(
+    profileChecks(custom, loadTasteProfile("editorial")).every((c) => c.pass),
+    "the editorial-ish fixture passes the editorial constraint set",
+  );
+  // playful REQUIRES elevation the flat custom fixture lacks — lower bounds bind too.
+  const playful = Object.fromEntries(
+    profileChecks(custom, loadTasteProfile("playful")).map((c) => [c.id, c]),
+  );
+  assert.equal(playful["taste-shadow"].pass, false);
+  assert.match(playful["taste-shadow"].hint, /at least 1/);
+});
+
+test("uiGate: taste thresholds override the defaults (same vector, different verdict)", () => {
+  const custom = fingerprintText(CUSTOM_CSS);
+  const slop = slopDistance(custom);
+  assert.equal(uiGate(custom).pass, true, "passes the default tau");
+  const strict = uiGate(custom, { tauSlop: slop + 0.01 });
+  assert.equal(strict.pass, false, "a stricter profile tau flips the verdict");
+  assert.ok(strict.violations.length > 0, "and still names the driving features");
+});
+
+test("cli: `uicheck design --taste <name>` uses the profile's thresholds and checks", () => {
+  const cwd = tmp();
+  writeFileSync(join(cwd, "app.css"), CUSTOM_CSS);
+  const r = runCli(["uicheck", "design", "app.css", "--taste", "editorial", "--json"], cwd);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.taste, "editorial");
+  assert.equal(out.tauSlop, loadTasteProfile("editorial").gate.tau_slop);
+  assert.ok(
+    out.checks.some((c) => c.id === "taste-radius"),
+    "profile checks ride along",
+  );
+  // brutalist's [0,0] radius bound fails the same file (it has a 2px radius).
+  const b = runCli(["uicheck", "design", "app.css", "--taste", "brutalist", "--json"], cwd);
+  assert.equal(b.status, 1);
+  const bout = JSON.parse(b.stdout);
+  assert.equal(bout.checks.find((c) => c.id === "taste-radius").pass, false);
+  // An unknown explicit profile is an error, not a silent default.
+  const bad = runCli(["uicheck", "design", "app.css", "--taste", "nope"], cwd);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /unknown taste profile/);
+});
+
+test("cli: a forge-taste-managed DESIGN.md auto-picks the profile when --taste is absent", () => {
+  const cwd = tmp();
+  writeFileSync(join(cwd, "app.css"), CUSTOM_CSS);
+  const applied = runCli(["taste", "editorial"], cwd);
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(activeTasteStyle(cwd), "editorial");
+  const r = runCli(["uicheck", "design", "app.css", "--json"], cwd);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.taste, "editorial", "the pinned style is picked up");
+  assert.equal(out.tauSlop, loadTasteProfile("editorial").gate.tau_slop);
+  // A hand-written (unmanaged) DESIGN.md pins nothing.
+  writeFileSync(join(cwd, "DESIGN.md"), "# my own design notes\n");
+  assert.equal(activeTasteStyle(cwd), null);
 });
 
 test("cli: fingerprint --mint stores the project claim; design then gates against it", () => {

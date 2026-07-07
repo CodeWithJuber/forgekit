@@ -1,0 +1,9 @@
+{
+  "name": "editorial",
+  "why": "Magazine-grade (editorial.md): warm paper + rich ink + ONE muted accent, but max_hues 2 because the HSL saturation/100 chroma proxy (0-1) counts warm paper itself (#FBFAF7-class, s well above the neutral cutoff) as a hue bin — one accent + the paper cast; low-to-mid chroma band (#7C6A4E sits near 0.23); warm neutrals; spacious geometric rhythm near the classic 1.4-1.62 ratios; 'exactly one serif + one sans', 'DON'T use more than two families' -> max_families 2; thin rules over boxes -> radius [0,1], shadow [0,1]; tau_slop 0.35 (the spec Section 3 example) because considered typography must clear the template look by a wide margin.",
+  "palette": { "max_hues": 2, "chroma": [0.1, 0.45], "neutrals": "warm" },
+  "space": { "scale": "geometric", "ratio": [1.4, 1.62], "base": [4, 8] },
+  "type": { "max_families": 2 },
+  "shape": { "radius_levels": [0, 1], "shadow_levels": [0, 1] },
+  "gate": { "tau_slop": 0.35, "tau_conform": 0.5 }
+}
