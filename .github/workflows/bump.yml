@@ -1,0 +1,67 @@
+# One-click release kickoff: Actions -> "Bump version" -> Run workflow.
+# Runs the tests, bumps every version field via scripts/bump.mjs (package.json,
+# package-lock.json, both plugin manifests, CITATION.cff, landing page, CHANGELOG
+# rotation), commits "chore(release): vX.Y.Z", tags vX.Y.Z, and pushes commit + tag.
+#
+# Pushing the v* tag is what normally triggers release.yml — but pushes made with
+# the default GITHUB_TOKEN deliberately do NOT trigger other workflows (GitHub's
+# recursion guard). So this workflow also dispatches release.yml on the new tag
+# explicitly, which needs `actions: write` (granted below). No PAT required.
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Bump type (auto = conventional commits since last tag: BREAKING -> major, feat -> minor, else patch)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write # push the release commit + tag
+  actions: write # dispatch release.yml on the new tag
+
+concurrency:
+  group: bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history + tags so "auto" can read commits since the last tag
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test # never tag a broken tree
+      - name: Bump version fields + rotate CHANGELOG
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          VERSION="$(node scripts/bump.mjs "$BUMP")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Commit, tag, push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): v$VERSION"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin HEAD "v$VERSION"
+      - name: Trigger the release workflow on the new tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: gh workflow run release.yml --ref "v$VERSION"

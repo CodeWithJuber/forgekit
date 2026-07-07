@@ -1,10 +1,17 @@
-# Push a v* tag -> test -> publish to public npm (with provenance) -> cut a GitHub Release.
-# Requires one repo secret: NPM_TOKEN (an npm "Automation" token). See docs/RELEASING.md.
+# Runs on a v* tag push, or via workflow_dispatch ON A TAG REF (bump.yml uses the
+# dispatch path because pushes made with the default GITHUB_TOKEN never trigger
+# other workflows). Flow: test -> assert tag == package.json version -> publish to
+# public npm (with provenance) -> cut a GitHub Release.
+#
+# npm publish is SKIPPED with a warning — not failed — when the NPM_TOKEN secret is
+# missing, so the GitHub Release is still created. Add an npm "Automation" token as
+# the NPM_TOKEN repo secret to enable publishing. See docs/RELEASING.md.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch: # dispatched by bump.yml with --ref vX.Y.Z; must target a tag
 
 permissions:
   contents: read
@@ -15,7 +22,15 @@ jobs:
     permissions:
       contents: write # create the GitHub Release
       id-token: write # npm provenance (supply-chain attestation)
+    env:
+      # secrets are not directly usable in step `if:`, so surface presence here.
+      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
+      - name: Assert this run targets a v* tag
+        if: github.ref_type != 'tag'
+        run: |
+          echo "::error::Release must run on a v* tag ref (got '${{ github.ref }}'). Use the 'Bump version' workflow to cut one."
+          exit 1
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history so release notes can diff from the last tag
@@ -26,9 +41,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm publish --provenance --access public
+      - name: Assert tag matches package.json version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $TAG does not match package.json version $PKG. Re-run the 'Bump version' workflow instead of tagging by hand."
+            exit 1
+          fi
+      - name: Publish to npm (with provenance)
+        if: env.HAS_NPM_TOKEN == 'true'
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Skip npm publish (NPM_TOKEN not set)
+        if: env.HAS_NPM_TOKEN != 'true'
+        run: |
+          echo "::warning::NPM_TOKEN secret is not set — SKIPPING npm publish. The GitHub Release is still created. To publish, add an npm Automation token as the NPM_TOKEN repo secret (Settings -> Secrets and variables -> Actions) and re-run this workflow. See docs/RELEASING.md."
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
