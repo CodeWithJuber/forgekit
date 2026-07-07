@@ -109,6 +109,12 @@ output (see [Use it in a script](#use-it-in-a-script)).
 | `forge anchor "<goal>"` | Are my changes still on the stated goal? | flags changed files that drifted off-goal |
 | `forge verify` | Did it actually work? | runs the real tests/build, not the model's word |
 
+The wider v0.5 surface — `forge context` (budgeted assembly + completeness gate),
+`forge imagine [--run]` (predicted breaks + minimal dry-run suite), `forge diagnose`
+(doom-loop), `forge ledger` / `forge reuse` (proof-carrying memory + code cache), and
+`forge uicheck` (the design gate) — is documented with real outputs in
+[docs/GUIDE.md → Command reference](../GUIDE.md#command-reference).
+
 Real output for the two most-used:
 
 ```console
@@ -132,34 +138,21 @@ $ forge impact verifyToken
 
 ## Read the result (what to do)
 
-| Field | What it means | Do this |
-| --- | --- | --- |
-| `okToProceed: false` | task is under-specified | ask the `assumption.questions`, don't guess |
-| `route.tier` | cheapest capable model | start there; only escalate if a verifier fails |
-| `impact.impactedFiles` | predicted blast radius | read these before editing |
-| `scope.clusters` | independent vs. coupled work | split independent groups into separate sessions |
-| `memory.advisory` | past lessons for this area | context, not law — tests override it |
-| `verification.checklist` | how to prove it works | run it, show the output, then say "done" |
+Field-by-field: what each verdict means and the action to take —
+[docs/GUIDE.md → Reading substrate output](../GUIDE.md#reading-substrate-output).
+The short version: `ASK FIRST` means ask, `route` means start cheap, `impact` means
+read those files first, and `verify` means show the output before saying "done".
 
 ---
 
 ## In other AI tools
 
 Tools without a hook surface get the substrate two ways, both written by `forge init`:
-
-1. **A rule in their config** (`AGENTS.md`, `.cursor/rules`, `GEMINI.md`, …): *"Before
-   ambiguous, expensive, multi-file, or mutating work, run `forge substrate "<task>" --json`
-   (or the MCP tool `substrate_check`). If `okToProceed` is false, ask the questions first."*
-
-2. **MCP tools** any MCP-capable agent can call directly:
-
-   | MCP tool | Does |
-   | --- | --- |
-   | `substrate_check` | full pre-action check |
-   | `assumption_gate` | ask/proceed + questions |
-   | `predict_impact` | blast radius |
-   | `route_task` | model recommendation |
-   | `scope_files` | independent vs. coupled |
+a rule in their native config telling the agent to run `forge substrate "<task>" --json`
+before ambiguous/expensive/mutating work, and MCP tools (`substrate_check`,
+`assumption_gate`, `predict_impact`, `route_task`, `scope_files`) any MCP-capable agent
+can call directly. Details + the exact rule wording:
+[docs/GUIDE.md → Auto-use inside an agent](../GUIDE.md#auto-use-inside-an-agent).
 
 Forge never pretends it can force a hook into a tool that has none — it's ambient on Claude
 Code, and agent-invoked everywhere else.
@@ -228,13 +221,10 @@ auditable. Off by default; the ambient Claude Code hook stays deterministic unle
 
 ## Honest limits
 
-Heuristic, not benchmarked; the graph is regex-approximate (conservative, not a sound call
-graph); assumption detection is lexical by default (opt into a verified LLM refinement with
-`FORGE_LLM=1` — see above); auto-run needs a hook surface (ambient on Claude Code,
-agent-invoked elsewhere). What's *asserted* is safe to gate on (repo grounding, graph
-traversal, scope, routing arithmetic, test commands); everything else is *advisory* — including
-every LLM proposal, which is verified against the repo/graph/tests before it counts and is
-never trusted blind. Tests and human corrections always win. Full list:
+Heuristic, not benchmarked; the graph is regex-approximate; assumption detection is
+lexical by default (`FORGE_LLM=1` adds the verified refinement above — proposals are
+checked against the repo/graph/tests before they count, never trusted blind); auto-run
+needs a hook surface. Tests and human corrections always win. The full, canonical list:
 [docs/GUIDE.md → Honest limits](../GUIDE.md#honest-limits).
 
 ---
@@ -249,8 +239,9 @@ never trusted blind. Tests and human corrections always win. Full list:
 - **[Ecosystem map](./ecosystem_map.md)** — each capability vs. the real 2026 tool stack
 - **[Prototype source](../../research/python-prototypes/)** — the auditable Python originals
 
-**How the paper maps to what ships (all 11):** memory → `recall`/`cortex` · learning →
-`cortex` · imagination → `impact` · self-correction → `verify`/`doom-loop` ·
-impact-awareness → `atlas`/`impact` · M1 routing → `route` · M2 assumption gate →
-`preflight` · M3 decomposition → `scope` · M4 goal-anchoring → `anchor` · M5 minimality →
-`lean`/`substrate` · M6 verification → `verify`/`substrate`.
+**How the paper maps to what ships (all 11):** memory → `recall`/`cortex`/`ledger` ·
+learning → `cortex` + ledger oracles · imagination → `imagine [--run]`/`impact` ·
+self-correction → `verify`/`diagnose` · impact-awareness → `atlas`/`impact` · M1 routing →
+`route` · M2 assumption gate → `preflight`/`context` · M3 decomposition → `scope` ·
+M4 goal-anchoring → `anchor` · M5 minimality → `lean`/`uicheck design` · M6 verification →
+`verify`/`substrate`.

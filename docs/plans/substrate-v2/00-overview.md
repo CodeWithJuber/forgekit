@@ -1,7 +1,10 @@
 # Substrate v2 — completing the whitepaper, and the Proof-Carrying Memory protocol
 
-> Status: **P0 — specification** · Owner: forgekit core · Companion to
-> [docs/cognitive-substrate/](../../cognitive-substrate/) (the paper this plan completes)
+> Status: **shipped — all phases P0–P8 landed in v0.5.0** · Owner: forgekit core · Companion to
+> [docs/cognitive-substrate/](../../cognitive-substrate/) (the paper this plan completes).
+> What remains (deferred, tracked in [ROADMAP.md](../../../ROADMAP.md)): the ledger
+> read-path flip (legacy stores still serve reads), the optional embeddings tier
+> (ADR-0005), and a Playwright-driven browser loop for the UI gate.
 
 ForgeKit v0.4 implements roughly half of the committed whitepaper — the two prototyped
 mechanisms (M1 routing, M2 assumption gate), an approximate impact atlas, and an advisory
@@ -60,19 +63,34 @@ structure this plan assigns it. Nothing is left as prose-only discipline.
 ## 3. Phase roadmap
 
 Phases are dependency-ordered; each has an acceptance gate. P1 is the keystone — every
-later phase stores its state as PCM claims.
+later phase stores its state as PCM claims. **All phases have shipped** (v0.5.0):
+
+```mermaid
+flowchart LR
+    P0["P0 specs ✅"] --> P1["P1 ledger core ✅"]
+    P1 --> P2["P2 team sync ✅"]
+    P1 --> P3["P3 reuse cache ✅"]
+    P1 --> P4["P4 context assembly ✅"]
+    P1 --> P6["P6 UI quality gate ✅"]
+    P4 --> P5["P5 loop closure ✅"]
+    P2 --> P7["P7 dashboard ✅"]
+    P5 --> P7
+    P6 --> P7
+    P3 --> P8["P8 evaluation ✅"]
+    P5 --> P8
+```
 
 | Phase | Delivers | Depends on | Acceptance |
 |---|---|---|---|
-| **P0** (this PR) | Specs 00–08, ADR-0005, ADR-0006, ROADMAP update | — | Docs merged; referenced paths resolve; no source changes |
-| **P1 Ledger core** | `src/ledger.js` (claim store, canonical hashing, Beta confidence, Eq. 3 retrieval, decay/prune); migrate `src/lessons.js` + `src/lessons_store.js` + `src/recall.js` onto claim kinds | P0 | All existing cortex/recall tests green on the new store; property tests: id stability, decay monotonicity |
-| **P2 Team sync** | `.forge/ledger/` git layout, union-merge driver, `forge ledger merge\|verify\|blame` | P1 | Three-way merge fuzz: any interleaving of two ledgers converges byte-identically (semilattice test) |
-| **P3 Reuse cache** | `forge reuse` — fingerprint, exact/near lookup, atlas revalidation, eviction | P1 | Cache hit returns artifact + evidence; stale-interface artifact refused; hit/miss metrics emitted |
-| **P4 Context assembly** | `forge context` — candidate scoring, knapsack selection, required-set completeness gate; wired into `src/substrate.js` + hooks | P1 | Gate emits computed missing-set on incomplete context; token budget never exceeded |
-| **P5 Loop closure** | Outcome write-back band; doom-loop diagnosis + escalation; imagination dry-run; M3/M4/M5/M6 extensions | P1, P4 | Revert/test outcomes visibly move `val` of informing claims; repeated failure signature halts with a diagnosis claim |
-| **P6 UI quality gate** | `forge uicheck` v2: design fingerprints, slop distance, scale conformance; machine-readable taste constraints | P1 | Known-template fixture flagged; project-conformant fixture passes; zero LLM calls in the gate |
-| **P7 Dashboard** | `forge dash` — local server + self-contained HTML over `.forge/` stores | P1–P6 (reads their stores) | Renders ledger, cost meter, cache rate, blast radius offline |
-| **P8 Evaluation** | Extend `src/eval.js`: cost-stage measurement, cache-hit-rate harness, honest report | P3–P5 | A measured (not asserted) end-to-end cost figure per stage, published in reports/ |
+| **P0** ✅ (this PR) | Specs 00–08, ADR-0005, ADR-0006, ROADMAP update | — | Docs merged; referenced paths resolve; no source changes |
+| **P1 Ledger core** ✅ | `src/ledger.js` (claim store, canonical hashing, Beta confidence, Eq. 3 retrieval, decay/prune); migrate `src/lessons.js` + `src/lessons_store.js` + `src/recall.js` onto claim kinds | P0 | All existing cortex/recall tests green on the new store; property tests: id stability, decay monotonicity |
+| **P2 Team sync** ✅ | `.forge/ledger/` git layout, union-merge driver, `forge ledger merge\|verify\|blame` | P1 | Three-way merge fuzz: any interleaving of two ledgers converges byte-identically (semilattice test) |
+| **P3 Reuse cache** ✅ | `forge reuse` — fingerprint, exact/near lookup, atlas revalidation, eviction | P1 | Cache hit returns artifact + evidence; stale-interface artifact refused; hit/miss metrics emitted |
+| **P4 Context assembly** ✅ | `forge context` — candidate scoring, knapsack selection, required-set completeness gate; wired into `src/substrate.js` + hooks | P1 | Gate emits computed missing-set on incomplete context; token budget never exceeded |
+| **P5 Loop closure** ✅ | Outcome write-back band; doom-loop diagnosis + escalation; imagination dry-run; M3/M4/M5/M6 extensions | P1, P4 | Revert/test outcomes visibly move `val` of informing claims; repeated failure signature halts with a diagnosis claim |
+| **P6 UI quality gate** ✅ | `forge uicheck` v2: design fingerprints, slop distance, scale conformance; machine-readable taste constraints | P1 | Known-template fixture flagged; project-conformant fixture passes; zero LLM calls in the gate |
+| **P7 Dashboard** ✅ | `forge dash` — local server + self-contained HTML over `.forge/` stores | P1–P6 (reads their stores) | Renders ledger, cost meter, cache rate, blast radius offline |
+| **P8 Evaluation** ✅ | Extend `src/eval.js`: cost-stage measurement, cache-hit-rate harness, honest report | P3–P5 | A measured (not asserted) end-to-end cost figure per stage, published in reports/ |
 
 ## 4. Honesty register (the paper's own discipline, applied to this plan)
 

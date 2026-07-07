@@ -42,13 +42,19 @@ packages; the production runtime remains Node-only and zero-dependency.
 
 ## Architecture — a four-layer config compiler with ONE source
 
-```
-                       source/rules.json  (canonical rules: git · testing · security · style)
-                                │           (+ source/substrate.json, source/mcp.json)
-                          forge sync  (emitter: content-hash + DO-NOT-EDIT headers)
-        ┌───────────────┬───────┴───────┬───────────────┬─────────────┐
-   Claude CLAUDE.md   Codex AGENTS.md  Cursor .mdc   Gemini settings  Aider .aider.conf.yml ...
-   (@AGENTS.md import)  (native)        /AGENTS.md    (context.fileName)  (read: AGENTS.md)
+```mermaid
+flowchart TD
+    S["source/ — rules.json · substrate.json · mcp.json"] -->|"forge sync: content-hash + DO-NOT-EDIT headers"| N["native configs: CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …"]
+    subgraph L4["the four layers"]
+        T["tools — model-invoked skills"]
+        C["crew — sub-agents"]
+        G["guards — enforced hooks"]
+        M["mcp — atlas · substrate tools"]
+    end
+    S -. configures .-> L4
+    K["cortex lessons · recall facts · reuse artifacts<br/>design fingerprints · diagnoses"] --> LG[("PCM ledger — .forge/ledger/<br/>content-addressed claims")]
+    O["independent oracles<br/>tests · CI · human accept/revert"] -->|"move val"| LG
+    LG <-->|"git union-merge, conflict-free"| TM["teammate ledgers"]
 ```
 
 Layers map onto the Claude Code substrate, brand-named, and are emitted cross-tool:
@@ -143,7 +149,7 @@ forgekit/
   brand.json              # single FORGE_BRAND token + layer-name map
   README.md               # Start-Here index + one bootstrap command
   src/
-    cli.js                # init | sync | doctor | taste | learn-consolidate | brand
+    cli.js                # init | sync | doctor | substrate | ledger | reuse | … (`forge --help` for all)
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
@@ -163,9 +169,9 @@ forgekit/
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
     mcp.json              # MCP server definitions emitted into each tool
   global/                 # installs into ~/.forge, symlinked into ~/.claude
-    tools/ crew/ guards/ mcp/atlas/ recall/ lean/ statusline.sh settings.template.json
+    tools/ crew/ guards/ rules/ recall/ taste/ statusline.sh settings.template.json
   templates/project-layer/  # per-repo template (was hostlelo-project-layer)
-  plugin/                 # plugin.json + marketplace.json → point at global/ (no dup)
+  .claude-plugin/ .codex-plugin/  # plugin manifests → point at global/ + skills/ (no dup beyond the codex skill mirror)
   install.sh              # hardened: idempotent, symlink, backup, no curl|sh
   bin/                    # back-compat shims → src/cli.js
 ```
