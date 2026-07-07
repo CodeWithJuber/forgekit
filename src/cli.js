@@ -29,6 +29,7 @@ const COMMANDS = {
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck: "deterministic UI check — WCAG contrast <fg> <bg> (assertable, no guessing)",
+  dash: "local dashboard over the ledger, metrics, and blast radius",
   brand: "print the active brand token map",
 };
 
@@ -850,6 +851,27 @@ async function run(argv) {
     console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
     console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
     return;
+  }
+  if (cmd === "dash") {
+    const { serve } = await import("./dash.js");
+    const i = argv.indexOf("--port");
+    const port = i >= 0 ? Number(argv[i + 1]) : 4242;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error("usage: forge dash [--port N]");
+      process.exitCode = 1;
+      return;
+    }
+    const server = serve(process.cwd(), { port });
+    server.on("listening", () => {
+      const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+      console.log(`${BRAND.brand} dash — read-only lens on .forge/\n`);
+      console.log(`  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`);
+    });
+    server.on("error", (err) => {
+      console.error(`  ${err.message}`);
+      process.exitCode = 1;
+    });
+    return; // the process stays alive serving — that's the command
   }
   if (!(cmd in COMMANDS)) {
     console.error(`Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`);

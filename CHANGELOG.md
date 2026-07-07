@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Local dashboard (P7 of the substrate-v2 plan).** `forge dash [--port N]` serves a
+  read-only lens on the substrate's state: a `node:http` stdlib server (localhost-only,
+  zero runtime deps) with ONE self-contained HTML page — inline CSS/JS, no CDN, no
+  framework, no build step. Panels: Ledger (claims with val bars, kind filter, contested
+  claims — val ∈ [0.4, 0.6] with ≥1 contradiction — and per-author trust), Cost/Cache
+  (stage counters + measured saved-token estimates from `.forge/metrics.jsonl`), and
+  Impact (atlas blast-radius explorer via `/api/impact?target=X`). Every claim row shows
+  its `forge ledger blame <id>` command — no unexplained scores anywhere in the UI. Data
+  is separated from serving (`dashData()` vs `serve()` in `src/dash.js`) so the payload
+  is tested without sockets, and corrupt/missing stores degrade to empty sections instead
+  of taking down the lens. The ratify/retract POSTs are a follow-up; this phase never
+  writes.
+
 - **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
   "reuse already-generated code" from prose into a deterministic system: verified code
   becomes an `artifact` claim keyed by a normalized task fingerprint (volatile literals →
