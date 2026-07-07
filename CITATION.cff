@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use forgekit, please cite it using this metadata."
 title: "Forge (forgekit)"
-version: 0.4.0
-date-released: "2026-07-06"
+version: 0.5.0
+date-released: "2026-07-07"
 abstract: >-
   One config for every AI coding agent — a cross-tool configuration layer plus a
   cognitive substrate that gives a frozen model the memory, blast-radius awareness, and

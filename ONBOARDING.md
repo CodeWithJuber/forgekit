@@ -73,6 +73,22 @@ forge recall list          # facts the recall-load guard injects next session
 forge catalog              # the Start-Here index of everything
 ```
 
+## 6. Day two: the ledger is learning
+
+Everything the substrate learned on day one — cortex lessons, remembered facts,
+verified code — landed as claims in `.forge/ledger/`. Now it starts paying off:
+
+```bash
+forge ledger stats                     # what the repo knows, by kind and trust level
+forge ledger blame <id-prefix>         # who minted a claim, every oracle outcome, per-author trust
+forge reuse query "<what you're about to build>"   # verified code you already have — with its proof
+```
+
+A `forge reuse query` hit points at working, test-confirmed code and the
+`forge ledger blame` command that proves it — reuse it instead of regenerating. And
+after `git pull`, `forge ledger merge <path>` folds a teammate's ledger in
+conflict-free, so their lessons arrive with their provenance intact.
+
 ---
 
 ## Forge principles

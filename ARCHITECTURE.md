@@ -67,6 +67,21 @@ Stop-guard, so it works whether or not the model invokes it), **recall** (memory
 `substrate_check` / `predict_impact` / `assumption_gate`) composes atlas, preflight,
 route, scope, cortex, and verify into one pre-action contract before mutating work.
 
+**PCM ledger** (`.forge/ledger/`; decision recorded in
+[`docs/adr/0006-proof-carrying-memory.md`](docs/adr/0006-proof-carrying-memory.md)) —
+the convergent store all memory subsystems write to. Every stored unit (cortex lesson,
+`recall`/`brain` fact, reuse artifact, design fingerprint, doom-loop diagnosis) is a
+content-addressed *claim*: claim bytes are a pure function of (kind, body, scope) —
+byte-identical on every replica — evidence and tombstones are append-only hash-deduped
+logs, and confidence (`val`) is a decayed Beta posterior moved only by independent
+oracles (tests, CI, human accept/revert). Merge is a join-semilattice (property-tested:
+commutative, associative, idempotent), so teammate ledgers converge in any order over
+plain git — `forge init` emits the union-merge `.gitattributes` rule; `forge ledger
+merge` folds in any other ledger tree. The legacy stores (`lessons/`, `recall`, `brain`)
+remain the read path; the ledger is where their events converge. Surface: `forge ledger
+stats | verify | show | blame | query | merge | import` (`--personal` for the
+per-user ledger beside the global recall store).
+
 ## Component map — the reuse ledger (30 components)
 
 **Reuse (rename + swap brand token, logic unchanged):**
@@ -132,6 +147,17 @@ forgekit/
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
+    ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
+    ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
+    ledger_bridge.js      # legacy-store bridge: cortex/recall/brain shadow-writes + idempotent `ledger import`
+    reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
+    context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
+    diagnose.js           # doom-loop diagnosis: normalized failure signatures; 3× = diagnosis claim + one-tier escalation
+    imagine.js            # consequence simulation (Eq. 4): predicted breaks + minimal dry-run suite via greedy set cover
+    uifingerprint.js      # deterministic design fingerprint + slop-distance / conformance gate (no LLM, no screenshots)
+    dash.js               # localhost-only read-only dashboard over the ledger, metrics, and blast radius (node:http, one HTML page)
+    metrics.js            # stage-tagged .forge/metrics.jsonl — the measured events every cost figure is computed from
+    cost_report.js        # per-stage cost factors as pure arithmetic over metrics.jsonl; composes ONLY measured stages
   source/
     rules.json            # THE canonical rules source (git · testing · security · style)
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
