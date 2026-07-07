@@ -165,6 +165,33 @@ export function goalDrift(root, goal, opts = {}) {
   };
 }
 
+/**
+ * M4 — one-sided CUSUM control chart over a drift-signal series (spec §5:
+ * docs/plans/substrate-v2/06-faculties-and-mechanisms.md). A raw threshold on a
+ * single checkpoint's drift Dₜ is noisy — one exploratory step legitimately wanders.
+ * CUSUM accumulates only the excess over the allowance k (Cₜ = max(0, Cₜ₋₁ + Dₜ − k))
+ * and alarms at Cₜ > h, which detects SUSTAINED small drift with provably minimal
+ * detection delay for a given false-alarm rate (classical sequential analysis),
+ * while a single within-tolerance spike drains back to zero instead of alarming.
+ * Defaults k = 0.35, h = 1.0 per the spec (calibration lands in P8). Pure.
+ * @param {number[]} signals drift per checkpoint, Dₜ ∈ [0, 1] (non-numeric → 0)
+ * @param {{k?: number, h?: number}} [opts]
+ * @returns {{alarm: boolean, C: number[], firstAlarm: number}} firstAlarm = index of
+ *   the first checkpoint whose statistic crossed h, or -1 if none did.
+ */
+export function cusum(signals, { k = 0.35, h = 1.0 } = {}) {
+  const C = [];
+  let c = 0;
+  let firstAlarm = -1;
+  for (let i = 0; i < signals.length; i++) {
+    const d = Number(signals[i]);
+    c = Math.max(0, c + (Number.isFinite(d) ? d : 0) - k);
+    C.push(c);
+    if (firstAlarm < 0 && c > h) firstAlarm = i;
+  }
+  return { alarm: firstAlarm >= 0, C, firstAlarm };
+}
+
 export function renderAnchor(r) {
   const lines = ["Forge anchor — goal-drift check", ""];
   if (!r.changed.length)
