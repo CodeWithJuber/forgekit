@@ -19,6 +19,7 @@ const COMMANDS = {
   cost: "real per-day spend via ccusage + the cost ceiling",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
+  ledger: "proof-carrying memory ledger — stats / verify / show <id> / import",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
@@ -153,6 +154,14 @@ async function run(argv) {
         return;
       }
       const res = r.add(store, name, body);
+      if (res.ok) {
+        // Shadow the fact into the PERSONAL ledger beside the global store (repo
+        // promotion stays an explicit act — docs/plans/substrate-v2/02-team-memory.md §3).
+        const { join } = await import("node:path");
+        const { recordFactEvent } = await import("./ledger_bridge.js");
+        const { epochDay } = await import("./util.js");
+        recordFactEvent(join(store, "ledger"), name, body, epochDay());
+      }
       console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
       if (!res.ok) process.exitCode = 1;
     } else if (sub === "consolidate") {
@@ -162,6 +171,64 @@ async function run(argv) {
       console.error(`recall: unknown subcommand "${sub}" (list | add | consolidate)`);
       process.exitCode = 1;
     }
+    return;
+  }
+  if (cmd === "ledger") {
+    const ls = await import("./ledger_store.js");
+    const { epochDay } = await import("./util.js");
+    const root = process.cwd();
+    const dir = ls.repoLedger(root);
+    const sub = argv[1] || "stats";
+    const json = argv.includes("--json");
+    const nowDay = epochDay();
+    if (sub === "stats") {
+      const s = ls.stats(dir, nowDay);
+      if (json) return console.log(JSON.stringify(s, null, 2));
+      console.log(`${BRAND.brand} ledger — proof-carrying memory\n`);
+      console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
+      for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
+      console.log(
+        `  val: trusted ${s.val.trusted} · uncertain ${s.val.uncertain} · dormant ${s.val.dormant}`,
+      );
+      console.log("\n  stored in .forge/ledger/ (git-committable, conflict-free merge)");
+      return;
+    }
+    if (sub === "verify") {
+      const r = ls.verify(dir);
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      console.log(`  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`);
+      for (const i of r.issues) console.log(`    - ${i}`);
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    if (sub === "show") {
+      const id = argv[2];
+      const hit = id && ls.loadClaims(dir).find((c) => c.id.startsWith(id));
+      if (!hit) {
+        console.error(id ? `  no claim matching ${id}` : "usage: forge ledger show <id-prefix>");
+        process.exitCode = 1;
+        return;
+      }
+      const { val } = await import("./ledger.js");
+      return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
+    }
+    if (sub === "import") {
+      const { importLegacy } = await import("./ledger_bridge.js");
+      const { brainStore } = await import("./brain.js");
+      const r = importLegacy(root, {
+        recallStore: brainStore(root),
+        recallLedger: dir,
+        nowDay,
+      });
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      console.log(
+        `  imported: ${r.lessons} lesson(s), ${r.facts} fact(s), ${r.outcomes} outcome(s)`,
+      );
+      for (const x of r.refused) console.log(`    refused: ${x}`);
+      return;
+    }
+    console.error(`ledger: unknown subcommand "${sub}" (stats | verify | show <id> | import)`);
+    process.exitCode = 1;
     return;
   }
   if (cmd === "atlas") {
@@ -260,6 +327,13 @@ async function run(argv) {
       return;
     }
     const res = b.remember(b.brainStore(process.cwd()), name, body);
+    if (res.ok) {
+      // Brain is repo-scoped and git-committable → shadow into the REPO ledger.
+      const { recordFactEvent } = await import("./ledger_bridge.js");
+      const { repoLedger } = await import("./ledger_store.js");
+      const { epochDay } = await import("./util.js");
+      recordFactEvent(repoLedger(process.cwd()), name, body, epochDay());
+    }
     console.log(
       res.ok
         ? `  remembered: ${res.slug} — run \`forge sync\` to inline it into every tool`

@@ -26,6 +26,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Proof-Carrying Memory ledger (P1 of the substrate-v2 plan).** `src/ledger.js` — the
+  pure PCM core (ADR-0006): content-addressed claims over canonical JSON, an oracle
+  taxonomy in which only independent signals (tests, CI, human accept/revert) may move
+  confidence, a time-decayed Beta-posterior `val` that decays toward *uncertainty* (never
+  toward false), the paper's Eq. 3 retrieval score, dependency-free MinHash similarity +
+  union-find consolidation clustering, and a join-semilattice merge (property-tested:
+  commutative, associative, idempotent — teammate ledgers converge in any order).
+  `src/ledger_store.js` — the git-native on-disk ledger (`.forge/ledger/`): one immutable
+  file per claim sharded by id, append-only hash-deduped evidence logs (union-merge safe,
+  see `.gitattributes`), tombstones, attic, `LEDGER.md` index, and a CI-friendly
+  normal-form `verify`. `forge ledger stats|verify|show|import` CLI. The legacy stores
+  stay the read path in P1: cortex shadow-writes every lesson event (create/confirm/
+  human-revert contradiction) into the ledger, `forge remember` / `forge recall add`
+  shadow facts, and `forge ledger import` back-fills history idempotently
+  (`src/ledger_bridge.js`). Secret-refusal now lives in the ledger core so no claim kind
+  can store a credential (re-exported from `recall.js` for compatibility).
 - **Uniform `--json`.** `doctor`, `route`, `preflight`, `verify`, and `scope` now accept `--json`
   (previously only `impact`/`substrate`/`anchor` did) — so CI and scripts can gate on the health
   check, the routed tier, the assumption gap, and the verification result.
