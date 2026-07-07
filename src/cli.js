@@ -16,7 +16,7 @@ const COMMANDS = {
   harden: "wire security controls — gitleaks pre-commit + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
-  cost: "real per-day spend via ccusage + the cost ceiling",
+  cost: "real per-day spend via ccusage + measured stage factors (--stages)",
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
@@ -556,6 +556,14 @@ async function run(argv) {
     return;
   }
   if (cmd === "cost") {
+    // `--stages` is the P8 measured report (per-stage factors from .forge/metrics.jsonl);
+    // the default path stays the ccusage per-day spend view, untouched.
+    if (argv.includes("--stages")) {
+      const { renderCostReport, report } = await import("./cost_report.js");
+      const r = report(process.cwd());
+      console.log(argv.includes("--json") ? JSON.stringify(r, null, 2) : renderCostReport(r));
+      return;
+    }
     const { execFileSync } = await import("node:child_process");
     const run = (bin, args) => execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
     console.log(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
