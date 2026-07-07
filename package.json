@@ -63,19 +63,23 @@
     "forge": "node src/cli.js"
   },
   "keywords": [
+    "ai-agents",
     "claude-code",
     "claude-code-plugin",
     "codex",
     "cursor",
     "agents-md",
-    "ai-coding",
-    "ai-agents",
-    "cognitive-substrate",
+    "agent-memory",
+    "team-memory",
+    "crdt",
+    "blast-radius",
+    "cost-optimization",
+    "code-quality",
     "mcp",
-    "config",
-    "cross-tool",
     "cli",
-    "zero-dependencies"
+    "zero-dependency",
+    "llm",
+    "developer-tools"
   ],
   "devDependencies": {
     "@biomejs/biome": "2.5.2",
