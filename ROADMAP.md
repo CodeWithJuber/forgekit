@@ -32,8 +32,10 @@ confidence only from independent oracles, and merges across teammates conflict-f
 - **Embeddings tier** — optional vector backend (ADR-0005 dependency tier, stdlib
   fallback kept) for Eq. 3 retrieval and `forge reuse` near-match, where MinHash is
   weak on short specs.
-- **Playwright loop** — drive a real browser in the UI gate: screenshot + interaction
-  checks feeding `forge uicheck` verdicts back as oracle evidence on design claims.
+- **Playwright loop** — shipped as `forge uicheck visual` (rendered computed-style
+  fingerprint through the design gate + 2-viewport screenshots, optional-tier
+  playwright); still open: interaction checks and feeding verdicts back as oracle
+  evidence on design claims.
 - **Advisory → gated promotions** — outcome-calibrated routing weights, consolidation
   promotion (ʿilm→fahm), M6 hazard estimates: advisory today, become blocking only
   once fixtures measure them (overview §4 honesty register).

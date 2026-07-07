@@ -424,7 +424,8 @@ tree (your uncommitted changes wouldn't be in the run); commit/stash first or pa
 
 ### `forge uicheck` — deterministic UI checks
 
-Three subcommands, all static parsing — no LLM, no screenshots.
+Four subcommands: three are static parsing — no LLM, no screenshots — and `visual`
+optionally drives a real browser.
 
 **`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
 `forge uicheck <fg> <bg>` still works):
@@ -456,6 +457,32 @@ fingerprint must stay LOW, plus scale-conformance checks (spacing on base, level
 Failures are actionable per-feature edits, never a bare score. Honest limit: the
 fingerprint doesn't resolve CSS `var()` indirection yet — fully tokenized palettes are
 partially invisible to it.
+
+**`visual <file-or-url> [--taste <name>] [--json] [--remote]`** — the Playwright
+visual loop: renders the page headless at two viewports (1280×800, 390×844),
+fingerprints the **computed** styles of every visible element — what the cascade,
+`var()` resolution, and runtime theming actually produced — and runs the exact same
+design gate as `design` (exit 1 on fail). Screenshots land in `.forge/ui/` for human
+review. Playwright is an *optional tier* (ADR-0005): `package.json` stays
+dependency-free; without a browser runtime the command prints a "skipped (no browser
+runtime)" note and exits 0 — enable it with `npm i -D playwright-core` or point
+`FORGE_PLAYWRIGHT` at an existing install (e.g.
+`FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core`). Security default: http(s)
+targets must be loopback (`localhost`, `127.*`, `[::1]`) — fetching arbitrary URLs is
+an exfiltration hazard, so non-local URLs are refused unless you pass `--remote`.
+
+```console
+$ forge uicheck visual src/dash.html
+Forge uicheck visual — rendered fingerprint + design gate
+
+  rendered:      file:///…/src/dash.html (80 visible element style(s))
+  screenshots:   .forge/ui/dash-1280x800.png, .forge/ui/dash-390x844.png
+  slop distance: 0.516  (need ≥ 0.25 — farther from generic is better)
+  ...
+  ✓ spacing-scale: 100% of 6 spacing value(s) on the 4px base (ε 0.5px)
+
+  ✓ PASS
+```
 
 ### `forge dash [--port N]` — the local dashboard
 
