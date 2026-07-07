@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildRunner, llmEnabled } from "./adjudicate.js";
 import { goalDrift } from "./anchor.js";
 import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
+import { assemble as assembleContext } from "./context.js";
 import { matchingLessons } from "./cortex.js";
 import { leanRepo } from "./lean.js";
 import { load as loadLessons } from "./lessons_store.js";
@@ -234,6 +235,18 @@ export function substrateCheck(
       return { tier: "miss" }; // cache trouble must never block the gate
     }
   })();
+  // P4 context assembly: what the edit REQUIRES to be known (defs, dependents, tests,
+  // trusted lessons) vs what can be supplied — missing becomes derived questions, not
+  // assumptions. Explicit gate only (file reads are too heavy for the per-prompt hook).
+  const context = allowBuild
+    ? (() => {
+        try {
+          return assembleContext(root, text, { atlas, nowDay: epochDay() });
+        } catch {
+          return null; // assembly trouble must never block the gate
+        }
+      })()
+    : null;
   const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
   const scope = scopedFiles.length
     ? decompose(root, scopedFiles)
@@ -250,6 +263,14 @@ export function substrateCheck(
     route,
     entities,
     reuse,
+    context: context && {
+      ok: context.ok,
+      tokens: context.tokens,
+      budget: context.budget,
+      required: context.required.length,
+      missing: context.missing,
+      questions: context.questions,
+    },
     impact: { targets: impactTargets, reports: impacts, impactedFiles, predictedTests },
     scope,
     memory: {
@@ -339,6 +360,15 @@ export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
       reason: `Forge gate (enforcing): this task has no concrete anchor to act on — clarify before I start:\n${qs}${tail}`,
     };
   }
+  // P4 completeness gate: the task names things the repo cannot supply — the questions
+  // are DERIVED from the missing-knowledge set, so acting now means acting on a guess.
+  if (result.context && !result.context.ok && result.context.questions.length) {
+    const qs = result.context.questions.map((q) => `  • ${q}`).join("\n");
+    return {
+      block: true,
+      reason: `Forge gate (enforcing): the required context can't be assembled from this repo — resolve before I edit:\n${qs}${tail}`,
+    };
+  }
   const blast = result.impact?.impactedFiles?.length ?? 0;
   if (blast >= blastThreshold) {
     return {
@@ -370,6 +400,13 @@ export function renderSubstrate(result) {
       "",
       `  reuse: ${result.reuse.tier.toUpperCase()} hit — verified ${a?.form ?? "artifact"}${a?.path ? ` at ${a.path}` : ""} (\`forge ledger show ${a?.id.slice(0, 8)}\`) — start from it, don't regenerate`,
     );
+  }
+  if (result.context) {
+    lines.push(
+      "",
+      `  context: ${result.context.ok ? "complete" : "INCOMPLETE"} — ${result.context.required} required item(s), ${result.context.tokens}/${result.context.budget} tokens (\`forge context\` for the assembly)`,
+    );
+    for (const q of result.context.questions ?? []) lines.push(`    ? ${q}`);
   }
   lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
   for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
