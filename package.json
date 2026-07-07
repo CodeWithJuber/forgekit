@@ -48,7 +48,9 @@
     "ARCHITECTURE.md",
     "ONBOARDING.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "public",
+    "scripts"
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -60,7 +62,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "coverage": "node --test --experimental-test-coverage test/*.test.js",
     "bump": "node scripts/bump.mjs",
-    "forge": "node src/cli.js"
+    "forge": "node src/cli.js",
+    "pages:build": "node scripts/build-pages.mjs",
+    "pages:build:live": "BUILD_PAGES_LIVE=1 node scripts/build-pages.mjs"
   },
   "keywords": [
     "ai-agents",

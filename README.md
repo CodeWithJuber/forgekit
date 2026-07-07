@@ -181,6 +181,18 @@ into that shape; they have to be supplied from outside. The full argument, with 
 load-bearing statistic re-graded against primary sources, is the
 [cognitive-substrate white paper](docs/cognitive-substrate/).
 
+
+## GitLab Pages landing page
+
+Forgekit includes a generated, professional GitLab Pages landing page in [`public/index.html`](public/index.html). It is intentionally static and auto-updated from real repository data (`package.json`, `README.md`, `CHANGELOG.md`, and `reports/benchmarks.md`) by the generator in [`scripts/build-pages.mjs`](scripts/build-pages.mjs).
+
+```bash
+npm run pages:build        # offline, deterministic repo-data build
+BUILD_PAGES_LIVE=1 npm run pages:build  # also refresh public GitHub counters
+```
+
+The optional live mode uses the no-auth GitHub repository API with timeouts, retries, jitter, and ETag/Last-Modified caching. GitLab Pages deployment is defined in [`.gitlab-ci.yml`](.gitlab-ci.yml).
+
 ## Documentation
 
 | Doc | What's in it |
