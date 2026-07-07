@@ -99,6 +99,10 @@ the other gates).
 
 ## 5. The visual loop (the only non-static part)
 
+> Status: shipped as `forge uicheck visual <file-or-url>` (`src/uivisual.js`) — rendered
+> computed-style fingerprint through the same gate, 2-viewport screenshots to
+> `.forge/ui/`, optional-tier playwright with graceful absence (ADR-0005).
+
 Static analysis can't see rendered composition. Under ADR-0005, the
 `frontend-verifier` crew agent gets Playwright:
 

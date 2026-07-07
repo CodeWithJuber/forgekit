@@ -330,10 +330,12 @@ holds** — confidence above the 0.6 floor and every declared dependency still i
 
 ```console
 $ forge reuse query "debounce user input before firing search"
+  sim: minhash
   NEAR hit (similarity 0.87) — module at src/lib/debounce.js
     claim 9c41d2ab77e0 — `forge ledger blame 9c41d2ab` for its proof
 
 $ forge reuse query "quantum blockchain"
+  sim: minhash
   miss — nothing verified matches; generate, then `forge reuse mint` it
 ```
 
@@ -348,7 +350,32 @@ $ forge reuse mint "debounce helper for search input" --file src/lib/debounce.js
 
 `forge reuse stats` shows lookups by outcome + estimated tokens saved (from
 `.forge/metrics.jsonl`). Honest limit: the MinHash near-match is weak on very short
-specs — a few words hash to too few shingles to rank reliably.
+specs — a few words hash to too few shingles to rank reliably. The optional embeddings
+tier below lifts exactly this.
+
+### `FORGE_EMBED` — the optional embeddings tier (ADR-0005)
+
+MinHash is the always-working, zero-dependency default. Set `FORGE_EMBED` and
+`forge reuse query` + `forge ledger query` swap the lexical similarity for embedding
+cosine — no new flags, the env var is the switch, and every query prints which backend
+served it (`sim: minhash` / `sim: embed(cmd)` / `sim: embed(http)`):
+
+- `FORGE_EMBED=cmd:<shell-command>` — the universal escape hatch (any local model, any
+  script): forge writes `{"texts":[...]}` to its stdin and reads
+  `{"vectors":[[...]]}` from its stdout.
+- `FORGE_EMBED=http:<url>` (or a bare `https://` URL) — OpenAI-compatible
+  `POST {input, model: $FORGE_EMBED_MODEL}` with
+  `Authorization: Bearer $FORGE_EMBED_KEY` (the key is passed via environment only —
+  never logged, never in argv).
+
+Thresholds move with the scale: near/adapt are cosine ≥ 0.85/0.7 instead of Jaccard's
+0.8/0.6, because dense cosines have a much higher noise floor (unrelated sentences
+commonly score 0.4–0.6) while unrelated shingle sets sit near 0. Vectors are cached in
+`.forge/embed-cache.jsonl` (content-hash keyed, corrupt-tolerant, size-capped
+truncate-oldest) so repeated queries never re-pay the provider. Any provider failure —
+crash, timeout, garbage output — silently degrades to the MinHash path
+(`FORGE_EMBED_TIMEOUT_MS` caps the wait, default 15000). Per ADR-0005:
+`dependencies` stays empty; this tier is configuration, not a package.
 
 ### `forge context "<task>"` — budgeted assembly + completeness gate
 
@@ -424,7 +451,8 @@ tree (your uncommitted changes wouldn't be in the run); commit/stash first or pa
 
 ### `forge uicheck` — deterministic UI checks
 
-Three subcommands, all static parsing — no LLM, no screenshots.
+Four subcommands: three are static parsing — no LLM, no screenshots — and `visual`
+optionally drives a real browser.
 
 **`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
 `forge uicheck <fg> <bg>` still works):
@@ -456,6 +484,32 @@ fingerprint must stay LOW, plus scale-conformance checks (spacing on base, level
 Failures are actionable per-feature edits, never a bare score. Honest limit: the
 fingerprint doesn't resolve CSS `var()` indirection yet — fully tokenized palettes are
 partially invisible to it.
+
+**`visual <file-or-url> [--taste <name>] [--json] [--remote]`** — the Playwright
+visual loop: renders the page headless at two viewports (1280×800, 390×844),
+fingerprints the **computed** styles of every visible element — what the cascade,
+`var()` resolution, and runtime theming actually produced — and runs the exact same
+design gate as `design` (exit 1 on fail). Screenshots land in `.forge/ui/` for human
+review. Playwright is an *optional tier* (ADR-0005): `package.json` stays
+dependency-free; without a browser runtime the command prints a "skipped (no browser
+runtime)" note and exits 0 — enable it with `npm i -D playwright-core` or point
+`FORGE_PLAYWRIGHT` at an existing install (e.g.
+`FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core`). Security default: http(s)
+targets must be loopback (`localhost`, `127.*`, `[::1]`) — fetching arbitrary URLs is
+an exfiltration hazard, so non-local URLs are refused unless you pass `--remote`.
+
+```console
+$ forge uicheck visual src/dash.html
+Forge uicheck visual — rendered fingerprint + design gate
+
+  rendered:      file:///…/src/dash.html (80 visible element style(s))
+  screenshots:   .forge/ui/dash-1280x800.png, .forge/ui/dash-390x844.png
+  slop distance: 0.516  (need ≥ 0.25 — farther from generic is better)
+  ...
+  ✓ spacing-scale: 100% of 6 spacing value(s) on the 4px base (ε 0.5px)
+
+  ✓ PASS
+```
 
 ### `forge dash [--port N]` — the local dashboard
 
@@ -683,7 +737,8 @@ Edit `brand.json` (`FORGE_BRAND`), the `bin` key in `package.json`, and `name` i
 - **The atlas graph is regex-approximate** — conservative, not a sound call graph;
   dynamic dispatch and generated code can be missed.
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
-  to too few shingles to rank reliably; write a sentence, not a keyword.
+  to too few shingles to rank reliably; write a sentence, not a keyword — or configure
+  the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.
 - **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
   tokenized palette is partially invisible to the design gate.
 - **`forge cost --stages` reports measured stages only** — a stage with no events says

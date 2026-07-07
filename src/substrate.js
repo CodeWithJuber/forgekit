@@ -12,7 +12,7 @@ import { assemble as assembleContext } from "./context.js";
 import { matchingLessons } from "./cortex.js";
 import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
-import { load as loadLessons } from "./lessons_store.js";
+import { mergedLessons } from "./ledger_read.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
@@ -264,7 +264,8 @@ export function substrateCheck(
   const scope = scopedFiles.length
     ? decompose(root, scopedFiles)
     : { clusters: [], independentGroups: 0 };
-  const lessons = matchingLessons(loadLessons(root), {
+  // Merged view (P2 read flip): a teammate's merged lesson counts in the advisory too.
+  const lessons = matchingLessons(mergedLessons(root, epochDay()), {
     files: scopedFiles,
     symbols: entities.symbols,
   });

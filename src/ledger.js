@@ -332,22 +332,50 @@ const sketchOf = (claim) => (claim._sketch ??= sketch(claimText(claim)));
  * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val) × scope weight.
  * `query` may be a string or a precomputed sketch. The `g·val` term is the protocol's
  * load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
+ *
+ * `sim` (optional) replaces the lexical `rel` term with a caller-supplied similarity
+ * (the ADR-0005 embeddings tier — built by callers from embed.js; this pure core
+ * NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or any
+ * non-finite value) falls back to MinHash Jaccard per claim, and negatives clamp to 0
+ * — "anti-similar" is just irrelevant, never a penalty below unrelated.
+ * @param {*} query
+ * @param {any} claim
+ * @param {{nowDay?:number, weights?:typeof EQ3_WEIGHTS, sim?:(query:any, claim:any)=>number|null}} [opts]
  */
-export function score(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS } = {}) {
-  const qs = Array.isArray(query) ? query : sketch(query);
-  const rel = jaccard(qs, sketchOf(claim));
+export function score(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
+  let rel = null;
+  if (sim) {
+    const s = sim(query, claim);
+    if (typeof s === "number" && Number.isFinite(s)) rel = Math.max(0, Math.min(1, s));
+  }
+  if (rel === null) {
+    const qs = Array.isArray(query) ? query : sketch(query);
+    rel = jaccard(qs, sketchOf(claim));
+  }
   const x = weights.a * rel + weights.b * rec(claim, nowDay) + weights.g * val(claim, nowDay);
   const sigma = 1 / (1 + Math.exp(-x));
   const scopeW = SCOPE_WEIGHT[claim.scope?.level] ?? 0.5;
   return sigma * scopeW;
 }
 
-/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`. */
-export function retrieve(query, claims, { nowDay = 0, budget = 12, weights = EQ3_WEIGHTS } = {}) {
-  const qs = sketch(String(query));
+/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`.
+ *  Optional `sim` as in score() — the caller-built embedding similarity; the query
+ *  string (not the sketch) is what a sim sees.
+ *  @param {*} query
+ *  @param {any[]} claims
+ *  @param {{nowDay?:number, budget?:number, weights?:typeof EQ3_WEIGHTS,
+ *           sim?:((query:any, claim:any)=>number|null)|null}} [opts] */
+export function retrieve(
+  query,
+  claims,
+  { nowDay = 0, budget = 12, weights = EQ3_WEIGHTS, sim } = {},
+) {
+  const q = String(query);
+  const qs = sketch(q);
+  const boundSim = sim ? (_qs, c) => sim(q, c) : undefined;
   return claims
     .filter((c) => !c.tombstone && !isDormant(c, nowDay))
-    .map((c) => ({ claim: c, score: score(qs, c, { nowDay, weights }) }))
+    .map((c) => ({ claim: c, score: score(qs, c, { nowDay, weights, sim: boundSim }) }))
     .sort((a, b) => b.score - a.score || (a.claim.id < b.claim.id ? -1 : 1))
     .slice(0, budget);
 }

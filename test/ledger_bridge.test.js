@@ -183,6 +183,34 @@ test("reconcileFacts: a fact deleted from the store is tombstoned in the ledger"
   assert.equal(claims.find((c) => c.body.name === "keep").tombstone, undefined);
 });
 
+test("reconcileFacts spares a merged teammate fact (only locally-authored claims reconcile)", () => {
+  const store = tmp();
+  const dir = join(store, "ledger");
+  const prev = process.env.FORGE_AUTHOR;
+  try {
+    process.env.FORGE_AUTHOR = "Me <me@example.com>";
+    recallAdd(store, "keep", "this fact stays");
+    shadowFact(dir, "keep", "this fact stays", 1);
+    shadowFact(dir, "gone", "a consolidated-away duplicate", 1); // mine, file deleted
+    process.env.FORGE_AUTHOR = "Teammate <team@example.com>";
+    shadowFact(dir, "team wisdom", "arrived via forge ledger merge", 1); // theirs, never had a file
+    process.env.FORGE_AUTHOR = "Me <me@example.com>";
+    const r = reconcileFacts(store, dir, 2);
+    assert.equal(r.ok, true);
+    assert.equal(r.removed, 1, "only MY fileless claim is removed-from-store");
+    const claims = loadClaims(dir);
+    assert.equal(claims.find((c) => c.body.name === "gone").tombstone.reason, "removed-from-store");
+    assert.equal(
+      claims.find((c) => c.body.name === "team wisdom").tombstone,
+      undefined,
+      "a teammate's merged fact must survive my consolidate (it IS the read path now)",
+    );
+  } finally {
+    if (prev === undefined) delete process.env.FORGE_AUTHOR;
+    else process.env.FORGE_AUTHOR = prev;
+  }
+});
+
 test("importLegacy: back-fills pre-ledger history; skips claims already tracked live", () => {
   const root = tmp();
   // A legacy lesson with history that predates the ledger: 3 confirmations, 1 contradiction.

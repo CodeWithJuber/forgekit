@@ -166,8 +166,9 @@ Forge states its own ceiling everywhere. In short: **guards reduce, don't elimin
 the "ignored my rules" problem; `recall`/`cortex` are file memory, **not** weight-level
 learning; the `atlas`/`impact` graph is regex-approximate (conservative, not a sound
 call graph — the impact numbers above are n = 6 hand-labeled cases on one JavaScript
-repo); the substrate's rubrics are heuristic; `forge reuse`'s near-match is weak on very
-short specs; and `forge cost --stages` reports **measured stages only** — a stage with
+repo); the substrate's rubrics are heuristic; the MinHash near-match is weak on very short
+specs (an optional embeddings backend — `FORGE_EMBED` — lifts this; MinHash stays the
+zero-dependency default); and `forge cost --stages` reports **measured stages only** — a stage with
 no events says "no data", never a default. What's *asserted* is safe to gate on (repo
 grounding, graph traversal, routing arithmetic, test commands); everything else is
 *advisory*. **Tests and human corrections always win.** Full list:

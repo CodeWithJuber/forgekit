@@ -34,7 +34,7 @@ const COMMANDS = {
   imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck:
-    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...>",
+    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
   dash: "local dashboard over the ledger, metrics, and blast radius",
   brand: "print the active brand token map",
 };
@@ -341,16 +341,25 @@ async function run(argv) {
         return;
       }
       const { retrieve, claimText } = await import("./ledger.js");
+      // The embeddings tier (ADR-0005) is assembled HERE, not in ledger.js — the pure
+      // core stays provider-free. No FORGE_EMBED (or a failing provider) → sim is
+      // null and retrieval is the stock MinHash path.
+      const { claimSim, simLabel } = await import("./embed.js");
       const claims = ls.loadClaims(dir);
-      const ranked = retrieve(q, claims, { nowDay, budget: 8 });
+      const sim = claimSim(root, q, claims, claimText);
+      const ranked = retrieve(q, claims, { nowDay, budget: 8, sim });
       if (json)
         return console.log(
           JSON.stringify(
-            ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+            {
+              sim: simLabel(sim),
+              results: ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+            },
             null,
             2,
           ),
         );
+      console.log(`  sim: ${simLabel(sim)}`);
       if (!ranked.length) return console.log("  no matching live claims");
       for (const r of ranked)
         console.log(
@@ -408,17 +417,25 @@ async function run(argv) {
       if (json)
         return console.log(
           JSON.stringify(
-            { tier: r.tier, artifact: r.artifact?.id, jaccard: r.jaccard, reasons: r.reasons },
+            {
+              tier: r.tier,
+              artifact: r.artifact?.id,
+              jaccard: r.jaccard,
+              similarity: r.similarity,
+              sim: r.sim,
+              reasons: r.reasons,
+            },
             null,
             2,
           ),
         );
+      console.log(`  sim: ${r.sim}`);
       if (r.tier === "miss") {
         console.log("  miss — nothing verified matches; generate, then `forge reuse mint` it");
       } else {
         const a = r.artifact;
         console.log(
-          `  ${r.tier.toUpperCase()} hit (similarity ${(r.jaccard ?? 1).toFixed(2)}) — ${a.body.form}${a.body.code?.path ? ` at ${a.body.code.path}` : ""}`,
+          `  ${r.tier.toUpperCase()} hit (similarity ${(r.similarity ?? r.jaccard ?? 1).toFixed(2)}) — ${a.body.form}${a.body.code?.path ? ` at ${a.body.code.path}` : ""}`,
         );
         console.log(
           `    claim ${a.id.slice(0, 12)} — \`forge ledger blame ${a.id.slice(0, 8)}\` for its proof`,
@@ -1047,6 +1064,70 @@ async function run(argv) {
   }
   if (cmd === "uicheck") {
     const sub = argv[1];
+    if (sub === "visual") {
+      // The Playwright visual loop (spec §5): render in a real browser, fingerprint
+      // the COMPUTED styles, run the same design gate. Playwright is an optional
+      // tier (ADR-0005) — its absence is a note and exit 0, never a failure.
+      const { visualGate } = await import("./uivisual.js");
+      const args = argv.slice(2);
+      const tasteIdx = args.indexOf("--taste");
+      const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+      const json = args.includes("--json");
+      const remote = args.includes("--remote");
+      const targets = args.filter((a) => !a.startsWith("--"));
+      if (targets.length !== 1 || (tasteIdx >= 0 && !tasteArg)) {
+        console.error(
+          `usage: ${BRAND.cli} uicheck visual <file-or-url> [--taste <name>] [--json] [--remote]`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const r = await visualGate(targets[0], { taste: tasteArg, remote, root: process.cwd() });
+      if (!r.ok) {
+        const reason = "reason" in r ? r.reason : "visual gate failed";
+        if ("skipped" in r && r.skipped) {
+          // Graceful absence (ADR-0005): a missing optional tier is not a failure.
+          if (json) console.log(JSON.stringify({ skipped: true, reason }, null, 2));
+          else {
+            console.log(`${BRAND.brand} uicheck visual — skipped (no browser runtime)\n`);
+            console.log(`  ${reason}`);
+            console.log(
+              "  enable it: npm i -D playwright-core   (or point FORGE_PLAYWRIGHT at an existing install, e.g. FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core)",
+            );
+          }
+          return; // exit 0 — the static gate still stands
+        }
+        console.error(reason);
+        process.exitCode = 1;
+        return;
+      }
+      if (json) {
+        const { ok: _ok, fail: _fail, ...body } = r;
+        console.log(JSON.stringify(body, null, 2));
+      } else {
+        console.log(`${BRAND.brand} uicheck visual — rendered fingerprint + design gate\n`);
+        console.log(`  rendered:      ${r.url} (${r.elements} visible element style(s))`);
+        console.log(`  screenshots:   ${r.screenshots.join(", ")}`);
+        if (r.taste) console.log(`  taste:         ${r.taste} (thresholds from its profile)`);
+        console.log(
+          `  slop distance: ${r.slop}  (need ≥ ${r.tauSlop} — farther from generic is better)`,
+        );
+        console.log(
+          r.hasProjectFingerprint
+            ? `  conformance:   ${r.conform}  (need ≤ ${r.tauConform} — closer to the project system is better)`
+            : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
+        );
+        for (const v of r.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+        console.log("");
+        for (const c of r.checks)
+          console.log(
+            `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
+          );
+        console.log(`\n  ${r.fail ? "✗ FAIL" : "✓ PASS"}`);
+      }
+      if (r.fail) process.exitCode = 1;
+      return;
+    }
     if (sub === "fingerprint" || sub === "design") {
       const ui = await import("./uifingerprint.js");
       // `--taste <name>` (design only) takes a VALUE — splice it out before the

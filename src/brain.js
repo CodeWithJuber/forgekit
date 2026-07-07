@@ -5,10 +5,15 @@
 // by construction: the inlined index is capped; overflow stays in fact files, never
 // silently truncated the way Claude's native 200-line MEMORY.md is (#39811).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { add as recallAdd, list as recallList } from "./recall.js";
+import { dirname, join } from "node:path";
+import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
+import { listStored, add as recallAdd } from "./recall.js";
 
 export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".forge", "brain");
+
+// Brain facts shadow into the REPO ledger (.forge/ledger — the sibling of this store,
+// see `forge remember`), so that is where merged teammate facts arrive.
+const brainLedger = (store) => join(dirname(store), "ledger");
 
 /** Store one fact (secret-refused by recall) and rebuild the inlined index. */
 export function remember(store, name, body) {
@@ -17,7 +22,8 @@ export function remember(store, name, body) {
   return res;
 }
 
-export const list = recallList;
+/** Merged read (P2 read flip): file facts ∪ live repo-ledger facts, file wins on slug. */
+export const list = (store) => mergeFactSlugs(listStored(store), brainLedger(store));
 
 const gistOf = (text) =>
   text
@@ -26,7 +32,9 @@ const gistOf = (text) =>
     .map((l) => l.trim())
     .find(Boolean) || "";
 
-/** Build the capped, cliff-safe index inlined into AGENTS.md. Overflow → a pointer. */
+/** Build the capped, cliff-safe index inlined into AGENTS.md. Overflow → a pointer.
+ *  Merged view (P2 read flip): teammate facts that arrived in the repo ledger via
+ *  `forge ledger merge` join the index; a local file wins on name collision. */
 export function buildIndex(store, { capItems = 120 } = {}) {
   const factsDir = join(store, "facts");
   const facts = existsSync(factsDir)
@@ -34,17 +42,25 @@ export function buildIndex(store, { capItems = 120 } = {}) {
         .filter((f) => f.endsWith(".md"))
         .sort()
     : [];
+  const entries = facts.map((file) => ({
+    name: file.replace(/\.md$/, ""),
+    gist: gistOf(readFileSync(join(factsDir, file), "utf8")),
+  }));
+  const seen = new Set(entries.map((e) => e.name));
+  for (const f of ledgerFacts(brainLedger(store))) {
+    if (seen.has(f.slug)) continue;
+    seen.add(f.slug);
+    entries.push({ name: f.slug, gist: gistOf(f.text) });
+  }
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const rows = [];
   let overflow = 0;
-  for (const file of facts) {
+  for (const e of entries) {
     if (rows.length >= capItems) {
       overflow += 1;
       continue;
     }
-    const name = file.replace(/\.md$/, "");
-    rows.push(
-      `- **${name}** — ${gistOf(readFileSync(join(factsDir, file), "utf8")).slice(0, 140)}`,
-    );
+    rows.push(`- **${e.name}** — ${e.gist.slice(0, 140)}`);
   }
   const indexed = rows.length; // count real facts before adding the overflow pointer
   if (overflow)

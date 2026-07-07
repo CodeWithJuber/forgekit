@@ -6,6 +6,48 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Optional embeddings tier** (`src/embed.js`, ADR-0005; ROADMAP "Next"): set
+  `FORGE_EMBED=cmd:<command>` (stdin/stdout JSON protocol — any local model or script)
+  or `FORGE_EMBED=http:<url>` (OpenAI-compatible, `$FORGE_EMBED_MODEL` /
+  `$FORGE_EMBED_KEY`, key never logged) and `forge reuse query` + `forge ledger query`
+  replace the MinHash `rel` term with embedding cosine (near/adapt ≥ 0.85/0.7 — a
+  higher bar than Jaccard's 0.8/0.6 to match dense cosine's noise floor), fixing the
+  documented weak spot on very short specs. Vectors are disk-cached
+  (`.forge/embed-cache.jsonl`, content-hash keyed, corrupt-tolerant, truncate-oldest);
+  both commands print the backend that served (`sim: minhash` / `sim: embed(cmd)`);
+  any provider failure degrades silently to MinHash. `dependencies` stays empty —
+  the tier is configuration, not a package; the pure ledger core never imports it.
+- **`forge uicheck visual <file-or-url>`** — the Playwright visual loop
+  (07-ui-quality-gate §5): renders the page headless at two viewports, fingerprints
+  the **computed** styles of every visible element (what the cascade and runtime
+  theming actually painted, with used `auto`-margins and never-painted UA noise
+  filtered out), and runs the identical `design` gate over that rendered vector —
+  screenshots land in `.forge/ui/`. Playwright stays an optional tier (ADR-0005):
+  `package.json` gains no dependency, absence degrades to a "skipped (no browser
+  runtime)" note with exit 0 (`npm i -D playwright-core` or `FORGE_PLAYWRIGHT=…` to
+  enable), and non-loopback http(s) targets are refused by default (`--remote` to
+  override) — a gate that fetches arbitrary URLs is an exfiltration hazard.
+
+### Changed
+
+- **Ledger read-path flip (P2).** Reads are now a merged view (legacy ∪ ledger) via the
+  new `src/ledger_read.js`, so teammate knowledge that arrives with `forge ledger merge`
+  actually reaches injection and retrieval: cortex lesson surfaces
+  (`lessonsForContext`, `startupBlock`, `summary`, the substrate advisory and routing
+  past-mistake density) map ledger `lesson` claims onto the legacy lesson shape with an
+  evidence-derived status (tombstoned → retired, val ≥ 0.6 → active, val < 0.45 with a
+  contradiction → quarantined, else candidate), and fact surfaces (`recall list`/
+  `MEMORY.md`, brain's `AGENTS.md` index) include live ledger `fact` claims — always
+  deduped by legacy id/slug with the local file winning, and best-effort (a missing or
+  corrupt ledger degrades to legacy-only). Write paths (`recordMistake`'s
+  confirm-vs-create lookup, `recordContradiction`, `applyDistillation`) deliberately
+  keep reading the legacy store they edit; convergence comes from content-addressed
+  claim ids. `reconcileFacts` now only tombstones locally-authored claims, so a merged
+  teammate fact survives `forge recall consolidate`. Legacy formats are still written —
+  full retirement is the next step.
+
 ## [0.6.0] - 2026-07-07
 
 ### Changed

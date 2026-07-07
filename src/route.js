@@ -8,10 +8,10 @@ import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
 import { recordRoute } from "./cost_report.js";
-import { load as loadLessons } from "./lessons_store.js";
+import { mergedLessons } from "./ledger_read.js";
 import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
-import { clamp01, contentHash } from "./util.js";
+import { clamp01, contentHash, epochDay } from "./util.js";
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
 
@@ -181,7 +181,8 @@ export function routeTask(
   const { symbols, files } = referencedEntities(task);
   const fanout = symbols.reduce((m, sym) => Math.max(m, grepFanout(root, sym)), 0);
   const churn = files.reduce((m, f) => Math.max(m, gitChurn(root, f)), 0);
-  const pastMistakes = matchingLessons(loadLessons(root), {
+  // Merged view (P2 read flip): teammate lessons raise past-mistake density here too.
+  const pastMistakes = matchingLessons(mergedLessons(root, epochDay()), {
     files,
     symbols,
   }).length;
