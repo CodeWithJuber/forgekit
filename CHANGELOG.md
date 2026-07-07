@@ -8,6 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **Substrate v2 plan: the whitepaper, completed (`docs/plans/substrate-v2/`).** Nine specs
+  + two ADRs mapping every remaining paper faculty/mechanism to a concrete algorithm, unified
+  by the **Proof-Carrying Memory (PCM) protocol**: every stored unit (lesson, fact, cached
+  artifact, graph edge, design fingerprint, diagnosis) becomes a content-addressed claim whose
+  confidence is a decayed Beta posterior over independent-oracle outcomes — retrieval implements
+  the paper's Eq. 3, team memory is a conflict-free CRDT ledger merged over git, code reuse is a
+  proof-carrying artifact cache, context assembly is a token-budget knapsack with a set-cover
+  completeness gate, and generated-UI quality is a measurable slop-distance/conformance gate.
+  ADR-0005 relaxes the zero-dependency rule to selective optional deps with stdlib fallbacks;
+  ADR-0006 converges all persistence on the PCM ledger. `ROADMAP.md` now carries the P1–P8
+  phase plan. Docs only — no runtime behavior changes.
 - **Visual flow diagrams in the entry-point docs.** A "one source → every tool + pre-action gate"
   mermaid in `README.md` and a "your day with Forge" loop in `ONBOARDING.md` (alongside the
   propose→verify diagram in the substrate README) — making the model easier to grasp at a glance,
