@@ -3,10 +3,12 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { read as readMetrics } from "../src/metrics.js";
 import {
   complexity,
   complexityLLM,
   emitGatewayConfig,
+  meterRoute,
   recommend,
   routeTask,
 } from "../src/route.js";
@@ -153,6 +155,19 @@ test("routeTask (llm on): fires exactly ONE model call — no redundant inner as
   };
   routeTask(root, "refactor the password reset flow in auth.js", { llm: true, run });
   assert.equal(calls, 1, "routeTask must not also run an assumption model call");
+});
+
+test("meterRoute: one route metrics event lands with the chosen tier; routeTask itself never writes", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const task = "write a function to check if a number is prime";
+  const rec = routeTask(root, task);
+  assert.deepEqual(readMetrics(root, { stage: "route" }), [], "routing alone is write-free");
+  meterRoute(root, task, rec);
+  const events = readMetrics(root, { stage: "route" });
+  assert.equal(events.length, 1, "the explicit caller meters exactly once");
+  assert.equal(events[0].tier, rec.tier, "the event carries the chosen tier");
+  assert.match(events[0].ref, /^[0-9a-f]{12}$/, "ref is a short task hash, not the task text");
+  assert.ok(!JSON.stringify(events[0]).includes("prime"), "task text never leaks into metrics");
 });
 
 test("routeTask: a precomputed ambiguity matches computing it internally", () => {

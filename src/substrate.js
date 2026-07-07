@@ -15,7 +15,7 @@ import { leanRepo } from "./lean.js";
 import { load as loadLessons } from "./lessons_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
-import { routeTask } from "./route.js";
+import { meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { epochDay } from "./util.js";
 
@@ -205,6 +205,10 @@ export function substrateCheck(
   // Reuse the gap preflight already computed — routeTask would otherwise recompute it (and, with
   // FORGE_LLM on, fire a second, redundant assumption model call whose result it discards).
   const route = routeTask(root, text, { ...llmOpts, ambiguity: preflight.gap });
+  // P8 route metering, same write contract as recordGate above: the explicit gate
+  // meters, the ambient hook path (allowBuild:false) never appends. meterRoute is
+  // itself best-effort (try/catch inside), so measurement can never block routing.
+  if (allowBuild) meterRoute(root, text, route);
   // allowBuild:false (ambient hooks) uses the atlas only if one is already cached — never
   // builds or writes .forge/atlas.json from a hook. Impact is then best-effort.
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);

@@ -21,6 +21,7 @@ import {
   mergeDirs,
   pruneToAttic,
   putClaim,
+  ratify,
   readEvidence,
   reindex,
   stats,
@@ -168,6 +169,44 @@ test("tombstone: append-only records; concurrent retractions coexist; stats refl
   const loaded = loadClaims(dir)[0];
   assert.equal(loaded.tombstone.author, "bob", "earliest record is the view");
   assert.equal(stats(dir).tombstoned, 1);
+});
+
+test("ratify: mints a decision claim linked to the ratified claim, with the human as author", () => {
+  const dir = tmp();
+  const c = fact("promote-me", "a fahm claim the team decided to stand behind");
+  putClaim(dir, c);
+  const r = ratify(dir, c.id.slice(0, 8), { author: "alice", t: 7 });
+  assert.equal(r.ok, true);
+  assert.equal(r.ratifies, c.id, "the decision points at the FULL resolved id");
+  assert.equal(r.existed, false);
+  const decision = getClaimByPrefix(dir, r.decisionId.slice(0, 8));
+  assert.equal(decision.kind, "decision");
+  assert.deepEqual(decision.body, { ratifies: c.id, note: "" });
+  assert.equal(decision.provenance.author, "alice", "human-only promotion — the caller's identity");
+  assert.equal(decision.provenance.agent, "dash");
+  assert.equal(decision.provenance.t, 7);
+  assert.equal(loadClaims(dir).length, 2, "append-only: the ratified claim is untouched");
+});
+
+test("ratify: refuses an unknown prefix instead of minting a dangling decision", () => {
+  const dir = tmp();
+  putClaim(dir, fact("only", "claim"));
+  const r = ratify(dir, "zz", { author: "alice", t: 7 });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /no claim matching zz/);
+  assert.equal(loadClaims(dir).length, 1, "nothing was minted");
+});
+
+test("ratify: idempotent — the same content converges on the same decision (existed)", () => {
+  const dir = tmp();
+  const c = fact("stable", "ratify me twice");
+  putClaim(dir, c);
+  const first = ratify(dir, c.id.slice(0, 8), { author: "alice", t: 7 });
+  const again = ratify(dir, c.id.slice(0, 8), { author: "alice", t: 7 });
+  assert.equal(again.ok, true);
+  assert.equal(again.decisionId, first.decisionId, "content-addressed → same decision id");
+  assert.equal(again.existed, true);
+  assert.equal(loadClaims(dir).filter((x) => x.kind === "decision").length, 1);
 });
 
 test("getClaimByPrefix: finds one claim via its shard without scanning the ledger", () => {

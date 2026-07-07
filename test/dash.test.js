@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { dashData, serve } from "../src/dash.js";
 import { mintClaim, outcomeRecord } from "../src/ledger.js";
-import { appendEvidence, putClaim, repoLedger, tombstone } from "../src/ledger_store.js";
+import {
+  appendEvidence,
+  loadClaims,
+  putClaim,
+  repoLedger,
+  tombstone,
+} from "../src/ledger_store.js";
 import { record } from "../src/metrics.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-dash-"));
@@ -134,12 +140,71 @@ test("serve: / is the page, /api/data is the payload, unknown routes 404, GET-on
     assert.equal((await fetch(`${base}/api/impact`)).status, 400, "missing target");
     assert.equal((await fetch(`${base}/api/impact?target=x`)).status, 404, "no atlas yet");
     assert.equal((await fetch(`${base}/nope`)).status, 404);
+    // The ONLY writes are POST /api/ratify and /api/retract — POST anywhere else is 404,
+    // as is any other method on the write routes.
     assert.equal(
       (await fetch(`${base}/api/data`, { method: "POST" })).status,
       404,
-      "no writes in this phase",
+      "POST to a read route stays 404",
+    );
+    assert.equal((await fetch(`${base}/nope`, { method: "POST" })).status, 404);
+    assert.equal(
+      (await fetch(`${base}/api/ratify`, { method: "PUT", body: "{}" })).status,
+      404,
+      "the write routes are POST-only",
     );
   } finally {
+    server.close();
+  }
+});
+
+test("serve: POST /api/ratify and /api/retract are the two append-only writes", async () => {
+  process.env.FORGE_AUTHOR = "dash-tester"; // deterministic identity for gitAuthor()
+  const { root, trusted, contested } = fixture();
+  const server = serve(root, { port: 0 });
+  await new Promise((resolve) => server.on("listening", resolve));
+  const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+  const base = `http://127.0.0.1:${addr.port}`;
+  const post = (path, body) =>
+    fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  try {
+    // ratify → a decision claim, minted with the human author, linked by full id.
+    const r1 = await post("/api/ratify", { id: trusted.id.slice(0, 8) });
+    assert.equal(r1.status, 200);
+    const out = await r1.json();
+    assert.equal(out.ok, true);
+    assert.equal(out.ratifies, trusted.id);
+    const decision = loadClaims(repoLedger(root)).find((c) => c.kind === "decision");
+    assert.deepEqual(decision.body, { ratifies: trusted.id, note: "" });
+    assert.equal(decision.provenance.author, "dash-tester");
+    // …and the new decision shows up in the read payload.
+    const d = await (await fetch(`${base}/api/data`)).json();
+    assert.equal(d.ledger.stats.byKind.decision, 1);
+    assert.ok(d.ledger.claims.some((c) => c.kind === "decision"));
+
+    // retract → the claim reads as tombstoned in the payload, reason preserved on disk.
+    const r2 = await post("/api/retract", { id: contested.id.slice(0, 8), reason: "wrong port" });
+    assert.equal(r2.status, 200);
+    assert.equal((await r2.json()).ok, true);
+    const d2 = await (await fetch(`${base}/api/data`)).json();
+    const row = d2.ledger.claims.find((c) => c.id8 === contested.id.slice(0, 8));
+    assert.equal(row.tombstoned, true);
+    const onDisk = loadClaims(repoLedger(root)).find((c) => c.id === contested.id);
+    assert.equal(onDisk.tombstone.reason, "wrong port");
+    assert.equal(onDisk.tombstone.author, "dash-tester");
+
+    // Bad bodies → 400; unknown prefixes → 404. Nothing else was written.
+    assert.equal((await post("/api/ratify", "{nope")).status, 400, "bad JSON");
+    assert.equal((await post("/api/ratify", {})).status, 400, "missing id");
+    assert.equal((await post("/api/retract", { id: "x" })).status, 400, "1-char prefix refused");
+    assert.equal((await post("/api/ratify", { id: "zz" })).status, 404, "unknown prefix");
+    assert.equal((await post("/api/retract", { id: "zz", reason: "r" })).status, 404);
+  } finally {
+    delete process.env.FORGE_AUTHOR;
     server.close();
   }
 });
