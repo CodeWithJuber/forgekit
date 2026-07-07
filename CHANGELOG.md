@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Benchmark harness (`npm run bench`) + measured results doc.** `bench/bench.mjs`
+  (node stdlib only) measures the substrate primitives as medians of N runs after
+  warmup — atlas build/incremental/impact latency on this repo, ledger
+  mint+put/loadClaims/mergeDirs/val() on seeded synthetic fixtures, reuse fingerprint +
+  exact/near-LSH lookup at 100 and 1000 artifacts, `assemble()` and full
+  `substrateCheck` wall time — and writes the tables plus an environment block into
+  `reports/benchmarks.md`. The same run scores `impact()` precision/recall/F1 against a
+  committed, hand-labeled case set from this repo's real import graph
+  (`bench/impact_cases.mjs`, every reference cited; one known-miss alias case kept in on
+  purpose), reported next to — never blended with — the paper prototype's
+  mutation-derived numbers, plus a structural-only contrast with adjacent tools (note
+  stores, LLM gateways, plain RAG), every row checkable from the named source.
 - **Loop closure (P5 of the substrate-v2 plan): doom-loop diagnosis, imagination, CUSUM
   drift, checkpoint cadence.** `forge diagnose "<error>"` hashes each failure into a
   signature (line numbers, addresses, timestamps, and absolute paths normalized out) and
