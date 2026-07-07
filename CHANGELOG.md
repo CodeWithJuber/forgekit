@@ -37,6 +37,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   implements it?"), shown in `forge substrate` and — under `FORGE_ENFORCE=1` — blocking:
   acting on missing context is acting on a guess. Incomplete context stops being a
   feeling and starts being a set difference.
+- **Generated-UI quality gate (P6 of the substrate-v2 plan).** Taste becomes measurable:
+  `src/uifingerprint.js` extracts a deterministic design fingerprint from CSS/JSX/Tailwind
+  classes — pure static parsing, no LLM, no screenshots — covering palette (HSL + 12-bin hue
+  histogram), spacing (base unit by residual-minimization approximate GCD, on-scale
+  fraction), font families, radius and shadow levels. Two distances gate generated UI:
+  `slopDistance` to a shipped, rationale-documented generic-template signature set
+  (default-Tailwind blue/indigo, stock Bootstrap, the AI-landing gradient) must stay HIGH,
+  and `conformance` to the project's own fingerprint — stored as a shared `fingerprint`
+  ledger claim via `mintProjectFingerprint` — must stay LOW; `uiGate` failures are
+  actionable per-feature edits, never a bare score. Scale-conformance checks
+  (spacing-on-base, radius/shadow level caps, palette bound) join `ASSERTABLE_CHECKS`.
+  `forge uicheck` gains `fingerprint <file...> [--mint]` and `design <file...>` (exit 1 on
+  fail) alongside the unchanged contrast math.
 
 - **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
   "reuse already-generated code" from prose into a deterministic system: verified code
