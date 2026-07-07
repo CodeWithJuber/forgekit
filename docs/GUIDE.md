@@ -330,10 +330,12 @@ holds** — confidence above the 0.6 floor and every declared dependency still i
 
 ```console
 $ forge reuse query "debounce user input before firing search"
+  sim: minhash
   NEAR hit (similarity 0.87) — module at src/lib/debounce.js
     claim 9c41d2ab77e0 — `forge ledger blame 9c41d2ab` for its proof
 
 $ forge reuse query "quantum blockchain"
+  sim: minhash
   miss — nothing verified matches; generate, then `forge reuse mint` it
 ```
 
@@ -348,7 +350,32 @@ $ forge reuse mint "debounce helper for search input" --file src/lib/debounce.js
 
 `forge reuse stats` shows lookups by outcome + estimated tokens saved (from
 `.forge/metrics.jsonl`). Honest limit: the MinHash near-match is weak on very short
-specs — a few words hash to too few shingles to rank reliably.
+specs — a few words hash to too few shingles to rank reliably. The optional embeddings
+tier below lifts exactly this.
+
+### `FORGE_EMBED` — the optional embeddings tier (ADR-0005)
+
+MinHash is the always-working, zero-dependency default. Set `FORGE_EMBED` and
+`forge reuse query` + `forge ledger query` swap the lexical similarity for embedding
+cosine — no new flags, the env var is the switch, and every query prints which backend
+served it (`sim: minhash` / `sim: embed(cmd)` / `sim: embed(http)`):
+
+- `FORGE_EMBED=cmd:<shell-command>` — the universal escape hatch (any local model, any
+  script): forge writes `{"texts":[...]}` to its stdin and reads
+  `{"vectors":[[...]]}` from its stdout.
+- `FORGE_EMBED=http:<url>` (or a bare `https://` URL) — OpenAI-compatible
+  `POST {input, model: $FORGE_EMBED_MODEL}` with
+  `Authorization: Bearer $FORGE_EMBED_KEY` (the key is passed via environment only —
+  never logged, never in argv).
+
+Thresholds move with the scale: near/adapt are cosine ≥ 0.85/0.7 instead of Jaccard's
+0.8/0.6, because dense cosines have a much higher noise floor (unrelated sentences
+commonly score 0.4–0.6) while unrelated shingle sets sit near 0. Vectors are cached in
+`.forge/embed-cache.jsonl` (content-hash keyed, corrupt-tolerant, size-capped
+truncate-oldest) so repeated queries never re-pay the provider. Any provider failure —
+crash, timeout, garbage output — silently degrades to the MinHash path
+(`FORGE_EMBED_TIMEOUT_MS` caps the wait, default 15000). Per ADR-0005:
+`dependencies` stays empty; this tier is configuration, not a package.
 
 ### `forge context "<task>"` — budgeted assembly + completeness gate
 
@@ -710,7 +737,8 @@ Edit `brand.json` (`FORGE_BRAND`), the `bin` key in `package.json`, and `name` i
 - **The atlas graph is regex-approximate** — conservative, not a sound call graph;
   dynamic dispatch and generated code can be missed.
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
-  to too few shingles to rank reliably; write a sentence, not a keyword.
+  to too few shingles to rank reliably; write a sentence, not a keyword — or configure
+  the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.
 - **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
   tokenized palette is partially invisible to the design gate.
 - **`forge cost --stages` reports measured stages only** — a stage with no events says
