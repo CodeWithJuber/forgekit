@@ -1,28 +1,25 @@
-# Simple workflow for deploying static content to GitHub Pages
+# Deploys the public site to GitHub Pages: the landing page at the site root and the
+# generated live-status page at /status/. Only the assembled _site/ directory is
+# published — never the whole repository. Both pages share one design system and are
+# gated by `forge uicheck design` (see test/pages.test.js and the uicheck suite).
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["master"]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Allow only one concurrent deployment, but let in-progress production deploys finish.
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
   deploy:
     environment:
       name: github-pages
@@ -31,13 +28,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build site
+        # build-pages.mjs is node-stdlib-only — no npm ci needed. BUILD_PAGES_LIVE=1
+        # refreshes public GitHub counters (best-effort; the build succeeds without it).
+        run: |
+          BUILD_PAGES_LIVE=1 node scripts/build-pages.mjs
+          mkdir -p _site/status
+          cp landing/index.html _site/index.html
+          cp public/index.html _site/status/index.html
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          path: "_site"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

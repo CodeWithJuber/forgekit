@@ -3,39 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>
-      Forge Cortex — the self-correcting memory your AI agent is missing
-    </title>
+    <title>forgekit — one brain for every AI coding agent</title>
     <meta
       name="description"
-      content="LLMs are stateless. Forge Cortex gives your coding agent a persistent, self-correcting memory that learns from mistakes on THIS repo — ambiently, across every tool."
+      content="forgekit compiles one source of truth into native config for nine AI coding tools — and gives them a shared, proof-carrying memory. Every lesson carries evidence, earns trust from real outcomes, decays without review, and merges across your team through git."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
-      rel="stylesheet"
+    <meta name="theme-color" content="#171310" />
+    <link rel="canonical" href="https://codewithjuber.github.io/forgekit/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="forgekit — one brain for every AI coding agent" />
+    <meta
+      property="og:description"
+      content="A cognitive substrate for coding agents: proof-carrying memory, blast-radius prediction, verified code reuse, and a cross-tool config compiler. Zero runtime dependencies. Measured, not asserted."
     />
+    <meta property="og:url" content="https://codewithjuber.github.io/forgekit/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="forgekit — one brain for every AI coding agent" />
+    <meta
+      name="twitter:description"
+      content="Proof-carrying memory + cross-tool config for Claude Code, Codex, Cursor, Gemini, Aider, and more. Zero runtime dependencies."
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "forgekit",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "license": "https://opensource.org/licenses/MIT",
+        "url": "https://github.com/CodeWithJuber/forgekit",
+        "description": "Cross-tool config compiler and cognitive substrate (proof-carrying memory, impact prediction, guardrails) for AI coding agents.",
+        "offers": { "@type": "Offer", "price": "0" }
+      }
+    </script>
+    <script>
+      /* stamped before first paint so .reveal hiding is JS-gated (no-JS UAs see everything) */
+      document.documentElement.classList.add("js");
+    </script>
     <style>
+      /* ── tokens ─────────────────────────────────────────────────────────
+         The entire page draws from eight colors — the same palette as
+         `forge dash`. Spacing sits on a strict 4px base, radii on three
+         levels, one shadow. `forge uicheck design` enforces this. */
       :root {
-        --ink: #12131a;
-        --ink-2: #171922;
-        --surface: #1b1d27;
-        --surface-2: #21242f;
-        --line: #2b2e3b;
-        --fg: #ececeff2;
-        --fg: #ecedf3;
-        --muted: #9a9dae;
-        --faint: #6b6e7e;
+        --ink: #171310;
+        --surface: #201a15;
+        --surface-2: #272019;
+        --line: #372c22;
+        --faint: #7d7263;
+        --muted: #a99e90;
         --ember: #f26430;
-        --ember-glow: #ff8a5b;
-        --signal: #4ad6c0;
-        --amber-wash: rgba(242, 100, 48, 0.12);
-        --radius: 14px;
-        --maxw: 1120px;
-        --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-        --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-        --display: "Bricolage Grotesque", var(--sans);
+        --fg: #f2ede7;
+        --wash: rgba(242, 100, 48, 0.08);
+        --wash-2: rgba(242, 100, 48, 0.16);
+        --shade: rgba(23, 19, 16, 0.6);
+        --r-s: 6px;
+        --r-m: 12px;
+        --r-pill: 999px;
+        --shadow: 0 24px 64px rgba(23, 19, 16, 0.56);
+        --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --maxw: 1080px;
       }
       * {
         box-sizing: border-box;
@@ -43,246 +71,182 @@
       html {
         scroll-behavior: smooth;
         background: var(--ink);
-        scrollbar-color: #2b2e3b var(--ink);
       }
-      ::-webkit-scrollbar {
-        width: 12px;
-        height: 12px;
-      }
-      ::-webkit-scrollbar-track {
-        background: var(--ink);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #2b2e3b;
-        border-radius: 8px;
-        border: 3px solid var(--ink);
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #3a3e4e;
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
       }
       body {
         margin: 0;
         background: var(--ink);
         color: var(--fg);
-        font-family: var(--sans);
-        line-height: 1.6;
+        font: 17px/1.65 var(--sans);
         -webkit-font-smoothing: antialiased;
-        overflow-x: hidden;
+        text-rendering: optimizeLegibility;
+      }
+      ::selection {
+        background: var(--ember);
+        color: var(--ink);
       }
       a {
         color: inherit;
       }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 2px solid var(--ember);
+        outline-offset: 4px;
+        border-radius: var(--r-s);
+      }
       .wrap {
-        width: 100%;
-        max-width: var(--maxw);
+        width: min(var(--maxw), calc(100% - 48px));
         margin: 0 auto;
-        padding: 0 24px;
       }
       .mono {
         font-family: var(--mono);
       }
-      .ember {
-        color: var(--ember);
-      }
 
-      /* ---- ambient forge glow ---- */
-      .glow {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        background:
-          radial-gradient(
-            60% 45% at 78% 8%,
-            rgba(242, 100, 48, 0.18),
-            transparent 60%
-          ),
-          radial-gradient(
-            50% 40% at 8% 30%,
-            rgba(74, 214, 192, 0.08),
-            transparent 60%
-          );
-        z-index: 0;
-      }
-
-      /* ---- nav ---- */
-      nav {
+      /* ── nav ── */
+      .nav {
         position: sticky;
         top: 0;
-        z-index: 20;
-        backdrop-filter: blur(10px);
-        background: rgba(18, 19, 26, 0.72);
+        z-index: 10;
+        background: var(--shade);
+        backdrop-filter: blur(12px);
         border-bottom: 1px solid var(--line);
       }
       .nav-in {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 62px;
+        gap: 16px;
+        padding: 16px 0;
       }
       .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-family: var(--display);
-        font-weight: 800;
-        letter-spacing: -0.01em;
-        font-size: 18px;
-      }
-      .spark {
-        width: 22px;
-        height: 22px;
-        display: block;
-      }
-      .nav-links {
-        display: flex;
-        align-items: center;
-        gap: 26px;
-      }
-      .nav-links a {
-        color: var(--muted);
-        text-decoration: none;
-        font-size: 14px;
-        transition: color 0.15s;
-      }
-      .nav-links a:hover {
-        color: var(--fg);
-      }
-      .btn {
-        font-family: var(--sans);
-        font-weight: 600;
-        font-size: 14px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        color: var(--fg);
-        padding: 9px 15px;
-        border-radius: 9px;
-        cursor: pointer;
+        font: 600 16px var(--mono);
+        letter-spacing: 0.02em;
         text-decoration: none;
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        transition:
-          border-color 0.15s,
-          transform 0.15s,
-          background 0.15s;
       }
-      .btn:hover {
-        border-color: var(--faint);
-        transform: translateY(-1px);
+      .brand-mark {
+        width: 20px;
+        height: 20px;
+        flex: none;
       }
-      .btn-ember {
-        background: var(--ember);
+      .brand em {
+        font-style: normal;
+        color: var(--ember);
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        font-size: 14px;
+      }
+      .nav-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      .nav-links a:hover {
+        color: var(--fg);
+      }
+      .nav-links .gh {
+        color: var(--fg);
+        border: 1px solid var(--line);
+        border-radius: var(--r-pill);
+        padding: 8px 16px;
+      }
+      .nav-links .gh:hover {
         border-color: var(--ember);
-        color: #1a0d06;
       }
-      .btn-ember:hover {
-        background: var(--ember-glow);
-        border-color: var(--ember-glow);
+      @media (max-width: 720px) {
+        .nav-links a:not(.gh) {
+          display: none;
+        }
       }
 
-      /* ---- hero ---- */
-      header {
+      /* ── hero ── */
+      .hero {
+        padding: 96px 0 64px;
+        background:
+          radial-gradient(1200px 480px at 85% -10%, var(--wash-2), transparent 70%),
+          var(--ink);
+        border-bottom: 1px solid var(--line);
         position: relative;
         overflow: hidden;
-        padding: 74px 0 40px;
       }
-      .hero {
+      .hero-mark {
+        position: absolute;
+        top: 48px;
+        right: -120px;
+        width: 560px;
+        height: 560px;
+        opacity: 0.07;
+        pointer-events: none;
+      }
+      @media (max-width: 960px) {
+        .hero-mark {
+          display: none;
+        }
+      }
+      .hero .wrap {
         position: relative;
-        z-index: 1;
-        display: grid;
-        grid-template-columns: 1.05fr 0.95fr;
-        gap: 54px;
-        align-items: center;
       }
       .eyebrow {
-        font-family: var(--mono);
-        font-size: 12px;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
+        font: 500 13px var(--mono);
         color: var(--ember);
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        margin-bottom: 22px;
-      }
-      .eyebrow::before {
-        content: "";
-        width: 26px;
-        height: 1px;
-        background: var(--ember);
-        display: inline-block;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
       }
       h1 {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: clamp(38px, 5.6vw, 66px);
+        font-size: clamp(44px, 7.5vw, 84px);
         line-height: 1.02;
-        letter-spacing: -0.025em;
-        margin: 0 0 22px;
-        text-wrap: balance;
+        letter-spacing: -0.03em;
+        margin: 20px 0 24px;
+        max-width: 880px;
+        font-weight: 700;
       }
-      h1 .hl {
-        position: relative;
+      h1 em {
+        font-style: normal;
         color: var(--ember);
-        white-space: nowrap;
-      }
-      h1 .hl::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 4%;
-        height: 4px;
-        background: linear-gradient(90deg, var(--ember), transparent);
-        border-radius: 2px;
-        opacity: 0.55;
       }
       .lede {
-        font-size: clamp(16px, 1.6vw, 19px);
+        font-size: clamp(17px, 2vw, 21px);
         color: var(--muted);
-        max-width: 46ch;
-        margin: 0 0 30px;
+        max-width: 720px;
+        margin: 0 0 40px;
       }
       .lede b {
         color: var(--fg);
         font-weight: 600;
       }
-
-      .cmd {
-        display: flex;
+      .install {
+        display: inline-flex;
         align-items: center;
-        gap: 12px;
-        background: var(--ink-2);
+        gap: 16px;
+        background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 11px;
-        padding: 12px 12px 12px 16px;
-        max-width: 400px;
-        margin-bottom: 18px;
+        border-radius: var(--r-m);
+        padding: 16px 20px;
+        font: 500 15px var(--mono);
+        max-width: 100%;
+        overflow-x: auto;
       }
-      .cmd code {
-        font-family: var(--mono);
-        font-size: 14.5px;
-        color: var(--fg);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .cmd code .pr {
+      .install .p {
         color: var(--ember);
+        user-select: none;
       }
       .copy {
-        margin-left: auto;
-        border: 1px solid var(--line);
-        background: var(--surface);
+        font: 500 12px var(--mono);
         color: var(--muted);
-        border-radius: 7px;
-        padding: 6px 10px;
-        font-size: 12px;
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: 4px 12px;
         cursor: pointer;
-        font-family: var(--mono);
-        transition:
-          color 0.15s,
-          border-color 0.15s;
+        flex: none;
       }
       .copy:hover {
         color: var(--fg);
@@ -290,186 +254,157 @@
       }
       .cta-row {
         display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin: 32px 0 0;
+      }
+      .btn {
+        display: inline-block;
+        text-decoration: none;
+        font: 600 15px var(--sans);
+        border-radius: var(--r-pill);
+        padding: 12px 28px;
+        border: 1px solid var(--line);
+      }
+      .btn-ember {
+        background: var(--ember);
+        border-color: var(--ember);
+        color: var(--ink);
+      }
+      .btn-ember:hover {
+        background: var(--fg);
+        border-color: var(--fg);
+      }
+      .btn-ghost:hover {
+        border-color: var(--faint);
+      }
+      .hero-meta {
+        display: flex;
         gap: 12px;
         flex-wrap: wrap;
-        align-items: center;
+        margin-top: 48px;
       }
-      .under {
-        margin-top: 18px;
-        font-size: 13px;
-        color: var(--faint);
-        font-family: var(--mono);
+      .chip {
+        font: 500 13px var(--mono);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: var(--r-pill);
+        padding: 8px 16px;
       }
-      .under b {
-        color: var(--signal);
-        font-weight: 500;
+      .chip b {
+        color: var(--fg);
+        font-weight: 600;
       }
 
-      /* ---- hero panel: a lesson forming ---- */
-      .panel {
-        background: linear-gradient(180deg, var(--surface), var(--ink-2));
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow:
-          0 30px 80px -40px rgba(0, 0, 0, 0.8),
-          0 0 0 1px rgba(255, 255, 255, 0.02) inset;
-        overflow: hidden;
-      }
-      .panel-bar {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding: 12px 15px;
+      /* ── measured strip ── */
+      .measured {
         border-bottom: 1px solid var(--line);
-        background: rgba(0, 0, 0, 0.15);
+        background: var(--surface);
       }
-      .dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #34384a;
+      .measured-in {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        padding: 32px 0 16px;
       }
-      .panel-title {
-        margin-left: 8px;
-        font-family: var(--mono);
-        font-size: 12px;
-        color: var(--faint);
-      }
-      .panel-body {
-        padding: 18px;
-        font-family: var(--mono);
-        font-size: 12.5px;
-      }
-      .log {
-        margin: 0 0 5px;
-        color: var(--muted);
-      }
-      .log .k {
-        color: var(--faint);
-      }
-      .badge {
-        display: inline-block;
-        font-size: 10.5px;
-        padding: 1px 7px;
-        border-radius: 20px;
-        font-weight: 600;
-        letter-spacing: 0.02em;
-      }
-      .b-cand {
-        background: rgba(154, 157, 174, 0.16);
-        color: var(--muted);
-      }
-      .b-active {
-        background: rgba(74, 214, 192, 0.16);
-        color: var(--signal);
-      }
-      .b-inject {
-        background: var(--amber-wash);
-        color: var(--ember-glow);
-      }
-      .lesson-card {
-        margin-top: 14px;
+      .metric {
+        background: var(--surface);
         border: 1px solid var(--line);
-        border-left: 2px solid var(--ember);
-        border-radius: 8px;
-        padding: 12px 13px;
-        background: rgba(0, 0, 0, 0.2);
+        border-radius: var(--r-m);
+        padding: 32px 24px;
       }
-      .lesson-card .id {
-        color: var(--ember-glow);
-      }
-      .lesson-card .txt {
+      .metric .num {
+        font: 600 clamp(26px, 3vw, 36px) var(--mono);
+        letter-spacing: -0.02em;
         color: var(--fg);
-        margin-top: 4px;
       }
-      .conf {
+      .metric .num em {
+        font-style: normal;
+        color: var(--ember);
+      }
+      .metric .what {
+        font-size: 14px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+      .metric .src {
+        font: 400 12px var(--mono);
+        color: var(--faint);
         margin-top: 12px;
       }
-      .conf-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      .conf-label {
-        font-size: 11px;
+      .measured-note {
+        font: 400 13px var(--mono);
         color: var(--faint);
-        min-width: 78px;
+        margin: 0;
+        padding: 16px 0;
+        text-align: center;
       }
-      .conf-track {
-        flex: 1;
-        height: 6px;
-        background: #262936;
-        border-radius: 4px;
-        overflow: hidden;
+      @media (max-width: 880px) {
+        .measured-in {
+          grid-template-columns: repeat(2, 1fr);
+        }
       }
-      .conf-fill {
-        height: 100%;
-        width: 0;
-        background: linear-gradient(90deg, var(--signal), #7ee9d8);
-        border-radius: 4px;
-        transition: width 1.1s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-      canvas#life {
-        display: block;
-        width: 100%;
-        height: 92px;
-        margin-top: 14px;
+      @media (max-width: 480px) {
+        .measured-in {
+          grid-template-columns: 1fr;
+        }
       }
 
-      /* ---- generic section ---- */
+      /* ── sections ── */
       section {
-        position: relative;
-        padding: 78px 0;
-        border-top: 1px solid var(--line);
+        padding: 96px 0;
+        border-bottom: 1px solid var(--line);
       }
       .kicker {
-        font-family: var(--mono);
-        font-size: 12px;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
+        font: 500 13px var(--mono);
         color: var(--ember);
-        margin: 0 0 14px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0 0 16px;
+      }
+      .kicker .n {
+        color: var(--faint);
+        margin-right: 8px;
       }
       h2 {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: clamp(27px, 3.4vw, 40px);
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.1;
         letter-spacing: -0.02em;
-        line-height: 1.08;
         margin: 0 0 16px;
-        text-wrap: balance;
+        max-width: 720px;
+        font-weight: 700;
       }
       .sub {
         color: var(--muted);
-        font-size: 17px;
-        max-width: 60ch;
-        margin: 0;
+        font-size: 18px;
+        max-width: 680px;
+        margin: 0 0 48px;
+      }
+      .sub b {
+        color: var(--fg);
+        font-weight: 600;
       }
 
-      /* problem → root */
-      .root-grid {
+      /* problem */
+      .faces {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 18px;
-        margin-top: 40px;
+        gap: 24px;
       }
       .face {
-        background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 26px;
+        border-radius: var(--r-m);
+        padding: 32px;
+        background: var(--surface);
       }
       .face .n {
-        font-family: var(--mono);
-        font-size: 12px;
+        font: 500 12px var(--mono);
         color: var(--faint);
+        letter-spacing: 0.12em;
       }
       .face h3 {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 21px;
-        margin: 8px 0 8px;
-        letter-spacing: -0.01em;
+        margin: 12px 0 8px;
+        font-size: 20px;
       }
       .face p {
         color: var(--muted);
@@ -477,223 +412,271 @@
         font-size: 15px;
       }
       .face .q {
-        color: var(--ember-glow);
-        font-family: var(--mono);
-        font-size: 13px;
-        margin-top: 12px;
+        font: 400 14px var(--mono);
+        color: var(--ember);
+        margin: 16px 0 0;
+      }
+      @media (max-width: 720px) {
+        .faces {
+          grid-template-columns: 1fr;
+        }
       }
 
-      /* how it works — 3 layers */
-      .layers {
+      /* claim anatomy */
+      .split {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 18px;
-        margin-top: 44px;
+        grid-template-columns: 1fr 1fr;
+        gap: 48px;
+        align-items: start;
       }
-      .layer {
-        background: linear-gradient(180deg, var(--surface), var(--ink-2));
+      @media (max-width: 880px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+      }
+      .terminal {
+        background: var(--surface-2);
         border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 26px;
-        position: relative;
+        border-radius: var(--r-m);
+        box-shadow: var(--shadow);
         overflow: hidden;
       }
-      .layer::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, var(--ember), transparent 70%);
-        opacity: 0.7;
-      }
-      .layer .tag {
-        font-family: var(--mono);
-        font-size: 11px;
-        letter-spacing: 0.1em;
+      .term-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        font: 400 12px var(--mono);
         color: var(--faint);
-        text-transform: uppercase;
       }
-      .layer h3 {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 20px;
-        margin: 12px 0 10px;
-        letter-spacing: -0.01em;
+      .term-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: var(--r-pill);
+        background: var(--line);
       }
-      .layer p {
+      .term-body {
+        padding: 20px;
+        font: 400 13px/1.7 var(--mono);
+        overflow-x: auto;
+        white-space: pre;
         color: var(--muted);
-        font-size: 14.5px;
-        margin: 0;
       }
-      .layer .ic {
-        width: 34px;
-        height: 34px;
+      .term-body .hi {
+        color: var(--fg);
+      }
+      .term-body .em {
         color: var(--ember);
       }
-
-      /* honesty section */
-      .honest {
-        background: var(--ink-2);
+      .term-body .dim {
+        color: var(--faint);
       }
-      .honest-grid {
+      .ladder {
+        list-style: none;
+        margin: 0;
+        padding: 0;
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 14px 40px;
-        margin-top: 40px;
+        gap: 16px;
       }
-      .claim {
-        display: flex;
-        gap: 14px;
-        align-items: flex-start;
-      }
-      .claim svg {
-        flex: none;
-        width: 22px;
-        height: 22px;
-        color: var(--signal);
-        margin-top: 2px;
-      }
-      .claim .c-t {
-        font-weight: 600;
-        font-size: 15.5px;
-      }
-      .claim .c-d {
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      /* stats */
-      .stats {
+      .ladder li {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 18px;
-        margin-top: 4px;
+        grid-template-columns: 32px 1fr;
+        gap: 16px;
+        align-items: start;
       }
-      .stat {
-        text-align: left;
-        padding: 22px 0;
+      .ladder .step {
+        font: 600 13px var(--mono);
+        color: var(--ember);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        background: var(--surface);
       }
-      .stat .num {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: clamp(30px, 4vw, 46px);
-        letter-spacing: -0.03em;
-        line-height: 1;
-        background: linear-gradient(180deg, var(--fg), var(--ember-glow));
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
+      .ladder h3 {
+        margin: 4px 0;
+        font-size: 17px;
       }
-      .stat .lb {
+      .ladder p {
+        margin: 0;
         color: var(--muted);
-        font-size: 13.5px;
-        margin-top: 8px;
-        font-family: var(--mono);
+        font-size: 15px;
+      }
+      .ladder code {
+        font: 500 13px var(--mono);
+        color: var(--fg);
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: 0 8px;
       }
 
-      /* cross-tool */
+      /* loop */
+      .loop {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+      }
+      .loop-step {
+        border: 1px solid var(--line);
+        border-radius: var(--r-m);
+        background: var(--surface);
+        padding: 20px 16px;
+        position: relative;
+      }
+      .loop-step .n {
+        font: 500 11px var(--mono);
+        color: var(--faint);
+      }
+      .loop-step .cmd {
+        font: 600 14px var(--mono);
+        color: var(--ember);
+        margin: 8px 0 4px;
+        display: block;
+      }
+      .loop-step p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .loop-back {
+        grid-column: 1 / -1;
+        font: 400 13px var(--mono);
+        color: var(--faint);
+        text-align: center;
+        padding: 8px 0 0;
+      }
+      .loop-back em {
+        font-style: normal;
+        color: var(--ember);
+      }
+      @media (max-width: 960px) {
+        .loop {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (max-width: 560px) {
+        .loop {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      /* tools */
       .tools {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 30px;
+        gap: 12px;
       }
-      .chip {
-        font-family: var(--mono);
-        font-size: 13px;
+      .tool {
+        font: 500 14px var(--mono);
         color: var(--muted);
         border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: 12px 20px;
         background: var(--surface);
-        border-radius: 30px;
-        padding: 8px 15px;
       }
-      .chip.live {
-        color: var(--signal);
-        border-color: rgba(74, 214, 192, 0.35);
+      .tools-note {
+        color: var(--faint);
+        font-size: 14px;
+        margin: 24px 0 0;
       }
 
-      /* final cta */
-      .final {
+      /* honest */
+      .honest-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 16px;
+      }
+      .honest-list li {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r-m);
+        padding: 20px 24px;
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        gap: 24px;
+        font-size: 15px;
+      }
+      .honest-list .tag {
+        font: 500 12px var(--mono);
+        color: var(--ember);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding-top: 4px;
+      }
+      .honest-list p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .honest-list b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      @media (max-width: 560px) {
+        .honest-list li {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+      }
+
+      /* cta */
+      .cta {
         text-align: center;
+        border-bottom: none;
       }
-      .final h2 {
-        max-width: 18ch;
-        margin: 0 auto 18px;
+      .cta h2 {
+        margin-left: auto;
+        margin-right: auto;
       }
-      .final .cmd {
-        margin: 26px auto 0;
+      .cta .install {
+        margin-top: 16px;
       }
-      .final .cta-row {
+      .cta .cta-row {
         justify-content: center;
       }
 
       footer {
         border-top: 1px solid var(--line);
-        padding: 40px 0;
+        padding: 48px 0;
         color: var(--faint);
-        font-size: 13.5px;
+        font-size: 14px;
       }
       .foot-in {
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        gap: 24px;
         flex-wrap: wrap;
-        gap: 16px;
       }
-      .foot-in a {
+      footer a {
         color: var(--muted);
         text-decoration: none;
-        margin-left: 20px;
       }
-      .foot-in a:hover {
+      footer a:hover {
         color: var(--fg);
       }
-
-      .reveal {
-        opacity: 0;
-        transform: translateY(16px);
-        transition:
-          opacity 0.6s ease,
-          transform 0.6s ease;
-      }
-      .reveal.in {
-        opacity: 1;
-        transform: none;
+      .foot-links {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
       }
 
-      @media (max-width: 900px) {
-        .hero {
-          grid-template-columns: 1fr;
-          gap: 36px;
+      /* reveal — progressive enhancement only: content is visible by default and
+         is hidden pre-scroll only when JS has stamped html.js (crawlers, no-JS,
+         and screenshots always see the full page) */
+      @media (prefers-reduced-motion: no-preference) {
+        html.js .reveal {
+          opacity: 0;
+          transform: translateY(16px);
+          transition:
+            opacity 0.6s ease,
+            transform 0.6s ease;
         }
-        .root-grid,
-        .layers,
-        .honest-grid,
-        .stats {
-          grid-template-columns: 1fr;
-        }
-        .stats {
-          grid-template-columns: 1fr 1fr;
-        }
-        .nav-links a:not(.btn) {
-          display: none;
-        }
-        section {
-          padding: 60px 0;
-        }
-        header {
-          padding: 46px 0 20px;
-        }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        * {
-          animation: none !important;
-          transition: none !important;
-          scroll-behavior: auto;
-        }
-        .reveal {
+        html.js .reveal.in {
           opacity: 1;
           transform: none;
         }
@@ -701,505 +684,418 @@
     </style>
   </head>
   <body>
-    <nav>
+    <nav class="nav" aria-label="Primary">
       <div class="wrap nav-in">
-        <div class="brand">
-          <svg class="spark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <a class="brand" href="#top">
+          <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
-              d="M12 2 L14.2 9.2 L21.5 9.5 L15.7 13.9 L18 21 L12 16.6 L6 21 L8.3 13.9 L2.5 9.5 L9.8 9.2 Z"
+              d="M12 2 14.2 9.2 21.5 9.5 15.7 13.9 18 21 12 16.6 6 21 8.3 13.9 2.5 9.5 9.8 9.2Z"
               fill="var(--ember)"
-              opacity="0.9"
             />
           </svg>
-          Forge<span style="color: var(--ember)">Cortex</span>
-        </div>
+          <span>forge<em>kit</em></span>
+        </a>
         <div class="nav-links">
-          <a href="#root">The problem</a>
-          <a href="#how">How it works</a>
-          <a href="#honest">The honest part</a>
-          <a class="btn" href="https://github.com/CodeWithJuber/forgekit"
-            >GitHub ↗</a
-          >
+          <a href="#memory">Memory</a>
+          <a href="#loop">The loop</a>
+          <a href="#team">Team</a>
+          <a href="#honest">Honest limits</a>
+          <a href="./status/">Status</a>
+          <a class="gh" href="https://github.com/CodeWithJuber/forgekit">GitHub ↗</a>
         </div>
       </div>
     </nav>
 
-    <header>
-      <div class="glow"></div>
-      <div class="wrap hero">
-        <div>
-          <span class="eyebrow"
-            >Self-correcting memory for AI coding agents</span
-          >
-          <h1>
-            Your agent forgets<br />every mistake.<br /><span class="hl"
-              >Cortex</span
-            >
-            doesn't.
-          </h1>
+    <main id="top">
+      <header class="hero">
+        <svg class="hero-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 2 14.2 9.2 21.5 9.5 15.7 13.9 18 21 12 16.6 6 21 8.3 13.9 2.5 9.5 9.8 9.2Z"
+            fill="var(--ember)"
+          />
+        </svg>
+        <div class="wrap">
+          <p class="eyebrow">Cognitive substrate for AI coding agents</p>
+          <h1>One brain for<br />every coding <em>agent</em>.</h1>
           <p class="lede">
-            An LLM is a stateless next-token predictor — it relearns your
-            codebase from a pile of text every session, and repeats the
-            correction you gave it last week.
-            <b>Forge Cortex</b> gives it the persistent, self-correcting memory
-            it structurally lacks. Ambient. Cross-tool. Zero dependencies.
+            forgekit compiles a single source of truth into native config for nine AI
+            coding tools — and gives them a shared, <b>proof-carrying memory</b>: every
+            lesson carries its evidence, earns trust only from real outcomes (tests, CI,
+            your reverts), decays without review, and merges across your team through
+            plain git.
           </p>
-          <div class="cmd">
-            <code
-              ><span class="pr">$</span> npm install -g
-              @codewithjuber/forgekit</code
-            >
-            <button
-              class="copy"
-              data-copy="npm install -g @codewithjuber/forgekit"
-            >
+          <div class="install">
+            <span class="p">$</span>
+            <span id="install-cmd">npm install -g @codewithjuber/forgekit</span>
+            <button class="copy" data-copy="npm install -g @codewithjuber/forgekit">
               copy
             </button>
           </div>
           <div class="cta-row">
-            <a class="btn btn-ember" href="#how">See how it learns</a>
-            <a class="btn" href="https://github.com/CodeWithJuber/forgekit"
-              >Read the source</a
+            <a class="btn btn-ember" href="#memory">How the memory works</a>
+            <a class="btn btn-ghost" href="https://github.com/CodeWithJuber/forgekit#readme"
+              >Read the docs</a
             >
           </div>
-          <p class="under">
-            108 tests · 0 runtime deps · works with
-            <b>Claude Code, Cursor, Codex, Gemini, Aider</b>
+          <div class="hero-meta">
+            <span class="chip"><b>438</b> tests</span>
+            <span class="chip"><b>0</b> runtime dependencies</span>
+            <span class="chip"><b>9</b> tools, one config</span>
+            <span class="chip">MIT · Node ≥ 20</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="measured" aria-label="Measured results">
+        <div class="wrap">
+          <div class="measured-in">
+            <div class="metric">
+              <div class="num"><em>0.43</em> ms</div>
+              <div class="what">“if I edit this, what breaks?” — blast-radius query</div>
+              <div class="src">reports/benchmarks.md · this repo</div>
+            </div>
+            <div class="metric">
+              <div class="num"><em>118</em> ms</div>
+              <div class="what">full pre-action gate: assumptions → routing → impact</div>
+              <div class="src">reports/benchmarks.md · this repo</div>
+            </div>
+            <div class="metric">
+              <div class="num"><em>62.1</em> %</div>
+              <div class="what">token cost saved by tiered routing vs always-premium</div>
+              <div class="src">whitepaper prototype · live tokens</div>
+            </div>
+            <div class="metric">
+              <div class="num"><em>3.5</em> M/s</div>
+              <div class="what">confidence evaluations — trust math is never the bottleneck</div>
+              <div class="src">reports/benchmarks.md · this repo</div>
+            </div>
+          </div>
+          <p class="measured-note">
+            measured, not asserted — every number regenerates from
+            <span class="mono">npm run bench</span>; targets are labeled as targets
           </p>
         </div>
-
-        <div class="panel reveal" id="panel">
-          <div class="panel-bar">
-            <span class="dot"></span><span class="dot"></span
-            ><span class="dot"></span>
-            <span class="panel-title"
-              >forge cortex — learning from a recurring mistake</span
-            >
-          </div>
-          <div class="panel-body">
-            <p class="log">
-              <span class="k">session 1 ·</span> test fail → edit ×3 → green
-              &nbsp; <span class="badge b-cand">candidate</span>
-            </p>
-            <p class="log">
-              <span class="k">session 2 ·</span> the same mistake recurs &nbsp;
-              <span class="badge b-active">active</span>
-            </p>
-            <p class="log">
-              <span class="k">session 3 ·</span> you touch
-              <span style="color: var(--fg)">src/tax.ts</span> &nbsp;
-              <span class="badge b-inject">injected</span>
-            </p>
-            <div class="lesson-card">
-              <span class="id">lsn_src-tax-ts</span>
-              <div class="txt">
-                “Before editing computeTax, check its callers and tests first.”
-              </div>
-            </div>
-            <div class="conf">
-              <div class="conf-row">
-                <span class="conf-label">confidence</span>
-                <span class="conf-track"
-                  ><span class="conf-fill" id="conffill"></span
-                ></span>
-              </div>
-            </div>
-            <canvas
-              id="life"
-              width="440"
-              height="92"
-              aria-label="A lesson's confidence rising on confirmations, decaying, and dropping on a human reversal"
-            ></canvas>
-          </div>
-        </div>
       </div>
-    </header>
 
-    <section id="root">
-      <div class="wrap">
-        <p class="kicker">The root cause</p>
-        <h2>One root. Two faces.</h2>
-        <p class="sub">
-          Every headline failure — breaking callers, hallucinating APIs,
-          re-reading the same files, repeating a corrected mistake — is a
-          symptom of one thing: the model is stateless and eats flat text. It
-          carries no model of your code and no memory of what it already tried.
-        </p>
-        <div class="root-grid">
-          <div class="face reveal">
-            <div class="n">FACE A</div>
-            <h3>No world-model</h3>
-            <p>
-              It doesn't hold a live map of your code, so it can't reason about
-              what a change breaks.
-            </p>
-            <p class="q">“If I change X, what else fails?”</p>
-          </div>
-          <div class="face reveal">
-            <div class="n">FACE B</div>
-            <h3>No memory, no learning</h3>
-            <p>
-              Each session re-derives understanding from zero and repeats the
-              same mistakes.
-            </p>
-            <p class="q">“What did I already learn here?”</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="how">
-      <div class="wrap">
-        <p class="kicker">How it works</p>
-        <h2>A cognitive substrate — not another model.</h2>
-        <p class="sub">
-          Cortex doesn't train a new LLM. It wraps the one you use in three
-          non-transformer layers that give it the memory and self-correction a
-          predictor can't have on its own.
-        </p>
-        <div class="layers">
-          <div class="layer reveal">
-            <svg
-              class="ic"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            >
-              <circle cx="12" cy="12" r="2.4" />
-              <circle cx="5" cy="6" r="1.8" />
-              <circle cx="19" cy="6" r="1.8" />
-              <circle cx="6" cy="18" r="1.8" />
-              <circle cx="18" cy="18" r="1.8" />
-              <path
-                d="M10 11 6.5 7M14 11 17.5 7M10.5 13.5 7.2 16.6M13.5 13.5 16.8 16.6"
-              />
-            </svg>
-            <div class="tag">Perception</div>
-            <h3>World-model</h3>
-            <p>
-              An always-current code graph: what exists, and what a change to it
-              will impact — the "if I edit this, these 12 callers break" it
-              never had.
-            </p>
-          </div>
-          <div class="layer reveal">
-            <svg
-              class="ic"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            >
-              <path
-                d="M12 3c-2.2 0-4 1.6-4 3.6 0 .7.2 1.3.5 1.9C7 9.1 6 10.4 6 12c0 1.3.6 2.4 1.6 3.1-.1.4-.2.8-.2 1.2 0 1.9 1.6 3.4 3.6 3.4"
-              />
-              <path
-                d="M12 3c2.2 0 4 1.6 4 3.6 0 .7-.2 1.3-.5 1.9C17 9.1 18 10.4 18 12c0 1.3-.6 2.4-1.6 3.1.1.4.2.8.2 1.2 0 1.9-1.6 3.4-3.6 3.4"
-              />
-              <path d="M12 3v17" />
-            </svg>
-            <div class="tag">Hippocampus</div>
-            <h3>Self-correcting memory</h3>
-            <p>
-              Detects a genuine mistake, distills a structured lesson, and
-              re-confirms it against fresh outcomes. Following a lesson never
-              inflates its own confidence — so a wrong one decays out instead of
-              ossifying.
-            </p>
-          </div>
-          <div class="layer reveal">
-            <svg
-              class="ic"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            >
-              <path d="M3 17l4-5 3 3 5-7 3 4" />
-              <path d="M3 21h18" />
-              <path d="M3 3v18" />
-            </svg>
-            <div class="tag">Foresight</div>
-            <h3>Local error predictor</h3>
-            <p>
-              Learns from this repo's own correction history to flag a risky
-              edit before you make it — and it's honest: a hard kill-switch
-              keeps it on a simple heuristic unless the learned model measurably
-              beats it.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="honest" class="honest">
-      <div class="wrap">
-        <p class="kicker">The honest part</p>
-        <h2>It won't nag. It can't ossify.</h2>
-        <p class="sub">
-          Memory that acts on false confidence is worse than none. Cortex is
-          engineered so a wrong lesson dies faster than a right one grows — and
-          a green build always wins.
-        </p>
-        <div class="honest-grid">
-          <div class="claim reveal">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-            <div>
-              <div class="c-t">Injection is never confirmation</div>
-              <div class="c-d">
-                Only independent outcomes — tests, builds, a human — move a
-                lesson's confidence. It can't grade its own homework.
-              </div>
+      <section id="problem">
+        <div class="wrap">
+          <p class="kicker"><span class="n">01</span>The root cause</p>
+          <h2>Every agent failure is the same failure.</h2>
+          <p class="sub">
+            Breaking callers it never looked at. Re-reading the same files every session.
+            Repeating the mistake you corrected last week. One root: the model is a
+            <b>stateless next-token predictor eating flat text</b> — no model of your
+            code, no memory of what it already tried.
+          </p>
+          <div class="faces">
+            <div class="face reveal">
+              <div class="n">FACE A — NO WORLD-MODEL</div>
+              <h3>It can't see consequences</h3>
+              <p>
+                No live map of the codebase means no way to reason about what a change
+                breaks before making it.
+              </p>
+              <p class="q">“If I change X, what else fails?”</p>
             </div>
-          </div>
-          <div class="claim reveal">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-            <div>
-              <div class="c-t">A human reversal always wins</div>
-              <div class="c-d">
-                A mistake is defined by a bad outcome, not by "differs from a
-                lesson." Change your mind and the lesson retires — it never
-                fights you.
-              </div>
-            </div>
-          </div>
-          <div class="claim reveal">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-            <div>
-              <div class="c-t">Advisory, never blocking</div>
-              <div class="c-d">
-                Cortex can never block or break a tool call. The hooks are
-                fail-safe by construction — worst case, they do nothing.
-              </div>
-            </div>
-          </div>
-          <div class="claim reveal">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-            <div>
-              <div class="c-t">The predictor can't become vaporware</div>
-              <div class="c-d">
-                It's held to an AUC-PR gate on future-held-out data. If it
-                doesn't beat the heuristic, it's abandoned. If features carry no
-                signal, it disables itself.
-              </div>
+            <div class="face reveal">
+              <div class="n">FACE B — NO MEMORY</div>
+              <h3>It can't accumulate judgment</h3>
+              <p>
+                Each session re-derives your project from zero, then repeats the exact
+                correction you already gave it.
+              </p>
+              <p class="q">“What did I already learn here?”</p>
             </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section>
-      <div class="wrap">
-        <p class="kicker">Built for real</p>
-        <div class="stats">
-          <div class="stat reveal">
-            <div class="num">108</div>
-            <div class="lb">tests, all green</div>
-          </div>
-          <div class="stat reveal">
-            <div class="num">0</div>
-            <div class="lb">runtime deps</div>
-          </div>
-          <div class="stat reveal">
-            <div class="num">5+</div>
-            <div class="lb">tools, one source</div>
-          </div>
-          <div class="stat reveal">
-            <div class="num">100%</div>
-            <div class="lb">local &amp; auditable</div>
-          </div>
-        </div>
-      </div>
-    </section>
+      <section id="memory">
+        <div class="wrap">
+          <p class="kicker"><span class="n">02</span>Proof-carrying memory</p>
+          <h2>A memory with receipts.</h2>
+          <p class="sub">
+            Most agent memory is a pile of notes that grows stale and lies with
+            confidence. In forgekit, every stored thing is a <b>claim</b> — and a claim
+            has to carry its own proof.
+          </p>
+          <div class="split">
+            <ol class="ladder">
+              <li class="reveal">
+                <span class="step">a</span>
+                <div>
+                  <h3>Content-addressed</h3>
+                  <p>
+                    A claim's id is the hash of its content. The same lesson learned on
+                    two machines is <em>the same claim</em> — merging is set union, and
+                    it cannot conflict.
+                  </p>
+                </div>
+              </li>
+              <li class="reveal">
+                <span class="step">b</span>
+                <div>
+                  <h3>Evidence, not vibes</h3>
+                  <p>
+                    Confidence moves only when an <b>independent oracle</b> speaks — a
+                    test run, CI, the type checker, or you accepting or reverting a
+                    change. Oracle weights live in code, so evidence can't be forged;
+                    <code>forge ledger verify</code> recomputes every hash.
+                  </p>
+                </div>
+              </li>
+              <li class="reveal">
+                <span class="step">c</span>
+                <div>
+                  <h3>Decays toward doubt</h3>
+                  <p>
+                    Unreviewed knowledge slides back toward uncertainty — never to
+                    “false,” never frozen at “true.” Stale lessons stop being injected
+                    long before they can mislead.
+                  </p>
+                </div>
+              </li>
+              <li class="reveal">
+                <span class="step">d</span>
+                <div>
+                  <h3>Merges through git</h3>
+                  <p>
+                    The ledger lives in <code>.forge/ledger/</code> as append-only,
+                    union-merged files. <b>git pull is the sync protocol.</b> No server,
+                    no accounts, no lock-in.
+                  </p>
+                </div>
+              </li>
+            </ol>
+            <div class="terminal reveal">
+              <div class="term-bar">
+                <span class="term-dot"></span><span class="term-dot"></span
+                ><span class="term-dot"></span>
+                <span>forge ledger show 64bf19 — a claim and its proof</span>
+              </div>
+              <div class="term-body"><span class="dim">claim</span>    <span class="hi">64bf1958…</span>  <span class="dim">kind</span> lesson  <span class="dim">scope</span> repo
+<span class="dim">body</span>     <span class="hi">“Before editing computeTax, check its
+          callers and tests first.”</span>
 
-    <section>
-      <div class="wrap">
-        <p class="kicker">Cross-tool</p>
-        <h2>One memory. Every tool.</h2>
-        <p class="sub">
-          Claude Code gets lessons live through hooks. Every other tool reads
-          them through the files it already loads and a zero-dependency MCP
-          server it can query. Honest ceiling, honestly stated.
-        </p>
-        <div class="tools">
-          <span class="chip live">Claude Code — live via hooks</span>
-          <span class="chip">Cursor</span>
-          <span class="chip">Codex</span>
-          <span class="chip">Gemini CLI</span>
-          <span class="chip">Aider</span>
-          <span class="chip">Zed</span>
-          <span class="chip">Windsurf</span>
-          <span class="chip">Continue</span>
-        </div>
-      </div>
-    </section>
+<span class="dim">evidence</span>
+  <span class="em">✓ confirm</span>   test.run   <span class="dim">w 0.8   ref</span> run:9f31
+  <span class="em">✓ confirm</span>   human.accept <span class="dim">w 0.9   ref</span> pr:35
+  <span class="dim">✗ contradict ci.run   w 0.8   ref</span> ci:7712
 
-    <section>
-      <div class="wrap final">
-        <p class="kicker" style="text-align: center">Get started</p>
-        <h2>Give your agent a memory that gets better the more it's wrong.</h2>
-        <p class="sub" style="margin: 0 auto">
-          One command. It learns from the mistakes you were already making.
-        </p>
-        <div class="cmd">
-          <code
-            ><span class="pr">$</span> npm install -g
-            github:CodeWithJuber/forgekit</code
-          >
-          <button
-            class="copy"
-            data-copy="npm install -g github:CodeWithJuber/forgekit"
-          >
-            copy
-          </button>
+<span class="dim">confidence</span>  <span class="em">val 0.71</span>  <span class="dim">(decays without review)</span>
+<span class="dim">provenance</span>  alice · 2026-06-30 · task tax-rounding
+<span class="dim">merge</span>       union — conflict-free across teammates</div>
+            </div>
+          </div>
         </div>
-        <div class="cta-row" style="margin-top: 18px">
-          <a
-            class="btn btn-ember"
-            href="https://github.com/CodeWithJuber/forgekit"
-            >Star on GitHub ↗</a
-          >
-          <a class="btn" href="https://github.com/CodeWithJuber/forgekit#readme"
-            >Read the docs</a
-          >
+      </section>
+
+      <section id="loop">
+        <div class="wrap">
+          <p class="kicker"><span class="n">03</span>The loop</p>
+          <h2>Think before. Verify after. Learn always.</h2>
+          <p class="sub">
+            Six deterministic stages wrap every edit — no LLM calls inside the gates, so
+            they run in milliseconds and never hallucinate.
+          </p>
+          <div class="loop">
+            <div class="loop-step reveal">
+              <span class="n">1 · GATE</span>
+              <span class="cmd">forge substrate</span>
+              <p>Assumptions checked, task routed to the cheapest capable tier.</p>
+            </div>
+            <div class="loop-step reveal">
+              <span class="n">2 · CONTEXT</span>
+              <span class="cmd">forge context</span>
+              <p>Budgeted assembly; missing context becomes a computed question list.</p>
+            </div>
+            <div class="loop-step reveal">
+              <span class="n">3 · REUSE</span>
+              <span class="cmd">forge reuse</span>
+              <p>Verified artifacts served from cache instead of regenerated.</p>
+            </div>
+            <div class="loop-step reveal">
+              <span class="n">4 · IMAGINE</span>
+              <span class="cmd">forge imagine</span>
+              <p>Blast radius predicted; minimal test suite dry-run in a sandbox.</p>
+            </div>
+            <div class="loop-step reveal">
+              <span class="n">5 · VERIFY</span>
+              <span class="cmd">forge verify</span>
+              <p>Independent oracles judge the edit — types, tests, review.</p>
+            </div>
+            <div class="loop-step reveal">
+              <span class="n">6 · LEARN</span>
+              <span class="cmd">forge ledger</span>
+              <p>Outcomes update the confidence of every claim that informed the edit.</p>
+            </div>
+            <div class="loop-back">
+              ↺ outcomes flow back — <em>the memory that informed a bad edit loses
+              trust automatically</em>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section id="tools">
+        <div class="wrap">
+          <p class="kicker"><span class="n">04</span>Cross-tool</p>
+          <h2>Write the rules once. Every agent obeys.</h2>
+          <p class="sub">
+            One source of truth compiles to each tool's native config format — switch
+            agents without losing your project's accumulated judgment.
+          </p>
+          <div class="tools">
+            <span class="tool">Claude Code</span>
+            <span class="tool">Codex</span>
+            <span class="tool">Cursor</span>
+            <span class="tool">Gemini CLI</span>
+            <span class="tool">Aider</span>
+            <span class="tool">Copilot</span>
+            <span class="tool">Windsurf</span>
+            <span class="tool">Zed</span>
+            <span class="tool">Continue</span>
+          </div>
+          <p class="tools-note">
+            plus MCP config for Roo and VS Code — <span class="mono">forge sync</span>
+            regenerates everything from one file.
+          </p>
+        </div>
+      </section>
+
+      <section id="team">
+        <div class="wrap">
+          <p class="kicker"><span class="n">05</span>Team memory</p>
+          <h2>Your whole team's mistakes, learned once.</h2>
+          <p class="sub">
+            When a teammate's agent burns an hour on a dead end, yours shouldn't have to.
+            Shared memory is three commands — all of them ordinary git.
+          </p>
+          <div class="terminal reveal">
+            <div class="term-bar">
+              <span class="term-dot"></span><span class="term-dot"></span
+              ><span class="term-dot"></span>
+              <span>team memory in three commands</span>
+            </div>
+            <div class="term-body"><span class="em">$</span> forge init          <span class="dim"># once — sets up .forge/ledger + union merge</span>
+<span class="em">$</span> git pull            <span class="dim"># teammate lessons arrive, conflict-free</span>
+<span class="em">$</span> forge cortex        <span class="dim"># their hard-won lessons now inject into</span>
+                      <span class="dim"># YOUR agent's context — with provenance:</span>
+                      <span class="dim">#</span> forge ledger blame <span class="dim">shows who learned what, when</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="honest">
+        <div class="wrap">
+          <p class="kicker"><span class="n">06</span>The honest part</p>
+          <h2>What it won't do.</h2>
+          <p class="sub">
+            The project keeps a public honesty register — claims are labeled
+            <b>measured</b>, <b>target</b>, or <b>known limit</b>. These are the limits.
+          </p>
+          <ul class="honest-list">
+            <li class="reveal">
+              <span class="tag">limit</span>
+              <p>
+                <b>MinHash is weak on very short specs.</b> Two four-word tasks can look
+                unrelated. Fix: point <span class="mono">FORGE_EMBED</span> at any
+                embedding provider — retrieval upgrades to cosine, and silently falls
+                back if the provider dies.
+              </p>
+            </li>
+            <li class="reveal">
+              <span class="tag">limit</span>
+              <p>
+                <b>The impact atlas is approximate.</b> Regex-built import graph:
+                measured 0.90 precision / 0.97 recall on this repo's hand-labeled cases
+                — good enough to gate, never claimed perfect.
+              </p>
+            </li>
+            <li class="reveal">
+              <span class="tag">target</span>
+              <p>
+                <b>The ~90% cost-reduction figure is a composition argument,</b> not yet
+                an end-to-end measurement. Only the 62.1% routing stage is measured;
+                <span class="mono">forge cost --stages</span> reports measured factors
+                only and refuses to blend in estimates.
+              </p>
+            </li>
+            <li class="reveal">
+              <span class="tag">design</span>
+              <p>
+                <b>It never self-grades.</b> Confidence moves only on oracle outcomes —
+                an agent claiming its own change works is worth exactly zero evidence.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="wrap">
+          <p class="kicker">Get started</p>
+          <h2>Sixty seconds to a substrate.</h2>
+          <div class="install">
+            <span class="p">$</span>
+            <span>npm install -g @codewithjuber/forgekit && forge init</span>
+            <button class="copy" data-copy="npm install -g @codewithjuber/forgekit && forge init">
+              copy
+            </button>
+          </div>
+          <div class="cta-row">
+            <a class="btn btn-ember" href="https://github.com/CodeWithJuber/forgekit">
+              Star on GitHub
+            </a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/CodeWithJuber/forgekit/tree/master/docs/cognitive-substrate"
+              >Read the whitepaper</a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
 
     <footer>
       <div class="wrap foot-in">
-        <div class="mono">Forge Cortex · forgekit v0.6.0 · MIT</div>
-        <div>
+        <div class="mono">forgekit v0.6.0 · MIT · zero runtime dependencies</div>
+        <div class="foot-links">
           <a href="https://github.com/CodeWithJuber/forgekit">GitHub</a>
-          <a href="https://github.com/CodeWithJuber/forgekit/issues">Issues</a>
-          <a href="#root">Docs</a>
+          <a href="https://github.com/CodeWithJuber/forgekit/blob/master/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/CodeWithJuber/forgekit/blob/master/SECURITY.md">Security</a>
+          <a href="./status/">Live status</a>
         </div>
       </div>
     </footer>
 
     <script>
-      // copy-to-clipboard
       for (const b of document.querySelectorAll(".copy")) {
         b.addEventListener("click", async () => {
           try {
             await navigator.clipboard.writeText(b.dataset.copy);
-            const t = b.textContent;
-            b.textContent = "copied ✓";
-            setTimeout(() => (b.textContent = t), 1400);
-          } catch (e) {}
+            b.textContent = "copied";
+            setTimeout(() => (b.textContent = "copy"), 1600);
+          } catch {}
         });
       }
-
-      const reduce = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-
-      // scroll reveal
-      const io = new IntersectionObserver(
-        (es) =>
-          es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
-        { threshold: 0.14 },
-      );
-      document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
-
-      // hero: animate the confidence bar + lifecycle sparkline
-      setTimeout(() => {
-        document.getElementById("conffill").style.width = "72%";
-      }, 500);
-
-      const cv = document.getElementById("life");
-      const ctx = cv.getContext("2d");
-      const W = cv.width,
-        H = cv.height;
-      const cs = getComputedStyle(document.documentElement);
-      const SIG = cs.getPropertyValue("--signal").trim() || "#4ad6c0";
-      const EMB = cs.getPropertyValue("--ember").trim() || "#f26430";
-      const LINE = cs.getPropertyValue("--line").trim() || "#2b2e3b";
-      // confidence over events: 0 create, +confirm, +confirm, slow decay, then a reversal drop
-      const pts = [0.5, 0.5, 0.62, 0.67, 0.7, 0.66, 0.62, 0.58, 0.36, 0.3];
-      const pad = 8;
-      const x = (i) => pad + (i * (W - pad * 2)) / (pts.length - 1);
-      const y = (v) => H - pad - v * (H - pad * 2);
-      function frame(p) {
-        ctx.clearRect(0, 0, W, H);
-        // baseline grid
-        ctx.strokeStyle = LINE;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(pad, y(0.3));
-        ctx.lineTo(W - pad, y(0.3));
-        ctx.stroke();
-        const n = Math.max(2, Math.floor(p * pts.length));
-        // area + line
-        ctx.beginPath();
-        ctx.moveTo(x(0), y(pts[0]));
-        for (let i = 1; i < n; i++) ctx.lineTo(x(i), y(pts[i]));
-        ctx.strokeStyle = SIG;
-        ctx.lineWidth = 2;
-        ctx.lineJoin = "round";
-        ctx.stroke();
-        // fill
-        ctx.lineTo(x(n - 1), H - pad);
-        ctx.lineTo(x(0), H - pad);
-        ctx.closePath();
-        const g = ctx.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, "rgba(74,214,192,0.22)");
-        g.addColorStop(1, "rgba(74,214,192,0)");
-        ctx.fillStyle = g;
-        ctx.fill();
-        // reversal marker at the drop
-        if (n >= 9) {
-          ctx.fillStyle = EMB;
-          ctx.beginPath();
-          ctx.arc(x(8), y(pts[8]), 3.2, 0, 7);
-          ctx.fill();
-        }
-        // head dot
-        ctx.fillStyle = SIG;
-        ctx.beginPath();
-        ctx.arc(x(n - 1), y(pts[n - 1]), 3, 0, 7);
-        ctx.fill();
-      }
-      if (reduce) {
-        frame(1);
+      if (
+        "IntersectionObserver" in window &&
+        !matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        const io = new IntersectionObserver(
+          (es) => {
+            for (const e of es)
+              if (e.isIntersecting) {
+                e.target.classList.add("in");
+                io.unobserve(e.target);
+              }
+          },
+          { threshold: 0.15 },
+        );
+        for (const el of document.querySelectorAll(".reveal")) io.observe(el);
       } else {
-        let start = null;
-        function tick(ts) {
-          if (!start) start = ts;
-          const p = Math.min(1, (ts - start) / 1600);
-          frame(p);
-          if (p < 1) requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
+        for (const el of document.querySelectorAll(".reveal")) el.classList.add("in");
       }
     </script>
   </body>
