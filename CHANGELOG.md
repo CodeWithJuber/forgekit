@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Context assembly + completeness gate (P4 of the substrate-v2 plan).** `forge context
+  "<task>"` makes what goes into the window a budgeted optimization and makes
+  *sufficiency* a computed set. The required-knowledge set `R(edit)` — the target's
+  definitions, its hop-1 dependents from the atlas, sibling tests, and team lessons
+  trusted past val ≥ 0.8 — is derived, then covered by pinned items with a **compression
+  ladder** (full → head → pointer): a tight budget downgrades granularity instead of
+  silently dropping coverage. Optional items (trusted facts) fill remaining budget
+  greedily with per-source diminishing returns. `missing = R \ covered` becomes derived
+  clarifying questions ("the task names `X` but the repo doesn't define it — which file
+  implements it?"), shown in `forge substrate` and — under `FORGE_ENFORCE=1` — blocking:
+  acting on missing context is acting on a guess. Incomplete context stops being a
+  feeling and starts being a set difference.
+
 - **Proof-carrying reuse cache (P3 of the substrate-v2 plan).** `forge reuse` turns
   "reuse already-generated code" from prose into a deterministic system: verified code
   becomes an `artifact` claim keyed by a normalized task fingerprint (volatile literals →

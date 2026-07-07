@@ -21,6 +21,7 @@ const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   ledger: "proof-carrying memory — stats / verify / show / blame / query / merge / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
+  context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
@@ -425,6 +426,34 @@ async function run(argv) {
       `reuse: unknown subcommand "${sub}" (query <spec> | mint <spec> --file <path> | stats)`,
     );
     process.exitCode = 1;
+    return;
+  }
+  if (cmd === "context") {
+    const { assemble, renderContext } = await import("./context.js");
+    const { load: loadAtlas } = await import("./atlas.js");
+    const { epochDay } = await import("./util.js");
+    const json = argv.includes("--json");
+    const bi = argv.indexOf("--budget");
+    const budget = bi >= 0 ? Number(argv[bi + 1]) || undefined : undefined;
+    const task = argv
+      .filter((a, i) => i > 0 && !a.startsWith("--") && argv[i - 1] !== "--budget")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge context "<task>" [--budget <tokens>] [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const r = assemble(process.cwd(), task, {
+      atlas: loadAtlas(process.cwd()),
+      nowDay: epochDay(),
+      ...(budget ? { budget } : {}),
+    });
+    if (json) {
+      const { block, ...rest } = r;
+      return console.log(JSON.stringify(rest, null, 2));
+    }
+    console.log(renderContext(r));
+    if (!r.ok) process.exitCode = 1;
     return;
   }
   if (cmd === "atlas") {
