@@ -52,8 +52,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   static half of the consequence simulator (paper Eq. 4): entities → blast radius →
   predicted breaks with confidence, plus the minimal dry-run test suite via weighted greedy
   set cover (weight = file size as a duration proxy; classic ln-n approximation) and
-  `riskScore = Σ confidence` — the sandboxed worktree runner that executes the suite is the
-  P5 follow-up. `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
+  `riskScore = Σ confidence`. **`forge imagine --run` executes that minimal suite in a
+  sandboxed ephemeral git worktree** (HEAD-only — refused on a dirty tree unless
+  `--allow-dirty`), parses the TAP summary into per-file verdicts, always removes the
+  worktree (verified in a finally), and meters the run (`stage: "imagine"`); on this repo
+  the 8-test selected suite measured 1.3 s where the full suite takes ~60 s.
+  `anchor.cusum()` adds the M4 one-sided CUSUM control chart (k = 0.35,
   h = 1.0): sustained small drift alarms, a single exploratory spike drains back to zero.
   `verify.checkpointCadence()` prices M6's "when to check?" as the optimal-stopping
   threshold rule `n* = ⌈checkCost / (pErr·tokensPerStep·costPerToken)⌉`, clamped to
