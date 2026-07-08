@@ -2,6 +2,7 @@
 // OpenRouter, and custom API endpoints. Config lives in .forge/providers.json; defaults
 // are hardcoded so the system works with zero config. Never stores API keys — only env
 // var names (the key is resolved at runtime from the environment).
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,8 @@ import { MODELS } from "./model_tiers.js";
 
 const PROVIDERS_FILE = "providers.json";
 const PROVIDERS_DIR = ".forge";
+
+const ANTHROPIC_DEFAULT_URL = "https://api.anthropic.com";
 
 function providersPath(root) {
   return join(root, PROVIDERS_DIR, PROVIDERS_FILE);
@@ -20,9 +23,7 @@ const BUILTIN_PROVIDERS = {
     label: "Anthropic (direct)",
     baseUrl: "https://api.anthropic.com",
     envKey: "ANTHROPIC_API_KEY",
-    models: Object.fromEntries(
-      Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-    ),
+    models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
   },
   openrouter: {
     type: "openrouter",
@@ -32,6 +33,18 @@ const BUILTIN_PROVIDERS = {
     models: Object.fromEntries(
       Object.entries(MODELS).map(([key, m]) => [key, `anthropic/${m.id}`]),
     ),
+  },
+  litellm: {
+    type: "litellm",
+    label: "LiteLLM Gateway",
+    baseUrl: "http://localhost:4000",
+    envKey: "ANTHROPIC_API_KEY",
+    models: {
+      haiku: "forge-simple",
+      sonnet: "forge-medium",
+      opus: "forge-complex",
+      fable: "forge-complex",
+    },
   },
 };
 
@@ -68,13 +81,22 @@ function saveProviders(root, config) {
   writeFileSync(providersPath(root), `${JSON.stringify(config, null, 2)}\n`);
 }
 
-/** The active provider config. */
+/** The active provider config. Explicit .forge/providers.json wins; otherwise auto-detects from env. */
 export function activeProvider(root = process.cwd()) {
-  const config = loadProviders(root);
-  const name = config.active;
-  const provider = config.providers[name];
-  if (!provider) return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic };
-  return { name, ...provider };
+  if (existsSync(providersPath(root))) {
+    const config = loadProviders(root);
+    const name = config.active;
+    const provider = config.providers[name];
+    if (provider) return { name, ...provider };
+  }
+
+  const detected = autoDetectProvider();
+  if (detected) {
+    const { source, ...rest } = detected;
+    return { ...rest, _autoDetected: true, _source: source };
+  }
+
+  return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic };
 }
 
 /** Resolve a tier key (haiku/sonnet/opus/fable) to the active provider's model ID. */
@@ -87,7 +109,10 @@ export function resolveModel(root, tierKey) {
 export function setProvider(root, name) {
   const config = loadProviders(root);
   if (!config.providers[name]) {
-    return { ok: false, reason: `unknown provider "${name}" — add it first with forge config provider add` };
+    return {
+      ok: false,
+      reason: `unknown provider "${name}" — add it first with forge config provider add`,
+    };
   }
   config.active = name;
   saveProviders(root, config);
@@ -110,9 +135,7 @@ export function addProvider(root, name, cfg) {
     label: cfg.label || name,
     baseUrl: cfg.baseUrl,
     envKey: cfg.envKey || "",
-    models: cfg.models || Object.fromEntries(
-      Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-    ),
+    models: cfg.models || Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
   };
   saveProviders(root, config);
   return { ok: true, name, provider: config.providers[name] };
@@ -130,6 +153,151 @@ export function listProviders(root = process.cwd()) {
     envKey: p.envKey,
     hasKey: p.envKey ? Boolean(process.env[p.envKey]) : false,
   }));
+}
+
+/**
+ * Auto-detect the best provider from environment variables.
+ * Pure read — never writes config. Returns null if nothing detected.
+ */
+export function autoDetectProvider() {
+  const litellmUrl = (process.env.LITELLM_BASE_URL || "").replace(/\/+$/, "");
+  if (litellmUrl) {
+    return {
+      name: "litellm",
+      type: "litellm",
+      label: "LiteLLM Gateway (hosted)",
+      baseUrl: litellmUrl,
+      envKey: process.env.LITELLM_API_KEY ? "LITELLM_API_KEY" : "ANTHROPIC_API_KEY",
+      models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
+      source: "LITELLM_BASE_URL",
+    };
+  }
+
+  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
+  if (baseUrl && baseUrl.toLowerCase() !== ANTHROPIC_DEFAULT_URL) {
+    return {
+      name: "anthropic-proxy",
+      type: "anthropic",
+      label: "Anthropic (via proxy)",
+      baseUrl,
+      envKey: "ANTHROPIC_API_KEY",
+      models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
+      source: "ANTHROPIC_BASE_URL",
+    };
+  }
+
+  if (process.env.OPENROUTER_API_KEY) {
+    return { name: "openrouter", ...BUILTIN_PROVIDERS.openrouter, source: "OPENROUTER_API_KEY" };
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic, source: "ANTHROPIC_API_KEY" };
+  }
+
+  return null;
+}
+
+/** List all providers that could be auto-detected from the current environment. */
+export function listDetectedProviders() {
+  const detected = [];
+  const litellmUrl = (process.env.LITELLM_BASE_URL || "").replace(/\/+$/, "");
+  if (litellmUrl) {
+    detected.push({
+      name: "litellm",
+      type: "litellm",
+      label: "LiteLLM Gateway (hosted)",
+      source: "LITELLM_BASE_URL",
+      available: true,
+    });
+  }
+  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
+  if (baseUrl && baseUrl.toLowerCase() !== ANTHROPIC_DEFAULT_URL) {
+    detected.push({
+      name: "anthropic-proxy",
+      type: "anthropic",
+      label: "Anthropic (via proxy)",
+      source: "ANTHROPIC_BASE_URL",
+      available: true,
+    });
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    detected.push({
+      name: "openrouter",
+      type: "openrouter",
+      label: "OpenRouter",
+      source: "OPENROUTER_API_KEY",
+      available: true,
+    });
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    detected.push({
+      name: "anthropic",
+      type: "anthropic",
+      label: "Anthropic (direct)",
+      source: "ANTHROPIC_API_KEY",
+      available: true,
+    });
+  }
+  return detected;
+}
+
+/** Check provider health: env key set, gateway reachable (litellm), base URL valid. */
+export function providerStatus(root = process.cwd()) {
+  const prov = activeProvider(root);
+  const checks = [];
+
+  if (prov._autoDetected) {
+    checks.push({
+      id: "auto-detect",
+      ok: true,
+      detail: `Auto-detected from ${prov._source}`,
+    });
+  }
+
+  if (prov.envKey) {
+    checks.push({
+      id: "api-key",
+      ok: Boolean(process.env[prov.envKey]),
+      detail: process.env[prov.envKey]
+        ? `${prov.envKey} is set`
+        : `${prov.envKey} is NOT set — get it from the Anthropic Console (console.anthropic.com/settings/keys) or your provider's dashboard`,
+    });
+  }
+  if (prov.type === "litellm") {
+    let reachable = false;
+    try {
+      const out = execFileSync(
+        "curl",
+        ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `${prov.baseUrl}/health`],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      reachable = out.startsWith("2");
+    } catch {}
+    checks.push({
+      id: "gateway",
+      ok: reachable,
+      detail: reachable
+        ? `LiteLLM gateway reachable at ${prov.baseUrl}`
+        : `LiteLLM gateway NOT reachable at ${prov.baseUrl}`,
+    });
+  }
+
+  const envScan = [
+    { key: "LITELLM_BASE_URL", set: Boolean(process.env.LITELLM_BASE_URL) },
+    { key: "LITELLM_API_KEY", set: Boolean(process.env.LITELLM_API_KEY) },
+    { key: "ANTHROPIC_BASE_URL", set: Boolean(process.env.ANTHROPIC_BASE_URL) },
+    { key: "OPENROUTER_API_KEY", set: Boolean(process.env.OPENROUTER_API_KEY) },
+    { key: "ANTHROPIC_API_KEY", set: Boolean(process.env.ANTHROPIC_API_KEY) },
+  ];
+
+  return {
+    provider: prov.name,
+    type: prov.type,
+    autoDetected: Boolean(prov._autoDetected),
+    source: prov._source || null,
+    checks,
+    envScan,
+  };
 }
 
 /**

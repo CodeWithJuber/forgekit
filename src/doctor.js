@@ -9,6 +9,7 @@ import { summary as cortexSummary } from "./cortex.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
+import { activeProvider } from "./providers.js";
 import { canonical } from "./sync.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -283,9 +284,21 @@ function checkLedger(out, targetRoot) {
   );
 }
 
+function checkProvider(out, targetRoot) {
+  const prov = activeProvider(targetRoot);
+  if (prov._autoDetected) {
+    out.push(ok("provider", `${prov.name} (auto-detected from ${prov._source})`));
+  } else if (prov.envKey && !process.env[prov.envKey]) {
+    out.push(warn("provider", `${prov.name} — ${prov.envKey} is NOT set`));
+  } else {
+    out.push(ok("provider", `${prov.name} (configured)`));
+  }
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
+  checkProvider(results, targetRoot);
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);

@@ -7,15 +7,15 @@ import { argv } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { lessonsForContext, summary } from "./cortex.js";
+import { report as costReport } from "./cost_report.js";
+import { dashData } from "./dash.js";
+import { diagnose } from "./diagnose.js";
+import { doctor } from "./doctor.js";
 import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
 import { epochDay } from "./util.js";
-import { report as costReport } from "./cost_report.js";
-import { dashData } from "./dash.js";
-import { diagnose } from "./diagnose.js";
-import { doctor } from "./doctor.js";
 
 const PKG_VERSION = (() => {
   try {
@@ -132,8 +132,7 @@ const TOOLS = [
   },
   {
     name: "forge_brain",
-    description:
-      "Project memory index — list all remembered facts stored in .forge/brain/.",
+    description: "Project memory index — list all remembered facts stored in .forge/brain/.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -142,7 +141,9 @@ const TOOLS = [
       "Query the proof-carrying memory ledger with a natural language query. Returns ranked matching claims.",
     inputSchema: {
       type: "object",
-      properties: { query: { type: "string", description: "what you are about to do or looking for" } },
+      properties: {
+        query: { type: "string", description: "what you are about to do or looking for" },
+      },
       required: ["query"],
     },
   },
@@ -164,6 +165,12 @@ const TOOLS = [
     name: "forge_doctor",
     description:
       "Health check — verify installed tools, guards, MCP auth, config drift, and system state.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "forge_provider_status",
+    description:
+      "Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.",
     inputSchema: { type: "object", properties: {} },
   },
 ];
@@ -212,7 +219,9 @@ async function callTool(name, args = {}) {
       const idx = buildIndex(store);
       const items = list(store);
       return JSON.stringify({ items, indexed: idx.indexed, overflow: idx.overflow }, null, 2);
-    } catch { return "No brain store found — run `forge remember` to start."; }
+    } catch {
+      return "No brain store found — run `forge remember` to start.";
+    }
   }
   if (name === "forge_ledger_query") {
     try {
@@ -224,11 +233,22 @@ async function callTool(name, args = {}) {
       const claims = loadClaims(dir);
       const sim = claimSim(root, q, claims, claimText);
       const ranked = retrieve(q, claims, { nowDay: today(), budget: 8, sim });
-      return JSON.stringify({
-        sim: simLabel(sim),
-        results: ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score, text: claimText(r.claim).slice(0, 200) })),
-      }, null, 2);
-    } catch { return "No ledger claims found."; }
+      return JSON.stringify(
+        {
+          sim: simLabel(sim),
+          results: ranked.map((r) => ({
+            id: r.claim.id,
+            kind: r.claim.kind,
+            score: r.score,
+            text: claimText(r.claim).slice(0, 200),
+          })),
+        },
+        null,
+        2,
+      );
+    } catch {
+      return "No ledger claims found.";
+    }
   }
   if (name === "forge_diagnose") {
     const r = diagnose(root, {
@@ -241,6 +261,31 @@ async function callTool(name, args = {}) {
   if (name === "forge_doctor") {
     const { results, failed } = doctor({ targetRoot: root });
     return JSON.stringify({ results, failed }, null, 2);
+  }
+  if (name === "forge_provider_status") {
+    const { activeProvider, providerStatus, listDetectedProviders } = await import(
+      "./providers.js"
+    );
+    const prov = activeProvider(root);
+    const status = providerStatus(root);
+    const detected = listDetectedProviders();
+    return JSON.stringify(
+      {
+        active: {
+          name: prov.name,
+          type: prov.type,
+          label: prov.label || prov.name,
+          baseUrl: prov.baseUrl,
+          autoDetected: Boolean(prov._autoDetected),
+          source: prov._source || null,
+        },
+        checks: status.checks,
+        availableProviders: detected,
+        envScan: status.envScan,
+      },
+      null,
+      2,
+    );
   }
   return null;
 }
@@ -294,9 +339,11 @@ export function serve(input = process.stdin, output = process.stdout) {
     } catch {
       return; // ignore malformed frames
     }
-    handle(msg).then((res) => {
-      if (res) output.write(`${JSON.stringify(res)}\n`);
-    }).catch(() => {});
+    handle(msg)
+      .then((res) => {
+        if (res) output.write(`${JSON.stringify(res)}\n`);
+      })
+      .catch(() => {});
   });
 }
 

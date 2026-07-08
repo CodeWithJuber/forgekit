@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
+import { autoDetectProvider } from "./providers.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
 
@@ -62,15 +63,11 @@ function mergeHooks(existing = {}, template = {}) {
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
     const existingCommands = new Set(
-      existingEntries
-        .flatMap((e) => (e.hooks || []).map((h) => h.command))
-        .filter(Boolean),
+      existingEntries.flatMap((e) => (e.hooks || []).map((h) => h.command)).filter(Boolean),
     );
     const newEntries = [];
     for (const entry of entries) {
-      const hooks = (entry.hooks || []).filter(
-        (h) => !existingCommands.has(h.command),
-      );
+      const hooks = (entry.hooks || []).filter((h) => !existingCommands.has(h.command));
       if (hooks.length) {
         newEntries.push({ ...entry, hooks });
       }
@@ -145,7 +142,8 @@ export function init({ targetRoot = process.cwd(), noSettings = false } = {}) {
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
   const settings = mergeSettings({ noSettings });
-  return { ...r, settings };
+  const detected = autoDetectProvider();
+  return { ...r, settings, detected };
 }
 
 function skillDescription(dir) {

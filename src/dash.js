@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { impact, load as loadAtlas } from "./atlas.js";
+import { estimateSpendFromLogs } from "./cost_report.js";
 import { authorTrust, claimText, val, validOutcome } from "./ledger.js";
 import {
   getClaimByPrefix,
@@ -22,7 +23,6 @@ import {
   tombstone,
 } from "./ledger_store.js";
 import { read as readMetrics, summarize } from "./metrics.js";
-import { estimateSpendFromLogs } from "./cost_report.js";
 import { epochDay, gitAuthor } from "./util.js";
 
 /** A claim is contested when its val sits in this band AND it carries ≥1 oracle
