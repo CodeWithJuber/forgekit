@@ -77,9 +77,7 @@ async function run(argv) {
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
     if (settings?.action === "merged") {
-      console.log(
-        `  settings: merged ${settings.added.join(", ")} into ${settings.path}`,
-      );
+      console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
     } else if (settings?.action === "unchanged") {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
@@ -88,7 +86,9 @@ async function run(argv) {
     if (detected) {
       console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
     } else {
-      console.log(`  provider: none detected — set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or LITELLM_BASE_URL`);
+      console.log(
+        `  provider: none detected — set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or LITELLM_BASE_URL`,
+      );
     }
     console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
@@ -697,9 +697,14 @@ async function run(argv) {
       const { estimateSpendFromLogs } = await import("./cost_report.js");
       const est = estimateSpendFromLogs();
       if (est && est.totalCost > 0) {
-        console.log(`  $${est.totalCost.toFixed(2)} estimated from Claude session logs (${est.sessions} session(s))`);
+        console.log(
+          `  $${est.totalCost.toFixed(2)} estimated from Claude session logs (${est.sessions} session(s))`,
+        );
         if (est.byModel.length) {
-          for (const m of est.byModel) console.log(`    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`);
+          for (const m of est.byModel)
+            console.log(
+              `    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`,
+            );
         }
         console.log("\n  install ccusage for precise tracking: npm i -g ccusage");
       } else {
@@ -866,12 +871,15 @@ async function run(argv) {
     if (sub === "show") {
       const prov = activeProvider(process.cwd());
       const config = loadProviders(process.cwd());
-      if (json) return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
+      if (json)
+        return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
       console.log(`${BRAND.brand} config\n`);
       console.log(`  provider:  ${prov.name} (${prov.label || prov.name})`);
       if (prov._autoDetected) console.log(`  detected:  auto (from ${prov._source})`);
       console.log(`  base URL:  ${prov.baseUrl}`);
-      console.log(`  env key:   ${prov.envKey || "(none)"}${prov.envKey ? (process.env[prov.envKey] ? " ✓ set" : " ✗ not set") : ""}`);
+      console.log(
+        `  env key:   ${prov.envKey || "(none)"}${prov.envKey ? (process.env[prov.envKey] ? " ✓ set" : " ✗ not set") : ""}`,
+      );
       console.log(`  models:`);
       for (const [tier, id] of Object.entries(prov.models || {}))
         console.log(`    ${tier.padEnd(8)} ${id}`);
@@ -891,23 +899,36 @@ async function run(argv) {
     if (sub === "provider") {
       const name = argv[2];
       if (!name) {
-        console.error(`usage: ${BRAND.cli} config provider <name>   |   ${BRAND.cli} config provider add <name> --base-url <url> [--key-env <VAR>]`);
+        console.error(
+          `usage: ${BRAND.cli} config provider <name>   |   ${BRAND.cli} config provider add <name> --base-url <url> [--key-env <VAR>]`,
+        );
         process.exitCode = 1;
         return;
       }
       if (name === "add") {
         const addName = argv[3];
-        const flagVal = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
+        const flagVal = (f) => {
+          const i = argv.indexOf(f);
+          return i >= 0 ? argv[i + 1] : undefined;
+        };
         const baseUrl = flagVal("--base-url");
         const envKey = flagVal("--key-env");
         const label = flagVal("--label");
         const r = addProvider(process.cwd(), addName, { baseUrl, envKey, label });
-        if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+        if (!r.ok) {
+          console.error(`  ${r.reason}`);
+          process.exitCode = 1;
+          return;
+        }
         console.log(`  added provider "${addName}" → ${r.provider.baseUrl}`);
         return;
       }
       const r = setProvider(process.cwd(), name);
-      if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
       console.log(`  switched to provider "${name}" (${r.provider.label || name})`);
       return;
     }
@@ -919,7 +940,11 @@ async function run(argv) {
         return;
       }
       const r = applyRoute(tier);
-      if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+      if (!r.ok) {
+        console.error(`  ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
       console.log(`  model set to ${r.model} (${r.modelId})${r.prev ? ` — was: ${r.prev}` : ""}`);
       console.log(`  written to ${r.path}`);
       return;
@@ -983,7 +1008,9 @@ async function run(argv) {
       console.log(`    ${BRAND.cli} route "<task>" --apply        # route + apply model`);
       return;
     }
-    console.error(`config: unknown subcommand "${sub}" (show | providers | provider <name> | model <tier> | gateway | setup)`);
+    console.error(
+      `config: unknown subcommand "${sub}" (show | providers | provider <name> | model <tier> | gateway | setup)`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -995,7 +1022,9 @@ async function run(argv) {
         console.log(`  ${result.reason}`);
         return;
       }
-      console.log(`  wrote ${result} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
+      console.log(
+        `  wrote ${result} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`,
+      );
       console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
       console.log(
         "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
@@ -1012,14 +1041,20 @@ async function run(argv) {
       .filter((a, i) => !FLAGS.has(a) && a !== "--provider" && argv[i] !== "--provider")
       .join(" ");
     if (!task) {
-      console.error('usage: forge route "<task>" [--apply] [--provider <name>] [--json]   |   forge route gateway');
+      console.error(
+        'usage: forge route "<task>" [--apply] [--provider <name>] [--json]   |   forge route gateway',
+      );
       process.exitCode = 1;
       return;
     }
     if (providerName) {
       const { setProvider } = await import("./providers.js");
       const sr = setProvider(process.cwd(), providerName);
-      if (!sr.ok) { console.error(`  ${sr.reason}`); process.exitCode = 1; return; }
+      if (!sr.ok) {
+        console.error(`  ${sr.reason}`);
+        process.exitCode = 1;
+        return;
+      }
     }
     const rec = r.routeTask(process.cwd(), task);
     r.meterRoute(process.cwd(), task, rec);
@@ -1042,13 +1077,16 @@ async function run(argv) {
       const { applyRoute } = await import("./providers.js");
       const ar = applyRoute(rec.key);
       if (ar.ok) {
-        if (!json) console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
+        if (!json)
+          console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
       } else {
         if (!json) console.error(`\n  apply failed: ${ar.reason}`);
         process.exitCode = 1;
       }
     } else if (!json) {
-      console.log(`\n  advisory · apply: \`${BRAND.cli} route "<task>" --apply\` · gateway: \`${BRAND.cli} route gateway\``);
+      console.log(
+        `\n  advisory · apply: \`${BRAND.cli} route "<task>" --apply\` · gateway: \`${BRAND.cli} route gateway\``,
+      );
     }
     return;
   }

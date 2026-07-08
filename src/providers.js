@@ -23,9 +23,7 @@ const BUILTIN_PROVIDERS = {
     label: "Anthropic (direct)",
     baseUrl: "https://api.anthropic.com",
     envKey: "ANTHROPIC_API_KEY",
-    models: Object.fromEntries(
-      Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-    ),
+    models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
   },
   openrouter: {
     type: "openrouter",
@@ -111,7 +109,10 @@ export function resolveModel(root, tierKey) {
 export function setProvider(root, name) {
   const config = loadProviders(root);
   if (!config.providers[name]) {
-    return { ok: false, reason: `unknown provider "${name}" — add it first with forge config provider add` };
+    return {
+      ok: false,
+      reason: `unknown provider "${name}" — add it first with forge config provider add`,
+    };
   }
   config.active = name;
   saveProviders(root, config);
@@ -134,9 +135,7 @@ export function addProvider(root, name, cfg) {
     label: cfg.label || name,
     baseUrl: cfg.baseUrl,
     envKey: cfg.envKey || "",
-    models: cfg.models || Object.fromEntries(
-      Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-    ),
+    models: cfg.models || Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
   };
   saveProviders(root, config);
   return { ok: true, name, provider: config.providers[name] };
@@ -169,9 +168,7 @@ export function autoDetectProvider() {
       label: "LiteLLM Gateway (hosted)",
       baseUrl: litellmUrl,
       envKey: process.env.LITELLM_API_KEY ? "LITELLM_API_KEY" : "ANTHROPIC_API_KEY",
-      models: Object.fromEntries(
-        Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-      ),
+      models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
       source: "LITELLM_BASE_URL",
     };
   }
@@ -184,9 +181,7 @@ export function autoDetectProvider() {
       label: "Anthropic (via proxy)",
       baseUrl,
       envKey: "ANTHROPIC_API_KEY",
-      models: Object.fromEntries(
-        Object.entries(MODELS).map(([key, m]) => [key, m.id]),
-      ),
+      models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
       source: "ANTHROPIC_BASE_URL",
     };
   }

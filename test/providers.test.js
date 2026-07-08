@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -204,25 +204,31 @@ test("autoDetectProvider: LITELLM_BASE_URL strips trailing slash", () => {
 });
 
 test("autoDetectProvider: LITELLM_BASE_URL + LITELLM_API_KEY → correct envKey", () => {
-  withEnv({
-    ...CLEAR_ENV,
-    LITELLM_BASE_URL: "https://gw.example.com",
-    LITELLM_API_KEY: "sk-litellm-test",
-  }, () => {
-    const r = autoDetectProvider();
-    assert.equal(r.envKey, "LITELLM_API_KEY");
-  });
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      LITELLM_BASE_URL: "https://gw.example.com",
+      LITELLM_API_KEY: "sk-litellm-test",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.envKey, "LITELLM_API_KEY");
+    },
+  );
 });
 
 test("autoDetectProvider: LITELLM_BASE_URL without LITELLM_API_KEY → falls back to ANTHROPIC_API_KEY envKey", () => {
-  withEnv({
-    ...CLEAR_ENV,
-    LITELLM_BASE_URL: "https://gw.example.com",
-    ANTHROPIC_API_KEY: "sk-ant-test",
-  }, () => {
-    const r = autoDetectProvider();
-    assert.equal(r.envKey, "ANTHROPIC_API_KEY");
-  });
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      LITELLM_BASE_URL: "https://gw.example.com",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.envKey, "ANTHROPIC_API_KEY");
+    },
+  );
 });
 
 test("autoDetectProvider: ANTHROPIC_BASE_URL (non-default) → anthropic-proxy", () => {
@@ -248,28 +254,34 @@ test("autoDetectProvider: LITELLM_API_KEY alone (no URL) → ignored", () => {
 });
 
 test("autoDetectProvider: priority — LITELLM_BASE_URL wins over OPENROUTER_API_KEY", () => {
-  withEnv({
-    ...CLEAR_ENV,
-    LITELLM_BASE_URL: "https://gw.example.com",
-    OPENROUTER_API_KEY: "sk-or-test",
-    ANTHROPIC_API_KEY: "sk-ant-test",
-  }, () => {
-    const r = autoDetectProvider();
-    assert.equal(r.name, "litellm");
-    assert.equal(r.source, "LITELLM_BASE_URL");
-  });
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      LITELLM_BASE_URL: "https://gw.example.com",
+      OPENROUTER_API_KEY: "sk-or-test",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.name, "litellm");
+      assert.equal(r.source, "LITELLM_BASE_URL");
+    },
+  );
 });
 
 test("autoDetectProvider: priority — OPENROUTER_API_KEY wins over ANTHROPIC_API_KEY alone", () => {
-  withEnv({
-    ...CLEAR_ENV,
-    OPENROUTER_API_KEY: "sk-or-test",
-    ANTHROPIC_API_KEY: "sk-ant-test",
-  }, () => {
-    const r = autoDetectProvider();
-    assert.equal(r.name, "openrouter");
-    assert.equal(r.source, "OPENROUTER_API_KEY");
-  });
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      OPENROUTER_API_KEY: "sk-or-test",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.name, "openrouter");
+      assert.equal(r.source, "OPENROUTER_API_KEY");
+    },
+  );
 });
 
 // --- activeProvider with auto-detection ---
@@ -344,17 +356,20 @@ test("listDetectedProviders: returns empty when no env vars set", () => {
 });
 
 test("listDetectedProviders: returns all available providers from env", () => {
-  withEnv({
-    ...CLEAR_ENV,
-    LITELLM_BASE_URL: "https://gw.example.com",
-    OPENROUTER_API_KEY: "sk-or-test",
-    ANTHROPIC_API_KEY: "sk-ant-test",
-  }, () => {
-    const detected = listDetectedProviders();
-    assert.ok(detected.length >= 3);
-    const names = detected.map((d) => d.name);
-    assert.ok(names.includes("litellm"));
-    assert.ok(names.includes("openrouter"));
-    assert.ok(names.includes("anthropic"));
-  });
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      LITELLM_BASE_URL: "https://gw.example.com",
+      OPENROUTER_API_KEY: "sk-or-test",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    },
+    () => {
+      const detected = listDetectedProviders();
+      assert.ok(detected.length >= 3);
+      const names = detected.map((d) => d.name);
+      assert.ok(names.includes("litellm"));
+      assert.ok(names.includes("openrouter"));
+      assert.ok(names.includes("anthropic"));
+    },
+  );
 });

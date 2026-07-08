@@ -227,7 +227,11 @@ export function estimateSpendFromLogs() {
     for (const project of readdirSync(projectsDir)) {
       const pDir = join(projectsDir, project);
       let files;
-      try { files = readdirSync(pDir); } catch { continue; }
+      try {
+        files = readdirSync(pDir);
+      } catch {
+        continue;
+      }
       for (const f of files) {
         if (!f.endsWith(".jsonl")) continue;
         sessions++;
@@ -254,11 +258,14 @@ export function estimateSpendFromLogs() {
     const modelBreakdown = [];
     for (const [model, usage] of Object.entries(byModel)) {
       const pricing = pricingPerM[model] || { inCost: 3, outCost: 15 };
-      const cost = (usage.inTokens * pricing.inCost + usage.outTokens * pricing.outCost) / 1_000_000;
+      const cost =
+        (usage.inTokens * pricing.inCost + usage.outTokens * pricing.outCost) / 1_000_000;
       totalCost += cost;
       modelBreakdown.push({ model, cost, inTokens: usage.inTokens, outTokens: usage.outTokens });
     }
     modelBreakdown.sort((a, b) => b.cost - a.cost);
     return { totalCost, sessions, byModel: modelBreakdown };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }

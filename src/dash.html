@@ -290,11 +290,9 @@ function renderCost(d) {
   if (spend && spend.byModel && spend.byModel.length) {
     $("spend-section").innerHTML = '<h3>Spend by model</h3>' +
       '<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>' +
-      spend.byModel.map(function(m) {
-        return '<tr><td class="mono">' + esc(m.model) + '</td><td class="num">$' + m.cost.toFixed(4) +
+      spend.byModel.map((m) => '<tr><td class="mono">' + esc(m.model) + '</td><td class="num">$' + m.cost.toFixed(4) +
           '</td><td class="num">' + (m.inTokens || 0).toLocaleString() +
-          '</td><td class="num">' + (m.outTokens || 0).toLocaleString() + '</td></tr>';
-      }).join('') + '</tbody></table>';
+          '</td><td class="num">' + (m.outTokens || 0).toLocaleString() + '</td></tr>').join('') + '</tbody></table>';
   } else {
     $("spend-section").innerHTML = '';
   }

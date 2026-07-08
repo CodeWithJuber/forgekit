@@ -10,8 +10,8 @@ import { gitChurn, grepFanout } from "./cortex_features.js";
 import { recordRoute } from "./cost_report.js";
 import { mergedLessons } from "./ledger_read.js";
 import { MODELS } from "./model_tiers.js";
-import { activeProvider } from "./providers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
+import { activeProvider } from "./providers.js";
 import { clamp01, contentHash, epochDay } from "./util.js";
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
@@ -282,7 +282,8 @@ export function emitGatewayConfig(root = process.cwd()) {
   if (prov._autoDetected && prov._source === "LITELLM_BASE_URL") {
     return {
       ok: false,
-      reason: `Hosted LiteLLM gateway detected at ${prov.baseUrl}. ` +
+      reason:
+        `Hosted LiteLLM gateway detected at ${prov.baseUrl}. ` +
         `No local config needed — requests go directly to the hosted gateway. ` +
         `Use standard model names (the gateway handles routing).`,
     };
