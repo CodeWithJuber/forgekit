@@ -407,7 +407,7 @@ test("autoDetectProvider: ANTHROPIC_BASE_URL with 'gateway' → litellm type", (
   withEnv(
     {
       ...CLEAR_ENV,
-      ANTHROPIC_BASE_URL: "https://api-eu1.aigateway.emirates.group",
+      ANTHROPIC_BASE_URL: "https://api.aigateway.example.com",
       ANTHROPIC_AUTH_TOKEN: "token",
     },
     () => {
@@ -451,20 +451,20 @@ test("autoDetectProvider: ANTHROPIC_BASE_URL proxy uses ANTHROPIC_AUTH_TOKEN whe
   );
 });
 
-// --- Full LiteLLM gateway scenario (the Emirates env) ---
+// --- Full LiteLLM gateway scenario (corporate gateway env) ---
 
-test("autoDetectProvider: full LiteLLM gateway env (Emirates scenario)", () => {
+test("autoDetectProvider: full LiteLLM gateway env (corporate gateway scenario)", () => {
   withEnv(
     {
       ...CLEAR_ENV,
-      ANTHROPIC_BASE_URL: "https://api-eu1.aigateway.emirates.group",
+      ANTHROPIC_BASE_URL: "https://api.aigateway.example.com",
       ANTHROPIC_AUTH_TOKEN: "gateway-token",
       ANTHROPIC_MODEL: "claude-opus-4-7",
     },
     () => {
       const r = autoDetectProvider();
       assert.equal(r.type, "litellm");
-      assert.equal(r.baseUrl, "https://api-eu1.aigateway.emirates.group");
+      assert.equal(r.baseUrl, "https://api.aigateway.example.com");
       assert.equal(r.envKey, "ANTHROPIC_AUTH_TOKEN");
     },
   );
