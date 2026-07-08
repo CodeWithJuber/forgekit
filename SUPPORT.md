@@ -1,6 +1,7 @@
 # Support
 
-Thanks for using forgekit. Here's where to get help.
+forgekit is one brain for every AI coding agent — the cognitive substrate (memory, foresight,
+guardrails) authored once and delivered as native config to every tool. Here's where to get help.
 
 - **Questions / "how do I…"** → [Discussions](https://github.com/CodeWithJuber/forgekit/discussions)
 - **Bugs** → open an issue with the bug template (include `forge doctor` output + `node --version`).

@@ -1,7 +1,8 @@
 # Contributing to forgekit
 
-Thanks for your interest. forgekit stays small and dependency-free — please read
-this before opening a PR.
+forgekit is one brain for every AI coding agent — a cognitive substrate (memory, foresight,
+guardrails) authored once and compiled into every tool's native config. Keeping that brain
+small and dependency-free is the whole point, so please read this before opening a PR.
 
 ## Ground rules
 
@@ -9,7 +10,7 @@ this before opening a PR.
   PRs adding one are rejected unless there's an exceptional, discussed reason. Dev
   dependencies (test/lint tooling) are fine.
 - **Node.js ESM only.** All code is ES modules (`"type": "module"`). No CommonJS.
-- **Supported Node versions:** 18, 20, 22.
+- **Supported Node versions:** 20 and 22 (the `>=20` engines floor; Node 18 is EOL).
 - **Cross-tool first.** New behavior should work across the tools forgekit targets
   (Claude Code, Codex, Cursor, Gemini, Aider, …), emitted from one source — not
   Claude-only. Say so in the PR if a piece is unavoidably tool-specific.
@@ -29,11 +30,11 @@ npm run check     # Biome lint + format check
 1. Branch: `git checkout -b feat/my-change`.
 2. Write the change **plus tests** — every new public function needs at least one
    test. Shell guards are tested via `spawnSync` (see `test/guards.test.js`).
-3. Run `npm test` and `npm run check:fix` before committing.
+3. Run `npm test`, `npm run typecheck`, and `npm run check:fix` before committing.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/):
    `feat(scope): description`, `fix: …`, `docs: …`.
 5. Add a line to `CHANGELOG.md` under `## [Unreleased]`.
-6. Open a PR. CI (tests on Node 18/20/22, Biome, shellcheck) must pass.
+6. Open a PR. CI (tests on Node 20/22, Biome, typecheck, shellcheck) must pass.
 
 ## Project shape
 

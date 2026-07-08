@@ -1,4 +1,4 @@
-# Releasing Forge
+# Releasing forgekit
 
 Releases are one click. Two workflows do everything:
 
