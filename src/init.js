@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
+import { autoDetectProvider } from "./providers.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
 
@@ -145,7 +146,8 @@ export function init({ targetRoot = process.cwd(), noSettings = false } = {}) {
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
   const settings = mergeSettings({ noSettings });
-  return { ...r, settings };
+  const detected = autoDetectProvider();
+  return { ...r, settings, detected };
 }
 
 function skillDescription(dir) {

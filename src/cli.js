@@ -69,7 +69,7 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
-    const { report, bytes, settings } = init({ targetRoot: process.cwd(), noSettings });
+    const { report, bytes, settings, detected } = init({ targetRoot: process.cwd(), noSettings });
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     console.log(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
@@ -84,6 +84,11 @@ async function run(argv) {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
+    }
+    if (detected) {
+      console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
+    } else {
+      console.log(`  provider: none detected — set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or LITELLM_BASE_URL`);
     }
     console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
@@ -864,6 +869,7 @@ async function run(argv) {
       if (json) return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
       console.log(`${BRAND.brand} config\n`);
       console.log(`  provider:  ${prov.name} (${prov.label || prov.name})`);
+      if (prov._autoDetected) console.log(`  detected:  auto (from ${prov._source})`);
       console.log(`  base URL:  ${prov.baseUrl}`);
       console.log(`  env key:   ${prov.envKey || "(none)"}${prov.envKey ? (process.env[prov.envKey] ? " ✓ set" : " ✗ not set") : ""}`);
       console.log(`  models:`);
@@ -918,15 +924,78 @@ async function run(argv) {
       console.log(`  written to ${r.path}`);
       return;
     }
-    console.error(`config: unknown subcommand "${sub}" (show | providers | provider <name> | model <tier>)`);
+    if (sub === "gateway") {
+      const { emitGatewayConfig } = await import("./route.js");
+      const result = emitGatewayConfig(process.cwd());
+      if (typeof result === "object" && !result.ok) {
+        console.log(`  ${result.reason}`);
+        return;
+      }
+      console.log(`  wrote ${result}`);
+      console.log(`\n  setup LiteLLM gateway:`);
+      console.log(`    1. pip install "litellm[proxy]"    # pin an exact verified version`);
+      console.log(`    2. litellm --config litellm.config.yaml`);
+      console.log(`    3. export ANTHROPIC_BASE_URL=http://localhost:4000`);
+      console.log(`\n  then switch to the gateway provider:`);
+      console.log(`    ${BRAND.cli} config provider litellm`);
+      console.log(`\n  routing flows through: forge route → tier alias → LiteLLM → model`);
+      return;
+    }
+    if (sub === "setup") {
+      const { providerStatus, listDetectedProviders } = await import("./providers.js");
+      const prov = activeProvider(process.cwd());
+      const status = providerStatus(process.cwd());
+      const detected = listDetectedProviders();
+      console.log(`${BRAND.brand} config setup\n`);
+      console.log(`  active provider: ${prov.name} (${prov.label || prov.name})`);
+      if (prov._autoDetected) console.log(`  source: auto-detected from ${prov._source}`);
+      console.log();
+      for (const c of status.checks) {
+        console.log(`  ${c.ok ? "✓" : "✗"} ${c.detail}`);
+      }
+      console.log(`\n  environment:`);
+      for (const e of status.envScan) {
+        console.log(`  ${e.set ? "✓" : "·"} ${e.key}${e.set ? " (set)" : ""}`);
+      }
+      if (detected.length) {
+        console.log(`\n  available providers (auto-detected):`);
+        for (const d of detected) {
+          console.log(`    ${d.name.padEnd(18)} ${d.label.padEnd(24)} via ${d.source}`);
+        }
+      }
+      console.log(`\n  Anthropic Console API key:`);
+      console.log(`    1. Go to console.anthropic.com/settings/keys`);
+      console.log(`    2. Create a key, then:  export ANTHROPIC_API_KEY=sk-ant-...`);
+      console.log(`\n  OpenRouter API key:`);
+      console.log(`    1. Go to openrouter.ai/keys`);
+      console.log(`    2. Create a key, then:  export OPENROUTER_API_KEY=sk-or-...`);
+      console.log(`\n  LiteLLM hosted gateway (no admin access needed):`);
+      console.log(`    export LITELLM_BASE_URL=https://your-gateway.example.com`);
+      console.log(`    export LITELLM_API_KEY=sk-...    # or uses ANTHROPIC_API_KEY`);
+      console.log(`\n  LiteLLM self-hosted gateway:`);
+      console.log(`    ${BRAND.cli} config gateway    # emit litellm.config.yaml`);
+      console.log(`    ${BRAND.cli} config provider litellm`);
+      console.log(`\n  quick start:`);
+      console.log(`    ${BRAND.cli} config provider anthropic     # direct Anthropic API`);
+      console.log(`    ${BRAND.cli} config provider openrouter    # OpenRouter multi-model`);
+      console.log(`    ${BRAND.cli} config provider litellm       # LiteLLM self-hosted`);
+      console.log(`    ${BRAND.cli} config model sonnet           # set default model tier`);
+      console.log(`    ${BRAND.cli} route "<task>" --apply        # route + apply model`);
+      return;
+    }
+    console.error(`config: unknown subcommand "${sub}" (show | providers | provider <name> | model <tier> | gateway | setup)`);
     process.exitCode = 1;
     return;
   }
   if (cmd === "route") {
     const r = await import("./route.js");
     if (argv[1] === "gateway") {
-      const path = r.emitGatewayConfig(process.cwd());
-      console.log(`  wrote ${path} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
+      const result = r.emitGatewayConfig(process.cwd());
+      if (typeof result === "object" && !result.ok) {
+        console.log(`  ${result.reason}`);
+        return;
+      }
+      console.log(`  wrote ${result} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
       console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
       console.log(
         "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",

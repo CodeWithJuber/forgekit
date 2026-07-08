@@ -166,6 +166,12 @@ const TOOLS = [
       "Health check — verify installed tools, guards, MCP auth, config drift, and system state.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "forge_provider_status",
+    description:
+      "Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.",
+    inputSchema: { type: "object", properties: {} },
+  },
 ];
 
 async function callTool(name, args = {}) {
@@ -241,6 +247,25 @@ async function callTool(name, args = {}) {
   if (name === "forge_doctor") {
     const { results, failed } = doctor({ targetRoot: root });
     return JSON.stringify({ results, failed }, null, 2);
+  }
+  if (name === "forge_provider_status") {
+    const { activeProvider, providerStatus, listDetectedProviders } = await import("./providers.js");
+    const prov = activeProvider(root);
+    const status = providerStatus(root);
+    const detected = listDetectedProviders();
+    return JSON.stringify({
+      active: {
+        name: prov.name,
+        type: prov.type,
+        label: prov.label || prov.name,
+        baseUrl: prov.baseUrl,
+        autoDetected: Boolean(prov._autoDetected),
+        source: prov._source || null,
+      },
+      checks: status.checks,
+      availableProviders: detected,
+      envScan: status.envScan,
+    }, null, 2);
   }
   return null;
 }

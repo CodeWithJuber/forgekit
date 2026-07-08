@@ -10,6 +10,7 @@ import { gitChurn, grepFanout } from "./cortex_features.js";
 import { recordRoute } from "./cost_report.js";
 import { mergedLessons } from "./ledger_read.js";
 import { MODELS } from "./model_tiers.js";
+import { activeProvider } from "./providers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { clamp01, contentHash, epochDay } from "./util.js";
 
@@ -272,8 +273,21 @@ export function meterRoute(root, task, rec) {
   } catch {}
 }
 
-/** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks). */
+/** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks).
+ *  Provider-aware: uses the active provider's model IDs for the passthrough entries
+ *  and the correct LiteLLM model prefix (anthropic/ for direct, openrouter/ for OR).
+ *  Returns `{ ok: false, reason }` for hosted gateways the user cannot configure. */
 export function emitGatewayConfig(root = process.cwd()) {
+  const prov = activeProvider(root);
+  if (prov._autoDetected && prov._source === "LITELLM_BASE_URL") {
+    return {
+      ok: false,
+      reason: `Hosted LiteLLM gateway detected at ${prov.baseUrl}. ` +
+        `No local config needed — requests go directly to the hosted gateway. ` +
+        `Use standard model names (the gateway handles routing).`,
+    };
+  }
+  const prefix = prov.type === "openrouter" ? "openrouter/" : "anthropic/";
   const path = join(root, "litellm.config.yaml");
   const body = `# Forge Preflight — LiteLLM routing config (complexity tier -> model).
 # HOW ROUTING WORKS: LiteLLM routes by the REQUESTED model name; it cannot infer task
@@ -282,22 +296,24 @@ export function emitGatewayConfig(root = process.cwd()) {
 # unchanged — pointing ANTHROPIC_BASE_URL here never breaks existing traffic.
 #   pip install "litellm[proxy]==<pin an exact verified version>"   # supply-chain: pin exact, no floating tag
 #   litellm --config litellm.config.yaml       # then export ANTHROPIC_BASE_URL=http://localhost:4000
+# Provider: ${prov.label || prov.name} (${prov.type})
 # Models verified 2026-07-05; re-verify via dev-radar.
 model_list:
   # Tier aliases — request one of these (per 'forge route') to pick a model by complexity.
   - model_name: forge-simple   # ${MODELS.haiku.name} — ${MODELS.haiku.use}
-    litellm_params: { model: anthropic/${MODELS.haiku.id} }
+    litellm_params: { model: ${prefix}${MODELS.haiku.id} }
   - model_name: forge-medium   # ${MODELS.sonnet.name} — default
-    litellm_params: { model: anthropic/${MODELS.sonnet.id} }
+    litellm_params: { model: ${prefix}${MODELS.sonnet.id} }
   - model_name: forge-complex  # ${MODELS.opus.name}
-    litellm_params: { model: anthropic/${MODELS.opus.id} }
+    litellm_params: { model: ${prefix}${MODELS.opus.id} }
   # Passthrough — a normal claude-* request still works when pointed at the gateway.
   - model_name: ${MODELS.haiku.id}
-    litellm_params: { model: anthropic/${MODELS.haiku.id} }
+    litellm_params: { model: ${prefix}${MODELS.haiku.id} }
   - model_name: ${MODELS.sonnet.id}
-    litellm_params: { model: anthropic/${MODELS.sonnet.id} }
+    litellm_params: { model: ${prefix}${MODELS.sonnet.id} }
   - model_name: ${MODELS.opus.id}
-    litellm_params: { model: anthropic/${MODELS.opus.id} }
+    litellm_params: { model: ${prefix}${MODELS.opus.id} }
+${prov.envKey ? `litellm_settings:\n  drop_params: true\n  set_verbose: false` : ""}
 router_settings:
   routing_strategy: simple-shuffle
 `;
