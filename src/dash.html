@@ -354,17 +354,17 @@ async function refresh() {
 async function runWrite(act, id8) {
   const body = { id: id8 };
   if (act === "retract") {
-    const reason = prompt("retract " + id8 + " — reason (recorded in the tombstone):");
+    const reason = prompt(`retract ${id8} — reason (recorded in the tombstone):`);
     if (reason === null) return; // cancelled
     body.reason = reason;
   }
-  const res = await fetch("/api/" + act, {
+  const res = await fetch(`/api/${act}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   const r = await res.json().catch(() => ({}));
-  if (!res.ok) alert(act + " failed: " + (r.reason || r.error || res.status));
+  if (!res.ok) alert(`${act} failed: ${r.reason || r.error || res.status}`);
   await refresh();
 }
 

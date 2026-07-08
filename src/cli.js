@@ -76,9 +76,9 @@ async function run(argv) {
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
-    if (settings?.action === "merged") {
+    if (settings?.action === "merged" && "added" in settings) {
       console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
-    } else if (settings?.action === "unchanged") {
+    } else if (settings?.action === "unchanged" && "path" in settings) {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
@@ -593,7 +593,7 @@ async function run(argv) {
     }
     const r = scan(target);
     console.log(`${BRAND.brand} scan — skill-gate (${r.scanner})\n`);
-    if (r.findings && r.findings.length) {
+    if (r.findings?.length) {
       for (const f of r.findings) console.log(`  [${f.sev}] ${f.msg}`);
     } else if (r.raw) {
       console.log("  " + r.raw.trim().split("\n").slice(-6).join("\n  "));
