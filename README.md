@@ -183,16 +183,20 @@ load-bearing statistic re-graded against primary sources, is the
 [cognitive-substrate white paper](docs/cognitive-substrate/).
 
 
-## GitLab Pages landing page
+## Public site
 
-Forgekit includes a generated, professional GitLab Pages landing page in [`public/index.html`](public/index.html). It is intentionally static and auto-updated from real repository data (`package.json`, `README.md`, `CHANGELOG.md`, and `reports/benchmarks.md`) by the generator in [`scripts/build-pages.mjs`](scripts/build-pages.mjs).
+Forgekit ships two static pages. [`landing/index.html`](landing/index.html) is a hand-authored landing page — the project's front door. [`public/index.html`](public/index.html) is a generated status page, intentionally static and auto-updated from real repository data (`package.json`, `README.md`, `CHANGELOG.md`, and `reports/benchmarks.md`) by the generator in [`scripts/build-pages.mjs`](scripts/build-pages.mjs).
 
 ```bash
 npm run pages:build        # offline, deterministic repo-data build
 BUILD_PAGES_LIVE=1 npm run pages:build  # also refresh public GitHub counters
 ```
 
-The optional live mode uses the no-auth GitHub repository API with timeouts, retries, jitter, and ETag/Last-Modified caching. GitLab Pages deployment is defined in [`.gitlab-ci.yml`](.gitlab-ci.yml).
+The optional live mode uses the no-auth GitHub repository API with timeouts, retries, jitter, and ETag/Last-Modified caching.
+
+Both pages share one design system (the same tokens as `forge dash`) and are gated by `forge uicheck design` and the rendered `forge uicheck visual` check.
+
+GitHub Pages is the primary deployment, via [`.github/workflows/static.yml`](.github/workflows/static.yml): the landing page is published at the site root and the status page at `/status/`. GitLab Pages ([`.gitlab-ci.yml`](.gitlab-ci.yml)) is unchanged and only deploys the status page at its root — it does not get the landing page.
 
 ## Documentation
 

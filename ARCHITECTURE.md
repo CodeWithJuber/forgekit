@@ -156,11 +156,14 @@ forgekit/
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
     ledger_bridge.js      # legacy-store bridge: cortex/recall/brain shadow-writes + idempotent `ledger import`
+    ledger_read.js        # merged legacy∪ledger read path: cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
+    embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
     diagnose.js           # doom-loop diagnosis: normalized failure signatures; 3× = diagnosis claim + one-tier escalation
     imagine.js            # consequence simulation (Eq. 4): predicted breaks + minimal dry-run suite via greedy set cover
     uifingerprint.js      # deterministic design fingerprint + slop-distance / conformance gate (no LLM, no screenshots)
+    taste.js              # taste-profile system: applies design-taste profiles (brutalist, corporate, editorial, minimalist, playful; JSON in global/taste/) to parameterize `uicheck design` gate thresholds via --taste
     dash.js               # localhost-only read-only dashboard over the ledger, metrics, and blast radius (node:http, one HTML page)
     metrics.js            # stage-tagged .forge/metrics.jsonl — the measured events every cost figure is computed from
     cost_report.js        # per-stage cost factors as pure arithmetic over metrics.jsonl; composes ONLY measured stages
@@ -174,7 +177,14 @@ forgekit/
   .claude-plugin/ .codex-plugin/  # plugin manifests → point at global/ + skills/ (no dup beyond the codex skill mirror)
   install.sh              # hardened: idempotent, symlink, backup, no curl|sh
   bin/                    # back-compat shims → src/cli.js
+  landing/                # hand-authored public landing page; design tokens shared with `forge dash`
+  scripts/
+    build-pages.mjs       # generates public/index.html, the live status page, from real repo data
 ```
+Public site deploy (two independent Pages targets, both built from `landing/` +
+`scripts/build-pages.mjs`): `.github/workflows/static.yml` (GitHub Pages — assembles
+landing + status page into one `_site/`) · `.gitlab-ci.yml` (GitLab Pages — status
+page only).
 plugin.json, install.sh, and the npm bin **all reference `global/` + `source/`** —
 no duplication; each channel just runs `forge sync` at the end. A test asserts all
 three resolve to `global/`.
