@@ -82,8 +82,15 @@ async function main() {
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
       const result = substrateCheck(root, hook.prompt, { allowBuild: false });
-      // Opt-in enforcing mode (FORGE_ENFORCE=1) turns the gate from advisory into a real halt on
-      // a vacuous prompt. Default: advisory, never blocks.
+      // Best-effort metrics recording — fills the cost dashboard pipeline without
+      // blocking the hook. A failing write is silently swallowed.
+      try {
+        const { record } = await import("./metrics.js");
+        record(root, { stage: "gate", outcome: result.gate?.halted ? "halt" : "pass" });
+        if (result.route?.key) {
+          record(root, { stage: "route", tier: result.route.tier });
+        }
+      } catch {}
       const gate = enforceDecision(result);
       if (gate.block) {
         process.stdout.write(JSON.stringify({ decision: "block", reason: gate.reason }));

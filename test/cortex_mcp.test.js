@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
 
-test("handle: initialize advertises the forge-cortex server", () => {
-  const r = handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+test("handle: initialize advertises the forge-cortex server", async () => {
+  const r = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
   assert.equal(r.result.serverInfo.name, "forge-cortex");
 });
 
-test("handle: tools/list exposes the cortex + preflight tools", () => {
-  const r = handle({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+test("handle: tools/list exposes the cortex + preflight tools", async () => {
+  const r = await handle({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const names = r.result.tools.map((t) => t.name);
   for (const t of [
     "cortex_lessons",
@@ -22,14 +22,20 @@ test("handle: tools/list exposes the cortex + preflight tools", () => {
     "preflight_check",
     "route_task",
     "scope_files",
+    "forge_cost",
+    "forge_dash_data",
+    "forge_brain",
+    "forge_ledger_query",
+    "forge_diagnose",
+    "forge_doctor",
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }
 });
 
-test("handle: notifications get no response; unknown methods error", () => {
-  assert.equal(handle({ method: "notifications/initialized" }), null);
-  assert.equal(handle({ id: 9, method: "bogus" }).error.code, -32601);
+test("handle: notifications get no response; unknown methods error", async () => {
+  assert.equal(await handle({ method: "notifications/initialized" }), null);
+  assert.equal((await handle({ id: 9, method: "bogus" })).error.code, -32601);
 });
 
 const SERVER = fileURLToPath(new URL("../src/cortex_mcp.js", import.meta.url));

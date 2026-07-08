@@ -24,6 +24,7 @@ const COMMANDS = {
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
+  config: "provider setup — show / switch / add providers, set default model",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
@@ -67,13 +68,23 @@ async function run(argv) {
   }
   if (cmd === "init") {
     const { init } = await import("./init.js");
-    const { report, bytes } = init({ targetRoot: process.cwd() });
+    const noSettings = argv.includes("--no-settings");
+    const { report, bytes, settings } = init({ targetRoot: process.cwd(), noSettings });
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     console.log(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
+    if (settings?.action === "merged") {
+      console.log(
+        `  settings: merged ${settings.added.join(", ")} into ${settings.path}`,
+      );
+    } else if (settings?.action === "unchanged") {
+      console.log(`  settings: already up to date (${settings.path})`);
+    } else if (settings?.action === "skipped") {
+      console.log("  settings: skipped (--no-settings)");
+    }
     console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
     return;
@@ -678,9 +689,19 @@ async function run(argv) {
       }
       console.log(out.trim());
     } catch {
-      console.log(
-        "  ccusage not found. Install for real spend (reads local JSONL, nothing leaves your machine):\n    npm i -g ccusage    # then: forge cost",
-      );
+      const { estimateSpendFromLogs } = await import("./cost_report.js");
+      const est = estimateSpendFromLogs();
+      if (est && est.totalCost > 0) {
+        console.log(`  $${est.totalCost.toFixed(2)} estimated from Claude session logs (${est.sessions} session(s))`);
+        if (est.byModel.length) {
+          for (const m of est.byModel) console.log(`    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`);
+        }
+        console.log("\n  install ccusage for precise tracking: npm i -g ccusage");
+      } else {
+        console.log(
+          "  ccusage not found. Install for real spend (reads local JSONL, nothing leaves your machine):\n    npm i -g ccusage    # then: forge cost",
+        );
+      }
     }
     console.log(
       `\n  ceiling: FORGE_COST_CEILING (default $10) — the cost-budget guard warns when a day exceeds it.`,
@@ -832,6 +853,75 @@ async function run(argv) {
     console.log(json ? JSON.stringify(r, null, 2) : renderSubstrate(r));
     return;
   }
+  if (cmd === "config") {
+    const sub = argv[1] || "show";
+    const { loadProviders, activeProvider, setProvider, addProvider, listProviders, applyRoute } =
+      await import("./providers.js");
+    const json = argv.includes("--json");
+    if (sub === "show") {
+      const prov = activeProvider(process.cwd());
+      const config = loadProviders(process.cwd());
+      if (json) return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
+      console.log(`${BRAND.brand} config\n`);
+      console.log(`  provider:  ${prov.name} (${prov.label || prov.name})`);
+      console.log(`  base URL:  ${prov.baseUrl}`);
+      console.log(`  env key:   ${prov.envKey || "(none)"}${prov.envKey ? (process.env[prov.envKey] ? " ✓ set" : " ✗ not set") : ""}`);
+      console.log(`  models:`);
+      for (const [tier, id] of Object.entries(prov.models || {}))
+        console.log(`    ${tier.padEnd(8)} ${id}`);
+      return;
+    }
+    if (sub === "providers") {
+      const list = listProviders(process.cwd());
+      if (json) return console.log(JSON.stringify(list, null, 2));
+      console.log(`${BRAND.brand} config providers\n`);
+      for (const p of list)
+        console.log(
+          `  ${p.active ? "▸" : " "} ${p.name.padEnd(14)} ${p.label.padEnd(20)} ${p.envKey ? (p.hasKey ? "✓ key set" : "✗ key missing") : ""}`,
+        );
+      console.log(`\n  switch: \`${BRAND.cli} config provider <name>\``);
+      return;
+    }
+    if (sub === "provider") {
+      const name = argv[2];
+      if (!name) {
+        console.error(`usage: ${BRAND.cli} config provider <name>   |   ${BRAND.cli} config provider add <name> --base-url <url> [--key-env <VAR>]`);
+        process.exitCode = 1;
+        return;
+      }
+      if (name === "add") {
+        const addName = argv[3];
+        const flagVal = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
+        const baseUrl = flagVal("--base-url");
+        const envKey = flagVal("--key-env");
+        const label = flagVal("--label");
+        const r = addProvider(process.cwd(), addName, { baseUrl, envKey, label });
+        if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+        console.log(`  added provider "${addName}" → ${r.provider.baseUrl}`);
+        return;
+      }
+      const r = setProvider(process.cwd(), name);
+      if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+      console.log(`  switched to provider "${name}" (${r.provider.label || name})`);
+      return;
+    }
+    if (sub === "model") {
+      const tier = argv[2];
+      if (!tier) {
+        console.error(`usage: ${BRAND.cli} config model <haiku|sonnet|opus|fable>`);
+        process.exitCode = 1;
+        return;
+      }
+      const r = applyRoute(tier);
+      if (!r.ok) { console.error(`  ${r.reason}`); process.exitCode = 1; return; }
+      console.log(`  model set to ${r.model} (${r.modelId})${r.prev ? ` — was: ${r.prev}` : ""}`);
+      console.log(`  written to ${r.path}`);
+      return;
+    }
+    console.error(`config: unknown subcommand "${sub}" (show | providers | provider <name> | model <tier>)`);
+    process.exitCode = 1;
+    return;
+  }
   if (cmd === "route") {
     const r = await import("./route.js");
     if (argv[1] === "gateway") {
@@ -844,35 +934,53 @@ async function run(argv) {
       return;
     }
     const json = argv.includes("--json");
+    const apply = argv.includes("--apply");
+    const providerIdx = argv.indexOf("--provider");
+    const providerName = providerIdx >= 0 ? argv[providerIdx + 1] : undefined;
+    const FLAGS = new Set(["--json", "--apply"]);
     const task = argv
       .slice(1)
-      .filter((a) => a !== "--json")
+      .filter((a, i) => !FLAGS.has(a) && a !== "--provider" && argv[i] !== "--provider")
       .join(" ");
     if (!task) {
-      console.error('usage: forge route "<task>" [--json]   |   forge route gateway');
+      console.error('usage: forge route "<task>" [--apply] [--provider <name>] [--json]   |   forge route gateway');
       process.exitCode = 1;
       return;
     }
+    if (providerName) {
+      const { setProvider } = await import("./providers.js");
+      const sr = setProvider(process.cwd(), providerName);
+      if (!sr.ok) { console.error(`  ${sr.reason}`); process.exitCode = 1; return; }
+    }
     const rec = r.routeTask(process.cwd(), task);
-    // P8 route metering — explicit CLI path only (hooks that route stay write-free);
-    // best-effort, a metrics failure must never block the recommendation.
     r.meterRoute(process.cwd(), task, rec);
     if (json) {
       console.log(JSON.stringify(rec, null, 2));
-      return;
+    } else {
+      console.log(`${BRAND.brand} route — cheapest capable model\n`);
+      console.log(
+        `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+      );
+      console.log(`    ${rec.model.use}`);
+      console.log(
+        `    complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
+      );
+      console.log(
+        `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
+      );
     }
-    console.log(`${BRAND.brand} route — cheapest capable model\n`);
-    console.log(
-      `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
-    );
-    console.log(`    ${rec.model.use}`);
-    console.log(
-      `    complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
-    );
-    console.log(
-      `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
-    );
-    console.log("\n  advisory · auto-routing: `forge route gateway`");
+    if (apply) {
+      const { applyRoute } = await import("./providers.js");
+      const ar = applyRoute(rec.key);
+      if (ar.ok) {
+        if (!json) console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
+      } else {
+        if (!json) console.error(`\n  apply failed: ${ar.reason}`);
+        process.exitCode = 1;
+      }
+    } else if (!json) {
+      console.log(`\n  advisory · apply: \`${BRAND.cli} route "<task>" --apply\` · gateway: \`${BRAND.cli} route gateway\``);
+    }
     return;
   }
   if (cmd === "anchor") {
