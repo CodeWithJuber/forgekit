@@ -8,6 +8,7 @@ import {
   addProvider,
   applyRoute,
   autoDetectProvider,
+  envModelOverride,
   listDetectedProviders,
   listProviders,
   loadProviders,
@@ -43,6 +44,9 @@ const CLEAR_ENV = {
   ANTHROPIC_BASE_URL: undefined,
   OPENROUTER_API_KEY: undefined,
   ANTHROPIC_API_KEY: undefined,
+  ANTHROPIC_AUTH_TOKEN: undefined,
+  ANTHROPIC_MODEL: undefined,
+  FORGE_MODEL: undefined,
 };
 
 // --- existing tests ---
@@ -370,6 +374,184 @@ test("listDetectedProviders: returns all available providers from env", () => {
       assert.ok(names.includes("litellm"));
       assert.ok(names.includes("openrouter"));
       assert.ok(names.includes("anthropic"));
+    },
+  );
+});
+
+// --- ANTHROPIC_AUTH_TOKEN recognition ---
+
+test("autoDetectProvider: ANTHROPIC_AUTH_TOKEN → anthropic (fallback auth)", () => {
+  withEnv({ ...CLEAR_ENV, ANTHROPIC_AUTH_TOKEN: "token-test" }, () => {
+    const r = autoDetectProvider();
+    assert.equal(r.name, "anthropic");
+    assert.equal(r.type, "anthropic");
+    assert.equal(r.envKey, "ANTHROPIC_AUTH_TOKEN");
+    assert.equal(r.source, "ANTHROPIC_AUTH_TOKEN");
+  });
+});
+
+test("autoDetectProvider: ANTHROPIC_API_KEY wins over ANTHROPIC_AUTH_TOKEN", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_API_KEY: "sk-ant-test", ANTHROPIC_AUTH_TOKEN: "token-test" },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.envKey, "ANTHROPIC_API_KEY");
+      assert.equal(r.source, "ANTHROPIC_API_KEY");
+    },
+  );
+});
+
+// --- LiteLLM gateway detection from ANTHROPIC_BASE_URL ---
+
+test("autoDetectProvider: ANTHROPIC_BASE_URL with 'gateway' → litellm type", () => {
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      ANTHROPIC_BASE_URL: "https://api-eu1.aigateway.emirates.group",
+      ANTHROPIC_AUTH_TOKEN: "token",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.type, "litellm");
+      assert.equal(r.name, "litellm-gateway");
+      assert.equal(r.envKey, "ANTHROPIC_AUTH_TOKEN");
+    },
+  );
+});
+
+test("autoDetectProvider: ANTHROPIC_BASE_URL with 'litellm' → litellm type", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_BASE_URL: "https://litellm.company.com", ANTHROPIC_API_KEY: "sk" },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.type, "litellm");
+      assert.equal(r.name, "litellm-gateway");
+    },
+  );
+});
+
+test("autoDetectProvider: non-gateway proxy URL → anthropic-proxy (backward compat)", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_BASE_URL: "http://localhost:4000", ANTHROPIC_API_KEY: "sk-ant-test" },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.type, "anthropic");
+      assert.equal(r.name, "anthropic-proxy");
+    },
+  );
+});
+
+test("autoDetectProvider: ANTHROPIC_BASE_URL proxy uses ANTHROPIC_AUTH_TOKEN when no API_KEY", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_BASE_URL: "http://localhost:4000", ANTHROPIC_AUTH_TOKEN: "token" },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.envKey, "ANTHROPIC_AUTH_TOKEN");
+    },
+  );
+});
+
+// --- Full LiteLLM gateway scenario (the Emirates env) ---
+
+test("autoDetectProvider: full LiteLLM gateway env (Emirates scenario)", () => {
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      ANTHROPIC_BASE_URL: "https://api-eu1.aigateway.emirates.group",
+      ANTHROPIC_AUTH_TOKEN: "gateway-token",
+      ANTHROPIC_MODEL: "claude-opus-4-7",
+    },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.type, "litellm");
+      assert.equal(r.baseUrl, "https://api-eu1.aigateway.emirates.group");
+      assert.equal(r.envKey, "ANTHROPIC_AUTH_TOKEN");
+    },
+  );
+});
+
+// --- ANTHROPIC_MODEL override ---
+
+test("envModelOverride: returns ANTHROPIC_MODEL when set", () => {
+  withEnv({ ANTHROPIC_MODEL: "claude-opus-4-7" }, () => {
+    assert.equal(envModelOverride(), "claude-opus-4-7");
+  });
+});
+
+test("envModelOverride: returns FORGE_MODEL as fallback", () => {
+  withEnv({ ANTHROPIC_MODEL: undefined, FORGE_MODEL: "custom-model" }, () => {
+    assert.equal(envModelOverride(), "custom-model");
+  });
+});
+
+test("envModelOverride: returns null when neither is set", () => {
+  withEnv({ ANTHROPIC_MODEL: undefined, FORGE_MODEL: undefined }, () => {
+    assert.equal(envModelOverride(), null);
+  });
+});
+
+test("resolveModel: ANTHROPIC_MODEL overrides tier-based resolution", () => {
+  const root = tmpRoot();
+  withEnv({ ...CLEAR_ENV, ANTHROPIC_MODEL: "claude-opus-4-7" }, () => {
+    assert.equal(resolveModel(root, "haiku"), "claude-opus-4-7");
+    assert.equal(resolveModel(root, "sonnet"), "claude-opus-4-7");
+    assert.equal(resolveModel(root, "opus"), "claude-opus-4-7");
+  });
+});
+
+test("resolveModel: without ANTHROPIC_MODEL, tier resolution is unchanged", () => {
+  const root = tmpRoot();
+  withEnv({ ANTHROPIC_MODEL: undefined, FORGE_MODEL: undefined }, () => {
+    const id = resolveModel(root, "haiku");
+    assert.ok(id);
+    assert.notEqual(id, "claude-opus-4-7");
+  });
+});
+
+// --- providerStatus envScan includes new env vars ---
+
+test("providerStatus: envScan includes ANTHROPIC_AUTH_TOKEN and ANTHROPIC_MODEL", () => {
+  const root = tmpRoot();
+  withEnv(CLEAR_ENV, () => {
+    const status = providerStatus(root);
+    const keys = status.envScan.map((e) => e.key);
+    assert.ok(keys.includes("ANTHROPIC_AUTH_TOKEN"));
+    assert.ok(keys.includes("ANTHROPIC_MODEL"));
+  });
+});
+
+// --- listDetectedProviders: ANTHROPIC_AUTH_TOKEN ---
+
+test("listDetectedProviders: ANTHROPIC_AUTH_TOKEN (no API_KEY) → listed", () => {
+  withEnv({ ...CLEAR_ENV, ANTHROPIC_AUTH_TOKEN: "token-test" }, () => {
+    const detected = listDetectedProviders();
+    assert.ok(detected.some((d) => d.source === "ANTHROPIC_AUTH_TOKEN"));
+  });
+});
+
+test("listDetectedProviders: ANTHROPIC_API_KEY set → ANTHROPIC_AUTH_TOKEN not double-listed", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_AUTH_TOKEN: "token-test" },
+    () => {
+      const detected = listDetectedProviders();
+      const authTokenEntries = detected.filter((d) => d.source === "ANTHROPIC_AUTH_TOKEN");
+      assert.equal(authTokenEntries.length, 0);
+    },
+  );
+});
+
+test("listDetectedProviders: gateway URL detected as litellm", () => {
+  withEnv(
+    {
+      ...CLEAR_ENV,
+      ANTHROPIC_BASE_URL: "https://api.aigateway.example.com",
+      ANTHROPIC_AUTH_TOKEN: "token",
+    },
+    () => {
+      const detected = listDetectedProviders();
+      const gw = detected.find((d) => d.source === "ANTHROPIC_BASE_URL");
+      assert.equal(gw.type, "litellm");
+      assert.equal(gw.name, "litellm-gateway");
     },
   );
 });

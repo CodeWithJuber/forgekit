@@ -11,7 +11,7 @@ import { recordRoute } from "./cost_report.js";
 import { mergedLessons } from "./ledger_read.js";
 import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
-import { activeProvider } from "./providers.js";
+import { activeProvider, envModelOverride } from "./providers.js";
 import { clamp01, contentHash, epochDay } from "./util.js";
 
 // Weights sum to 1. Each raw signal is normalized by the point where it reads as "complex".
@@ -232,6 +232,7 @@ export function routeTask(
     }
   }
   const recommended = recommend(score, norm);
+  const modelOvr = envModelOverride();
   return {
     score,
     repoScore,
@@ -242,6 +243,7 @@ export function routeTask(
       : null,
     provenance: { path },
     ...recommended,
+    modelOverride: modelOvr || undefined,
     reasons: [
       ...new Set([
         ...(recommended.reasons || []),

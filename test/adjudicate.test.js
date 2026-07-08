@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { adjudicate, asText, asUnit, extractJson, llmEnabled } from "../src/adjudicate.js";
+import {
+  adjudicate,
+  asText,
+  asUnit,
+  buildRunner,
+  extractJson,
+  llmEnabled,
+} from "../src/adjudicate.js";
 
 const parseScore = (o) => {
   const score = asUnit(o.score);
@@ -106,4 +113,31 @@ test("asUnit clamps to [0,1]; asText trims and caps", () => {
   assert.equal(asText("  hi  "), "hi");
   assert.equal(asText(null), "");
   assert.equal(asText("x".repeat(500)).length, 200);
+});
+
+test("buildRunner: returns a function regardless of transport (HTTP or CLI)", () => {
+  const runner = buildRunner({ model: "haiku" });
+  assert.equal(typeof runner, "function");
+});
+
+test("buildRunner: FORGE_LLM_HTTP=1 with no provider → runner throws descriptive error", () => {
+  const saved = {
+    FORGE_LLM_HTTP: process.env.FORGE_LLM_HTTP,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+    LITELLM_API_KEY: process.env.LITELLM_API_KEY,
+  };
+  process.env.FORGE_LLM_HTTP = "1";
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.LITELLM_API_KEY;
+  try {
+    const runner = buildRunner({ model: "haiku" });
+    assert.throws(() => runner("test prompt"), /no LLM provider/);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });

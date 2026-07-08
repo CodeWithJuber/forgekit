@@ -13,6 +13,16 @@ const PROVIDERS_DIR = ".forge";
 
 const ANTHROPIC_DEFAULT_URL = "https://api.anthropic.com";
 
+function anthropicKeyEnv() {
+  if (process.env.ANTHROPIC_API_KEY) return "ANTHROPIC_API_KEY";
+  if (process.env.ANTHROPIC_AUTH_TOKEN) return "ANTHROPIC_AUTH_TOKEN";
+  return "ANTHROPIC_API_KEY";
+}
+
+function isLikelyGateway(url) {
+  return /\b(gateway|litellm|aigateway|llmproxy|llm-proxy)\b/i.test(url);
+}
+
 function providersPath(root) {
   return join(root, PROVIDERS_DIR, PROVIDERS_FILE);
 }
@@ -99,8 +109,15 @@ export function activeProvider(root = process.cwd()) {
   return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic };
 }
 
+/** Explicit model override from the environment — bypasses tier-based routing when set. */
+export function envModelOverride() {
+  return process.env.ANTHROPIC_MODEL?.trim() || process.env.FORGE_MODEL?.trim() || null;
+}
+
 /** Resolve a tier key (haiku/sonnet/opus/fable) to the active provider's model ID. */
 export function resolveModel(root, tierKey) {
+  const override = envModelOverride();
+  if (override) return override;
   const provider = activeProvider(root);
   return provider.models?.[tierKey] ?? MODELS[tierKey]?.id ?? null;
 }
@@ -167,7 +184,7 @@ export function autoDetectProvider() {
       type: "litellm",
       label: "LiteLLM Gateway (hosted)",
       baseUrl: litellmUrl,
-      envKey: process.env.LITELLM_API_KEY ? "LITELLM_API_KEY" : "ANTHROPIC_API_KEY",
+      envKey: process.env.LITELLM_API_KEY ? "LITELLM_API_KEY" : anthropicKeyEnv(),
       models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
       source: "LITELLM_BASE_URL",
     };
@@ -175,12 +192,13 @@ export function autoDetectProvider() {
 
   const baseUrl = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
   if (baseUrl && baseUrl.toLowerCase() !== ANTHROPIC_DEFAULT_URL) {
+    const gateway = isLikelyGateway(baseUrl);
     return {
-      name: "anthropic-proxy",
-      type: "anthropic",
-      label: "Anthropic (via proxy)",
+      name: gateway ? "litellm-gateway" : "anthropic-proxy",
+      type: gateway ? "litellm" : "anthropic",
+      label: gateway ? "LiteLLM Gateway (via ANTHROPIC_BASE_URL)" : "Anthropic (via proxy)",
       baseUrl,
-      envKey: "ANTHROPIC_API_KEY",
+      envKey: anthropicKeyEnv(),
       models: Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
       source: "ANTHROPIC_BASE_URL",
     };
@@ -192,6 +210,15 @@ export function autoDetectProvider() {
 
   if (process.env.ANTHROPIC_API_KEY) {
     return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic, source: "ANTHROPIC_API_KEY" };
+  }
+
+  if (process.env.ANTHROPIC_AUTH_TOKEN) {
+    return {
+      name: "anthropic",
+      ...BUILTIN_PROVIDERS.anthropic,
+      envKey: "ANTHROPIC_AUTH_TOKEN",
+      source: "ANTHROPIC_AUTH_TOKEN",
+    };
   }
 
   return null;
@@ -212,10 +239,11 @@ export function listDetectedProviders() {
   }
   const baseUrl = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
   if (baseUrl && baseUrl.toLowerCase() !== ANTHROPIC_DEFAULT_URL) {
+    const gateway = isLikelyGateway(baseUrl);
     detected.push({
-      name: "anthropic-proxy",
-      type: "anthropic",
-      label: "Anthropic (via proxy)",
+      name: gateway ? "litellm-gateway" : "anthropic-proxy",
+      type: gateway ? "litellm" : "anthropic",
+      label: gateway ? "LiteLLM Gateway (via ANTHROPIC_BASE_URL)" : "Anthropic (via proxy)",
       source: "ANTHROPIC_BASE_URL",
       available: true,
     });
@@ -235,6 +263,15 @@ export function listDetectedProviders() {
       type: "anthropic",
       label: "Anthropic (direct)",
       source: "ANTHROPIC_API_KEY",
+      available: true,
+    });
+  }
+  if (!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_AUTH_TOKEN) {
+    detected.push({
+      name: "anthropic",
+      type: "anthropic",
+      label: "Anthropic (via auth token)",
+      source: "ANTHROPIC_AUTH_TOKEN",
       available: true,
     });
   }
@@ -288,6 +325,8 @@ export function providerStatus(root = process.cwd()) {
     { key: "ANTHROPIC_BASE_URL", set: Boolean(process.env.ANTHROPIC_BASE_URL) },
     { key: "OPENROUTER_API_KEY", set: Boolean(process.env.OPENROUTER_API_KEY) },
     { key: "ANTHROPIC_API_KEY", set: Boolean(process.env.ANTHROPIC_API_KEY) },
+    { key: "ANTHROPIC_AUTH_TOKEN", set: Boolean(process.env.ANTHROPIC_AUTH_TOKEN) },
+    { key: "ANTHROPIC_MODEL", set: Boolean(process.env.ANTHROPIC_MODEL) },
   ];
 
   return {

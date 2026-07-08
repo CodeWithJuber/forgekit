@@ -10,7 +10,10 @@
 //   - FAIL-SAFE. Any error/timeout/garble/secret → returns null. A null NEVER changes a verdict.
 //   - ZERO-DEP. Access is a `claude -p` CLI shell-out; the runner is injectable so the pure
 //     prompt/parse/verify logic is fully testable without the CLI or the network.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { buildHttpRunner as httpRunner } from "./llm.js";
+import { MODELS } from "./model_tiers.js";
+import { envModelOverride } from "./providers.js";
 import { SECRET_RE } from "./recall.js";
 
 /**
@@ -22,10 +25,30 @@ export function llmEnabled(opts = {}) {
   return process.env.FORGE_LLM === "1";
 }
 
-/** Build an injectable `claude -p` runner. Pure config in, a (prompt)->string runner out. */
+let _claudeChecked = false;
+let _claudeAvail = false;
+function hasClaude() {
+  if (!_claudeChecked) {
+    _claudeChecked = true;
+    try {
+      const r = spawnSync("which", ["claude"], { encoding: "utf8", timeout: 2000, stdio: "pipe" });
+      _claudeAvail = r.status === 0;
+    } catch {
+      _claudeAvail = false;
+    }
+  }
+  return _claudeAvail;
+}
+
+/** Build an injectable LLM runner. Tries direct HTTP when `claude` CLI is unavailable
+ *  or when FORGE_LLM_HTTP=1. Falls back to `claude -p` otherwise. */
 export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
+  const resolvedModel = envModelOverride() || MODELS[model]?.id || model;
+  if (process.env.FORGE_LLM_HTTP === "1" || !hasClaude()) {
+    return httpRunner({ model: resolvedModel, timeoutMs });
+  }
   return (prompt) =>
-    execFileSync("claude", ["-p", "--model", model], {
+    execFileSync("claude", ["-p", "--model", resolvedModel], {
       input: prompt,
       encoding: "utf8",
       timeout: timeoutMs,
