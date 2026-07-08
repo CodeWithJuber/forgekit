@@ -33,7 +33,7 @@ function mergeJson(path, key, servers) {
   }
   if (!added) return { action: "unchanged", note: "present" };
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(obj, null, 2) + "\n");
+  writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
   return { action: "written", note: `+${added} server(s)` };
 }
 
@@ -58,7 +58,7 @@ function emitContinueYaml(dir, servers) {
     lines.push(`  - name: ${name}`, "    type: stdio", `    command: ${def.command}`, "    args:");
     for (const a of def.args || []) lines.push(`      - ${JSON.stringify(a)}`);
   }
-  const content = lines.join("\n") + "\n";
+  const content = `${lines.join("\n")}\n`;
   if (existsSync(path) && readFileSync(path, "utf8") === content)
     return { action: "unchanged", note: "present" };
   mkdirSync(dir, { recursive: true });

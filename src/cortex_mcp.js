@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { lessonsForContext, summary } from "./cortex.js";
 import { report as costReport } from "./cost_report.js";
-import { dashData } from "./dash.js";
+import { dashData, dashSummary } from "./dash.js";
 import { diagnose } from "./diagnose.js";
 import { doctor } from "./doctor.js";
 import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
@@ -131,6 +131,12 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "forge_dash_summary",
+    description:
+      "Lightweight dashboard health check — just counts (claims, tombstoned, contested, atlas built, metric events). Cheaper than forge_dash_data.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "forge_brain",
     description: "Project memory index — list all remembered facts stored in .forge/brain/.",
     inputSchema: { type: "object", properties: {} },
@@ -173,6 +179,44 @@ const TOOLS = [
       "Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "forge_remember",
+    description:
+      "Store a durable fact in this repo's portable memory (.forge/brain/). Use for non-obvious, lasting knowledge (env quirks, decisions, gotchas).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "short slug for the fact (used as filename)" },
+        body: { type: "string", description: "the fact content (markdown)" },
+      },
+      required: ["name", "body"],
+    },
+  },
+  {
+    name: "forge_ledger_ratify",
+    description:
+      "Promote a ledger claim's confidence — record an independent oracle ratification (the claim held under test).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "claim ID or unique prefix" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "forge_ledger_retract",
+    description:
+      "Tombstone a ledger claim with a reason — mark it as no longer valid so it stops influencing routing and memory.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "claim ID or unique prefix" },
+        reason: { type: "string", description: "why the claim is being retracted" },
+      },
+      required: ["id", "reason"],
+    },
+  },
 ];
 
 async function callTool(name, args = {}) {
@@ -212,6 +256,7 @@ async function callTool(name, args = {}) {
   }
   if (name === "forge_cost") return JSON.stringify(costReport(root), null, 2);
   if (name === "forge_dash_data") return JSON.stringify(dashData(root), null, 2);
+  if (name === "forge_dash_summary") return JSON.stringify(dashSummary(root), null, 2);
   if (name === "forge_brain") {
     try {
       const { brainStore, list, buildIndex } = await import("./brain.js");
@@ -286,6 +331,34 @@ async function callTool(name, args = {}) {
       null,
       2,
     );
+  }
+  if (name === "forge_remember") {
+    const { brainStore, remember } = await import("./brain.js");
+    const store = brainStore(root);
+    remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    return `Remembered "${args.name}" in ${store}.`;
+  }
+  if (name === "forge_ledger_ratify") {
+    const { ratify, repoLedger, getClaimByPrefix } = await import("./ledger_store.js");
+    const { gitAuthor } = await import("./util.js");
+    const dir = repoLedger(root);
+    const claim = getClaimByPrefix(dir, String(args.id ?? ""));
+    if (!claim) return `No claim matching prefix "${args.id}".`;
+    ratify(dir, claim.id, { author: gitAuthor(), t: today() });
+    return `Ratified claim ${claim.id}.`;
+  }
+  if (name === "forge_ledger_retract") {
+    const { tombstone, repoLedger, getClaimByPrefix } = await import("./ledger_store.js");
+    const { gitAuthor } = await import("./util.js");
+    const dir = repoLedger(root);
+    const claim = getClaimByPrefix(dir, String(args.id ?? ""));
+    if (!claim) return `No claim matching prefix "${args.id}".`;
+    tombstone(dir, claim.id, {
+      author: gitAuthor(),
+      reason: String(args.reason ?? ""),
+      t: today(),
+    });
+    return `Retracted claim ${claim.id}: ${args.reason}`;
   }
   return null;
 }

@@ -33,7 +33,7 @@ test("brain is inlined into AGENTS.md by sync (so every tool shares it)", () => 
 
 test("buildIndex caps items and reports overflow (cliff-safe)", () => {
   const store = brainStore(fixture());
-  for (let i = 0; i < 5; i++) remember(store, "fact" + i, "body " + i);
+  for (let i = 0; i < 5; i++) remember(store, `fact${i}`, `body ${i}`);
   const idx = buildIndex(store, { capItems: 2 });
   assert.equal(idx.indexed, 2);
   assert.equal(idx.overflow, 3);

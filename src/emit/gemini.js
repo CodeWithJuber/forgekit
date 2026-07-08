@@ -29,7 +29,7 @@ export default {
     const had = current.includes("AGENTS.md");
     context.fileName = [...new Set([...current, "AGENTS.md"])];
     settings._forge = ctx.shared.markerString(ctx.hash);
-    const action = ctx.shared.writeIfChanged(path, JSON.stringify(settings, null, 2) + "\n");
+    const action = ctx.shared.writeIfChanged(path, `${JSON.stringify(settings, null, 2)}\n`);
     return {
       tool: this.tool,
       target: ".gemini/settings.json",

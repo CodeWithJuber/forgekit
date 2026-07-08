@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { catalog, init } from "../src/init.js";
+import { catalog, init, mergeSettings } from "../src/init.js";
 
 test("init emits the shared config for a fresh repo in one call", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));
@@ -11,6 +11,54 @@ test("init emits the shared config for a fresh repo in one call", () => {
   assert.ok(existsSync(join(root, "AGENTS.md")), "AGENTS.md");
   assert.ok(existsSync(join(root, "CLAUDE.md")), "CLAUDE.md");
   assert.ok(existsSync(join(root, ".aider.conf.yml")), ".aider.conf.yml");
+});
+
+test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-hooks-"));
+  const settingsPath = join(tmp, ".claude", "settings.json");
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt',
+              },
+              {
+                type: "command",
+                command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh preflight',
+              },
+            ],
+          },
+        ],
+        Stop: [
+          {
+            hooks: [
+              { type: "command", command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/lean-guard.sh' },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  mergeSettings({ settingsPath });
+  const result = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const promptHooks = result.hooks.UserPromptSubmit.flatMap((e) =>
+    (e.hooks || []).map((h) => h.command),
+  );
+  const cortexPromptCount = promptHooks.filter((c) => c.includes("cortex.sh prompt")).length;
+  assert.equal(
+    cortexPromptCount,
+    1,
+    "cortex.sh prompt must not duplicate across plugin + settings paths",
+  );
+  const stopHooks = result.hooks.Stop.flatMap((e) => (e.hooks || []).map((h) => h.command));
+  const leanCount = stopHooks.filter((c) => c.includes("lean-guard.sh")).length;
+  assert.equal(leanCount, 1, "lean-guard.sh must not duplicate");
 });
 
 test("catalog indexes tools (with a why), crew, and guards", () => {

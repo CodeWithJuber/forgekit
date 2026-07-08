@@ -57,17 +57,28 @@ function unionStrings(a = [], b = []) {
   return [...set];
 }
 
-/** Merge Forge hook entries into existing hook arrays, matching by command to avoid duplicates. */
+/** Extract guard identity (basename + trailing args) from a hook command for dedup.
+ *  `bash ~/.forge/guards/cortex.sh prompt` and
+ *  `"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt` both → `cortex.sh prompt`. */
+function guardKey(command) {
+  const m = command.match(/([^/\\"]+\.sh)\s*(.*)/);
+  return m ? `${m[1]} ${m[2]}`.trim() : command;
+}
+
+/** Merge Forge hook entries into existing hook arrays, matching by guard identity to avoid duplicates. */
 function mergeHooks(existing = {}, template = {}) {
   const merged = { ...existing };
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
-    const existingCommands = new Set(
-      existingEntries.flatMap((e) => (e.hooks || []).map((h) => h.command)).filter(Boolean),
+    const existingKeys = new Set(
+      existingEntries
+        .flatMap((e) => (e.hooks || []).map((h) => h.command))
+        .filter(Boolean)
+        .map(guardKey),
     );
     const newEntries = [];
     for (const entry of entries) {
-      const hooks = (entry.hooks || []).filter((h) => !existingCommands.has(h.command));
+      const hooks = (entry.hooks || []).filter((h) => !existingKeys.has(guardKey(h.command)));
       if (hooks.length) {
         newEntries.push({ ...entry, hooks });
       }

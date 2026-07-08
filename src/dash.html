@@ -210,7 +210,7 @@ const bar = (v, { dim = false } = {}) =>
 
 // Every claim row carries its provenance affordance — click to copy the exact command.
 const blameCell = (id8) =>
-  '<td><span class="blame" data-id8="' + esc(id8) + '">forge ledger blame ' + esc(id8) + "</span></td>";
+  `<td><span class="blame" data-id8="${esc(id8)}">forge ledger blame ${esc(id8)}</span></td>`;
 
 // The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
 // server stamps YOUR git identity as author); retract = tombstone with a reason.
@@ -240,37 +240,37 @@ let DATA = null;
 
 function renderLedger(d) {
   const L = d.ledger;
-  $("hdr-repo").textContent = "· " + d.repo;
+  $("hdr-repo").textContent = `· ${d.repo}`;
   $("hdr-meta").textContent =
-    L.stats.total + " claims · " + L.stats.tombstoned + " tombstoned · day " + d.nowDay;
+    `${L.stats.total} claims · ${L.stats.tombstoned} tombstoned · day ${d.nowDay}`;
   $("ledger-stats").innerHTML =
     '<span class="stat"><span class="n">' + L.stats.total + '</span><span class="l">claims</span></span>' +
     '<span class="stat"><span class="n ember">' + L.stats.val.trusted + '</span><span class="l">trusted ≥0.65</span></span>' +
     '<span class="stat"><span class="n">' + L.stats.val.uncertain + '</span><span class="l">uncertain</span></span>' +
     '<span class="stat"><span class="n">' + L.stats.val.dormant + '</span><span class="l">dormant &lt;0.35</span></span>' +
     Object.entries(L.stats.byKind).map(([k, n]) =>
-      '<span class="stat"><span class="n">' + n + '</span><span class="l">' + esc(k) + "</span></span>").join("");
+      `<span class="stat"><span class="n">${n}</span><span class="l">${esc(k)}</span></span>`).join("");
 
   const kinds = Object.keys(L.stats.byKind).sort();
   const sel = $("kind-filter");
   const keep = sel.value;
   sel.innerHTML = '<option value="">all</option>' +
-    kinds.map((k) => '<option value="' + esc(k) + '">' + esc(k) + "</option>").join("");
+    kinds.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
   if (kinds.includes(keep)) sel.value = keep;
 
   const shown = L.claims.filter((c) => !sel.value || c.kind === sel.value);
-  $("claim-count").textContent = shown.length + " of " + L.stats.total + " shown";
+  $("claim-count").textContent = `${shown.length} of ${L.stats.total} shown`;
   $("claims").innerHTML = shown.length ? claimTable(shown)
     : '<div class="empty">no claims yet — mint one: forge remember "&lt;name&gt;" "&lt;fact&gt;"</div>';
 
   $("contested").innerHTML = L.contested.length
-    ? '<span class="tag contested">' + L.contested.length + " contested</span>" + claimTable(L.contested)
+    ? `<span class="tag contested">${L.contested.length} contested</span>${claimTable(L.contested)}`
     : '<div class="empty">none — no live claim is both uncertain and contradicted</div>';
 
   const trust = Object.entries(L.trust).sort((a, b) => b[1] - a[1]);
   $("trust").innerHTML = trust.length
     ? "<table><tbody>" + trust.map(([a, u]) =>
-        '<tr><td class="muted">' + esc(a) + "</td><td>" + bar(u) + "</td></tr>").join("") +
+        `<tr><td class="muted">${esc(a)}</td><td>${bar(u)}</td></tr>`).join("") +
       "</tbody></table>"
     : '<div class="empty">no authored claims yet</div>';
 }
@@ -280,35 +280,42 @@ function renderCost(d) {
   const saved = stages.reduce((n, [, s]) => n + (s.savedEstimate || 0), 0);
   const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
   const spend = d.spend;
-  $("cost-stats").innerHTML =
-    (spend && spend.totalCost > 0
-      ? '<span class="stat"><span class="n ember">$' + spend.totalCost.toFixed(2) + '</span><span class="l">real spend</span></span>' +
-        '<span class="stat"><span class="n">' + spend.sessions + '</span><span class="l">sessions</span></span>'
-      : '') +
-    '<span class="stat"><span class="n' + (spend && spend.totalCost > 0 ? '' : ' ember') + '">' + saved.toLocaleString() + '</span><span class="l">est. tokens saved</span></span>' +
-    '<span class="stat"><span class="n">' + events + '</span><span class="l">stage events</span></span>';
-  if (spend && spend.byModel && spend.byModel.length) {
+  const noData = (!spend || spend.totalCost <= 0) && saved === 0 && events === 0;
+  if (noData) {
+    $("cost-stats").innerHTML =
+      '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>';
+  } else {
+    $("cost-stats").innerHTML =
+      (spend && spend.totalCost > 0
+        ? '<span class="stat"><span class="n ember">$' + spend.totalCost.toFixed(2) + '</span><span class="l">real spend</span></span>' +
+          '<span class="stat"><span class="n">' + spend.sessions + '</span><span class="l">sessions</span></span>'
+        : '') +
+      '<span class="stat"><span class="n' + (spend && spend.totalCost > 0 ? '' : ' ember') + '">' + saved.toLocaleString() + '</span><span class="l">est. tokens saved</span></span>' +
+      '<span class="stat"><span class="n">' + events + '</span><span class="l">stage events</span></span>';
+  }
+  if (spend?.byModel?.length) {
     $("spend-section").innerHTML = '<h3>Spend by model</h3>' +
       '<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>' +
       spend.byModel.map((m) => '<tr><td class="mono">' + esc(m.model) + '</td><td class="num">$' + m.cost.toFixed(4) +
           '</td><td class="num">' + (m.inTokens || 0).toLocaleString() +
           '</td><td class="num">' + (m.outTokens || 0).toLocaleString() + '</td></tr>').join('') + '</tbody></table>';
   } else {
-    $("spend-section").innerHTML = '';
+    $("spend-section").innerHTML =
+      '<div class="empty">no model spend data yet — real costs appear when ccusage is configured</div>';
   }
   $("stages").innerHTML = stages.length
     ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
       stages.map(([name, s]) =>
         '<tr><td class="mono">' + esc(name) + '</td><td class="num">' + s.events + "</td><td>" +
         Object.entries(s.byOutcome || {}).map(([o, n]) =>
-          '<span class="tag">' + esc(o) + " " + n + "</span>").join(" ") +
+          `<span class="tag">${esc(o)} ${n}</span>`).join(" ") +
         '</td><td class="num">' + (s.savedEstimate || 0).toLocaleString() + "</td></tr>").join("") +
       "</tbody></table>"
     : '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
   $("recent").innerHTML = d.metrics.recent.slice().reverse().map((e) =>
     "<li>" + new Date(e.t).toLocaleTimeString() + ' <span class="st">' + esc(e.stage) + "</span> " +
-    esc(e.outcome || "") + (e.savedEstimate ? ' <span class="plus">+' + e.savedEstimate + "</span>" : "") +
-    "</li>").join("") || '<li class="empty">—</li>';
+    esc(e.outcome || "") + (e.savedEstimate ? ` <span class="plus">+${e.savedEstimate}</span>` : "") +
+    "</li>").join("") || '<li class="empty">no recent events — the substrate records cache hits, gate passes, and routing decisions as you work</li>';
 }
 
 async function runImpact() {
@@ -320,9 +327,9 @@ async function runImpact() {
     return;
   }
   out.innerHTML = '<div class="empty">tracing…</div>';
-  const res = await fetch("/api/impact?target=" + encodeURIComponent(target));
+  const res = await fetch(`/api/impact?target=${encodeURIComponent(target)}`);
   const r = await res.json();
-  if (!res.ok) { out.innerHTML = '<div class="empty">' + esc(r.error || "error") + "</div>"; return; }
+  if (!res.ok) { out.innerHTML = `<div class="empty">${esc(r.error || "error")}</div>`; return; }
   if (!r.found) {
     out.innerHTML = '<div class="empty">"' + esc(target) + '" not found in the atlas (' +
       r.totalGraphNodes + " nodes)</div>";
@@ -338,7 +345,7 @@ async function runImpact() {
       '</td><td class="mono">' + esc(x.node.name || x.id) + '</td><td class="muted">' +
       esc(x.node.file || "") + "</td></tr>").join("") +
     "</tbody></table>" +
-    (r.impacted.length > 40 ? '<div class="empty">… ' + (r.impacted.length - 40) + " more</div>" : "") +
+    (r.impacted.length > 40 ? `<div class="empty">… ${r.impacted.length - 40} more</div>` : "") +
     '<div class="empty" style="margin-top:8px">same trace on the CLI: forge impact ' + esc(target) + "</div>";
 }
 
@@ -376,7 +383,7 @@ document.addEventListener("click", (ev) => {
   }
   const el = ev.target.closest(".blame");
   if (!el) return;
-  navigator.clipboard?.writeText("forge ledger blame " + el.dataset.id8).then(() => {
+  navigator.clipboard?.writeText(`forge ledger blame ${el.dataset.id8}`).then(() => {
     el.classList.add("copied");
     const prev = el.textContent;
     el.textContent = "copied ✓";
