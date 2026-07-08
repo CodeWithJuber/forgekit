@@ -31,7 +31,7 @@ export function assemble(rules) {
     for (const rule of section.rules || []) out.push(`- ${rule}`);
     out.push("");
   }
-  return out.join("\n").trimEnd() + "\n";
+  return `${out.join("\n").trimEnd()}\n`;
 }
 
 function loadRules(targetRoot) {

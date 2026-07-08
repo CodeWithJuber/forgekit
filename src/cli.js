@@ -40,17 +40,40 @@ const COMMANDS = {
   brand: "print the active brand token map",
 };
 
+const GROUPS = {
+  Core: ["init", "sync", "doctor", "catalog"],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse"],
+  Substrate: [
+    "substrate",
+    "preflight",
+    "route",
+    "impact",
+    "scope",
+    "context",
+    "anchor",
+    "diagnose",
+    "imagine",
+    "lean",
+  ],
+  Quality: ["verify", "scan", "spec", "taste", "uicheck", "harden"],
+  Config: ["config", "cost", "dash", "brand", "atlas"],
+};
+
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
 function printHelp() {
   printVersion();
   console.log(`\n${BRAND.tagline}\n`);
   console.log(`Usage: ${BRAND.cli} <command> [options]\n`);
-  console.log("Commands:");
-  for (const [name, desc] of Object.entries(COMMANDS)) {
-    console.log(`  ${name.padEnd(8)} ${desc}`);
+  for (const [group, cmds] of Object.entries(GROUPS)) {
+    console.log(`${group}:`);
+    for (const name of cmds) {
+      if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${COMMANDS[name]}`);
+    }
+    console.log();
   }
-  console.log(`\nRun \`${BRAND.cli} <command> --help\` for details.`);
+  console.log(`Start here: \`${BRAND.cli} catalog\``);
+  console.log(`Run \`${BRAND.cli} <command> --help\` for details.`);
 }
 
 async function run(argv) {
@@ -139,7 +162,7 @@ async function run(argv) {
     console.log(`${BRAND.brand} sync — one source → every tool\n`);
     for (const r of report) {
       console.log(
-        `  ${r.action.padEnd(16)} ${String(r.target).padEnd(22)} ${r.tool}${r.note ? "  · " + r.note : ""}`,
+        `  ${r.action.padEnd(16)} ${String(r.target).padEnd(22)} ${r.tool}${r.note ? `  · ${r.note}` : ""}`,
       );
     }
     for (const w of warnings) console.warn(`  ! ${w}`);
@@ -158,7 +181,7 @@ async function run(argv) {
     const icon = { ok: "✓", warn: "!", fail: "✗" };
     console.log(`${BRAND.brand} doctor\n`);
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
-    console.log(`\n${failed === 0 ? "all clear" : failed + " problem(s)"}`);
+    console.log(`\n${failed === 0 ? "all clear" : `${failed} problem(s)`}`);
     if (failed) process.exitCode = 1;
     return;
   }
@@ -596,7 +619,7 @@ async function run(argv) {
     if (r.findings?.length) {
       for (const f of r.findings) console.log(`  [${f.sev}] ${f.msg}`);
     } else if (r.raw) {
-      console.log("  " + r.raw.trim().split("\n").slice(-6).join("\n  "));
+      console.log(`  ${r.raw.trim().split("\n").slice(-6).join("\n  ")}`);
     } else {
       console.log("  no obvious red flags");
     }

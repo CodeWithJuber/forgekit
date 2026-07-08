@@ -39,7 +39,6 @@
     "hooks",
     ".claude-plugin",
     ".codex-plugin",
-    "skills",
     ".mcp.json",
     "bin",
     "brand.json",

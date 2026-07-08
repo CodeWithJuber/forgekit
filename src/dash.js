@@ -111,6 +111,42 @@ export function dashData(root, { nowDay = epochDay() } = {}) {
   return { repo: basename(root), nowDay, ledger, metrics, atlas, spend };
 }
 
+/**
+ * Lightweight summary — counts and status only (no full claim list).
+ * @param {string} root
+ * @param {{nowDay?: number}} [opts]
+ */
+export function dashSummary(root, { nowDay = epochDay() } = {}) {
+  let ledgerStats = emptyLedger().stats;
+  let contested = 0;
+  try {
+    const dir = repoLedger(root);
+    ledgerStats = stats(dir, nowDay);
+    const all = loadClaims(dir);
+    contested = all.filter((c) => {
+      if (c.tombstone) return false;
+      const v = val(c, nowDay);
+      if (v < CONTESTED_BAND[0] || v > CONTESTED_BAND[1]) return false;
+      return (c.evidence ?? []).some((e) => validOutcome(e) && e.result === "contradict");
+    }).length;
+  } catch {}
+  let atlasBuilt = false;
+  try {
+    atlasBuilt = Boolean(loadAtlas(root));
+  } catch {}
+  let metricEvents = 0;
+  try {
+    metricEvents = readMetrics(root).length;
+  } catch {}
+  return {
+    claims: ledgerStats.total,
+    tombstoned: ledgerStats.tombstoned,
+    contested,
+    atlasBuilt,
+    metricEvents,
+  };
+}
+
 const HTML_PATH = join(dirname(fileURLToPath(import.meta.url)), "dash.html");
 
 const sendJson = (res, code, body) => {

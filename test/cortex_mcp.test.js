@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -24,10 +24,14 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
     "scope_files",
     "forge_cost",
     "forge_dash_data",
+    "forge_dash_summary",
     "forge_brain",
     "forge_ledger_query",
     "forge_diagnose",
     "forge_doctor",
+    "forge_remember",
+    "forge_ledger_ratify",
+    "forge_ledger_retract",
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }
@@ -74,4 +78,61 @@ test("live server over stdio returns learned lessons for a repo", () => {
   const call = responses.find((x) => x.id === 2);
   assert.match(call.result.content[0].text, /Lessons for the files in play/);
   assert.match(call.result.content[0].text, /tax\.ts/);
+});
+
+test("forge_remember writes a fact to .forge/brain/ via stdio", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-rem-"));
+  mkdirSync(join(root, ".forge", "brain"), { recursive: true });
+  const requests = [
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "forge_remember",
+        arguments: { name: "test-fact", body: "testing MCP write" },
+      },
+    }),
+  ].join("\n");
+  const r = spawnSync("node", [SERVER], {
+    input: `${requests}\n`,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_ROOT: root },
+    timeout: 10000,
+  });
+  const responses = r.stdout
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const call = responses.find((x) => x.id === 2);
+  assert.match(call.result.content[0].text, /Remembered/);
+  const written = readFileSync(join(root, ".forge", "brain", "facts", "test-fact.md"), "utf8");
+  assert.match(written, /testing MCP write/);
+});
+
+test("forge_ledger_retract returns error for missing claim via stdio", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-ret-"));
+  mkdirSync(join(root, ".forge", "ledger"), { recursive: true });
+  const requests = [
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "forge_ledger_retract", arguments: { id: "nonexistent", reason: "test" } },
+    }),
+  ].join("\n");
+  const r = spawnSync("node", [SERVER], {
+    input: `${requests}\n`,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_ROOT: root },
+    timeout: 10000,
+  });
+  const responses = r.stdout
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const call = responses.find((x) => x.id === 2);
+  assert.match(call.result.content[0].text, /No claim matching/);
 });

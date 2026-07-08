@@ -7,19 +7,10 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.6.0)
-Cross-tool config for nine agents (Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
-Windsurf, Zed, Continue) plus MCP config for Roo & VS Code, verification layer
-(`forge verify`), security gate (`forge scan`), portable memory (`forge brain`), cost
-governor (`forge cost`, `--stages` for measured factors), spec-as-contract drift
-(`forge spec`), goal-drift check (`forge anchor`), the cognitive-substrate pre-action
-gate (`forge substrate`, `forge impact`) — **plus the whole Substrate v2 surface**:
-`forge ledger` (proof-carrying team memory), `forge reuse` (verified-code cache),
-`forge context` (budgeted assembly + completeness gate), `forge diagnose` (doom-loop),
-`forge imagine [--run]` (consequence simulation + sandboxed dry-run), `forge uicheck`
-v2 (fingerprints + design gate), and `forge dash`. The full paper and evidence bundle
-live in [docs/cognitive-substrate/](./docs/cognitive-substrate/). See
-[CHANGELOG.md](./CHANGELOG.md).
+## Now (`master`, v0.8.0)
+Everything from 0.7.0 plus branding layer (`forge brand`), model-tier exports
+(`forgekit/model-tiers`), and the Codex plugin manifest — same toolkit, two plugin
+surfaces (Claude Code + Codex). See [CHANGELOG.md](./CHANGELOG.md).
 
 ## Shipped — Substrate v2 (all phases P0–P8, v0.5.0)
 The plan lives in [docs/plans/substrate-v2/](./docs/plans/substrate-v2/00-overview.md)
@@ -28,6 +19,17 @@ mechanism mapped to an algorithm, unified by the **Proof-Carrying Memory (PCM)
 protocol** (ADR-0006) — every stored thing is a claim that carries its evidence, earns
 confidence only from independent oracles, and merges across teammates conflict-free
 (git-native CRDT ledger).
+
+## Shipped — 0.7.0
+- **Zero-config provider auto-detection** — `autoDetectProvider()` probes env vars
+  for OpenRouter, LiteLLM (local + hosted gateway), OpenAI, Anthropic, and Gemini;
+  `forge init` reports what it found, no manual config needed.
+- **Hosted LiteLLM gateway** — `emitGatewayConfig()` writes a guard that injects
+  `LITELLM_GATEWAY_URL` + key so every model call routes through the team proxy.
+- **15 MCP tools** — the cortex MCP server (`src/cortex_mcp.js`) now exposes
+  read-path tools for ledger, brain, atlas, recall, cost, substrate, and dashboard.
+- **Cost dashboard** — `forge dash` serves a local HTML dashboard showing model spend,
+  event timeline, and ledger health from `.forge/` data.
 
 ## Shipped — 0.6.0
 - **Embeddings tier** — optional vector backend (`src/embed.js`, ADR-0005 dependency

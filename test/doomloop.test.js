@@ -38,7 +38,7 @@ test("doom-loop stays quiet for varied actions", () => {
     last = run({
       session_id: "loop-quiet",
       tool_name: "Bash",
-      tool_input: { command: "echo " + i },
+      tool_input: { command: `echo ${i}` },
     });
   }
   assert.equal(last.code, 0);
