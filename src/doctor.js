@@ -9,7 +9,7 @@ import { summary as cortexSummary } from "./cortex.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
-import { activeProvider } from "./providers.js";
+import { activeProvider, envModelOverride } from "./providers.js";
 import { canonical } from "./sync.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -30,6 +30,14 @@ function checkTooling(out) {
   );
   out.push(
     hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),
+  );
+  out.push(
+    hasBin("claude")
+      ? ok("claude CLI", "found — LLM proposer uses it (FORGE_LLM=1)")
+      : warn(
+          "claude CLI",
+          "not found — LLM proposer falls back to direct HTTP (needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)",
+        ),
   );
 }
 
@@ -292,6 +300,10 @@ function checkProvider(out, targetRoot) {
     out.push(warn("provider", `${prov.name} — ${prov.envKey} is NOT set`));
   } else {
     out.push(ok("provider", `${prov.name} (configured)`));
+  }
+  const override = envModelOverride();
+  if (override) {
+    out.push(ok("model override", `${override} (all tiers resolve to this model)`));
   }
 }
 
