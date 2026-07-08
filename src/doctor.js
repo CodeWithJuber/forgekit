@@ -116,6 +116,90 @@ function checkLayers(out) {
   }
 }
 
+function commandScriptFromPluginRoot(command) {
+  const marker = '"$' + '{CLAUDE_PLUGIN_ROOT}"/';
+  const i = command.indexOf(marker);
+  if (i === -1) return null;
+  const rest = command.slice(i + marker.length);
+  const script = rest.split(/\s+/)[0]?.replace(/^['"]|['"]$/g, "");
+  return script || null;
+}
+
+// Plugin/hook compatibility: Forge should be additive and self-contained. Claude Code
+// composes plugin hook arrays, so the main risk is a stale manifest path or a hook command
+// that references a missing/non-executable guard and silently degrades beside other plugins.
+function checkPluginCompatibility(out) {
+  try {
+    const plugin = readJson(join(BRAND.root, ".claude-plugin", "plugin.json"));
+    const hookRel = plugin.hooks;
+    const hookPath = hookRel ? join(BRAND.root, hookRel) : "";
+    if (!hookRel || !existsSync(hookPath)) {
+      out.push(warn("Claude plugin hooks", "manifest hooks path missing or invalid"));
+    } else {
+      const manifest = readJson(hookPath);
+      const hooks = manifest.hooks && typeof manifest.hooks === "object" ? manifest.hooks : {};
+      const commands = Object.values(hooks)
+        .flatMap((entries) => (Array.isArray(entries) ? entries : []))
+        .flatMap((entry) => (Array.isArray(entry.hooks) ? entry.hooks : []))
+        .map((h) => h.command)
+        .filter(Boolean);
+      const missing = [];
+      const notExec = [];
+      for (const command of commands) {
+        const rel = commandScriptFromPluginRoot(command);
+        if (!rel) continue;
+        const abs = join(BRAND.root, rel);
+        if (!existsSync(abs)) {
+          missing.push(rel);
+          continue;
+        }
+        try {
+          accessSync(abs, constants.X_OK);
+        } catch {
+          notExec.push(rel);
+        }
+      }
+      if (missing.length || notExec.length) {
+        out.push(
+          warn(
+            "Claude plugin hooks",
+            `${missing.length} missing, ${notExec.length} not executable — other plugins may still load but Forge hooks degrade`,
+          ),
+        );
+      } else {
+        out.push(
+          ok(
+            "Claude plugin hooks",
+            `${commands.length} additive hook command(s), all local/executable`,
+          ),
+        );
+      }
+    }
+  } catch {
+    out.push(warn("Claude plugin hooks", "plugin or hooks manifest missing/invalid"));
+  }
+
+  try {
+    const codex = readJson(join(BRAND.root, ".codex-plugin", "plugin.json"));
+    const skillsPath = codex.skills ? join(BRAND.root, codex.skills) : "";
+    const mcpPath = codex.mcpServers ? join(BRAND.root, codex.mcpServers) : "";
+    const issues = [];
+    if (!codex.name) issues.push("missing name");
+    if (!skillsPath || !existsSync(skillsPath)) issues.push("skills path missing");
+    if (!mcpPath || !existsSync(mcpPath)) issues.push("mcpServers path missing");
+    out.push(
+      issues.length
+        ? warn(
+            "Codex plugin",
+            `${issues.join("; ")} — plugin may not install cleanly beside others`,
+          )
+        : ok("Codex plugin", "manifest paths resolve; no repo-level hook takeover"),
+    );
+  } catch {
+    out.push(warn("Codex plugin", "plugin manifest missing/invalid"));
+  }
+}
+
 function checkInstall(out) {
   const forgeHome = join(homedir(), ".forge");
   out.push(
@@ -205,6 +289,7 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);
+  checkPluginCompatibility(results);
   checkTooling(results);
   checkInstall(results);
   checkDrift(results, targetRoot);

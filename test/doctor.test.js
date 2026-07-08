@@ -54,3 +54,15 @@ test("doctor surfaces the new tooling / guards-exec / atlas / pricing checks", (
     assert.ok(labels.includes(l), `doctor runs the '${l}' check`);
   }
 });
+
+test("doctor checks plugin manifests and hook compatibility", () => {
+  const results = doctor({ targetRoot: fixture() }).results;
+  const claude = results.find((r) => r.label === "Claude plugin hooks");
+  const codex = results.find((r) => r.label === "Codex plugin");
+  assert.ok(claude, "Claude plugin compatibility check ran");
+  assert.ok(codex, "Codex plugin compatibility check ran");
+  assert.equal(claude.status, "ok");
+  assert.match(claude.note, /additive hook command/);
+  assert.equal(codex.status, "ok");
+  assert.match(codex.note, /no repo-level hook takeover/);
+});
