@@ -1,6 +1,6 @@
 {
   "name": "@codewithjuber/forgekit",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "One brain for every AI coding agent \u2014 the cognitive substrate every frozen model is missing (proof-carrying memory, impact foresight, enforced guardrails), authored once and delivered as native config to Claude Code, Codex, Cursor, Gemini, Aider, and more.",
   "type": "module",
   "bin": {
