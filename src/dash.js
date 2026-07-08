@@ -22,6 +22,7 @@ import {
   tombstone,
 } from "./ledger_store.js";
 import { read as readMetrics, summarize } from "./metrics.js";
+import { estimateSpendFromLogs } from "./cost_report.js";
 import { epochDay, gitAuthor } from "./util.js";
 
 /** A claim is contested when its val sits in this band AND it carries ≥1 oracle
@@ -103,7 +104,11 @@ export function dashData(root, { nowDay = epochDay() } = {}) {
     const a = loadAtlas(root);
     if (a) atlas = { built: true, symbols: a.symbols?.length ?? 0, files: a.files ?? 0 };
   } catch {}
-  return { repo: basename(root), nowDay, ledger, metrics, atlas };
+  let spend = null;
+  try {
+    spend = estimateSpendFromLogs();
+  } catch {}
+  return { repo: basename(root), nowDay, ledger, metrics, atlas, spend };
 }
 
 const HTML_PATH = join(dirname(fileURLToPath(import.meta.url)), "dash.html");
@@ -194,6 +199,10 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       return res.end(html);
     }
     if (url.pathname === "/api/data") return sendJson(res, 200, dashData(root));
+    if (url.pathname === "/api/spend") {
+      const spend = estimateSpendFromLogs();
+      return sendJson(res, 200, spend || { totalCost: 0, sessions: 0, byModel: [] });
+    }
     if (url.pathname === "/api/impact") {
       const target = url.searchParams.get("target");
       if (!target) return sendJson(res, 400, { error: "usage: /api/impact?target=<symbol|file>" });

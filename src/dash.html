@@ -179,6 +179,7 @@
     <section class="panel" id="cost-panel">
       <h2>Cost / Cache — measured, not asserted <span class="cmd">.forge/metrics.jsonl</span></h2>
       <div class="stats" id="cost-stats"></div>
+      <div id="spend-section"></div>
       <div id="stages"></div>
       <h3>Recent events</h3>
       <ul class="log" id="recent"></ul>
@@ -278,9 +279,25 @@ function renderCost(d) {
   const stages = Object.entries(d.metrics.stages);
   const saved = stages.reduce((n, [, s]) => n + (s.savedEstimate || 0), 0);
   const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
+  const spend = d.spend;
   $("cost-stats").innerHTML =
-    '<span class="stat"><span class="n ember">' + saved.toLocaleString() + '</span><span class="l">est. tokens saved</span></span>' +
+    (spend && spend.totalCost > 0
+      ? '<span class="stat"><span class="n ember">$' + spend.totalCost.toFixed(2) + '</span><span class="l">real spend</span></span>' +
+        '<span class="stat"><span class="n">' + spend.sessions + '</span><span class="l">sessions</span></span>'
+      : '') +
+    '<span class="stat"><span class="n' + (spend && spend.totalCost > 0 ? '' : ' ember') + '">' + saved.toLocaleString() + '</span><span class="l">est. tokens saved</span></span>' +
     '<span class="stat"><span class="n">' + events + '</span><span class="l">stage events</span></span>';
+  if (spend && spend.byModel && spend.byModel.length) {
+    $("spend-section").innerHTML = '<h3>Spend by model</h3>' +
+      '<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>' +
+      spend.byModel.map(function(m) {
+        return '<tr><td class="mono">' + esc(m.model) + '</td><td class="num">$' + m.cost.toFixed(4) +
+          '</td><td class="num">' + (m.inTokens || 0).toLocaleString() +
+          '</td><td class="num">' + (m.outTokens || 0).toLocaleString() + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  } else {
+    $("spend-section").innerHTML = '';
+  }
   $("stages").innerHTML = stages.length
     ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
       stages.map(([name, s]) =>

@@ -1,7 +1,15 @@
 // forge init / catalog — the onboarding surface. init gets a repo to a working
 // state in one command; catalog is the "Start Here" index of everything active.
-import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { sync } from "./sync.js";
@@ -21,11 +29,123 @@ export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
   return { written: true };
 }
 
+// ---------------------------------------------------------------------------
+// Settings merge — auto-install Forge hooks + permissions into the user's
+// ~/.claude/settings.json without clobbering existing entries.
+// ---------------------------------------------------------------------------
+
+const FORGE_SETTINGS_MARKER = "forge-managed";
+
+function loadTemplate() {
+  const path = join(BRAND.root, "global", "settings.template.json");
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function readJsonSafe(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Deduplicated union of two string arrays. */
+function unionStrings(a = [], b = []) {
+  const set = new Set(a);
+  for (const s of b) set.add(s);
+  return [...set];
+}
+
+/** Merge Forge hook entries into existing hook arrays, matching by command to avoid duplicates. */
+function mergeHooks(existing = {}, template = {}) {
+  const merged = { ...existing };
+  for (const [event, entries] of Object.entries(template)) {
+    const existingEntries = merged[event] || [];
+    const existingCommands = new Set(
+      existingEntries
+        .flatMap((e) => (e.hooks || []).map((h) => h.command))
+        .filter(Boolean),
+    );
+    const newEntries = [];
+    for (const entry of entries) {
+      const hooks = (entry.hooks || []).filter(
+        (h) => !existingCommands.has(h.command),
+      );
+      if (hooks.length) {
+        newEntries.push({ ...entry, hooks });
+      }
+    }
+    merged[event] = [...existingEntries, ...newEntries];
+  }
+  return merged;
+}
+
+/**
+ * Merge Forge settings (hooks, permissions, statusline) into the user's
+ * ~/.claude/settings.json. Preserves all existing entries. Idempotent.
+ * @param {{settingsPath?: string, noSettings?: boolean}} [opts]
+ */
+export function mergeSettings({ settingsPath, noSettings } = {}) {
+  if (noSettings) return { action: "skipped", reason: "--no-settings" };
+  const target = settingsPath || join(homedir(), ".claude", "settings.json");
+  const template = loadTemplate();
+  const existing = readJsonSafe(target) || {};
+  const report = { added: [], unchanged: [], path: target };
+
+  // Hooks
+  if (template.hooks) {
+    const before = JSON.stringify(existing.hooks || {});
+    existing.hooks = mergeHooks(existing.hooks, template.hooks);
+    if (JSON.stringify(existing.hooks) !== before) report.added.push("hooks");
+    else report.unchanged.push("hooks");
+  }
+
+  // Permissions
+  if (template.permissions) {
+    const ep = existing.permissions || {};
+    for (const level of ["allow", "ask", "deny"]) {
+      if (template.permissions[level]) {
+        const before = (ep[level] || []).length;
+        ep[level] = unionStrings(ep[level], template.permissions[level]);
+        if (ep[level].length > before) report.added.push(`permissions.${level}`);
+        else report.unchanged.push(`permissions.${level}`);
+      }
+    }
+    if (!ep.defaultMode) ep.defaultMode = template.permissions.defaultMode || "default";
+    existing.permissions = ep;
+  }
+
+  // Statusline — set only if not already configured
+  if (template.statusLine && !existing.statusLine) {
+    existing.statusLine = template.statusLine;
+    report.added.push("statusLine");
+  } else if (template.statusLine) {
+    report.unchanged.push("statusLine");
+  }
+
+  // Schema
+  if (template.$schema && !existing.$schema) existing.$schema = template.$schema;
+
+  // Mark as forge-managed (metadata, won't affect Claude Code)
+  existing._forge = FORGE_SETTINGS_MARKER;
+
+  // Write back
+  const dir = dirname(target);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(target, `${JSON.stringify(existing, null, 2)}\n`);
+
+  return {
+    action: report.added.length ? "merged" : "unchanged",
+    ...report,
+  };
+}
+
 /** Scaffold this repo's cross-tool config (emit every tool) in one step. */
-export function init({ targetRoot = process.cwd() } = {}) {
+export function init({ targetRoot = process.cwd(), noSettings = false } = {}) {
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
-  return r;
+  const settings = mergeSettings({ noSettings });
+  return { ...r, settings };
 }
 
 function skillDescription(dir) {

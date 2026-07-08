@@ -6,6 +6,9 @@
 // or backfilled from a target. The ~90 % figure in the plan stays a TARGET everywhere in this
 // module's output; the only measured external figure (62 % routing, paper §9) is cited as
 // context, clearly labeled as not-local.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { read, record } from "./metrics.js";
 import { MODELS } from "./model_tiers.js";
 
@@ -204,4 +207,58 @@ export function recordGate(root, { halted, ref } = {}) {
  *  @param {{tier?: string, tokensIn?: number, tokensOut?: number, ref?: string}} [opts] */
 export function recordRoute(root, { tier, tokensIn, tokensOut, ref } = {}) {
   return record(root, { stage: "route", tier, tokensIn, tokensOut, ref });
+}
+
+/**
+ * Fallback spend estimation from Claude's native JSONL session logs when ccusage
+ * is unavailable. Scans ~/.claude/projects/ for session files and computes cost
+ * from token counts x model_tiers pricing. Best-effort, never throws.
+ */
+export function estimateSpendFromLogs() {
+  try {
+    const projectsDir = join(homedir(), ".claude", "projects");
+    if (!existsSync(projectsDir)) return null;
+    const pricingPerM = {};
+    for (const [, m] of Object.entries(MODELS)) {
+      pricingPerM[m.id] = { inCost: m.inCost, outCost: m.outCost };
+    }
+    const byModel = {};
+    let sessions = 0;
+    for (const project of readdirSync(projectsDir)) {
+      const pDir = join(projectsDir, project);
+      let files;
+      try { files = readdirSync(pDir); } catch { continue; }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        sessions++;
+        try {
+          const lines = readFileSync(join(pDir, f), "utf8").split("\n");
+          for (const line of lines) {
+            if (!line.includes('"usage"')) continue;
+            try {
+              const entry = JSON.parse(line);
+              const usage = entry.usage || entry.message?.usage;
+              const model = entry.model || entry.message?.model || "";
+              if (!usage) continue;
+              const inTok = usage.input_tokens || 0;
+              const outTok = usage.output_tokens || 0;
+              if (!byModel[model]) byModel[model] = { inTokens: 0, outTokens: 0 };
+              byModel[model].inTokens += inTok;
+              byModel[model].outTokens += outTok;
+            } catch {}
+          }
+        } catch {}
+      }
+    }
+    let totalCost = 0;
+    const modelBreakdown = [];
+    for (const [model, usage] of Object.entries(byModel)) {
+      const pricing = pricingPerM[model] || { inCost: 3, outCost: 15 };
+      const cost = (usage.inTokens * pricing.inCost + usage.outTokens * pricing.outCost) / 1_000_000;
+      totalCost += cost;
+      modelBreakdown.push({ model, cost, inTokens: usage.inTokens, outTokens: usage.outTokens });
+    }
+    modelBreakdown.sort((a, b) => b.cost - a.cost);
+    return { totalCost, sessions, byModel: modelBreakdown };
+  } catch { return null; }
 }

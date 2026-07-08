@@ -12,6 +12,10 @@ import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
 import { epochDay } from "./util.js";
+import { report as costReport } from "./cost_report.js";
+import { dashData } from "./dash.js";
+import { diagnose } from "./diagnose.js";
+import { doctor } from "./doctor.js";
 
 const PKG_VERSION = (() => {
   try {
@@ -114,9 +118,57 @@ const TOOLS = [
       required: ["files"],
     },
   },
+  {
+    name: "forge_cost",
+    description:
+      "Cost report — measured stage factors (gate, cache, route, context) from .forge/metrics.jsonl with multiplicative composition.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "forge_dash_data",
+    description:
+      "Dashboard JSON payload — ledger stats, metrics, atlas info. Same data forge dash serves at /api/data.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "forge_brain",
+    description:
+      "Project memory index — list all remembered facts stored in .forge/brain/.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "forge_ledger_query",
+    description:
+      "Query the proof-carrying memory ledger with a natural language query. Returns ranked matching claims.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", description: "what you are about to do or looking for" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "forge_diagnose",
+    description:
+      "Doom-loop check — record a failure and check if the same signature has recurred (3x = escalation). Prevents thrashing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        errorText: { type: "string", description: "the error message" },
+        file: { type: "string", description: "file where the error occurred" },
+        symbol: { type: "string", description: "symbol involved" },
+      },
+      required: ["errorText"],
+    },
+  },
+  {
+    name: "forge_doctor",
+    description:
+      "Health check — verify installed tools, guards, MCP auth, config drift, and system state.",
+    inputSchema: { type: "object", properties: {} },
+  },
 ];
 
-function callTool(name, args = {}) {
+async function callTool(name, args = {}) {
   if (name === "cortex_lessons") {
     const files = args.files ?? [];
     const symbols = args.symbols ?? [];
@@ -151,11 +203,50 @@ function callTool(name, args = {}) {
     const d = decompose(root, args.files ?? []);
     return JSON.stringify(d, null, 2);
   }
+  if (name === "forge_cost") return JSON.stringify(costReport(root), null, 2);
+  if (name === "forge_dash_data") return JSON.stringify(dashData(root), null, 2);
+  if (name === "forge_brain") {
+    try {
+      const { brainStore, list, buildIndex } = await import("./brain.js");
+      const store = brainStore(root);
+      const idx = buildIndex(store);
+      const items = list(store);
+      return JSON.stringify({ items, indexed: idx.indexed, overflow: idx.overflow }, null, 2);
+    } catch { return "No brain store found — run `forge remember` to start."; }
+  }
+  if (name === "forge_ledger_query") {
+    try {
+      const { loadClaims, repoLedger } = await import("./ledger_store.js");
+      const { retrieve, claimText } = await import("./ledger.js");
+      const { claimSim, simLabel } = await import("./embed.js");
+      const dir = repoLedger(root);
+      const q = String(args.query ?? "");
+      const claims = loadClaims(dir);
+      const sim = claimSim(root, q, claims, claimText);
+      const ranked = retrieve(q, claims, { nowDay: today(), budget: 8, sim });
+      return JSON.stringify({
+        sim: simLabel(sim),
+        results: ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score, text: claimText(r.claim).slice(0, 200) })),
+      }, null, 2);
+    } catch { return "No ledger claims found."; }
+  }
+  if (name === "forge_diagnose") {
+    const r = diagnose(root, {
+      errorText: String(args.errorText ?? ""),
+      file: args.file,
+      symbol: args.symbol,
+    });
+    return JSON.stringify(r, null, 2);
+  }
+  if (name === "forge_doctor") {
+    const { results, failed } = doctor({ targetRoot: root });
+    return JSON.stringify({ results, failed }, null, 2);
+  }
   return null;
 }
 
 /** Handle one JSON-RPC message; returns a response object, or null for notifications. */
-export function handle(msg) {
+export async function handle(msg) {
   const { id, method, params } = msg;
   if (id === undefined || String(method).startsWith("notifications/")) return null;
   if (method === "initialize") {
@@ -171,7 +262,7 @@ export function handle(msg) {
   }
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (method === "tools/call") {
-    const text = callTool(params?.name, params?.arguments);
+    const text = await callTool(params?.name, params?.arguments);
     if (text === null) {
       return {
         jsonrpc: "2.0",
@@ -203,8 +294,9 @@ export function serve(input = process.stdin, output = process.stdout) {
     } catch {
       return; // ignore malformed frames
     }
-    const res = handle(msg);
-    if (res) output.write(`${JSON.stringify(res)}\n`);
+    handle(msg).then((res) => {
+      if (res) output.write(`${JSON.stringify(res)}\n`);
+    }).catch(() => {});
   });
 }
 
