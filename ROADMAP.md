@@ -1,5 +1,9 @@
 # Roadmap
 
+forgekit is one brain for every AI coding agent — the cognitive substrate (memory, foresight,
+guardrails) that a stateless model is missing, authored once and delivered as native config to
+every tool. This is where that brain is headed.
+
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 

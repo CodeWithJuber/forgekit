@@ -1,9 +1,16 @@
 # Forge — the complete guide
 
-Every command with a worked example and its **real** output, the everyday workflow,
-how to make it run itself inside any agent, common recipes, and how to extend each
-piece. If you just want to get going, the [5-minute onboarding](../ONBOARDING.md) is
-shorter; this is the reference you come back to.
+**One brain for every AI coding agent.** A language model is *stateless* — one context
+window, wiped every call. It can't remember what your team learned, can't foresee what
+an edit breaks, and has no enforced guardrails. Forge is the **cognitive substrate** —
+the layer that runs *before* the model edits code — that supplies exactly those three
+things, and it ships them as native config to nine AI coding tools at once. The brain is
+the point; one config for every tool is how the brain gets delivered.
+
+This is the exhaustive reference: every command with a worked example and its **real**
+output, the everyday workflow, how to make it run itself inside any agent, common
+recipes, and how to extend each piece. If you just want to get going, the
+[5-minute onboarding](../ONBOARDING.md) is shorter; this is the reference you come back to.
 
 - [Mental model](#mental-model)
 - [The everyday workflow](#the-everyday-workflow)
@@ -13,6 +20,25 @@ shorter; this is the reference you come back to.
 - [Recipes](#recipes) — common situations, start to finish
 - [Extending Forge](#extending-forge)
 - [Honest limits](#honest-limits)
+
+### Command groups
+
+Every command is real and wired. Grouped by what it does:
+
+| Group | Commands |
+| --- | --- |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge harden` · `forge catalog` · `forge brand` |
+| **Memory & ledger (PCM)** | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` |
+| **Code graph & retrieval** | `forge atlas` · `forge context` |
+| **Substrate / pre-action** | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
+| **Verification & safety** | `forge verify` · `forge scan` · `forge spec` |
+| **UI / design** | `forge taste` · `forge uicheck` |
+| **Dashboard** | `forge dash` |
+
+Storage in one line: the code graph is `.forge/atlas.json` (plain JSON, not SQLite); the
+ledger is content-addressed claims under `.forge/ledger/` (git-committable, union-merge).
+The runtime is **zero-dependency Node** — optional tiers (`FORGE_EMBED` embeddings,
+Playwright for `uicheck visual`) are opt-in and still add no required dependency.
 
 ---
 
@@ -43,11 +69,14 @@ The daily loop — every outcome an oracle observes lands in the team ledger, an
 ledger informs the next task:
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart LR
     W["work — substrate pre-checks,<br/>then edit"] --> O["oracles — forge verify ·<br/>imagine --run · CI · human accept/revert"]
     O -->|"outcomes move claim val"| L[("team ledger<br/>.forge/ledger/")]
     L <-->|"git + forge ledger merge"| T["teammates' ledgers"]
     L -->|"lessons · facts · reuse hits"| W
+    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
+    class L accent;
 ```
 
 ```bash
@@ -317,10 +346,11 @@ Forge ledger blame — lesson 3f2a91c04d7e
 The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
 tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
 record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
-paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `verify` recomputes
-every content hash (CI-friendly, exit 1 on tampering); `import` back-fills legacy
-lessons/facts idempotently. Add `--personal` to target the per-user ledger beside the
-global recall store, `--json` for scripts.
+paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id>` and
+`retract <id>` are the human oracle — a manual accept or revert that appends evidence and
+moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
+tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
+target the per-user ledger beside the global recall store, `--json` for scripts.
 
 ### `forge reuse` — proof-carrying code cache
 
@@ -560,10 +590,12 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 | `forge catalog` | Start-Here index of every tool / crew / guard. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`. |
 | `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report. |
-| `forge scan <path>` | Vet a skill/MCP for injection/RCE before install. |
+| `forge scan <target>` | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install. |
 | `forge harden` | Wire gitleaks pre-commit + sandbox settings. |
 | `forge spec [init\|lock\|check]` | Spec-as-contract drift check. |
 | `forge brand` | Print the active brand token map. |
+| `forge lean "<task>"` | Scope-minimality footprint for a task — advisory (the Lean Path as a command). |
+| `forge taste [<style>]` | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads). |
 
 ### Use it in a script
 

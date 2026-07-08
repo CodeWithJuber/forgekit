@@ -4,11 +4,12 @@ title: "Forge (forgekit)"
 version: 0.6.0
 date-released: "2026-07-07"
 abstract: >-
-  One config for every AI coding agent — a cross-tool configuration layer plus a
-  cognitive substrate that gives a frozen model the memory, blast-radius awareness, and
-  guardrails it structurally lacks: an independent verification gate, self-correcting
-  project memory, portable memory, a security-vetting skill-gate, and a cost governor,
-  emitted natively to Claude Code, Codex, Cursor, Gemini, Aider, and more.
+  One brain for every AI coding agent — the cognitive substrate every frozen model is
+  missing. Forge gives a stateless model the memory, blast-radius foresight, and
+  guardrails it structurally lacks: proof-carrying team memory, an independent
+  verification gate, self-correcting project memory, a security-vetting skill-gate, and a
+  cost governor — authored once and emitted natively to Claude Code, Codex, Cursor,
+  Gemini, Aider, and more.
 type: software
 authors:
   - name: CodeWithJuber
