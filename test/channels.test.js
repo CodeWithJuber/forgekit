@@ -10,7 +10,13 @@ const readJson = (p) => JSON.parse(readFileSync(join(root, p), "utf8"));
 test("plugin channel points at global/ (no duplication)", () => {
   const plugin = readJson(".claude-plugin/plugin.json");
   assert.equal(plugin.skills, "./global/tools");
-  assert.equal(plugin.agents, "./global/crew");
+  // The manifest schema requires each `agents` entry to be a path to a .md file
+  // (pattern ^\.\/.*\.md$), not a directory — so crew agents are listed explicitly.
+  assert.ok(Array.isArray(plugin.agents), "agents is an array of agent files");
+  for (const a of plugin.agents) {
+    assert.match(a, /^\.\/global\/crew\/.+\.md$/, `agent path ${a} is a ./global/crew/*.md file`);
+    assert.ok(existsSync(join(root, a)), `${a} exists`);
+  }
   assert.ok(existsSync(join(root, "global/tools")), "global/tools exists");
   assert.ok(existsSync(join(root, "global/crew")), "global/crew exists");
 });

@@ -10,6 +10,11 @@
   "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
   "keywords": ["config", "cross-tool", "agents-md", "ai-coding", "claude-code", "cognitive-substrate"],
   "skills": "./global/tools",
-  "agents": "./global/crew",
+  "agents": [
+    "./global/crew/frontend-verifier.md",
+    "./global/crew/independent-reviewer.md",
+    "./global/crew/scout.md",
+    "./global/crew/verifier.md"
+  ],
   "hooks": "./hooks/hooks.json"
 }
