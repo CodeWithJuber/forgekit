@@ -18,5 +18,7 @@
 - Match existing patterns: dynamic `await import()` for optional modules, brand
   tokens from `src/brand.js` (never hardcode "Forge"/"forge"), `BRAND.root` for
   package root paths.
-- Run `npm test && npx biome check && npm run typecheck` before committing.
+- Run `npm test && npx biome check && npm run typecheck && node src/cli.js docs check`
+  before committing — the docs check fails CI when commands/env vars/MCP tools/CHANGELOG
+  drift from the code, so update docs IN THE SAME CHANGE, not later.
 - Version lives in `package.json` — `scripts/bump.mjs` keeps all manifests in sync.

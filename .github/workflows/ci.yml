@@ -68,6 +68,20 @@ jobs:
       # and CITATION.cff must all carry the same version (scripts/bump.mjs keeps them in sync).
       - run: node scripts/bump.mjs check
 
+  docs-drift:
+    name: Docs match code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the CHANGELOG check compares src vs CHANGELOG.md commit times
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      # Commands, env vars, MCP tools, and CHANGELOG reconciled against the code —
+      # a feature can't merge with its docs missing (src/docs_check.js).
+      - run: node src/cli.js docs check
+
   dependency-review:
     name: Dependency review
     runs-on: ubuntu-latest

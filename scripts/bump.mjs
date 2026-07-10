@@ -109,6 +109,13 @@ export function rotateChangelog(changelog, newVersion, prevVersion, date) {
   }
   const body = extractUnreleased(changelog);
   if (body === null) throw new Error("CHANGELOG.md has no ## [Unreleased] section");
+  // An empty [Unreleased] would rotate into an empty release section — a header
+  // with no record of what shipped (exactly how 0.8.0/0.8.1 went undocumented).
+  // Write the changelog first; the release notes ARE part of the release.
+  if (!body.trim())
+    throw new Error(
+      "CHANGELOG.md [Unreleased] is empty — describe the release before bumping (see forge docs check)",
+    );
   const start = changelog.search(/^## \[Unreleased\][^\n]*\n/m);
   const afterHeading = changelog.indexOf("\n", start) + 1;
   const head = changelog.slice(0, afterHeading);

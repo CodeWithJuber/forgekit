@@ -28,6 +28,7 @@ export const SIGNALS = {
 // legacy injection path and Eq.-3 retrieval can never rank the same memory with
 // silently different weights during the bridge window.
 import { SCOPE_WEIGHT } from "./ledger.js";
+import { setOverlap } from "./math.js";
 
 export { SCOPE_WEIGHT };
 
@@ -136,13 +137,42 @@ const globToRe = (glob) => {
   return new RegExp(`^${body}$`);
 };
 
-/** Trigger overlap with the current context, in [0,1]: symbol hit beats file beats keyword. */
+// Tokens every path shares — matching on them would make a lesson keyed to
+// src/auth/login.js "relevant" to every .js file under src/ (review-verified bug:
+// the shared {src, js} tokens alone scored 0.15, injecting unrelated lessons and
+// mis-attributing outcomes). Extensions and layout boilerplate carry no topic.
+const GENERIC_PATH_TOKENS = new Set(
+  "src lib app test tests spec specs index main utils util js ts jsx tsx mjs cjs py go rs java rb php md json yml yaml".split(
+    " ",
+  ),
+);
+
+/** Content-token footprint of a keyword list ("src/auth/login.js" → {auth, login})
+ *  so two keywords about the same module overlap even when the strings differ. */
+const keywordGrams = (words) => {
+  const grams = new Set();
+  for (const w of words ?? []) {
+    for (const t of String(w)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)) {
+      if (t.length > 1 && !GENERIC_PATH_TOKENS.has(t)) grams.add(t);
+    }
+  }
+  return grams;
+};
+
+/**
+ * Trigger overlap with the current context, in [0,1]: symbol hit beats file-glob
+ * beats keyword. The keyword tier is GRADED — 0.3 × token-overlap coefficient —
+ * so an exact keyword match keeps its historical 0.3 while a same-module partial
+ * match ("src/auth/login.js" vs "src/auth/session.js") earns partial credit
+ * instead of the old all-or-nothing string equality.
+ */
 export function matchScore(lesson, context) {
   const t = lesson.trigger;
   if (t.symbols?.some((s) => context.symbols?.includes(s))) return 1.0;
   if (t.files?.some((g) => context.files?.some((f) => globToRe(g).test(f)))) return 0.6;
-  if (t.keywords?.some((k) => context.keywords?.includes(k))) return 0.3;
-  return 0;
+  return 0.3 * setOverlap(keywordGrams(t.keywords), keywordGrams(context.keywords));
 }
 
 /**

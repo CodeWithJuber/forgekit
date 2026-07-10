@@ -230,3 +230,11 @@ test("collectVersions reports every field and exposes drift", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("rotateChangelog refuses an empty [Unreleased] — a release must describe itself", () => {
+  const empty = "# Changelog\n\n## [Unreleased]\n\n## [0.4.0] - 2026-01-01\n\n- old\n";
+  assert.throws(
+    () => rotateChangelog(empty, "0.5.0", "0.4.0", "2026-07-07"),
+    /\[Unreleased\] is empty/,
+  );
+});

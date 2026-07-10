@@ -49,7 +49,7 @@ const DIMENSIONS = [
     description: "target file/module/component scope",
     question: "Which specific file, module, component, or symbol should this change touch?",
     applies: rx(
-      "\\b(fix|change|edit|update|modify|refactor|add to|remove from|integrate|wire|bug|issue|error)\\b",
+      "\\b(fix|change|edit|update|modify|refactor|rewrite|redesign|clean|optimi[sz]e|improve|add to|remove from|integrate|wire|bug|issue|error)\\b",
     ),
     cues: rx(
       "\\b(file|module|class|function|component|path|directory|service|layer|endpoint)\\b|`[\\w./-]+`|\\w+\\.\\w+",
@@ -72,7 +72,12 @@ const DIMENSIONS = [
     description: "hard constraints",
     question:
       "What constraints must be respected: performance, dependencies, style, or compatibility?",
-    applies: rx("\\b(design|architect|production|scal|migrate|distributed|concurren|refactor)\\b"),
+    // \w* because users type "scalable"/"concurrent"/"migration" — a bare "scal\b"
+    // alternative never matched anything (review-verified dead branch). auth/payment
+    // are here because money- and identity-touching work implies constraints.
+    applies: rx(
+      "\\b(design|architect|production|scal\\w*|migrat\\w*|distribut\\w*|concurren\\w*|refactor|authenticat\\w*|authoriz\\w*|payment|billing)\\b",
+    ),
     cues: rx(
       "\\b(must|should|constraint|limit|no new dependenc|only use|standard library|without|performance|latency|O\\(|backward|compatib|convention|style)\\b",
     ),

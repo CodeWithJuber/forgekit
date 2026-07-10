@@ -7,10 +7,14 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.8.0)
-Everything from 0.7.0 plus branding layer (`forge brand`), model-tier exports
-(`forgekit/model-tiers`), and the Codex plugin manifest — same toolkit, two plugin
-surfaces (Claude Code + Codex). See [CHANGELOG.md](./CHANGELOG.md).
+## Now (`master`, v0.8.1+)
+Everything from 0.8.0 plus gateway-environment support end to end — `ANTHROPIC_AUTH_TOKEN`
+recognized everywhere, `ANTHROPIC_MODEL`/`FORGE_MODEL` model override, LiteLLM-gateway
+auto-classification of `ANTHROPIC_BASE_URL`, direct-HTTP LLM calls when the `claude` CLI
+is absent (`src/llm.js`) — plus decision math replacing keyword heuristics (exemplar k-NN
+routing, entropy secret detection), docs↔code drift gating (`forge docs check`, in CI),
+docs in the impact graph, and a persistent goal (`forge anchor set`).
+See [CHANGELOG.md](./CHANGELOG.md).
 
 ## Shipped — Substrate v2 (all phases P0–P8, v0.5.0)
 The plan lives in [docs/plans/substrate-v2/](./docs/plans/substrate-v2/00-overview.md)
@@ -22,12 +26,15 @@ confidence only from independent oracles, and merges across teammates conflict-f
 
 ## Shipped — 0.7.0
 - **Zero-config provider auto-detection** — `autoDetectProvider()` probes env vars
-  for OpenRouter, LiteLLM (local + hosted gateway), OpenAI, Anthropic, and Gemini;
-  `forge init` reports what it found, no manual config needed.
-- **Hosted LiteLLM gateway** — `emitGatewayConfig()` writes a guard that injects
-  `LITELLM_GATEWAY_URL` + key so every model call routes through the team proxy.
-- **15 MCP tools** — the cortex MCP server (`src/cortex_mcp.js`) now exposes
-  read-path tools for ledger, brain, atlas, recall, cost, substrate, and dashboard.
+  for LiteLLM (local + hosted gateway), OpenRouter, and Anthropic (key, auth token,
+  or custom base URL); `forge init` reports what it found, no manual config needed.
+  (OpenAI and Gemini detection: see Next.)
+- **Hosted LiteLLM gateway** — `emitGatewayConfig()` writes a `litellm.config.yaml`
+  exposing the complexity tiers as model aliases; point `ANTHROPIC_BASE_URL` at the
+  proxy and every model call routes through it.
+- **MCP server** — the cortex MCP server (`src/cortex_mcp.js`) exposes read-path
+  tools for ledger, brain, atlas, recall, cost, substrate, and dashboard (19 MCP tools
+  as of 0.8.x, including the write tools added in 0.8.0).
 - **Cost dashboard** — `forge dash` serves a local HTML dashboard showing model spend,
   event timeline, and ledger health from `.forge/` data.
 
@@ -46,6 +53,9 @@ confidence only from independent oracles, and merges across teammates conflict-f
   `/status/`.
 
 ## Next
+- **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
+  Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
+  zero-config contract.
 - **Legacy store retirement** — the read-path flip has shipped: every read surface
   (cortex injection/status, the substrate advisory, routing, `recall list`, brain's
   AGENTS.md index) is now a merged view (legacy ∪ ledger) via `src/ledger_read.js`,

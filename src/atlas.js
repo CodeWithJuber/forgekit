@@ -34,6 +34,17 @@ const RULES = {
   ".java": [{ re: /\b(?:class|interface|enum)\s+([A-Za-z_]\w*)/g, kind: "type" }],
 };
 
+// Documentation extensions — first-class in the walk, extracted by extractDoc() (a
+// doc node + `references` edges to the code it names), never by the symbol RULES.
+// This is the missing code→doc half of impact: change a symbol, its docs show up
+// as dependents.
+const DOC_EXTS = new Set([".md"]);
+
+// Docs excluded from the graph: generated files the Stop hook rewrites (AGENTS.md
+// auto-sync would re-stale the atlas after every session) and the changelog, which
+// churns on every change and whose references describe HISTORY, not current code.
+const DOC_SKIP = /^(AGENTS|CLAUDE|GEMINI|CHANGELOG)\.md$/i;
+
 const IMPORT_RE =
   /(?:import\s+(?:[^"'\n]+\s+from\s+)?["']([^"']+)["']|require\(["']([^"']+)["']\)|^\s*(?:from\s+([\w.]+)\s+)?import\s+([\w*,\s]+))/gm;
 const BUILTINS = new Set([
@@ -94,7 +105,11 @@ function walk(dir, files, cap) {
       continue;
     }
     if (st.isDirectory()) walk(path, files, cap);
-    else if (RULES[extname(name)] && files.length < cap) files.push(path);
+    else if (
+      (RULES[extname(name)] || (DOC_EXTS.has(extname(name)) && !DOC_SKIP.test(name))) &&
+      files.length < cap
+    )
+      files.push(path);
   }
 }
 
@@ -114,6 +129,41 @@ function nearestSource(nodes, line, fallback) {
   return best;
 }
 
+// A markdown file becomes ONE doc node whose outgoing `references` edges point at the
+// code it names: backticked `src/foo.js` paths and `symbolName` identifiers, plus
+// [link](path) targets. In the reverse-BFS those edges make every referencing doc a
+// DEPENDENT of the code — `forge impact src/route.js` now lists the docs that go
+// stale, so end-to-end propagation includes documentation, not just callers.
+function extractDoc(rel, text) {
+  const doc = { id: `doc:${rel}`, name: rel, kind: "doc", file: rel, line: 1 };
+  const edges = [];
+  const seen = new Set();
+  const refEdge = (target, confidence, line) => {
+    if (seen.has(target)) return;
+    seen.add(target);
+    edges.push({ source: doc.id, target, kind: "references", confidence, line });
+  };
+  for (const m of text.matchAll(/`([^`\n]+)`/g)) {
+    const line = lineOf(text, m.index);
+    for (const raw of m[1].trim().split(/\s+/)) {
+      const tok = raw.replace(/[(),;:]+$/, "").replace(/^\.\//, "");
+      if (!tok) continue;
+      if (/[/\\]/.test(tok) && RULES[extname(tok)]) {
+        refEdge(`module:${moduleId(tok)}`, 0.8, line); // `src/foo.js` → its module node
+      } else if (/^[A-Za-z_$][\w$]*(\(\))?$/.test(tok) && tok.length >= 3) {
+        const name = tok.replace(/\(\)$/, "");
+        if (!BUILTINS.has(name)) refEdge(name, 0.6, line); // `symbolName` → resolveEdges links it
+      }
+    }
+  }
+  for (const m of text.matchAll(/\]\(([^)#\s]+)\)/g)) {
+    const tok = m[1].replace(/^\.\//, "");
+    if (/^[a-z]+:/i.test(tok)) continue; // external URL, not a repo path
+    if (RULES[extname(tok)]) refEdge(`module:${moduleId(tok)}`, 0.8, lineOf(text, m.index));
+  }
+  return { symbols: [], nodes: [doc], edges, hash: hash(text) };
+}
+
 function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
@@ -126,6 +176,7 @@ function extractFile(path, root, preRead) {
       return { symbols: [], nodes: [], edges: [], hash: "" };
     }
   }
+  if (DOC_EXTS.has(ext)) return extractDoc(rel, text);
 
   const mod = {
     id: `module:${moduleId(rel)}`,

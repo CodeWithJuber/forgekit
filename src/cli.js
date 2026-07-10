@@ -2,62 +2,9 @@
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
-
-const COMMANDS = {
-  init: "scaffold this repo's config — emits every tool from one shared source",
-  sync: "recompile the canonical source into each tool's native config files",
-  doctor: "health-check installed tools, guards, MCP auth, and config drift",
-  taste: "enable one UI-taste tool for this repo (no arg = list)",
-  atlas: "build / query the code-graph (where-is-Y, has-symbol)",
-  recall: "manage cross-session memory (list / add / consolidate)",
-  catalog: "Start Here — list every tool, crew, and guard with a one-line why",
-  scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
-  verify: "independent verification gate — tests + hallucinated-symbol + provenance",
-  harden: "wire security controls — gitleaks pre-commit + sandbox settings",
-  remember: "add a durable fact to this repo's portable memory (forge brain)",
-  brain: "show / rebuild the portable project memory index",
-  cost: "real per-day spend via ccusage + measured stage factors (--stages)",
-  spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
-  cortex: "self-correcting project memory — status / why <symbol>",
-  ledger:
-    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import",
-  reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
-  context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
-  preflight: "assumption check — what a task names that the repo doesn't define",
-  config: "provider setup — show / switch / add providers, set default model",
-  route: "recommend the cheapest capable model for a task (+ gateway config)",
-  impact: "predict blast radius for a symbol or file from the atlas graph",
-  substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
-  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
-  anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
-  diagnose:
-    "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
-  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
-  lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
-  uicheck:
-    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
-  dash: "local dashboard over the ledger, metrics, and blast radius",
-  brand: "print the active brand token map",
-};
-
-const GROUPS = {
-  Core: ["init", "sync", "doctor", "catalog"],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse"],
-  Substrate: [
-    "substrate",
-    "preflight",
-    "route",
-    "impact",
-    "scope",
-    "context",
-    "anchor",
-    "diagnose",
-    "imagine",
-    "lean",
-  ],
-  Quality: ["verify", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "brand", "atlas"],
-};
+// The command surface lives in commands.js as data — docs_check.js reconciles the
+// README/GUIDE tables against the same table this help is rendered from.
+import { COMMANDS, GROUPS } from "./commands.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
@@ -183,6 +130,27 @@ async function run(argv) {
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
     console.log(`\n${failed === 0 ? "all clear" : `${failed} problem(s)`}`);
     if (failed) process.exitCode = 1;
+    return;
+  }
+  if (cmd === "docs") {
+    // Self-check of the forge package's own docs against its code (commands table,
+    // env reads, MCP registry, CHANGELOG). `forge docs check` is the only subcommand.
+    const { docsCheck } = await import("./docs_check.js");
+    const r = docsCheck();
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    console.log(`${BRAND.brand} docs check — docs↔code drift\n`);
+    if (!r.issues.length)
+      console.log("  ✓ docs and code agree (commands, env vars, MCP tools, CHANGELOG)");
+    for (const i of r.issues)
+      console.log(`  ${i.severity === "error" ? "✗" : "!"} [${i.check}] ${i.detail}`);
+    if (!r.ok) {
+      console.log(`\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`);
+      process.exitCode = 1;
+    }
     return;
   }
   if (cmd === "recall") {
@@ -1115,13 +1083,39 @@ async function run(argv) {
   }
   if (cmd === "anchor") {
     const { goalDrift, renderAnchor } = await import("./anchor.js");
+    const { clearGoal, getGoal, setGoal } = await import("./goal.js");
     const json = argv.includes("--json");
-    const goal = argv
-      .slice(1)
-      .filter((a) => a !== "--json")
-      .join(" ");
+    const args = argv.slice(1).filter((a) => a !== "--json");
+    const sub = args[0];
+    // Persistent goal management: `set` stores it, SessionStart re-injects it, and a
+    // bare `forge anchor` checks against it — the goal survives the session that set it.
+    if (sub === "set") {
+      const r = setGoal(process.cwd(), args.slice(1).join(" "));
+      if (!r.ok) {
+        console.error(`${BRAND.cli} anchor set: ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(
+        `goal set: ${r.goal}\n(injected each session start; \`forge anchor\` checks against it)`,
+      );
+      return;
+    }
+    if (sub === "show") {
+      const g = getGoal(process.cwd());
+      console.log(g ? `active goal: ${g}` : 'no active goal — set one: forge anchor set "<goal>"');
+      return;
+    }
+    if (sub === "clear") {
+      clearGoal(process.cwd());
+      console.log("goal cleared.");
+      return;
+    }
+    const goal = args.join(" ") || getGoal(process.cwd());
     if (!goal) {
-      console.error('usage: forge anchor "<original goal>" [--json]');
+      console.error(
+        `usage: ${BRAND.cli} anchor "<original goal>" [--json]\n       ${BRAND.cli} anchor set|show|clear — persist the goal across sessions`,
+      );
       process.exitCode = 1;
       return;
     }

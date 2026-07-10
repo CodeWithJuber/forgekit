@@ -4,7 +4,7 @@
 // shells out to the `claude` CLI via the shared adjudicate runner (same primitive every other
 // faculty uses); the runner is injectable so the pure prompt/parse logic is testable without it.
 import { buildRunner } from "./adjudicate.js";
-import { SECRET_RE } from "./recall.js";
+import { hasSecret } from "./recall.js";
 
 /**
  * Pure: build the distillation prompt from an episode.
@@ -39,7 +39,7 @@ export function parseDistilled(text) {
     .trim()
     .slice(0, 200);
   if (!whatWentWrong || !correctedBehavior) return null;
-  if (SECRET_RE.test(`${whatWentWrong} ${correctedBehavior}`)) return null; // never persist a secret
+  if (hasSecret(`${whatWentWrong} ${correctedBehavior}`)) return null; // never persist a secret
   return { whatWentWrong, correctedBehavior };
 }
 

@@ -19,8 +19,27 @@ function anthropicKeyEnv() {
   return "ANTHROPIC_API_KEY";
 }
 
+// A PRIOR, not a verdict: hostname vocabulary suggests a gateway, and the /health
+// probe in providerStatus() supplies the behavioral evidence (a proxy that answers
+// /health IS a LiteLLM-style gateway regardless of what its hostname says — pin the
+// corrected classification with `forge config provider add`). Detection itself stays
+// pure and network-free because it runs inside per-prompt hooks.
 function isLikelyGateway(url) {
   return /\b(gateway|litellm|aigateway|llmproxy|llm-proxy)\b/i.test(url);
+}
+
+/** curl {baseUrl}/health, 2xx → true. Best-effort behavioral probe (5s cap). */
+function probeHealth(baseUrl) {
+  try {
+    const out = execFileSync(
+      "curl",
+      ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `${baseUrl}/health`],
+      { encoding: "utf8", timeout: 5000 },
+    );
+    return out.startsWith("2");
+  } catch {
+    return false;
+  }
 }
 
 function providersPath(root) {
@@ -300,22 +319,27 @@ export function providerStatus(root = process.cwd()) {
         : `${prov.envKey} is NOT set — get it from the Anthropic Console (console.anthropic.com/settings/keys) or your provider's dashboard`,
     });
   }
+  const customUrl =
+    prov.baseUrl && prov.baseUrl.replace(/\/+$/, "").toLowerCase() !== ANTHROPIC_DEFAULT_URL;
   if (prov.type === "litellm") {
-    let reachable = false;
-    try {
-      const out = execFileSync(
-        "curl",
-        ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `${prov.baseUrl}/health`],
-        { encoding: "utf8", timeout: 5000 },
-      );
-      reachable = out.startsWith("2");
-    } catch {}
+    const reachable = probeHealth(prov.baseUrl);
     checks.push({
       id: "gateway",
       ok: reachable,
       detail: reachable
         ? `LiteLLM gateway reachable at ${prov.baseUrl}`
         : `LiteLLM gateway NOT reachable at ${prov.baseUrl}`,
+    });
+  } else if (customUrl) {
+    // Behavioral evidence beats hostname spelling: an "anthropic-proxy" that answers
+    // /health is actually a LiteLLM-style gateway the URL prior missed. Advisory.
+    const behavesLikeGateway = probeHealth(prov.baseUrl);
+    checks.push({
+      id: "gateway-behavior",
+      ok: true,
+      detail: behavesLikeGateway
+        ? `${prov.baseUrl} answers /health like a LiteLLM gateway — pin it with \`forge config provider add\``
+        : `${prov.baseUrl} does not answer /health (plain proxy, or unreachable from here)`,
     });
   }
 

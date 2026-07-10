@@ -166,7 +166,7 @@ that forgekit structurally does not.
 |---|---|---|
 | routing decision visible *before* dispatch | yes — returns band, signals, and per-signal reasons the user can read and override (`src/route.js`) | decision is made inside the proxy at request time |
 | rubric versioned in the repo | yes — deterministic scoring over `src/model_tiers.json`, diffable in PRs | routing/cost logic lives in gateway config or the provider's service |
-| same input ⇒ same route | yes — regex rubric is deterministic; LLM adjudication is opt-in and clamped inside band rails (a proposal can never jump past them) | depends on gateway load/cost/failover state |
+| same input ⇒ same route | yes — the exemplar k-NN rubric is deterministic (same text, same neighbors, same score); LLM adjudication is opt-in and clamped inside band rails (a proposal can never jump past them) | depends on gateway load/cost/failover state |
 | **what the gateways have that forgekit doesn't** | — | they actually *move traffic*: proxying, failover, quotas, key management. `forge route` is advisory and at most **emits** a LiteLLM config exposing its tiers as aliases (`src/route.js`) — it is a transparency layer over gateways, not a replacement |
 
 ### Proof-carrying reuse vs plain RAG retrieval

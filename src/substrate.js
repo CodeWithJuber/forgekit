@@ -42,27 +42,29 @@ function verificationChecklist(root) {
   return [...new Set(checks)];
 }
 
-function minimalityWarnings(task, route, preflight) {
+// Every warning derives from signals the gate ALREADY computed — the preflight
+// DIMENSIONS rubric owns "which dimensions apply and which are missing", routing owns
+// complexity. No second keyword copy here to drift out of sync with those sources.
+function minimalityWarnings(_task, route, preflight) {
   const warnings = [];
-  const text = String(task).toLowerCase();
-  if (
-    /\b(refactor|rewrite|clean|redesign|optimi[sz]e|improve)\b/.test(text) &&
-    preflight.entities.files.length === 0
-  ) {
+  const missing = new Set((preflight.assumption?.missing ?? []).map((m) => m.key));
+  if (missing.has("target_scope") && preflight.entities.files.length === 0) {
     warnings.push(
       "High-risk broad change with no target files named; ask for scope before editing.",
     );
   }
-  if (route.score >= 0.55 && preflight.assumption.completeness < 0.7) {
+  if (route.score >= 0.55 && (preflight.assumption?.completeness ?? 1) < 0.7) {
     warnings.push(
       "Complex task with medium/low specification completeness; clarify before spending a premium model.",
     );
   }
-  if (
-    /\b(add authentication|payment|migration|distributed|concurrent|production)\b/.test(text) &&
-    !/\btest|acceptance|rollback|constraint|must|should\b/.test(text)
-  ) {
-    warnings.push("Production-sensitive task lacks explicit constraints or acceptance criteria.");
+  // Worded to what the signal actually means: the constraints DIMENSION applies to
+  // design/refactor work too, not only production systems — an overclaiming
+  // "production-sensitive!" on a casual refactor teaches users to ignore warnings.
+  if (missing.has("constraints")) {
+    warnings.push(
+      "Task implies constraints (design/production/auth/payment-class work) but states none — name performance, compatibility, or rollback expectations.",
+    );
   }
   return warnings;
 }

@@ -89,6 +89,25 @@ test("matchScore: symbol hit beats file-glob beats keyword", () => {
   assert.equal(matchScore(l, { files: ["src/db/index.ts"] }), 0);
 });
 
+test("matchScore: keyword tier is graded — same-module partial overlap earns partial credit", () => {
+  const l = newLesson({ id: "g", trigger: { keywords: ["src/auth/login.js"] } });
+  const exact = matchScore(l, { keywords: ["src/auth/login.js"] });
+  const sibling = matchScore(l, { keywords: ["src/auth/session.js"] });
+  const unrelated = matchScore(l, { keywords: ["docs/readme.md"] });
+  assert.equal(exact, 0.3, "full overlap keeps the historical tier value");
+  assert.ok(sibling > 0 && sibling < exact, "same module scores between 0 and exact");
+  assert.equal(unrelated, 0, "no shared tokens → no match");
+});
+
+test("matchScore: generic path tokens (src, js, index) never create cross-module matches", () => {
+  // Regression: {src, js} alone must not make an auth lesson 'relevant' to billing.
+  const l = newLesson({ id: "n", trigger: { keywords: ["src/auth/login.js"] } });
+  assert.equal(matchScore(l, { keywords: ["src/billing/invoice.js"] }), 0);
+  assert.equal(matchScore(l, { keywords: ["src/cortex_hook_main.js"] }), 0);
+  const cfg = newLesson({ id: "c", trigger: { keywords: ["config.js"] } });
+  assert.equal(matchScore(cfg, { keywords: ["src/anything_else.js"] }), 0);
+});
+
 test("selectForInjection: relevance-ranked, capped, overflow becomes a pointer (never silent)", () => {
   const ctx = { symbols: ["foo"], files: [], keywords: [] };
   const lessons = Array.from({ length: 5 }, (_, i) => {
