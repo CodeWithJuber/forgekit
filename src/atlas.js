@@ -12,7 +12,7 @@ const JS_RULES = [
   { re: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, kind: "class" },
   { re: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g, kind: "const" },
 ];
-const RULES = {
+export const RULES = {
   ".js": JS_RULES,
   ".jsx": JS_RULES,
   ".ts": JS_RULES,
@@ -38,12 +38,30 @@ const RULES = {
 // doc node + `references` edges to the code it names), never by the symbol RULES.
 // This is the missing code→doc half of impact: change a symbol, its docs show up
 // as dependents.
-const DOC_EXTS = new Set([".md"]);
+export const DOC_EXTS = new Set([".md"]);
 
 // Docs excluded from the graph: generated files the Stop hook rewrites (AGENTS.md
 // auto-sync would re-stale the atlas after every session) and the changelog, which
 // churns on every change and whose references describe HISTORY, not current code.
 const DOC_SKIP = /^(AGENTS|CLAUDE|GEMINI|CHANGELOG)\.md$/i;
+
+// The extensions the symbol RULES parse — exported as the ONE code-class registry so
+// the completion gate and docs sweep classify paths from the same table the graph is
+// built from, instead of growing their own regex lists.
+export const CODE_EXTS = new Set(Object.keys(RULES));
+
+// Config artifacts — CI workflows, manifests, build/deploy wiring. They name code
+// paths, so a code change must surface the configs that point at it (the missing
+// config half of impact). Lockfiles are generated churn, never sources of truth.
+export const CONFIG_EXTS = new Set([".json", ".yml", ".yaml", ".toml"]);
+export const CONFIG_FILE_RE = /^Dockerfile$|\.config\.[\w.]+$/;
+const CONFIG_SKIP = /^package-lock\.json$|[-.]lock(\.[\w]+)?$|\.cache\.json$/i;
+
+/** True when a basename is a config artifact worth graphing (lockfiles excluded). */
+export function isConfigFile(name) {
+  if (CONFIG_SKIP.test(name)) return false;
+  return CONFIG_EXTS.has(extname(name)) || CONFIG_FILE_RE.test(name);
+}
 
 const IMPORT_RE =
   /(?:import\s+(?:[^"'\n]+\s+from\s+)?["']([^"']+)["']|require\(["']([^"']+)["']\)|^\s*(?:from\s+([\w.]+)\s+)?import\s+([\w*,\s]+))/gm;
@@ -96,7 +114,9 @@ function walk(dir, files, cap) {
     return;
   }
   for (const name of entries) {
-    if (IGNORE_DIRS.has(name) || name.startsWith(".")) continue;
+    // Dot-entries stay out of the graph — except `.github`, whose workflows are config
+    // artifacts that name code paths (a CI file IS a dependent of the code it runs).
+    if (IGNORE_DIRS.has(name) || (name.startsWith(".") && name !== ".github")) continue;
     const path = join(dir, name);
     let st;
     try {
@@ -106,7 +126,9 @@ function walk(dir, files, cap) {
     }
     if (st.isDirectory()) walk(path, files, cap);
     else if (
-      (RULES[extname(name)] || (DOC_EXTS.has(extname(name)) && !DOC_SKIP.test(name))) &&
+      (RULES[extname(name)] ||
+        (DOC_EXTS.has(extname(name)) && !DOC_SKIP.test(name)) ||
+        isConfigFile(name)) &&
       files.length < cap
     )
       files.push(path);
@@ -164,6 +186,31 @@ function extractDoc(rel, text) {
   return { symbols: [], nodes: [doc], edges, hash: hash(text) };
 }
 
+// A config artifact (CI workflow, manifest, Dockerfile) becomes ONE config node whose
+// `references` edges point at the code files it names — quoted or bare, since YAML and
+// Dockerfiles reference paths without quotes (`run: node src/cli.js`). Reverse-BFS then
+// lists the configs a code change can break, closing the config half of blast radius.
+function extractConfig(rel, text) {
+  const cfg = { id: `config:${rel}`, name: rel, kind: "config", file: rel, line: 1 };
+  const edges = [];
+  const seen = new Set();
+  for (const m of text.matchAll(/[A-Za-z0-9_.@-]+(?:[/\\][A-Za-z0-9_.@-]+)*/g)) {
+    const tok = m[0].replace(/^\.\//, "");
+    if (!RULES[extname(tok)]) continue; // only path-like tokens ending in a code extension
+    const target = `module:${moduleId(tok)}`;
+    if (seen.has(target)) continue;
+    seen.add(target);
+    edges.push({
+      source: cfg.id,
+      target,
+      kind: "references",
+      confidence: 0.8,
+      line: lineOf(text, m.index),
+    });
+  }
+  return { symbols: [], nodes: [cfg], edges, hash: hash(text) };
+}
+
 function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
@@ -177,6 +224,7 @@ function extractFile(path, root, preRead) {
     }
   }
   if (DOC_EXTS.has(ext)) return extractDoc(rel, text);
+  if (isConfigFile(rel.split(/[/\\]/).pop() || "")) return extractConfig(rel, text);
 
   const mod = {
     id: `module:${moduleId(rel)}`,
