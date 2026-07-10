@@ -130,3 +130,23 @@ export function sync({ targetRoot = process.cwd() } = {}) {
 export function canonical(targetRoot = process.cwd()) {
   return buildCanonical(targetRoot);
 }
+
+/**
+ * Re-run sync ONLY when the managed AGENTS.md no longer matches the canonical source.
+ * The Stop hook calls this, so lessons/facts learned in a session reach every
+ * AGENTS.md-reading tool immediately — not whenever someone remembers `forge sync`
+ * (nothing did before: doctor DETECTED drift but nothing repaired it).
+ * Never adopts a repo: AGENTS.md must already exist AND be Forge-managed.
+ * Kill switch: FORGE_AUTOSYNC=0.
+ * @returns {{synced: boolean, reason: string}}
+ */
+export function autoSyncIfDrifted(targetRoot = process.cwd()) {
+  if (process.env.FORGE_AUTOSYNC === "0") return { synced: false, reason: "disabled" };
+  const existing = shared.readIfExists(join(targetRoot, "AGENTS.md"));
+  if (existing === null || !shared.isManaged(existing))
+    return { synced: false, reason: "no managed AGENTS.md here" };
+  if (shared.extractHash(existing) === shared.hashContent(buildCanonical(targetRoot)))
+    return { synced: false, reason: "in sync" };
+  sync({ targetRoot });
+  return { synced: true, reason: "drifted — resynced" };
+}

@@ -1083,13 +1083,39 @@ async function run(argv) {
   }
   if (cmd === "anchor") {
     const { goalDrift, renderAnchor } = await import("./anchor.js");
+    const { clearGoal, getGoal, setGoal } = await import("./goal.js");
     const json = argv.includes("--json");
-    const goal = argv
-      .slice(1)
-      .filter((a) => a !== "--json")
-      .join(" ");
+    const args = argv.slice(1).filter((a) => a !== "--json");
+    const sub = args[0];
+    // Persistent goal management: `set` stores it, SessionStart re-injects it, and a
+    // bare `forge anchor` checks against it — the goal survives the session that set it.
+    if (sub === "set") {
+      const r = setGoal(process.cwd(), args.slice(1).join(" "));
+      if (!r.ok) {
+        console.error(`forge anchor set: ${r.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(
+        `goal set: ${r.goal}\n(injected each session start; \`forge anchor\` checks against it)`,
+      );
+      return;
+    }
+    if (sub === "show") {
+      const g = getGoal(process.cwd());
+      console.log(g ? `active goal: ${g}` : 'no active goal — set one: forge anchor set "<goal>"');
+      return;
+    }
+    if (sub === "clear") {
+      clearGoal(process.cwd());
+      console.log("goal cleared.");
+      return;
+    }
+    const goal = args.join(" ") || getGoal(process.cwd());
     if (!goal) {
-      console.error('usage: forge anchor "<original goal>" [--json]');
+      console.error(
+        'usage: forge anchor "<original goal>" [--json]\n       forge anchor set|show|clear — persist the goal across sessions',
+      );
       process.exitCode = 1;
       return;
     }

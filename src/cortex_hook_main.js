@@ -67,15 +67,27 @@ async function main() {
       clearSession(root, sid);
       await enrichCreated(root, results);
     }
+    // Auto-sync: anything this session taught the memory (lessons, facts) reaches
+    // every AGENTS.md-reading tool NOW — drift used to be detected by doctor but
+    // repaired by nobody. Only touches an already-Forge-managed AGENTS.md;
+    // kill switch FORGE_AUTOSYNC=0. Fail-safe like everything else here.
+    try {
+      const { autoSyncIfDrifted } = await import("./sync.js");
+      autoSyncIfDrifted(root);
+    } catch {}
   } else if (mode === "session-start") {
-    const block = startupBlock(root, today);
+    // Learned lessons + the persistent goal — the two things a fresh session forgets.
+    const { goalBlock } = await import("./goal.js");
+    const block = [startupBlock(root, today), goalBlock(root)].filter(Boolean).join("\n");
     if (block) emit("SessionStart", block);
   } else if (mode === "pre-edit") {
     // A doom loop (the same failure recurring) is the loudest thing to say — it means "stop",
     // so it takes precedence over lesson/risk advice.
     const loop = doomLoopAdvisory(readSession(root, sid));
     const advice = loop || (await preEditAdvisory(root, hook.tool_input?.file_path, today));
-    if (advice) emit("PreToolUse", advice);
+    const docs = await staleDocsAdvisory(root, hook.tool_input?.file_path);
+    const combined = [advice, docs].filter(Boolean).join("\n\n");
+    if (combined) emit("PreToolUse", combined);
   } else if (mode === "preflight") {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
@@ -129,6 +141,23 @@ async function preEditAdvisory(root, file, today) {
   return band === "high"
     ? `Forge Cortex — ${file} looks high-risk (churn / prior mistakes here). Re-read and check impact before editing.`
     : "";
+}
+
+// Docs that reference the file about to change (atlas doc edges, CACHED graph only —
+// a hook never builds). The end-to-end nudge: a code edit carries its docs with it.
+async function staleDocsAdvisory(root, file) {
+  if (!file || file.endsWith(".md")) return "";
+  try {
+    const { load, impact } = await import("./atlas.js");
+    const atlas = load(root);
+    if (!atlas) return "";
+    const rel = file.startsWith(root) ? file.slice(root.length).replace(/^[/\\]/, "") : file;
+    const docs = impact(atlas, rel, { maxHops: 2 }).impactedFiles.filter((f) => f.endsWith(".md"));
+    if (!docs.length) return "";
+    return `Forge impact — docs that reference ${rel}: ${docs.slice(0, 5).join(", ")}. If this change alters behavior, update them in the same pass (\`forge impact ${rel}\` for the full list).`;
+  } catch {
+    return "";
+  }
 }
 
 main()
