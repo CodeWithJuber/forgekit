@@ -1,9 +1,9 @@
 # Forge — the complete guide
 
-**One brain for every AI coding agent.** A language model is *stateless* — one context
+**One brain for every AI coding agent.** A language model is _stateless_ — one context
 window, wiped every call. It can't remember what your team learned, can't foresee what
 an edit breaks, and has no enforced guardrails. Forge is the **cognitive substrate** —
-the layer that runs *before* the model edits code — that supplies exactly those three
+the layer that runs _before_ the model edits code — that supplies exactly those three
 things, and it ships them as native config to nine AI coding tools at once. The brain is
 the point; one config for every tool is how the brain gets delivered.
 
@@ -25,15 +25,15 @@ recipes, and how to extend each piece. If you just want to get going, the
 
 Every command is real and wired. Grouped by what it does:
 
-| Group | Commands |
-| --- | --- |
-| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand` |
-| **Memory & ledger (PCM)** | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` |
-| **Code graph & retrieval** | `forge atlas` · `forge context` |
-| **Substrate / pre-action** | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
-| **Verification & safety** | `forge verify` · `forge scan` · `forge spec` |
-| **UI / design** | `forge taste` · `forge uicheck` |
-| **Dashboard** | `forge dash` |
+| Group                        | Commands                                                                                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                           |
+| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide`                                     |
+| **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
+| **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
+| **Verification & safety**    | `forge verify` · `forge scan` · `forge spec`                                                                                                                               |
+| **UI / design**              | `forge taste` · `forge uicheck`                                                                                                                                            |
+| **Dashboard**                | `forge dash`                                                                                                                                                               |
 
 Storage in one line: the code graph is `.forge/atlas.json` (plain JSON, not SQLite); the
 ledger is content-addressed claims under `.forge/ledger/` (git-committable, union-merge).
@@ -50,11 +50,11 @@ prompt can fix: it can't **remember** across sessions, can't **learn** from outc
 can't **imagine** what an edit breaks, can't reliably **check itself**, and can't see
 **what already exists** beyond its window.
 
-Forge supplies those faculties from the *outside*, in three layers:
+Forge supplies those faculties from the _outside_, in three layers:
 
 - **tools** — know-how the model loads on demand (`lean`, `atlas`, `recall`…).
 - **crew** — isolated sub-agents for focused work (`scout`, `verifier`…).
-- **guards** — deterministic shell hooks that *enforce* what prose can't (the only
+- **guards** — deterministic shell hooks that _enforce_ what prose can't (the only
   layer the model can't drift from).
 
 Two subsystems sit on top: **Cortex** (self-correcting memory) and the **cognitive
@@ -132,7 +132,7 @@ Forge substrate — pre-action check
 ```
 
 It found `login.js` and `session.js` — the two files that import `verifyToken` but you
-never named. That's the "forgot the coupled file" bug, caught *before* the edit.
+never named. That's the "forgot the coupled file" bug, caught _before_ the edit.
 
 **A vague task — it tells you to ask first:**
 
@@ -242,7 +242,7 @@ Forge impact — blast radius
 ### `forge scope <file…>` — can this be split into sessions?
 
 Groups the files you name into independent clusters and surfaces coupled files you
-*didn't* name — so you split cleanly instead of overloading one session.
+_didn't_ name — so you split cleanly instead of overloading one session.
 
 ```console
 $ forge scope src/auth.js src/report.js
@@ -258,7 +258,7 @@ Forge scope — task decomposition
 ### `forge anchor "<goal>"` — are your changes still on the stated goal?
 
 Goal-anchoring (the paper's M4): it re-reads your original objective against the files
-you've *actually* changed (`git diff HEAD` + untracked, minus forge's own generated
+you've _actually_ changed (`git diff HEAD` + untracked, minus forge's own generated
 config), and flags work that wandered off-goal. Quiet on a clean tree — it only speaks
 once there's a diff to compare, so it's a mid-session "am I still on track?" check.
 
@@ -276,7 +276,7 @@ Forge anchor — goal-drift check
 doesn't — so it's surfaced as drift to confirm or undo. Coarse and advisory by design
 (path/keyword match, not semantic). `forge substrate` folds this in automatically. The
 result also carries `driftScore` (the off-goal fraction per checkpoint) — the graded
-signal the `cusum` change-point detector accumulates to catch *sustained* small drift.
+signal the `cusum` change-point detector accumulates to catch _sustained_ small drift.
 
 **The goal persists.** `forge anchor set "<goal>"` stores it in `.forge/goal.md`; every
 new session re-injects it at SessionStart, a bare `forge anchor` checks against it, and
@@ -297,7 +297,7 @@ forge handoff "built the export endpoint" \
 ```
 
 Every new session re-injects the snapshot at SessionStart, so the next session — any
-machine, any day — *resumes* instead of re-assuming. Refuses secrets, like every forge
+machine, any day — _resumes_ instead of re-assuming. Refuses secrets, like every forge
 store. Updating it also satisfies the completion gate (below): the weakest way to stop
 cleanly is to tell the future what happened.
 
@@ -307,14 +307,14 @@ Sessions re-decide (or silently contradict) what a past session already settled,
 nothing durable recorded the choice. `forge decide` appends one ADR-lite line to
 `.forge/decisions.md` (`- **D-0007** (2026-07-10): …`) and mints a machine-readable
 `decision` claim in the ledger. Bare `forge decide` lists the last ten. Append-only by
-design: a decision that stops being true gets a *new* entry, never an edit — the log is
+design: a decision that stops being true gets a _new_ entry, never an edit — the log is
 history, and `forge docs sync` exempts it for exactly that reason.
 
 ### `forge docs sync` — which prose did this diff make stale?
 
 `forge docs check` reconciles the registries; `docs sync` answers the diff-shaped
 question. It extracts the changed identifiers (paths, definitions, called symbols —
-from added *and removed* lines, so deletions count), scans every doc artifact (atlas doc
+from added _and removed_ lines, so deletions count), scans every doc artifact (atlas doc
 nodes + README/GUIDE/ARCHITECTURE), and gives each one a verdict:
 
 ```console
@@ -373,6 +373,41 @@ $ forge atlas has doesNotExistSymbol
 `query` costs a few hundred tokens instead of reading five files; `has` is a cheap
 "is this symbol real?" check before an agent calls it.
 
+The atlas parses **JS/TS, Python, Go, Rust, Java, Ruby, C#, PHP, Kotlin, Swift, and
+C/C++** — adding a language is a regex grammar in `src/atlas.js RULES`, and everything
+downstream (the walk, the completion gate's code-class, the docs sweep) picks it up from
+that one table.
+
+### `forge stack` — what is THIS repo actually built with?
+
+The atlas lists the languages forge can _parse_; `forge stack` answers the other
+question — the repo's _real_ stack — by reading its dependency manifests (not a hardcoded
+menu). It reports languages, frameworks, package managers, and the actual test
+command(s), which also feed the substrate's verification checklist:
+
+```console
+$ forge stack
+  languages:  JavaScript/TypeScript, TypeScript
+  frameworks: Next.js, React
+  pkg mgrs:   pnpm
+  test:       npx vitest
+  evidence:   package.json
+```
+
+Detection reads `package.json` (deps → frameworks, lockfile → package manager),
+`pyproject.toml`/`requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`,
+`pom.xml`/`build.gradle`, and `*.csproj`. Widening it is adding a data row, not code.
+`--json` for tooling. Nothing detected → an honest "no known stack".
+
+### `forge update` — self-update
+
+No more manual "am I on the latest?". `forge update --check` reports whether a newer
+version is available (git checkout: commits behind upstream, from a cached hourly fetch);
+bare `forge update` applies it (`git pull --ff-only` for a checkout — symlink/npm-link
+installs go live immediately; npm-global installs get the `npm i -g` command). `forge
+doctor` also surfaces a one-line notice when behind (cached, never nags; silence it with
+`FORGE_NO_UPDATE_CHECK=1`). Fail-open: offline or a non-git install never errors.
+
 ### `forge recall add | list | consolidate` — cross-session memory
 
 Durable facts, one per file, injected at the start of the next session by the
@@ -387,7 +422,7 @@ $ forge recall list
 
 ### `forge cortex [status | why <symbol>]` — self-correcting memory
 
-Status of the lessons Cortex has learned from *this repo's* correction history.
+Status of the lessons Cortex has learned from _this repo's_ correction history.
 
 ```console
 $ forge cortex
@@ -505,7 +540,7 @@ crash, timeout, garbage output — silently degrades to the MinHash path
 
 Derives the required-knowledge set for an edit (the target's definitions, hop-1
 dependents, sibling tests, trusted lessons), covers it under a token budget with a
-compression ladder (full → head → pointer), and computes what's *missing* as a set
+compression ladder (full → head → pointer), and computes what's _missing_ as a set
 difference — not a feeling.
 
 ```console
@@ -614,7 +649,7 @@ visual loop: renders the page headless at two viewports (1280×800, 390×844),
 fingerprints the **computed** styles of every visible element — what the cascade,
 `var()` resolution, and runtime theming actually produced — and runs the exact same
 design gate as `design` (exit 1 on fail). Screenshots land in `.forge/ui/` for human
-review. Playwright is an *optional tier* (ADR-0005): `package.json` stays
+review. Playwright is an _optional tier_ (ADR-0005): `package.json` stays
 dependency-free; without a browser runtime the command prints a "skipped (no browser
 runtime)" note and exits 0 — enable it with `npm i -D playwright-core` or point
 `FORGE_PLAYWRIGHT` at an existing install (e.g.
@@ -676,22 +711,22 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 
 ### The rest
 
-| Command | Answers |
-| --- | --- |
-| `forge init` | Emit every tool's native config from one source. |
-| `forge sync` | Recompile `source/` → each tool's files (idempotent). |
-| `forge doctor` | Health check: layers, install, drift, cortex. |
-| `forge docs check` | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself). |
-| `forge docs sync` | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above). |
-| `forge catalog` | Start-Here index of every tool / crew / guard. |
-| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`. |
-| `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report. |
-| `forge scan <target>` | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install. |
-| `forge harden` | Wire gitleaks pre-commit + sandbox settings. |
-| `forge spec [init\|lock\|check]` | Spec-as-contract drift check. |
-| `forge brand` | Print the active brand token map. |
-| `forge lean "<task>"` | Scope-minimality footprint for a task — advisory (the Lean Path as a command). |
-| `forge taste [<style>]` | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads). |
+| Command                          | Answers                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `forge init`                     | Emit every tool's native config from one source.                                                                                |
+| `forge sync`                     | Recompile `source/` → each tool's files (idempotent).                                                                           |
+| `forge doctor`                   | Health check: layers, install, drift, cortex.                                                                                   |
+| `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).      |
+| `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above). |
+| `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                  |
+| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                               |
+| `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                      |
+| `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                    |
+| `forge harden`                   | Wire gitleaks pre-commit + sandbox settings.                                                                                    |
+| `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                   |
+| `forge brand`                    | Print the active brand token map.                                                                                               |
+| `forge lean "<task>"`            | Scope-minimality footprint for a task — advisory (the Lean Path as a command).                                                  |
+| `forge taste [<style>]`          | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads).                        |
 
 ### Use it in a script
 
@@ -703,9 +738,9 @@ forge substrate "update verifyToken in src/auth.js" --json
 {
   "okToProceed": false,
   "assumption": { "risk": "high", "shouldAsk": true, "questions": ["…"] },
-  "route":      { "tier": "simple", "model": { "name": "Haiku 4.5" } },
-  "impact":     { "impactedFiles": ["src/auth.js", "src/login.js"] },
-  "verification": { "checklist": ["npm test", "npm run typecheck"] }
+  "route": { "tier": "simple", "model": { "name": "Haiku 4.5" } },
+  "impact": { "impactedFiles": ["src/auth.js", "src/login.js"] },
+  "verification": { "checklist": ["npm test", "npm run typecheck"] },
 }
 ```
 
@@ -717,7 +752,7 @@ too.
 
 ## Auto-use inside an agent
 
-The point of Forge is that you don't have to *remember* to run these checks.
+The point of Forge is that you don't have to _remember_ to run these checks.
 
 ### Claude Code — fully ambient
 
@@ -753,26 +788,26 @@ that intent; questions get no ceremony, and below-confidence prompts get nothing
 **The completion gate (Stop).** The deterministic floor under "done": when the session
 tries to finish, everything changed since the baseline (committed ∪ working tree) is
 classified against the same registries the atlas is built from — and if **code moved but
-no doc or state artifact moved with it**, the stop is blocked *once*, with the repair
+no doc or state artifact moved with it**, the stop is blocked _once_, with the repair
 checklist as the reason (`forge docs sync` → update stale docs, `forge handoff`,
 `forge decide`; plus a CUSUM goal-drift alarm when the session's recorded drift series
 sustained). The decision table, first match wins:
 
-| # | Condition | Decision |
-| --- | --- | --- |
-| 1 | `stop_hook_active` (already continuing from a block) | allow |
-| 2 | no `session_id` in the hook payload (per-session promises impossible) | allow |
-| 3 | not a git repo / git unusable | allow (fail-open) |
-| 4 | this session already blocked once — or the marker can't be persisted | allow |
-| 5 | `FORGE_STOPGATE=0` | allow (kill switch) |
-| 6 | nothing changed (or only `.forge/` internals / generated files) | allow |
-| 7 | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow |
-| 8 | **code changed ∧ no doc/state artifact moved** | **block once + checklist** |
-| 9 | only tests / configs / other files changed | allow |
-| 10 | any internal error in the gate itself | allow (fail-open) |
+| #   | Condition                                                                      | Decision                   |
+| --- | ------------------------------------------------------------------------------ | -------------------------- |
+| 1   | `stop_hook_active` (already continuing from a block)                           | allow                      |
+| 2   | no `session_id` in the hook payload (per-session promises impossible)          | allow                      |
+| 3   | not a git repo / git unusable                                                  | allow (fail-open)          |
+| 4   | this session already blocked once — or the marker can't be persisted           | allow                      |
+| 5   | `FORGE_STOPGATE=0`                                                             | allow (kill switch)        |
+| 6   | nothing changed (or only `.forge/` internals / generated files)                | allow                      |
+| 7   | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow                      |
+| 8   | **code changed ∧ no doc/state artifact moved**                                 | **block once + checklist** |
+| 9   | only tests / configs / other files changed                                     | allow                      |
+| 10  | any internal error in the gate itself                                          | allow (fail-open)          |
 
-"Changed" is **session-scoped**, not repo-scoped: files from commits made *during* the
-session (committer time ≥ session start) plus working-tree changes *minus* whatever was
+"Changed" is **session-scoped**, not repo-scoped: files from commits made _during_ the
+session (committer time ≥ session start) plus working-tree changes _minus_ whatever was
 already dirty when the session began (snapshotted at SessionStart). Pre-existing dirt,
 commits reached by a branch switch or `git pull`, and vendor trees (`node_modules/`…)
 are never attributed to the agent — near-zero false blocks is the gate's credibility.
@@ -796,26 +831,26 @@ emitted `.mcp.json`):
 
 <a id="mcp-tools"></a>
 
-| MCP tool | Does |
-| --- | --- |
-| `substrate_check` | full pre-action check |
-| `preflight_check` | assumption / info-gap check |
-| `assumption_gate` | ask/proceed + questions |
-| `predict_impact` | blast radius (code **and** the docs that reference it) |
-| `route_task` | model recommendation |
-| `scope_files` | independent vs. coupled |
-| `cortex_lessons` | learned lessons for given files/symbols |
-| `cortex_status` | memory lifecycle summary |
-| `forge_brain` | durable project facts |
-| `forge_ledger_query` | ranked retrieval over the PCM ledger |
-| `forge_remember` | **write**: add a durable project fact |
-| `forge_ledger_ratify` | **write**: human-ratify a claim into a decision |
-| `forge_ledger_retract` | **write**: tombstone a claim |
-| `forge_diagnose` | doom-loop failure check |
-| `forge_doctor` | health check |
-| `forge_provider_status` | provider detection + gateway reachability |
-| `forge_cost` | spend + stage factors |
-| `forge_dash_data` / `forge_dash_summary` | dashboard data feeds |
+| MCP tool                                 | Does                                                   |
+| ---------------------------------------- | ------------------------------------------------------ |
+| `substrate_check`                        | full pre-action check                                  |
+| `preflight_check`                        | assumption / info-gap check                            |
+| `assumption_gate`                        | ask/proceed + questions                                |
+| `predict_impact`                         | blast radius (code **and** the docs that reference it) |
+| `route_task`                             | model recommendation                                   |
+| `scope_files`                            | independent vs. coupled                                |
+| `cortex_lessons`                         | learned lessons for given files/symbols                |
+| `cortex_status`                          | memory lifecycle summary                               |
+| `forge_brain`                            | durable project facts                                  |
+| `forge_ledger_query`                     | ranked retrieval over the PCM ledger                   |
+| `forge_remember`                         | **write**: add a durable project fact                  |
+| `forge_ledger_ratify`                    | **write**: human-ratify a claim into a decision        |
+| `forge_ledger_retract`                   | **write**: tombstone a claim                           |
+| `forge_diagnose`                         | doom-loop failure check                                |
+| `forge_doctor`                           | health check                                           |
+| `forge_provider_status`                  | provider detection + gateway reachability              |
+| `forge_cost`                             | spend + stage factors                                  |
+| `forge_dash_data` / `forge_dash_summary` | dashboard data feeds                                   |
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
 Code, agent-invoked everywhere else.**
@@ -824,14 +859,14 @@ Code, agent-invoked everywhere else.**
 
 ## Reading substrate output
 
-| Field | What it means | Do this |
-| --- | --- | --- |
-| `proceed: ASK FIRST` / `okToProceed: false` | task is under-specified | ask the `clarify` questions, don't guess |
-| `route` | cheapest capable model | start there; escalate only if a verifier fails |
-| `impact` | predicted blast radius | read these files before editing |
-| `scope` | independent vs. coupled work | split independent groups into separate sessions |
-| `memory` | past Cortex lessons for this area | context, not law — tests override it |
-| `verify` | how to prove it works | run it, show the output, then say "done" |
+| Field                                       | What it means                     | Do this                                         |
+| ------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| `proceed: ASK FIRST` / `okToProceed: false` | task is under-specified           | ask the `clarify` questions, don't guess        |
+| `route`                                     | cheapest capable model            | start there; escalate only if a verifier fails  |
+| `impact`                                    | predicted blast radius            | read these files before editing                 |
+| `scope`                                     | independent vs. coupled work      | split independent groups into separate sessions |
+| `memory`                                    | past Cortex lessons for this area | context, not law — tests override it            |
+| `verify`                                    | how to prove it works             | run it, show the output, then say "done"        |
 
 ---
 
@@ -863,43 +898,49 @@ tools for the rest.
 Everything is small, single-sourced, and testable. Change one piece, run `npm test`.
 
 ### Add or change a rule
+
 Edit [`source/rules.json`](../source/rules.json), then `forge sync`. The rule is
 re-emitted into every tool's native file with a content-hash header.
 
 ### Add a tool (skill)
+
 Create `global/tools/<name>/SKILL.md` with `name` + `description` frontmatter. It's
 picked up by the plugin and by `forge catalog`.
 
 ### Add a guard (enforced hook)
+
 Create `global/guards/<name>.sh` (source `_guardlib.sh` for the shared fields + the
 re-entrancy lock), then wire it in `global/settings.template.json` **and**
 [`hooks/hooks.json`](../hooks/hooks.json). Guards must be idempotent and fail-safe —
 worst case they do nothing.
 
 ### Add a crew member (sub-agent)
+
 Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/agents/`.
 
 ### Tune the cognitive substrate
-| To change… | Edit |
-| --- | --- |
-| how often it asks | `source/substrate.json` → `defaults.askThreshold` (0.6) |
-| blast-radius sensitivity | `source/substrate.json` → `defaults.impactThreshold` (0.1) |
-| a routing outcome | `src/route.js` → add a labeled row to `EXEMPLARS` (data, not weights); constants in `RUBRIC` |
-| model tiers / prices | `src/model_tiers.js` |
-| an assumption question | `src/preflight.js` → `DIMENSIONS[]` |
-| the verify checklist | `src/substrate.js` → `verificationChecklist()` |
-| when the ambient hook speaks | `src/substrate.js` → `substrateContext()` |
-| the cross-tool rule wording | `source/rules.json` → `substrate` section (then `forge init`) |
-| opt-in LLM adjudication | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm` |
+
+| To change…                                      | Edit                                                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| how often it asks                               | `source/substrate.json` → `defaults.askThreshold` (0.6)                                                                               |
+| blast-radius sensitivity                        | `source/substrate.json` → `defaults.impactThreshold` (0.1)                                                                            |
+| a routing outcome                               | `src/route.js` → add a labeled row to `EXEMPLARS` (data, not weights); constants in `RUBRIC`                                          |
+| model tiers / prices                            | `src/model_tiers.js`                                                                                                                  |
+| an assumption question                          | `src/preflight.js` → `DIMENSIONS[]`                                                                                                   |
+| the verify checklist                            | `src/substrate.js` → `verificationChecklist()`                                                                                        |
+| when the ambient hook speaks                    | `src/substrate.js` → `substrateContext()`                                                                                             |
+| the cross-tool rule wording                     | `source/rules.json` → `substrate` section (then `forge init`)                                                                         |
+| opt-in LLM adjudication                         | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm`                                       |
 | opt-in enforcing gate (halt, don't just advise) | `FORGE_ENFORCE=1` — blocks a no-anchor prompt or a very-large-blast action; `src/substrate.js` → `enforceDecision()`. Off by default. |
-| verify test timeout | `FORGE_VERIFY_TIMEOUT_MS` (default 600000) |
+| verify test timeout                             | `FORGE_VERIFY_TIMEOUT_MS` (default 600000)                                                                                            |
 
 ### Opt into LLM-assisted judgments
+
 By default every judgment is a deterministic rubric. `FORGE_LLM=1` adds a thin **proposer**
 layer (`src/adjudicate.js`) — one shared `claude -p` primitive used by M2/M1/impact/M4. The
 model never decides: each proposal is verified against the rubric, the code graph, or a grep
 before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
-a verified reading can *clear* a false ask or route a task *down* a tier, not only add caution,
+a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
 but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
 routing floor). Impact edges must be real + grep-confirmed; goal-drift moves off→on only. Any
 failure falls back to the deterministic path, so the flag is safe to leave off or on. `--json`
@@ -909,11 +950,13 @@ conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer
 `reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
 ### Support a new tool
+
 Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like
 `src/emit/cursor.js`), then register it in `src/sync.js`. A golden-file test in
 `test/sync.test.js` keeps it honest.
 
 ### Rebrand
+
 Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name` in
 `.claude-plugin/plugin.json`. The whole CLI, banner, and emitted headers follow.
 
@@ -922,32 +965,34 @@ Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name
 The complete env contract (`forge docs check` keeps this table honest — a variable the
 code reads but this table misses fails CI on the forge repo):
 
-| Variable | Does |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | direct Anthropic auth (also used by gateways when set) |
-| `ANTHROPIC_AUTH_TOKEN` | gateway/proxy Bearer credential — recognized everywhere the API key is |
-| `ANTHROPIC_BASE_URL` | custom API endpoint; gateway-looking URLs auto-classify as LiteLLM |
-| `ANTHROPIC_MODEL` / `FORGE_MODEL` | pin one model — bypasses tier routing entirely |
-| `LITELLM_BASE_URL` / `LITELLM_API_KEY` | hosted LiteLLM gateway endpoint + key (highest detection priority) |
-| `OPENROUTER_API_KEY` | OpenRouter provider |
-| `FORGE_LLM` | `1` enables the LLM proposer layer (off = fully deterministic) |
-| `FORGE_LLM_AMBIENT` | `1` lets the ambient hook use the proposer too |
-| `FORGE_LLM_HTTP` | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
-| `FORGE_ENFORCE` | `1` turns the substrate advisory into a hard block on the strongest signals |
-| `FORGE_AUTOSYNC` | `0` disables the Stop-hook AGENTS.md auto-repair |
-| `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005) |
-| `FORGE_HOME` | override `~/.forge` (recall store location) |
-| `FORGE_ROOT` | repo root override for the MCP server |
-| `FORGE_AUTHOR` | identity stamped on ledger provenance (defaults to git identity) |
-| `FORGE_COST_CEILING` | daily spend (USD) the cost-budget guard warns at (default 10) |
-| `FORGE_LOOP_THRESHOLD` | identical tool calls before the doom-loop guard speaks (default 4) |
-| `FORGE_LEAN_THRESHOLD` | lines-per-task-word ratio the lean guard nudges at |
-| `FORGE_VERIFY_TIMEOUT_MS` | verify test-run timeout (default 600000) |
-| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
-| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
-| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
-| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
-| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
+| Variable                                                       | Does                                                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                                            | direct Anthropic auth (also used by gateways when set)                                                        |
+| `ANTHROPIC_AUTH_TOKEN`                                         | gateway/proxy Bearer credential — recognized everywhere the API key is                                        |
+| `ANTHROPIC_BASE_URL`                                           | custom API endpoint; gateway-looking URLs auto-classify as LiteLLM                                            |
+| `ANTHROPIC_MODEL` / `FORGE_MODEL`                              | pin one model — bypasses tier routing entirely                                                                |
+| `LITELLM_BASE_URL` / `LITELLM_API_KEY`                         | hosted LiteLLM gateway endpoint + key (highest detection priority)                                            |
+| `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                           |
+| `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                |
+| `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                |
+| `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
+| `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
+| `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
+| `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |
+| `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                   |
+| `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                         |
+| `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                              |
+| `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                 |
+| `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                            |
+| `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                            |
+| `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                      |
+| `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                               |
+| `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                    |
+| `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                               |
+| `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                 |
+| `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                |
+| `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                 |
+| `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                       |
 
 ---
 
@@ -965,8 +1010,8 @@ code reads but this table misses fails CI on the forge repo):
   tokenized palette is partially invisible to the design gate.
 - **`forge cost --stages` reports measured stages only** — a stage with no events says
   "no data", never a default; the composed figure is a lower bound and ~90 % is a
-  labeled *target*, not a claim.
+  labeled _target_, not a claim.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
-  use. What's *asserted* (safe to gate on): repo grounding, graph traversal, scope
+  use. What's _asserted_ (safe to gate on): repo grounding, graph traversal, scope
   decomposition, routing arithmetic, and the test/build commands. Everything else is
-  *advisory*. **Tests and human corrections always win.**
+  _advisory_. **Tests and human corrections always win.**

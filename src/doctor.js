@@ -12,6 +12,7 @@ import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
 import { canonical } from "./sync.js";
+import { updateStatus } from "./update.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
 const warn = (label, note = "") => ({ status: "warn", label, note });
@@ -323,6 +324,20 @@ function checkDocs(out, targetRoot) {
   } catch {}
 }
 
+// Best-effort freshness notice — never a hard failure, only speaks when genuinely behind.
+// Cached fetch (updateStatus) keeps it cheap; FORGE_NO_UPDATE_CHECK=1 silences it entirely.
+function checkUpdate(out) {
+  if (process.env.FORGE_NO_UPDATE_CHECK === "1") return;
+  try {
+    // fetch:false — doctor never initiates network; it reports on the LAST cached fetch
+    // (a prior `forge update`/`update --check`). Keeps the health check fast and offline-safe.
+    const s = updateStatus({ fetch: false });
+    if (s.behind > 0)
+      out.push(warn("update", `${s.behind} commit(s) behind — run \`${BRAND.cli} update\``));
+    else if (!s.unknown) out.push(ok("update", `up to date (v${s.current})`));
+  } catch {}
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -340,5 +355,6 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkMcp(results, targetRoot);
   checkCortex(results, targetRoot);
   checkLedger(results, targetRoot);
+  checkUpdate(results);
   return { results, failed: results.filter((r) => r.status === "fail").length };
 }

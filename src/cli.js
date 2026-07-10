@@ -8,6 +8,14 @@ import { COMMANDS, GROUPS } from "./commands.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
+// Per-command title lines ("Forge <cmd> — …") are branding chrome, not results. They
+// print only when asked (`--verbose` or FORGE_VERBOSE=1); by default a command emits
+// just its output. The `--help`/`--version` banner is unaffected.
+const VERBOSE = process.argv.includes("--verbose") || process.env.FORGE_VERBOSE === "1";
+const heading = (text) => {
+  if (VERBOSE) console.log(text);
+};
+
 function printHelp() {
   printVersion();
   console.log(`\n${BRAND.tagline}\n`);
@@ -41,7 +49,7 @@ async function run(argv) {
     const noSettings = argv.includes("--no-settings");
     const { report, bytes, settings, detected } = init({ targetRoot: process.cwd(), noSettings });
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
-    console.log(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
+    heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
@@ -64,10 +72,63 @@ async function run(argv) {
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
     return;
   }
+  if (cmd === "update") {
+    const { applyUpdate, updateStatus } = await import("./update.js");
+    const json = argv.includes("--json");
+    if (argv.includes("--check")) {
+      const s = updateStatus({});
+      if (json) return console.log(JSON.stringify(s, null, 2));
+      heading(`${BRAND.brand} update — check\n`);
+      if (s.unknown)
+        console.log(
+          `  on v${s.current} (${s.mode}) — can't compare to upstream${s.network === "offline" ? " (offline)" : ""}; update with your installer.`,
+        );
+      else if (s.behind > 0)
+        console.log(`  ${s.behind} commit(s) behind ${s.upstream} — run \`${BRAND.cli} update\`.`);
+      else console.log(`  up to date (v${s.current}).`);
+      return;
+    }
+    const r = applyUpdate({});
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    heading(`${BRAND.brand} update\n`);
+    if (r.ok)
+      console.log(
+        r.changed
+          ? `  updated ${r.before} → ${r.after}. ${r.note}`
+          : `  already up to date (v${BRAND.version}).`,
+      );
+    else if (r.instruction) console.log(`  ${r.reason}:\n    ${r.instruction}`);
+    else {
+      console.log(`  ${r.reason}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (cmd === "stack") {
+    // Dynamic: read THIS repo's manifests and report its real stack (not a static menu).
+    const { detectStack } = await import("./stack.js");
+    const s = detectStack(process.cwd());
+    if (argv.includes("--json")) return console.log(JSON.stringify(s, null, 2));
+    heading(`${BRAND.brand} stack — detected from this repo's manifests\n`);
+    const row = (label, arr) =>
+      arr.length ? console.log(`  ${`${label}:`.padEnd(11)} ${arr.join(", ")}`) : undefined;
+    if (!s.languages.length) {
+      console.log("  no known stack detected (no package.json/go.mod/Cargo.toml/… found).");
+      return;
+    }
+    row("languages", s.languages);
+    row("frameworks", s.frameworks);
+    row("pkg mgrs", s.packageManagers);
+    row("test", s.testCommands);
+    row("tools", s.tools);
+    row("notes", s.notes);
+    console.log(`  ${"evidence:".padEnd(11)} ${s.evidence.join(", ")}`);
+    return;
+  }
   if (cmd === "catalog") {
     const { catalog } = await import("./init.js");
     const c = catalog();
-    console.log(`${BRAND.brand} catalog — Start Here\n`);
+    heading(`${BRAND.brand} catalog — Start Here\n`);
     console.log("  TOOLS (model-invoked skills)");
     for (const t of c.tools) console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
     console.log(`\n  CREW (isolated sub-agents)   ${c.crew.join(" · ")}`);
@@ -106,7 +167,7 @@ async function run(argv) {
   if (cmd === "sync") {
     const { sync } = await import("./sync.js");
     const { report, warnings, bytes } = sync({ targetRoot: process.cwd() });
-    console.log(`${BRAND.brand} sync — one source → every tool\n`);
+    heading(`${BRAND.brand} sync — one source → every tool\n`);
     for (const r of report) {
       console.log(
         `  ${r.action.padEnd(16)} ${String(r.target).padEnd(22)} ${r.tool}${r.note ? `  · ${r.note}` : ""}`,
@@ -126,7 +187,7 @@ async function run(argv) {
       return;
     }
     const icon = { ok: "✓", warn: "!", fail: "✗" };
-    console.log(`${BRAND.brand} doctor\n`);
+    heading(`${BRAND.brand} doctor\n`);
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
     console.log(`\n${failed === 0 ? "all clear" : `${failed} problem(s)`}`);
     if (failed) process.exitCode = 1;
@@ -157,7 +218,7 @@ async function run(argv) {
       if (!r.ok) process.exitCode = 1;
       return;
     }
-    console.log(`${BRAND.brand} docs check — docs↔code drift\n`);
+    heading(`${BRAND.brand} docs check — docs↔code drift\n`);
     if (!r.issues.length)
       console.log("  ✓ docs and code agree (commands, env vars, MCP tools, CHANGELOG)");
     for (const i of r.issues)
@@ -230,7 +291,7 @@ async function run(argv) {
     if (sub === "stats") {
       const s = ls.stats(dir, nowDay);
       if (json) return console.log(JSON.stringify(s, null, 2));
-      console.log(`${BRAND.brand} ledger — proof-carrying memory\n`);
+      heading(`${BRAND.brand} ledger — proof-carrying memory\n`);
       console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
       for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
       console.log(
@@ -287,7 +348,7 @@ async function run(argv) {
         return;
       }
       if (json) return console.log(JSON.stringify(b, null, 2));
-      console.log(`${BRAND.brand} ledger blame — ${b.kind} ${b.id.slice(0, 12)}\n`);
+      heading(`${BRAND.brand} ledger blame — ${b.kind} ${b.id.slice(0, 12)}\n`);
       console.log(`  val ${b.val.toFixed(2)} (trust-weighted ${b.valTrustWeighted.toFixed(2)})`);
       for (const p of b.minted)
         console.log(
@@ -510,7 +571,7 @@ async function run(argv) {
       const { summarize } = await import("./metrics.js");
       const s = summarize(root).cache ?? { events: 0, byOutcome: {}, savedEstimate: 0 };
       if (json) return console.log(JSON.stringify(s, null, 2));
-      console.log(`${BRAND.brand} reuse — proof-carrying code cache\n`);
+      heading(`${BRAND.brand} reuse — proof-carrying code cache\n`);
       console.log(`  lookups: ${s.events}`);
       for (const [o, n] of Object.entries(s.byOutcome)) console.log(`    ${o}: ${n}`);
       console.log(`  est. tokens saved: ${s.savedEstimate}`);
@@ -598,7 +659,7 @@ async function run(argv) {
       return;
     }
     const r = scan(target);
-    console.log(`${BRAND.brand} scan — skill-gate (${r.scanner})\n`);
+    heading(`${BRAND.brand} scan — skill-gate (${r.scanner})\n`);
     if (r.findings?.length) {
       for (const f of r.findings) console.log(`  [${f.sev}] ${f.msg}`);
     } else if (r.raw) {
@@ -621,7 +682,7 @@ async function run(argv) {
       if (!r.ok) process.exitCode = 1;
       return;
     }
-    console.log(`${BRAND.brand} verify\n`);
+    heading(`${BRAND.brand} verify\n`);
     console.log(`  changed files:    ${r.changedFiles.length}`);
     console.log(
       `  tests:            ${r.tests.ran ? (r.tests.passed ? "✓ pass" : "✗ FAIL") : "— none detected"}`,
@@ -667,7 +728,7 @@ async function run(argv) {
     const store = b.brainStore(process.cwd());
     const idx = b.buildIndex(store);
     const items = b.list(store);
-    console.log(`${BRAND.brand} brain — portable project memory\n`);
+    heading(`${BRAND.brand} brain — portable project memory\n`);
     console.log(
       items.length
         ? items.map((s) => `  - ${s}`).join("\n")
@@ -689,7 +750,7 @@ async function run(argv) {
     }
     const { execFileSync } = await import("node:child_process");
     const run = (bin, args) => execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
-    console.log(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
+    heading(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
     try {
       let out;
       try {
@@ -747,7 +808,7 @@ async function run(argv) {
       return;
     }
     const r = s.check(process.cwd());
-    console.log(`${BRAND.brand} spec check\n`);
+    heading(`${BRAND.brand} spec check\n`);
     if (r.note) console.log(`  ${r.note}`);
     else if (r.drift.length) {
       for (const d of r.drift) {
@@ -761,7 +822,7 @@ async function run(argv) {
   if (cmd === "harden") {
     const { harden } = await import("./harden.js");
     const r = harden({ targetRoot: process.cwd() });
-    console.log(`${BRAND.brand} harden\n`);
+    heading(`${BRAND.brand} harden\n`);
     console.log(`  gitleaks pre-commit: ${r.gitleaks}`);
     console.log(
       `  sandbox settings:    ${r.sandbox} — merge into ~/.claude/settings.json to enable (84% fewer prompts)`,
@@ -789,7 +850,7 @@ async function run(argv) {
       return;
     }
     const s = c.summary(root, nowDay);
-    console.log(`${BRAND.brand} cortex — self-correcting project memory\n`);
+    heading(`${BRAND.brand} cortex — self-correcting project memory\n`);
     console.log(
       `  lessons: ${s.total}  (active ${s.active} · candidate ${s.candidate} · quarantined ${s.quarantined} · retired ${s.retired})`,
     );
@@ -819,7 +880,7 @@ async function run(argv) {
       console.log(JSON.stringify(r, null, 2));
       return;
     }
-    console.log(`${BRAND.brand} preflight — assumption check\n`);
+    heading(`${BRAND.brand} preflight — assumption check\n`);
     console.log(
       `  info-gap: ${r.gap.toFixed(2)}  · completeness ${r.assumption.completeness.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
     );
@@ -846,7 +907,7 @@ async function run(argv) {
       console.log(JSON.stringify(r, null, 2));
       return;
     }
-    console.log(`${BRAND.brand} impact — blast radius\n`);
+    heading(`${BRAND.brand} impact — blast radius\n`);
     console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
     console.log(`  impacted files: ${r.impactedFiles.length}`);
     for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
@@ -879,7 +940,7 @@ async function run(argv) {
       const config = loadProviders(process.cwd());
       if (json)
         return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
-      console.log(`${BRAND.brand} config\n`);
+      heading(`${BRAND.brand} config\n`);
       console.log(`  provider:  ${prov.name} (${prov.label || prov.name})`);
       if (prov._autoDetected) console.log(`  detected:  auto (from ${prov._source})`);
       console.log(`  base URL:  ${prov.baseUrl}`);
@@ -894,7 +955,7 @@ async function run(argv) {
     if (sub === "providers") {
       const list = listProviders(process.cwd());
       if (json) return console.log(JSON.stringify(list, null, 2));
-      console.log(`${BRAND.brand} config providers\n`);
+      heading(`${BRAND.brand} config providers\n`);
       for (const p of list)
         console.log(
           `  ${p.active ? "▸" : " "} ${p.name.padEnd(14)} ${p.label.padEnd(20)} ${p.envKey ? (p.hasKey ? "✓ key set" : "✗ key missing") : ""}`,
@@ -977,7 +1038,7 @@ async function run(argv) {
       const prov = activeProvider(process.cwd());
       const status = providerStatus(process.cwd());
       const detected = listDetectedProviders();
-      console.log(`${BRAND.brand} config setup\n`);
+      heading(`${BRAND.brand} config setup\n`);
       console.log(`  active provider: ${prov.name} (${prov.label || prov.name})`);
       if (prov._autoDetected) console.log(`  source: auto-detected from ${prov._source}`);
       console.log();
@@ -1067,7 +1128,7 @@ async function run(argv) {
     if (json) {
       console.log(JSON.stringify(rec, null, 2));
     } else {
-      console.log(`${BRAND.brand} route — cheapest capable model\n`);
+      heading(`${BRAND.brand} route — cheapest capable model\n`);
       console.log(
         `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
       );
@@ -1220,7 +1281,7 @@ async function run(argv) {
       symbol: flagVal("--symbol"),
     });
     if (json) return console.log(JSON.stringify(r, null, 2));
-    console.log(`${BRAND.brand} diagnose — doom-loop check\n`);
+    heading(`${BRAND.brand} diagnose — doom-loop check\n`);
     console.log(
       `  signature: ${r.signature.slice(0, 12)} · seen ${r.count}× in the recent failure window`,
     );
@@ -1351,7 +1412,7 @@ async function run(argv) {
       console.log(JSON.stringify(d, null, 2));
       return;
     }
-    console.log(`${BRAND.brand} scope — task decomposition\n`);
+    heading(`${BRAND.brand} scope — task decomposition\n`);
     if (d.independentGroups > 1) {
       console.log(
         `  ${d.independentGroups} independent groups → consider a separate session per group:\n`,
@@ -1396,7 +1457,7 @@ async function run(argv) {
           // Graceful absence (ADR-0005): a missing optional tier is not a failure.
           if (json) console.log(JSON.stringify({ skipped: true, reason }, null, 2));
           else {
-            console.log(`${BRAND.brand} uicheck visual — skipped (no browser runtime)\n`);
+            heading(`${BRAND.brand} uicheck visual — skipped (no browser runtime)\n`);
             console.log(`  ${reason}`);
             console.log(
               "  enable it: npm i -D playwright-core   (or point FORGE_PLAYWRIGHT at an existing install, e.g. FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core)",
@@ -1412,7 +1473,7 @@ async function run(argv) {
         const { ok: _ok, fail: _fail, ...body } = r;
         console.log(JSON.stringify(body, null, 2));
       } else {
-        console.log(`${BRAND.brand} uicheck visual — rendered fingerprint + design gate\n`);
+        heading(`${BRAND.brand} uicheck visual — rendered fingerprint + design gate\n`);
         console.log(`  rendered:      ${r.url} (${r.elements} visible element style(s))`);
         console.log(`  screenshots:   ${r.screenshots.join(", ")}`);
         if (r.taste) console.log(`  taste:         ${r.taste} (thresholds from its profile)`);
@@ -1461,7 +1522,7 @@ async function run(argv) {
         if (json) {
           console.log(JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2));
         } else {
-          console.log(`${BRAND.brand} uicheck fingerprint — the design feature vector\n`);
+          heading(`${BRAND.brand} uicheck fingerprint — the design feature vector\n`);
           console.log(
             `  palette:  ${fp.paletteSize} color(s), hue bins [${fp.hueBuckets.join(" ")}]`,
           );
@@ -1520,7 +1581,7 @@ async function run(argv) {
           ),
         );
       } else {
-        console.log(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
+        heading(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
         if (profile) console.log(`  taste:         ${tasteName} (thresholds from its profile)`);
         console.log(
           `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
@@ -1547,7 +1608,7 @@ async function run(argv) {
     // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
     // supported (it predates the subcommands and hooks already call it).
     const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
-    console.log(`${BRAND.brand} uicheck — deterministic UI review\n`);
+    heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
     if (fg && bg) {
       try {
         const g = wcagLevel(contrastRatio(fg, bg));
@@ -1576,7 +1637,7 @@ async function run(argv) {
     const server = serve(process.cwd(), { port });
     server.on("listening", () => {
       const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
-      console.log(`${BRAND.brand} dash — read-only lens on .forge/\n`);
+      heading(`${BRAND.brand} dash — read-only lens on .forge/\n`);
       console.log(`  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`);
     });
     server.on("error", (err) => {

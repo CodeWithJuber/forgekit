@@ -18,7 +18,11 @@ import {
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const DASH = fileURLToPath(new URL("../src/dash.html", import.meta.url));
 const runCli = (args, cwd, env = {}) =>
-  spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+  spawnSync("node", [CLI, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-uiv-"));
 
 // Run a block with FORGE_PLAYWRIGHT forced to a value (undefined = unset), restored
@@ -138,9 +142,11 @@ test("resolvePlaywright: FORGE_PLAYWRIGHT at a nonexistent module → null, and 
 });
 
 test("cli: uicheck visual without a browser runtime exits 0 with a skipped note", () => {
-  const r = runCli(["uicheck", "visual", DASH], tmp(), { FORGE_PLAYWRIGHT: "/nonexistent/pw" });
+  const r = runCli(["uicheck", "visual", DASH], tmp(), {
+    FORGE_PLAYWRIGHT: "/nonexistent/pw",
+  });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /skipped \(no browser runtime\)/);
+  assert.match(r.stdout, /playwright is not installed/);
   assert.match(r.stdout, /npm i -D playwright-core/);
   assert.match(r.stdout, /FORGE_PLAYWRIGHT/);
   const j = runCli(["uicheck", "visual", DASH, "--json"], tmp(), {

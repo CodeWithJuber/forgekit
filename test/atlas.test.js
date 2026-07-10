@@ -90,7 +90,10 @@ test("impact (llm on): a proposed edge survives only if real + grep-verified", (
     verify: (f) => f === "a.js",
   });
   assert.ok(!kept.impactedFiles.includes("ghost.js"), "fabricated file dropped");
-  const blind = impact(atlas, "computeTax", { llm: true, run: () => '{"files":["a.js"]}' });
+  const blind = impact(atlas, "computeTax", {
+    llm: true,
+    run: () => '{"files":["a.js"]}',
+  });
   assert.deepEqual(blind.llmVerified, [], "no verify predicate → nothing added blind");
 });
 
@@ -162,4 +165,71 @@ test("a config edit flips isStale (configs are tracked like any other artifact)"
   assert.equal(isStale(root, atlas), false);
   writeFileSync(join(root, "deploy.yml"), "run: node app.js --prod\n");
   assert.equal(isStale(root, atlas), true, "config content change detected");
+});
+
+test("atlas indexes the broadened language set (Ruby, C#, PHP, Kotlin, Swift, C/C++)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  writeFileSync(
+    join(root, "svc.rb"),
+    "class OrderService\n  def process_order(x)\n    x\n  end\nend\n",
+  );
+  writeFileSync(
+    join(root, "Svc.cs"),
+    "public class OrderSvc {\n  public int ProcessOrder(int x) { return x; }\n}\n",
+  );
+  writeFileSync(
+    join(root, "svc.php"),
+    "<?php\nclass OrderSvc {\n  function processOrder($x) { return $x; }\n}\n",
+  );
+  writeFileSync(
+    join(root, "Svc.kt"),
+    "class OrderSvc {\n  fun processOrder(x: Int): Int { return x }\n}\n",
+  );
+  writeFileSync(
+    join(root, "Svc.swift"),
+    "struct OrderSvc {\n  func processOrder(_ x: Int) -> Int { return x }\n}\n",
+  );
+  writeFileSync(join(root, "svc.cpp"), "int processOrder(int x) {\n  return x;\n}\n");
+  const atlas = build({ root });
+  const names = atlas.symbols.map((s) => s.name);
+  for (const sym of ["OrderService", "process_order", "OrderSvc", "ProcessOrder", "processOrder"])
+    assert.ok(names.includes(sym), `${sym} indexed — have: ${names.join(", ")}`);
+  // A C/C++ header shares the C grammar and is walked.
+  writeFileSync(join(root, "api.h"), "void doThing(int n) {\n}\n");
+  const a2 = build({ root });
+  assert.ok(a2.symbols.map((s) => s.name).includes("doThing"), ".h uses the C grammar");
+  // impact reaches a newly-added-language symbol.
+  const r = build({ root });
+  assert.ok(
+    r.symbols.some((s) => s.name === "processOrder"),
+    "cross-language symbols present",
+  );
+});
+
+test("the Java/C#/C grammars are linear on pathological input (ReDoS guard)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  // `public static public static …` with no `(` forced polynomial backtracking before
+  // the {0,6}-bounded, whitespace-anchored rewrite.
+  writeFileSync(join(root, "Bad.cs"), `${"public static ".repeat(5000)}\n`);
+  writeFileSync(join(root, "Bad.java"), `public int name ${"a ".repeat(20000)}\n`);
+  // A header of prototype DECLARATIONS (no brace) made the old C regex scan the whole
+  // file from every line start → O(n²) (13s on 445 KB). The line-anchored form is linear.
+  let h = "";
+  for (let i = 0; i < 12000; i += 1) h += `extern int api_func_${i} arg arg arg\n`;
+  writeFileSync(join(root, "big.h"), `${h}int main(argc\n`);
+  const t = Date.now();
+  build({ root });
+  const ms = Date.now() - t;
+  assert.ok(ms < 1000, `build stayed linear (${ms}ms)`);
+});
+
+test("C function DEFINITIONS index but prototype declarations do not (same-line brace)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  writeFileSync(
+    join(root, "m.c"),
+    "int add(int a, int b) {\n  return a + b;\n}\nstatic char *dup(char *s);\n",
+  );
+  const names = build({ root }).symbols.map((s) => s.name);
+  assert.ok(names.includes("add"), "definition indexed");
+  assert.ok(!names.includes("dup"), "a bare prototype (ends in ;) is not a definition");
 });

@@ -17,6 +17,7 @@ import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js"
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
+import { detectStack } from "./stack.js";
 import { epochDay } from "./util.js";
 
 function loadSubstrateSpec() {
@@ -30,13 +31,15 @@ function loadSubstrateSpec() {
 
 function verificationChecklist(root) {
   const checks = [];
+  // Derive the real test command(s) from the repo's actual stack instead of assuming npm.
+  try {
+    for (const cmd of detectStack(root).testCommands) checks.push(cmd);
+  } catch {}
+  // Node repos also get typecheck/lint if the scripts plausibly exist (cheap heuristic).
   if (existsSync(join(root, "package.json"))) {
-    checks.push("npm test");
     checks.push("npm run typecheck");
     checks.push("npm run lint");
   }
-  if (existsSync(join(root, "pyproject.toml")) || existsSync(join(root, "pytest.ini")))
-    checks.push("pytest -q");
   checks.push("review impacted files before editing");
   checks.push("run the narrowest affected test first, then the broader suite");
   return [...new Set(checks)];

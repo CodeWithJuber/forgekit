@@ -6,8 +6,10 @@ export const COMMANDS = {
   init: "scaffold this repo's config — emits every tool from one shared source",
   sync: "recompile the canonical source into each tool's native config files",
   doctor: "health-check installed tools, guards, MCP auth, and config drift",
+  update: "self-update — `--check` reports if a newer version is available, bare applies it",
   taste: "enable one UI-taste tool for this repo (no arg = list)",
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
+  stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
@@ -43,7 +45,7 @@ export const COMMANDS = {
 };
 
 export const GROUPS = {
-  Core: ["init", "sync", "doctor", "catalog", "docs"],
+  Core: ["init", "sync", "doctor", "catalog", "docs", "update"],
   Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse", "handoff", "decide"],
   Substrate: [
     "substrate",
@@ -58,7 +60,7 @@ export const GROUPS = {
     "lean",
   ],
   Quality: ["verify", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "brand", "atlas"],
+  Config: ["config", "cost", "dash", "brand", "atlas", "stack"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

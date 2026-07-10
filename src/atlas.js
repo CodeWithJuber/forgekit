@@ -8,10 +8,25 @@ import { CALL_RE } from "./extract.js";
 import { contentHash, IGNORE_DIRS } from "./util.js";
 
 const JS_RULES = [
-  { re: /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, kind: "function" },
+  {
+    re: /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+    kind: "function",
+  },
   { re: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, kind: "class" },
-  { re: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g, kind: "const" },
+  {
+    re: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g,
+    kind: "const",
+  },
 ];
+
+// Shared Java/C# method-def grammar. Line-anchored; a bounded ({0,6}) run of keyword
+// modifiers (each ending in required whitespace) then `<returnType> name(` — deliberately
+// NON-backtracking (no `\s` inside the modifier alternation; the type class excludes
+// spaces so it can't span an ambiguous run). A `(?:mod|\s)+` version was polynomial (ReDoS
+// on `public static public static …`).
+const JVM_METHOD_RE =
+  /^[ \t]*(?:(?:public|private|protected|internal|static|final|async|virtual|override|abstract|sealed|partial)[ \t]+){0,6}[\w<>[\],.?]+[ \t]+([A-Za-z_]\w*)[ \t]*\(/gm;
+
 export const RULES = {
   ".js": JS_RULES,
   ".jsx": JS_RULES,
@@ -31,8 +46,64 @@ export const RULES = {
     { re: /\bfn\s+([A-Za-z_]\w*)/g, kind: "function" },
     { re: /\b(?:struct|enum|trait)\s+([A-Za-z_]\w*)/g, kind: "type" },
   ],
-  ".java": [{ re: /\b(?:class|interface|enum)\s+([A-Za-z_]\w*)/g, kind: "type" }],
+  ".java": [
+    { re: /\b(?:class|interface|enum|record)\s+([A-Za-z_]\w*)/g, kind: "type" },
+    // method defs, LINE-ANCHORED: ≤6 keyword modifiers (each requires trailing space, so
+    // the run can't overlap the return type) + return type + name( . The {0,6} bound and
+    // the whitespace-free modifier list keep this linear — a `\s`-in-the-group version
+    // backtracked polynomially on `public static public static …` (ReDoS).
+    { re: JVM_METHOD_RE, kind: "function" },
+  ],
+  ".rb": [
+    { re: /^\s*def\s+([A-Za-z_]\w*[!?=]?)/gm, kind: "function" },
+    { re: /^\s*(?:class|module)\s+([A-Z]\w*)/gm, kind: "class" },
+  ],
+  ".cs": [
+    {
+      re: /\b(?:class|interface|struct|enum|record)\s+([A-Za-z_]\w*)/g,
+      kind: "type",
+    },
+    { re: JVM_METHOD_RE, kind: "function" },
+  ],
+  ".php": [
+    { re: /\bfunction\s+([A-Za-z_]\w*)/g, kind: "function" },
+    { re: /\b(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)/g, kind: "class" },
+  ],
+  ".kt": [
+    {
+      re: /\bfun\s+(?:<[^>]*>\s*)?(?:[A-Za-z_][\w.]*\.)?([A-Za-z_]\w*)\s*\(/g,
+      kind: "function",
+    },
+    {
+      re: /\b(?:class|interface|object|enum\s+class)\s+([A-Za-z_]\w*)/g,
+      kind: "type",
+    },
+  ],
+  ".swift": [
+    { re: /\bfunc\s+([A-Za-z_]\w*)/g, kind: "function" },
+    {
+      re: /\b(?:class|struct|enum|protocol|actor)\s+([A-Za-z_]\w*)/g,
+      kind: "type",
+    },
+  ],
+  ".c": [
+    // Function defs, LINE-ANCHORED and linear: 1–4 type/modifier tokens (each ending in
+    // required whitespace, so no ambiguous overlap), optional pointer stars, the name,
+    // then `(args) {` where args exclude `;{}` and newlines. The old `^[\w*\s]+?…` form
+    // let `\s` cross newlines and scanned the whole file from every line start → O(n²)
+    // ReDoS (13s on a 445 KB header of prototypes). Requiring a same-line `{` also
+    // correctly rejects prototypes/declarations (K&R brace-on-next-line is missed — an
+    // acceptable heuristic loss for a symbol index).
+    {
+      re: /^[ \t]*(?:[A-Za-z_*][\w*]*[ \t]+){1,4}\**([A-Za-z_]\w*)[ \t]*\([^;{}\n]*\)[ \t]*\{/gm,
+      kind: "function",
+    },
+    { re: /\b(?:struct|enum|union)\s+([A-Za-z_]\w*)/g, kind: "type" },
+  ],
 };
+// Kotlin script, C/C++ family, and PHP siblings share the grammar above.
+RULES[".kts"] = RULES[".kt"];
+for (const ext of [".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh"]) RULES[ext] = RULES[".c"];
 
 // Documentation extensions — first-class in the walk, extracted by extractDoc() (a
 // doc node + `references` edges to the code it names), never by the symbol RULES.
@@ -163,7 +234,13 @@ function extractDoc(rel, text) {
   const refEdge = (target, confidence, line) => {
     if (seen.has(target)) return;
     seen.add(target);
-    edges.push({ source: doc.id, target, kind: "references", confidence, line });
+    edges.push({
+      source: doc.id,
+      target,
+      kind: "references",
+      confidence,
+      line,
+    });
   };
   for (const m of text.matchAll(/`([^`\n]+)`/g)) {
     const line = lineOf(text, m.index);
@@ -191,7 +268,13 @@ function extractDoc(rel, text) {
 // Dockerfiles reference paths without quotes (`run: node src/cli.js`). Reverse-BFS then
 // lists the configs a code change can break, closing the config half of blast radius.
 function extractConfig(rel, text) {
-  const cfg = { id: `config:${rel}`, name: rel, kind: "config", file: rel, line: 1 };
+  const cfg = {
+    id: `config:${rel}`,
+    name: rel,
+    kind: "config",
+    file: rel,
+    line: 1,
+  };
   const edges = [];
   const seen = new Set();
   for (const m of text.matchAll(/[A-Za-z0-9_.@-]+(?:[/\\][A-Za-z0-9_.@-]+)*/g)) {
@@ -251,9 +334,22 @@ function extractFile(path, root, preRead) {
         file: rel,
         line,
       };
-      symbols.push({ name, kind, file: rel, line, id: node.id, qname: node.qname });
+      symbols.push({
+        name,
+        kind,
+        file: rel,
+        line,
+        id: node.id,
+        qname: node.qname,
+      });
       nodes.push(node);
-      edges.push({ source: mod.id, target: node.id, kind: "contains", confidence: 1, line });
+      edges.push({
+        source: mod.id,
+        target: node.id,
+        kind: "contains",
+        confidence: 1,
+        line,
+      });
     }
   }
 
@@ -279,7 +375,13 @@ function extractFile(path, root, preRead) {
         .map((b) => b.split(".").pop()) // module.Base → Base
         .filter((b) => b && b !== cm[1] && b.toLowerCase() !== "object");
       for (const base of bases)
-        edges.push({ source: child.id, target: base, kind: "inherits", confidence: 0.9, line });
+        edges.push({
+          source: child.id,
+          target: base,
+          kind: "inherits",
+          confidence: 0.9,
+          line,
+        });
     }
   }
 
@@ -295,7 +397,14 @@ function extractFile(path, root, preRead) {
       : [];
     const line = lineOf(text, im.index);
     const source = nearestSource(nodes.slice(1), line, mod);
-    if (target) edges.push({ source: source.id, target, kind: "imports", confidence: 0.85, line });
+    if (target)
+      edges.push({
+        source: source.id,
+        target,
+        kind: "imports",
+        confidence: 0.85,
+        line,
+      });
     for (const name of names) {
       if (name !== "*")
         edges.push({
@@ -319,7 +428,13 @@ function extractFile(path, root, preRead) {
       if (BUILTINS.has(callee)) continue;
       const source = nearestSource(nodes.slice(1), line, mod);
       if (source.name === callee) continue;
-      edges.push({ source: source.id, target: callee, kind: "calls", confidence: 0.75, line });
+      edges.push({
+        source: source.id,
+        target: callee,
+        kind: "calls",
+        confidence: 0.75,
+        line,
+      });
     }
   }
 
@@ -347,7 +462,12 @@ function resolveEdges(nodes, edges) {
     const short = String(edge.target).split(".").pop();
     const matches = byName.get(short) || [];
     if (matches.length === 1)
-      return { ...edge, target: matches[0].id, resolved: true, confidence: edge.confidence * 0.9 };
+      return {
+        ...edge,
+        target: matches[0].id,
+        resolved: true,
+        confidence: edge.confidence * 0.9,
+      };
     return { ...edge, unresolved: true };
   });
 }
@@ -452,7 +572,13 @@ function targetIds(atlas, target) {
   return matches.map((n) => n.id);
 }
 
-const EDGE_WEIGHT = { calls: 0.95, imports: 0.85, inherits: 0.92, references: 0.7, contains: 0.45 };
+const EDGE_WEIGHT = {
+  calls: 0.95,
+  imports: 0.85,
+  inherits: 0.92,
+  references: 0.7,
+  contains: 0.45,
+};
 
 // Reverse-adjacency (node id → incoming edges) + node lookup, built once per atlas and memoized.
 // substrateCheck calls impact() up to 8× on the same atlas; without this each call rebuilt both.
@@ -498,7 +624,11 @@ export function parseImpactProposal(obj) {
 }
 
 export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
-  return adjudicate({ prompt: buildImpactPrompt(atlas, target), parse: parseImpactProposal, run });
+  return adjudicate({
+    prompt: buildImpactPrompt(atlas, target),
+    parse: parseImpactProposal,
+    run,
+  });
 }
 
 /**
@@ -520,7 +650,13 @@ export function impact(
   const starts = targetIds(atlas, target);
   const { nodeById, incoming } = adjacency(atlas);
   const visited = new Map();
-  const queue = starts.map((id) => ({ id, confidence: 1, hop: 0, path: [id], edgeKinds: [] }));
+  const queue = starts.map((id) => ({
+    id,
+    confidence: 1,
+    hop: 0,
+    path: [id],
+    edgeKinds: [],
+  }));
   while (queue.length) {
     const current = queue.shift();
     if (!current || current.hop >= maxHops) continue;
@@ -533,7 +669,11 @@ export function impact(
       if (prev && prev.confidence >= nextConfidence) continue;
       const item = {
         id: edge.source,
-        node: nodeById.get(edge.source) || { id: edge.source, name: edge.source, kind: "unknown" },
+        node: nodeById.get(edge.source) || {
+          id: edge.source,
+          name: edge.source,
+          kind: "unknown",
+        },
         confidence: Number(nextConfidence.toFixed(4)),
         hopDistance: current.hop + 1,
         path: [...current.path, edge.source],

@@ -14,7 +14,6 @@ test("forge cortex: empty repo reports zero lessons, no crash", () => {
   const cwd = mkdtempSync(join(tmpdir(), "forge-cli-"));
   const { status, stdout } = runCli(["cortex"], cwd);
   assert.equal(status, 0);
-  assert.match(stdout, /self-correcting project memory/);
   assert.match(stdout, /lessons: 0/);
 });
 

@@ -38,15 +38,24 @@ test("failureSignature is stable under line/col numbers, hex addresses, timestam
 });
 
 test("failureSignature distinguishes error class, file, and symbol", () => {
-  const base = failureSignature("TypeError: x is undefined", { file: "a.js", symbol: "f" });
+  const base = failureSignature("TypeError: x is undefined", {
+    file: "a.js",
+    symbol: "f",
+  });
   assert.notEqual(base, failureSignature("RangeError: y overflow", { file: "a.js", symbol: "f" }));
   assert.notEqual(
     base,
-    failureSignature("TypeError: x is undefined", { file: "b.js", symbol: "f" }),
+    failureSignature("TypeError: x is undefined", {
+      file: "b.js",
+      symbol: "f",
+    }),
   );
   assert.notEqual(
     base,
-    failureSignature("TypeError: x is undefined", { file: "a.js", symbol: "g" }),
+    failureSignature("TypeError: x is undefined", {
+      file: "a.js",
+      symbol: "g",
+    }),
   );
 });
 
@@ -62,7 +71,12 @@ test("normalizeError keeps the basename (signal) while dropping the machine pref
 
 test("recordFailure counts recurrences of the same signature", () => {
   const root = fixture();
-  const f = { errorText: "TypeError: boom", file: "src/a.js", symbol: "f", t: 1 };
+  const f = {
+    errorText: "TypeError: boom",
+    file: "src/a.js",
+    symbol: "f",
+    t: 1,
+  };
   assert.equal(recordFailure(root, f).count, 1);
   assert.equal(recordFailure(root, f).count, 2);
   const other = recordFailure(root, { ...f, errorText: "RangeError: other" });
@@ -91,7 +105,10 @@ test("recordFailure only counts within the last RING_SIZE entries", () => {
 
 test("recordFailure never persists a secret-shaped error head", () => {
   const root = fixture();
-  recordFailure(root, { errorText: `auth failed: api_key="hunter2-super-secret"`, t: 1 });
+  recordFailure(root, {
+    errorText: `auth failed: api_key="hunter2-super-secret"`,
+    t: 1,
+  });
   const [e] = readFailures(root);
   assert.match(e.head, /redacted/);
   assert.doesNotMatch(JSON.stringify(e), /hunter2/);
@@ -103,7 +120,12 @@ test("recordFailure never persists a secret-shaped error head", () => {
 
 test("diagnose stays quiet below the thrash threshold", () => {
   const root = fixture();
-  const f = { errorText: "TypeError: boom", file: "src/a.js", symbol: "f", nowDay: 10 };
+  const f = {
+    errorText: "TypeError: boom",
+    file: "src/a.js",
+    symbol: "f",
+    nowDay: 10,
+  };
   for (let i = 1; i < THRASH_K; i++) {
     const r = diagnose(root, { ...f, t: i });
     assert.equal(r.thrash, false);
@@ -115,7 +137,12 @@ test("diagnose stays quiet below the thrash threshold", () => {
 
 test("diagnose at the 3rd recurrence mints a diagnosis claim and says STOP + escalate one tier", () => {
   const root = fixture();
-  const f = { errorText: "TypeError: boom", file: "src/a.js", symbol: "f", nowDay: 10 };
+  const f = {
+    errorText: "TypeError: boom",
+    file: "src/a.js",
+    symbol: "f",
+    nowDay: 10,
+  };
   let r;
   for (let i = 1; i <= THRASH_K; i++) r = diagnose(root, { ...f, t: i });
   assert.equal(r.thrash, true);
@@ -134,7 +161,12 @@ test("diagnose at the 3rd recurrence mints a diagnosis claim and says STOP + esc
 
 test("diagnose is idempotent — further recurrences resolve to the SAME claim", () => {
   const root = fixture();
-  const f = { errorText: "TypeError: boom", file: "src/a.js", symbol: "f", nowDay: 10 };
+  const f = {
+    errorText: "TypeError: boom",
+    file: "src/a.js",
+    symbol: "f",
+    nowDay: 10,
+  };
   let third;
   for (let i = 1; i <= THRASH_K; i++) third = diagnose(root, { ...f, t: i });
   const fourth = diagnose(root, { ...f, t: THRASH_K + 1 });
@@ -171,7 +203,7 @@ test("forge diagnose: records, then escalates on the 3rd identical failure", () 
   let out;
   for (let i = 0; i < THRASH_K; i++) out = runCli(args, cwd);
   assert.equal(out.status, 0, "advisory — never fails the process");
-  assert.match(out.stdout, /doom-loop/);
+  assert.match(out.stdout, /thrash/i);
   assert.match(out.stdout, /STOP retrying/i);
   const j = JSON.parse(runCli([...args, "--json"], cwd).stdout);
   assert.equal(j.thrash, true);
