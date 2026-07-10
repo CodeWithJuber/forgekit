@@ -90,12 +90,14 @@ async function main() {
       if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
     } catch {}
   } else if (mode === "session-start") {
-    // Anchor first: record WHERE the repo stands (HEAD) so the completion gate can diff
-    // this session's changes against it; prune week-old session artifacts in the same pass.
+    // Prune BEFORE anchoring: pruning after would delete the very baseline a >7-day
+    // resume just preserved (the anchor then re-records fresh, which is the right
+    // semantics for a week-old session anyway). Then record WHERE the repo stands so
+    // the completion gate can diff this session's changes against it.
     try {
       const { pruneSessions, recordBaseline } = await import("./session.js");
-      recordBaseline(root, sid);
       pruneSessions(root);
+      recordBaseline(root, sid);
     } catch {}
     // Then everything a fresh session forgets: learned lessons, the persistent goal,
     // the handoff snapshot, and the repo's recent history.

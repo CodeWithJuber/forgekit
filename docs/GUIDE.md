@@ -315,7 +315,7 @@ history, and `forge docs sync` exempts it for exactly that reason.
 `forge docs check` reconciles the registries; `docs sync` answers the diff-shaped
 question. It extracts the changed identifiers (paths, definitions, called symbols —
 from added *and removed* lines, so deletions count), scans every doc artifact (atlas doc
-nodes + README/GUIDE/ARCHITECTURE + `.forge/state.md`), and gives each one a verdict:
+nodes + README/GUIDE/ARCHITECTURE), and gives each one a verdict:
 
 ```console
 $ forge docs sync
@@ -328,9 +328,16 @@ docs sync — diff vs a1b2c3d: 2 changed file(s), 7 identifier(s)
 
 **STALE** hits are cited `file:line` — update them or justify out loud. **VERIFIED**
 means checked-not-assumed: the reason is recorded. Advisory by default (it runs
-mid-repair); `--strict` exits 1 on stale docs for CI, `--base <ref>` widens the diff,
-`--json` for tooling. The base defaults to this session's git baseline when the hooks
-recorded one, else `HEAD`.
+mid-repair); `--strict` exits 1 on stale docs for CI, `--base <ref>` widens the diff
+(an unknown ref errors instead of silently mislabeling), `--json` for tooling. The base
+defaults to this session's git baseline when the hooks recorded one, else `HEAD`.
+
+Precision rules the sweep applies: symbols come only from non-test code files (prose
+parentheses are not call sites); all-lowercase symbols like `cusum` count only inside
+backtick code spans (in plain prose they're indistinguishable from English); a doc
+touched in the same diff still answers for **removed** symbols (updated-for-one-reason
+isn't updated-for-the-rename); and `.forge/state.md` is never scanned — handoff writes
+the changed-file list into it by design, so the gate's mtime check covers it instead.
 
 ### `forge verify` — did it actually work?
 
@@ -754,18 +761,24 @@ sustained). The decision table, first match wins:
 | # | Condition | Decision |
 | --- | --- | --- |
 | 1 | `stop_hook_active` (already continuing from a block) | allow |
-| 2 | not a git repo / git unusable | allow (fail-open) |
-| 3 | this session already blocked once | allow (marker) |
-| 4 | `FORGE_STOPGATE=0` | allow (kill switch) |
-| 5 | nothing changed (or only `.forge/` internals / generated files) | allow |
-| 6 | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow |
-| 7 | **code changed ∧ no doc/state artifact moved** | **block once + checklist** |
-| 8 | only tests / configs / other files changed | allow |
-| 9 | any internal error in the gate itself | allow (fail-open) |
+| 2 | no `session_id` in the hook payload (per-session promises impossible) | allow |
+| 3 | not a git repo / git unusable | allow (fail-open) |
+| 4 | this session already blocked once — or the marker can't be persisted | allow |
+| 5 | `FORGE_STOPGATE=0` | allow (kill switch) |
+| 6 | nothing changed (or only `.forge/` internals / generated files) | allow |
+| 7 | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow |
+| 8 | **code changed ∧ no doc/state artifact moved** | **block once + checklist** |
+| 9 | only tests / configs / other files changed | allow |
+| 10 | any internal error in the gate itself | allow (fail-open) |
 
+"Changed" is **session-scoped**, not repo-scoped: files from commits made *during* the
+session (committer time ≥ session start) plus working-tree changes *minus* whatever was
+already dirty when the session began (snapshotted at SessionStart). Pre-existing dirt,
+commits reached by a branch switch or `git pull`, and vendor trees (`node_modules/`…)
+are never attributed to the agent — near-zero false blocks is the gate's credibility.
 Test-only sessions pass on purpose (a regression test owes no prose), and the state
 snapshot counts via its mtime against the baseline because `.forge/` is gitignored. The
-gate can never loop (rows 1+3) and never brick a session (rows 2+9) — it costs at most
+gate can never loop (rows 1+4) and never brick a session (rows 3+10) — it costs at most
 one extra turn, exactly when that turn was owed.
 
 ### Every other tool — a rule + MCP tools

@@ -87,6 +87,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`cortex.sh` hook entry resolution in symlink installs** — `~/.forge/src/…` pointed
   at the nonexistent `global/src/`, silently no-opping every cortex hook outside plugin
   mode; the shim now resolves through the symlink (`pwd -P`), same as `secret-redact.sh`.
+- **Twelve defects found by a two-angle adversarial review of the new layer, all with
+  regression tests** — the gate no longer attributes pre-session dirt, branch-switch/pull
+  commits, or vendor trees to the session (session-scoped changed set: committer-time
+  window + SessionStart dirty snapshot); `-z` NUL parsing keeps unicode/space/arrow paths
+  correctly classified; an unwritable block-once marker stands down instead of blocking
+  every turn; a missing `session_id` disables gating instead of sharing `default` state;
+  a >7-day resume re-anchors instead of losing its baseline to the prune; `readState` no
+  longer truncates snapshots whose rows contain `<!--`; `forge decide` takes a lock so
+  concurrent appends can't mint duplicate D-#### ids; the docs sweep stopped scanning its
+  own bookkeeping (`.forge/state.md`), scans touched docs for REMOVED symbols (the rename
+  case), counts lowercase symbols only inside backticks, dedupes recorded assumptions,
+  and errors on an unknown `--base` instead of mislabeling the report.
 
 ## [0.8.1] - 2026-07-08
 

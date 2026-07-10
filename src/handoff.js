@@ -39,9 +39,11 @@ export function gatherGitFacts(root, { statusCap = 20 } = {}) {
 }
 
 /** Assumption events recorded this session (preflight appends them when it proceeds
- *  without asking) — surfaced here so the handoff carries what was GUESSED, not
- *  just what was done. Empty-safe when no session log exists. */
-export function gatherAssumptions(root) {
+ *  without asking) — surfaced here so the handoff carries what was GUESSED, not just
+ *  what was done. Deduped by content and capped: a constraint missing on every prompt
+ *  appends one event per prompt, and 30 identical rows would eat the bounded snapshot.
+ *  Empty-safe when no session log exists. */
+export function gatherAssumptions(root, { cap = 5 } = {}) {
   try {
     const dir = join(root, ".forge", "sessions");
     const newest = readdirSync(dir)
@@ -49,15 +51,20 @@ export function gatherAssumptions(root) {
       .map((f) => ({ f, m: statSync(join(dir, f)).mtimeMs }))
       .sort((a, b) => b.m - a.m)[0];
     if (!newest) return [];
+    const seen = new Set();
     const out = [];
     for (const line of readFileSync(join(dir, newest.f), "utf8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const e = JSON.parse(line);
-        if (e.type === "assumption") out.push(e);
+        if (e.type !== "assumption") continue;
+        const key = JSON.stringify([e.missing ?? [], e.questions ?? []]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(e);
       } catch {}
     }
-    return out;
+    return out.slice(0, cap);
   } catch {
     return [];
   }
@@ -129,14 +136,21 @@ export function writeState(root, fields = {}, { t = Date.now(), maxLines = 150 }
   return { ok: true, path: statePath(root), lines: kept.length + 1 };
 }
 
+// Only the EXACT provenance line is stripped — a naive slice at the first "<!--" would
+// silently truncate a snapshot whose rows mention HTML comments ("strip <!-- markers
+// from templates"), losing every later section from the next session's injection.
+const PROVENANCE_RE = /^<!-- written .* -->\s*$/;
+
 /** The snapshot text minus provenance, or null when none exists. */
 export function readState(root) {
   const p = statePath(root);
   if (!existsSync(p)) return null;
   try {
-    const raw = readFileSync(p, "utf8");
-    const cut = raw.indexOf("<!--");
-    const text = (cut === -1 ? raw : raw.slice(0, cut)).trim();
+    const text = readFileSync(p, "utf8")
+      .split("\n")
+      .filter((l) => !PROVENANCE_RE.test(l))
+      .join("\n")
+      .trim();
     return text || null;
   } catch {
     return null;

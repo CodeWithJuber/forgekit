@@ -145,7 +145,7 @@ async function run(argv) {
       });
       if (json) console.log(JSON.stringify(r, null, 2));
       else console.log(renderDocsSync(r));
-      if (argv.includes("--strict") && r.stale.length) process.exitCode = 1;
+      if (r.error || (argv.includes("--strict") && r.stale.length)) process.exitCode = 1;
       return;
     }
     // `check` — self-check of the forge package's own docs against its code (commands

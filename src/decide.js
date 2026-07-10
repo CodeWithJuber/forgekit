@@ -4,7 +4,7 @@
 // choices. .forge/decisions.md is ADR-lite: one line per decision, append-only. Append
 // is one syscall, merge-friendly, and never rewrites history — a decision that stops
 // being true gets a new entry, not an edit.
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { mintClaim } from "./ledger.js";
@@ -37,6 +37,35 @@ export function listDecisions(root, { limit = 10 } = {}) {
   }
 }
 
+// mkdir is the one atomic zero-dep mutex: the D-#### number is read-then-append, and
+// two concurrent processes (a review demonstrated 12) would mint duplicate ids and
+// interleave headers without it. Held for milliseconds; a lock older than 5s is a
+// crashed holder and is stolen; total wait is bounded (~300ms) then we proceed anyway —
+// a duplicate id under pathological contention beats a lost decision.
+function withDecisionLock(root, fn) {
+  const lock = join(root, ".forge", "decisions.lock");
+  let held = false;
+  for (let i = 0; i < 60 && !held; i += 1) {
+    try {
+      mkdirSync(lock);
+      held = true;
+    } catch {
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 5000) rmdirSync(lock);
+      } catch {}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    if (held)
+      try {
+        rmdirSync(lock);
+      } catch {}
+  }
+}
+
 /**
  * Append one decision ("<what was decided> — <why>"). Refuses secrets (same rule as
  * every forge store). Also mints a `decision` ledger claim — the machine-readable twin —
@@ -52,18 +81,27 @@ export function appendDecision(root, text, { t = Date.now() } = {}) {
     return { ok: false, reason: "refused: decision looks like it contains a secret/credential" };
   mkdirSync(join(root, ".forge"), { recursive: true });
   const p = decisionsPath(root);
-  let existing = "";
-  try {
-    existing = existsSync(p) ? readFileSync(p, "utf8") : "";
-  } catch {}
-  const prior = parseDecisions(existing);
-  const n = prior.length ? Math.max(...prior.map((d) => d.n)) + 1 : 1;
-  const id = `D-${String(n).padStart(4, "0")}`;
-  const date = new Date(t).toISOString().slice(0, 10);
-  const header = existing.trim()
-    ? ""
-    : `# Decisions\n\nAppend-only — supersede an old choice with a NEW entry (\`${BRAND.cli} decide\`), never an edit.\n\n`;
-  appendFileSync(p, `${header}- **${id}** (${date}): ${body}\n`);
+  const appended = withDecisionLock(root, () => {
+    let existing = "";
+    try {
+      existing = existsSync(p) ? readFileSync(p, "utf8") : "";
+    } catch {}
+    const prior = parseDecisions(existing);
+    const n = prior.length ? Math.max(...prior.map((d) => d.n)) + 1 : 1;
+    const id = `D-${String(n).padStart(4, "0")}`;
+    const date = new Date(t).toISOString().slice(0, 10);
+    const header = existing.trim()
+      ? ""
+      : `# Decisions\n\nAppend-only — supersede an old choice with a NEW entry (\`${BRAND.cli} decide\`), never an edit.\n\n`;
+    try {
+      appendFileSync(p, `${header}- **${id}** (${date}): ${body}\n`);
+    } catch (err) {
+      return { ok: false, reason: `could not write ${p}: ${err?.code ?? "error"}` };
+    }
+    return { ok: true, id };
+  });
+  if (!appended.ok) return appended;
+  const { id } = appended;
   try {
     const minted = mintClaim({
       kind: "decision",

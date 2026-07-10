@@ -130,3 +130,71 @@ test("both hook manifests register the completion gate under Stop (lockstep)", (
   assert.match(flat(plugin), /completion-gate\.sh/, "plugin manifest wires the gate");
   assert.match(flat(template), /completion-gate\.sh/, "init template wires the gate");
 });
+
+test("pre-session dirt is never pinned on the session (review: false-block class)", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "a.js"), "export const one = 99;\n"); // dirty BEFORE the session
+  start(root, "pre1");
+  const r = stopGate(root, "pre1"); // session itself did nothing
+  assert.equal(r.stdout.trim(), "", "no-op session over a dirty repo passes");
+  // But the same session then editing another code file DOES get gated.
+  writeFileSync(join(root, "b.js"), "export const two = 2;\n");
+  const blocked = stopGate(root, "pre1");
+  assert.equal(JSON.parse(blocked.stdout).decision, "block");
+  assert.match(JSON.parse(blocked.stdout).reason, /b\.js/);
+  assert.doesNotMatch(JSON.parse(blocked.stdout).reason, /a\.js/, "pre-existing dirt not cited");
+});
+
+test("a branch switch's old commits are not attributed to the session", () => {
+  const { root, git } = gitFixture();
+  // A feature branch whose commit is an hour old (committer date aged explicitly).
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(join(root, "old_work.js"), "export const legacy = 1;\n");
+  git("add", "-A");
+  execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-qm", "old feature work"], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      GIT_COMMITTER_DATE: new Date(Date.now() - 3_600_000).toISOString(),
+      GIT_AUTHOR_DATE: new Date(Date.now() - 3_600_000).toISOString(),
+    },
+  });
+  git("checkout", "-q", "master");
+  start(root, "sw1"); // session starts on master
+  git("checkout", "-q", "feature"); // the session merely switches branches
+  const r = stopGate(root, "sw1");
+  assert.equal(r.stdout.trim(), "", "hour-old commits reached by checkout are not the session's");
+});
+
+test("unicode/space doc paths keep their doc credit (-z parsing)", () => {
+  const { root, git } = gitFixture();
+  start(root, "uni1");
+  writeFileSync(join(root, "a.js"), "export const one = 42;\n");
+  writeFileSync(join(root, "Änderungen notes.md"), "# änderungen\n\ndocumented the change\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "code + unicode doc");
+  const r = stopGate(root, "uni1");
+  assert.equal(r.stdout.trim(), "", "the unicode-named doc satisfies the gate");
+});
+
+test("missing session_id disables gating (no shared 'default' state)", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "a.js"), "export const one = 7;\n");
+  const r = spawnSync("node", [ENTRY, "stop-gate"], {
+    input: JSON.stringify({ cwd: root }), // no session_id
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout.trim(), "", "unknown identity → no per-session promises → allow");
+});
+
+test("unwritable marker → stand down instead of blocking every turn", () => {
+  const { root } = gitFixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "sessions"), "a file where a directory must be\n");
+  writeFileSync(join(root, "a.js"), "export const one = 8;\n");
+  const r = stopGate(root, "ro1");
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout.trim(), "", "block-once cannot be promised → fail open");
+});

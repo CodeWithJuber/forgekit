@@ -195,13 +195,19 @@ silent misses fall to `(1−p)(1−c)`, and every layer here is one more `c`.
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
 `completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
-detached and can never block). Everything changed since the session's git baseline —
-committed ∪ working tree — is classified by ONE total function derived from the atlas
-registries (`CODE_EXTS`/`DOC_EXTS`/config rules) plus the shared test-file predicate.
-Code moved with no doc/state artifact → block once with the repair checklist as the
-reason; every other row allows, every internal error allows (fail-open), a marker caps
-the cost at one extra turn, `FORGE_STOPGATE=0` kills it. `.forge/state.md` is gitignored,
-so its signal is mtime-vs-baseline (the baseline file's mtime *is* session start).
+detached and can never block). The changed set is **session-scoped**: files from commits
+whose committer time is ≥ session start, plus working-tree changes minus the dirt
+snapshotted at SessionStart — so pre-existing edits, branch switches, and `git pull`s
+are never pinned on the agent (adversarial review demonstrated all three false-block
+classes). Paths are classified by ONE total function derived from the atlas registries
+(`CODE_EXTS`/`DOC_EXTS`/config rules) plus the shared test-file predicate, parsed from
+`-z` NUL-separated git output (C-quoted unicode paths classify correctly). Code moved
+with no doc/state artifact → block once with the repair checklist as the reason; every
+other row allows, every internal error allows (fail-open), the once-per-session marker
+is written BEFORE the block (unwritable marker → stand down rather than nag every turn),
+a missing `session_id` disables gating (no shared-state leaks between sessions), and
+`FORGE_STOPGATE=0` kills it. `.forge/state.md` is gitignored, so its signal is
+mtime-vs-baseline (the baseline file's mtime *is* session start).
 
 **Session anchoring (SessionStart, `src/session.js`).** Records `HEAD` once per session
 (`.forge/sessions/<sid>.base`; resume keeps it), prunes week-old session artifacts, and

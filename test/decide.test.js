@@ -61,3 +61,27 @@ test("a corrupted decisions file is tolerated — numbering restarts from parsea
   const parsed = parseDecisions(readFileSync(decisionsPath(root), "utf8"));
   assert.equal(parsed.length, 2, "garbage ignored, both real entries parse");
 });
+
+test("concurrent appends never duplicate ids or headers (mkdir lock)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-decide-"));
+  const { spawn } = await import("node:child_process");
+  const one = (i) =>
+    new Promise((resolve) => {
+      const p = spawn(
+        "node",
+        [
+          "-e",
+          `import("${process.cwd()}/src/decide.js").then(m => m.appendDecision(process.argv[1], "parallel decision ${"n"}${i} — race test"))`,
+          root,
+        ],
+        { stdio: "ignore" },
+      );
+      p.on("exit", resolve);
+    });
+  await Promise.all(Array.from({ length: 8 }, (_, i) => one(i)));
+  const text = readFileSync(decisionsPath(root), "utf8");
+  const ids = [...text.matchAll(/\*\*D-(\d{4,})\*\*/g)].map((m) => m[1]);
+  assert.equal(ids.length, 8, `all 8 decisions written: ${text}`);
+  assert.equal(new Set(ids).size, 8, `ids unique: ${ids.join(",")}`);
+  assert.equal((text.match(/# Decisions/g) || []).length, 1, "exactly one header");
+});

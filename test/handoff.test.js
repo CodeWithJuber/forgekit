@@ -93,3 +93,29 @@ test("writeState surfaces recorded assumption events from the newest session log
   const text = readFileSync(statePath(root), "utf8");
   assert.match(text, /target_scope/, "assumption keys carried into the handoff");
 });
+
+test("a row containing '<!--' never truncates the snapshot (only provenance is stripped)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
+  writeState(root, {
+    done: ["strip <!-- markers from templates before render"],
+    next: ["CRITICAL: fix auth bypass in login.js"],
+    gotchas: ["templating chokes on <!-- comments"],
+  });
+  const text = readState(root);
+  assert.match(text, /CRITICAL: fix auth bypass/, "later sections survive an inline <!--");
+  assert.match(text, /templating chokes/, "gotchas survive too");
+  assert.doesNotMatch(text, /written .*handoff/, "the provenance line itself is stripped");
+  const block = stateBlock(root);
+  assert.match(block, /CRITICAL: fix auth bypass/, "the injection carries the full snapshot");
+});
+
+test("gatherAssumptions dedupes identical events and caps the list", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
+  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+  const line = `${JSON.stringify({ type: "assumption", missing: ["test-command"] })}\n`;
+  writeFileSync(join(root, ".forge", "sessions", "s1.jsonl"), line.repeat(30));
+  writeState(root, { done: ["x"] });
+  const text = readFileSync(statePath(root), "utf8");
+  const count = (text.match(/test-command/g) || []).length;
+  assert.equal(count, 1, "30 identical events collapse to one row");
+});

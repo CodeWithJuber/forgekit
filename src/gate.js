@@ -21,8 +21,9 @@ import { BRAND } from "./brand.js";
 import { readSession, sessionPath } from "./cortex_hook.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
-import { readBaseline } from "./session.js";
+import { readBaseline, readDirtySnapshot } from "./session.js";
 import { isTestFile } from "./substrate.js";
+import { IGNORE_DIRS } from "./util.js";
 
 // gitRaw keeps the exact bytes — porcelain's first column is a SPACE for unstaged
 // entries, and a trim() would eat it and shift the path slice by one.
@@ -59,20 +60,62 @@ export function classifyPath(rel) {
   return "other";
 }
 
-/** Everything changed this session: diff against the recorded baseline ∪ the working
- *  tree (staged + unstaged + untracked file-by-file, renames as both paths). */
-export function changedSet(root, baseHead) {
-  const out = new Set();
-  if (baseHead && git(root, ["rev-parse", "--verify", `${baseHead}^{commit}`]))
-    for (const f of git(root, ["diff", "--name-only", baseHead]).split("\n").filter(Boolean))
-      out.add(f);
-  for (const line of gitRaw(root, ["status", "--porcelain", "-uall"]).split("\n").filter(Boolean)) {
-    for (const part of line.slice(3).split(" -> ")) {
-      const p = part.replace(/^"(.*)"$/, "$1").trim();
-      if (p) out.add(p);
-    }
+// All -z (NUL-separated) parsing: git's C-quoting of unicode/space/quote paths never
+// reaches us, so `Änderungen.md` classifies as docs instead of `other` (a review-found
+// false block) and a file literally named `plan -> v2.md` can't be split in two.
+function statusEntriesZ(root) {
+  const raw = gitRaw(root, ["status", "--porcelain", "-z", "-uall"]);
+  const tokens = raw.split("\0").filter(Boolean);
+  const paths = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i];
+    if (t.length < 4 || t[2] !== " ") continue;
+    paths.push(t.slice(3));
+    if (/[RC]/.test(t[0])) paths.push(tokens[++i] ?? ""); // rename/copy: next token is the source
   }
-  return [...out].sort();
+  return paths.filter(Boolean);
+}
+
+// Files committed DURING the session: commits in base..HEAD whose committer time is at
+// or after session start. A branch switch or `git pull` moves HEAD onto commits made
+// long before the session — a plain baseline diff would attribute all of them to the
+// agent (review-found false block). Merge commits list no files (correct: the merged
+// work predates the session); the 2s slack absorbs clock granularity.
+function committedSince(root, baseHead, sinceMs) {
+  if (!baseHead || !git(root, ["rev-parse", "--verify", `${baseHead}^{commit}`])) return [];
+  const since = new Date(Math.max(0, (sinceMs ?? 0) - 2000)).toISOString();
+  const raw = gitRaw(root, [
+    "log",
+    "--name-only",
+    "-z",
+    "--pretty=format:",
+    `--since=${since}`,
+    `${baseHead}..HEAD`,
+  ]);
+  return raw
+    .split("\0")
+    .flatMap((chunk) => chunk.split("\n"))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Vendor/build trees that are somehow not gitignored must never be pinned on the agent.
+const IGNORED_PREFIX = (p) => IGNORE_DIRS.has(String(p).split("/")[0]);
+
+/**
+ * Everything attributable to THIS session: files from session-time commits ∪ the
+ * working tree minus whatever was already dirty at session start. Pre-existing dirt,
+ * pulled-in commits, and vendor trees stay out — near-zero false blocks is the gate's
+ * credibility. Degraded mode (no baseline/snapshot): the full worktree, still bounded
+ * by the block-once marker.
+ */
+export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
+  const out = new Set(committedSince(root, baseHead, sinceMs));
+  for (const p of statusEntriesZ(root)) {
+    if (preDirty?.has(p)) continue; // already dirty before the session began
+    out.add(p);
+  }
+  return [...out].filter((p) => !IGNORED_PREFIX(p)).sort();
 }
 
 /**
@@ -146,6 +189,9 @@ export function stopGate(root, sid, hook = {}) {
   try {
     if (hook.stop_hook_active === true || hook.stop_hook_active === "true")
       return { allow: true, row: "stop-hook-active" };
+    // No session identity → no per-session marker/baseline is trustworthy; a shared
+    // "default" would leak one session's block/allow into every other (review-found).
+    if (!hook.session_id) return { allow: true, row: "no-session" };
     if (process.env.FORGE_STOPGATE === "0") return { allow: true, row: "kill-switch" };
     if (git(root, ["rev-parse", "--is-inside-work-tree"]) !== "true")
       return { allow: true, row: "not-a-repo" };
@@ -170,9 +216,21 @@ export function stopGate(root, sid, hook = {}) {
           return false;
         }
       });
-    const changed = changedSet(root, base?.head);
+    const changed = changedSet(root, base?.head, {
+      sinceMs: startedAt ?? undefined,
+      preDirty: readDirtySnapshot(root, sid) ?? undefined,
+    });
     const decision = gateDecision({ changed, stateTouched });
     if (decision.allow) return decision;
+    // Marker FIRST: if it can't be persisted, the block-once promise can't be kept —
+    // on a read-only checkout that would mean an unsatisfiable block every turn, so
+    // the honest move is to stand down (fail-open, review-found).
+    try {
+      mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+      writeFileSync(marker, `${new Date().toISOString()}\n`);
+    } catch {
+      return { allow: true, row: "marker-unwritable" };
+    }
     let driftAlarm = false;
     try {
       const scores = readSession(root, sid)
@@ -182,10 +240,6 @@ export function stopGate(root, sid, hook = {}) {
       if (scores.length >= 3) driftAlarm = cusum(scores).alarm;
     } catch {}
     const reason = repairReason(root, { codeFiles: decision.classes.code, driftAlarm });
-    try {
-      mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-      writeFileSync(marker, `${new Date().toISOString()}\n`);
-    } catch {}
     return { allow: false, row: decision.row, reason, classes: decision.classes };
   } catch {
     return { allow: true, row: "internal-error" };
