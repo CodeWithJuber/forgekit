@@ -93,3 +93,25 @@ test("impact (llm on): a proposed edge survives only if real + grep-verified", (
   const blind = impact(atlas, "computeTax", { llm: true, run: () => '{"files":["a.js"]}' });
   assert.deepEqual(blind.llmVerified, [], "no verify predicate → nothing added blind");
 });
+
+test("markdown docs become graph nodes whose references make them impact dependents", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  writeFileSync(join(root, "src.js"), "export function computeTax(x){ return x*0.2 }\n");
+  writeFileSync(
+    join(root, "GUIDE.md"),
+    "# guide\n\nThe `computeTax` helper lives in [the source](src.js).\n",
+  );
+  writeFileSync(join(root, "UNRELATED.md"), "# other\n\nNothing about the code here.\n");
+  const atlas = build({ root });
+  assert.ok(
+    atlas.nodes.some((n) => n.kind === "doc" && n.file === "GUIDE.md"),
+    "the doc is a graph node",
+  );
+  // Change the symbol → the doc that references it is in the blast radius.
+  const bySymbol = impact(atlas, "computeTax");
+  assert.ok(bySymbol.impactedFiles.includes("GUIDE.md"), JSON.stringify(bySymbol.impactedFiles));
+  assert.ok(!bySymbol.impactedFiles.includes("UNRELATED.md"), "silent docs stay out");
+  // Change the file → same answer through the module-path reference.
+  const byFile = impact(atlas, "src.js");
+  assert.ok(byFile.impactedFiles.includes("GUIDE.md"), JSON.stringify(byFile.impactedFiles));
+});

@@ -28,7 +28,10 @@ const PKG_VERSION = (() => {
 const root = process.env.FORGE_ROOT || process.cwd();
 const today = epochDay;
 
-const TOOLS = [
+// Exported so docs_check.js reconciles the documented MCP tool list against the
+// registry that actually serves — a tool can't ship undocumented (or be documented
+// after removal) without `forge docs check` flagging it.
+export const TOOLS = [
   {
     name: "cortex_lessons",
     description:

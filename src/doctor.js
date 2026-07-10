@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
+import { docsCheck } from "./docs_check.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
@@ -307,6 +308,21 @@ function checkProvider(out, targetRoot) {
   }
 }
 
+// Docs↔code drift — a self-check of the forge package's own docs, so it only runs
+// when doctor is pointed at the forge repo itself (contributors + CI), never at a
+// host project whose README rightly says nothing about forge commands.
+function checkDocs(out, targetRoot) {
+  try {
+    if (readJson(join(targetRoot, "package.json")).name !== BRAND.pkg) return;
+    const r = docsCheck({ root: targetRoot });
+    out.push(
+      r.ok
+        ? ok("docs↔code", "commands, env vars, MCP tools, CHANGELOG all agree")
+        : warn("docs↔code", `${r.issues.length} drift issue(s) — run \`forge docs check\``),
+    );
+  } catch {}
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -318,6 +334,7 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkTooling(results);
   checkInstall(results);
   checkDrift(results, targetRoot);
+  checkDocs(results, targetRoot);
   checkAtlas(results, targetRoot);
   checkPricing(results);
   checkMcp(results, targetRoot);
