@@ -5,6 +5,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { shannonEntropy } from "./math.js";
 
 // Instruction-layer + tool-layer red flags. `critical` blocks install.
 const RULES = [
@@ -45,13 +46,28 @@ const RULES = [
   },
 ];
 
+// Obfuscation detector: a long base64-class blob whose Shannon entropy sits in
+// encoded-payload territory. The RULES above are signatures for KNOWN attack shapes;
+// entropy catches the unknown one hiding as an opaque blob in the instruction layer
+// (nothing in a legitimate SKILL.md needs a 200-char undecodable string).
+const BLOB_RE = /[A-Za-z0-9+/=]{200,}/g;
+const BLOB_MIN_BITS = 4.5;
+
 /** Pure: scan raw text for red flags. Returns findings [{sev, msg}]. */
 export function heuristicScan(text) {
   const s = String(text);
-  return RULES.filter((r) => r.re.test(s)).map(({ sev, msg }) => ({
+  const findings = RULES.filter((r) => r.re.test(s)).map(({ sev, msg }) => ({
     sev,
     msg,
   }));
+  const blobs = (s.match(BLOB_RE) || []).filter((b) => shannonEntropy(b) >= BLOB_MIN_BITS);
+  if (blobs.length) {
+    findings.push({
+      sev: "high",
+      msg: `${blobs.length} high-entropy encoded blob(s) — possible obfuscated payload`,
+    });
+  }
+  return findings;
 }
 
 /** Scan a path (SKILL.md/.mcp.json) or raw text. Real scanner if available, else heuristic. */

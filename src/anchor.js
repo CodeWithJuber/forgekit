@@ -154,6 +154,10 @@ export function goalDrift(root, goal, opts = {}) {
   }
 
   const drift = changedFiles.length > 0 && (offGoal.length > 0 || onGoal.length === 0);
+  // Graded drift magnitude Dₜ ∈ [0,1] — the fraction of this checkpoint's changes that
+  // wandered off-goal. This is the signal cusum() below expects: the binary `drift`
+  // flag answers "any drift now?", the score accumulates into "sustained drift?".
+  const driftScore = changedFiles.length ? offGoal.length / changedFiles.length : 0;
   return {
     goal: String(goal),
     keywords,
@@ -161,6 +165,7 @@ export function goalDrift(root, goal, opts = {}) {
     onGoal,
     offGoal,
     drift,
+    driftScore,
     provenance,
   };
 }

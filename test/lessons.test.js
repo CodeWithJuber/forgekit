@@ -89,6 +89,16 @@ test("matchScore: symbol hit beats file-glob beats keyword", () => {
   assert.equal(matchScore(l, { files: ["src/db/index.ts"] }), 0);
 });
 
+test("matchScore: keyword tier is graded — same-module partial overlap earns partial credit", () => {
+  const l = newLesson({ id: "g", trigger: { keywords: ["src/auth/login.js"] } });
+  const exact = matchScore(l, { keywords: ["src/auth/login.js"] });
+  const sibling = matchScore(l, { keywords: ["src/auth/session.js"] });
+  const unrelated = matchScore(l, { keywords: ["docs/readme.md"] });
+  assert.equal(exact, 0.3, "full overlap keeps the historical tier value");
+  assert.ok(sibling > 0 && sibling < exact, "same module scores between 0 and exact");
+  assert.equal(unrelated, 0, "no shared tokens → no match");
+});
+
 test("selectForInjection: relevance-ranked, capped, overflow becomes a pointer (never silent)", () => {
   const ctx = { symbols: ["foo"], files: [], keywords: [] };
   const lessons = Array.from({ length: 5 }, (_, i) => {

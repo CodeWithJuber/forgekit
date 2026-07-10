@@ -42,13 +42,13 @@ function verificationChecklist(root) {
   return [...new Set(checks)];
 }
 
-function minimalityWarnings(task, route, preflight) {
+// Every warning derives from signals the gate ALREADY computed — the preflight
+// DIMENSIONS rubric owns "which dimensions apply and which are missing", routing owns
+// complexity. No second keyword copy here to drift out of sync with those sources.
+function minimalityWarnings(_task, route, preflight) {
   const warnings = [];
-  const text = String(task).toLowerCase();
-  if (
-    /\b(refactor|rewrite|clean|redesign|optimi[sz]e|improve)\b/.test(text) &&
-    preflight.entities.files.length === 0
-  ) {
+  const missing = new Set((preflight.assumption?.missing ?? []).map((m) => m.key));
+  if (missing.has("target_scope") && preflight.entities.files.length === 0) {
     warnings.push(
       "High-risk broad change with no target files named; ask for scope before editing.",
     );
@@ -58,10 +58,7 @@ function minimalityWarnings(task, route, preflight) {
       "Complex task with medium/low specification completeness; clarify before spending a premium model.",
     );
   }
-  if (
-    /\b(add authentication|payment|migration|distributed|concurrent|production)\b/.test(text) &&
-    !/\btest|acceptance|rollback|constraint|must|should\b/.test(text)
-  ) {
+  if (missing.has("constraints")) {
     warnings.push("Production-sensitive task lacks explicit constraints or acceptance criteria.");
   }
   return warnings;
