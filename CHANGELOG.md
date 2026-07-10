@@ -6,8 +6,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-07-10
-
 ### Added
 - **The completion gate** — a synchronous Stop hook (`global/guards/completion-gate.sh`
   → `src/gate.js`) that blocks a session ONCE when code changed but no doc or state
@@ -46,6 +44,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `doc-sync` crew agent that repairs stale docs in its own context, and an
   `end-to-end` rules section (Definition of Done, no silent assumptions, decision log)
   compiled into every tool by `forge sync`.
+
+### Fixed
+- **`cortex.sh` hook entry resolution in symlink installs** — `~/.forge/src/…` pointed
+  at the nonexistent `global/src/`, silently no-opping every cortex hook outside plugin
+  mode; the shim now resolves through the symlink (`pwd -P`), same as `secret-redact.sh`.
+- **Twelve defects found by a two-angle adversarial review of the new layer, all with
+  regression tests** — the gate no longer attributes pre-session dirt, branch-switch/pull
+  commits, or vendor trees to the session (session-scoped changed set: committer-time
+  window + SessionStart dirty snapshot); `-z` NUL parsing keeps unicode/space/arrow paths
+  correctly classified; an unwritable block-once marker stands down instead of blocking
+  every turn; a missing `session_id` disables gating instead of sharing `default` state;
+  a >7-day resume re-anchors instead of losing its baseline to the prune; `readState` no
+  longer truncates snapshots whose rows contain `<!--`; `forge decide` takes a lock so
+  concurrent appends can't mint duplicate D-#### ids; the docs sweep stopped scanning its
+  own bookkeeping (`.forge/state.md`), scans touched docs for REMOVED symbols (the rename
+  case), counts lowercase symbols only inside backticks, dedupes recorded assumptions,
+  and errors on an unknown `--base` instead of mislabeling the report.
+
+## [0.9.0] - 2026-07-10
+
+### Added
 - **Gateway environments work end to end** — `ANTHROPIC_AUTH_TOKEN` is recognized
   everywhere `ANTHROPIC_API_KEY` is; `ANTHROPIC_MODEL` / `FORGE_MODEL` pin one model
   (bypassing tier routing); a gateway-looking `ANTHROPIC_BASE_URL` auto-classifies as
@@ -84,23 +103,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as findings alongside the signature rules.
 - **`providerStatus` probes `/health` on any custom base URL** and reports behavioral
   gateway evidence (a proxy that answers /health is a gateway, whatever its hostname).
-
-### Fixed
-- **`cortex.sh` hook entry resolution in symlink installs** — `~/.forge/src/…` pointed
-  at the nonexistent `global/src/`, silently no-opping every cortex hook outside plugin
-  mode; the shim now resolves through the symlink (`pwd -P`), same as `secret-redact.sh`.
-- **Twelve defects found by a two-angle adversarial review of the new layer, all with
-  regression tests** — the gate no longer attributes pre-session dirt, branch-switch/pull
-  commits, or vendor trees to the session (session-scoped changed set: committer-time
-  window + SessionStart dirty snapshot); `-z` NUL parsing keeps unicode/space/arrow paths
-  correctly classified; an unwritable block-once marker stands down instead of blocking
-  every turn; a missing `session_id` disables gating instead of sharing `default` state;
-  a >7-day resume re-anchors instead of losing its baseline to the prune; `readState` no
-  longer truncates snapshots whose rows contain `<!--`; `forge decide` takes a lock so
-  concurrent appends can't mint duplicate D-#### ids; the docs sweep stopped scanning its
-  own bookkeeping (`.forge/state.md`), scans touched docs for REMOVED symbols (the rename
-  case), counts lowercase symbols only inside backticks, dedupes recorded assumptions,
-  and errors on an unknown `--base` instead of mislabeling the report.
 
 ## [0.8.1] - 2026-07-08
 
