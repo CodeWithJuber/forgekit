@@ -108,6 +108,9 @@ const IGNORED_PREFIX = (p) => IGNORE_DIRS.has(String(p).split("/")[0]);
  * pulled-in commits, and vendor trees stay out — near-zero false blocks is the gate's
  * credibility. Degraded mode (no baseline/snapshot): the full worktree, still bounded
  * by the block-once marker.
+ * @param {string} root
+ * @param {string|null} [baseHead]
+ * @param {{sinceMs?: number, preDirty?: Set<string>}} [opts]
  */
 export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
   const out = new Set(committedSince(root, baseHead, sinceMs));
