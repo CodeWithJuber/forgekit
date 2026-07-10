@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 import { recordMistake } from "../src/cortex.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
-const runCli = (args, cwd) => spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
+const runCli = (args, cwd) =>
+  spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
 
 test("forge cortex: empty repo reports zero lessons, no crash", () => {
   const cwd = mkdtempSync(join(tmpdir(), "forge-cli-"));
   const { status, stdout } = runCli(["cortex"], cwd);
   assert.equal(status, 0);
-  assert.match(stdout, /self-correcting project memory/);
   assert.match(stdout, /lessons: 0/);
 });
 

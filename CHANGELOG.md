@@ -6,9 +6,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge stack`** — dynamic stack detection: reads the repo's dependency manifests
+  (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`,
+  `pom.xml`/`build.gradle`, `*.csproj`) and reports its real languages, frameworks,
+  package managers, and test commands — data-driven (extend by adding a `SIGNATURES`
+  row), not a hardcoded menu. The detected test commands now drive the substrate's
+  verification checklist instead of assuming npm.
+- **Six more atlas languages** — Ruby, C#, PHP, Kotlin, Swift, and C/C++ join JS/TS,
+  Python, Go, Rust, and Java (whose method defs are now indexed too). One `RULES` table;
+  the walk, completion gate, and docs sweep pick each up automatically.
+- **`forge update`** — self-update: `--check` reports whether a newer version is
+  available (commits behind upstream, from a cached hourly fetch), bare applies it
+  (`git pull --ff-only` for a checkout, or the `npm i -g` command otherwise). `forge
+doctor` surfaces a non-nagging "update available" notice; `FORGE_NO_UPDATE_CHECK=1`
+  silences it. Fail-open: offline / non-git / detached-HEAD never error.
+- **Self-dogfood** — a committed `.claude/settings.json` wires forgekit's own guards via
+  `${CLAUDE_PROJECT_DIR}`, so the repo runs its own completion gate, cortex, and guards
+  during local dev without a marketplace install.
+
+### Changed
+
+- **CLI output is quiet by default** — the `Forge <command> — …` title line no longer
+  prints on every command; results come first. `--verbose` or `FORGE_VERBOSE=1` restores
+  it. The `--help` / `--version` banner is unchanged.
+
 ## [0.10.0] - 2026-07-10
 
 ### Added
+
 - **The completion gate** — a synchronous Stop hook (`global/guards/completion-gate.sh`
   → `src/gate.js`) that blocks a session ONCE when code changed but no doc or state
   artifact moved with it, answering with the repair checklist (`forge docs sync`,
@@ -48,6 +75,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compiled into every tool by `forge sync`.
 
 ### Fixed
+
 - **`cortex.sh` hook entry resolution in symlink installs** — `~/.forge/src/…` pointed
   at the nonexistent `global/src/`, silently no-opping every cortex hook outside plugin
   mode; the shim now resolves through the symlink (`pwd -P`), same as `secret-redact.sh`.
@@ -67,6 +95,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.0] - 2026-07-10
 
 ### Added
+
 - **Gateway environments work end to end** — `ANTHROPIC_AUTH_TOKEN` is recognized
   everywhere `ANTHROPIC_API_KEY` is; `ANTHROPIC_MODEL` / `FORGE_MODEL` pin one model
   (bypassing tier routing); a gateway-looking `ANTHROPIC_BASE_URL` auto-classifies as
@@ -92,6 +121,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`src/math.js`** — Shannon entropy, charset classes, exact set Jaccard/overlap.
 
 ### Changed
+
 - **Routing scores by exemplar similarity, not keyword lists** — the text rubric is
   similarity-weighted k-NN over a labeled `EXEMPLARS` bank (overlap-coefficient on
   stopword-filtered unigram+bigram sets, credibility-shrunk); the four topic keyword
@@ -109,18 +139,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.8.1] - 2026-07-08
 
 ### Added
+
 - **MCP write tools** — `forge_remember`, `forge_ledger_ratify`,
   `forge_ledger_retract` join the read tools (19 tools total).
 
 ### Changed
+
 - Simplified CLI surface and improved dashboard UX empty states.
 
 ### Fixed
+
 - Stale documentation across command references.
 
 ## [0.8.0] - 2026-07-08
 
 ### Added
+
 - **Forge work system** — auto-install flow, multi-provider routing, the cost
   dashboard (`forge dash`), and the cortex MCP server's read-path tools.
 - **Zero-config provider auto-detection** — `autoDetectProvider()` resolves the
@@ -130,9 +164,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `litellm.config.yaml` exposing complexity tiers as model aliases.
 
 ### Fixed
+
 - TypeScript errors and Biome 2.5.2 lint warnings across source and tests.
-
-
 
 ## [0.7.0] - 2026-07-08
 
@@ -260,8 +293,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [1, 50] — every input measured or priced, no magic constants.
 
 - **Context assembly + completeness gate (P4 of the substrate-v2 plan).** `forge context
-  "<task>"` makes what goes into the window a budgeted optimization and makes
-  *sufficiency* a computed set. The required-knowledge set `R(edit)` — the target's
+"<task>"` makes what goes into the window a budgeted optimization and makes
+  _sufficiency_ a computed set. The required-knowledge set `R(edit)` — the target's
   definitions, its hop-1 dependents from the atlas, sibling tests, and team lessons
   trusted past val ≥ 0.8 — is derived, then covered by pinned items with a **compression
   ladder** (full → head → pointer): a tight budget downgrades granularity instead of
@@ -353,7 +386,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conservative bridge weight instead of the full-weight human oracle. Fact claims: one
   CRLF-tolerant parser (`recall.readFact`), trimmed bodies (shadow path and import path
   mint one id), same-name updates supersede the stale claim, and `forge recall
-  consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/truncated
+consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/truncated
   claim files instead of trusting `existsSync`. `forge ledger --personal` reaches the
   personal ledger (previously write-only); `forge ledger show` resolves by shard instead
   of scanning; `forge init` emits the union-merge `.gitattributes` rule into consumer
@@ -362,16 +395,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Documentation
 
 - **Substrate v2 plan: the whitepaper, completed (`docs/plans/substrate-v2/`).** Nine specs
-  + two ADRs mapping every remaining paper faculty/mechanism to a concrete algorithm, unified
-  by the **Proof-Carrying Memory (PCM) protocol**: every stored unit (lesson, fact, cached
-  artifact, graph edge, design fingerprint, diagnosis) becomes a content-addressed claim whose
-  confidence is a decayed Beta posterior over independent-oracle outcomes — retrieval implements
-  the paper's Eq. 3, team memory is a conflict-free CRDT ledger merged over git, code reuse is a
-  proof-carrying artifact cache, context assembly is a token-budget knapsack with a set-cover
-  completeness gate, and generated-UI quality is a measurable slop-distance/conformance gate.
-  ADR-0005 relaxes the zero-dependency rule to selective optional deps with stdlib fallbacks;
-  ADR-0006 converges all persistence on the PCM ledger. `ROADMAP.md` now carries the P1–P8
-  phase plan. Docs only — no runtime behavior changes.
+  - two ADRs mapping every remaining paper faculty/mechanism to a concrete algorithm, unified
+    by the **Proof-Carrying Memory (PCM) protocol**: every stored unit (lesson, fact, cached
+    artifact, graph edge, design fingerprint, diagnosis) becomes a content-addressed claim whose
+    confidence is a decayed Beta posterior over independent-oracle outcomes — retrieval implements
+    the paper's Eq. 3, team memory is a conflict-free CRDT ledger merged over git, code reuse is a
+    proof-carrying artifact cache, context assembly is a token-budget knapsack with a set-cover
+    completeness gate, and generated-UI quality is a measurable slop-distance/conformance gate.
+    ADR-0005 relaxes the zero-dependency rule to selective optional deps with stdlib fallbacks;
+    ADR-0006 converges all persistence on the PCM ledger. `ROADMAP.md` now carries the P1–P8
+    phase plan. Docs only — no runtime behavior changes.
 - **Visual flow diagrams in the entry-point docs.** A "one source → every tool + pre-action gate"
   mermaid in `README.md` and a "your day with Forge" loop in `ONBOARDING.md` (alongside the
   propose→verify diagram in the substrate README) — making the model easier to grasp at a glance,
@@ -382,7 +415,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Proof-Carrying Memory ledger (P1 of the substrate-v2 plan).** `src/ledger.js` — the
   pure PCM core (ADR-0006): content-addressed claims over canonical JSON, an oracle
   taxonomy in which only independent signals (tests, CI, human accept/revert) may move
-  confidence, a time-decayed Beta-posterior `val` that decays toward *uncertainty* (never
+  confidence, a time-decayed Beta-posterior `val` that decays toward _uncertainty_ (never
   toward false), the paper's Eq. 3 retrieval score, dependency-free MinHash similarity +
   union-find consolidation clustering, and a join-semilattice merge (property-tested:
   commutative, associative, idempotent — teammate ledgers converge in any order).
@@ -415,7 +448,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   drift apart.
 
 - **Opt-in enforcing gate (`FORGE_ENFORCE=1`).** The substrate's assumption gate can now be a real
-  *halt* (the paper's Eq 5 / M2 "block on insufficient input"), not just advice. On the Claude Code
+  _halt_ (the paper's Eq 5 / M2 "block on insufficient input"), not just advice. On the Claude Code
   ambient path it blocks a prompt with **no concrete anchor at all** ("fix it", "make it better") —
   or an action into a very large predicted blast radius — and returns the clarifying questions.
   Deliberately low-false-positive: a specified task is never blocked, and it's **off by default**
@@ -425,13 +458,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and flags the footprint beyond what the task asked for — new abstractions the task never named,
   a large diff for a short ask, files touched beyond the stated scope. Folded into
   `forge substrate` (a `minimality.footprint` field) and available standalone as `forge lean "<task>"`.
-- **Doom-loop breaker (self-correction).** Complements the shell guard (which catches the *same
-  action* repeated) by catching the subtler loop the paper names — *different edits that keep
-  producing the same test failure*. `cortex_hook` now captures a normalized signature of failing
+- **Doom-loop breaker (self-correction).** Complements the shell guard (which catches the _same
+  action_ repeated) by catching the subtler loop the paper names — _different edits that keep
+  producing the same test failure_. `cortex_hook` now captures a normalized signature of failing
   test output; `detectDoomLoop` fires when one signature recurs past a threshold, and the
   pre-edit hook surfaces a "stop and find the root cause" advisory with the diagnosis.
 - **Consequence simulation — failing-tests class (Eq 4).** `forge substrate` now predicts the
-  tests likely to break *before* an edit (`impact.predictedTests`): the impacted files that are
+  tests likely to break _before_ an edit (`impact.predictedTests`): the impacted files that are
   tests, plus each impacted source file's sibling test — surfaced so you run the narrowest
   affected tests first, not after the fact.
 
@@ -457,7 +490,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `secret`/`password`/`api key`, so any task or lesson merely mentioning them was silently
   refused — disabling the LLM proposer (`adjudicate`) and blocking memory persistence
   (`recall`/`lessons`) for exactly the high-risk code you most want help on. The word arm now
-  requires a value-shaped assignment (`password = "…"`, `SECRET_KEY: …`); credential *formats*
+  requires a value-shaped assignment (`password = "…"`, `SECRET_KEY: …`); credential _formats_
   (`sk-…`, `ghp_…`, JWTs, …) are still refused.
 - **One malformed file no longer takes down memory.** `lessons_store.load`/`readEpisodes` and
   `cortex_hook.readSession` now skip a corrupt lesson file / JSONL line instead of throwing
@@ -478,8 +511,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Opt-in LLM adjudication for the substrate (`FORGE_LLM=1`)** — one shared, fail-safe `claude -p` proposer (`src/adjudicate.js`) wired thinly into the assumption gate (M2), model routing (M1), impact/blast-radius, and goal-drift (M4). The model only *proposes*; every proposal is verified against the deterministic rubric, the code graph, or a grep before it can move a verdict. Off by default — behaviour is unchanged unless enabled — never blocks, and the ambient Claude Code hook stays deterministic unless `FORGE_LLM_AMBIENT=1`. `forge substrate --json` carries an `llm.provenance` map per faculty for auditability.
-- **Bidirectional verified reconcile (default on when `FORGE_LLM=1`; `llm.bidirectional` in `source/substrate.json` to disable).** A verified reading may now *reduce* caution as well as add it — clear a false "ASK FIRST" (`llm-cleared`) and route a task *down* a tier (`llm-lowered`) — but only within `band` and never past the hard floors: the gate can't clear a task with no concrete anchor or one naming symbols/files the repo lacks, and routing can't drop below a strong-signal (algorithmic/architectural) floor. Set `llm.bidirectional: false` for the conservative tighten-/raise-only mode. Impact edges stay graph-+-grep-verified; goal-drift stays off→on with a goal-referencing reason.
+- **Opt-in LLM adjudication for the substrate (`FORGE_LLM=1`)** — one shared, fail-safe `claude -p` proposer (`src/adjudicate.js`) wired thinly into the assumption gate (M2), model routing (M1), impact/blast-radius, and goal-drift (M4). The model only _proposes_; every proposal is verified against the deterministic rubric, the code graph, or a grep before it can move a verdict. Off by default — behaviour is unchanged unless enabled — never blocks, and the ambient Claude Code hook stays deterministic unless `FORGE_LLM_AMBIENT=1`. `forge substrate --json` carries an `llm.provenance` map per faculty for auditability.
+- **Bidirectional verified reconcile (default on when `FORGE_LLM=1`; `llm.bidirectional` in `source/substrate.json` to disable).** A verified reading may now _reduce_ caution as well as add it — clear a false "ASK FIRST" (`llm-cleared`) and route a task _down_ a tier (`llm-lowered`) — but only within `band` and never past the hard floors: the gate can't clear a task with no concrete anchor or one naming symbols/files the repo lacks, and routing can't drop below a strong-signal (algorithmic/architectural) floor. Set `llm.bidirectional: false` for the conservative tighten-/raise-only mode. Impact edges stay graph-+-grep-verified; goal-drift stays off→on with a goal-referencing reason.
 - **Explicit memory `val` term** — lesson retrieval now decomposes into the white paper's `relevance × freshness × validity × scope`, with `validity()` (a ground-truth Beta posterior over confirmed vs. contradicted outcomes) exported and ranked so outcome-confirmed lessons outrank merely-recent ones.
 
 ### Changed

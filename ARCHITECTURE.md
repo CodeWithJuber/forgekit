@@ -3,7 +3,7 @@
 > **One brain for every AI coding agent.** A large language model is stateless: one
 > context window, wiped every call. It has no memory of what your team learned, no
 > foresight about what an edit will break, and no enforced guardrails. forgekit is the
-> **cognitive substrate** — the layer that runs *before* the model edits code, supplying
+> **cognitive substrate** — the layer that runs _before_ the model edits code, supplying
 > proof-carrying memory, impact foresight, and enforced guardrails — and a **cross-tool
 > config compiler** that delivers that brain as native config into every tool at once.
 
@@ -23,6 +23,7 @@ Every command referenced below is real and wired in `src/cli.js`. Run `forge --h
 for the full list.
 
 ## Locked decisions
+
 - **Brand = `Forge`** — CLI `forge`; layer names: skills→**tools**, agents→**crew**,
   hooks→**guards**, code-graph→**atlas**, minimalism→**lean**, memory→**recall**.
   Brand stored as **one token** (the `brand` key in `brand.json`); rebrand = 1 edit.
@@ -30,8 +31,8 @@ for the full list.
   the brand token changes, so a rename never breaks install.
 - **Scope = full multi-tool day 1** — nine tools plus MCP, from one canonical source.
 - **Install = all three channels** (plugin + hardened installer + npm CLI), all
-  three pointing at the *same* tree ("one tree, three front doors").
-- **Own `lean` + `atlas`** — as *thin layers over proven primitives*, not
+  three pointing at the _same_ tree ("one tree, three front doors").
+- **Own `lean` + `atlas`** — as _thin layers over proven primitives_, not
   from-scratch reimplementations (reuse-first).
 
 ## 1. A four-layer config compiler with ONE source
@@ -65,7 +66,7 @@ The four layers, brand-named and emitted cross-tool:
 - **crew** (`~/.forge/crew/` → `~/.claude/agents/`) — isolated sub-agents
   (scout / verifier / frontend-verifier).
 - **guards** (`~/.forge/guards/` → `settings.json` hooks) — **the only layer that
-  *enforces* rather than suggests.** A guard is a deterministic hook the model cannot
+  _enforces_ rather than suggests.** A guard is a deterministic hook the model cannot
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
   compaction; a guard does not. Every enforceable invariant belongs here.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
@@ -74,12 +75,12 @@ The four layers, brand-named and emitted cross-tool:
   ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
 
 Cross-cutting concerns thread through all four: **atlas** (the code graph), **lean**
-(minimalism — shipped as *both* a tool and a Stop-guard, so it applies whether or not
+(minimalism — shipped as _both_ a tool and a Stop-guard, so it applies whether or not
 the model invokes it), and **recall** (memory).
 
 ## 2. The pre-action gate — `forge substrate`
 
-**cognitive substrate** — the layer that runs *before* the model edits code. `forge
+**cognitive substrate** — the layer that runs _before_ the model edits code. `forge
 substrate "<task>"` (and the MCP tool `substrate_check`) runs one ordered pass of
 checks and returns a single verdict. It composes the individually-callable stages
 (`preflight`, `route`, `atlas`, `impact`, `reuse`, `context`, `scope`, `lean`,
@@ -120,7 +121,7 @@ Everything else stays a warning the human can override.
 ## 3. Proof-carrying memory — the ledger + team merge
 
 **proof-carrying memory (PCM)** — every stored fact, lesson, or reuse artifact is a
-*claim* that carries its own evidence. It is trusted only once independent oracles
+_claim_ that carries its own evidence. It is trusted only once independent oracles
 (tests, CI, a human accept/revert) raise its confidence above a floor. A wrong lesson
 decays out instead of ossifying.
 
@@ -161,7 +162,7 @@ Decision recorded in
 ## 4. The reuse / context loop
 
 `forge reuse` is a proof-carrying code cache. A generated artifact is only served again
-when its evidence still holds — the confidence is above the floor *and* its atlas
+when its evidence still holds — the confidence is above the floor _and_ its atlas
 dependencies still resolve. Otherwise it falls through to generation and mints a fresh
 claim on the way back.
 
@@ -181,7 +182,7 @@ flowchart LR
 
 The completeness gate on the retrieval side is `forge context "<task>"`: it assembles a
 budgeted context via set-cover over the predicted edit set (`R(edit)`), applies a
-compression ladder, and reports the *computed missing set* — the inputs it could not
+compression ladder, and reports the _computed missing set_ — the inputs it could not
 assemble. That missing set is exactly what the substrate pipeline's context stage reads
 to decide whether an edit is safe to start. Surface: `forge reuse query | mint | stats`.
 
@@ -189,8 +190,8 @@ to decide whether an edit is safe to start. Surface: `forge reuse query | mint |
 
 Two failure modes this layer exists to kill: **partial work** (code changes without the
 artifacts that depend on it) and **session amnesia** (the next session re-assumes what
-this one knew). Instructions raise the *probability* of correct behavior; deterministic
-hooks guarantee a *floor* — with per-task miss rate `1−p` and gate catch rate `c`,
+this one knew). Instructions raise the _probability_ of correct behavior; deterministic
+hooks guarantee a _floor_ — with per-task miss rate `1−p` and gate catch rate `c`,
 silent misses fall to `(1−p)(1−c)`, and every layer here is one more `c`.
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
@@ -207,7 +208,7 @@ other row allows, every internal error allows (fail-open), the once-per-session 
 is written BEFORE the block (unwritable marker → stand down rather than nag every turn),
 a missing `session_id` disables gating (no shared-state leaks between sessions), and
 `FORGE_STOPGATE=0` kills it. `.forge/state.md` is gitignored, so its signal is
-mtime-vs-baseline (the baseline file's mtime *is* session start).
+mtime-vs-baseline (the baseline file's mtime _is_ session start).
 
 **Session anchoring (SessionStart, `src/session.js`).** Records `HEAD` once per session
 (`.forge/sessions/<sid>.base`; resume keeps it), prunes week-old session artifacts, and
@@ -251,6 +252,7 @@ session-learner` (guards) · `statusline` · `tech-currency · stack-notes ·
 self-correction` (rules) · project-layer template.
 
 **Own-branded replacements (thin layer over proven primitive):**
+
 - **`lean`** — a model-invoked **tool** (YAGNI ladder, reuse-before-build,
   shortest-diff) **+** a deterministic **`lean-guard`** Stop-hook that nudges on
   oversized diffs. No plugin, no engine.
@@ -258,6 +260,7 @@ self-correction` (rules) · project-layer template.
   graph engine, no language server, no database.
 
 **Net-new (justified by a pain):**
+
 - **`forge sync`** (the cross-tool emitter) · **`forge doctor`** (health check) ·
   **`forge init`** (one-command bootstrap) · **`cost-budget` guard** ·
   **Start-Here catalog** · **`recall`** unified memory subsystem.
@@ -278,26 +281,53 @@ self-correction` (rules) · project-layer template.
 `atlas.json` is the single source the impact, reuse-revalidation, and hallucination-flag
 stages all read. There is no SQLite database and no `.forge/atlas.db`.
 
+The `RULES` table (`src/atlas.js`) is the ONE language registry — JS/TS, Python, Go,
+Rust, Java, Ruby, C#, PHP, Kotlin, Swift, C/C++ as regex grammars (zero-dep; a real
+parser would need tree-sitter, which the no-runtime-deps rule forbids). `CODE_EXTS =
+new Set(Object.keys(RULES))` means adding a language auto-extends the walk, the
+completion gate's code-class, and the docs sweep — no other file changes.
+
+**`forge stack` (`src/stack.js`)** answers the complementary question the parser can't:
+_what is this repo actually built with?_ It reads the dependency manifests
+(package.json, pyproject.toml, go.mod, Cargo.toml, Gemfile, composer.json, pom.xml/
+build.gradle, *.csproj) and reports languages + frameworks + package managers + real
+test commands. Detection is data (`SIGNATURES`-style tables), every reader is fail-safe,
+and the detected test commands feed `substrate`'s verification checklist — so "run the
+tests" means the repo's *actual\* runner, not an assumed `npm test`.
+
+**`forge update` (`src/update.js`)** is the self-update path across all three install
+modes. It detects a git checkout vs an npm/copy install, does a cached (hourly) best-
+effort `git fetch`, and reports commits-behind-upstream; `doctor` surfaces that as a
+non-nagging notice (`FORGE_NO_UPDATE_CHECK=1` to silence). Every path is fail-open —
+offline, no upstream, or detached HEAD returns "unknown", never an error.
+
+CLI output is **quiet by default**: the per-command `Forge <cmd> — …` title is branding
+chrome behind `--verbose`/`FORGE_VERBOSE`, so a command emits its result first. The repo
+also dogfoods its own plugin via a committed `.claude/settings.json` that wires the
+guards through `${CLAUDE_PROJECT_DIR}`.
+
 ## Verified cross-tool emit matrix
-*(All rows confirmed against vendor docs.)* Forge emits config for **nine tools**, plus
+
+_(All rows confirmed against vendor docs.)_ Forge emits config for **nine tools**, plus
 an **MCP server** for Roo Code and VS Code.
 
-| Tool | Native target | How Forge emits |
-|------|---------------|-----------------|
-| **Claude Code** | `CLAUDE.md` (+ `.claude/rules/*.md`, `settings.json`); **no** AGENTS.md | Thin `CLAUDE.md` whose first line is `@AGENTS.md`; guards+permissions → `settings.json` |
-| **Codex** | `AGENTS.md` native (32 KiB cap) | Canonical `AGENTS.md` at root **is** the source; keep < 32 KiB or it silently truncates |
-| **Cursor** | `AGENTS.md` + `.cursor/rules/*.mdc` (`.cursorrules` deprecated) | `AGENTS.md` for flat rules; `.mdc` when scoping/precedence needed; never leave a legacy `.cursorrules` |
-| **Gemini** | `GEMINI.md` by default; **AGENTS.md only via `context.fileName` opt-in** | Write `.gemini/settings.json` `context.fileName:["AGENTS.md",…]` (avoids a 2nd copy) |
-| **Aider** | `CONVENTIONS.md` via `read:` in `.aider.conf.yml` | Emit `.aider.conf.yml` with `read: AGENTS.md` |
-| **Copilot** | root `AGENTS.md` + `.github/copilot-instructions.md` | Rely on root `AGENTS.md`; optional generated `.github` pointer |
-| **Windsurf/Devin** | `AGENTS.md` auto-discovered; caps 6k/12k chars | Root `AGENTS.md` under caps; detect `.windsurf` vs `.devin` at init |
-| **Zed** | first match of a precedence list incl. `AGENTS.md` | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it |
-| **Continue** | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml` | Emit a rules file plus the Forge MCP server config |
+| Tool               | Native target                                                            | How Forge emits                                                                                        |
+| ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| **Claude Code**    | `CLAUDE.md` (+ `.claude/rules/*.md`, `settings.json`); **no** AGENTS.md  | Thin `CLAUDE.md` whose first line is `@AGENTS.md`; guards+permissions → `settings.json`                |
+| **Codex**          | `AGENTS.md` native (32 KiB cap)                                          | Canonical `AGENTS.md` at root **is** the source; keep < 32 KiB or it silently truncates                |
+| **Cursor**         | `AGENTS.md` + `.cursor/rules/*.mdc` (`.cursorrules` deprecated)          | `AGENTS.md` for flat rules; `.mdc` when scoping/precedence needed; never leave a legacy `.cursorrules` |
+| **Gemini**         | `GEMINI.md` by default; **AGENTS.md only via `context.fileName` opt-in** | Write `.gemini/settings.json` `context.fileName:["AGENTS.md",…]` (avoids a 2nd copy)                   |
+| **Aider**          | `CONVENTIONS.md` via `read:` in `.aider.conf.yml`                        | Emit `.aider.conf.yml` with `read: AGENTS.md`                                                          |
+| **Copilot**        | root `AGENTS.md` + `.github/copilot-instructions.md`                     | Rely on root `AGENTS.md`; optional generated `.github` pointer                                         |
+| **Windsurf/Devin** | `AGENTS.md` auto-discovered; caps 6k/12k chars                           | Root `AGENTS.md` under caps; detect `.windsurf` vs `.devin` at init                                    |
+| **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
+| **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file.
 
 ## Repo layout — one tree, three front doors
+
 ```
 forgekit/
   package.json            # npm CLI: bin `forge` → src/cli.js
@@ -336,6 +366,7 @@ forgekit/
   scripts/
     build-pages.mjs       # generates public/index.html, the live status page, from real repo data
 ```
+
 Public site deploy (two independent Pages targets, both built from `landing/` +
 `scripts/build-pages.mjs`): `.github/workflows/static.yml` (GitHub Pages — assembles
 landing + status page into one `_site/`) · `.gitlab-ci.yml` (GitLab Pages — status
@@ -346,9 +377,10 @@ The plugin manifest, `install.sh`, and the npm bin **all reference `global/` +
 asserts all three resolve to `global/`.
 
 ## Risks & honest boundaries
+
 - **Enforcement ceiling** — guards enforce only what is expressible as a hook (paths,
   format, diff-size, budget). Semantic rules ("prefer functional") stay prose and
-  *will* sometimes be ignored. Forge **reduces, does not eliminate** rule drift. Say so.
+  _will_ sometimes be ignored. Forge **reduces, does not eliminate** rule drift. Say so.
 - **Verification reduces, does not certify** — `crew` verifiers and the `atlas has`
   hallucination flag cut review burden; they do not prove the code correct.
 - **No weight-level learning** — `recall` / `self-improve` are file-and-prompt memory
@@ -368,5 +400,6 @@ asserts all three resolve to `global/`.
   `FORGE_EMBED` is the only embeddings path, and it is opt-in.
 
 ---
+
 See [ROADMAP.md](ROADMAP.md) for direction and [`docs/adr/`](docs/adr/) for the recorded
 architecture decisions (zero runtime deps, the SKILL.md standard, guard-over-prose).

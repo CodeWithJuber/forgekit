@@ -48,7 +48,7 @@ A large language model is stateless — one context window, wiped every call.
 - It has **no enforced guardrails** — prose rules get forgotten after a compaction.
 
 And every tool wants its own config file (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`,
-`GEMINI.md`, MCP…). Forge is the **cognitive substrate** — the layer that runs *before*
+`GEMINI.md`, MCP…). Forge is the **cognitive substrate** — the layer that runs _before_
 the model edits code, supplying memory, foresight, and guardrails — and the compiler that
 delivers it into every tool from one source.
 
@@ -81,11 +81,11 @@ so a wrong lesson decays out instead of ossifying. Full design:
 The day-to-day value first — the substrate gives a frozen model what it can't hold itself:
 
 - **Memory that persists across sessions and teammates.** Every lesson, fact, and verified
-  reuse is *proof-carrying memory (PCM)* — a claim that carries its own evidence and is only
+  reuse is _proof-carrying memory (PCM)_ — a claim that carries its own evidence and is only
   trusted once independent oracles raise its confidence above a floor. Wrong lessons decay
   out instead of ossifying.
 - **Foresight before you break things.** Ask "what does changing `verifyToken` break?" and
-  get the *blast radius* — the set of files an edit is predicted to impact, read from the
+  get the _blast radius_ — the set of files an edit is predicted to impact, read from the
   code graph, including coupled files you never named.
 - **Guardrails that can't be forgotten.** Deterministic hooks enforce the rules a model must
   never break (protected paths, cost budget, doom loops) — they survive a context compaction
@@ -102,8 +102,8 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
 ### The measured evidence
 
 Every number is a median from `npm run bench` on this repo, recorded with its environment
-block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is *a number is
-an assumption until measured*.
+block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is _a number is
+an assumption until measured_.
 
 - **Blast radius in 0.43 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
   real import graph: recall **0.97** vs **0.33** for looking at the edited file alone.
@@ -112,7 +112,7 @@ an assumption until measured*.
   Claude Code it runs on **every prompt, automatically**.
 - **62.1% cost saved vs always-premium** — from the white paper's live routing prototype on
   real models (paper §9; that's the paper's measurement, not this repo's — `forge cost
-  --stages` reports only *your* measured stages).
+--stages` reports only _your_ measured stages).
 - **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
   merge is a property-tested join-semilattice, so teammate ledgers converge in any order over
   plain git.
@@ -121,12 +121,12 @@ an assumption until measured*.
 
 Install — pick one row (the recommended paths need no token and no clone):
 
-| You use… | Run this |
-| --- | --- |
-| **Claude Code / Codex** *(recommended — full plugin, ambient guards)* | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit` |
-| **Any tool, from the CLI** | `npm install -g @codewithjuber/forgekit` |
-| **No registry** | `npm install -g github:CodeWithJuber/forgekit` |
-| **Contributors / local dev** | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` — or `bash install.sh` for the symlink setup |
+| You use…                                                              | Run this                                                                                                                          |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Claude Code / Codex** _(recommended — full plugin, ambient guards)_ | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit`                                                  |
+| **Any tool, from the CLI**                                            | `npm install -g @codewithjuber/forgekit`                                                                                          |
+| **No registry**                                                       | `npm install -g github:CodeWithJuber/forgekit`                                                                                    |
+| **Contributors / local dev**                                          | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` — or `bash install.sh` for the symlink setup |
 
 Then, in your project:
 
@@ -156,42 +156,44 @@ Advisory by default. Set `FORGE_ENFORCE=1` to turn the substrate into a hard blo
 strongest signals (vacuous prompt, un-assemblable required context, blast radius over the
 default 25-file threshold).
 
-| Group | Command | Does |
-| --- | --- | --- |
-| **Config layer** | `forge init` | emit every tool's native config from one source |
-| | `forge sync` | recompile canonical source → each tool's native files (idempotent) |
-| | `forge doctor` | pass/fail health check: tools, guards, MCP, drift |
-| | `forge docs` | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions |
-| | `forge config` | provider setup — show / switch / add providers, set the default model |
-| | `forge harden` | wire gitleaks pre-commit + sandbox settings |
-| | `forge catalog` | Start-Here index of every tool / crew / guard |
-| | `forge brand` | print the brand token map |
-| **Memory & team** | `forge ledger` | proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import |
-| | `forge recall` | cross-session personal memory — list / add / consolidate |
-| | `forge remember` | durable, repo-committable fact |
-| | `forge brain` | portable project-memory index |
-| | `forge cortex` | self-correcting lessons — `status` / `why` |
-| | `forge reuse` | proof-carrying code cache — query / mint / stats |
-| | `forge handoff` | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start |
-| | `forge decide` | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding |
-| **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass |
-| | `forge preflight` | assumption / info-gap check |
-| | `forge route` | cheapest capable model tier (`route gateway` emits LiteLLM config) |
-| | `forge impact` | predict blast radius for a symbol or file |
-| | `forge scope` | cluster + surface coupled files |
-| | `forge imagine` | consequence sim + minimal dry-run suite (`--run` executes it sandboxed) |
-| | `forge context` | budgeted context assembly + completeness gate |
-| | `forge atlas` | build / query / has (hallucinated-symbol check) the code graph |
-| | `forge anchor` | goal-drift check (advisory) — `set`/`show`/`clear` persists the goal across sessions |
-| | `forge diagnose` | doom-loop: same failure 3× → diagnosis + escalation |
-| | `forge lean` | scope-minimality footprint (advisory) |
-| | `forge cost` | real per-day spend · measured stage factors (`--stages`) |
-| **Verification & safety** | `forge verify` | independent gate — tests + hallucinated-symbol flag + provenance |
-| | `forge scan` | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil |
-| | `forge spec` | spec-as-contract drift — init / lock / check |
-| **UI / design** | `forge taste` | pick one visual direction → DESIGN.md |
-| | `forge uicheck` | contrast · fingerprint · design · visual (WCAG · slop+conformance · Playwright) |
-| **Observability** | `forge dash` | localhost-only read-only dashboard over ledger, metrics, blast radius (default port 4242) |
+| Group                      | Command           | Does                                                                                                               |
+| -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                    |
+|                            | `forge sync`      | recompile canonical source → each tool's native files (idempotent)                                                 |
+|                            | `forge doctor`    | pass/fail health check: tools, guards, MCP, drift, update                                                          |
+|                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it                                         |
+|                            | `forge docs`      | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions     |
+|                            | `forge config`    | provider setup — show / switch / add providers, set the default model                                              |
+|                            | `forge harden`    | wire gitleaks pre-commit + sandbox settings                                                                        |
+|                            | `forge catalog`   | Start-Here index of every tool / crew / guard                                                                      |
+|                            | `forge brand`     | print the brand token map                                                                                          |
+| **Memory & team**          | `forge ledger`    | proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import                  |
+|                            | `forge recall`    | cross-session personal memory — list / add / consolidate                                                           |
+|                            | `forge remember`  | durable, repo-committable fact                                                                                     |
+|                            | `forge brain`     | portable project-memory index                                                                                      |
+|                            | `forge cortex`    | self-correcting lessons — `status` / `why`                                                                         |
+|                            | `forge reuse`     | proof-carrying code cache — query / mint / stats                                                                   |
+|                            | `forge handoff`   | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start             |
+|                            | `forge decide`    | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding |
+| **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass                                                                               |
+|                            | `forge preflight` | assumption / info-gap check                                                                                        |
+|                            | `forge route`     | cheapest capable model tier (`route gateway` emits LiteLLM config)                                                 |
+|                            | `forge impact`    | predict blast radius for a symbol or file                                                                          |
+|                            | `forge scope`     | cluster + surface coupled files                                                                                    |
+|                            | `forge imagine`   | consequence sim + minimal dry-run suite (`--run` executes it sandboxed)                                            |
+|                            | `forge context`   | budgeted context assembly + completeness gate                                                                      |
+|                            | `forge atlas`     | build / query / has (hallucinated-symbol check) the code graph                                                     |
+|                            | `forge stack`     | detect this repo's real stack (languages, frameworks, test commands) from its manifests                            |
+|                            | `forge anchor`    | goal-drift check (advisory) — `set`/`show`/`clear` persists the goal across sessions                               |
+|                            | `forge diagnose`  | doom-loop: same failure 3× → diagnosis + escalation                                                                |
+|                            | `forge lean`      | scope-minimality footprint (advisory)                                                                              |
+|                            | `forge cost`      | real per-day spend · measured stage factors (`--stages`)                                                           |
+| **Verification & safety**  | `forge verify`    | independent gate — tests + hallucinated-symbol flag + provenance                                                   |
+|                            | `forge scan`      | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil                                                 |
+|                            | `forge spec`      | spec-as-contract drift — init / lock / check                                                                       |
+| **UI / design**            | `forge taste`     | pick one visual direction → DESIGN.md                                                                              |
+|                            | `forge uicheck`   | contrast · fingerprint · design · visual (WCAG · slop+conformance · Playwright)                                    |
+| **Observability**          | `forge dash`      | localhost-only read-only dashboard over ledger, metrics, blast radius (default port 4242)                          |
 
 **→ Every command with a worked example and real output:
 [`docs/GUIDE.md`](docs/GUIDE.md).**
@@ -215,17 +217,17 @@ outcome, and per-author trust. No server, no sync service — it's just files in
 ## How it compares
 
 Structural differences only — each row is checkable against the named source, and the full
-tables (including what each adjacent tool does *better*) are in
+tables (including what each adjacent tool does _better_) are in
 [`reports/benchmarks.md` → Uniqueness](reports/benchmarks.md#uniqueness--structural-contrasts-with-adjacent-tools):
 
-| Property | Forge | Note stores / gateways / RAG |
-| --- | --- | --- |
-| Memory confidence moved **only by independent oracles** (tests, CI, human) | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`) | note stores keep notes as written |
-| Unreviewed knowledge decays toward *uncertainty*, not deletion | yes — time-decayed Beta posterior; dormant claims kept for audit | notes persist unchanged until deleted |
-| Conflict-free team merge over plain git | yes — join-semilattice, property-tested | per-machine SQLite or a hosted store |
-| Routing decision visible and diffable **before** dispatch | yes — deterministic rubric over `src/model_tiers.json` | gateways decide inside the proxy at request time |
-| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — `SERVE_FLOOR`, `revalidate()` in `src/reuse.js` | plain RAG serves on similarity alone |
-| **What they do better** | — | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually *move traffic* (failover, quotas). Forge is a transparency layer, not a replacement |
+| Property                                                                                           | Forge                                                                          | Note stores / gateways / RAG                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory confidence moved **only by independent oracles** (tests, CI, human)                         | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`) | note stores keep notes as written                                                                                                                                     |
+| Unreviewed knowledge decays toward _uncertainty_, not deletion                                     | yes — time-decayed Beta posterior; dormant claims kept for audit               | notes persist unchanged until deleted                                                                                                                                 |
+| Conflict-free team merge over plain git                                                            | yes — join-semilattice, property-tested                                        | per-machine SQLite or a hosted store                                                                                                                                  |
+| Routing decision visible and diffable **before** dispatch                                          | yes — deterministic rubric over `src/model_tiers.json`                         | gateways decide inside the proxy at request time                                                                                                                      |
+| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — `SERVE_FLOOR`, `revalidate()` in `src/reuse.js`                          | plain RAG serves on similarity alone                                                                                                                                  |
+| **What they do better**                                                                            | —                                                                              | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually _move traffic_ (failover, quotas). Forge is a transparency layer, not a replacement |
 
 ## Honest limits
 
@@ -236,9 +238,9 @@ graph — the impact numbers above are n = 6 hand-labeled cases on one JavaScrip
 substrate's rubrics are heuristic; the MinHash near-match is weak on very short specs (an
 optional embeddings backend — `FORGE_EMBED` — lifts this; MinHash stays the zero-dependency
 default); and `forge cost --stages` reports **measured stages only** — a stage with no
-events says "no data", never a default. What's *asserted* is safe to gate on (repo
+events says "no data", never a default. What's _asserted_ is safe to gate on (repo
 grounding, graph traversal, routing arithmetic, test commands); everything else is
-*advisory*. **Tests and human corrections always win.** Full list:
+_advisory_. **Tests and human corrections always win.** Full list:
 [docs/GUIDE.md → Honest limits](docs/GUIDE.md#honest-limits).
 
 ## Why a cognitive substrate? The white paper
@@ -275,15 +277,15 @@ its root — it does not get the landing page.
 
 ## Documentation
 
-| Doc | What's in it |
-| --- | --- |
-| [`ONBOARDING.md`](ONBOARDING.md) | Five minutes to productive + the design principles. |
-| [`docs/GUIDE.md`](docs/GUIDE.md) | Every command, worked examples, all cases, how to extend. |
-| [`reports/benchmarks.md`](reports/benchmarks.md) | Every measured number, methodology, and `npm run bench` to reproduce. |
-| [`docs/cognitive-substrate/`](docs/cognitive-substrate/) | The white paper, evidence map, ecosystem map, and prototype sources. |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | The four-layer compiler and the cross-tool emit matrix. |
-| [`docs/RELEASING.md`](docs/RELEASING.md) | How releases are cut (tag → npm + GitHub Release). |
-| [`CHANGELOG.md`](CHANGELOG.md) | What changed, per release. |
+| Doc                                                      | What's in it                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`ONBOARDING.md`](ONBOARDING.md)                         | Five minutes to productive + the design principles.                   |
+| [`docs/GUIDE.md`](docs/GUIDE.md)                         | Every command, worked examples, all cases, how to extend.             |
+| [`reports/benchmarks.md`](reports/benchmarks.md)         | Every measured number, methodology, and `npm run bench` to reproduce. |
+| [`docs/cognitive-substrate/`](docs/cognitive-substrate/) | The white paper, evidence map, ecosystem map, and prototype sources.  |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md)                     | The four-layer compiler and the cross-tool emit matrix.               |
+| [`docs/RELEASING.md`](docs/RELEASING.md)                 | How releases are cut (tag → npm + GitHub Release).                    |
+| [`CHANGELOG.md`](CHANGELOG.md)                           | What changed, per release.                                            |
 
 ## Community & support
 
