@@ -24,8 +24,9 @@ const readJson = (root, rel) => {
   }
 };
 
-// Dependency name (substring/exact) → framework label. Ordered specific→general so a
-// Next.js repo reports "Next.js", not just "React". Pure data.
+// Dependency name → framework label. Exact match, except a trailing-slash entry
+// (`@remix-run/`) which matches any dep under that scope. Ordered specific→general.
+// Pure data.
 const NODE_FRAMEWORKS = [
   ["next", "Next.js"],
   ["nuxt", "Nuxt"],
@@ -60,10 +61,24 @@ const PY_FRAMEWORKS = [
   ["tornado", "Tornado"],
 ];
 
+// String blob (Python/Rust/…): plain substring test.
 const hasAny = (hay, pairs) => {
   const out = [];
-  for (const [needle, label] of pairs)
-    if (hay.includes(needle)) out.push(label);
+  for (const [needle, label] of pairs) if (hay.includes(needle)) out.push(label);
+  return [...new Set(out)];
+};
+
+// Node dep NAMES (an array): EXACT element match, or startsWith for a scoped `@scope/`
+// signature. Exact avoids `preact`→React / `next-auth`→Next.js false positives that a
+// naive substring would cause; the prefix form catches `@remix-run/react` etc.
+const hasAnyDep = (names, pairs) => {
+  const out = [];
+  for (const [needle, label] of pairs) {
+    const hit = needle.endsWith("/")
+      ? names.some((n) => n.startsWith(needle))
+      : names.includes(needle);
+    if (hit) out.push(label);
+  }
   return [...new Set(out)];
 };
 
@@ -74,13 +89,10 @@ function detectNode(root, add) {
   add.evidence("package.json");
   const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
   const names = Object.keys(deps);
-  if (
-    existsSync(join(root, "tsconfig.json")) ||
-    names.some((n) => n === "typescript")
-  )
+  if (existsSync(join(root, "tsconfig.json")) || names.some((n) => n === "typescript"))
     add.language("TypeScript");
-  for (const f of hasAny(names, NODE_FRAMEWORKS)) add.framework(f);
-  for (const t of hasAny(names, NODE_TEST)) add.testCmd(runnerCmd(root, t));
+  for (const f of hasAnyDep(names, NODE_FRAMEWORKS)) add.framework(f);
+  for (const t of hasAnyDep(names, NODE_TEST)) add.testCmd(runnerCmd(root, t));
   // package manager from the lockfile present
   if (existsSync(join(root, "pnpm-lock.yaml"))) add.pm("pnpm");
   else if (existsSync(join(root, "yarn.lock"))) add.pm("yarn");
@@ -105,22 +117,17 @@ function detectPython(root, add) {
   const pyproject = read(root, "pyproject.toml");
   const reqs = read(root, "requirements.txt");
   const pipfile = read(root, "Pipfile");
-  const blob = [pyproject, reqs, pipfile]
-    .filter(Boolean)
-    .join("\n")
-    .toLowerCase();
+  const blob = [pyproject, reqs, pipfile].filter(Boolean).join("\n").toLowerCase();
   if (!blob && !existsSync(join(root, "setup.py"))) return;
   add.language("Python");
   if (pyproject) add.evidence("pyproject.toml");
   else if (reqs) add.evidence("requirements.txt");
   else if (pipfile) add.evidence("Pipfile");
   for (const f of hasAny(blob, PY_FRAMEWORKS)) add.framework(f);
-  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini")))
-    add.testCmd("pytest -q");
+  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini"))) add.testCmd("pytest -q");
   else add.testCmd("python -m unittest");
   if (blob.includes("ruff")) add.tool("ruff");
-  if (blob.includes("[tool.uv]") || existsSync(join(root, "uv.lock")))
-    add.pm("uv");
+  if (blob.includes("[tool.uv]") || existsSync(join(root, "uv.lock"))) add.pm("uv");
   else if (pipfile) add.pm("pipenv");
   else if (reqs || pyproject) add.pm("pip");
 }
@@ -176,8 +183,7 @@ function detectPhp(root, add) {
   });
   if (deps.some((d) => d.startsWith("laravel/"))) add.framework("Laravel");
   if (deps.some((d) => d.startsWith("symfony/"))) add.framework("Symfony");
-  if (deps.some((d) => d.includes("phpunit")))
-    add.testCmd("./vendor/bin/phpunit");
+  if (deps.some((d) => d.includes("phpunit"))) add.testCmd("./vendor/bin/phpunit");
 }
 
 function detectJvm(root, add) {
@@ -186,24 +192,18 @@ function detectJvm(root, add) {
   if (pom == null && gradle == null) return;
   const blob = [pom, gradle].filter(Boolean).join("\n").toLowerCase();
   // Kotlin DSL or kotlin plugin → Kotlin, else Java
-  if (existsSync(join(root, "build.gradle.kts")) || blob.includes("kotlin"))
-    add.language("Kotlin");
+  if (existsSync(join(root, "build.gradle.kts")) || blob.includes("kotlin")) add.language("Kotlin");
   add.language("Java");
   if (pom) {
     add.evidence("pom.xml");
     add.pm("Maven");
     add.testCmd("mvn test");
   } else {
-    add.evidence(
-      existsSync(join(root, "build.gradle.kts"))
-        ? "build.gradle.kts"
-        : "build.gradle",
-    );
+    add.evidence(existsSync(join(root, "build.gradle.kts")) ? "build.gradle.kts" : "build.gradle");
     add.pm("Gradle");
     add.testCmd("./gradlew test");
   }
-  if (blob.includes("springframework") || blob.includes("spring-boot"))
-    add.framework("Spring");
+  if (blob.includes("springframework") || blob.includes("spring-boot")) add.framework("Spring");
 }
 
 function detectDotnet(root, add) {

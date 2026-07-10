@@ -11,10 +11,7 @@ import { BRAND } from "./brand.js";
 // The real npm name (scope included) for the `npm i -g` instruction — read, never guessed.
 function npmName(root) {
   try {
-    return (
-      JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name ||
-      BRAND.pkg
-    );
+    return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name || BRAND.pkg;
   } catch {
     return BRAND.pkg;
   }
@@ -32,16 +29,14 @@ function git(root, args) {
   }
 }
 
-const isGitCheckout = (root) =>
-  git(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
+const isGitCheckout = (root) => git(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
 
 // Fetch is the only network step — do it at most once an hour (FETCH_HEAD mtime), so a
 // per-command doctor check never blocks on the network repeatedly.
 function maybeFetch(root, { maxAgeMs = 3_600_000, now = Date.now() } = {}) {
   const fetchHead = join(root, ".git", "FETCH_HEAD");
   try {
-    if (existsSync(fetchHead) && now - statSync(fetchHead).mtimeMs < maxAgeMs)
-      return "cached";
+    if (existsSync(fetchHead) && now - statSync(fetchHead).mtimeMs < maxAgeMs) return "cached";
   } catch {}
   try {
     execFileSync("git", ["fetch", "--quiet"], {
@@ -60,25 +55,15 @@ function maybeFetch(root, { maxAgeMs = 3_600_000, now = Date.now() } = {}) {
  * @param {{root?: string, fetch?: boolean, now?: number}} [opts]
  * @returns {{mode:string, behind:number, current:string, unknown?:boolean, network?:string, upstream?:string}}
  */
-export function updateStatus({
-  root = BRAND.root,
-  fetch = true,
-  now = Date.now(),
-} = {}) {
+export function updateStatus({ root = BRAND.root, fetch = true, now = Date.now() } = {}) {
   const current = BRAND.version;
   if (!isGitCheckout(root)) {
     // Installed via npm (or a bare copy): can't diff commits — updating is `npm i -g`.
     return { mode: "npm-or-copy", behind: 0, current, unknown: true };
   }
   const network = fetch ? maybeFetch(root, { now }) : "skipped";
-  const upstream = git(root, [
-    "rev-parse",
-    "--abbrev-ref",
-    "--symbolic-full-name",
-    "@{u}",
-  ]);
-  if (!upstream)
-    return { mode: "git", behind: 0, current, unknown: true, network };
+  const upstream = git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  if (!upstream) return { mode: "git", behind: 0, current, unknown: true, network };
   const count = git(root, ["rev-list", "--count", "HEAD..@{u}"]);
   const behind = Number(count) || 0;
   return { mode: "git", behind, current, network, upstream };
@@ -117,8 +102,7 @@ export function applyUpdate({ root = BRAND.root } = {}) {
     return {
       ok: false,
       mode: "git",
-      reason:
-        "git pull --ff-only failed (diverged or offline) — resolve manually",
+      reason: "git pull --ff-only failed (diverged or offline) — resolve manually",
       detail: String(e.message || e).slice(-200),
     };
   }

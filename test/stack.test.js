@@ -14,7 +14,10 @@ test("node + Next.js: language, framework, pkg manager, test command", () => {
   const root = tmp();
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ dependencies: { next: "16", react: "19" }, devDependencies: { vitest: "2" } }),
+    JSON.stringify({
+      dependencies: { next: "16", react: "19" },
+      devDependencies: { vitest: "2" },
+    }),
   );
   writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
   const s = detectStack(root);
@@ -23,6 +26,25 @@ test("node + Next.js: language, framework, pkg manager, test command", () => {
   assert.ok(s.frameworks.includes("React"));
   assert.ok(s.packageManagers.includes("pnpm"));
   assert.ok(s.testCommands.includes("npx vitest"));
+});
+
+test("Node signatures: scoped-prefix (Remix) matches; exact avoids preact→React", () => {
+  const remix = tmp();
+  writeFileSync(
+    join(remix, "package.json"),
+    JSON.stringify({
+      dependencies: { "@remix-run/react": "2", "@remix-run/node": "2" },
+    }),
+  );
+  assert.ok(detectStack(remix).frameworks.includes("Remix"), "scoped @remix-run/ prefix matches");
+
+  const preact = tmp();
+  writeFileSync(join(preact, "package.json"), JSON.stringify({ dependencies: { preact: "10" } }));
+  const s = detectStack(preact);
+  assert.ok(
+    !s.frameworks.includes("React"),
+    "preact must NOT be misreported as React (exact match)",
+  );
 });
 
 test("python + Django: pytest + framework from requirements", () => {
@@ -77,7 +99,10 @@ test("empty repo → empty but safe; corrupt manifest never throws", () => {
 test("CLI: forge stack --json emits the detected stack", () => {
   const root = tmp();
   writeFileSync(join(root, "go.mod"), "module x\n\ngo 1.22\n");
-  const r = spawnSync("node", [CLI, "stack", "--json"], { cwd: root, encoding: "utf8" });
+  const r = spawnSync("node", [CLI, "stack", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  });
   assert.equal(r.status, 0);
   const parsed = JSON.parse(r.stdout);
   assert.deepEqual(parsed.languages, ["Go"]);

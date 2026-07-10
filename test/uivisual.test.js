@@ -70,10 +70,7 @@ test("resolveTarget: loopback http allowed, non-local refused by default, --remo
   assert.match(refused.reason, /--remote/);
   // a lookalike host must NOT pass the .localhost suffix rule
   assert.equal(resolveTarget("http://evil-localhost.example.com").ok, false);
-  assert.equal(
-    resolveTarget("https://example.com/page", { remote: true }).ok,
-    true,
-  );
+  assert.equal(resolveTarget("https://example.com/page", { remote: true }).ok, true);
   // non-web schemes are never navigated
   assert.equal(resolveTarget("ftp://example.com/x").ok, false);
   assert.equal(resolveTarget("javascript:alert(1)").ok, false);
@@ -119,10 +116,7 @@ test("computedStylesToCss: maps records onto fingerprintText's exact vector shap
   assert.equal(fp.shadowLevels, 0); // "none" never becomes a level
   // 3 colors: fg, panel bg, ember — the rgba(0,0,0,0) background is filtered
   assert.equal(fp.paletteSize, 3);
-  assert.ok(
-    !fp.palette.some((c) => c.l === 0 && c.s === 0),
-    "transparent must not read as black",
-  );
+  assert.ok(!fp.palette.some((c) => c.l === 0 && c.s === 0), "transparent must not read as black");
 });
 
 test("computedStylesToCss: dedupes identical records, skips empty ones", () => {
@@ -130,12 +124,7 @@ test("computedStylesToCss: dedupes identical records, skips empty ones", () => {
   const twice = computedStylesToCss([DASH_LIKE[0], { ...DASH_LIKE[0] }]);
   assert.equal(twice, one);
   assert.equal(computedStylesToCss([]), "");
-  assert.equal(
-    computedStylesToCss([
-      { color: "", boxShadow: "none", gap: "normal normal" },
-    ]),
-    "",
-  );
+  assert.equal(computedStylesToCss([{ color: "", boxShadow: "none", gap: "normal normal" }]), "");
 });
 
 // ---------------------------------------------------------------------------
@@ -184,11 +173,7 @@ test("cli: uicheck visual usage errors (no target, valueless --taste, unknown ta
   const dangling = runCli(["uicheck", "visual", DASH, "--taste"], tmp(), env);
   assert.equal(dangling.status, 1);
   // an unknown EXPLICIT taste fails before rendering, mirroring `design --taste`
-  const unknown = runCli(
-    ["uicheck", "visual", DASH, "--taste", "nope"],
-    tmp(),
-    env,
-  );
+  const unknown = runCli(["uicheck", "visual", DASH, "--taste", "nope"], tmp(), env);
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /unknown taste profile "nope"/);
 });
@@ -210,9 +195,7 @@ test("visualGate: unresolvable target is a plain error, not a skip", async () =>
 test("live: renders dash.html and the computed styles fingerprint to the same system the static gate sees", async (t) => {
   const pw = await resolvePlaywright();
   if (!pw) {
-    t.skip(
-      "no playwright runtime — set FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core",
-    );
+    t.skip("no playwright runtime — set FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core");
     return;
   }
   const root = tmp();

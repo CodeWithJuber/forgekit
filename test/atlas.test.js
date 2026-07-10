@@ -90,7 +90,10 @@ test("impact (llm on): a proposed edge survives only if real + grep-verified", (
     verify: (f) => f === "a.js",
   });
   assert.ok(!kept.impactedFiles.includes("ghost.js"), "fabricated file dropped");
-  const blind = impact(atlas, "computeTax", { llm: true, run: () => '{"files":["a.js"]}' });
+  const blind = impact(atlas, "computeTax", {
+    llm: true,
+    run: () => '{"files":["a.js"]}',
+  });
   assert.deepEqual(blind.llmVerified, [], "no verify predicate → nothing added blind");
 });
 
@@ -203,14 +206,30 @@ test("atlas indexes the broadened language set (Ruby, C#, PHP, Kotlin, Swift, C/
   );
 });
 
-test("the Java/C# method grammar is linear on pathological input (ReDoS guard)", () => {
+test("the Java/C#/C grammars are linear on pathological input (ReDoS guard)", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
   // `public static public static …` with no `(` forced polynomial backtracking before
-  // the {0,6}-bounded, whitespace-anchored rewrite. Must stay well under a second.
+  // the {0,6}-bounded, whitespace-anchored rewrite.
   writeFileSync(join(root, "Bad.cs"), `${"public static ".repeat(5000)}\n`);
   writeFileSync(join(root, "Bad.java"), `public int name ${"a ".repeat(20000)}\n`);
+  // A header of prototype DECLARATIONS (no brace) made the old C regex scan the whole
+  // file from every line start → O(n²) (13s on 445 KB). The line-anchored form is linear.
+  let h = "";
+  for (let i = 0; i < 12000; i += 1) h += `extern int api_func_${i} arg arg arg\n`;
+  writeFileSync(join(root, "big.h"), `${h}int main(argc\n`);
   const t = Date.now();
   build({ root });
   const ms = Date.now() - t;
   assert.ok(ms < 1000, `build stayed linear (${ms}ms)`);
+});
+
+test("C function DEFINITIONS index but prototype declarations do not (same-line brace)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  writeFileSync(
+    join(root, "m.c"),
+    "int add(int a, int b) {\n  return a + b;\n}\nstatic char *dup(char *s);\n",
+  );
+  const names = build({ root }).symbols.map((s) => s.name);
+  assert.ok(names.includes("add"), "definition indexed");
+  assert.ok(!names.includes("dup"), "a bare prototype (ends in ;) is not a definition");
 });

@@ -42,10 +42,7 @@ test("failureSignature distinguishes error class, file, and symbol", () => {
     file: "a.js",
     symbol: "f",
   });
-  assert.notEqual(
-    base,
-    failureSignature("RangeError: y overflow", { file: "a.js", symbol: "f" }),
-  );
+  assert.notEqual(base, failureSignature("RangeError: y overflow", { file: "a.js", symbol: "f" }));
   assert.notEqual(
     base,
     failureSignature("TypeError: x is undefined", {
@@ -63,9 +60,7 @@ test("failureSignature distinguishes error class, file, and symbol", () => {
 });
 
 test("normalizeError keeps the basename (signal) while dropping the machine prefix", () => {
-  const n = normalizeError(
-    "Error at /home/ci/build/src/auth.js:3:1 after 120ms",
-  );
+  const n = normalizeError("Error at /home/ci/build/src/auth.js:3:1 after 120ms");
   assert.match(n, /auth\.js/);
   assert.doesNotMatch(n, /home|ci|build|120|:3/);
 });
@@ -103,14 +98,9 @@ test("recordFailure only counts within the last RING_SIZE entries", () => {
   const f = { errorText: "old failure", file: "src/a.js" };
   recordFailure(root, { ...f, t: 1 });
   recordFailure(root, { ...f, t: 2 });
-  for (let i = 0; i < RING_SIZE; i++)
-    recordFailure(root, { errorText: `noise ${i}`, t: 3 + i });
+  for (let i = 0; i < RING_SIZE; i++) recordFailure(root, { errorText: `noise ${i}`, t: 3 + i });
   const r = recordFailure(root, { ...f, t: 999 });
-  assert.equal(
-    r.count,
-    1,
-    "hits pushed out of the ring no longer count toward thrash",
-  );
+  assert.equal(r.count, 1, "hits pushed out of the ring no longer count toward thrash");
 });
 
 test("recordFailure never persists a secret-shaped error head", () => {
@@ -142,11 +132,7 @@ test("diagnose stays quiet below the thrash threshold", () => {
     assert.equal(r.count, i);
     assert.equal(r.escalate, undefined);
   }
-  assert.equal(
-    loadClaims(repoLedger(root)).length,
-    0,
-    "no claim minted before thrash",
-  );
+  assert.equal(loadClaims(repoLedger(root)).length, 0, "no claim minted before thrash");
 });
 
 test("diagnose at the 3rd recurrence mints a diagnosis claim and says STOP + escalate one tier", () => {
@@ -185,16 +171,8 @@ test("diagnose is idempotent — further recurrences resolve to the SAME claim",
   for (let i = 1; i <= THRASH_K; i++) third = diagnose(root, { ...f, t: i });
   const fourth = diagnose(root, { ...f, t: THRASH_K + 1 });
   assert.equal(fourth.thrash, true);
-  assert.equal(
-    fourth.claimId,
-    third.claimId,
-    "content addressing dedupes the mint",
-  );
-  assert.equal(
-    loadClaims(repoLedger(root)).length,
-    1,
-    "no duplicate diagnosis claims",
-  );
+  assert.equal(fourth.claimId, third.claimId, "content addressing dedupes the mint");
+  assert.equal(loadClaims(repoLedger(root)).length, 1, "no duplicate diagnosis claims");
 });
 
 test("diagnose prefers the caller's root-cause note over the error head", () => {
@@ -216,20 +194,12 @@ test("diagnose prefers the caller's root-cause note over the error head", () => 
 // ---------------------------------------------------------------------------
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
-const runCli = (args, cwd) =>
-  spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
+const runCli = (args, cwd) => spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
 
 test("forge diagnose: records, then escalates on the 3rd identical failure", () => {
   const cwd = fixture();
   mkdirSync(join(cwd, ".forge"), { recursive: true });
-  const args = [
-    "diagnose",
-    "TypeError: boom",
-    "--file",
-    "src/a.js",
-    "--symbol",
-    "f",
-  ];
+  const args = ["diagnose", "TypeError: boom", "--file", "src/a.js", "--symbol", "f"];
   let out;
   for (let i = 0; i < THRASH_K; i++) out = runCli(args, cwd);
   assert.equal(out.status, 0, "advisory — never fails the process");
