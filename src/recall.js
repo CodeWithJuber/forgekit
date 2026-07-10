@@ -4,18 +4,17 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-
-// Secret-refusal now lives in the PCM ledger core (ledger.js) so NO claim kind can
-// persist a credential; re-exported here because recall is where callers historically
-// imported it from (lessons_store, guards, tests). See ledger.js for the precision
-// rationale (credential formats + key-assigned-to-value, never a bare English mention).
-import { SECRET_RE } from "./ledger.js";
 // The merged read helper (P2 read flip). Import cycle note: ledger_read → lessons_store
 // → recall is function-level only (no module-eval use on either side), so ESM resolves
 // it safely — same pattern as lessons_store's own SECRET_RE import from here.
 import { mergeFactSlugs } from "./ledger_read.js";
+// Secret-refusal now lives in secrets.js (format grammars + entropy gate) so no
+// store — and no shell guard — can disagree; re-exported here because recall is where
+// callers historically imported it from (lessons_store, guards, tests). See secrets.js
+// for the precision rationale (never refuse a bare English mention like "password").
+import { hasSecret, SECRET_RE } from "./secrets.js";
 
-export { SECRET_RE };
+export { hasSecret, SECRET_RE };
 
 export function defaultStore() {
   return join(process.env.FORGE_HOME || join(homedir(), ".forge"), "recall");
@@ -26,7 +25,7 @@ const factsDir = (store) => join(store, "facts");
 import { slug as slugify } from "./util.js";
 
 export function add(store, name, body) {
-  if (SECRET_RE.test(`${name}\n${body}`)) {
+  if (hasSecret(`${name}\n${body}`)) {
     return {
       ok: false,
       reason: "refused: looks like a secret/credential — store a pointer, not the value",

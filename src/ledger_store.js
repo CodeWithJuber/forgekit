@@ -20,11 +20,11 @@ import {
   claimId,
   DORMANT_VAL,
   emptyState,
+  hasSecret,
   liveClaims,
   mergeStates,
   mintClaim,
   ORACLES,
-  SECRET_RE,
   sealRecord,
   sortRecords,
   val,
@@ -116,7 +116,7 @@ export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
     return { ok: false, reason: "claim id does not match canonical content hash" };
   const text = claimBytes(claim);
-  if (SECRET_RE.test(text))
+  if (hasSecret(text))
     return { ok: false, reason: "refused: claim looks like it contains a secret/credential" };
   const path = claimPath(dir, claim.id);
   const already = existsSync(path);
@@ -295,7 +295,7 @@ export function verify(dir) {
       claims++;
       ids.push(id);
     }
-    if (SECRET_RE.test(raw)) issues.push(`claim ${id}: contains secret-like content`);
+    if (hasSecret(raw)) issues.push(`claim ${id}: contains secret-like content`);
   }
   for (const log of LOGS) {
     const logRoot = join(dir, log);
@@ -322,7 +322,7 @@ export function verify(dir) {
             issues.push(`${where}: recorded weight ${o.w} != oracle table ${ORACLES[o.oracle].w}`);
           else outcomes++;
         }
-        if (SECRET_RE.test(line)) issues.push(`${where}: secret-like content`);
+        if (hasSecret(line)) issues.push(`${where}: secret-like content`);
       }
     }
   }

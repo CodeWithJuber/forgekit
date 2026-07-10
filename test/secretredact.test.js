@@ -36,3 +36,22 @@ test("secret-redact stays silent when nothing matches", () => {
   assert.equal(r.code, 0);
   assert.equal(r.out.trim(), "");
 });
+
+// The guard imports src/secrets.js — the shell path and the JS refusal sites share
+// ONE detector, so they can never disagree. These two tests pin that parity.
+test("secret-redact matches redactSecrets byte-for-byte (shared implementation)", async () => {
+  const { redactSecrets } = await import("../src/secrets.js");
+  const input = `key=${fakeAnthropic("AAAAbbbbCCCCddddEEEEffff")} then DB_PASSWORD=hunter2-value done`;
+  const r = run({ tool_response: input });
+  assert.equal(r.code, 0);
+  const emitted = JSON.parse(r.out).hookSpecificOutput.updatedToolOutput;
+  assert.equal(emitted, redactSecrets(input));
+});
+
+test("secret-redact catches an unknown-vendor high-entropy token (beyond the old sed list)", () => {
+  const tok = ["Zq7Rt2", "Xk9Lp4", "Vm1Nc8", "Yb5Ws3", "Hd6Fg0"].join("");
+  const r = run({ tool_response: `issued credential ${tok} ok` });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /REDACTED/);
+  assert.doesNotMatch(r.out, new RegExp(tok));
+});

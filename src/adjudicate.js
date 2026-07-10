@@ -14,7 +14,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { buildHttpRunner as httpRunner } from "./llm.js";
 import { MODELS } from "./model_tiers.js";
 import { envModelOverride } from "./providers.js";
-import { SECRET_RE } from "./recall.js";
+import { hasSecret } from "./recall.js";
 
 /**
  * Is the LLM proposer layer active for this call? Explicit opt-in wins; env is the default.
@@ -77,9 +77,9 @@ export function extractJson(text) {
  */
 export function adjudicate({ prompt, parse, run = buildRunner() }) {
   try {
-    if (SECRET_RE.test(String(prompt))) return null; // never send a secret to the model
+    if (hasSecret(prompt)) return null; // never send a secret to the model
     const raw = run(prompt);
-    if (SECRET_RE.test(String(raw))) return null; // never trust a reply that leaked one back
+    if (hasSecret(raw)) return null; // never trust a reply that leaked one back
     const obj = extractJson(raw);
     if (obj == null) return null;
     const parsed = parse(obj);

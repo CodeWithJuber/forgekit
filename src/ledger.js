@@ -14,15 +14,15 @@
 //    logs. That is what makes every file either byte-identical across teammates or
 //    union-mergeable — the join-semilattice property is structural, not aspirational.
 //  - Unreviewed claims decay toward the PRIOR (0.5, uncertainty), not toward false.
+import { hasSecret } from "./secrets.js";
 import { contentHash } from "./util.js";
 
-// Anything matching this is refused at mint — store a pointer to where the secret
-// lives, never the value. Moved here from recall.js (which re-exports it) so NO claim
-// kind can persist a credential. See recall.js history for the precision rationale:
-// known credential formats, plus a secret-ish key ASSIGNED to a value (a bare English
-// mention like "implement password hashing" must NOT be refused).
-export const SECRET_RE =
-  /(-----BEGIN |\bghp_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bsk-[A-Za-z0-9_-]{16,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{20,}|\bya29\.[A-Za-z0-9._-]+|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AKIA[0-9A-Z]{16}|\b[\w-]*(?:api[_-]?key|secret|passwd|password|token)[\w-]*["']?\s*[:=]\s*["']?\S)/i;
+// Anything secret-shaped is refused at mint — store a pointer to where the secret
+// lives, never the value. Detection lives in secrets.js (format grammars + entropy
+// gate) so NO claim kind — and no shell guard — can disagree about what a secret is.
+// SECRET_RE stays re-exported here because recall.js/lessons_store.js/tests
+// historically import it from this module.
+export { hasSecret, SECRET_RE } from "./secrets.js";
 
 export const KINDS = [
   "lesson", // a corrected behavior (cortex)
@@ -121,7 +121,7 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
   const nBody = JSON.parse(JSON.stringify(body));
   const nScope = JSON.parse(JSON.stringify(scope));
   const canon = canonicalize({ body: nBody, kind, scope: nScope });
-  if (SECRET_RE.test(canon))
+  if (hasSecret(canon))
     return {
       ok: false,
       reason: "refused: looks like a secret/credential — store a pointer, not the value",

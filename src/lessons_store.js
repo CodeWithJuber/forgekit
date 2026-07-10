@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { SECRET_RE } from "./recall.js";
+import { hasSecret } from "./recall.js";
 
 export const lessonsDir = (root = process.cwd()) => join(root, ".forge", "lessons");
 
@@ -84,7 +84,7 @@ export function parse(text) {
 /** Persist one lesson. Refuses secret-like content (store a pointer, never the value). */
 export function save(root, lesson) {
   const text = serialize(lesson);
-  if (SECRET_RE.test(text)) {
+  if (hasSecret(text)) {
     return {
       ok: false,
       reason: "refused: lesson looks like it contains a secret/credential",
