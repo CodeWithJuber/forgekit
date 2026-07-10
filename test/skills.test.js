@@ -39,3 +39,26 @@ test("every crew agent declares name + description", () => {
 test("verifier crew is diff/review scoped", () => {
   assert.match(read("global/crew/verifier.md").toLowerCase(), /diff|review/);
 });
+
+test("end-to-end skills (handoff / sync-docs / catchup) have valid frontmatter naming their command", () => {
+  for (const [skill, cmd] of [
+    ["handoff", "forge handoff"],
+    ["sync-docs", "forge docs sync"],
+    ["catchup", "forge decide"],
+  ]) {
+    const md = read(`global/tools/${skill}/SKILL.md`);
+    const fm = frontmatter(md);
+    assert.equal(fm?.name, skill, `${skill} frontmatter name`);
+    assert.ok(fm?.description, `${skill} has description`);
+    assert.ok(md.includes(cmd), `${skill} body references \`${cmd}\``);
+  }
+});
+
+test("doc-sync crew agent declares frontmatter and never edits code", () => {
+  const md = read("global/crew/doc-sync.md");
+  const fm = frontmatter(md);
+  assert.equal(fm?.name, "doc-sync");
+  assert.ok(fm?.description, "doc-sync has description");
+  assert.match(md, /forge docs sync/);
+  assert.match(md, /never edit code/i);
+});

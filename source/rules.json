@@ -24,6 +24,15 @@
       ]
     },
     {
+      "id": "end-to-end",
+      "title": "End-to-end completeness",
+      "rules": [
+        "A change is DONE only when code, tests, docs, and session state moved together: run `forge docs sync` to sweep the diff for stale doc mentions, and `forge handoff \"<done>\" --next \"<next>\"` before stopping. A Stop gate enforces this floor — code moved with nothing following blocks once, with the repair checklist.",
+        "Never assume silently: answer preflight's clarifying questions, or proceed knowing the assumption is RECORDED to the session log and resurfaces in the handoff — verify it before claiming done.",
+        "Record non-obvious choices with `forge decide \"<decision> — <reason>\"`; read `.forge/decisions.md` (or bare `forge decide`) before re-deciding anything a past session settled."
+      ]
+    },
+    {
       "id": "reuse",
       "title": "Reuse & dependencies",
       "rules": [

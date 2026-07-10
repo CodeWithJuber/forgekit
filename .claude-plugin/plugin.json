@@ -11,6 +11,7 @@
   "keywords": ["config", "cross-tool", "agents-md", "ai-coding", "claude-code", "cognitive-substrate"],
   "skills": "./global/tools",
   "agents": [
+    "./global/crew/doc-sync.md",
     "./global/crew/frontend-verifier.md",
     "./global/crew/independent-reviewer.md",
     "./global/crew/scout.md",
