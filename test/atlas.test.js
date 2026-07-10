@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -114,4 +114,52 @@ test("markdown docs become graph nodes whose references make them impact depende
   // Change the file → same answer through the module-path reference.
   const byFile = impact(atlas, "src.js");
   assert.ok(byFile.impactedFiles.includes("GUIDE.md"), JSON.stringify(byFile.impactedFiles));
+});
+
+test("config artifacts become graph nodes; a code change lists its CI/config dependents", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src", "val.js"), "export function validate(x){ return !!x }\n");
+  writeFileSync(
+    join(root, ".github", "workflows", "ci.yml"),
+    "jobs:\n  test:\n    steps:\n      - run: node src/val.js\n",
+  );
+  writeFileSync(join(root, "Dockerfile"), "FROM node:20\nCOPY src/val.js /app/val.js\n");
+  writeFileSync(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
+  mkdirSync(join(root, ".hidden"));
+  writeFileSync(join(root, ".hidden", "x.yml"), "a: src/val.js\n");
+  const atlas = build({ root });
+  assert.ok(
+    atlas.nodes.some((n) => n.kind === "config" && n.file === ".github/workflows/ci.yml"),
+    "workflow is a config node",
+  );
+  assert.ok(
+    atlas.nodes.some((n) => n.kind === "config" && n.file === "Dockerfile"),
+    "Dockerfile is a config node",
+  );
+  assert.ok(
+    !atlas.nodes.some((n) => n.file === "package-lock.json"),
+    "lockfiles are generated churn, never graphed",
+  );
+  assert.ok(
+    !atlas.nodes.some((n) => n.file?.startsWith(".hidden")),
+    "other dot-dirs stay out of the walk",
+  );
+  const r = impact(atlas, "src/val.js");
+  assert.ok(r.impactedFiles.includes(".github/workflows/ci.yml"), JSON.stringify(r.impactedFiles));
+  assert.ok(
+    r.impactedFiles.includes("Dockerfile"),
+    "the Dockerfile copying the file is a dependent",
+  );
+});
+
+test("a config edit flips isStale (configs are tracked like any other artifact)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
+  writeFileSync(join(root, "app.js"), "export function main(){}\n");
+  writeFileSync(join(root, "deploy.yml"), "run: node app.js\n");
+  const atlas = build({ root });
+  assert.equal(isStale(root, atlas), false);
+  writeFileSync(join(root, "deploy.yml"), "run: node app.js --prod\n");
+  assert.equal(isStale(root, atlas), true, "config content change detected");
 });

@@ -133,11 +133,26 @@ async function run(argv) {
     return;
   }
   if (cmd === "docs") {
-    // Self-check of the forge package's own docs against its code (commands table,
-    // env reads, MCP registry, CHANGELOG). `forge docs check` is the only subcommand.
+    const json = argv.includes("--json");
+    const sub = argv.slice(1).filter((a) => !a.startsWith("--"))[0] || "check";
+    // `sync` sweeps THIS repo's diff for stale doc mentions (advisory by default —
+    // it runs mid-repair from the completion gate's checklist; --strict for CI).
+    if (sub === "sync") {
+      const { docsSyncReport, renderDocsSync } = await import("./docs_sync.js");
+      const baseIdx = argv.indexOf("--base");
+      const r = docsSyncReport(process.cwd(), {
+        base: baseIdx >= 0 ? argv[baseIdx + 1] : undefined,
+      });
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else console.log(renderDocsSync(r));
+      if (r.error || (argv.includes("--strict") && r.stale.length)) process.exitCode = 1;
+      return;
+    }
+    // `check` — self-check of the forge package's own docs against its code (commands
+    // table, env reads, MCP registry, CHANGELOG).
     const { docsCheck } = await import("./docs_check.js");
     const r = docsCheck();
-    if (argv.includes("--json")) {
+    if (json) {
       console.log(JSON.stringify(r, null, 2));
       if (!r.ok) process.exitCode = 1;
       return;
@@ -1122,6 +1137,66 @@ async function run(argv) {
     const r = goalDrift(process.cwd(), goal);
     console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
     return; // advisory — never fails the process
+  }
+  if (cmd === "handoff") {
+    const { writeState } = await import("./handoff.js");
+    const json = argv.includes("--json");
+    const args = argv.slice(1).filter((a) => a !== "--json");
+    // Repeatable flags collect rows; positionals are "done" rows. Piped stdin (one row
+    // per line) covers agents that assemble the summary programmatically.
+    const fields = { done: [], next: [], gotchas: [], criteria: [] };
+    const FLAG = { "--next": "next", "--gotcha": "gotchas", "--criteria": "criteria" };
+    for (let i = 0; i < args.length; i += 1) {
+      if (FLAG[args[i]]) fields[FLAG[args[i]]].push(args[++i] ?? "");
+      else if (args[i] === "--phase") fields.phase = args[++i] ?? "";
+      else fields.done.push(args[i]);
+    }
+    if (!fields.done.length && !process.stdin.isTTY) {
+      try {
+        const { readFileSync } = await import("node:fs");
+        fields.done = readFileSync(0, "utf8").split("\n");
+      } catch {}
+    }
+    const r = writeState(process.cwd(), fields);
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    if (!r.ok) {
+      console.error(
+        `${BRAND.cli} handoff: ${r.reason}\nusage: ${BRAND.cli} handoff "<done>" [--next "<step>"] [--gotcha "<trap>"] [--criteria "<check>"] [--phase <p>]`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `  state written: ${r.path} (${r.lines} lines)\n  (re-injected at every session start — the next session resumes instead of re-assuming)`,
+    );
+    return;
+  }
+  if (cmd === "decide") {
+    const { appendDecision, listDecisions } = await import("./decide.js");
+    const json = argv.includes("--json");
+    const text = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!text) {
+      const rows = listDecisions(process.cwd(), { limit: 10 });
+      if (json) return console.log(JSON.stringify(rows, null, 2));
+      console.log(
+        rows.length
+          ? rows.map((d) => `  ${d.id} (${d.date}): ${d.text}`).join("\n")
+          : `  no decisions recorded — ${BRAND.cli} decide "<what was decided — why>"`,
+      );
+      return;
+    }
+    const r = appendDecision(process.cwd(), text);
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    if (!r.ok) {
+      console.error(`${BRAND.cli} decide: ${r.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`  recorded ${r.id}: ${r.text}`);
+    return;
   }
   if (cmd === "diagnose") {
     const { diagnose, THRASH_K } = await import("./diagnose.js");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -60,4 +60,34 @@ test("session-start on a fresh repo injects nothing (no noise)", () => {
   const r = feed("session-start", { session_id: "s", cwd: root });
   assert.equal(r.status, 0);
   assert.equal(r.stdout.trim(), "");
+});
+
+test("session-start anchors a git baseline and injects state + repo history", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-entry-"));
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  git("init", "-q");
+  git("config", "user.email", "forge@test.invalid");
+  git("config", "user.name", "forge-test");
+  writeFileSync(join(root, "a.js"), "export const one = 1;\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "anchor fixture");
+  const r = feed("session-start", { session_id: "anchor-1", cwd: root });
+  assert.equal(r.status, 0);
+  const base = join(root, ".forge", "sessions", "anchor-1.base");
+  assert.ok(existsSync(base), "baseline recorded at session start");
+  const sha = readFileSync(base, "utf8").trim();
+  assert.match(sha, /^[0-9a-f]{40}$/);
+  const out = JSON.parse(r.stdout);
+  assert.match(
+    out.hookSpecificOutput.additionalContext,
+    /anchor fixture/,
+    "recent commits injected",
+  );
+  // Re-fired session-start (resume) keeps the anchor even after a new commit.
+  writeFileSync(join(root, "a.js"), "export const one = 2;\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "later commit");
+  feed("session-start", { session_id: "anchor-1", cwd: root });
+  assert.equal(readFileSync(base, "utf8").trim(), sha, "resume never moves the anchor");
 });

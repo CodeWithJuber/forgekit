@@ -7,8 +7,13 @@ import { join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
 import { contentHash, slug } from "./util.js";
 
-const sessionFile = (root, sid) =>
-  join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.jsonl`);
+// One naming rule for every per-session artifact (event log, git baseline, gate marker,
+// last-intent) — the sanitized sid plus an extension, all under .forge/sessions/ so one
+// prune sweep ages them together.
+export const sessionPath = (root, sid, ext = "jsonl") =>
+  join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.${ext}`);
+
+const sessionFile = (root, sid) => sessionPath(root, sid);
 
 /** Append one normalized event to a session's log (called by capture hooks). */
 export function appendSessionEvent(root, sid, event) {
