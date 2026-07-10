@@ -28,10 +28,11 @@ export function getGoal(root) {
   const p = goalPath(root);
   if (!existsSync(p)) return null;
   try {
-    const goal = readFileSync(p, "utf8")
-      .replace(/^# Goal\s*/, "")
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .trim();
+    // Everything before the first provenance comment IS the goal — a slice, not a
+    // comment-stripping replace (CodeQL: replace can leave a partial `<!--` behind).
+    const raw = readFileSync(p, "utf8").replace(/^# Goal\s*/, "");
+    const cut = raw.indexOf("<!--");
+    const goal = (cut === -1 ? raw : raw.slice(0, cut)).trim();
     return goal || null;
   } catch {
     return null;
