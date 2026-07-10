@@ -137,7 +137,17 @@ const globToRe = (glob) => {
   return new RegExp(`^${body}$`);
 };
 
-/** Token footprint of a keyword list ("src/auth/login.js" → {src, auth, login, js})
+// Tokens every path shares — matching on them would make a lesson keyed to
+// src/auth/login.js "relevant" to every .js file under src/ (review-verified bug:
+// the shared {src, js} tokens alone scored 0.15, injecting unrelated lessons and
+// mis-attributing outcomes). Extensions and layout boilerplate carry no topic.
+const GENERIC_PATH_TOKENS = new Set(
+  "src lib app test tests spec specs index main utils util js ts jsx tsx mjs cjs py go rs java rb php md json yml yaml".split(
+    " ",
+  ),
+);
+
+/** Content-token footprint of a keyword list ("src/auth/login.js" → {auth, login})
  *  so two keywords about the same module overlap even when the strings differ. */
 const keywordGrams = (words) => {
   const grams = new Set();
@@ -145,7 +155,7 @@ const keywordGrams = (words) => {
     for (const t of String(w)
       .toLowerCase()
       .split(/[^a-z0-9]+/)) {
-      if (t.length > 1) grams.add(t);
+      if (t.length > 1 && !GENERIC_PATH_TOKENS.has(t)) grams.add(t);
     }
   }
   return grams;

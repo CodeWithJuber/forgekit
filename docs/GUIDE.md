@@ -688,7 +688,9 @@ Nothing to wire — the plugin's [`hooks/hooks.json`](../hooks/hooks.json) insta
 > `forge substrate "<task>" --json` (or the MCP tool `substrate_check`). If
 > `okToProceed` is false, ask the questions first; read `impact.impactedFiles` before editing.
 
-…and exposes the substrate as **19 MCP tools** any MCP-capable agent can call directly:
+…and exposes the substrate as **19 MCP tools** any MCP-capable agent can call directly
+(the stdio server is launched with `forge cortex-mcp`, wired automatically via the
+emitted `.mcp.json`):
 
 <a id="mcp-tools"></a>
 

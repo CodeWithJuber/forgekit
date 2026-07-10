@@ -38,26 +38,34 @@ const ASSIGNED = `\\b[\\w-]*${KEYISH}[\\w-]*["']?\\s*[:=]\\s*["']?\\S`;
  *  New code should call hasSecret(), which adds the entropy gate. */
 export const SECRET_RE = new RegExp(`(${[...FORMATS, ASSIGNED].join("|")})`, "i");
 
-// (ii) Entropy gate thresholds. 20 chars is below every real credential length but
-// above almost all identifiers; 3.9 bits/char sits between English-like tokens
-// (camelCase identifiers ≈ 3.5–3.8 even with digits) and sampled random base64/62
-// tokens (≥ 4.2 at 20+ chars). Both are exported so tests pin the calibration.
+// (ii) Entropy gate thresholds, exported so tests pin the calibration. Entropy alone
+// cannot separate long camelCase identifiers from keys (both clear 4 bits/char at
+// 25+ chars — measured, not assumed), so the gate also requires SCATTERED digits:
+// ≥3 separate digit runs. Random 62-alphabet tokens have ~16% digits spread
+// throughout (P(<3 runs at 20+ chars) is small); identifiers put digits in one or
+// two lumps (`UserProfileCard2`, `convertBase64ToUtf8`). Precision first — a rare
+// low-digit credential slipping past this gate still hits the format grammars.
 export const ENTROPY_MIN_LEN = 20;
 export const ENTROPY_MIN_BITS = 3.9;
+export const ENTROPY_MIN_DIGIT_RUNS = 3;
 
-// Candidate extraction: contiguous base64-class runs. Parsing, not a decision.
-const TOKEN_RE = /[A-Za-z0-9+/=_-]{20,}/g;
+// Candidate extraction: contiguous base64-class runs. Deliberately excludes `/` so a
+// file path splits into segments instead of scoring as one token — paths were the #1
+// false positive (a redacted path corrupts the very tool output the guard protects).
+const TOKEN_RE = /[A-Za-z0-9+=_-]{20,}/g;
 
 /**
- * Is this bare token secret-shaped by math alone? Requires all three of: length,
- * mixed charset (lower AND upper AND digit — excludes hex/UUID/camelCase words
- * without digits), and near-random Shannon entropy.
+ * Is this bare token secret-shaped by math alone? Requires all of: length, mixed
+ * charset (lower AND upper AND digit — excludes hex/UUID/camelCase-without-digits),
+ * ≥3 scattered digit runs (excludes identifiers with a lone version/counter digit),
+ * and near-random Shannon entropy.
  * @param {string} tok
  */
 export function isHighEntropyToken(tok) {
   const s = String(tok);
   if (s.length < ENTROPY_MIN_LEN) return false;
   if (!(/[a-z]/.test(s) && /[A-Z]/.test(s) && /[0-9]/.test(s))) return false;
+  if ((s.match(/[0-9]+/g) || []).length < ENTROPY_MIN_DIGIT_RUNS) return false;
   return shannonEntropy(s) >= ENTROPY_MIN_BITS;
 }
 
@@ -76,10 +84,18 @@ export function hasSecret(text) {
 // Redaction machinery — used by the secret-redact guard (via node import) and any
 // JS caller that wants to keep surrounding text. PEM blocks are masked whole;
 // assigned values keep their key (context stays readable, value is gone).
-const PEM_BLOCK_G = /-----BEGIN [A-Z ]*-----[\s\S]*?(?:-----END [A-Z ]*-----|$)/g;
+// Case-insensitive and tolerant of a truncated header/footer — hasSecret's PEM
+// branch is case-insensitive too, and a detected-but-unredacted block would leak
+// straight through the guard ("one truth, two verbs" means these must agree).
+const PEM_BLOCK_G = /-----BEGIN [\s\S]*?(?:-----END [^\n-]*-----|$)/gi;
 const FORMAT_G = new RegExp(FORMATS.slice(1).join("|"), "gi");
+// Redaction is deliberately NARROWER than detection here: detection (SECRET_RE's
+// ASSIGNED branch) refuses on any assigned value — cheap and conservative for a
+// store. Redaction rewrites live tool output, so it only masks values that look
+// like opaque tokens (quoted, or an 8+ char credential-class run) — never a code
+// expression: reading `const token = jwt.sign(payload, key)` must NOT be mangled.
 const ASSIGNED_G = new RegExp(
-  `(\\b[\\w-]*${KEYISH}[\\w-]*["']?\\s*[:=]\\s*["']?)([^\\s"']+)`,
+  `(\\b[\\w-]*${KEYISH}[\\w-]*["']?\\s*[:=]\\s*)("[^"\\n]{4,}"|'[^'\\n]{4,}'|[A-Za-z0-9+=_-]{8,}(?![\\w(]))`,
   "gi",
 );
 

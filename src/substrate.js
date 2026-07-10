@@ -53,13 +53,18 @@ function minimalityWarnings(_task, route, preflight) {
       "High-risk broad change with no target files named; ask for scope before editing.",
     );
   }
-  if (route.score >= 0.55 && preflight.assumption.completeness < 0.7) {
+  if (route.score >= 0.55 && (preflight.assumption?.completeness ?? 1) < 0.7) {
     warnings.push(
       "Complex task with medium/low specification completeness; clarify before spending a premium model.",
     );
   }
+  // Worded to what the signal actually means: the constraints DIMENSION applies to
+  // design/refactor work too, not only production systems — an overclaiming
+  // "production-sensitive!" on a casual refactor teaches users to ignore warnings.
   if (missing.has("constraints")) {
-    warnings.push("Production-sensitive task lacks explicit constraints or acceptance criteria.");
+    warnings.push(
+      "Task implies constraints (design/production/auth/payment-class work) but states none — name performance, compatibility, or rollback expectations.",
+    );
   }
   return warnings;
 }

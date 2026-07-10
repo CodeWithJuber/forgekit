@@ -1092,7 +1092,7 @@ async function run(argv) {
     if (sub === "set") {
       const r = setGoal(process.cwd(), args.slice(1).join(" "));
       if (!r.ok) {
-        console.error(`forge anchor set: ${r.reason}`);
+        console.error(`${BRAND.cli} anchor set: ${r.reason}`);
         process.exitCode = 1;
         return;
       }
@@ -1114,7 +1114,7 @@ async function run(argv) {
     const goal = args.join(" ") || getGoal(process.cwd());
     if (!goal) {
       console.error(
-        'usage: forge anchor "<original goal>" [--json]\n       forge anchor set|show|clear — persist the goal across sessions',
+        `usage: ${BRAND.cli} anchor "<original goal>" [--json]\n       ${BRAND.cli} anchor set|show|clear — persist the goal across sessions`,
       );
       process.exitCode = 1;
       return;

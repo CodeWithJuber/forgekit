@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { charsetClasses, setJaccard, shannonEntropy } from "../src/math.js";
+import { setOverlap, shannonEntropy } from "../src/math.js";
 
 test("shannonEntropy: empty and single-char strings", () => {
   assert.equal(shannonEntropy(""), 0);
@@ -31,28 +31,13 @@ test("shannonEntropy: counts code points, not UTF-16 units", () => {
   assert.equal(shannonEntropy("😀😅"), 1);
 });
 
-test("charsetClasses: counts distinct character classes", () => {
-  assert.equal(charsetClasses(""), 0);
-  assert.equal(charsetClasses("hello"), 1);
-  assert.equal(charsetClasses("Hello"), 2);
-  assert.equal(charsetClasses("Hello1"), 3);
-  assert.equal(charsetClasses("Hello1!"), 4);
-  assert.equal(charsetClasses("12345"), 1);
-});
-
-test("setJaccard: identity, disjoint, empty, partial overlap", () => {
-  const abc = new Set(["a", "b", "c"]);
-  assert.equal(setJaccard(abc, new Set(["a", "b", "c"])), 1);
-  assert.equal(setJaccard(abc, new Set(["x", "y"])), 0);
-  assert.equal(setJaccard(new Set(), new Set()), 0);
-  assert.equal(setJaccard(abc, new Set()), 0);
-  // |{a,b}∩{b,c}| = 1, |∪| = 3
-  assert.equal(setJaccard(new Set(["a", "b"]), new Set(["b", "c"])), 1 / 3);
-});
-
-test("setJaccard: symmetric regardless of argument order", () => {
+test("setOverlap: containment, disjoint, empty, symmetric", () => {
   const small = new Set(["a"]);
   const large = new Set(["a", "b", "c", "d"]);
-  assert.equal(setJaccard(small, large), setJaccard(large, small));
-  assert.equal(setJaccard(small, large), 0.25);
+  assert.equal(setOverlap(small, large), 1, "full containment of the smaller set → 1");
+  assert.equal(setOverlap(large, small), 1, "symmetric");
+  assert.equal(setOverlap(new Set(["x"]), large), 0);
+  assert.equal(setOverlap(new Set(), large), 0);
+  // |{a,b}∩{b,c}| = 1, min size 2
+  assert.equal(setOverlap(new Set(["a", "b"]), new Set(["b", "c"])), 0.5);
 });

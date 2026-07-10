@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
-import { TOOLS } from "./cortex_mcp.js";
+import { TOOLS } from "./mcp_tools.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
 const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
@@ -30,7 +30,9 @@ function readDoc(root, rel) {
 function srcFiles(root) {
   const dir = join(root, "src");
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  // recursive: src/emit/*.js reads are part of the same env contract.
+  return readdirSync(dir, { recursive: true })
+    .map(String)
     .filter((f) => f.endsWith(".js"))
     .map((f) => join(dir, f));
 }
@@ -65,23 +67,25 @@ function checkCommands(docs, issues) {
     const text = docs[target];
     if (!text) continue;
     for (const name of Object.keys(COMMANDS)) {
-      if (!new RegExp(`\\bforge ${name}\\b`).test(text)) {
+      // BRAND.cli, not a literal: after a rebrand the docs say `<newcli> <cmd>` and
+      // this check must follow them or every command reports as undocumented.
+      if (!new RegExp(`\\b${BRAND.cli} ${name}\\b`).test(text)) {
         issues.push({
           check: "commands",
           severity: "error",
-          detail: `\`forge ${name}\` is implemented but ${target} never mentions it`,
+          detail: `\`${BRAND.cli} ${name}\` is implemented but ${target} never mentions it`,
         });
       }
     }
   }
   for (const [file, text] of Object.entries(docs)) {
-    for (const m of text.matchAll(/`forge ([a-z][a-z-]*)\b/g)) {
+    for (const m of text.matchAll(new RegExp(`\`${BRAND.cli} ([a-z][a-z-]*)\\b`, "g"))) {
       const name = m[1];
       if (!(name in COMMANDS) && !HIDDEN_COMMANDS.includes(name)) {
         issues.push({
           check: "commands",
           severity: "error",
-          detail: `${file} documents \`forge ${name}\` but no such command exists`,
+          detail: `${file} documents \`${BRAND.cli} ${name}\` but no such command exists`,
         });
       }
     }

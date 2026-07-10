@@ -12,6 +12,12 @@ INPUT="$(cat)"
 out="$(printf '%s' "$INPUT" | jq -r '.tool_response // .tool_output // empty' 2>/dev/null)"
 [ -n "$out" ] || exit 0
 
+# Fast prefilter: PostToolUse fires after EVERY tool call, and most outputs contain
+# nothing remotely secret-shaped — skip the node spawn entirely unless a candidate
+# (known credential prefix, PEM header, key-ish assignment, or a 20+ char token run)
+# is present. The node pass then decides precisely.
+printf '%s' "$out" | grep -qE -- '-----BEGIN |ghp_|github_pat_|sk-|xox[baprs]-|AIza|ya29\.|eyJ|AKIA|(api[_-]?key|secret|passwd|password|token)[A-Za-z0-9_-]*["'"'"']?[[:space:]]*[:=]|[A-Za-z0-9+=_-]{20,}' || exit 0
+
 # ~/.forge is a symlink to <repo>/global, so pwd -P lands inside the real tree in
 # both install modes (install.sh symlink and CLAUDE_PLUGIN_ROOT plugin checkout).
 DIR="$(cd "$(dirname "$0")" && pwd -P)"
@@ -19,7 +25,10 @@ SECRETS_JS="$DIR/../../src/secrets.js"
 
 red=""
 if command -v node >/dev/null 2>&1 && [ -f "$SECRETS_JS" ]; then
+  # setEncoding: string-concatenating raw Buffers corrupts multibyte UTF-8 split
+  # across chunk boundaries, and the mangled text would be emitted as a rewrite.
   red="$(printf '%s' "$out" | node -e '
+    process.stdin.setEncoding("utf8");
     let raw = "";
     process.stdin.on("data", (d) => { raw += d; });
     process.stdin.on("end", async () => {

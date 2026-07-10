@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { COMMANDS } from "../src/commands.js";
-import { TOOLS } from "../src/cortex_mcp.js";
 import { docsCheck, envVarsRead } from "../src/docs_check.js";
+import { TOOLS } from "../src/mcp_tools.js";
 
 // A fixture tree whose docs are generated FROM the real registries, so it passes by
 // construction — each test then breaks exactly one claim and asserts the reconciler

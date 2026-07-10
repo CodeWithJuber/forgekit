@@ -151,7 +151,11 @@ async function staleDocsAdvisory(root, file) {
     const { load, impact } = await import("./atlas.js");
     const atlas = load(root);
     if (!atlas) return "";
-    const rel = file.startsWith(root) ? file.slice(root.length).replace(/^[/\\]/, "") : file;
+    // root + separator, not a bare prefix: '/home/u/repo' must not strip '/home/u/repository'.
+    const rel =
+      file.startsWith(`${root}/`) || file.startsWith(`${root}\\`)
+        ? file.slice(root.length + 1)
+        : file;
     const docs = impact(atlas, rel, { maxHops: 2 }).impactedFiles.filter((f) => f.endsWith(".md"));
     if (!docs.length) return "";
     return `Forge impact — docs that reference ${rel}: ${docs.slice(0, 5).join(", ")}. If this change alters behavior, update them in the same pass (\`forge impact ${rel}\` for the full list).`;

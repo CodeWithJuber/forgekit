@@ -318,7 +318,7 @@ function checkDocs(out, targetRoot) {
     out.push(
       r.ok
         ? ok("docs↔code", "commands, env vars, MCP tools, CHANGELOG all agree")
-        : warn("docs↔code", `${r.issues.length} drift issue(s) — run \`forge docs check\``),
+        : warn("docs↔code", `${r.issues.length} drift issue(s) — run \`${BRAND.cli} docs check\``),
     );
   } catch {}
 }

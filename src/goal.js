@@ -4,6 +4,7 @@
 // goalDrift default to it, and makes "what are we actually doing" survive context loss.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { BRAND } from "./brand.js";
 import { hasSecret } from "./secrets.js";
 
 const goalPath = (root) => join(root, ".forge", "goal.md");
@@ -17,7 +18,7 @@ export function setGoal(root, text, { t = Date.now() } = {}) {
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(
     goalPath(root),
-    `# Goal\n\n${goal}\n\n<!-- set ${new Date(t).toISOString()} — forge anchor set -->\n`,
+    `# Goal\n\n${goal}\n\n<!-- set ${new Date(t).toISOString()} — ${BRAND.cli} anchor set -->\n`,
   );
   return { ok: true, goal };
 }
@@ -51,9 +52,9 @@ export function goalBlock(root) {
   const goal = getGoal(root);
   if (!goal) return "";
   return [
-    "## Active goal (Forge Anchor)",
+    `## Active goal (${BRAND.brand} Anchor)`,
     `The stated goal for current work in this repo: **${goal}**`,
-    "Stay on it. `forge anchor` checks your changes against it; `forge anchor clear` when done.",
+    `Stay on it. \`${BRAND.cli} anchor\` checks your changes against it; \`${BRAND.cli} anchor clear\` when done.`,
     "",
   ].join("\n");
 }

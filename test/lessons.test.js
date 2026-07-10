@@ -99,6 +99,15 @@ test("matchScore: keyword tier is graded — same-module partial overlap earns p
   assert.equal(unrelated, 0, "no shared tokens → no match");
 });
 
+test("matchScore: generic path tokens (src, js, index) never create cross-module matches", () => {
+  // Regression: {src, js} alone must not make an auth lesson 'relevant' to billing.
+  const l = newLesson({ id: "n", trigger: { keywords: ["src/auth/login.js"] } });
+  assert.equal(matchScore(l, { keywords: ["src/billing/invoice.js"] }), 0);
+  assert.equal(matchScore(l, { keywords: ["src/cortex_hook_main.js"] }), 0);
+  const cfg = newLesson({ id: "c", trigger: { keywords: ["config.js"] } });
+  assert.equal(matchScore(cfg, { keywords: ["src/anything_else.js"] }), 0);
+});
+
 test("selectForInjection: relevance-ranked, capped, overflow becomes a pointer (never silent)", () => {
   const ctx = { symbols: ["foo"], files: [], keywords: [] };
   const lessons = Array.from({ length: 5 }, (_, i) => {

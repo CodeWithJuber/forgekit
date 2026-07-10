@@ -70,9 +70,15 @@ export const EXEMPLARS = [
   { text: "implement a rate limiter with a token bucket", y: 0.78 },
   { text: "write a recursive descent parser for a grammar", y: 0.78 },
   { text: "resolve a deadlock between concurrent threads", y: 0.78 },
+  { text: "fix a deadlock in a worker pool", y: 0.78 },
+  { text: "fix the race condition in a queue", y: 0.78 },
   { text: "distributed consensus and replication protocol", y: 0.78 },
   { text: "cryptographic signing and verification flow", y: 0.78 },
-  { text: "producer consumer blocking queue with backpressure", y: 0.78 },
+  // spaced form on purpose: contentGrams splits "back-pressure" into two tokens,
+  // so the exemplar must carry the split form for the bigram to line up.
+  { text: "producer consumer blocking queue with back pressure", y: 0.78 },
+  { text: "handle back pressure in a stream pipeline", y: 0.78 },
+  { text: "run a database schema migration", y: 0.7 },
   { text: "state machine with invariants and transitions", y: 0.78 },
   { text: "numerical stability of a floating point computation", y: 0.78 },
   { text: "np-hard optimization with a heuristic search", y: 0.78 },
@@ -125,10 +131,17 @@ export const RUBRIC = {
   prior: 0.15, // no-signal complexity (the old "base cost of any task")
   confSat: 0.5, // top similarity at which the estimate earns full weight
   strongScore: 0.65, // k-NN estimate marking a confidently-hard task (LLM lower-bound floor)
-  strongConf: 0.5,
+  // Calibrated against short phrasings: "fix the race condition in the worker pool"
+  // overlaps its exemplar at ~0.43 (extra scope words dilute the coefficient), and
+  // the floor MUST hold there — 0.5 let a bad LLM vote talk concurrency work down.
+  strongConf: 0.35,
   bands: { cheap: 0.3, mid: 0.6 }, // score < cheap → cheap; ≤ mid → mid; else premium
   struct: { codeContext: 0.05, length: 0.1, constraints: 0.05, steps: 0.05 },
 };
+
+// Exemplar footprints are static — compute once, not per routeTask call (the ambient
+// hook routes on every prompt; re-tokenizing 50 exemplars each time was pure waste).
+const EXEMPLAR_GRAMS = EXEMPLARS.map((e) => ({ ...e, grams: contentGrams(e.text) }));
 
 /** Structural (non-topic) features of the task text — countable, graded inputs. */
 export function rubricSignals(task = "") {
@@ -140,7 +153,11 @@ export function rubricSignals(task = "") {
     // feeding a saturating weight — feature extraction, not a classification.
     nConstraints: (text.match(/(^\s*[-*\d.]|\b(must|should|ensure|require|constraint)\b)/gim) || [])
       .length,
-    nSteps: (text.match(/^\s*\d+[.)]\s/gm) || []).length,
+    // Sequencing markers: numbered-list lines plus prose connectives ("and then",
+    // "after that") — multi-step requests carry complexity the topic estimate misses.
+    nSteps:
+      (text.match(/^\s*\d+[.)]\s/gm) || []).length +
+      (text.match(/\b(and then|after that|step \d)\b/gi) || []).length,
   };
 }
 
@@ -152,7 +169,10 @@ export function rubricSignals(task = "") {
 export function rubricComplexity(task = "") {
   const sig = rubricSignals(task);
   const grams = contentGrams(task);
-  const neighbors = EXEMPLARS.map((e) => ({ ...e, sim: setOverlap(grams, contentGrams(e.text)) }))
+  const neighbors = EXEMPLAR_GRAMS.map(({ grams: eg, ...e }) => ({
+    ...e,
+    sim: setOverlap(grams, eg),
+  }))
     .sort((a, b) => b.sim - a.sim)
     .slice(0, RUBRIC.k)
     .filter((n) => n.sim > 0);

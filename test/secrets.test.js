@@ -48,6 +48,36 @@ test("isHighEntropyToken: hex digests, UUIDs, identifiers, and prose are NOT sec
   assert.equal(isHighEntropyToken("parseHttpResponseHeaders2"), false);
   // Too short even if random.
   assert.equal(isHighEntropyToken("Zq7Rt2Xk9Lp4"), false);
+  // LONG camelCase with a lone digit clears 3.9 bits/char — the scattered-digit-runs
+  // requirement is what keeps these out (regression: review found them redacted).
+  assert.equal(isHighEntropyToken("TestSecretRedact_HandlesMultilineOutput2"), false);
+  assert.equal(isHighEntropyToken("AbstractSingletonProxyFactoryBean2"), false);
+  assert.equal(isHighEntropyToken("getUserAuthenticationTokenFromEnvironment2"), false);
+  assert.equal(isHighEntropyToken("convertBase64ToUtf8String"), false);
+});
+
+test("hasSecret/redactSecrets: file paths and source code are never secrets (regression)", () => {
+  // TOKEN_RE excludes '/', so a path splits into short segments instead of fusing
+  // into one high-entropy 'token' — the #1 false positive class.
+  const path = "src/components/UserProfileCard2/index.js";
+  assert.equal(hasSecret(path), false);
+  assert.equal(redactSecrets(path), path);
+  assert.equal(hasSecret("wire up OAuth2 login in src/auth/OAuth2Provider"), false);
+  // Reading auth source must not be mangled: an assigned value that is a code
+  // expression is not an opaque token.
+  const code = "const token = jwt.sign(payload, key)";
+  assert.equal(redactSecrets(code), code);
+  const ls = "ls: components/AuthFlow2/LoginForm.tsx";
+  assert.equal(redactSecrets(ls), ls);
+});
+
+test("hasSecret/redactSecrets: PEM agrees case-insensitively (detect ⇒ redact)", () => {
+  const lower = "-----begin rsa private key-----\nMIIEowIBAAKCAQEA\n-----end rsa private key-----";
+  assert.ok(hasSecret(lower));
+  assert.equal(redactSecrets(lower).includes("MIIEowIBAAKCAQEA"), false);
+  const truncated = "-----BEGIN RSA PRIVATE KEY\nMIIEowIBAAKCAQEA";
+  assert.ok(hasSecret(truncated));
+  assert.equal(redactSecrets(truncated).includes("MIIEowIBAAKCAQEA"), false);
 });
 
 test("redactSecrets: masks formats, keeps surrounding text", () => {
@@ -86,18 +116,19 @@ test("redactSecrets: leaves git SHAs and UUIDs untouched (they are not secrets)"
   assert.equal(redactSecrets(line), line);
 });
 
-test("hasSecret and redactSecrets agree: anything redacted is detected", () => {
+test("redaction implies detection: anything redactSecrets rewrites, hasSecret catches", () => {
+  // One-way by design: detection (a store refusal) is broader than redaction (a
+  // rewrite of live tool output, which must never corrupt code or paths).
   const samples = [
     `key ${fakeAnthropic()}`,
-    "token = abc123",
+    "token = abc123-long-value",
     `bare ${fakeUnknownVendor()}`,
     "plain prose with nothing sensitive",
+    "const token = jwt.sign(payload, key)",
   ];
   for (const s of samples) {
-    assert.equal(
-      redactSecrets(s) !== s,
-      hasSecret(s),
-      `detect/redact must agree on: ${s.slice(0, 30)}`,
-    );
+    if (redactSecrets(s) !== s) {
+      assert.ok(hasSecret(s), `redacted but not detected: ${s.slice(0, 30)}`);
+    }
   }
 });
