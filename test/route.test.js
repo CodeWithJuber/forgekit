@@ -7,11 +7,62 @@ import { read as readMetrics } from "../src/metrics.js";
 import {
   complexity,
   complexityLLM,
+  contentGrams,
+  EXEMPLARS,
   emitGatewayConfig,
   meterRoute,
+  RUBRIC,
   recommend,
   routeTask,
+  rubricComplexity,
 } from "../src/route.js";
+
+test("contentGrams: stopwords dropped, unigrams+bigrams kept", () => {
+  const g = contentGrams("Implement a rate limiter with the token bucket");
+  assert.ok(g.has("rate") && g.has("limiter") && g.has("token") && g.has("bucket"));
+  assert.ok(g.has("rate limiter") && g.has("token bucket"), "bigrams bridge stopwords");
+  assert.ok(!g.has("a") && !g.has("the") && !g.has("with"), "stopwords carry no topic");
+});
+
+test("rubric: no lexical match at all falls back to the prior (abstains)", () => {
+  const r = rubricComplexity("zzz qqq xxx");
+  assert.equal(r.confidence, 0);
+  assert.ok(Math.abs(r.score - RUBRIC.prior) < 0.05, "score stays at the no-signal prior");
+  assert.equal(r.band, "cheap");
+});
+
+test("rubric: an UNSEEN phrasing routes by resemblance, not by literal keywords", () => {
+  // No old keyword ("race condition", "mutex") appears — the k-NN must still find
+  // the concurrency neighborhood through shared vocabulary.
+  const r = rubricComplexity("two threads deadlock when the queue is full, fix the locking");
+  assert.equal(r.band, "premium", `expected premium, got ${r.band} (score ${r.score})`);
+  assert.ok(r.neighbors.length > 0, "neighbors are returned, every score is attributable");
+});
+
+test("rubric: strongTopicSignal fires on confident hard matches only", () => {
+  const hard = rubricComplexity("implement a rate limiter with a token bucket algorithm");
+  assert.equal(hard.strongTopicSignal, true);
+  const easy = rubricComplexity("fix a typo in the readme");
+  assert.equal(easy.strongTopicSignal, false);
+  const moderate = rubricComplexity("add a small in-memory cache with get and set");
+  assert.equal(moderate.strongTopicSignal, false, "moderate work is safe to route down");
+});
+
+test("rubric: confidence shrinks weak matches toward the prior", () => {
+  const strong = rubricComplexity("implement dijkstra shortest path algorithm");
+  const weak = rubricComplexity("the dijkstra approach discussion notes");
+  assert.ok(strong.score > weak.score, "a full exemplar match outranks one shared token");
+  assert.ok(strong.confidence > weak.confidence);
+});
+
+test("EXEMPLARS: labels are valid and every band is represented", () => {
+  for (const e of EXEMPLARS) {
+    assert.ok(typeof e.text === "string" && e.text.length > 0);
+    assert.ok(e.y >= 0 && e.y <= 1, `label in range: ${e.text}`);
+  }
+  const ys = new Set(EXEMPLARS.map((e) => (e.y < 0.3 ? "cheap" : e.y <= 0.6 ? "mid" : "premium")));
+  assert.deepEqual([...ys].sort(), ["cheap", "mid", "premium"]);
+});
 
 test("complexity is monotonic and bounded", () => {
   const trivial = complexity({ files: 0, fanout: 0, sizeWords: 4 }).score;
