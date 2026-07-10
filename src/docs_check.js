@@ -48,7 +48,12 @@ export function envVarsRead(root = BRAND.root) {
   if (existsSync(guards)) {
     for (const f of readdirSync(guards).filter((f) => f.endsWith(".sh"))) {
       const text = readFileSync(join(guards, f), "utf8");
-      for (const m of text.matchAll(/\$\{?([A-Z_][A-Z0-9_]*)/g)) vars.add(m[1]);
+      // Only forge-contract prefixes: a guard's own ALL-CAPS locals ($INPUT, $DIR)
+      // are shell internals, not env surface the docs owe anyone.
+      for (const m of text.matchAll(
+        /\$\{?((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX|CLAUDE)_[A-Z0-9_]*)/g,
+      ))
+        vars.add(m[1]);
     }
   }
   return vars;

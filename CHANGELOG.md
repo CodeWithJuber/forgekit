@@ -6,11 +6,71 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Gateway environments work end to end** — `ANTHROPIC_AUTH_TOKEN` is recognized
+  everywhere `ANTHROPIC_API_KEY` is; `ANTHROPIC_MODEL` / `FORGE_MODEL` pin one model
+  (bypassing tier routing); a gateway-looking `ANTHROPIC_BASE_URL` auto-classifies as
+  LiteLLM; and the LLM proposer falls back to **direct HTTP** (`src/llm.js`, Anthropic
+  Messages API) when the `claude` CLI is absent — or on `FORGE_LLM_HTTP=1`.
+- **`forge docs check`** (+ CI job + doctor check) — reconciles README/GUIDE/
+  ARCHITECTURE/ROADMAP against the code: every CLI command documented, every env var
+  read is documented and every documented var is real, MCP tool counts/names match the
+  registry, CHANGELOG sections non-empty. First run found 56 real drift issues,
+  including a phantom env var. `scripts/bump.mjs` now refuses to rotate an empty
+  `[Unreleased]`.
+- **Docs are in the impact graph** — the atlas parses markdown into doc nodes with
+  `references` edges to the code they name, so `forge impact src/foo.js` lists the
+  docs that go stale, and the pre-edit hook says so before the edit.
+- **Persistent goal** — `forge anchor set/show/clear` stores the active goal in
+  `.forge/goal.md`; SessionStart re-injects it and a bare `forge anchor` checks
+  against it. `goalDrift` also returns a graded `driftScore` for the CUSUM detector.
+- **AGENTS.md auto-repair** — the Stop hook re-runs sync when the managed AGENTS.md
+  drifts from its canonical inputs (disable: `FORGE_AUTOSYNC=0`).
+- **Entropy secret detection** — `src/secrets.js` is the single source of truth
+  (format grammars + Shannon-entropy gate for unknown-vendor tokens); the
+  `secret-redact` guard now imports it, ending the JS/shell regex divergence.
+- **`src/math.js`** — Shannon entropy, charset classes, exact set Jaccard/overlap.
+
+### Changed
+- **Routing scores by exemplar similarity, not keyword lists** — the text rubric is
+  similarity-weighted k-NN over a labeled `EXEMPLARS` bank (overlap-coefficient on
+  stopword-filtered unigram+bigram sets, credibility-shrunk); the four topic keyword
+  regexes and their additive magic weights are gone. Tune routing by adding labeled
+  rows, not by editing weights.
+- **Lesson matching is graded** — the keyword tier of `matchScore` scores by token
+  overlap (same-module partial credit) instead of all-or-nothing string equality.
+- **Substrate minimality warnings derive from computed signals** (preflight missing
+  dimensions + route score) instead of a second keyword copy.
+- **`forge scan` detects obfuscated payloads** — long high-entropy base64 blobs flag
+  as findings alongside the signature rules.
+- **`providerStatus` probes `/health` on any custom base URL** and reports behavioral
+  gateway evidence (a proxy that answers /health is a gateway, whatever its hostname).
+
 ## [0.8.1] - 2026-07-08
 
+### Added
+- **MCP write tools** — `forge_remember`, `forge_ledger_ratify`,
+  `forge_ledger_retract` join the read tools (19 tools total).
 
+### Changed
+- Simplified CLI surface and improved dashboard UX empty states.
+
+### Fixed
+- Stale documentation across command references.
 
 ## [0.8.0] - 2026-07-08
+
+### Added
+- **Forge work system** — auto-install flow, multi-provider routing, the cost
+  dashboard (`forge dash`), and the cortex MCP server's read-path tools.
+- **Zero-config provider auto-detection** — `autoDetectProvider()` resolves the
+  provider from the environment (LiteLLM local/hosted, OpenRouter, Anthropic);
+  `forge init` reports what it found.
+- **Hosted LiteLLM gateway support** — `emitGatewayConfig()` writes a
+  `litellm.config.yaml` exposing complexity tiers as model aliases.
+
+### Fixed
+- TypeScript errors and Biome 2.5.2 lint warnings across source and tests.
 
 
 

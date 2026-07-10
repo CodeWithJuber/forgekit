@@ -140,8 +140,10 @@ git pull && forge ledger merge <path-to-their-ledger>
 
 On Claude Code the substrate then runs on **every prompt automatically** via a
 `UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets a
-native config rule plus MCP tools (`substrate_check`, `predict_impact`, `assumption_gate`,
-`route_task`, `scope_files`) it can call itself.
+native config rule plus **19 MCP tools** it can call itself — pre-action checks
+(`substrate_check`, `predict_impact`, `assumption_gate`, `route_task`, `scope_files`),
+memory reads and writes, and ops/health — the full list with schemas is in
+[`docs/GUIDE.md`](docs/GUIDE.md#mcp-tools).
 
 ## Commands
 
@@ -154,6 +156,8 @@ default 25-file threshold).
 | **Config layer** | `forge init` | emit every tool's native config from one source |
 | | `forge sync` | recompile canonical source → each tool's native files (idempotent) |
 | | `forge doctor` | pass/fail health check: tools, guards, MCP, drift |
+| | `forge docs` | docs↔code drift check — commands, env vars, MCP tools, CHANGELOG vs reality |
+| | `forge config` | provider setup — show / switch / add providers, set the default model |
 | | `forge harden` | wire gitleaks pre-commit + sandbox settings |
 | | `forge catalog` | Start-Here index of every tool / crew / guard |
 | | `forge brand` | print the brand token map |
@@ -171,7 +175,7 @@ default 25-file threshold).
 | | `forge imagine` | consequence sim + minimal dry-run suite (`--run` executes it sandboxed) |
 | | `forge context` | budgeted context assembly + completeness gate |
 | | `forge atlas` | build / query / has (hallucinated-symbol check) the code graph |
-| | `forge anchor` | goal-drift check (advisory) |
+| | `forge anchor` | goal-drift check (advisory) — `set`/`show`/`clear` persists the goal across sessions |
 | | `forge diagnose` | doom-loop: same failure 3× → diagnosis + escalation |
 | | `forge lean` | scope-minimality footprint (advisory) |
 | | `forge cost` | real per-day spend · measured stage factors (`--stages`) |

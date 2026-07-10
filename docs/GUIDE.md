@@ -27,7 +27,7 @@ Every command is real and wired. Grouped by what it does:
 
 | Group | Commands |
 | --- | --- |
-| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge harden` · `forge catalog` · `forge brand` |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand` |
 | **Memory & ledger (PCM)** | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` |
 | **Code graph & retrieval** | `forge atlas` · `forge context` |
 | **Substrate / pre-action** | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
@@ -177,21 +177,52 @@ _Advisory: ask rather than assume._
 
 ### `forge route "<task>"` — the cheapest capable model
 
-A transparent additive rubric (never a second LLM call). Every point is attributable
-to a named signal you can inspect and override.
+A transparent, deterministic rubric (never a second LLM call), and every score is
+attributable. The text side is **similarity-weighted k-NN over a labeled exemplar
+bank** (`EXEMPLARS` in `src/route.js`): your task is compared to ~50 example tasks
+with known complexities, and the nearest neighbors — which the output names — set the
+estimate. The repo side scores real signals (files in scope, impact fan-out, churn,
+past-mistake density, ambiguity). Whichever facet detects difficulty sets the tier.
 
 ```console
 $ forge route "write an is_prime function"
   → Haiku 4.5  (simple, $1/$5 per M tok)
     lint, formatting, docs, stubs, trivial well-defined edits
-    complexity 0.13 · driven by: ambiguity, base cost of any task
+    driven by: similar to "check if a number is prime" (sim 1.00, complexity 0.08)
 
 $ forge route "design and implement a distributed rate limiter with sliding windows across 3 services"
-  → Fable 5  (extreme, $10/$50 per M tok)
-    complexity 0.95 · driven by: algorithmic/systems difficulty, architectural/design scope
+  → Fable 5 / Opus  (premium tier)
+    driven by: similar to "implement a rate limiter with a token bucket" (sim 0.71, complexity 0.78)
 ```
 
+Unseen phrasings route by resemblance — "two threads deadlock when the queue is full"
+lands in the concurrency neighborhood without any keyword list needing the literal
+token "race condition". To tune routing, add labeled rows to `EXEMPLARS` (data, not
+weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
+
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
+
+### `forge config` — provider setup
+
+Shows, switches, and registers model providers, and sets the default model. Forge
+auto-detects the provider from the environment with zero config — the priority order is
+`LITELLM_BASE_URL` → `ANTHROPIC_BASE_URL` (a URL that answers `/health` or names a
+gateway is classified as one) → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` →
+`ANTHROPIC_AUTH_TOKEN`. An explicit `.forge/providers.json` always wins over detection.
+
+```console
+$ forge config show          # active provider + how it was resolved
+$ forge config providers     # everything detected + configured
+$ forge config provider <name>            # switch
+$ forge config provider add <name> --base-url <url> [--env-key VAR]
+$ forge config model <tier-or-id>         # default model
+$ forge config gateway       # emit litellm.config.yaml (same as forge route gateway)
+$ forge config setup         # guided first-time setup
+```
+
+Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
+`ANTHROPIC_AUTH_TOKEN` set (LiteLLM-style gateways), detection classifies the gateway,
+auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
 
 ### `forge impact <symbol|file>` — what will this edit break?
 
@@ -243,7 +274,14 @@ Forge anchor — goal-drift check
 
 `src/auth.js` maps to the goal (named file + where `verifyToken` lives); `src/report.js`
 doesn't — so it's surfaced as drift to confirm or undo. Coarse and advisory by design
-(path/keyword match, not semantic). `forge substrate` folds this in automatically.
+(path/keyword match, not semantic). `forge substrate` folds this in automatically. The
+result also carries `driftScore` (the off-goal fraction per checkpoint) — the graded
+signal the `cusum` change-point detector accumulates to catch *sustained* small drift.
+
+**The goal persists.** `forge anchor set "<goal>"` stores it in `.forge/goal.md`; every
+new session re-injects it at SessionStart, a bare `forge anchor` checks against it, and
+`forge anchor show` / `forge anchor clear` manage it. A goal set on Monday still anchors
+Thursday's session — no more each-session re-assumption of what you're working toward.
 
 ### `forge verify` — did it actually work?
 
@@ -587,6 +625,7 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 | `forge init` | Emit every tool's native config from one source. |
 | `forge sync` | Recompile `source/` → each tool's files (idempotent). |
 | `forge doctor` | Health check: layers, install, drift, cortex. |
+| `forge docs check` | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself). |
 | `forge catalog` | Start-Here index of every tool / crew / guard. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`. |
 | `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report. |
@@ -649,15 +688,30 @@ Nothing to wire — the plugin's [`hooks/hooks.json`](../hooks/hooks.json) insta
 > `forge substrate "<task>" --json` (or the MCP tool `substrate_check`). If
 > `okToProceed` is false, ask the questions first; read `impact.impactedFiles` before editing.
 
-…and exposes the substrate as MCP tools any MCP-capable agent can call directly:
+…and exposes the substrate as **19 MCP tools** any MCP-capable agent can call directly:
+
+<a id="mcp-tools"></a>
 
 | MCP tool | Does |
 | --- | --- |
 | `substrate_check` | full pre-action check |
+| `preflight_check` | assumption / info-gap check |
 | `assumption_gate` | ask/proceed + questions |
-| `predict_impact` | blast radius |
+| `predict_impact` | blast radius (code **and** the docs that reference it) |
 | `route_task` | model recommendation |
 | `scope_files` | independent vs. coupled |
+| `cortex_lessons` | learned lessons for given files/symbols |
+| `cortex_status` | memory lifecycle summary |
+| `forge_brain` | durable project facts |
+| `forge_ledger_query` | ranked retrieval over the PCM ledger |
+| `forge_remember` | **write**: add a durable project fact |
+| `forge_ledger_ratify` | **write**: human-ratify a claim into a decision |
+| `forge_ledger_retract` | **write**: tombstone a claim |
+| `forge_diagnose` | doom-loop failure check |
+| `forge_doctor` | health check |
+| `forge_provider_status` | provider detection + gateway reachability |
+| `forge_cost` | spend + stage factors |
+| `forge_dash_data` / `forge_dash_summary` | dashboard data feeds |
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
 Code, agent-invoked everywhere else.**
@@ -726,7 +780,7 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | --- | --- |
 | how often it asks | `source/substrate.json` → `defaults.askThreshold` (0.6) |
 | blast-radius sensitivity | `source/substrate.json` → `defaults.impactThreshold` (0.1) |
-| a routing signal | `src/route.js` → `rubricComplexity()` |
+| a routing outcome | `src/route.js` → add a labeled row to `EXEMPLARS` (data, not weights); constants in `RUBRIC` |
 | model tiers / prices | `src/model_tiers.js` |
 | an assumption question | `src/preflight.js` → `DIMENSIONS[]` |
 | the verify checklist | `src/substrate.js` → `verificationChecklist()` |
@@ -756,8 +810,38 @@ Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like
 `test/sync.test.js` keeps it honest.
 
 ### Rebrand
-Edit `brand.json` (`FORGE_BRAND`), the `bin` key in `package.json`, and `name` in
+Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name` in
 `.claude-plugin/plugin.json`. The whole CLI, banner, and emitted headers follow.
+
+### Environment variables
+
+The complete env contract (`forge docs check` keeps this table honest — a variable the
+code reads but this table misses fails CI on the forge repo):
+
+| Variable | Does |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | direct Anthropic auth (also used by gateways when set) |
+| `ANTHROPIC_AUTH_TOKEN` | gateway/proxy Bearer credential — recognized everywhere the API key is |
+| `ANTHROPIC_BASE_URL` | custom API endpoint; gateway-looking URLs auto-classify as LiteLLM |
+| `ANTHROPIC_MODEL` / `FORGE_MODEL` | pin one model — bypasses tier routing entirely |
+| `LITELLM_BASE_URL` / `LITELLM_API_KEY` | hosted LiteLLM gateway endpoint + key (highest detection priority) |
+| `OPENROUTER_API_KEY` | OpenRouter provider |
+| `FORGE_LLM` | `1` enables the LLM proposer layer (off = fully deterministic) |
+| `FORGE_LLM_AMBIENT` | `1` lets the ambient hook use the proposer too |
+| `FORGE_LLM_HTTP` | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
+| `FORGE_ENFORCE` | `1` turns the substrate advisory into a hard block on the strongest signals |
+| `FORGE_AUTOSYNC` | `0` disables the Stop-hook AGENTS.md auto-repair |
+| `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005) |
+| `FORGE_HOME` | override `~/.forge` (recall store location) |
+| `FORGE_ROOT` | repo root override for the MCP server |
+| `FORGE_AUTHOR` | identity stamped on ledger provenance (defaults to git identity) |
+| `FORGE_COST_CEILING` | daily spend (USD) the cost-budget guard warns at (default 10) |
+| `FORGE_LOOP_THRESHOLD` | identical tool calls before the doom-loop guard speaks (default 4) |
+| `FORGE_LEAN_THRESHOLD` | lines-per-task-word ratio the lean guard nudges at |
+| `FORGE_VERIFY_TIMEOUT_MS` | verify test-run timeout (default 600000) |
+| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
+| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
+| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 
 ---
 
