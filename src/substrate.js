@@ -489,6 +489,17 @@ export function substrateContext(result) {
     );
   if (result.memory.matchingLessons)
     lines.push(`- ${result.memory.matchingLessons} past lesson(s) match this area (advisory).`);
+  // I3: proceeding is fine below the ask-threshold, but never SILENTLY — the gaps are
+  // named here and recorded to the session log (the handoff surfaces them later).
+  if (
+    !result.assumption.shouldAsk &&
+    ((result.assumption.missing?.length ?? 0) > 0 || result.assumption.questions?.length > 0)
+  ) {
+    const keys = (result.assumption.missing ?? []).map((m) => m.key);
+    lines.push(
+      `- Proceeding without asking under ${keys.length || result.assumption.questions.length} recorded assumption(s)${keys.length ? ` (${keys.join(", ")})` : ""}. Verify them before claiming done.`,
+    );
+  }
   lines.push(`- Verify with: ${result.verification.checklist.join(" · ")}`);
   return lines.join("\n");
 }

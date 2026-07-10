@@ -8,6 +8,7 @@
 //           preflight       (UserPromptSubmit)            — inject the substrate pre-action advisory
 //           pre-edit        (PreToolUse Edit|Write)       — advise on lessons/risk before an edit
 //           stop            (Stop)                        — distill the session into lessons
+//           stop-gate       (Stop, synchronous)           — completion gate: block once if code moved but no doc/state did
 //           session-start   (SessionStart)               — inject learned lessons as context
 import { applyDistillation, lessonsForContext, startupBlock } from "./cortex.js";
 import {
@@ -75,10 +76,40 @@ async function main() {
       const { autoSyncIfDrifted } = await import("./sync.js");
       autoSyncIfDrifted(root);
     } catch {}
+  } else if (mode === "stop-gate") {
+    // The completion gate — the ONLY Stop-path mode that may block, so it runs through
+    // its own SYNCHRONOUS guard shim (cortex.sh stop is detached and can never answer).
+    // stopGate is fail-open by construction; a block's reason IS the repair checklist.
+    try {
+      const { stopGate } = await import("./gate.js");
+      const r = stopGate(root, sid, hook);
+      try {
+        const { record } = await import("./metrics.js");
+        record(root, { stage: "gate", outcome: r.allow ? "stop-pass" : "stop-block" });
+      } catch {}
+      if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
+    } catch {}
   } else if (mode === "session-start") {
-    // Learned lessons + the persistent goal — the two things a fresh session forgets.
+    // Anchor first: record WHERE the repo stands (HEAD) so the completion gate can diff
+    // this session's changes against it; prune week-old session artifacts in the same pass.
+    try {
+      const { pruneSessions, recordBaseline } = await import("./session.js");
+      recordBaseline(root, sid);
+      pruneSessions(root);
+    } catch {}
+    // Then everything a fresh session forgets: learned lessons, the persistent goal,
+    // the handoff snapshot, and the repo's recent history.
     const { goalBlock } = await import("./goal.js");
-    const block = [startupBlock(root, today), goalBlock(root)].filter(Boolean).join("\n");
+    const { stateBlock } = await import("./handoff.js");
+    const { rehydrationBlock } = await import("./session.js");
+    const block = [
+      startupBlock(root, today),
+      goalBlock(root),
+      stateBlock(root),
+      rehydrationBlock(root),
+    ]
+      .filter(Boolean)
+      .join("\n");
     if (block) emit("SessionStart", block);
   } else if (mode === "pre-edit") {
     // A doom loop (the same failure recurring) is the loudest thing to say — it means "stop",
@@ -108,8 +139,35 @@ async function main() {
         process.stdout.write(JSON.stringify({ decision: "block", reason: gate.reason }));
         return;
       }
+      // Session evidence trail (fail-safe): the per-prompt goal-drift score feeds the
+      // completion gate's CUSUM, and assumptions-proceeded-under are RECORDED — the
+      // handoff surfaces them later, so a guess can never silently become a fact.
+      try {
+        const { getGoal } = await import("./goal.js");
+        const goal = getGoal(root);
+        if (goal) {
+          const { goalDrift } = await import("./anchor.js");
+          const d = goalDrift(root, goal, { changed: result.goalAnchor?.changed });
+          appendSessionEvent(root, sid, { type: "drift", score: d.driftScore });
+        }
+        const a = result.assumption;
+        if (!a.shouldAsk && ((a.missing?.length ?? 0) > 0 || (a.questions?.length ?? 0) > 0))
+          appendSessionEvent(root, sid, {
+            type: "assumption",
+            missing: (a.missing ?? []).map((m) => m.key),
+            questions: (a.questions ?? []).slice(0, 3),
+          });
+      } catch {}
       const advisory = substrateContext(result);
-      if (advisory) emit("UserPromptSubmit", advisory);
+      // Intent protocol card (exemplar k-NN, once per run of the same intent) rides the
+      // SAME emit — one hook process must write one JSON object.
+      let card = "";
+      try {
+        const { intentCard } = await import("./intent.js");
+        card = intentCard(root, sid, hook.prompt);
+      } catch {}
+      const combined = [advisory, card].filter(Boolean).join("\n\n");
+      if (combined) emit("UserPromptSubmit", combined);
     }
   }
 }
