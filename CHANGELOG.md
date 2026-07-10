@@ -7,6 +7,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The completion gate** — a synchronous Stop hook (`global/guards/completion-gate.sh`
+  → `src/gate.js`) that blocks a session ONCE when code changed but no doc or state
+  artifact moved with it, answering with the repair checklist (`forge docs sync`,
+  `forge handoff`, `forge decide`, plus a CUSUM goal-drift alarm when the session's
+  recorded drift sustained). Loop-safe (`stop_hook_active` + once-per-session marker),
+  fail-open on every error path, kill switch `FORGE_STOPGATE=0`. Classification derives
+  from the atlas registries + the shared test-file predicate — no parallel regex lists.
+- **`forge handoff`** — the bounded session snapshot: rewrites `.forge/state.md`
+  (≤150 lines; goal/phase, acceptance criteria, done, next, gotchas, recorded
+  assumptions, in-progress git files) and SessionStart re-injects it, so the next
+  session resumes instead of re-assuming. Refuses secrets like every forge store.
+- **`forge decide`** — append-only ADR-lite decision log (`.forge/decisions.md`,
+  `D-####` numbering) + a machine-readable `decision` ledger twin; bare `forge decide`
+  lists the last ten. Supersede with a new entry, never an edit.
+- **`forge docs sync`** — the diff-driven half of docs↔code alignment: changed
+  identifiers (paths, definitions, called symbols — from added AND removed lines) swept
+  against every doc artifact → UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED
+  (reason recorded). Advisory by default, `--strict` for CI, `--base <ref>` to widen;
+  CHANGELOG and the decision log are exempt (append-only history).
+- **Session baseline + rehydration** — SessionStart records the session's git anchor
+  (`.forge/sessions/<sid>.base`; a resume never moves it), prunes week-old session
+  artifacts, and injects the handoff snapshot + last 10 commits + uncommitted changes.
+- **Intent protocol cards** — UserPromptSubmit classifies the prompt with the same
+  exemplar k-NN math as routing (labeled bank incl. Hinglish rows, overlap similarity,
+  confidence gate) and injects a bugfix/feature/refactor/release protocol card once per
+  run of that intent; questions get no ceremony. Kill switch `FORGE_INTENT=0`.
+- **Recorded assumptions** — when preflight proceeds without asking, the assumption is
+  appended to the session log, named in the advisory, and surfaces in the next handoff;
+  the per-prompt goal-drift score is recorded the same way and feeds the gate's CUSUM.
+- **Config artifacts in the atlas** — CI workflows (`.github` is now walked),
+  manifests, and Dockerfiles become `config:` nodes with `references` edges to the code
+  paths they name, so `forge impact` lists the configs a change can break (lockfiles
+  excluded as generated churn).
+- **End-to-end skills + agent** — `handoff`, `sync-docs`, and `catchup` skills, a
+  `doc-sync` crew agent that repairs stale docs in its own context, and an
+  `end-to-end` rules section (Definition of Done, no silent assumptions, decision log)
+  compiled into every tool by `forge sync`.
 - **Gateway environments work end to end** — `ANTHROPIC_AUTH_TOKEN` is recognized
   everywhere `ANTHROPIC_API_KEY` is; `ANTHROPIC_MODEL` / `FORGE_MODEL` pin one model
   (bypassing tier routing); a gateway-looking `ANTHROPIC_BASE_URL` auto-classifies as
@@ -45,6 +82,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as findings alongside the signature rules.
 - **`providerStatus` probes `/health` on any custom base URL** and reports behavioral
   gateway evidence (a proxy that answers /health is a gateway, whatever its hostname).
+
+### Fixed
+- **`cortex.sh` hook entry resolution in symlink installs** — `~/.forge/src/…` pointed
+  at the nonexistent `global/src/`, silently no-opping every cortex hook outside plugin
+  mode; the shim now resolves through the symlink (`pwd -P`), same as `secret-redact.sh`.
 
 ## [0.8.1] - 2026-07-08
 

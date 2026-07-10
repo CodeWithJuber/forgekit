@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # forgekit — contributor instructions
 
 ## Stack
@@ -7,7 +9,7 @@
 
 ## Commands
 - Install: `npm ci`
-- Test: `npm test` (node:test, 471+ tests)
+- Test: `npm test` (node:test, 600+ tests)
 - Lint + format: `npx biome check` (or `npm run check`)
 - Typecheck: `npm run typecheck`
 - Build pages: `npm run pages:build`

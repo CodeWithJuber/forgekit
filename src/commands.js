@@ -29,6 +29,8 @@ export const COMMANDS = {
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
+  handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
+  decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
   diagnose:
     "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
   imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
@@ -37,12 +39,12 @@ export const COMMANDS = {
     "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
   dash: "local dashboard over the ledger, metrics, and blast radius",
   brand: "print the active brand token map",
-  docs: "docs↔code drift check — commands, env vars, MCP tools, CHANGELOG vs reality",
+  docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
 };
 
 export const GROUPS = {
   Core: ["init", "sync", "doctor", "catalog", "docs"],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse"],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse", "handoff", "decide"],
   Substrate: [
     "substrate",
     "preflight",

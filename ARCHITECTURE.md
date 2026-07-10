@@ -185,6 +185,56 @@ compression ladder, and reports the *computed missing set* — the inputs it cou
 assemble. That missing set is exactly what the substrate pipeline's context stage reads
 to decide whether an edit is safe to start. Surface: `forge reuse query | mint | stats`.
 
+## 5. The end-to-end reliability layer
+
+Two failure modes this layer exists to kill: **partial work** (code changes without the
+artifacts that depend on it) and **session amnesia** (the next session re-assumes what
+this one knew). Instructions raise the *probability* of correct behavior; deterministic
+hooks guarantee a *floor* — with per-task miss rate `1−p` and gate catch rate `c`,
+silent misses fall to `(1−p)(1−c)`, and every layer here is one more `c`.
+
+**The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
+`completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
+detached and can never block). Everything changed since the session's git baseline —
+committed ∪ working tree — is classified by ONE total function derived from the atlas
+registries (`CODE_EXTS`/`DOC_EXTS`/config rules) plus the shared test-file predicate.
+Code moved with no doc/state artifact → block once with the repair checklist as the
+reason; every other row allows, every internal error allows (fail-open), a marker caps
+the cost at one extra turn, `FORGE_STOPGATE=0` kills it. `.forge/state.md` is gitignored,
+so its signal is mtime-vs-baseline (the baseline file's mtime *is* session start).
+
+**Session anchoring (SessionStart, `src/session.js`).** Records `HEAD` once per session
+(`.forge/sessions/<sid>.base`; resume keeps it), prunes week-old session artifacts, and
+injects: learned lessons, the anchored goal, the handoff snapshot, recent commits, and
+uncommitted changes — a fresh session orients on evidence, not priors.
+
+**The state/decision stores (`src/handoff.js`, `src/decide.js`).** `state.md` is a
+bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever);
+`decisions.md` is append-only ADR-lite with a machine-readable `decision` ledger twin
+(log semantics — supersede, never edit). Both refuse secrets at write.
+
+**The diff-driven docs sweep (`src/docs_sync.js`).** `docs check` reconciles registries;
+`docs sync` answers the diff-shaped question: changed identifiers (paths + definitions +
+called symbols, from added AND removed lines, via the same `RULES` grammars the atlas
+parses) swept against every doc artifact → UPDATED / STALE (file:line hits) /
+VERIFIED-UNAFFECTED with the reason recorded. Pure reporter; the gate provides the teeth.
+
+**Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
+model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
+confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
+generic task verbs (`fix`/`add`/`build`) as complexity noise, but they are exactly the
+intent signal — same math, different stop-set data.
+
+**The evidence trail (preflight).** Once a goal is anchored, every prompt appends its
+graded `driftScore` to the session log; `cusum` (until now test-only math) accumulates
+the series and a sustained alarm rides the gate's block reason. Proceeding under
+assumptions appends a record the advisory names and the next handoff surfaces — a guess
+can never silently become a fact.
+
+**Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
+has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
+library math with tests until a real consumer exists.
+
 ## Component map — the reuse ledger (30 components)
 
 **Reuse (rename + swap brand token, logic unchanged):**

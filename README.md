@@ -90,6 +90,11 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
 - **Guardrails that can't be forgotten.** Deterministic hooks enforce the rules a model must
   never break (protected paths, cost budget, doom loops) — they survive a context compaction
   the way `CLAUDE.md` prose does not.
+- **Work that finishes end to end.** A completion gate blocks "done" once per session when
+  code moved but no doc or state artifact followed — with the repair checklist as the answer
+  (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
+  session snapshot the next session resumes from, `forge decide` records choices so no
+  session re-decides them).
 - **One config for 9 tools.** Author your rules once; Forge emits each tool's native config,
   plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain files in git,
   no server.
@@ -156,7 +161,7 @@ default 25-file threshold).
 | **Config layer** | `forge init` | emit every tool's native config from one source |
 | | `forge sync` | recompile canonical source → each tool's native files (idempotent) |
 | | `forge doctor` | pass/fail health check: tools, guards, MCP, drift |
-| | `forge docs` | docs↔code drift check — commands, env vars, MCP tools, CHANGELOG vs reality |
+| | `forge docs` | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions |
 | | `forge config` | provider setup — show / switch / add providers, set the default model |
 | | `forge harden` | wire gitleaks pre-commit + sandbox settings |
 | | `forge catalog` | Start-Here index of every tool / crew / guard |
@@ -167,6 +172,8 @@ default 25-file threshold).
 | | `forge brain` | portable project-memory index |
 | | `forge cortex` | self-correcting lessons — `status` / `why` |
 | | `forge reuse` | proof-carrying code cache — query / mint / stats |
+| | `forge handoff` | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start |
+| | `forge decide` | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding |
 | **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass |
 | | `forge preflight` | assumption / info-gap check |
 | | `forge route` | cheapest capable model tier (`route gateway` emits LiteLLM config) |

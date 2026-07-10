@@ -28,7 +28,7 @@ Every command is real and wired. Grouped by what it does:
 | Group | Commands |
 | --- | --- |
 | **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand` |
-| **Memory & ledger (PCM)** | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` |
+| **Memory & ledger (PCM)** | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` |
 | **Code graph & retrieval** | `forge atlas` · `forge context` |
 | **Substrate / pre-action** | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
 | **Verification & safety** | `forge verify` · `forge scan` · `forge spec` |
@@ -282,6 +282,55 @@ signal the `cusum` change-point detector accumulates to catch *sustained* small 
 new session re-injects it at SessionStart, a bare `forge anchor` checks against it, and
 `forge anchor show` / `forge anchor clear` manage it. A goal set on Monday still anchors
 Thursday's session — no more each-session re-assumption of what you're working toward.
+
+### `forge handoff "<done>"` — the bounded session snapshot
+
+Session memory is volatile; `.forge/state.md` is the checkpoint that survives. One
+command rewrites it (never appends — it stays ≤150 lines forever) with what got done,
+what comes next, the gotchas, and any assumptions this session proceeded under (gathered
+automatically from the session log, along with in-progress git files):
+
+```bash
+forge handoff "built the export endpoint" \
+  --next "wire pagination" --gotcha "sqlite locks on parallel writes" \
+  --criteria "export completes under 5s on the fixture db"
+```
+
+Every new session re-injects the snapshot at SessionStart, so the next session — any
+machine, any day — *resumes* instead of re-assuming. Refuses secrets, like every forge
+store. Updating it also satisfies the completion gate (below): the weakest way to stop
+cleanly is to tell the future what happened.
+
+### `forge decide "<decision — reason>"` — the append-only decision log
+
+Sessions re-decide (or silently contradict) what a past session already settled, because
+nothing durable recorded the choice. `forge decide` appends one ADR-lite line to
+`.forge/decisions.md` (`- **D-0007** (2026-07-10): …`) and mints a machine-readable
+`decision` claim in the ledger. Bare `forge decide` lists the last ten. Append-only by
+design: a decision that stops being true gets a *new* entry, never an edit — the log is
+history, and `forge docs sync` exempts it for exactly that reason.
+
+### `forge docs sync` — which prose did this diff make stale?
+
+`forge docs check` reconciles the registries; `docs sync` answers the diff-shaped
+question. It extracts the changed identifiers (paths, definitions, called symbols —
+from added *and removed* lines, so deletions count), scans every doc artifact (atlas doc
+nodes + README/GUIDE/ARCHITECTURE + `.forge/state.md`), and gives each one a verdict:
+
+```console
+$ forge docs sync
+docs sync — diff vs a1b2c3d: 2 changed file(s), 7 identifier(s)
+  UPDATED     docs/GUIDE.md (changed in this diff)
+  STALE       README.md — mentions changed identifiers:
+                README.md:41  `validateOrder` — Use `validateOrder` from `src/val.js`…
+  VERIFIED    ARCHITECTURE.md — mentions none of the 7 changed identifiers
+```
+
+**STALE** hits are cited `file:line` — update them or justify out loud. **VERIFIED**
+means checked-not-assumed: the reason is recorded. Advisory by default (it runs
+mid-repair); `--strict` exits 1 on stale docs for CI, `--base <ref>` widens the diff,
+`--json` for tooling. The base defaults to this session's git baseline when the hooks
+recorded one, else `HEAD`.
 
 ### `forge verify` — did it actually work?
 
@@ -626,6 +675,7 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 | `forge sync` | Recompile `source/` → each tool's files (idempotent). |
 | `forge doctor` | Health check: layers, install, drift, cortex. |
 | `forge docs check` | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself). |
+| `forge docs sync` | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above). |
 | `forge catalog` | Start-Here index of every tool / crew / guard. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`. |
 | `forge cost` | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report. |
@@ -678,6 +728,45 @@ Forge substrate — pre-action advisory (advisory, never blocks):
 
 Nothing to wire — the plugin's [`hooks/hooks.json`](../hooks/hooks.json) installs the
 `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop` guards for you.
+
+Three more ambient layers ride the same hooks:
+
+**Session rehydration (SessionStart).** Besides lessons and the anchored goal, every
+session start injects the handoff snapshot (`.forge/state.md`), the last 10 commits, and
+any uncommitted changes — and records the session's git baseline (`HEAD`) that the
+completion gate and `forge docs sync` diff against. A `--resume` never moves the baseline.
+
+**Intent protocol cards (UserPromptSubmit).** The prompt is classified by the same
+exemplar k-NN math as model routing (labeled examples + overlap similarity — extended by
+adding rows, including Hinglish ones, never by editing regexes). A work intent
+(bugfix / feature / refactor / release) injects a ~6-line protocol card once per run of
+that intent; questions get no ceremony, and below-confidence prompts get nothing.
+`FORGE_INTENT=0` disables.
+
+**The completion gate (Stop).** The deterministic floor under "done": when the session
+tries to finish, everything changed since the baseline (committed ∪ working tree) is
+classified against the same registries the atlas is built from — and if **code moved but
+no doc or state artifact moved with it**, the stop is blocked *once*, with the repair
+checklist as the reason (`forge docs sync` → update stale docs, `forge handoff`,
+`forge decide`; plus a CUSUM goal-drift alarm when the session's recorded drift series
+sustained). The decision table, first match wins:
+
+| # | Condition | Decision |
+| --- | --- | --- |
+| 1 | `stop_hook_active` (already continuing from a block) | allow |
+| 2 | not a git repo / git unusable | allow (fail-open) |
+| 3 | this session already blocked once | allow (marker) |
+| 4 | `FORGE_STOPGATE=0` | allow (kill switch) |
+| 5 | nothing changed (or only `.forge/` internals / generated files) | allow |
+| 6 | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow |
+| 7 | **code changed ∧ no doc/state artifact moved** | **block once + checklist** |
+| 8 | only tests / configs / other files changed | allow |
+| 9 | any internal error in the gate itself | allow (fail-open) |
+
+Test-only sessions pass on purpose (a regression test owes no prose), and the state
+snapshot counts via its mtime against the baseline because `.forge/` is gitignored. The
+gate can never loop (rows 1+3) and never brick a session (rows 2+9) — it costs at most
+one extra turn, exactly when that turn was owed.
 
 ### Every other tool — a rule + MCP tools
 
@@ -843,6 +932,8 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_VERIFY_TIMEOUT_MS` | verify test-run timeout (default 600000) |
 | `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
 | `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
+| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
+| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
 | `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 
 ---
