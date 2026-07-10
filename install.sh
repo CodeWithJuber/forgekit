@@ -68,7 +68,9 @@ install_forge() {
       "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
         "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/protect-paths.sh" } ] } ],
       "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",
-        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/format-on-edit.sh" } ] } ]
+        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/format-on-edit.sh" } ] } ],
+      "Stop": [ { "hooks": [ { "type": "command",
+        "command": "bash $FORGE_HOME/guards/completion-gate.sh" } ] } ]
     }
 
   Or install the plugin instead (guards auto-wire): /plugin marketplace add <this-repo> then /plugin install forgekit.

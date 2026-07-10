@@ -166,6 +166,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash ~/.forge/guards/completion-gate.sh"
+          },
+          {
+            "type": "command",
             "command": "bash ~/.forge/guards/lean-guard.sh"
           },
           {
