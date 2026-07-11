@@ -1,0 +1,167 @@
+{
+  "title": "Graded reference set \u2014 new sources for the formal synthesis",
+  "method": "Independent verification: modern arXiv sources by direct metadata API fetch (title/authors/date pulled live, not from memory); classical works (HTN, BDI) by live web_search against primary hosts; Kahneman/Ebbinghaus/OODA/PDCA graded 'traceable' on established secondary knowledge per the rubric. Verified by the Citations sub-agent track.",
+  "rubric": {
+    "confirmed": "record retrieved from a primary source; title and attribution match the claim",
+    "traceable": "the work clearly exists and is correctly attributed, but rests on established secondary/historical knowledge rather than a single retrievable record",
+    "unverifiable": "could not confirm existence or attribution"
+  },
+  "tally": {
+    "confirmed": 9,
+    "traceable": 6,
+    "unverifiable": 0
+  },
+  "future_dated_note": "Two source IDs are dated 2026. Both resolve to real arXiv preprints matching their claims (confirmed by direct fetch). arXiv:2604.26275 (Agentic SDLC) is a single-author, non-peer-reviewed preprint. arXiv:2601.05111 (Agent-as-a-Judge, Jan 2026 survey) is a DIFFERENT paper from the founding work that coined the term (Zhuge et al. 2024, arXiv:2410.10934, added here on the verifier's recommendation).",
+  "sources": [
+    {
+      "key": "coala2023",
+      "title": "Cognitive Architectures for Language Agents",
+      "authors": "Theodore R. Sumers, Shunyu Yao, Karthik Narasimhan et al.",
+      "year": 2023,
+      "id": "2309.02427",
+      "url": "http://arxiv.org/abs/2309.02427v3",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Unifies memory, planning/reasoning, action, and learning modules into a single CoALA framework for language agents, giving the cognitive-substrate work's memory/imagination/self-correction taxonomy a directly citable architectural analogue."
+    },
+    {
+      "key": "yao2022react",
+      "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "authors": "Shunyu Yao, Jeffrey Zhao, Dian Yu et al.",
+      "year": 2022,
+      "id": "2210.03629",
+      "url": "http://arxiv.org/abs/2210.03629v3",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Interleaves reasoning traces with actions in a single LLM prompt loop, the foundational pattern the cognitive-substrate and reliability-framework agent loops build on."
+    },
+    {
+      "key": "gu2024llmjudge",
+      "title": "A Survey on LLM-as-a-Judge",
+      "authors": "Jiawei Gu, Xuhui Jiang, Zhichao Shi et al.",
+      "year": 2024,
+      "id": "2411.15594",
+      "url": "http://arxiv.org/abs/2411.15594v6",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Surveys the emerging practice of using LLMs themselves as evaluators/judges, directly relevant to any impact-awareness or self-correction mechanism that relies on an LLM-based verifier."
+    },
+    {
+      "key": "ridnik2024alphacodium",
+      "title": "Code Generation with AlphaCodium: From Prompt Engineering to Flow Engineering",
+      "authors": "Tal Ridnik, Dedy Kredo, Itamar Friedman",
+      "year": 2024,
+      "id": "2401.08500",
+      "url": "http://arxiv.org/abs/2401.08500v1",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Replaces single-shot prompting with an iterative 'flow engineering' test-generate-fix loop for code generation, an applied precedent for the reliability framework's change-closure fixpoint over code edits."
+    },
+    {
+      "key": "yang2024sweagent",
+      "title": "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering",
+      "authors": "John Yang, Carlos E. Jimenez, Alexander Wettig et al.",
+      "year": 2024,
+      "id": "2405.15793",
+      "url": "http://arxiv.org/abs/2405.15793v3",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Introduces an agent-computer interface (a constrained action/observation space) purpose-built for LM agents doing software engineering, directly relevant to forgekit's agent-tool interaction design."
+    },
+    {
+      "key": "wang2023voyager",
+      "title": "Voyager: An Open-Ended Embodied Agent with Large Language Models",
+      "authors": "Guanzhi Wang, Yuqi Xie, Yunfan Jiang et al.",
+      "year": 2023,
+      "id": "2305.16291",
+      "url": "http://arxiv.org/abs/2305.16291v2",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; title/authors match claim exactly. Demonstrates a lifelong-learning embodied agent that maintains and grows a skill library over time, the clearest existing analogue to persistent, growing external memory across sessions."
+    },
+    {
+      "key": "erol1994htn",
+      "title": "HTN Planning: Complexity and Expressivity",
+      "authors": "Erol, Hendler, Nau",
+      "year": 1994,
+      "id": null,
+      "url": "https://aaai.org/papers/01123-htn-planning-complexity-and-expressivity/",
+      "grade": "traceable",
+      "note": "Classical AI-planning paper, no arXiv/OpenAlex record. Verified via live web_search (this turn) against AAAI's own paper page, Semantic Scholar, and a downstream paper's reference list (arXiv:1403.7426, 'An Overview of Hierarchical Task Network Planning'), all of which corroborate: title 'HTN Planning: Complexity and Expressivity', authors Erol/Hendler/Nau, AAAI-94 Vol.2 pp.1123-1128. A distinct but related journal version, 'Complexity results for HTN planning' (Annals of Mathematics and Artificial Intelligence, vol. 18, no. 1, pp. 69-93, 1996), was also corroborated in the same search (arXiv:1403.7426 reference list) but its DOI was not independently confirmed in this pass -- do not assert a DOI for either version without a direct publisher lookup."
+    },
+    {
+      "key": "rao1995bdi",
+      "title": "BDI Agents: From Theory to Practice",
+      "authors": "Rao, Georgeff",
+      "year": 1995,
+      "id": null,
+      "url": "https://cdn.aaai.org/ICMAS/1995/ICMAS95-042.pdf",
+      "grade": "traceable",
+      "note": "Classical agent-architecture paper, no DOI/arXiv record. Verified via live web_search (this turn) against the AAAI-hosted PDF (cdn.aaai.org/ICMAS/1995/ICMAS95-042.pdf), gabormelli.com/RKB, and multiple independent downstream reference lists (e.g. arXiv:1310.2431, arXiv:2506.10192), all corroborating: title 'BDI Agents: From Theory to Practice', authors Rao & Georgeff, ICMAS-95, pp. 312-319."
+    },
+    {
+      "key": "kahneman2011",
+      "title": "Thinking, Fast and Slow",
+      "authors": "Kahneman, D.",
+      "year": 2011,
+      "id": null,
+      "url": null,
+      "grade": "traceable",
+      "note": "Classical trade/academic book, not indexed on arXiv or as a journal article with a DOI in the usual sense; existence and content (System 1 / System 2 dual-process framing) are well-established general knowledge, not independently re-verified against a bibliographic API in this pass."
+    },
+    {
+      "key": "ebbinghaus1885",
+      "title": "\u00dcber das Ged\u00e4chtnis: Untersuchungen zur experimentellen Psychologie (Memory: A Contribution to Experimental Psychology)",
+      "authors": "Ebbinghaus, H.",
+      "year": 1885,
+      "id": null,
+      "url": null,
+      "grade": "traceable",
+      "note": "Foundational 1885 monograph establishing the forgetting curve; predates modern indexing entirely, existence is well-established historical/secondary knowledge, not independently re-verified against a bibliographic API in this pass."
+    },
+    {
+      "key": "boyd_ooda",
+      "title": "OODA Loop (Observe-Orient-Decide-Act)",
+      "authors": "Boyd, J.R.",
+      "year": null,
+      "id": null,
+      "url": null,
+      "grade": "traceable",
+      "note": "No formal published paper exists \u2014 Boyd never formally published the OODA loop in a journal; it survives via briefing-slide decks and secondary military-strategy literature. Rubric correctly flags this as having 'no formal paper.' Cite as a named concept/doctrine, not a specific retrievable publication."
+    },
+    {
+      "key": "deming_pdca",
+      "title": "PDCA / Plan-Do-Check-Act cycle (the 'Shewhart Cycle', popularized by Deming)",
+      "authors": "Shewhart, W.A. (originator); Deming, W.E. (popularizer)",
+      "year": null,
+      "id": null,
+      "url": null,
+      "grade": "traceable",
+      "note": "Management/quality-control doctrine spanning multiple books across decades, not a single citable paper. Existence and attribution (Shewhart origin, Deming popularization) are well-established secondary knowledge, not independently re-verified against a bibliographic API in this pass."
+    },
+    {
+      "key": "bhati2026agenticsdlc",
+      "title": "Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering",
+      "authors": "Happy Bhati",
+      "year": 2026,
+      "id": "2604.26275",
+      "url": "http://arxiv.org/abs/2604.26275v1",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; the ID resolves to a REAL paper dated 2026-04-29 (April 2026, which is in the past relative to today, 2026-07-11 \u2014 so 'future-dated' only relative to the cited work's original claim date, not to now). Single author (Happy Bhati), self-archived cs.SE preprint, no journal/DOI yet \u2014 proposes a six-layer reference architecture and explicitly names an 'Agentic SDLC (A-SDLC)', matching the claimed topic closely. Confirmed to exist and match; flag for the synthesis authors that this is an unreviewed single-author preprint, not a peer-reviewed or highly-cited source, and should be cited with that caveat."
+    },
+    {
+      "key": "you2026agentasjudge",
+      "title": "Agent-as-a-Judge",
+      "authors": "Runyang You, Hongru Cai, Caiqi Zhang et al.",
+      "year": 2026,
+      "id": "2601.05111",
+      "url": "http://arxiv.org/abs/2601.05111v1",
+      "grade": "confirmed",
+      "note": "Retrieved via arXiv metadata API; ID resolves to a REAL paper dated 2026-01-08. Title is exactly 'Agent-as-a-Judge' and abstract frames it as 'the first comprehensive survey' of the Agent-as-a-Judge paradigm, matching the claimed 'Agent-as-a-Judge survey' framing. DISAMBIGUATION verified via live web_search (this turn) against arxiv.org/abs/2410.10934 directly: this 2601.05111 survey is NOT the original Agent-as-a-Judge paper. The founding paper is Zhuge, Zhao, Ashley, Wang, Khizbullin, Xiong, Liu, Chang, Krishnamoorthi, Tian, Shi, Chandra, Schmidhuber (2024), 'Agent-as-a-Judge: Evaluate Agents with Agents', arXiv:2410.10934, submitted 14 Oct 2024 -- a distinct, earlier, independently well-known paper that coined the term. If the synthesis intends to cite the founding paper rather than a survey of it, cite 2410.10934 instead or in addition."
+    },
+    {
+      "key": "zhuge2024agentjudge",
+      "title": "Agent-as-a-Judge: Evaluate Agents with Agents",
+      "authors": "Zhuge, Zhao, Ashley, Wang, Khizbullin, Xiong, Liu, Chang, Krishnamoorthi, Tian, Shi, Chandra, Schmidhuber",
+      "year": 2024,
+      "id": "2410.10934",
+      "url": "https://arxiv.org/abs/2410.10934",
+      "grade": "confirmed",
+      "note": "The founding Agent-as-a-Judge paper that coined the term; added on the verification track's explicit recommendation to disambiguate from the 2026 survey (2601.05111)."
+    }
+  ]
+}

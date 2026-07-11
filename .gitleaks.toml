@@ -1,0 +1,15 @@
+title = "forgekit gitleaks config"
+
+[extend]
+useDefault = true
+
+# generic-api-key false-positives: these are bibliography datasets where every entry has a
+# "key" field holding a BibTeX-style citation key (e.g. "wang2023voyager", "ebbinghaus1885").
+# The literal field name "key" next to a quoted alphanumeric value trips the default
+# generic-api-key rule even though there is no secret here — just citation metadata.
+[allowlist]
+description = "Bibliography citation-key fields, not secrets"
+paths = [
+  '''^research/formal-synthesis/graded_reference_set\.json$''',
+  '''^research/formal-synthesis/merged_references\.json$''',
+]
