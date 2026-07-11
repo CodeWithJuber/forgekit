@@ -27,8 +27,17 @@ function lineMatch(text, re, fallback = "") {
   return m?.[1]?.trim() ?? fallback;
 }
 function latestChanges() {
-  const section =
-    changelog.match(/## \[[^\]]+\][\s\S]*?(?=\n## \[|\n\[Unreleased\]:|$)/)?.[0] ?? "";
+  // Walk version sections in order and use the first one that actually has bullets —
+  // an empty "## [Unreleased]" (the normal state right after a release) must not win
+  // over the dated section below it that has the real content.
+  const sections = changelog.matchAll(/## \[[^\]]+\][\s\S]*?(?=\n## \[|\n\[Unreleased\]:|$)/g);
+  let section = "";
+  for (const m of sections) {
+    if (/^- /m.test(m[0])) {
+      section = m[0];
+      break;
+    }
+  }
   // Bullets wrap across several lines in the CHANGELOG; join each "- …" with its indented
   // continuation lines so the status page shows the whole item, not a truncated fragment.
   const items = [];
