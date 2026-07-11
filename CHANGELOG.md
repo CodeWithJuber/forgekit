@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-11
+
 ### Added
 
 - **`forge stack`** — dynamic stack detection: reads the repo's dependency manifests
@@ -641,7 +643,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.8.0...v0.8.1
