@@ -33,7 +33,9 @@ npm run check     # Biome lint + format check
 3. Run `npm test`, `npm run typecheck`, and `npm run check:fix` before committing.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/):
    `feat(scope): description`, `fix: …`, `docs: …`.
-5. Add a line to `CHANGELOG.md` under `## [Unreleased]`.
+5. Add a line to `CHANGELOG.md` under `## [Unreleased]`. This is your release note —
+   when your PR merges, the auto-release uses it verbatim. (Skip it and the release
+   still cuts, synthesizing notes from your commit subjects — but your wording is better.)
 6. Open a PR. CI (tests on Node 20/22, Biome, typecheck, shellcheck) must pass.
 
 ## Project shape
@@ -68,8 +70,11 @@ We'd rather give a clear "not now" than merge something that adds maintenance bu
 
 ## Releasing (maintainers)
 
-Cutting a release is one command plus a tag — the full runbook (and the one-time
-`NPM_TOKEN` setup) is in [docs/RELEASING.md](./docs/RELEASING.md).
+Releases are automatic: **merging a `feat`/`fix`/`perf`/breaking change to `master`
+cuts the release itself** (bump → tag → npm publish → GitHub Release); chore/docs-only
+merges skip cleanly. A manual **Actions → Bump version** dispatch is still available. The
+full runbook (and the one-time `NPM_TOKEN` setup) is in
+[docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Sign your work (DCO)
 

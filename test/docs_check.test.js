@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { COMMANDS } from "../src/commands.js";
 import { docsCheck, envVarsRead } from "../src/docs_check.js";
 import { TOOLS } from "../src/mcp_tools.js";
+import { MODELS } from "../src/model_tiers.js";
 
 // A fixture tree whose docs are generated FROM the real registries, so it passes by
 // construction — each test then breaks exactly one claim and asserts the reconciler
@@ -113,6 +114,136 @@ test("docsCheck: an undocumented MCP tool is flagged", () => {
   }));
   const r = docsCheck({ root });
   assert.ok(r.issues.some((i) => i.check === "mcp-tools" && i.detail.includes(TOOLS[0].name)));
+});
+
+test("docsCheck: a branded mermaid diagram with <br/> passes; diagrams is a checked dimension", () => {
+  const good =
+    "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A[\"a<br/>b\"] --> B[\"c\"]\n```\n";
+  const r = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\n${good}`,
+    })),
+  });
+  assert.deepEqual(r.issues, []);
+  assert.ok(r.checked.includes("diagrams"));
+});
+
+test("docsCheck: an unstyled mermaid diagram (no branded theme) is flagged", () => {
+  const bad = "```mermaid\nflowchart LR\n  A --> B\n```\n";
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\n${bad}`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(r.issues.some((i) => i.check === "diagrams" && /no branded.*theme/.test(i.detail)));
+});
+
+test("docsCheck: a mermaid node with a literal \\n is flagged (renders as garbage on GitHub)", () => {
+  const bad = "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A[\"x\\ny\"] --> B\n```\n";
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "docs/GUIDE.md": `${f["docs/GUIDE.md"]}\n${bad}`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(r.issues.some((i) => i.check === "diagrams" && /literal.*\\n/.test(i.detail)));
+});
+
+test("docsCheck: a price matching no model is flagged; a real model price passes", () => {
+  const haiku = MODELS.haiku;
+  const bad = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "docs/GUIDE.md": `${f["docs/GUIDE.md"]}\nRoutes to ${haiku.name} ($999/$5 per M tok).\n`,
+    })),
+  });
+  assert.ok(
+    bad.issues.some(
+      (i) => i.check === "model-tiers" && /\$999\/\$5.*matches no model/.test(i.detail),
+    ),
+    "a stale price no model has is flagged",
+  );
+  const good = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "docs/GUIDE.md": `${f["docs/GUIDE.md"]}\nRoutes to ${haiku.name} ($${haiku.inCost}/$${haiku.outCost} per M tok).\n`,
+    })),
+  });
+  assert.deepEqual(good.issues, [], "the real price reconciles clean");
+});
+
+test("docsCheck: a README benchmark number with no measured row is flagged", () => {
+  const bench =
+    "# Benchmarks\n\n| comp | scenario | median | p95 | runs | notes |\n|---|---|---|---|---|---|\n| atlas | build | 42 ms | 50 ms | 5 | ok |\n";
+  const bad = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "reports/benchmarks.md": bench,
+      "README.md": `${f["README.md"]}\nThe gate runs in **999 ms** flat.\n`,
+    })),
+  });
+  assert.ok(
+    bad.issues.some((i) => i.check === "benchmarks" && i.detail.includes("999 ms")),
+    "unmeasured claim flagged",
+  );
+  const good = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "reports/benchmarks.md": bench,
+      "README.md": `${f["README.md"]}\nThe build runs in **42 ms** flat.\n`,
+    })),
+  });
+  assert.deepEqual(good.issues, [], "a claim backed by a measured row reconciles clean");
+});
+
+test("docsCheck: model price attributes to the NEAREST name, not first-in-registry (no comparison false positive)", () => {
+  const h = MODELS.haiku;
+  const s = MODELS.sonnet;
+  // A comparison sentence naming two models near ONE price: the price is Sonnet's and correct.
+  const r = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "docs/GUIDE.md": `${f["docs/GUIDE.md"]}\n${s.name} costs more than ${h.name}: $${s.inCost}/$${s.outCost} per M tok.\n`,
+    })),
+  });
+  assert.deepEqual(
+    r.issues.filter((i) => i.check === "model-tiers"),
+    [],
+    "a correct price next to two model names must not false-positive on the farther model",
+  );
+});
+
+test("docsCheck: a bolded non-benchmark ms sandwich does not false-positive", () => {
+  const bench =
+    "# Benchmarks\n\n| c | s | median | p95 | runs | notes |\n|---|---|---|---|---|---|\n| atlas | build | 42 ms | 50 ms | 5 | ok |\n";
+  // A closing ** and the next opening ** must not pair to capture the plain "250 ms" between.
+  const r = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "reports/benchmarks.md": bench,
+      "README.md": `${f["README.md"]}\nThe **fast path** completes within a 250 ms budget and **holds** steady.\n`,
+    })),
+  });
+  assert.deepEqual(
+    r.issues.filter((i) => i.check === "benchmarks"),
+    [],
+    "a number in plain prose between two bold runs is not a benchmark claim",
+  );
+});
+
+test("docsCheck: a mermaid example marked docs-check-ignore is skipped", () => {
+  const bad = "<!-- docs-check-ignore -->\n\n```mermaid\nflowchart LR\n  A --> B\n```\n";
+  const r = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\n${bad}`,
+    })),
+  });
+  assert.deepEqual(
+    r.issues.filter((i) => i.check === "diagrams"),
+    [],
+    "an intentional example diagram opts out of the theme rule",
+  );
 });
 
 test("docsCheck: empty release sections and version mismatch are flagged", () => {

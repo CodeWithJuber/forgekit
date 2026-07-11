@@ -8,15 +8,21 @@
       name="description"
       content="forgekit gives AI coding agents a shared cognitive substrate: proof-carrying memory, impact foresight, reuse, and enforceable guardrails compiled into native tool config."
     />
-    <meta name="theme-color" content="#0b0f19" />
+    <meta name="theme-color" content="#171310" />
     <link rel="canonical" href="https://codewithjuber.github.io/forgekit/" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="forgekit — cognitive infrastructure for AI coding agents" />
+    <meta
+      property="og:title"
+      content="forgekit — cognitive infrastructure for AI coding agents"
+    />
     <meta
       property="og:description"
       content="A production-grade substrate for Claude Code, Codex, Cursor, Gemini, Aider, and more: proof-carrying memory, blast-radius prediction, verified reuse, and cross-tool config."
     />
-    <meta property="og:url" content="https://codewithjuber.github.io/forgekit/" />
+    <meta
+      property="og:url"
+      content="https://codewithjuber.github.io/forgekit/"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <script type="application/ld+json">
       {
@@ -32,150 +38,572 @@
       }
     </script>
     <style>
+      /* One design system, shared verbatim with the status page (scripts/build-pages.mjs):
+         the same warm ember/near-black tokens, one accent, a system font stack (no webfont
+         to silently fail to load). test/pages.test.js enforces this token parity. */
       :root {
         color-scheme: dark;
-        --bg: #0b0f19;
-        --bg-2: #111827;
-        --panel: rgba(17, 24, 39, 0.78);
-        --panel-2: rgba(255, 255, 255, 0.06);
-        --text: #f8fafc;
-        --muted: #aeb9cc;
-        --faint: #718096;
-        --line: rgba(255, 255, 255, 0.13);
-        --line-strong: rgba(255, 255, 255, 0.22);
+        --bg: #171310;
+        --bg-2: #201a15;
+        --panel: #201a15;
+        --panel-2: #272019;
+        --text: #f2ede7;
+        --muted: #a99e90;
+        --faint: #7d7263;
+        --line: #372c22;
+        --line-strong: #4a3b2e;
         --brand: #f26430;
-        --brand-2: #ffd166;
+        --brand-2: #f7a072;
         --ok: #67e8a5;
-        --shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
-        --radius: 24px;
-        --radius-sm: 14px;
+        --shadow: 0 24px 64px rgba(23, 19, 16, 0.56);
+        --radius: 20px;
+        --radius-sm: 12px;
         --max: 1180px;
-        --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono:
+          ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       }
       @media (prefers-color-scheme: light) {
         :root {
           color-scheme: light;
           --bg: #f7f3ed;
-          --bg-2: #ffffff;
-          --panel: rgba(255, 255, 255, 0.84);
-          --panel-2: rgba(11, 15, 25, 0.045);
-          --text: #111827;
-          --muted: #4b5563;
-          --faint: #6b7280;
-          --line: rgba(17, 24, 39, 0.12);
-          --line-strong: rgba(17, 24, 39, 0.22);
-          --shadow: 0 28px 80px rgba(17, 24, 39, 0.14);
+          --bg-2: #fffdf9;
+          --panel: #fffdf9;
+          --panel-2: #efe7db;
+          --text: #201a15;
+          --muted: #6b5f50;
+          --faint: #8a7c6a;
+          --line: #e2d6c4;
+          --line-strong: #cbbba3;
+          --shadow: 0 24px 64px rgba(32, 26, 21, 0.12);
         }
       }
-      * { box-sizing: border-box; }
-      html { scroll-behavior: smooth; background: var(--bg); }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        background: var(--bg);
+      }
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after { animation-duration: 0.001ms !important; scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+          transition-duration: 0.001ms !important;
+        }
       }
       body {
         margin: 0;
         color: var(--text);
         font: 16px/1.65 var(--sans);
         background:
-          radial-gradient(900px 520px at 80% -10%, rgba(242, 100, 48, 0.28), transparent 64%),
-          radial-gradient(780px 420px at 10% 12%, rgba(103, 232, 165, 0.12), transparent 60%),
-          linear-gradient(180deg, var(--bg), var(--bg-2));
+          radial-gradient(
+            960px 460px at 85% -10%,
+            rgba(242, 100, 48, 0.16),
+            transparent 70%
+          ),
+          var(--bg);
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
       }
-      a { color: inherit; }
-      a:focus-visible, button:focus-visible { outline: 3px solid var(--brand-2); outline-offset: 4px; border-radius: 10px; }
-      .wrap { width: min(var(--max), calc(100% - 40px)); margin: 0 auto; }
-      .mono { font-family: var(--mono); }
-      .skip { position: absolute; left: 16px; top: -80px; background: var(--text); color: var(--bg); padding: 10px 14px; z-index: 30; }
-      .skip:focus { top: 16px; }
+      a {
+        color: inherit;
+      }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--brand-2);
+        outline-offset: 4px;
+        border-radius: 10px;
+      }
+      .wrap {
+        width: min(var(--max), calc(100% - 40px));
+        margin: 0 auto;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      .skip {
+        position: absolute;
+        left: 16px;
+        top: -80px;
+        background: var(--text);
+        color: var(--bg);
+        padding: 10px 14px;
+        z-index: 30;
+      }
+      .skip:focus {
+        top: 16px;
+      }
       .nav {
-        position: sticky; top: 0; z-index: 20;
+        position: sticky;
+        top: 0;
+        z-index: 20;
         border-bottom: 1px solid var(--line);
         background: color-mix(in srgb, var(--bg) 76%, transparent);
         backdrop-filter: blur(18px);
       }
-      .nav-inner { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-      .brand { display: inline-flex; gap: 10px; align-items: center; text-decoration: none; font: 750 16px var(--mono); letter-spacing: -0.02em; }
-      .logo { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #111827; box-shadow: 0 14px 40px rgba(242, 100, 48, 0.28); }
-      .brand em { color: var(--brand); font-style: normal; }
-      .nav-links { display: flex; align-items: center; gap: 20px; font-size: 14px; }
-      .nav-links a { color: var(--muted); text-decoration: none; }
-      .nav-links a:hover { color: var(--text); }
-      .nav-links .pill { color: var(--text); border: 1px solid var(--line-strong); border-radius: 999px; padding: 8px 14px; }
-      @media (max-width: 760px) { .nav-links a:not(.pill) { display: none; } .wrap { width: min(var(--max), calc(100% - 28px)); } }
-      .hero { padding: 88px 0 64px; }
-      .hero-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.72fr); gap: 42px; align-items: center; }
-      .eyebrow { display: inline-flex; gap: 10px; align-items: center; margin: 0 0 18px; color: var(--brand-2); font: 700 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
-      .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--ok); box-shadow: 0 0 0 6px rgba(103, 232, 165, 0.14); }
-      h1 { margin: 0; max-width: 900px; font-size: clamp(44px, 8vw, 86px); line-height: 0.96; letter-spacing: -0.065em; }
-      h1 span { color: var(--brand); }
-      .lede { margin: 24px 0 0; max-width: 710px; color: var(--muted); font-size: clamp(18px, 2vw, 22px); }
-      .actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 32px; }
-      .btn { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 10px; border-radius: 999px; border: 1px solid var(--line-strong); padding: 12px 20px; text-decoration: none; font-weight: 750; }
-      .btn-primary { background: var(--text); color: var(--bg); border-color: transparent; }
-      .btn-primary:hover { background: var(--brand-2); }
-      .btn-secondary:hover { border-color: var(--brand); color: var(--brand-2); }
-      .command { margin-top: 18px; display: inline-flex; max-width: 100%; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; background: var(--panel); box-shadow: var(--shadow); overflow-x: auto; font: 700 13px var(--mono); }
-      .command .prompt { color: var(--brand); }
-      .command button { border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 10px; padding: 6px 10px; cursor: pointer; font: 700 12px var(--mono); }
-      .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
-      .agent-card { padding: 22px; }
-      .agent-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
-      .agent-head strong { display: block; font-size: 18px; }
-      .badge { border: 1px solid rgba(103, 232, 165, 0.32); color: var(--ok); border-radius: 999px; padding: 5px 10px; font: 700 11px var(--mono); white-space: nowrap; }
-      .checks { display: grid; gap: 12px; margin: 20px 0 0; padding: 0; list-style: none; }
-      .checks li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; color: var(--muted); }
-      .check { width: 28px; height: 28px; border-radius: 10px; display: grid; place-items: center; color: #0b0f19; background: var(--ok); font-weight: 900; }
-      .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 34px 0 0; }
-      .metric { border: 1px solid var(--line); border-radius: 18px; padding: 20px; background: var(--panel); }
-      .metric b { display: block; font: 850 clamp(24px, 4vw, 36px) var(--mono); letter-spacing: -0.04em; color: var(--brand-2); }
-      .metric span { color: var(--muted); font-size: 14px; }
-      section { padding: 84px 0; border-top: 1px solid var(--line); }
-      .section-head { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(260px, 0.45fr); gap: 32px; align-items: end; margin-bottom: 34px; }
-      .kicker { margin: 0 0 10px; color: var(--brand); font: 800 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
-      h2 { margin: 0; max-width: 760px; font-size: clamp(30px, 5vw, 54px); line-height: 1.04; letter-spacing: -0.045em; }
-      .sub { color: var(--muted); margin: 0; font-size: 18px; }
-      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-      .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 24px; min-height: 100%; }
-      .card h3 { margin: 14px 0 8px; font-size: 21px; letter-spacing: -0.02em; }
-      .card p { margin: 0; color: var(--muted); }
-      .icon { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg, rgba(242,100,48,.2), rgba(255,209,102,.18)); border: 1px solid var(--line); font: 900 18px var(--mono); color: var(--brand-2); }
-      .split { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: 22px; align-items: stretch; }
-      .terminal { background: #070a12; color: #dbeafe; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); }
-      @media (prefers-color-scheme: light) { .terminal { background: #111827; color: #dbeafe; } }
-      .term-bar { display: flex; gap: 8px; align-items: center; border-bottom: 1px solid rgba(255,255,255,.12); padding: 12px 16px; color: #93a4bd; font: 700 12px var(--mono); }
-      .term-dot { width: 10px; height: 10px; border-radius: 999px; background: #f26430; }
-      .term-dot:nth-child(2) { background: #ffd166; } .term-dot:nth-child(3) { background: #67e8a5; }
-      pre { margin: 0; padding: 22px; overflow-x: auto; font: 13px/1.7 var(--mono); }
-      .code-dim { color: #93a4bd; } .code-hot { color: #ffd166; } .code-ok { color: #67e8a5; }
-      .steps { display: grid; gap: 12px; }
-      .step { display: grid; grid-template-columns: 38px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); padding: 18px; }
-      .step-num { width: 38px; height: 38px; border-radius: 14px; display: grid; place-items: center; background: var(--panel-2); color: var(--brand-2); font: 900 13px var(--mono); }
-      .step h3 { margin: 0 0 4px; font-size: 17px; } .step p { margin: 0; color: var(--muted); }
-      .sources { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
-      .sources li { overflow-wrap: anywhere; border-left: 3px solid var(--brand); padding: 8px 0 8px 14px; color: var(--muted); }
-      .honesty { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-      footer { border-top: 1px solid var(--line); padding: 32px 0; color: var(--muted); }
-      .foot { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
-      .foot a { color: var(--muted); text-decoration: none; margin-left: 14px; }
-      .foot a:hover { color: var(--text); }
-      @media (max-width: 920px) { .hero-grid, .section-head, .split { grid-template-columns: 1fr; } .metric-grid, .cards { grid-template-columns: repeat(2, 1fr); } }
-      @media (max-width: 560px) { .hero { padding-top: 56px; } .metric-grid, .cards, .honesty { grid-template-columns: 1fr; } .command { display: flex; } h1 { font-size: clamp(40px, 14vw, 60px); } section { padding: 60px 0; } .foot a { margin-left: 0; margin-right: 12px; } }
+      .nav-inner {
+        min-height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .brand {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        text-decoration: none;
+        font: 750 16px var(--mono);
+        letter-spacing: -0.02em;
+      }
+      .logo {
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        color: #171310;
+        box-shadow: 0 14px 40px rgba(242, 100, 48, 0.28);
+      }
+      .brand em {
+        color: var(--brand);
+        font-style: normal;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 14px;
+      }
+      .nav-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+      }
+      .nav-links .pill {
+        color: var(--text);
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        padding: 8px 14px;
+      }
+      @media (max-width: 760px) {
+        .nav-links a:not(.pill) {
+          display: none;
+        }
+        .wrap {
+          width: min(var(--max), calc(100% - 28px));
+        }
+      }
+      .hero {
+        padding: 88px 0 64px;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.72fr);
+        gap: 42px;
+        align-items: center;
+      }
+      .eyebrow {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        margin: 0 0 18px;
+        color: var(--brand-2);
+        font: 700 12px var(--mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--ok);
+        box-shadow: 0 0 0 6px rgba(103, 232, 165, 0.14);
+      }
+      h1 {
+        margin: 0;
+        max-width: 900px;
+        font-size: clamp(40px, 6vw, 64px);
+        line-height: 1.03;
+        letter-spacing: -0.03em;
+        font-weight: 700;
+      }
+      h1 span {
+        color: var(--brand);
+      }
+      .lede {
+        margin: 24px 0 0;
+        max-width: 710px;
+        color: var(--muted);
+        font-size: clamp(18px, 2vw, 22px);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 32px;
+      }
+      .btn {
+        display: inline-flex;
+        min-height: 48px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+        padding: 12px 20px;
+        text-decoration: none;
+        font-weight: 750;
+      }
+      .btn-primary {
+        background: var(--text);
+        color: var(--bg);
+        border-color: transparent;
+      }
+      .btn-primary:hover {
+        background: var(--brand-2);
+      }
+      .btn-secondary:hover {
+        border-color: var(--brand);
+        color: var(--brand-2);
+      }
+      .command {
+        margin-top: 18px;
+        display: inline-flex;
+        max-width: 100%;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow-x: auto;
+        font: 700 13px var(--mono);
+      }
+      .command .prompt {
+        color: var(--brand);
+      }
+      .command button {
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--muted);
+        border-radius: 10px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font: 700 12px var(--mono);
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .agent-card {
+        padding: 22px;
+      }
+      .agent-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 18px;
+      }
+      .agent-head strong {
+        display: block;
+        font-size: 18px;
+      }
+      .badge {
+        border: 1px solid rgba(103, 232, 165, 0.32);
+        color: var(--ok);
+        border-radius: 999px;
+        padding: 5px 10px;
+        font: 700 11px var(--mono);
+        white-space: nowrap;
+      }
+      .checks {
+        display: grid;
+        gap: 12px;
+        margin: 20px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .checks li {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 12px;
+        align-items: start;
+        color: var(--muted);
+      }
+      .check {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        color: #171310;
+        background: var(--ok);
+        font-weight: 900;
+      }
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin: 34px 0 0;
+      }
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 20px;
+        background: var(--panel);
+      }
+      .metric b {
+        display: block;
+        font: 850 clamp(24px, 4vw, 36px) var(--mono);
+        letter-spacing: -0.04em;
+        color: var(--brand-2);
+      }
+      .metric span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      section {
+        padding: 84px 0;
+        border-top: 1px solid var(--line);
+      }
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(0, 0.75fr) minmax(260px, 0.45fr);
+        gap: 32px;
+        align-items: end;
+        margin-bottom: 34px;
+      }
+      .kicker {
+        margin: 0 0 10px;
+        color: var(--brand);
+        font: 800 12px var(--mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      h2 {
+        margin: 0;
+        max-width: 760px;
+        font-size: clamp(30px, 5vw, 54px);
+        line-height: 1.04;
+        letter-spacing: -0.045em;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0;
+        font-size: 18px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        padding: 24px;
+        min-height: 100%;
+      }
+      .card h3 {
+        margin: 14px 0 8px;
+        font-size: 21px;
+        letter-spacing: -0.02em;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(
+          135deg,
+          rgba(242, 100, 48, 0.2),
+          rgba(247, 160, 114, 0.18)
+        );
+        border: 1px solid var(--line);
+        font: 900 18px var(--mono);
+        color: var(--brand-2);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+        gap: 22px;
+        align-items: stretch;
+      }
+      .terminal {
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+      .term-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 16px;
+        color: var(--muted);
+        font: 700 12px var(--mono);
+      }
+      .term-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--faint);
+      }
+      pre {
+        margin: 0;
+        padding: 22px;
+        overflow-x: auto;
+        font: 13px/1.7 var(--mono);
+      }
+      .code-dim {
+        color: var(--faint);
+      }
+      .code-hot {
+        color: var(--brand-2);
+      }
+      .code-ok {
+        color: #67e8a5;
+      }
+      .steps {
+        display: grid;
+        gap: 12px;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 38px 1fr;
+        gap: 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 18px;
+      }
+      .step-num {
+        width: 38px;
+        height: 38px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: var(--panel-2);
+        color: var(--brand-2);
+        font: 900 13px var(--mono);
+      }
+      .step h3 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      .step p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .sources {
+        display: grid;
+        gap: 10px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+      .sources li {
+        overflow-wrap: anywhere;
+        border-left: 3px solid var(--brand);
+        padding: 8px 0 8px 14px;
+        color: var(--muted);
+      }
+      .honesty {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 18px;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 32px 0;
+        color: var(--muted);
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .foot a {
+        color: var(--muted);
+        text-decoration: none;
+        margin-left: 14px;
+      }
+      .foot a:hover {
+        color: var(--text);
+      }
+      @media (max-width: 920px) {
+        .hero-grid,
+        .section-head,
+        .split {
+          grid-template-columns: 1fr;
+        }
+        .metric-grid,
+        .cards {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 560px) {
+        .hero {
+          padding-top: 56px;
+        }
+        .metric-grid,
+        .cards,
+        .honesty {
+          grid-template-columns: 1fr;
+        }
+        .command {
+          display: flex;
+        }
+        h1 {
+          font-size: clamp(40px, 14vw, 60px);
+        }
+        section {
+          padding: 60px 0;
+        }
+        .foot a {
+          margin-left: 0;
+          margin-right: 12px;
+        }
+      }
     </style>
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top" aria-label="forgekit home"><span class="logo" aria-hidden="true">F</span>forge<em>kit</em></a>
+        <a class="brand" href="#top" aria-label="forgekit home"
+          ><span class="logo" aria-hidden="true">F</span>forge<em>kit</em></a
+        >
         <nav class="nav-links" aria-label="Primary navigation">
           <a href="#platform">Platform</a>
           <a href="#workflow">Workflow</a>
           <a href="#evidence">Evidence</a>
           <a href="./status/">Status</a>
-          <a class="pill" href="https://github.com/CodeWithJuber/forgekit">GitHub ↗</a>
+          <a class="pill" href="https://github.com/CodeWithJuber/forgekit"
+            >GitHub ↗</a
+          >
         </nav>
       </div>
     </header>
@@ -184,55 +612,163 @@
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="wrap hero-grid">
           <div>
-            <p class="eyebrow"><span class="dot" aria-hidden="true"></span> forgekit v0.10.0 · MIT · zero runtime dependencies</p>
-            <h1 id="hero-title">Give every coding agent the same <span>working memory.</span></h1>
+            <p class="eyebrow">
+              <span class="dot" aria-hidden="true"></span> forgekit v0.10.0 ·
+              MIT · zero runtime dependencies
+            </p>
+            <h1 id="hero-title">
+              Give every coding agent the same <span>working memory.</span>
+            </h1>
             <p class="lede">
-              Forgekit turns one source of truth into native configuration for AI coding tools, then adds proof-carrying lessons, blast-radius prediction, reuse search, and pre-action guardrails so agents act from shared evidence instead of fresh guesses.
+              Forgekit turns one source of truth into native configuration for
+              AI coding tools, then adds proof-carrying lessons, blast-radius
+              prediction, reuse search, and pre-action guardrails so agents act
+              from shared evidence instead of fresh guesses.
             </p>
             <div class="actions" aria-label="Primary calls to action">
-              <a class="btn btn-primary" href="https://github.com/CodeWithJuber/forgekit#readme">Read the docs</a>
+              <a
+                class="btn btn-primary"
+                href="https://github.com/CodeWithJuber/forgekit#readme"
+                >Read the docs</a
+              >
               <a class="btn btn-secondary" href="#workflow">See the workflow</a>
             </div>
             <div class="command" role="group" aria-label="Install command">
               <span class="prompt" aria-hidden="true">$</span>
               <span>npm install -g @codewithjuber/forgekit && forge init</span>
-              <button type="button" data-copy="npm install -g @codewithjuber/forgekit && forge init">copy</button>
+              <button
+                type="button"
+                data-copy="npm install -g @codewithjuber/forgekit && forge init"
+              >
+                copy
+              </button>
             </div>
           </div>
-          <aside class="panel agent-card" aria-label="Forge pre-action gate summary">
+          <aside
+            class="panel agent-card"
+            aria-label="Forge pre-action gate summary"
+          >
             <div class="agent-head">
-              <div><strong>Pre-action gate</strong><span class="sub">Evidence before edits, every time.</span></div>
+              <div>
+                <strong>Pre-action gate</strong
+                ><span class="sub">Evidence before edits, every time.</span>
+              </div>
               <span class="badge">measured</span>
             </div>
             <ul class="checks">
-              <li><span class="check" aria-hidden="true">✓</span><span>Reuse candidates are searched before new code is written.</span></li>
-              <li><span class="check" aria-hidden="true">✓</span><span>Impact atlas predicts likely files, tests, and blast radius.</span></li>
-              <li><span class="check" aria-hidden="true">✓</span><span>Lessons carry provenance and gain trust only from oracle outcomes.</span></li>
-              <li><span class="check" aria-hidden="true">✓</span><span>Guardrails compile to Claude Code, Codex, Cursor, Gemini, Aider, and more.</span></li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span
+                ><span
+                  >Reuse candidates are searched before new code is
+                  written.</span
+                >
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span
+                ><span
+                  >Impact atlas predicts likely files, tests, and blast
+                  radius.</span
+                >
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span
+                ><span
+                  >Lessons carry provenance and gain trust only from oracle
+                  outcomes.</span
+                >
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">✓</span
+                ><span
+                  >Guardrails compile to Claude Code, Codex, Cursor, Gemini,
+                  Aider, and more.</span
+                >
+              </li>
             </ul>
           </aside>
         </div>
         <div class="wrap metric-grid" aria-label="Measured repository outcomes">
-          <div class="metric"><b>118 ms</b><span>full pre-action gate from repository benchmarks</span></div>
-          <div class="metric"><b>0.43 ms</b><span>blast-radius lookup from benchmark reports</span></div>
-          <div class="metric"><b>62.1%</b><span>measured routing-stage cost saved</span></div>
-          <div class="metric"><b>0</b><span>runtime dependencies in package.json</span></div>
+          <div class="metric">
+            <b>118 ms</b
+            ><span>full pre-action gate from repository benchmarks</span>
+          </div>
+          <div class="metric">
+            <b>0.43 ms</b
+            ><span>blast-radius lookup from benchmark reports</span>
+          </div>
+          <div class="metric">
+            <b>62.1%</b><span>measured routing-stage cost saved</span>
+          </div>
+          <div class="metric">
+            <b>0</b><span>runtime dependencies in package.json</span>
+          </div>
         </div>
       </section>
 
       <section id="platform" aria-labelledby="platform-title">
         <div class="wrap">
           <div class="section-head">
-            <div><p class="kicker">Platform</p><h2 id="platform-title">A cognitive substrate, packaged like developer tooling.</h2></div>
-            <p class="sub">The site uses only repository-backed claims: README, CHANGELOG, package metadata, benchmark reports, and optional GitHub API counters on the status page.</p>
+            <div>
+              <p class="kicker">Platform</p>
+              <h2 id="platform-title">
+                A cognitive substrate, packaged like developer tooling.
+              </h2>
+            </div>
+            <p class="sub">
+              The site uses only repository-backed claims: README, CHANGELOG,
+              package metadata, benchmark reports, and optional GitHub API
+              counters on the status page.
+            </p>
           </div>
           <div class="cards">
-            <article class="card"><div class="icon">01</div><h3>Cross-tool config</h3><p>Author rules once, then compile native config layers for the agents your team already uses.</p></article>
-            <article class="card"><div class="icon">02</div><h3>Proof-carrying memory</h3><p>Every durable lesson includes evidence, provenance, confidence, decay, and merge behavior.</p></article>
-            <article class="card"><div class="icon">03</div><h3>Impact foresight</h3><p>Before editing, Forge predicts affected files and tests so agents can plan smaller, safer changes.</p></article>
-            <article class="card"><div class="icon">04</div><h3>Reuse-first retrieval</h3><p>Agents are pushed toward existing code paths and prior fixes before inventing another solution.</p></article>
-            <article class="card"><div class="icon">05</div><h3>Guardrails that run</h3><p>Scope, assumptions, anchoring, cost, and secret-redaction checks are enforced by CLI hooks.</p></article>
-            <article class="card"><div class="icon">06</div><h3>Team memory through git</h3><p>Knowledge moves with the repository, not with a single chat transcript or vendor workspace.</p></article>
+            <article class="card">
+              <div class="icon">01</div>
+              <h3>Cross-tool config</h3>
+              <p>
+                Author rules once, then compile native config layers for the
+                agents your team already uses.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">02</div>
+              <h3>Proof-carrying memory</h3>
+              <p>
+                Every durable lesson includes evidence, provenance, confidence,
+                decay, and merge behavior.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">03</div>
+              <h3>Impact foresight</h3>
+              <p>
+                Before editing, Forge predicts affected files and tests so
+                agents can plan smaller, safer changes.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">04</div>
+              <h3>Reuse-first retrieval</h3>
+              <p>
+                Agents are pushed toward existing code paths and prior fixes
+                before inventing another solution.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">05</div>
+              <h3>Guardrails that run</h3>
+              <p>
+                Scope, assumptions, anchoring, cost, and secret-redaction checks
+                are enforced by CLI hooks.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">06</div>
+              <h3>Team memory through git</h3>
+              <p>
+                Knowledge moves with the repository, not with a single chat
+                transcript or vendor workspace.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -241,16 +777,52 @@
         <div class="wrap split">
           <div>
             <p class="kicker">Workflow</p>
-            <h2 id="workflow-title">Install once. Gate every meaningful agent action.</h2>
-            <p class="sub">The CLI stays small and dependency-free, while optional live status data is fetched with timeouts, retries, jitter, and HTTP cache validators.</p>
+            <h2 id="workflow-title">
+              Install once. Gate every meaningful agent action.
+            </h2>
+            <p class="sub">
+              The CLI stays small and dependency-free, while optional live
+              status data is fetched with timeouts, retries, jitter, and HTTP
+              cache validators.
+            </p>
             <div class="steps" aria-label="Setup steps">
-              <div class="step"><span class="step-num">1</span><div><h3>Initialize the substrate</h3><p>Run the installer and generate project-local agent instructions, hooks, and memory stores.</p></div></div>
-              <div class="step"><span class="step-num">2</span><div><h3>Let agents plan with evidence</h3><p>Forge assembles context, reuse candidates, assumptions, scope, and impact predictions before edits.</p></div></div>
-              <div class="step"><span class="step-num">3</span><div><h3>Promote only verified lessons</h3><p>Tests and human corrections update memory; self-graded claims do not become trusted facts.</p></div></div>
+              <div class="step">
+                <span class="step-num">1</span>
+                <div>
+                  <h3>Initialize the substrate</h3>
+                  <p>
+                    Run the installer and generate project-local agent
+                    instructions, hooks, and memory stores.
+                  </p>
+                </div>
+              </div>
+              <div class="step">
+                <span class="step-num">2</span>
+                <div>
+                  <h3>Let agents plan with evidence</h3>
+                  <p>
+                    Forge assembles context, reuse candidates, assumptions,
+                    scope, and impact predictions before edits.
+                  </p>
+                </div>
+              </div>
+              <div class="step">
+                <span class="step-num">3</span>
+                <div>
+                  <h3>Promote only verified lessons</h3>
+                  <p>
+                    Tests and human corrections update memory; self-graded
+                    claims do not become trusted facts.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
           <div class="terminal" aria-label="Example Forge terminal output">
-            <div class="term-bar"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span><span>forge substrate</span></div>
+            <div class="term-bar">
+              <span class="term-dot"></span><span class="term-dot"></span
+              ><span class="term-dot"></span><span>forge substrate</span>
+            </div>
             <pre><code><span class="code-dim">$</span> forge substrate "Change auth validation and update tests"
 <span class="code-ok">✓</span> loaded team rules from AGENTS.md
 <span class="code-ok">✓</span> found reuse candidates before implementation
@@ -264,12 +836,35 @@
       <section id="evidence" aria-labelledby="evidence-title">
         <div class="wrap">
           <div class="section-head">
-            <div><p class="kicker">Evidence</p><h2 id="evidence-title">Professional, but honest about limits.</h2></div>
-            <p class="sub">The strongest design choice is restraint: measured numbers are labeled as measured, targets stay targets, and generated pages document their sources.</p>
+            <div>
+              <p class="kicker">Evidence</p>
+              <h2 id="evidence-title">
+                Professional, but honest about limits.
+              </h2>
+            </div>
+            <p class="sub">
+              The strongest design choice is restraint: measured numbers are
+              labeled as measured, targets stay targets, and generated pages
+              document their sources.
+            </p>
           </div>
           <div class="honesty">
-            <article class="card"><div class="icon">↯</div><h3>Approximate impact atlas</h3><p>Import-graph predictions are useful for gating and planning, not presented as perfect dependency analysis.</p></article>
-            <article class="card"><div class="icon">%</div><h3>Cost claims stay scoped</h3><p>The page shows the measured routing-stage savings rather than blending measured data with aspirational targets.</p></article>
+            <article class="card">
+              <div class="icon">↯</div>
+              <h3>Approximate impact atlas</h3>
+              <p>
+                Import-graph predictions are useful for gating and planning, not
+                presented as perfect dependency analysis.
+              </p>
+            </article>
+            <article class="card">
+              <div class="icon">%</div>
+              <h3>Cost claims stay scoped</h3>
+              <p>
+                The page shows the measured routing-stage savings rather than
+                blending measured data with aspirational targets.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -279,7 +874,11 @@
           <div>
             <p class="kicker">Data sources</p>
             <h2 id="sources-title">No mock marketing data.</h2>
-            <p class="sub">Every metric and product claim on this site comes from local repository files or the optional public GitHub repository endpoint used by the generated status page.</p>
+            <p class="sub">
+              Every metric and product claim on this site comes from local
+              repository files or the optional public GitHub repository endpoint
+              used by the generated status page.
+            </p>
           </div>
           <div class="card">
             <ul class="sources">
@@ -296,11 +895,19 @@
 
     <footer>
       <div class="wrap foot">
-        <div class="mono">forgekit v0.10.0 · MIT · designed for WCAG 2.2 AA</div>
+        <div class="mono">
+          forgekit v0.10.0 · MIT · designed for WCAG 2.2 AA
+        </div>
         <div>
           <a href="https://github.com/CodeWithJuber/forgekit">GitHub</a>
-          <a href="https://github.com/CodeWithJuber/forgekit/blob/master/CHANGELOG.md">Changelog</a>
-          <a href="https://github.com/CodeWithJuber/forgekit/blob/master/SECURITY.md">Security</a>
+          <a
+            href="https://github.com/CodeWithJuber/forgekit/blob/master/CHANGELOG.md"
+            >Changelog</a
+          >
+          <a
+            href="https://github.com/CodeWithJuber/forgekit/blob/master/SECURITY.md"
+            >Security</a
+          >
           <a href="./status/">Status</a>
         </div>
       </div>
@@ -311,10 +918,14 @@
           try {
             await navigator.clipboard.writeText(button.dataset.copy || "");
             button.textContent = "copied";
-            setTimeout(() => { button.textContent = "copy"; }, 1600);
+            setTimeout(() => {
+              button.textContent = "copy";
+            }, 1600);
           } catch (error) {
             button.textContent = "copy failed";
-            setTimeout(() => { button.textContent = "copy"; }, 1800);
+            setTimeout(() => {
+              button.textContent = "copy";
+            }, 1800);
           }
         });
       }

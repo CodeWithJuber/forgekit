@@ -25,12 +25,42 @@ doctor` surfaces a non-nagging "update available" notice; `FORGE_NO_UPDATE_CHECK
 - **Self-dogfood** — a committed `.claude/settings.json` wires forgekit's own guards via
   `${CLAUDE_PROJECT_DIR}`, so the repo runs its own completion gate, cortex, and guards
   during local dev without a marketplace install.
+- **Auto-release on merge** — pushing a `feat`/`fix`/`perf`/breaking change to `master`
+  now cuts the release automatically (bump → tag → npm publish → GitHub Release); a
+  chore/docs-only merge skips cleanly (`bump.mjs auto` exits `3`). When `[Unreleased]` is
+  empty, `bump.mjs` synthesizes the changelog body from commit subjects so every release
+  still describes itself. Manual **Actions → Bump version** dispatch stays available.
+- **`forge docs check` now guards diagrams, model prices, and benchmark numbers** — three
+  new reconcilers close the blind spots behind recurring complaints: every `mermaid` block
+  across all Markdown must carry the branded theme and use `<br/>` (not a literal `\n`);
+  model prices in the docs must match `src/model_tiers.json`; and every bolded `N ms`
+  claim in the README must be a value `reports/benchmarks.md` actually measured.
 
 ### Changed
 
 - **CLI output is quiet by default** — the `Forge <command> — …` title line no longer
   prints on every command; results come first. `--verbose` or `FORGE_VERBOSE=1` restores
   it. The `--help` / `--version` banner is unchanged.
+- **Unified public design system** — the landing page and the generated status page now
+  share one warm ember/near-black palette and a system font stack (the landing page no
+  longer declares the Inter webfont it never loaded). `test/pages.test.js` enforces token
+  parity, a non-empty changes list, and no phantom webfont.
+- **Restyled the terminal statusline** — a restrained palette (muted structure, one ember
+  accent, green/red reserved for the diff) with consistent `·` separators and a subtle
+  context-limit marker instead of an alarming red block.
+- **Plain-language docs pass** — the README and GUIDE openings lead with what forgekit is
+  and does; the deep math (`y = f(x)`, join-semilattice, Beta posteriors) moved into
+  parentheticals or the white paper, and comparison-table cells no longer cite code
+  identifiers as if they were user features.
+
+### Fixed
+
+- **Broken diagrams** — two `mermaid` diagrams rendered in Mermaid's off-brand default
+  theme, one with literal `\n` node breaks GitHub showed as garbage; both fixed, and the
+  over-wide 13-node pre-action pipeline was regrouped so it reads at GitHub width.
+- **Status page "Latest changes" list** — wrapped CHANGELOG bullets were truncated
+  mid-sentence (and could render empty); the parser now joins lazy/indented continuation
+  lines into the full item.
 
 ## [0.10.0] - 2026-07-10
 
@@ -619,7 +649,6 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
 [0.7.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...v0.5.0
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.2.0...v0.3.0

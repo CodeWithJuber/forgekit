@@ -1,15 +1,23 @@
-# One-click release kickoff: Actions -> "Bump version" -> Run workflow.
-# Runs the tests, bumps every version field via scripts/bump.mjs (package.json,
-# package-lock.json, both plugin manifests, CITATION.cff, landing page, CHANGELOG
-# rotation), commits "chore(release): vX.Y.Z", tags vX.Y.Z, and pushes commit + tag.
+# Auto-release. Two ways in:
+#   1. Merge to master (push) -> "auto" bump from conventional commits since the last tag.
+#      A chore/docs-only merge is a graceful skip (bump.mjs exits 3), so nothing publishes
+#      unless a feat/fix/perf/breaking change actually landed.
+#   2. Actions -> "Bump version" -> Run workflow -> pick auto/patch/minor/major by hand.
 #
-# Pushing the v* tag is what normally triggers release.yml — but pushes made with
-# the default GITHUB_TOKEN deliberately do NOT trigger other workflows (GitHub's
-# recursion guard). So this workflow also dispatches release.yml on the new tag
-# explicitly, which needs `actions: write` (granted below). No PAT required.
+# Either way scripts/bump.mjs bumps every version field (package.json, package-lock.json,
+# both plugin manifests, CITATION.cff, landing page) + rotates CHANGELOG, then this workflow
+# commits "chore(release): vX.Y.Z", tags vX.Y.Z, and pushes commit + tag.
+#
+# Pushing the v* tag is what normally triggers release.yml — but pushes made with the default
+# GITHUB_TOKEN deliberately do NOT trigger other workflows (GitHub's recursion guard). So this
+# workflow also dispatches release.yml on the new tag explicitly, which needs `actions: write`.
+# That same recursion guard is why the release commit this workflow pushes does NOT re-trigger
+# the push path below (no infinite loop); the actor/subject guard is belt-and-suspenders.
 name: Bump version
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       bump:
@@ -33,6 +41,10 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    # Never react to our own release commit (belt-and-suspenders behind GitHub's recursion guard).
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):')
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,12 +57,27 @@ jobs:
       - run: npm test # never tag a broken tree
       - name: Bump version fields + rotate CHANGELOG
         id: bump
+        # On push, always "auto"; on manual dispatch, honor the chosen input.
         env:
-          BUMP: ${{ inputs.bump }}
+          BUMP: ${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'auto' }}
         run: |
+          set +e
           VERSION="$(node scripts/bump.mjs "$BUMP")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$VERSION"
+          elif [ "$code" -eq 3 ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nothing to release (no feat/fix/perf/breaking commits) — skipping."
+          else
+            echo "::error::bump.mjs failed (exit $code)"
+            exit "$code"
+          fi
       - name: Commit, tag, push
+        if: steps.bump.outputs.release == 'true'
         env:
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
@@ -59,8 +86,9 @@ jobs:
           git add -A
           git commit -m "chore(release): v$VERSION"
           git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin HEAD "v$VERSION"
+          git push origin "HEAD:${{ github.ref_name }}" "v$VERSION"
       - name: Trigger the release workflow on the new tag
+        if: steps.bump.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.bump.outputs.version }}

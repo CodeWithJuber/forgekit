@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { TOOLS } from "./mcp_tools.js";
+import { MODELS } from "./model_tiers.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
 const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
@@ -159,6 +160,58 @@ const git = (root, args) => {
   }
 };
 
+/** Every tracked Markdown file, so diagram checks cover the WHOLE doc set — not just the
+ *  four prose docs. Falls back to a recursive walk when git is unavailable (tmp fixtures). */
+function markdownFiles(root) {
+  const tracked = git(root, ["ls-files", "*.md"]);
+  if (tracked) return tracked.split("\n").filter(Boolean);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith(".md") && !f.includes("node_modules") && !f.startsWith(".git/"));
+}
+
+// The branded Mermaid theme every diagram shares (see README's `%%{init …}%%`). Without it
+// GitHub renders Mermaid's default lavender, clashing with the ember/near-black identity.
+const MERMAID_BLOCK_RE = /```mermaid\n([\s\S]*?)```/g;
+
+/**
+ * Diagram hygiene across ALL tracked Markdown: every ```mermaid block must (a) carry the
+ * branded `%%{init` theme directive, and (b) use `<br/>` — never a literal `\n`, which
+ * GitHub's renderer shows as garbage instead of a line break. This is the guard that keeps
+ * "the diagrams look bad" from silently recurring; nothing else reconciled diagram quality.
+ */
+function checkDiagrams(root, issues) {
+  for (const rel of markdownFiles(root)) {
+    let text;
+    try {
+      text = readFileSync(join(root, rel), "utf8");
+    } catch {
+      continue;
+    }
+    for (const m of text.matchAll(MERMAID_BLOCK_RE)) {
+      // An intentional example block (e.g. docs showing what a BAD diagram looks like) opts
+      // out with an HTML comment `<!-- docs-check-ignore -->` on the line before the fence.
+      if (/docs-check-ignore/.test(text.slice(Math.max(0, m.index - 80), m.index))) continue;
+      const block = m[1];
+      if (!block.includes("%%{init")) {
+        issues.push({
+          check: "diagrams",
+          severity: "error",
+          detail: `${rel}: a mermaid diagram has no branded \`%%{init\` theme — it renders in Mermaid's off-brand default`,
+        });
+      }
+      if (block.includes("\\n")) {
+        issues.push({
+          check: "diagrams",
+          severity: "error",
+          detail: `${rel}: a mermaid node uses a literal \`\\n\` (GitHub renders it as garbage) — use \`<br/>\``,
+        });
+      }
+    }
+  }
+}
+
 /** CHANGELOG: latest release header matches package.json; no empty release sections;
  *  [Unreleased] must not be empty while src has commits the changelog hasn't seen. */
 function checkChangelog(root, issues) {
@@ -200,6 +253,67 @@ function checkChangelog(root, issues) {
 }
 
 /**
+ * Model tiers: every `$in/$out per M tok` price in the docs must equal SOME model's price in
+ * `src/model_tiers.json`. We deliberately do NOT attribute a price to a specific nearby model
+ * — comparative prose ("Sonnet costs more than Haiku: $3/$15") makes proximity unreliable and
+ * would false-positive — so a price is flagged only when it matches no current model at all
+ * (the actual failure mode: a figure that went stale to a value the table no longer has).
+ */
+function checkModelTiers(docs, issues) {
+  const models = Object.values(MODELS);
+  const PRICE_RE = /\$(\d+)\/\$(\d+)\s*per\s*M\s*tok/gi;
+  for (const [file, text] of Object.entries(docs)) {
+    for (const m of text.matchAll(PRICE_RE)) {
+      const inC = Number(m[1]);
+      const outC = Number(m[2]);
+      if (!models.some((mo) => mo.inCost === inC && mo.outCost === outC)) {
+        issues.push({
+          check: "model-tiers",
+          severity: "error",
+          detail: `${file}: price $${inC}/$${outC} per M tok matches no model in src/model_tiers.json (stale price?)`,
+        });
+      }
+    }
+  }
+}
+
+/** Every timing value measured in reports/benchmarks.md's table (median + p95 cells). */
+function measuredTimings(root) {
+  const set = new Set();
+  for (const line of readDoc(root, "reports/benchmarks.md").split("\n")) {
+    if (!line.startsWith("|")) continue; // table rows only — not the prose above it
+    for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(ms|µs|s)\b/g)) set.add(`${m[1]} ${m[2]}`);
+  }
+  return set;
+}
+
+/**
+ * Benchmarks: every `N ms` value inside a **single bold run** in the README must be a number
+ * reports/benchmarks.md actually measured (the same file the status page reads). Stops
+ * "**118 ms**"-style figures from drifting away from the measured table — the "outdated
+ * numbers" complaint. Matching one bold run at a time (`[^*]+`, never across a `**` boundary)
+ * avoids the sandwich bug where a closing `**` pairs with the next opening `**` and captures
+ * the plain prose between them. Only runs when a benchmark table exists.
+ */
+function checkBenchmarks(root, docs, issues) {
+  const measured = measuredTimings(root);
+  if (!measured.size) return;
+  const readme = docs["README.md"] || "";
+  for (const bold of readme.matchAll(/\*\*([^*]+)\*\*/g)) {
+    const run = bold[1];
+    for (const m of run.matchAll(/(\d+(?:\.\d+)?)\s*ms\b/g)) {
+      const num = `${m[1]} ms`;
+      if (measured.has(num)) continue;
+      issues.push({
+        check: "benchmarks",
+        severity: "error",
+        detail: `README claims "${run.trim()}" but no row in reports/benchmarks.md measures ${num}`,
+      });
+    }
+  }
+}
+
+/**
  * Run every reconciler against the forge package tree.
  * @param {{root?: string}} [opts]
  * @returns {{ok: boolean, issues: {check:string, severity:string, detail:string}[], checked: string[]}}
@@ -211,9 +325,20 @@ export function docsCheck({ root = BRAND.root } = {}) {
   checkEnvVars(root, docs, issues);
   checkMcpTools(docs, issues);
   checkChangelog(root, issues);
+  checkDiagrams(root, issues);
+  checkModelTiers(docs, issues);
+  checkBenchmarks(root, docs, issues);
   return {
     ok: !issues.some((i) => i.severity === "error"),
     issues,
-    checked: ["commands", "env-vars", "mcp-tools", "changelog"],
+    checked: [
+      "commands",
+      "env-vars",
+      "mcp-tools",
+      "changelog",
+      "diagrams",
+      "model-tiers",
+      "benchmarks",
+    ],
   };
 }

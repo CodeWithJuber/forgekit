@@ -5,14 +5,19 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   applyBump,
+  changelogBody,
   collectVersions,
   computeNext,
   extractUnreleased,
   inferKindFromChangelog,
   inferKindFromCommits,
+  isReleasableCommit,
   parseVersion,
+  releasableCommits,
   rotateChangelog,
   setJsonVersionText,
+  setUnreleasedBody,
+  synthesizeChangelog,
 } from "../scripts/bump.mjs";
 
 // ---------------------------------------------------------------------------
@@ -21,7 +26,11 @@ import {
 
 test("parseVersion parses X.Y.Z and rejects garbage", () => {
   assert.deepEqual(parseVersion("0.4.0"), { major: 0, minor: 4, patch: 0 });
-  assert.deepEqual(parseVersion("12.34.56"), { major: 12, minor: 34, patch: 56 });
+  assert.deepEqual(parseVersion("12.34.56"), {
+    major: 12,
+    minor: 34,
+    patch: 56,
+  });
   assert.throws(() => parseVersion("1.2"), /unsupported version format/);
   assert.throws(() => parseVersion("1.2.3-beta.1"), /unsupported version format/);
   assert.throws(() => parseVersion("v1.2.3"), /unsupported version format/);
@@ -76,6 +85,111 @@ test("inferKindFromChangelog: BREAKING -> major, Added -> minor, other -> patch,
   assert.equal(inferKindFromChangelog("### Fixed\n\n- a bug"), "patch");
   assert.equal(inferKindFromChangelog("\n\n"), null);
   assert.equal(inferKindFromChangelog(""), null);
+});
+
+// ---------------------------------------------------------------------------
+// unattended auto-release: worthiness + synthesized notes
+// ---------------------------------------------------------------------------
+
+test("releasableCommits drops merge and release-bookkeeping commits", () => {
+  const commits = [
+    { subject: "feat: real" },
+    { subject: "Merge pull request #9 from x" },
+    { subject: "chore(release): v1.2.3" },
+    { subject: "fix: another" },
+  ];
+  assert.deepEqual(
+    releasableCommits(commits).map((c) => c.subject),
+    ["feat: real", "fix: another"],
+  );
+  assert.deepEqual(releasableCommits(null), []);
+});
+
+test("isReleasableCommit: feat/fix/perf/breaking yes; docs/chore/test/refactor no", () => {
+  for (const s of ["feat: x", "fix(scope): y", "perf: z", "feat!: drop", "refactor(core)!: rename"])
+    assert.equal(isReleasableCommit({ subject: s }), true, s);
+  for (const s of ["docs: x", "chore(deps): y", "test: z", "refactor: r", "style: s", "ci: c"])
+    assert.equal(isReleasableCommit({ subject: s }), false, s);
+  assert.equal(
+    isReleasableCommit({
+      subject: "chore: migrate",
+      body: "BREAKING CHANGE: config moved",
+    }),
+    true,
+    "body BREAKING CHANGE counts",
+  );
+});
+
+test("synthesizeChangelog groups user-facing commits into Keep-a-Changelog sections", () => {
+  const body = synthesizeChangelog([
+    { subject: "feat: add stack detection" },
+    { subject: "fix(cli): quiet crash" },
+    { subject: "perf: faster impact" },
+    { subject: "docs: tidy readme" }, // excluded — not user-facing
+    { subject: "chore(release): v0.1.0" }, // excluded — noise
+    { subject: "not a conventional subject" }, // excluded — non-conventional
+  ]);
+  assert.match(body, /### Added\n\n- add stack detection/);
+  assert.match(body, /### Fixed\n\n- quiet crash/);
+  assert.match(body, /### Changed\n\n- faster impact/);
+  assert.doesNotMatch(body, /tidy readme/);
+  assert.doesNotMatch(body, /conventional subject/);
+  // deterministic section order: Added before Changed before Fixed
+  assert.ok(body.indexOf("### Added") < body.indexOf("### Changed"));
+  assert.ok(body.indexOf("### Changed") < body.indexOf("### Fixed"));
+});
+
+test("synthesizeChangelog flags breaking changes and dedupes", () => {
+  const body = synthesizeChangelog([
+    { subject: "feat!: drop node 18" },
+    { subject: "feat: same thing" },
+    { subject: "feat: same thing" }, // dup
+  ]);
+  assert.match(body, /- \*\*BREAKING\*\* drop node 18/);
+  assert.equal(body.match(/- same thing/g).length, 1, "duplicate collapsed");
+});
+
+test("synthesizeChangelog is empty when nothing is user-facing", () => {
+  assert.equal(synthesizeChangelog([{ subject: "docs: x" }, { subject: "chore: y" }]), "");
+  assert.equal(synthesizeChangelog([]), "");
+});
+
+test("changelogBody never returns empty for a worthy release (breaking change in a non-conventional subject)", () => {
+  // A squash-merge title GitHub capitalizes, with BREAKING CHANGE in the body: worthy, but
+  // synthesizeChangelog can't parse the subject. changelogBody must still yield a real body,
+  // or the auto-release would crash rotateChangelog and fail CI on a legit breaking change.
+  const commits = [
+    {
+      subject: "Fix login redirect (#42)",
+      body: "BREAKING CHANGE: renamed cookie",
+    },
+  ];
+  assert.equal(synthesizeChangelog(commits), "", "synthesize alone can't handle it");
+  assert.ok(isReleasableCommit(commits[0]), "but it IS release-worthy (breaking body)");
+  const body = changelogBody(commits);
+  assert.ok(body.trim().length > 0, "changelogBody is never empty for a worthy release");
+  assert.match(body, /### Changed\n\n- Fix login redirect \(#42\)/);
+  // and it rotates cleanly instead of throwing the empty-[Unreleased] error
+  const cl = `# Changelog\n\n## [Unreleased]\n\n## [0.4.0] - 2026-01-01\n\n- old\n`;
+  assert.doesNotThrow(() =>
+    rotateChangelog(setUnreleasedBody(cl, body), "0.5.0", "0.4.0", "2026-07-11"),
+  );
+});
+
+test("changelogBody prefers the synthesized conventional sections when available", () => {
+  const body = changelogBody([{ subject: "feat: add x" }, { subject: "fix: y" }]);
+  assert.match(body, /### Added\n\n- add x/);
+  assert.match(body, /### Fixed\n\n- y/);
+});
+
+test("setUnreleasedBody fills an empty [Unreleased] and rotateChangelog then accepts it", () => {
+  const empty = "# Changelog\n\n## [Unreleased]\n\n## [0.4.0] - 2026-01-01\n\n- old\n";
+  const filled = setUnreleasedBody(empty, "### Added\n\n- a new thing");
+  assert.match(filled, /## \[Unreleased\]\n\n### Added\n\n- a new thing/);
+  assert.match(filled, /## \[0\.4\.0\] - 2026-01-01/);
+  // the previously-empty body now rotates without the "empty" guard firing
+  const rotated = rotateChangelog(filled, "0.5.0", "0.4.0", "2026-07-11");
+  assert.match(rotated, /## \[0\.5\.0\] - 2026-07-11\n\n### Added\n\n- a new thing/);
 });
 
 // ---------------------------------------------------------------------------
@@ -157,7 +271,9 @@ function makeFixture() {
     name: "fixture",
     version: "0.4.0",
     lockfileVersion: 3,
-    packages: { "": { name: "fixture", version: "0.4.0", engines: { node: ">=20" } } },
+    packages: {
+      "": { name: "fixture", version: "0.4.0", engines: { node: ">=20" } },
+    },
   };
   w("package-lock.json", `${JSON.stringify(lock, null, 2)}\n`);
   w(".claude-plugin/plugin.json", '{\n  "name": "fixture",\n  "version": "0.4.0"\n}\n');
