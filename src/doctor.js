@@ -318,7 +318,7 @@ function checkDocs(out, targetRoot) {
     const r = docsCheck({ root: targetRoot });
     out.push(
       r.ok
-        ? ok("docs↔code", "commands, env vars, MCP tools, CHANGELOG all agree")
+        ? ok("docs↔code", `${r.checked.join(", ")} all agree`)
         : warn("docs↔code", `${r.issues.length} drift issue(s) — run \`${BRAND.cli} docs check\``),
     );
   } catch {}

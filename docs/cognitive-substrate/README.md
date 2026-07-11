@@ -1,7 +1,7 @@
 # The Forge Cognitive Substrate
 
 **Coding agents forget what they learned, assume what they don't know, and break code they
-can't see.** The substrate is a fast, mostly-deterministic check that runs *before* an agent
+can't see.** The substrate is a fast, mostly-deterministic check that runs _before_ an agent
 edits your code: it flags an unclear task, picks the cheapest capable model, and shows what
 an edit will break — all from the repo you already have, with no extra LLM call.
 
@@ -34,10 +34,10 @@ every prompt automatically.
 
 You don't have to remember to use it.
 
-**In Claude Code** — a hook runs the substrate on **every prompt** and adds a short note *only
-when something needs attention* (unclear task, big blast radius, pricey model). It never blocks
-and never nags on a clean, simple task. Real example — you type *"refactor computeTax in
-math.js"* and the agent silently receives:
+**In Claude Code** — a hook runs the substrate on **every prompt** and adds a short note _only
+when something needs attention_ (unclear task, big blast radius, pricey model). It never blocks
+and never nags on a clean, simple task. Real example — you type _"refactor computeTax in
+math.js"_ and the agent silently receives:
 
 ```text
 Forge substrate — pre-action advisory (advisory, never blocks):
@@ -91,7 +91,7 @@ $ forge substrate "Change verifyToken in src/auth.js to require length > 20; upd
 ```
 
 The second run found the two files that import `verifyToken` but you never named — the
-"forgot the coupled file" bug, caught *before* the edit. Add `--json` for machine-readable
+"forgot the coupled file" bug, caught _before_ the edit. Add `--json` for machine-readable
 output (see [Use it in a script](#use-it-in-a-script)).
 
 ---
@@ -100,14 +100,14 @@ output (see [Use it in a script](#use-it-in-a-script)).
 
 `forge substrate` bundles these. Run any one on its own when that's all you need.
 
-| Command | Answers | One-line example |
-| --- | --- | --- |
-| `forge preflight "<task>"` | Is this task clear enough to start? | flags names not in the repo + vague words |
-| `forge route "<task>"` | Which model is cheapest-but-capable? | trivial → Haiku · hard → Opus/Fable |
-| `forge impact <symbol\|file>` | What will this edit break? | reverse-dependency blast radius |
-| `forge scope <file…>` | Can this be split into sessions? | independent vs. coupled files |
-| `forge anchor "<goal>"` | Are my changes still on the stated goal? | flags changed files that drifted off-goal |
-| `forge verify` | Did it actually work? | runs the real tests/build, not the model's word |
+| Command                       | Answers                                  | One-line example                                |
+| ----------------------------- | ---------------------------------------- | ----------------------------------------------- |
+| `forge preflight "<task>"`    | Is this task clear enough to start?      | flags names not in the repo + vague words       |
+| `forge route "<task>"`        | Which model is cheapest-but-capable?     | trivial → Haiku · hard → Opus/Fable             |
+| `forge impact <symbol\|file>` | What will this edit break?               | reverse-dependency blast radius                 |
+| `forge scope <file…>`         | Can this be split into sessions?         | independent vs. coupled files                   |
+| `forge anchor "<goal>"`       | Are my changes still on the stated goal? | flags changed files that drifted off-goal       |
+| `forge verify`                | Did it actually work?                    | runs the real tests/build, not the model's word |
 
 The wider v0.5 surface — `forge context` (budgeted assembly + completeness gate),
 `forge imagine [--run]` (predicted breaks + minimal dry-run suite), `forge diagnose`
@@ -179,30 +179,33 @@ call proposes a completeness reading (M2), a complexity band (M1), the coupled e
 regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart LR
-    T[task / edit] --> R[deterministic rubric]
-    T --> P[LLM proposer]
+    T["task / edit"] --> R["deterministic rubric"]
+    T --> P["LLM proposer"]
     R --> C{reconcile}
-    P --> V[verify: rubric band · repo grounding · grep · tests]
+    P --> V["verify: rubric band · repo grounding<br/>grep · tests"]
     V --> C
-    C -->|passes checks| M[verdict moves\nllm-cleared / lowered / raised / verified]
-    C -->|fails / unavailable| D[verdict holds\ndeterministic]
+    C -->|passes checks| M["verdict moves<br/>llm-cleared / lowered / raised / verified"]
+    C -->|fails / unavailable| D["verdict holds<br/>deterministic"]
+    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
+    class C accent;
 ```
 
 The model **proposes**; the deterministic rubric, the code graph, and the tests **verify**.
 The verdict only moves when the proposal survives that check — otherwise it falls back, unchanged.
 
-The model is **never the judge — only a proposer.** Every proposal is *verified* before it can
-move a verdict, in the direction of the paper's *tabayyun* gate (49:6). By default the reconcile
+The model is **never the judge — only a proposer.** Every proposal is _verified_ before it can
+move a verdict, in the direction of the paper's _tabayyun_ gate (49:6). By default the reconcile
 is **bidirectional but rail-guarded** — a verified reading can lower caution as well as raise it,
 but never past a hard floor:
 
-- **routing** — a *raise* is free (spotting hidden complexity costs at most a bigger model); a
-  *lower* is bounded to one band and never drops below a strong-signal (algorithmic/architectural)
+- **routing** — a _raise_ is free (spotting hidden complexity costs at most a bigger model); a
+  _lower_ is bounded to one band and never drops below a strong-signal (algorithmic/architectural)
   floor, so a "distributed rate-limiter" can't be talked down to the cheap tier;
-- **the assumption gate** — can *clear* a false ask **or** *add* one, but never clears a task
+- **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
   with no concrete anchor, or one naming symbols/files the repo doesn't define;
-- **impact edges** — kept only if the file is real *and* a grep confirms the reference;
+- **impact edges** — kept only if the file is real _and_ a grep confirms the reference;
 - **goal-drift** — rescues an off-goal file only with a goal-referencing reason (off→on only).
 
 > **Note** — set `llm.bidirectional: false` in

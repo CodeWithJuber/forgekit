@@ -88,19 +88,23 @@ checks and returns a single verdict. It composes the individually-callable stage
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
-flowchart LR
-    RE["referenced<br/>entities"] --> PF["preflight<br/>assumption gap"]
-    PF --> RT["route<br/>cheapest tier"]
-    RT --> AT["atlas<br/>code graph"]
-    AT --> IM["impact<br/>blast radius"]
-    IM --> PT["predict<br/>failing tests"]
-    PT --> RU["reuse<br/>cache hit?"]
-    RU --> CX["context<br/>completeness gate"]
-    CX --> SC["scope<br/>coupled files"]
-    SC --> ME["memory<br/>recall + lessons"]
-    ME --> MN["minimality<br/>lean footprint"]
-    MN --> GA["goal-anchor<br/>drift check"]
-    GA --> VD["verdict"]
+flowchart TD
+    RE["referenced entities"] --> INTAKE
+    subgraph INTAKE["intake"]
+        direction LR
+        PF["preflight<br/>assumption gap"] --> RT["route<br/>cheapest tier"]
+    end
+    INTAKE --> ANALYSIS
+    subgraph ANALYSIS["analysis"]
+        direction LR
+        AT["atlas<br/>code graph"] --> IM["impact<br/>blast radius"] --> PT["predict<br/>failing tests"] --> RU["reuse<br/>cache hit?"]
+    end
+    ANALYSIS --> SAFETY
+    subgraph SAFETY["safety + fit"]
+        direction LR
+        CX["context<br/>completeness gate"] --> SC["scope<br/>coupled files"] --> ME["memory<br/>recall + lessons"] --> MN["minimality<br/>lean footprint"] --> GA["goal-anchor<br/>drift check"]
+    end
+    SAFETY --> VD["verdict"]
     classDef accent fill:#f26430,stroke:#f26430,color:#171310;
     class VD accent;
 ```
@@ -225,6 +229,22 @@ bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever);
 called symbols, from added AND removed lines, via the same `RULES` grammars the atlas
 parses) swept against every doc artifact → UPDATED / STALE (file:line hits) /
 VERIFIED-UNAFFECTED with the reason recorded. Pure reporter; the gate provides the teeth.
+
+**Docs-check now guards more than names (`src/docs_check.js`).** Beyond
+commands/env/MCP-tools/CHANGELOG, three reconcilers close the blind spots behind recurring
+"docs rot" complaints: `checkDiagrams` scans every `mermaid` block across all Markdown for
+the branded `%%{init` theme and literal-`\n` node breaks; `checkModelTiers` reconciles doc
+prose prices against `src/model_tiers.json`; `checkBenchmarks` reconciles bolded `N ms`
+README claims against the measured table in `reports/benchmarks.md`. The two public pages
+(`landing/index.html` + the `build-pages.mjs` status page) share one set of design tokens,
+enforced for parity (plus non-empty changes list, no phantom webfont) by
+`test/pages.test.js` — so neither the docs' numbers nor the site's look can silently drift.
+
+**Auto-release (`.github/workflows/bump.yml` + `scripts/bump.mjs`).** A push to `master`
+runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commit landed
+(or `[Unreleased]` was hand-written), synthesizing changelog notes from commit subjects
+when none exist, and exits `3` (a clean skip, not a failure) otherwise — so releases cut
+themselves without a chore/docs merge spamming the registry.
 
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a

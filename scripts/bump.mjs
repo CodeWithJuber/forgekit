@@ -12,7 +12,10 @@
  *        BREAKING CHANGE / "type!:" -> major, feat -> minor, anything else -> patch.
  *   2. If git yields no commits, fall back to the CHANGELOG [Unreleased] body:
  *        "BREAKING" -> major, a "### Added" section -> minor, any other content -> patch.
- *   3. Nothing found anywhere -> error (nothing to release).
+ *   3. Release only when notes were hand-written OR a feat/fix/perf/breaking commit
+ *        landed; a chore/docs-only merge exits NOTHING_TO_RELEASE (3) as a graceful skip.
+ *   4. Unattended (no hand-written [Unreleased]) runs synthesize the changelog body from
+ *        the commit subjects so the release still describes itself.
  *
  * Files touched (all version fields in the repo):
  *   package.json, package-lock.json (root "version" + packages[""].version),
@@ -79,6 +82,105 @@ export function inferKindFromChangelog(unreleasedBody) {
   if (/^### Added\b/m.test(body)) return "minor";
   return "patch";
 }
+
+// ---------------------------------------------------------------------------
+// Unattended auto-release: decide worthiness + synthesize notes from commits.
+// (Used by the merge-to-master path in .github/workflows/bump.yml. Attended
+//  patch|minor|major runs keep the "write your own [Unreleased]" discipline.)
+// ---------------------------------------------------------------------------
+
+// Merge commits and the bot's own "chore(release):" commits are bookkeeping, not
+// shippable change — they never seed a release or a changelog entry.
+const NOISE_SUBJECT_RE = /^(chore\(release\)|Merge )/;
+
+/** Drops merge/release-bookkeeping commits. `commits` may be null. */
+export function releasableCommits(commits) {
+  return (commits || []).filter((c) => c?.subject && !NOISE_SUBJECT_RE.test(c.subject));
+}
+
+/**
+ * Is this commit a reason to cut a release on its own? feat/fix/perf or any breaking
+ * change (`type!:` / "BREAKING CHANGE"). chore/docs/test/ci/style/build/refactor alone
+ * are NOT — matching conventional-release conventions, so a docs-only merge won't publish.
+ */
+export function isReleasableCommit(c) {
+  const subject = c?.subject || "";
+  if (/^(feat|fix|perf)(\([^)]*\))?!?:/.test(subject)) return true;
+  return (
+    /^[a-z]+(\([^)]*\))?!:/.test(subject) ||
+    /BREAKING[ -]CHANGE/.test(`${subject}\n${c?.body || ""}`)
+  );
+}
+
+// Conventional type -> Keep a Changelog section, for the user-facing types only.
+const TYPE_SECTION = {
+  feat: "Added",
+  fix: "Fixed",
+  perf: "Changed",
+  refactor: "Changed",
+  revert: "Changed",
+};
+
+/**
+ * Build a Keep-a-Changelog `[Unreleased]` body from commit subjects when a human wrote
+ * none. Only user-facing types are included (feat->Added, fix->Fixed, perf/refactor/
+ * revert->Changed); docs/chore/test/ci/style/build and non-conventional subjects are
+ * skipped. Breaking changes are prefixed **BREAKING**. Deduped, deterministic order.
+ */
+export function synthesizeChangelog(commits) {
+  const sections = { Added: [], Changed: [], Fixed: [] };
+  const seen = new Set();
+  for (const c of releasableCommits(commits)) {
+    const m = /^([a-z]+)(\([^)]*\))?(!)?:\s*(.+)$/.exec(c.subject);
+    if (!m) continue; // non-conventional subject — leave it out of synthesized notes
+    const [, type, , bang, descRaw] = m;
+    const breaking = Boolean(bang) || /BREAKING[ -]CHANGE/.test(`${c.subject}\n${c.body || ""}`);
+    const section = TYPE_SECTION[type];
+    if (!section && !breaking) continue; // docs/chore/test/etc. are not user-facing
+    const target = section || "Changed";
+    const desc = breaking ? `**BREAKING** ${descRaw.trim()}` : descRaw.trim();
+    const key = `${target}|${desc.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sections[target].push(desc);
+  }
+  const parts = [];
+  for (const name of ["Added", "Changed", "Fixed"]) {
+    if (sections[name].length)
+      parts.push(`### ${name}\n\n${sections[name].map((t) => `- ${t}`).join("\n")}`);
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * The `[Unreleased]` body for an unattended release: the synthesized conventional sections,
+ * or — when the release-worthy commits have no clean conventional subject to synthesize from
+ * (e.g. a squash-merge title `Fix login (#42)` whose `BREAKING CHANGE` lives in the body) —
+ * the releasing subjects listed verbatim. A worthy release must NEVER produce an empty body
+ * (rotateChangelog hard-fails on one), so this is the single source main() writes.
+ */
+export function changelogBody(commits) {
+  const synth = synthesizeChangelog(commits);
+  if (synth.trim()) return synth;
+  const lines = releasableCommits(commits)
+    .filter(isReleasableCommit)
+    .map((c) => `- ${c.subject.replace(/^[a-z]+(\([^)]*\))?!?:\s*/, "")}`);
+  return lines.length ? `### Changed\n\n${lines.join("\n")}` : "";
+}
+
+/** Replaces the [Unreleased] body (typically empty) with `body`. Pure. */
+export function setUnreleasedBody(changelog, body) {
+  const start = changelog.search(/^## \[Unreleased\][^\n]*\n/m);
+  if (start === -1) throw new Error("CHANGELOG.md has no ## [Unreleased] section");
+  const afterHeading = changelog.indexOf("\n", start) + 1;
+  const existing = extractUnreleased(changelog) ?? "";
+  const tail = changelog.slice(afterHeading + existing.length);
+  return `${changelog.slice(0, afterHeading)}\n${body}\n\n${tail}`;
+}
+
+// Exit code the CLI returns (and bump.yml keys off) when `auto` finds nothing worth
+// releasing — a graceful skip, distinct from a real failure so CI won't go red.
+export const NOTHING_TO_RELEASE = 3;
 
 // ---------------------------------------------------------------------------
 // CHANGELOG rotation (pure)
@@ -243,7 +345,11 @@ function today() {
 
 function gitCommitsSinceLastTag(root) {
   const git = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   try {
     let range;
     try {
@@ -298,17 +404,32 @@ function main(argv) {
   let kind = cmd;
   if (cmd === "auto") {
     const commits = gitCommitsSinceLastTag(root);
-    kind = inferKindFromCommits(commits);
-    if (!kind) {
-      kind = inferKindFromChangelog(
-        extractUnreleased(readIfExists(path.join(root, "CHANGELOG.md")) || ""),
-      );
-    }
-    if (!kind) {
+    const changelogText = readIfExists(path.join(root, "CHANGELOG.md")) || "";
+    const unreleased = extractUnreleased(changelogText) || "";
+    const hasNotes = Boolean(unreleased.trim());
+
+    kind = inferKindFromCommits(commits) || inferKindFromChangelog(unreleased);
+
+    // Release only when a human wrote [Unreleased] notes, OR a feat/fix/perf/breaking
+    // commit landed. A chore/docs-only merge is a graceful skip — never an npm publish.
+    const worthy = hasNotes || releasableCommits(commits).some(isReleasableCommit);
+    if (!kind || !worthy) {
       process.stderr.write(
-        "auto: no commits since the last tag and an empty CHANGELOG [Unreleased] — nothing to release\n",
+        "auto: nothing to release (no feat/fix/perf/breaking commits and an empty CHANGELOG [Unreleased])\n",
       );
-      return 1;
+      return NOTHING_TO_RELEASE;
+    }
+
+    // Unattended run with no hand-written notes: synthesize [Unreleased] from the
+    // commit log so rotateChangelog has a real body (it hard-fails on an empty one).
+    if (!hasNotes && !dryRun) {
+      // changelogBody() is guaranteed non-empty here (reached only when `worthy`), so
+      // rotateChangelog never hits its empty-[Unreleased] hard-fail.
+      fs.writeFileSync(
+        path.join(root, "CHANGELOG.md"),
+        setUnreleasedBody(changelogText, changelogBody(commits)),
+      );
+      process.stderr.write("auto: synthesized CHANGELOG [Unreleased] from commit subjects\n");
     }
     process.stderr.write(`auto -> ${kind}\n`);
   }

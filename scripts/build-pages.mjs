@@ -29,9 +29,32 @@ function lineMatch(text, re, fallback = "") {
 function latestChanges() {
   const section =
     changelog.match(/## \[[^\]]+\][\s\S]*?(?=\n## \[|\n\[Unreleased\]:|$)/)?.[0] ?? "";
+  // Bullets wrap across several lines in the CHANGELOG; join each "- …" with its indented
+  // continuation lines so the status page shows the whole item, not a truncated fragment.
+  const items = [];
+  let cur = null;
+  for (const line of section.split("\n")) {
+    const m = /^- (.*)$/.exec(line);
+    if (m) {
+      if (cur !== null) items.push(cur);
+      cur = m[1];
+    } else if (cur !== null) {
+      // A blank line or heading ends the bullet; anything else — indented OR a column-0
+      // "lazy continuation" (valid CommonMark, and how the formatter reflows wrapped
+      // bullets) — is still part of the current item.
+      if (line.trim() === "" || /^#{1,6}\s/.test(line)) {
+        items.push(cur);
+        cur = null;
+      } else {
+        cur += ` ${line.trim()}`;
+      }
+    }
+  }
+  if (cur !== null) items.push(cur);
   // Strip inline markdown (bold/code) — these bullets render as plain HTML text.
-  return [...section.matchAll(/^- (.+)$/gm)].slice(0, 4).map((m) =>
-    m[1]
+  return items.slice(0, 4).map((s) =>
+    s
+      .replace(/\s+/g, " ")
       .trim()
       .replace(/\*\*([^*]+)\*\*/g, "$1")
       .replace(/`([^`]+)`/g, "$1"),
@@ -68,7 +91,11 @@ async function fetchJsonWithRetry(url, { timeoutMs = 5000, attempts = 3 } = {}) 
       writeFileSync(
         cacheFile,
         JSON.stringify(
-          { etag: res.headers.get("etag"), lastModified: res.headers.get("last-modified"), data },
+          {
+            etag: res.headers.get("etag"),
+            lastModified: res.headers.get("last-modified"),
+            data,
+          },
           null,
           2,
         ),
@@ -119,9 +146,10 @@ export async function collect({ live = process.env.BUILD_PAGES_LIVE === "1" } = 
     benchMentions: (benchmarks.match(/^## /gm) ?? []).length,
   };
 }
-// The status page shares the landing page's design system verbatim: the same eight
-// color tokens (forge dash palette), a strict 4px spacing base, three radius levels,
-// one shadow. `forge uicheck design public/index.html` enforces this.
+// The status page shares the landing page's design system verbatim: the same warm
+// ember/near-black color tokens, one accent, a system font stack. test/pages.test.js
+// enforces token parity, a non-empty changes list, and no phantom webfont — so the two
+// public surfaces can't silently drift into two different "school-project" looks again.
 export function render(d) {
   const live = d.github
     ? `<span class="chip">${esc(d.github.stars)} stars</span><span class="chip">${esc(d.github.forks)} forks</span><span class="chip">${esc(d.github.issues)} open issues</span>`
@@ -170,7 +198,7 @@ footer{padding:32px 0;color:var(--faint);font-size:14px}
 </style></head><body><div class="wrap"><header class="nav"><a class="brand" href="../">forge<em>kit</em></a><nav class="links" aria-label="Primary"><a href="../">Landing</a><a href="#quickstart">Quickstart</a><a href="#changes">Latest</a><a href="#sources">Data Sources</a><a href="https://github.com/CodeWithJuber/forgekit">GitHub ↗</a></nav></header><main id="top"><section class="hero" style="border-bottom:0;padding-bottom:0"><p class="eyebrow">${esc(d.name)} · v${esc(d.version)} · Node ${esc(d.node)}</p><h1>Live status, straight from the repository.</h1><p class="lead">${esc(d.description)}</p><p><a class="btn primary" href="#quickstart">Install in 60 seconds</a> <a class="btn" href="https://github.com/CodeWithJuber/forgekit#readme">Read the docs</a></p><div class="meta"><span class="chip">${esc(d.license)} license</span><span class="chip">${esc(d.deps)} runtime dependencies</span><span class="chip">${esc(d.branch)} @ ${esc(d.commit)}</span>${live}</div></section><div class="grid" aria-label="Measured outcomes"><article class="cell"><div class="metric"><em>${esc(d.impact)}</em></div><strong>blast-radius lookup</strong><p class="muted">Measured from this repo's benchmark report, not a marketing placeholder.</p><p class="src">reports/benchmarks.md</p></article><article class="cell"><div class="metric"><em>${esc(d.speed)}</em></div><strong>pre-action gate</strong><p class="muted">Assumptions, routing, reuse, context, impact, scope, and anchoring.</p><p class="src">reports/benchmarks.md</p></article><article class="cell"><div class="metric"><em>${esc(d.saved.match(/^[\d.]+\s*%?/)?.[0] ?? d.saved)}</em></div><strong>${esc(d.saved.replace(/^[\d.]+\s*%?\s*/, "") || "routing signal")}</strong><p class="muted">Documented from the white-paper prototype and exposed by Forge cost reports.</p><p class="src">whitepaper prototype</p></article></div><section id="quickstart"><h2>Quickstart</h2><div class="terminal">npm install -g @codewithjuber/forgekit
 forge init
 forge doctor
-forge substrate "Change auth validation and update tests"</div></section><section id="changes"><h2>Latest repo changes</h2><div class="card"><ul class="list">${d.latest.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted">Benchmark sections indexed: ${esc(d.benchMentions)} · benchmarks file updated ${esc(d.benchUpdated)}.</p></div></section><section id="sources"><h2>Data Sources</h2><div class="card"><p class="muted">No mock data is used. This page is regenerated from repository files during CI (generated ${esc(d.generated)} from ${esc(d.commit)}). Enable <code>BUILD_PAGES_LIVE=1</code> to refresh public GitHub counters with ETag/Last-Modified caching.</p><ul class="list"><li>package.json</li><li>README.md</li><li>CHANGELOG.md</li><li>reports/benchmarks.md</li><li>${api} (optional, no auth, only when BUILD_PAGES_LIVE=1)</li></ul></div></section></main><footer>WCAG-minded semantic HTML, keyboard focus, responsive 320px–1920px+, and reduced-motion-safe. Same design tokens as the landing page — <code>forge uicheck design</code> gates both.</footer></div></body></html>`;
+forge substrate "Change auth validation and update tests"</div></section><section id="changes"><h2>Latest repo changes</h2><div class="card"><ul class="list">${d.latest.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted">Benchmark sections indexed: ${esc(d.benchMentions)} · benchmarks file updated ${esc(d.benchUpdated)}.</p></div></section><section id="sources"><h2>Data Sources</h2><div class="card"><p class="muted">No mock data is used. This page is regenerated from repository files during CI (generated ${esc(d.generated)} from ${esc(d.commit)}). Enable <code>BUILD_PAGES_LIVE=1</code> to refresh public GitHub counters with ETag/Last-Modified caching.</p><ul class="list"><li>package.json</li><li>README.md</li><li>CHANGELOG.md</li><li>reports/benchmarks.md</li><li>${api} (optional, no auth, only when BUILD_PAGES_LIVE=1)</li></ul></div></section></main><footer>WCAG-minded semantic HTML, keyboard focus, responsive 320px–1920px+, and reduced-motion-safe. Same design tokens as the landing page — parity enforced in test/pages.test.js.</footer></div></body></html>`;
 }
 if (import.meta.url === `file://${process.argv[1]}`) {
   const data = await collect();

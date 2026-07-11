@@ -220,14 +220,14 @@ Structural differences only — each row is checkable against the named source, 
 tables (including what each adjacent tool does _better_) are in
 [`reports/benchmarks.md` → Uniqueness](reports/benchmarks.md#uniqueness--structural-contrasts-with-adjacent-tools):
 
-| Property                                                                                           | Forge                                                                          | Note stores / gateways / RAG                                                                                                                                          |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Memory confidence moved **only by independent oracles** (tests, CI, human)                         | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`) | note stores keep notes as written                                                                                                                                     |
-| Unreviewed knowledge decays toward _uncertainty_, not deletion                                     | yes — time-decayed Beta posterior; dormant claims kept for audit               | notes persist unchanged until deleted                                                                                                                                 |
-| Conflict-free team merge over plain git                                                            | yes — join-semilattice, property-tested                                        | per-machine SQLite or a hosted store                                                                                                                                  |
-| Routing decision visible and diffable **before** dispatch                                          | yes — deterministic rubric over `src/model_tiers.json`                         | gateways decide inside the proxy at request time                                                                                                                      |
-| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — `SERVE_FLOOR`, `revalidate()` in `src/reuse.js`                          | plain RAG serves on similarity alone                                                                                                                                  |
-| **What they do better**                                                                            | —                                                                              | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually _move traffic_ (failover, quotas). Forge is a transparency layer, not a replacement |
+| Property                                                                                           | Forge                                                                                                     | Note stores / gateways / RAG                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory confidence moved **only by independent oracles** (tests, CI, human)                         | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`)                            | note stores keep notes as written                                                                                                                                     |
+| Unreviewed knowledge decays toward _uncertainty_, not deletion                                     | yes — confidence fades over time toward _unsure_; dormant claims kept for audit, never deleted            | notes persist unchanged until deleted                                                                                                                                 |
+| Conflict-free team merge over plain git                                                            | yes — two teammates' memories combine by set-union, so they never conflict (property-tested)              | per-machine SQLite or a hosted store                                                                                                                                  |
+| Routing decision visible and diffable **before** dispatch                                          | yes — a deterministic rubric you can read in the repo (`src/model_tiers.json`)                            | gateways decide inside the proxy at request time                                                                                                                      |
+| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — a cache hit is served only if its evidence clears a confidence floor and still matches today's code | plain RAG serves on similarity alone                                                                                                                                  |
+| **What they do better**                                                                            | —                                                                                                         | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually _move traffic_ (failover, quotas). Forge is a transparency layer, not a replacement |
 
 ## Honest limits
 
@@ -245,11 +245,12 @@ _advisory_. **Tests and human corrections always win.** Full list:
 
 ## Why a cognitive substrate? The white paper
 
-A language model at inference is a fixed function `y = f(x)` — frozen weights, a bounded
-window, no state between calls. Memory, foresight, and self-checking can't be prompted into
-that shape; they have to be supplied from outside. The full argument, with every
-load-bearing statistic re-graded against primary sources, is the
-[cognitive-substrate white paper](docs/cognitive-substrate/).
+A model can't learn from your codebase between calls: its weights are frozen and its
+working memory is wiped after every response. Memory, foresight, and self-checking can't
+be prompted into it — they have to be supplied from outside, which is what the substrate
+does. (Formally: inference is a fixed function `y = f(x)` with no state between calls.)
+The full argument, with every load-bearing statistic re-graded against primary sources, is
+the [cognitive-substrate white paper](docs/cognitive-substrate/).
 
 ## Public site
 

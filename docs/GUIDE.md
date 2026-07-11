@@ -44,11 +44,12 @@ Playwright for `uicheck visual`) are opt-in and still add no required dependency
 
 ## Mental model
 
-A language model at inference time is a fixed function `y = f(x)` — frozen weights, a
-bounded window, no state between calls. From that shape, five things follow that no
-prompt can fix: it can't **remember** across sessions, can't **learn** from outcomes,
-can't **imagine** what an edit breaks, can't reliably **check itself**, and can't see
-**what already exists** beyond its window.
+A coding model starts every call from zero: its training is frozen and it forgets
+everything the moment a session ends. Five gaps follow, and no prompt closes them — it
+can't **remember** across sessions, can't **learn** from outcomes, can't **imagine** what
+an edit breaks, can't reliably **check itself**, and can't see **what already exists**
+beyond its current window. (Formally: inference is a fixed function `y = f(x)` with no
+state between calls.)
 
 Forge supplies those faculties from the _outside_, in three layers:
 
@@ -178,11 +179,11 @@ _Advisory: ask rather than assume._
 ### `forge route "<task>"` — the cheapest capable model
 
 A transparent, deterministic rubric (never a second LLM call), and every score is
-attributable. The text side is **similarity-weighted k-NN over a labeled exemplar
-bank** (`EXEMPLARS` in `src/route.js`): your task is compared to ~50 example tasks
-with known complexities, and the nearest neighbors — which the output names — set the
-estimate. The repo side scores real signals (files in scope, impact fan-out, churn,
-past-mistake density, ambiguity). Whichever facet detects difficulty sets the tier.
+attributable. **The text side works by resemblance:** your task is compared to ~50
+example tasks with known difficulty, and the closest matches — which the output names —
+set the estimate (a similarity-weighted k-NN over the labeled `EXEMPLARS` bank in
+`src/route.js`). The repo side scores real signals (files in scope, impact fan-out,
+churn, past-mistake density, ambiguity). Whichever facet detects difficulty sets the tier.
 
 ```console
 $ forge route "write an is_prime function"

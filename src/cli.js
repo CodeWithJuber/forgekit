@@ -47,7 +47,10 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
-    const { report, bytes, settings, detected } = init({ targetRoot: process.cwd(), noSettings });
+    const { report, bytes, settings, detected } = init({
+      targetRoot: process.cwd(),
+      noSettings,
+    });
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
@@ -219,8 +222,7 @@ async function run(argv) {
       return;
     }
     heading(`${BRAND.brand} docs check — docs↔code drift\n`);
-    if (!r.issues.length)
-      console.log("  ✓ docs and code agree (commands, env vars, MCP tools, CHANGELOG)");
+    if (!r.issues.length) console.log(`  ✓ docs and code agree (${r.checked.join(", ")})`);
     for (const i of r.issues)
       console.log(`  ${i.severity === "error" ? "✗" : "!"} [${i.check}] ${i.detail}`);
     if (!r.ok) {
@@ -404,7 +406,11 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = ls.tombstone(dir, hit.id, { author: gitAuthor(), reason, t: nowDay });
+      const r = ls.tombstone(dir, hit.id, {
+        author: gitAuthor(),
+        reason,
+        t: nowDay,
+      });
       if (!r.ok) {
         console.error(`  ${r.reason}`);
         process.exitCode = 1;
@@ -436,7 +442,11 @@ async function run(argv) {
           JSON.stringify(
             {
               sim: simLabel(sim),
-              results: ranked.map((r) => ({ id: r.claim.id, kind: r.claim.kind, score: r.score })),
+              results: ranked.map((r) => ({
+                id: r.claim.id,
+                kind: r.claim.kind,
+                score: r.score,
+              })),
             },
             null,
             2,
@@ -456,10 +466,18 @@ async function run(argv) {
       if (personal) {
         // Personal import: facts from the global recall store into the personal ledger.
         const { defaultStore } = await import("./recall.js");
-        r = { lessons: 0, outcomes: 0, ...b.importFacts(defaultStore(), dir, nowDay) };
+        r = {
+          lessons: 0,
+          outcomes: 0,
+          ...b.importFacts(defaultStore(), dir, nowDay),
+        };
       } else {
         const { brainStore } = await import("./brain.js");
-        r = b.importLegacy(root, { recallStore: brainStore(root), recallLedger: dir, nowDay });
+        r = b.importLegacy(root, {
+          recallStore: brainStore(root),
+          recallLedger: dir,
+          nowDay,
+        });
       }
       if (json) return console.log(JSON.stringify(r, null, 2));
       console.log(
@@ -548,7 +566,10 @@ async function run(argv) {
         repoLedger(root),
         { spec, form: "module", ...desc },
         ref
-          ? { evidence: { oracle: "test.run", result: "confirm", ref }, t: nowDay }
+          ? {
+              evidence: { oracle: "test.run", result: "confirm", ref },
+              t: nowDay,
+            }
           : { t: nowDay },
       );
       if (json) return console.log(JSON.stringify(r, null, 2));
@@ -569,7 +590,11 @@ async function run(argv) {
     }
     if (sub === "stats") {
       const { summarize } = await import("./metrics.js");
-      const s = summarize(root).cache ?? { events: 0, byOutcome: {}, savedEstimate: 0 };
+      const s = summarize(root).cache ?? {
+        events: 0,
+        byOutcome: {},
+        savedEstimate: 0,
+      };
       if (json) return console.log(JSON.stringify(s, null, 2));
       heading(`${BRAND.brand} reuse — proof-carrying code cache\n`);
       console.log(`  lookups: ${s.events}`);
@@ -981,7 +1006,11 @@ async function run(argv) {
         const baseUrl = flagVal("--base-url");
         const envKey = flagVal("--key-env");
         const label = flagVal("--label");
-        const r = addProvider(process.cwd(), addName, { baseUrl, envKey, label });
+        const r = addProvider(process.cwd(), addName, {
+          baseUrl,
+          envKey,
+          label,
+        });
         if (!r.ok) {
           console.error(`  ${r.reason}`);
           process.exitCode = 1;
@@ -1206,7 +1235,11 @@ async function run(argv) {
     // Repeatable flags collect rows; positionals are "done" rows. Piped stdin (one row
     // per line) covers agents that assemble the summary programmatically.
     const fields = { done: [], next: [], gotchas: [], criteria: [] };
-    const FLAG = { "--next": "next", "--gotcha": "gotchas", "--criteria": "criteria" };
+    const FLAG = {
+      "--next": "next",
+      "--gotcha": "gotchas",
+      "--criteria": "criteria",
+    };
     for (let i = 0; i < args.length; i += 1) {
       if (FLAG[args[i]]) fields[FLAG[args[i]]].push(args[++i] ?? "");
       else if (args[i] === "--phase") fields.phase = args[++i] ?? "";
@@ -1450,7 +1483,11 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = await visualGate(targets[0], { taste: tasteArg, remote, root: process.cwd() });
+      const r = await visualGate(targets[0], {
+        taste: tasteArg,
+        remote,
+        root: process.cwd(),
+      });
       if (!r.ok) {
         const reason = "reason" in r ? r.reason : "visual gate failed";
         if ("skipped" in r && r.skipped) {
@@ -1517,7 +1554,9 @@ async function run(argv) {
         let minted = null;
         if (argv.includes("--mint")) {
           const { epochDay } = await import("./util.js");
-          minted = ui.mintProjectFingerprint(process.cwd(), files, { t: epochDay() });
+          minted = ui.mintProjectFingerprint(process.cwd(), files, {
+            t: epochDay(),
+          });
         }
         if (json) {
           console.log(JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2));
