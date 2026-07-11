@@ -8,6 +8,8 @@ import {
   assessTask,
   assessTaskLLM,
   clarifyBlock,
+  completenessFeatures,
+  completenessScore,
   informationGap,
   preflightRepo,
   reconcileAssumption,
@@ -73,6 +75,74 @@ test("preflightRepo grounds against a real repo (missing file/symbol → clarify
   assert.ok(!r.unresolved.symbols.includes("computeTax"), "resolved symbol is not flagged");
 });
 
+// --- M2 completeness is a logistic estimator (smooth, bounded, calibrated), not a step scorer ---
+
+test("completenessScore: logistic output is strictly bounded in (0,1) at feature extremes", () => {
+  const floor = completenessScore({
+    words: 1,
+    concreteness: 0,
+    specifics: 0,
+    vagueness: 12,
+    length: -1,
+  });
+  const ceil = completenessScore({
+    words: 400,
+    concreteness: 8,
+    specifics: 8,
+    vagueness: 0,
+    length: 1,
+  });
+  assert.ok(floor > 0 && floor < 0.02, "a wall of vagueness floors near 0 without a hard clamp");
+  assert.ok(ceil > 0.99 && ceil < 1, "a dense concrete spec saturates near 1 but never reaches it");
+});
+
+test("completenessScore: each concrete anchor raises completeness monotonically (no step jumps)", () => {
+  let prev = -1;
+  for (let c = 0; c <= 5; c++) {
+    const s = completenessScore({
+      words: 15,
+      concreteness: c,
+      specifics: 0,
+      vagueness: 0,
+      length: 0,
+    });
+    assert.ok(s > prev, `concreteness ${c} must exceed ${c - 1}`);
+    prev = s;
+  }
+});
+
+test("completenessScore: vagueness pulls down, specifics pull up (signed, attributable)", () => {
+  const base = {
+    words: 15,
+    concreteness: 1,
+    specifics: 0,
+    vagueness: 0,
+    length: 0,
+  };
+  assert.ok(completenessScore({ ...base, vagueness: 2 }) < completenessScore(base));
+  assert.ok(completenessScore({ ...base, specifics: 2 }) > completenessScore(base));
+});
+
+test("assessTask: completeness is continuous in length — no discontinuity at the old 22/30-word steps", () => {
+  // The old scorer jumped +0.1/+0.2 crossing 22/30 words; the tanh length term must be smooth,
+  // so completeness for 29 vs 30 words (same other features) differs only marginally.
+  const mk = (n) => `Implement parseThing to convert input to output ${"x ".repeat(n).trim()}`;
+  const a = assessTask(mk(20)).completeness;
+  const b = assessTask(mk(21)).completeness;
+  assert.ok(Math.abs(a - b) < 0.03, `adjacent word counts must not jump (${a} vs ${b})`);
+});
+
+test("assessTask: reproduces the paper's calibrated anchor examples", () => {
+  const vague = assessTask("make the auth better");
+  const clear = assessTask(
+    "Change verifyToken in src/auth.js to require length > 20; update tests",
+  );
+  assert.ok(vague.completeness < 0.3 && vague.shouldAsk, "bare ask stays under-specified");
+  assert.ok(clear.completeness >= 0.6 && !clear.shouldAsk, "a concrete task clears the gate");
+  // features are inspectable
+  assert.equal(completenessFeatures("make the auth better").concreteness, 0);
+});
+
 test("assessTaskLLM: parses a completeness reading, rejects junk", () => {
   const p = assessTaskLLM("do a thing", {
     run: () => '{"completeness":0.3,"missing":["target_scope"],"questions":["Which file?"]}',
@@ -98,7 +168,11 @@ test("reconcileAssumption: model can only move completeness within ±band of the
 test("reconcileAssumption: never clears a deterministic / hard-underspecified ask", () => {
   const det = assessTask("Fix it."); // hardUnderspecified
   assert.equal(det.shouldAsk, true);
-  const r = reconcileAssumption(det, { completeness: 0.95, missing: [], questions: [] });
+  const r = reconcileAssumption(det, {
+    completeness: 0.95,
+    missing: [],
+    questions: [],
+  });
   assert.equal(r.shouldAsk, true, "the gate only tightens; the model cannot open it");
 });
 
@@ -120,7 +194,11 @@ test("reconcileAssumption: extra questions survive only if grounded or on a flag
   // An ungrounded question tied to no flagged dimension is dropped.
   const r2 = reconcileAssumption(
     det,
-    { completeness: det.completeness, missing: [], questions: ["Unrelated musing?"] },
+    {
+      completeness: det.completeness,
+      missing: [],
+      questions: ["Unrelated musing?"],
+    },
     { grounded: () => false },
   );
   assert.ok(!r2.questions.includes("Unrelated musing?"), "ungrounded extra question dropped");
@@ -172,7 +250,11 @@ test("bidirectional: a verified raise clears a borderline false ask", () => {
 });
 
 test("bidirectional: a hard-underspecified task is NEVER cleared", () => {
-  const det = detStub({ completeness: 0.5, shouldAsk: true, hardUnderspecified: true });
+  const det = detStub({
+    completeness: 0.5,
+    shouldAsk: true,
+    hardUnderspecified: true,
+  });
   const r = reconcileAssumption(det, { completeness: 1, missing: [], questions: [] }, {});
   assert.equal(r.shouldAsk, true, "no concrete anchor → the model can't wave it through");
 });

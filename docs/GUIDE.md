@@ -192,8 +192,9 @@ $ forge route "write an is_prime function"
     driven by: similar to "check if a number is prime" (sim 1.00, complexity 0.08)
 
 $ forge route "design and implement a distributed rate limiter with sliding windows across 3 services"
-  → Fable 5 / Opus  (premium tier)
-    driven by: similar to "implement a rate limiter with a token bucket" (sim 0.71, complexity 0.78)
+  → Opus 4.8  (complex, $5/$25 per M tok)
+    architecture, cross-module refactor, novel algorithms, multi-layer debugging
+    complexity 0.73 · driven by: similar to "implement a rate limiter with a token bucket" (sim 0.43, complexity 0.78)
 ```
 
 Unseen phrasings route by resemblance — "two threads deadlock when the queue is full"
@@ -274,10 +275,13 @@ Forge anchor — goal-drift check
 ```
 
 `src/auth.js` maps to the goal (named file + where `verifyToken` lives); `src/report.js`
-doesn't — so it's surfaced as drift to confirm or undo. Coarse and advisory by design
-(path/keyword match, not semantic). `forge substrate` folds this in automatically. The
-result also carries `driftScore` (the off-goal fraction per checkpoint) — the graded
-signal the `cusum` change-point detector accumulates to catch _sustained_ small drift.
+doesn't — so it's surfaced as drift to confirm or undo. Advisory by design, and graded: each
+file's on-goal confidence is a noisy-OR over how many goal concepts it exhibits in its path
+**and** the identifiers it defines (via the atlas), so a file that implements the goal but never
+spells it in its path is still caught. `forge substrate` folds this in automatically. The result
+carries `driftScore` — the mean off-goal-ness (1 − that confidence) across the checkpoint's
+changes, the graded signal the `cusum` change-point detector accumulates to catch _sustained_
+small drift.
 
 **The goal persists.** `forge anchor set "<goal>"` stores it in `.forge/goal.md`; every
 new session re-injects it at SessionStart, a bare `forge anchor` checks against it, and

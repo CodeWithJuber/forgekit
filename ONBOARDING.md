@@ -1,6 +1,6 @@
 # Onboarding — five minutes to productive
 
-**One brain for every AI coding agent.** A language model is *stateless* — one
+**One brain for every AI coding agent.** A language model is _stateless_ — one
 context window, wiped every call — so it has no memory of what your team learned, no
 foresight about what an edit breaks, and no enforced guardrails. forgekit is the
 **cognitive substrate** that supplies exactly those three things, and it delivers them
@@ -39,7 +39,7 @@ forge doctor               # everything green?
 ```
 
 Full matrix (no-registry `github:` install, symlink dev setup) →
-[README → Install](README.md#install).
+[README → 60-second quickstart](README.md#60-second-quickstart).
 
 ## 2. Configure a repo (once per repo)
 
@@ -64,7 +64,7 @@ forge sync                 # recompiles into every tool; idempotent (only rewrit
 
 ## 3. Use the cognitive substrate
 
-The substrate is the layer that runs *before* the model edits code. One command runs
+The substrate is the layer that runs _before_ the model edits code. One command runs
 the whole pre-action gate:
 
 ```bash

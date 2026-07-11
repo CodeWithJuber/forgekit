@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
+import { sigmoid } from "./predictor.js";
 import { CODE_EXT } from "./util.js";
 
 const STOP = new Set([
@@ -159,6 +160,55 @@ export function ambiguityMarkers(text) {
   return [...new Set(out)];
 }
 
+// M2 completeness model — a logistic (log-odds) estimator of specification completeness s(x),
+// replacing the older additive scorer whose magic coefficients + discontinuous word-count steps
+// the audit flagged as "graded-but-uncalibrated". Each feature contributes a signed amount to the
+// log-odds and the sigmoid maps the sum to [0,1] — so the estimate is smooth (no step jumps),
+// self-bounding (no ad-hoc clamp), and every feature's pull stays attributable (transparent rubric,
+// the substrate's core commitment). Weights are a documented PRIOR calibrated so the paper's own
+// examples land where they should (a bare "make the auth better" ≈ 0.23 → ask; a concrete
+// "Change verifyToken … length > 20; update tests" ≈ 0.63 → proceed); a labeled task bank could
+// refine them via predictor.js's trainLogistic without changing this call site.
+export const COMPLETENESS_WEIGHTS = {
+  bias: -0.858,
+  concreteness: 1.44, // each concrete anchor (example, call signature, quoted literal, filename)
+  specifics: 0.5, // each named technology/algorithm — real information even in prose
+  vagueness: -1.3, // each vague filler that forces the agent to interpret — strong negative
+  length: 0.6, // continuous length signal in [-1,1]; replaces the old ≥22/≥30-word steps
+};
+
+/**
+ * Extract the completeness feature vector from a task string. Pure and exported so the estimate
+ * is inspectable and a completeness bank could be fit against it.
+ * @param {string} task
+ */
+export function completenessFeatures(task) {
+  const t = String(task || "");
+  const words = t.trim().split(/\s+/).filter(Boolean).length;
+  return {
+    words,
+    concreteness: ANCHORS.filter((a) => a.test(t)).length,
+    specifics: new Set([...t.matchAll(SPECIFIC)].map((m) => m[0].toLowerCase())).size,
+    vagueness: new Set(
+      [...t.matchAll(new RegExp(VAGUE.source, "gi"))].map((m) => m[0].toLowerCase()),
+    ).size,
+    // smooth, bounded length evidence: ~12-word tasks are neutral, shorter pulls down, longer up,
+    // with no threshold jumps — tanh saturates so a wall of text can't dominate the verdict.
+    length: Math.tanh((words - 12) / 12),
+  };
+}
+
+/** Completeness s(x) ∈ (0,1) as a logistic over the feature vector. */
+export function completenessScore(features, weights = COMPLETENESS_WEIGHTS) {
+  const z =
+    weights.bias +
+    weights.concreteness * features.concreteness +
+    weights.specifics * features.specifics +
+    weights.vagueness * features.vagueness +
+    weights.length * features.length;
+  return sigmoid(z);
+}
+
 export function assessTask(text, { askThreshold = 0.6 } = {}) {
   const task = String(text || "");
   const words = task.trim().split(/\s+/).filter(Boolean).length;
@@ -167,23 +217,16 @@ export function assessTask(text, { askThreshold = 0.6 } = {}) {
   const vagueHits = [
     ...new Set([...task.matchAll(new RegExp(VAGUE.source, "gi"))].map((m) => m[0].toLowerCase())),
   ];
+  const completeness = completenessScore({
+    words,
+    concreteness,
+    specifics: specifics.length,
+    vagueness: vagueHits.length,
+    length: Math.tanh((words - 12) / 12),
+  });
   const reasons = [];
-  let score =
-    0.45 +
-    Math.min(0.45, 0.18 * concreteness) +
-    Math.min(0.2, 0.06 * specifics.length) -
-    0.22 * vagueHits.length;
-  if (words <= 7) {
-    score -= 0.22;
-    reasons.push("very short request");
-  }
-  if (words >= 30 && specifics.length >= 2) {
-    score += 0.2;
-    reasons.push(`long detailed spec (${words} words)`);
-  } else if (words >= 22 && specifics.length >= 1) {
-    score += 0.1;
-    reasons.push(`detailed spec (${words} words)`);
-  }
+  if (words <= 7) reasons.push("very short request");
+  if (words >= 22) reasons.push(`detailed request (${words} words)`);
   if (concreteness) reasons.push(`${concreteness} concrete anchor(s)`);
   if (specifics.length) reasons.push(`${specifics.length} named technical specific(s)`);
   if (vagueHits.length) reasons.push(`${vagueHits.length} vague filler(s)`);
@@ -196,7 +239,6 @@ export function assessTask(text, { askThreshold = 0.6 } = {}) {
       questions.push(d.question);
     }
   }
-  const completeness = Math.max(0, Math.min(1, score));
   const hardUnderspecified =
     concreteness === 0 && (words <= 10 || (vagueHits.length >= 1 && specifics.length === 0));
   const shouldAsk = completeness < askThreshold || hardUnderspecified;
@@ -246,7 +288,11 @@ export function parseAssumptionProposal(obj) {
 
 /** Ask the model for an assumption reading (proposer). Returns null when off/unavailable. */
 export function assessTaskLLM(task, { run = buildRunner() } = {}) {
-  return adjudicate({ prompt: buildAssumptionPrompt(task), parse: parseAssumptionProposal, run });
+  return adjudicate({
+    prompt: buildAssumptionPrompt(task),
+    parse: parseAssumptionProposal,
+    run,
+  });
 }
 
 /**
@@ -393,8 +439,13 @@ export function preflightRepo(
   // M2 proposer: only when opted in. The rubric is the external judge; the model refines it
   // within bounds and can add grounded questions. Fail-safe: null proposal keeps `det`.
   if (!llmEnabled({ llm }))
-    return { ...gap, assumption: { ...det, provenance: { path: "deterministic" } } };
-  const proposal = assessTaskLLM(text, { run: run || buildRunner({ model, timeoutMs }) });
+    return {
+      ...gap,
+      assumption: { ...det, provenance: { path: "deterministic" } },
+    };
+  const proposal = assessTaskLLM(text, {
+    run: run || buildRunner({ model, timeoutMs }),
+  });
   const grounded = (q) => {
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));

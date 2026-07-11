@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Goal-drift is graded, not a substring match (`src/anchor.js`).** A changed file's
+  on-goal-ness is now a **noisy-OR** (`1 − (1 − p)^hits`) over how many distinct goal
+  concepts it exhibits in its path **and** the identifiers it defines (via the atlas) —
+  so a file that implements the goal but never names it in its path is caught
+  deterministically, not just by the opt-in LLM pass. `driftScore` becomes a true
+  continuous Dₜ that strictly generalizes the old off-goal fraction (identical on 0/1
+  scores, graded otherwise), sharpening the CUSUM drift detector's input.
+- **Specification completeness is a logistic estimator (`src/preflight.js`).** The M2
+  assumption gate's `s(x)` completeness score is now a logistic over its features
+  (concreteness, named specifics, vagueness, a smooth `tanh` length term) — replacing the
+  additive scorer's magic coefficients and discontinuous word-count steps. The `sigmoid`
+  bounds it to (0,1) with no clamp, each feature's pull stays attributable, and a labeled
+  bank could refine the weights via `predictor.js`'s `trainLogistic`. Calibrated to keep the
+  documented examples (a bare "make the auth better" ≈ 0.23 → ask; a concrete verifyToken
+  edit ≈ 0.63 → proceed).
+
+### Added
+
+- **`forge docs check` now guards intra-repo links and roadmap freshness** — two more
+  reconcilers close recurring "docs rot" classes: `checkLinks` resolves every Markdown
+  anchor (`#x` and `path.md#x`) against the target file's real headings using
+  GitHub-exact slugs (an em-dash yields `--`, never collapsed), catching dead anchors like
+  a renamed `#install`; `checkRoadmap` fails when ROADMAP's "Now" marker trails the shipped
+  `package.json` version.
+
+### Fixed
+
+- **Dead and fabricated docs** — a fabricated `forge route` example in `docs/GUIDE.md`
+  (an impossible `Fable 5 / Opus` / "premium tier" output) now shows the real routed
+  verdict; broken `#install` anchors in `ONBOARDING.md` and the substrate README now point
+  to `#60-second-quickstart`; a dead `#use-it-in-a-script` self-link resolves; and ROADMAP's
+  "Now" marker is current (v0.11.0). All now enforced by the new docs-check guards.
+
 ## [0.11.0] - 2026-07-11
 
 ### Added

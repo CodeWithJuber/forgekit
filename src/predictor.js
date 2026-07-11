@@ -19,7 +19,8 @@ export const DEFAULT_WEIGHTS = {
 
 export const FEATURE_KEYS = Object.keys(DEFAULT_WEIGHTS).filter((k) => k !== "bias");
 
-const sigmoid = (z) => 1 / (1 + Math.exp(-z));
+/** Logistic squashing function — maps any real log-odds z to a probability in (0,1). */
+export const sigmoid = (z) => 1 / (1 + Math.exp(-z));
 
 /** Heuristic risk in [0,1]. Advisory only — never blocks. */
 export function heuristicRisk(features, weights = DEFAULT_WEIGHTS) {

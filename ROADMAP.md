@@ -7,16 +7,20 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.8.1+)
-Everything from 0.8.0 plus gateway-environment support end to end — `ANTHROPIC_AUTH_TOKEN`
-recognized everywhere, `ANTHROPIC_MODEL`/`FORGE_MODEL` model override, LiteLLM-gateway
-auto-classification of `ANTHROPIC_BASE_URL`, direct-HTTP LLM calls when the `claude` CLI
-is absent (`src/llm.js`) — plus decision math replacing keyword heuristics (exemplar k-NN
-routing, entropy secret detection), docs↔code drift gating (`forge docs check`, in CI),
-docs in the impact graph, and a persistent goal (`forge anchor set`).
+## Now (`master`, v0.11.0)
+
+The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
+routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file
+defines, and a logistic specification-completeness gate. Around it: docs↔code drift gating
+(`forge docs check`, in CI) that now also reconciles diagrams, model prices, benchmark numbers,
+intra-repo links, and roadmap freshness; a completion gate (Stop hook); and auto-release on merge.
+Gateway environments are supported end to end — `ANTHROPIC_AUTH_TOKEN` recognized everywhere,
+`ANTHROPIC_MODEL`/`FORGE_MODEL` model override, LiteLLM-gateway auto-classification of
+`ANTHROPIC_BASE_URL`, and direct-HTTP LLM calls when the `claude` CLI is absent (`src/llm.js`).
 See [CHANGELOG.md](./CHANGELOG.md).
 
 ## Shipped — Substrate v2 (all phases P0–P8, v0.5.0)
+
 The plan lives in [docs/plans/substrate-v2/](./docs/plans/substrate-v2/00-overview.md)
 (phase dependency graph + acceptance gates, all marked done): every paper faculty and
 mechanism mapped to an algorithm, unified by the **Proof-Carrying Memory (PCM)
@@ -25,6 +29,7 @@ confidence only from independent oracles, and merges across teammates conflict-f
 (git-native CRDT ledger).
 
 ## Shipped — 0.7.0
+
 - **Zero-config provider auto-detection** — `autoDetectProvider()` probes env vars
   for LiteLLM (local + hosted gateway), OpenRouter, and Anthropic (key, auth token,
   or custom base URL); `forge init` reports what it found, no manual config needed.
@@ -39,6 +44,7 @@ confidence only from independent oracles, and merges across teammates conflict-f
   event timeline, and ledger health from `.forge/` data.
 
 ## Shipped — 0.6.0
+
 - **Embeddings tier** — optional vector backend (`src/embed.js`, ADR-0005 dependency
   tier, stdlib fallback kept): `FORGE_EMBED=cmd:<command>` or
   `FORGE_EMBED=http:<url>` (OpenAI-compatible), disk-cached at
@@ -53,6 +59,7 @@ confidence only from independent oracles, and merges across teammates conflict-f
   `/status/`.
 
 ## Next
+
 - **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
   Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
   zero-config contract.
@@ -70,12 +77,14 @@ confidence only from independent oracles, and merges across teammates conflict-f
   once fixtures measure them (overview §4 honesty register).
 
 ## Later / exploring
+
 - `forge verify` independent-review wired into CI with provenance gating.
 - Formal/semantic verification — documented as out-of-scope for now.
 - Parametric learning channel (LoRA distillation) — deliberately out of scope (ADR-0006).
 
 ## Non-goals
+
 Unbounded dependency growth — deps are selective, optional, and always backed by a
 stdlib fallback path (ADR-0005). Reimplementing mature tools (skills installer,
 subagent orchestration, SDD framework, SAST) — we wire the best existing ones. Bundling
-a whole IDE. A hosted memory server — git *is* the sync (see 02-team-memory.md).
+a whole IDE. A hosted memory server — git _is_ the sync (see 02-team-memory.md).
