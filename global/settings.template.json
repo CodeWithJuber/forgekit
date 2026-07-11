@@ -70,8 +70,6 @@
       "Bash(rm -rf ~:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
-      "Bash(curl:* | sh)",
-      "Bash(curl:* | bash)",
       "Bash(sudo:*)"
     ]
   },

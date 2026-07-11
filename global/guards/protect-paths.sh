@@ -38,8 +38,11 @@ if [ -n "${cmd:-}" ]; then
     *"rm -rf /"*|*"rm -rf ~"*|*"rm -rf --no-preserve-root"*) deny "destructive rm detected." ;;
     *"git push --force"*|*"git push -f"*) deny "force-push blocked. Ask the user first." ;;
     *"DROP TABLE"*|*"DROP DATABASE"*|*"TRUNCATE "*) deny "destructive SQL detected. Confirm with the user." ;;
-    *" | sh"*|*" | bash"*) deny "piping remote content to a shell is blocked." ;;
   esac
+  # Pipe-to-shell (e.g. curl … | sh). Boundary-aware so legit `… | shellcheck` is not caught.
+  if [[ "$cmd" =~ \|[[:space:]]*(sh|bash|zsh)([[:space:]]|$) ]]; then
+    deny "piping content to a shell is blocked."
+  fi
 fi
 
 exit 0
