@@ -231,11 +231,15 @@ parses) swept against every doc artifact → UPDATED / STALE (file:line hits) /
 VERIFIED-UNAFFECTED with the reason recorded. Pure reporter; the gate provides the teeth.
 
 **Docs-check now guards more than names (`src/docs_check.js`).** Beyond
-commands/env/MCP-tools/CHANGELOG, three reconcilers close the blind spots behind recurring
+commands/env/MCP-tools/CHANGELOG, five reconcilers close the blind spots behind recurring
 "docs rot" complaints: `checkDiagrams` scans every `mermaid` block across all Markdown for
 the branded `%%{init` theme and literal-`\n` node breaks; `checkModelTiers` reconciles doc
 prose prices against `src/model_tiers.json`; `checkBenchmarks` reconciles bolded `N ms`
-README claims against the measured table in `reports/benchmarks.md`. The two public pages
+README claims against the measured table in `reports/benchmarks.md`; `checkLinks` resolves
+every intra-repo Markdown anchor (`#x` and `path.md#x`) against the target's real headings
+(GitHub-exact slugs — em-dashes yield `--`, never collapsed), killing the dead-anchor class;
+and `checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
+version. The two public pages
 (`landing/index.html` + the `build-pages.mjs` status page) share one set of design tokens,
 enforced for parity (plus non-empty changes list, no phantom webfont) by
 `test/pages.test.js` — so neither the docs' numbers nor the site's look can silently drift.
@@ -251,6 +255,21 @@ model routing — a labeled bank (English + Hinglish rows) under overlap similar
 confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
 generic task verbs (`fix`/`add`/`build`) as complexity noise, but they are exactly the
 intent signal — same math, different stop-set data.
+
+**Graded goal-drift & completeness (`src/anchor.js`, `src/preflight.js`).** Two decisions that
+were the last hand-static holdouts are now formulas. Goal-drift no longer classifies a changed
+file by a binary path-substring match; `onGoalScore` is a **noisy-OR** (`1 − (1 − p)^hits`, the
+same estimator `lessons.js` uses) over how many distinct goal concepts the file exhibits in its
+path **and** its atlas-defined identifiers, thresholded at the single-hit floor — so a file that
+implements the goal without naming it in its path is still classed on-goal. `driftScore` stays the
+off-goal fraction (the `cusum` operating point is unchanged; an on-goal checkpoint scores 0 and
+drains the chart); the grading sharpens _which_ files count as drift, not the detector's tuning. The M2
+completeness score `s(x)` is a **logistic** over its features (concreteness, named specifics,
+vagueness, a smooth `tanh` length term) instead of an additive rubric with magic coefficients and
+discontinuous word-count steps — the `sigmoid` bounds it to (0,1) with no clamp, every feature's
+pull stays attributable, and a labeled bank could refine the weights via `predictor.js`'s
+`trainLogistic`. The calibrated prior still lands the paper's own examples where they were
+(a bare "make the auth better" ≈ 0.23 → ask; a concrete verifyToken edit ≈ 0.63 → proceed).
 
 **The evidence trail (preflight).** Once a goal is anchored, every prompt appends its
 graded `driftScore` to the session log; `cusum` (until now test-only math) accumulates

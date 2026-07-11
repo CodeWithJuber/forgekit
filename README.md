@@ -114,8 +114,8 @@ an assumption until measured_.
   real models (paper §9; that's the paper's measurement, not this repo's — `forge cost
 --stages` reports only _your_ measured stages).
 - **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
-  merge is a property-tested join-semilattice, so teammate ledgers converge in any order over
-  plain git.
+  merge is order-independent and property-tested, so teammate ledgers converge to the same state
+  no matter who syncs first, over plain git.
 
 ## 60-second quickstart
 

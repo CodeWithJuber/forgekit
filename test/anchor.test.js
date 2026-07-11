@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cusum, goalDrift, renderAnchor } from "../src/anchor.js";
+import { cusum, goalDrift, ON_GOAL_P, onGoalScore, renderAnchor } from "../src/anchor.js";
 
 // changed[] is injected so these are pure (no git needed).
 test("goalDrift flags a changed file unrelated to the goal", () => {
@@ -13,7 +13,9 @@ test("goalDrift flags a changed file unrelated to the goal", () => {
 });
 
 test("goalDrift is quiet when every change maps to the goal", () => {
-  const r = goalDrift("/nope", "fix login validation", { changed: ["src/login.js"] });
+  const r = goalDrift("/nope", "fix login validation", {
+    changed: ["src/login.js"],
+  });
   assert.equal(r.drift, false);
   assert.deepEqual(r.offGoal, []);
 });
@@ -25,7 +27,9 @@ test("goalDrift is quiet with no changes yet", () => {
 });
 
 test("goalDrift flags pure drift — changes exist but none match the goal", () => {
-  const r = goalDrift("/nope", "update the billing invoice totals", { changed: ["src/auth.js"] });
+  const r = goalDrift("/nope", "update the billing invoice totals", {
+    changed: ["src/auth.js"],
+  });
   assert.equal(r.onGoal.length, 0);
   assert.equal(r.drift, true);
 });
@@ -75,6 +79,86 @@ test("goalDrift (llm on): a throwing runner falls back to the deterministic spli
   });
   assert.ok(r.offGoal.includes("src/reports.js"));
   assert.equal(r.drift, true);
+});
+
+// ---------------------------------------------------------------------------
+// M4 — graded on-goal score (noisy-OR over concept hits), the CUSUM input.
+// ---------------------------------------------------------------------------
+
+test("onGoalScore: 0 hits → 0, and each extra hit raises confidence with diminishing returns", () => {
+  const goal = new Set(["rate", "limit", "login"]);
+  assert.equal(
+    onGoalScore(goal, new Set(["reports", "billing"])),
+    0,
+    "no shared concept → off-goal",
+  );
+  const one = onGoalScore(goal, new Set(["login"]));
+  const two = onGoalScore(goal, new Set(["login", "rate"]));
+  const three = onGoalScore(goal, new Set(["login", "rate", "limit"]));
+  assert.ok(Math.abs(one - ON_GOAL_P) < 1e-9, "a single hit sits at the on-goal floor");
+  assert.ok(two > one && three > two, "more independent evidence ⇒ higher, monotone");
+  assert.ok(three < 1, "noisy-OR saturates below 1, never false-certain");
+});
+
+test("onGoalScore: the ≥4-char prefix channel matches morphological variants but not collisions", () => {
+  // "auth" is a prefix of the file token "authentication" → a hit (recall preserved). But
+  // "port" is NOT a prefix of "report" (only a raw substring) → NO hit, so an unrelated file
+  // can't be wrongly scored on-goal and hide real drift.
+  assert.ok(onGoalScore(new Set(["auth"]), new Set(["authentication"])) >= ON_GOAL_P);
+  assert.ok(onGoalScore(new Set(["valid"]), new Set(["validation"])) >= ON_GOAL_P);
+  assert.equal(onGoalScore(new Set(["port"]), new Set(["report"])), 0, "substring ≠ prefix");
+});
+
+test("goalDrift: an atlas identifier rescues an implement-the-goal file the PATH never names", () => {
+  // src/throttle.js's path shares no goal word, but it DEFINES rateLimiter — the identifier
+  // channel catches it deterministically (no LLM), the exact gap the audit flagged.
+  const atlas = {
+    symbols: [
+      { name: "rateLimiter", file: "src/throttle.js", kind: "function" },
+      { name: "renderReport", file: "src/reports.js", kind: "function" },
+    ],
+  };
+  const r = goalDrift("/nope", "add rate limiting to the login route", {
+    changed: ["src/throttle.js", "src/reports.js"],
+    atlas,
+  });
+  assert.ok(r.onGoal.includes("src/throttle.js"), "identifier match ⇒ on-goal without the LLM");
+  assert.ok(r.offGoal.includes("src/reports.js"), "a genuinely unrelated file still drifts");
+  assert.equal(r.provenance.path, "deterministic");
+});
+
+test("goalDrift: an on-goal file contributes NO drift; a fully off-goal checkpoint drifts at 1.0", () => {
+  // driftScore is the off-goal FRACTION (the cusum operating point), so a classified-on-goal
+  // file must drain the chart, not accrue residual drift — the regression the review caught.
+  const on = goalDrift("/nope", "add rate limiting to the login route", {
+    changed: ["src/login.js"], // one concept hit → on-goal
+    atlas: null,
+  });
+  const off = goalDrift("/nope", "add rate limiting to the login route", {
+    changed: ["src/reports.js"], // zero hits → off-goal
+    atlas: null,
+  });
+  assert.equal(on.driftScore, 0, "an on-goal checkpoint scores exactly 0 (drains the cusum chart)");
+  assert.equal(off.driftScore, 1, "a fully off-goal checkpoint drifts at 1.0");
+});
+
+test("goalDrift: driftScore is the off-goal fraction (1 on-goal + 1 off-goal → 0.5)", () => {
+  const r = goalDrift("/nope", "billing invoice totals", {
+    changed: ["src/billing.js", "src/reports.js"], // billing → on-goal (1 hit); reports → off-goal
+    atlas: null,
+  });
+  assert.ok(r.onGoal.includes("src/billing.js") && r.offGoal.includes("src/reports.js"));
+  assert.ok(Math.abs(r.driftScore - 0.5) < 1e-9, "1 of 2 files off-goal → 0.5");
+});
+
+test("goalDrift: a goal that NAMES a file classifies that file on-goal (named target ⇒ score 1)", () => {
+  const r = goalDrift("/nope", "update src/pay.js", {
+    changed: ["src/pay.js", "src/reports.js"], // pay.js is the named target; reports is unrelated
+    atlas: null,
+  });
+  assert.ok(r.onGoal.includes("src/pay.js"), "the named file anchors on-goal");
+  assert.ok(r.offGoal.includes("src/reports.js"));
+  assert.ok(Math.abs(r.driftScore - 0.5) < 1e-9, "1 of 2 off-goal → 0.5");
 });
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 // against the forge package root (BRAND.root), not the host repo.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { TOOLS } from "./mcp_tools.js";
@@ -313,6 +313,127 @@ function checkBenchmarks(root, docs, issues) {
   }
 }
 
+// GitHub-style heading→anchor slug: lowercase, drop backticks, strip punctuation (keep word
+// chars/spaces/hyphens), spaces→hyphens. Close enough to GitHub's own algorithm for the intra-repo
+// links these docs use; we only ever FLAG a miss, so a rare slug mismatch degrades to a false
+// alarm we'd see immediately, never a silent wrong link.
+function headingSlug(text) {
+  return (
+    text
+      .trim()
+      .toLowerCase()
+      .replace(/`/g, "")
+      // Drop punctuation but KEEP any Unicode letter/number (so "Café" → "café", matching GitHub,
+      // rather than ASCII-only `\w` which would strip the accent and false-flag a valid link).
+      .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+      .replace(/\s/g, "-")
+  ); // each space → one hyphen; GitHub does NOT collapse (an em-dash between
+  // two words becomes "--", not "-"), so consecutive spaces must map 1:1.
+}
+
+// Every anchor a Markdown file EXPOSES: heading slugs plus explicit ids authors add
+// (`<a id=…>`, `name=…`, or a `{#custom-id}` suffix).
+function anchorsFor(text) {
+  const set = new Set();
+  for (const m of text.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) set.add(headingSlug(m[1]));
+  for (const m of text.matchAll(/\b(?:id|name)=["']([\w-]+)["']/g)) set.add(m[1].toLowerCase());
+  for (const m of text.matchAll(/\{#([\w-]+)\}/g)) set.add(m[1].toLowerCase());
+  return set;
+}
+
+/**
+ * Intra-repo link hygiene: every Markdown link with an `#anchor` (same-file `#x` or a
+ * `path.md#x` cross-reference) must resolve to a heading/anchor that actually exists in the
+ * target. This is the guard that kills the "[README → Install](#install)" class of silent dead
+ * links — a heading gets renamed, the anchor rots, and nothing noticed until now. External URLs
+ * and non-Markdown targets (.html/.pdf/code) are skipped; a missing target file is left to other
+ * checks. Only a genuine unresolved anchor is flagged.
+ */
+function checkLinks(root, issues) {
+  const cache = new Map();
+  const anchorsOf = (rel) => {
+    if (cache.has(rel)) return cache.get(rel);
+    let a = null;
+    try {
+      a = anchorsFor(readFileSync(join(root, rel), "utf8"));
+    } catch {
+      a = null;
+    }
+    cache.set(rel, a);
+    return a;
+  };
+  for (const rel of markdownFiles(root)) {
+    let text;
+    try {
+      text = readFileSync(join(root, rel), "utf8");
+    } catch {
+      continue;
+    }
+    // Strip fenced code blocks so link SYNTAX shown in an example (```md … [x](#y) …```) isn't
+    // scanned as a live link — that would false-positive on documentation about links.
+    const prose = text.replace(/```[\s\S]*?```/g, "");
+    for (const m of prose.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+      const href = m[1].trim();
+      if (/^https?:/i.test(href)) continue; // external
+      const hash = href.indexOf("#");
+      if (hash < 0) continue; // no anchor to resolve
+      const path = href.slice(0, hash);
+      const anchor = href.slice(hash + 1).toLowerCase();
+      if (!anchor) continue;
+      let targetRel;
+      if (!path)
+        targetRel = rel; // same-file anchor
+      else if (path.endsWith(".md")) targetRel = normalize(join(dirname(rel), path));
+      else continue; // .html/.pdf/code target — can't resolve headings, skip
+      const anchors = anchorsOf(targetRel);
+      if (anchors == null) continue; // unreadable/missing target — file existence is another matter
+      if (!anchors.has(anchor)) {
+        issues.push({
+          check: "links",
+          severity: "error",
+          detail: `${rel}: link \`${href}\` points to #${anchor}, which is not a heading in ${targetRel}`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * ROADMAP freshness: the "## Now" marker must not name a version behind package.json. A roadmap
+ * that still says "Now (v0.8.1+)" two releases after 0.10.0 shipped is the "docs are outdated"
+ * complaint in miniature — this makes it a CI failure the moment a release laps the roadmap.
+ */
+function checkRoadmap(root, issues) {
+  const text = readDoc(root, "ROADMAP.md");
+  if (!text) return;
+  const now = text.match(/##\s+Now\b[^\n]*/i);
+  if (!now) return;
+  const vm = now[0].match(/v(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!vm) return;
+  const road = [Number(vm[1]), Number(vm[2]), Number(vm[3] || 0)];
+  let pkg;
+  try {
+    // Parse leading integers per component so a prerelease tag ("1.2.3-beta.1") still yields
+    // [1,2,3], not NaN; guard the read so a missing/corrupt manifest can't abort the whole check.
+    const raw = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || "";
+    const pv = raw.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!pv) return;
+    pkg = [Number(pv[1]), Number(pv[2]), Number(pv[3] || 0)];
+  } catch {
+    return;
+  }
+  const behind =
+    road[0] < pkg[0] ||
+    (road[0] === pkg[0] && (road[1] < pkg[1] || (road[1] === pkg[1] && road[2] < pkg[2])));
+  if (behind) {
+    issues.push({
+      check: "roadmap",
+      severity: "error",
+      detail: `ROADMAP's "Now" marker says v${road.join(".")} but package.json is ${pkg.join(".")} — the roadmap trails the shipped release`,
+    });
+  }
+}
+
 /**
  * Run every reconciler against the forge package tree.
  * @param {{root?: string}} [opts]
@@ -328,6 +449,8 @@ export function docsCheck({ root = BRAND.root } = {}) {
   checkDiagrams(root, issues);
   checkModelTiers(docs, issues);
   checkBenchmarks(root, docs, issues);
+  checkLinks(root, issues);
+  checkRoadmap(root, issues);
   return {
     ok: !issues.some((i) => i.severity === "error"),
     issues,
@@ -339,6 +462,8 @@ export function docsCheck({ root = BRAND.root } = {}) {
       "diagrams",
       "model-tiers",
       "benchmarks",
+      "links",
+      "roadmap",
     ],
   };
 }

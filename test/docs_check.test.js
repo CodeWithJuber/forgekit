@@ -246,6 +246,71 @@ test("docsCheck: a mermaid example marked docs-check-ignore is skipped", () => {
   );
 });
 
+test("docsCheck: a Markdown link to a heading anchor that doesn't exist is flagged", () => {
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\nSee [the setup](#nonexistent-section) first.\n`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(
+    r.issues.some((i) => i.check === "links" && /#nonexistent-section/.test(i.detail)),
+    "a dead same-file anchor is caught",
+  );
+});
+
+test("docsCheck: a link to a real heading — including an em-dash '--' slug — resolves clean", () => {
+  // "Design — the loop" → GitHub slug "design--the-loop" (the em-dash leaves two spaces → two
+  // hyphens). The resolver must NOT collapse them, or valid links false-positive.
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": "# arch\n\n## Design — the loop\n\nJump to [the loop](#design--the-loop).\n",
+  }));
+  const r = docsCheck({ root });
+  assert.deepEqual(
+    r.issues.filter((i) => i.check === "links"),
+    [],
+    "an em-dash heading anchor is not a false positive",
+  );
+});
+
+test("docsCheck: a cross-file .md#anchor that does not resolve is flagged", () => {
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\nSee [the guide](docs/GUIDE.md#ghost-heading).\n`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(
+    r.issues.some(
+      (i) => i.check === "links" && /ghost-heading/.test(i.detail) && /GUIDE/.test(i.detail),
+    ),
+    "a dead cross-file anchor resolves against the target file and is caught",
+  );
+});
+
+test("docsCheck: a ROADMAP 'Now' marker behind package.json is flagged; a current one passes", () => {
+  const behind = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "ROADMAP.md": "# Roadmap\n\n## Now (`master`, v1.0.0)\nold news\n",
+    })),
+  });
+  assert.ok(
+    behind.issues.some((i) => i.check === "roadmap" && /v1\.0\.0.*1\.2\.3/.test(i.detail)),
+    "a roadmap two patch/minor behind the shipped version is flagged",
+  );
+  const current = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "ROADMAP.md": "# Roadmap\n\n## Now (`master`, v1.2.3)\nfresh\n",
+    })),
+  });
+  assert.deepEqual(
+    current.issues.filter((i) => i.check === "roadmap"),
+    [],
+    "a roadmap at the shipped version reconciles clean",
+  );
+});
+
 test("docsCheck: empty release sections and version mismatch are flagged", () => {
   const root = fixtureRoot((f) => ({
     ...f,

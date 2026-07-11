@@ -16,7 +16,7 @@ In Claude Code it runs **automatically**. In other tools you (or the agent) run 
 
 ## Install
 
-Install Forge (plugin · npm · `github:`) per [README → Install](../../README.md#install),
+Install Forge (plugin · npm · `github:`) per [README → 60-second quickstart](../../README.md#60-second-quickstart),
 then inside any project:
 
 ```bash
@@ -159,7 +159,7 @@ Code, and agent-invoked everywhere else.
 
 ---
 
-## Use it in a script & extend it
+## Use it in a script
 
 Add `--json` to any command for machine-readable output — gate your agent's next step on
 `okToProceed`, feed `route.tier` to your model picker, read `impact.impactedFiles` before
