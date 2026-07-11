@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   applyBump,
+  bumpRoadmapNow,
   changelogBody,
   collectVersions,
   computeNext,
@@ -193,6 +194,26 @@ test("setUnreleasedBody fills an empty [Unreleased] and rotateChangelog then acc
 });
 
 // ---------------------------------------------------------------------------
+// ROADMAP "Now" marker
+// ---------------------------------------------------------------------------
+
+test("bumpRoadmapNow updates only the Now marker's version", () => {
+  const roadmap =
+    "# Roadmap\n\n## Now (`master`, v0.12.0)\n\nSome text.\n\n" +
+    "## Shipped — Substrate v2 (v0.5.0)\n\nOlder text mentioning v0.5.0 again.\n";
+  const out = bumpRoadmapNow(roadmap, "0.12.1");
+  assert.match(out, /## Now \(`master`, v0\.12\.1\)/);
+  // untouched: version mentions outside the "## Now" line survive verbatim
+  assert.match(out, /## Shipped — Substrate v2 \(v0\.5\.0\)/);
+  assert.match(out, /Older text mentioning v0\.5\.0 again\./);
+});
+
+test("bumpRoadmapNow is a no-op when there's no Now heading", () => {
+  const roadmap = "# Roadmap\n\nNo heading here.\n";
+  assert.equal(bumpRoadmapNow(roadmap, "1.0.0"), roadmap);
+});
+
+// ---------------------------------------------------------------------------
 // CHANGELOG rotation
 // ---------------------------------------------------------------------------
 
@@ -280,6 +301,7 @@ function makeFixture() {
   w(".codex-plugin/plugin.json", '{\n  "name": "fixture",\n  "version": "0.4.0"\n}\n');
   w("CITATION.cff", 'cff-version: 1.2.0\nversion: 0.4.0\ndate-released: "2026-07-06"\n');
   w("landing/index.html", '<div class="mono">forgekit v0.4.0 · MIT</div>\n');
+  w("ROADMAP.md", "# Roadmap\n\n## Now (`master`, v0.4.0)\n\nSome text.\n");
   w("CHANGELOG.md", CHANGELOG);
   return dir;
 }
@@ -295,6 +317,7 @@ test("applyBump updates every version field in a fixture tree", () => {
         ".codex-plugin/plugin.json",
         "CHANGELOG.md",
         "CITATION.cff",
+        "ROADMAP.md",
         "landing/index.html",
         "package-lock.json",
         "package.json",
@@ -311,6 +334,7 @@ test("applyBump updates every version field in a fixture tree", () => {
     assert.match(read("CITATION.cff"), /^version: 0\.5\.0$/m);
     assert.match(read("CITATION.cff"), /^date-released: "2026-07-07"$/m);
     assert.match(read("landing/index.html"), /forgekit v0\.5\.0/);
+    assert.match(read("ROADMAP.md"), /## Now \(`master`, v0\.5\.0\)/);
     assert.match(read("CHANGELOG.md"), /## \[0\.5\.0\] - 2026-07-07/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

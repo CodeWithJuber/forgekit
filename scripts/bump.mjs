@@ -21,6 +21,8 @@
  *   package.json, package-lock.json (root "version" + packages[""].version),
  *   .claude-plugin/plugin.json, .codex-plugin/plugin.json,
  *   CITATION.cff (version + date-released), landing/index.html (display string),
+ *   ROADMAP.md ("## Now" marker version, so `forge docs check`'s roadmap-freshness
+ *   guard never trails a release this same script just cut),
  *   CHANGELOG.md ([Unreleased] rotated under "## [X.Y.Z] - <date>" + compare links).
  *
  * Prints ONLY the new version on stdout (diagnostics go to stderr) so callers can
@@ -239,6 +241,18 @@ export function rotateChangelog(changelog, newVersion, prevVersion, date) {
   return out;
 }
 
+/**
+ * Rewrites the version in ROADMAP.md's "## Now" marker (e.g. "## Now (`master`, v0.12.0)")
+ * to `newVersion`. Only that line is touched — other version mentions elsewhere in the
+ * document (e.g. "Shipped — Substrate v2 ... v0.5.0") are left alone. No-op (returns
+ * `roadmap` unchanged) if there's no "## Now" heading to update.
+ */
+export function bumpRoadmapNow(roadmap, newVersion) {
+  return roadmap.replace(/^(##\s+Now\b[^\n]*)$/m, (line) =>
+    line.replace(/v\d+\.\d+(?:\.\d+)?/, `v${newVersion}`),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // File mutation
 // ---------------------------------------------------------------------------
@@ -324,6 +338,13 @@ export function applyBump(root, currentVersion, newVersion, date) {
   const landing = readIfExists(path.join(root, landingRel));
   if (landing !== null && /forgekit v\d+\.\d+\.\d+/.test(landing)) {
     write(landingRel, landing.replace(/forgekit v\d+\.\d+\.\d+/g, `forgekit v${newVersion}`));
+  }
+
+  const roadmapRel = "ROADMAP.md";
+  const roadmap = readIfExists(path.join(root, roadmapRel));
+  if (roadmap !== null) {
+    const updated = bumpRoadmapNow(roadmap, newVersion);
+    if (updated !== roadmap) write(roadmapRel, updated);
   }
 
   const clRel = "CHANGELOG.md";
