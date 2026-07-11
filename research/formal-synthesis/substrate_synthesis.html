@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Formal Theory of the Cognitive Substrate for Coding Agents</title>
+<style>
+:root{
+  --ink:#20242B; --muted:#5b636e; --line:#d9dee5; --bg:#ffffff; --soft:#f6f8fa;
+  --llm:#3C6E9C; --mem:#4E9A6B; --learn:#DD8452; --imag:#8172B3; --oracle:#1F9E96;
+  --meta:#C9A227; --eth:#6C7A89; --alarm:#C44E52; --hard:#1F9E96; --soft2:#8172B3;
+}
+*{box-sizing:border-box}
+html{font-size:16.5px}
+body{margin:0 auto;max-width:860px;padding:56px 30px 120px;background:var(--bg);
+  color:var(--ink);font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  line-height:1.62;-webkit-font-smoothing:antialiased;}
+h1{font-size:1.92rem;line-height:1.2;margin:0 0 6px;letter-spacing:-0.01em}
+.subtitle{font-size:1.16rem;color:var(--muted);font-style:italic;margin:0 0 20px}
+h2{font-size:1.4rem;margin:44px 0 12px;padding-top:14px;border-top:2px solid var(--line);letter-spacing:-0.01em}
+h3{font-size:1.13rem;margin:26px 0 8px;color:#2c333c}
+h4{font-size:1.0rem;margin:18px 0 6px;color:#39414b;font-variant:small-caps;letter-spacing:.02em}
+p{margin:10px 0}
+a{color:var(--llm);text-decoration:none} a:hover{text-decoration:underline}
+.byline{font-size:.98rem;color:var(--muted);margin:0 0 22px}
+.abstract{background:var(--soft);border:1px solid var(--line);border-radius:10px;
+  padding:18px 22px;margin:22px 0 10px;font-size:1.0rem}
+.abstract h4{margin-top:0}
+sup.cite{color:var(--llm);font-weight:600;font-size:.72em;padding:0 1px}
+code,.mono{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:.86em}
+/* equation block */
+.eq{background:var(--soft);border-left:3px solid var(--llm);border-radius:4px;
+  padding:10px 16px;margin:14px 0;font-size:1.02rem;overflow-x:auto}
+.eq .lbl{float:right;color:var(--muted);font-size:.85rem;font-style:italic}
+/* definition / theorem / proof blocks */
+.thm,.defn,.algo{border:1px solid var(--line);border-radius:8px;margin:16px 0;padding:0;overflow:hidden}
+.thm>.hd,.defn>.hd,.algo>.hd{padding:7px 15px;font-weight:700;font-size:.95rem;color:#fff;letter-spacing:.01em}
+.thm>.hd{background:var(--llm)} .defn>.hd{background:var(--mem)} .algo>.hd{background:var(--eth)}
+.thm>.bd,.defn>.bd,.algo>.bd{padding:12px 16px}
+.thm .name,.defn .name{font-weight:400;font-style:italic;opacity:.92}
+.proof{margin:8px 0 14px;padding:2px 0 2px 16px;border-left:2px solid var(--line);color:#333;font-size:.97rem}
+.proof:before{content:"Proof.";font-style:italic;font-weight:600;margin-right:6px}
+.qed{float:right}
+.algo .bd pre{margin:0;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+  font-size:.82rem;line-height:1.5;white-space:pre;overflow-x:auto;color:#252b33}
+/* callouts */
+.callout{border-radius:8px;padding:13px 18px;margin:16px 0;font-size:.98rem;border:1px solid}
+.callout.key{background:#eef4f9;border-color:#bcd4e6}
+.callout.warn{background:#fbf3ec;border-color:#f0d6bf}
+.callout.eth{background:#f0f2f4;border-color:#cfd6dd}
+.callout h4{margin:0 0 5px}
+/* quran verse card */
+.quran{background:#faf7ef;border:1px solid #e7dcc3;border-left:4px solid var(--meta);
+  border-radius:8px;padding:14px 18px;margin:16px 0}
+.quran .ar{font-size:1.5rem;line-height:1.9;text-align:right;direction:rtl;color:#3a3320;
+  font-family:'Geeza Pro','Al Bayan','Traditional Arabic',serif;margin:2px 0 8px}
+.quran .tr{font-style:italic;color:#4a463a;margin:6px 0}
+.quran .rf{font-size:.82rem;color:var(--meta);font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+.quran .pr{font-size:.95rem;color:#333;margin-top:8px}
+.tag{display:inline-block;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:10px;
+  vertical-align:middle;margin-left:6px}
+.tag.lb{background:#e7f0e9;color:#2f6b45;border:1px solid #bcd8c4}
+.tag.mp{background:#f0edf5;color:#5b4a7e;border:1px solid #d5cae6}
+/* tables */
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:.9rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:700}
+figure{margin:22px 0;text-align:center}
+figure img{max-width:100%;border:1px solid var(--line);border-radius:8px}
+figcaption{font-size:.9rem;color:var(--muted);margin-top:8px;text-align:left;line-height:1.5}
+.toc{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:16px 24px;margin:24px 0}
+.toc ol{margin:6px 0;padding-left:22px} .toc li{margin:3px 0}
+hr.sec{border:none;border-top:1px solid var(--line);margin:26px 0}
+.refs{font-size:.86rem;line-height:1.5} .refs li{margin:6px 0}
+.small{font-size:.88rem;color:var(--muted)}
+sub{font-size:.72em}
+</style>
+</head>
+<body>
+
+
+<h1>A Formal Theory of the Cognitive Substrate for Coding Agents</h1>
+<p class="subtitle">Unifying the substrate faculties, the end-to-end reliability framework, and the forgekit implementation &mdash; with a two-layer duality theorem, a unified algorithm set, and a Qur'anic epistemology.</p>
+<p class="byline">A synthesis edition. Consolidates three independently-developed bodies of work: the <em>Cognitive Substrate for Coding Agents</em> (faculties and mechanisms M1&ndash;M6, with two runnable prototypes), the <em>End-to-End Agent Reliability Framework</em> (failure modes F1/F2, invariants I1&ndash;I4, algorithms A1&ndash;A7, theorems T1&ndash;T6), and the <em>forgekit / claude-e2e-kit</em> implementation (deterministic hooks, skills, and committed-file memory). The fourteen-mapping Qur'anic lens is carried throughout as the governing epistemology of obligation.</p>
+
+<div class="abstract">
+<h4>Abstract</h4>
+<p>A large language model used for coding is a fixed probabilistic map, <span class="mono">y = f<sub>&theta;</sub>(x)</span>: stateless, frozen, and bounded in context. Three research efforts converged, independently, on the same conclusion &mdash; that the remedy is not a better prompt or a bigger model but an <em>external, stateful architecture</em> wrapped around the frozen core. This paper proves they are describing one object. We show that the substrate's <em>impact-awareness</em> faculty and the framework's <em>change-closure fixpoint</em> <span class="mono">&Delta;*</span> are the same mathematics; that the <em>assumption gate</em> and the <em>amnesia equation</em> <span class="mono">assumption &asymp; argmax P(convention&nbsp;|&nbsp;training)</span> are the same phenomenon; and that both reduce to a single <strong>two-layer duality</strong>: a <em>probabilistic</em> instruction layer that raises the probability <span class="mono">p&lt;1</span> of correct behaviour, and a <em>deterministic</em> interception layer that guarantees a floor. The central theorem states that neither layer alone can make an agent reliable &mdash; a direct formalization of the discipline <em>never trust the output of a probabilistic engine; earn trust with an external check</em>. We give definitions, the duality theorem with proof, a unified seven-algorithm task loop, the probabilistic failure model <span class="mono">P(&ge;1&nbsp;miss)=1&minus;p<sup>n</sup></span>, and carry through the six correctness theorems of the reliability framework. Two prototypes &mdash; an impact oracle and a complexity-router/assumption-gate &mdash; instantiate the deterministic layer and are evaluated honestly. The forgekit / claude-e2e-kit codebase is the deployed binding. The Qur'anic lens supplies the vocabulary of epistemic obligation (tabayyun, amāna, lā taqfu) that names <em>why</em> each safeguard is mandatory rather than optional.</p>
+</div>
+
+<div class="toc">
+<strong>Contents</strong>
+<ol>
+<li><a href="#intro">The convergence &mdash; three roads to one architecture</a></li>
+<li><a href="#model">The object of study &mdash; the frozen map and its five lacks</a></li>
+<li><a href="#defs">Definitions &mdash; substrate, artifact graph, faculties</a></li>
+<li><a href="#duality">The central result &mdash; the two-layer duality theorem</a></li>
+<li><a href="#failure">The probabilistic failure model</a></li>
+<li><a href="#algos">The unified algorithm set &mdash; the TASK loop A1&ndash;A7</a></li>
+<li><a href="#invariants">The four invariants and the six correctness theorems</a></li>
+<li><a href="#crosswalk">The crosswalk &mdash; one object, three vocabularies</a></li>
+<li><a href="#lens">The Qur'anic epistemology &mdash; the full fourteen mappings</a></li>
+<li><a href="#prototypes">The prototypes &mdash; instantiating the deterministic layer</a></li>
+<li><a href="#forgekit">forgekit &mdash; the deployed binding</a></li>
+<li><a href="#limits">Honest limits &mdash; what no architecture can guarantee</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ol>
+<div class="small">Appendix A: graded reference set &nbsp;&middot;&nbsp; Appendix B: crosswalk table &nbsp;&middot;&nbsp; References</div>
+</div>
+
+
+<h2 id="intro">1&ensp;The convergence &mdash; three roads to one architecture</h2>
+
+<p>Three efforts set out from different starting points and arrived at the same building.</p>
+
+<p>The first began with a question about human cognition: when a developer opens a file, they carry memory of what already exists, imagine what an edit will break, and verify their reasoning as they type. A frozen language model does none of this. The <em>Cognitive Substrate</em> work<sup class="cite">S</sup> named five faculties the model structurally lacks &mdash; memory, learning, imagination, self-correction, and impact-awareness &mdash; and argued the remedy is an external architecture that supplies them, together with six operating mechanisms (M1&ndash;M6: complexity-routing, an assumption gate, decomposition, goal-anchoring, scope-minimality, and inline verification).</p>
+
+<p>The second began with two concrete failures observed in production coding agents. <strong>F1, partial work:</strong> the agent changes code but not the artifacts that depend on it &mdash; docs, tests, changelog, examples. <strong>F2, session amnesia:</strong> a later session lacks the project's goals and conventions, so it fills the gaps with assumptions and the developer burns iterations re-explaining. The <em>End-to-End Reliability Framework</em><sup class="cite">E</sup> gave these a formal model: a typed artifact graph, a change-closure fixpoint, four invariants, seven algorithms, and six correctness theorems.</p>
+
+<p>The third is a deployed codebase. <em>forgekit</em><sup class="cite">K</sup> (and its Claude-specific precursor <em>claude-e2e-kit</em>) implements the same discipline as committed files, deterministic lifecycle hooks, and auto-invoked skills &mdash; one configuration that binds the architecture onto Claude Code, Codex, Cursor, Gemini, and Aider alike.</p>
+
+<div class="callout key">
+<h4>The claim of this paper</h4>
+<p>These are not three similar ideas. They are one architecture described in three vocabularies. The impact-awareness faculty <em>is</em> the change-closure fixpoint. The assumption gate <em>is</em> the amnesia equation. The substrate's external structure <em>is</em> a two-layer duality &mdash; and that duality, which the reliability framework states as a design law, is the theorem the whole thing turns on. What each road saw partially, the union sees whole.</p>
+</div>
+
+<p>The synthesis also inherits a governing discipline, stated plainly by the practitioner who commissioned this work: <em>AI output is a mathematically calculated probability; it must never be trusted blindly; for the same prompt it can give a different answer, so use only the capability it is genuinely best at, and earn trust with an external check.</em> We will see that this sentence is not a slogan but the informal statement of the central theorem &mdash; the quantity <span class="mono">(1&minus;p)&gt;0</span> that forces a deterministic layer to exist.</p>
+
+<h2 id="model">2&ensp;The object of study &mdash; the frozen map and its five lacks</h2>
+
+<p>Fix the model. Let the coding agent's core be a function</p>
+<div class="eq"><span class="lbl">(1)</span><span class="mono">y = f<sub>&theta;</sub>(x)</span>,&emsp;&theta; fixed, &nbsp;x the bounded context window,&nbsp; y the sampled output.</div>
+
+<p>Three properties of this map generate every problem the architecture must solve. To avoid a notation collision with the reliability framework's primitives (&sect;3), we label these <em>model properties</em> <strong>P1&ndash;P3</strong>:</p>
+
+<ul>
+<li><strong>P1 &mdash; statelessness.</strong> <span class="mono">f<sub>&theta;</sub></span> has no memory across calls; each invocation sees only the current <span class="mono">x</span>. Nothing the agent learned yesterday is present today unless something outside the model re-supplies it.</li>
+<li><strong>P2 &mdash; frozen parameters.</strong> <span class="mono">&theta;</span> does not change from use. The agent cannot learn from an outcome by updating weights; any learning must be external.</li>
+<li><strong>P3 &mdash; bounded, undifferentiated context.</strong> <span class="mono">x</span> is finite and flat: a long story and a long program are the same kind of object to it, with no privileged channel for goals versus detail. This is the root of goal-drift and of context saturation.</li>
+</ul>
+
+<p>The five faculties are not wishes; each is the direct consequence of one or more of these properties, and each has an external remedy:</p>
+
+<table>
+<tr><th>Faculty the model lacks</th><th>Forced by</th><th>External remedy (this architecture)</th></tr>
+<tr><td><strong>Persistent memory</strong></td><td>P1</td><td>A committed store re-injected each session (&sect;6, A4/A5)</td></tr>
+<tr><td><strong>Learning from outcomes</strong></td><td>P2</td><td>Non-parametric experience store; optional parametric adapters (&sect;6)</td></tr>
+<tr><td><strong>Imagination / world-model</strong></td><td>P1, P3</td><td>A typed artifact graph the agent queries before acting (&sect;3.2)</td></tr>
+<tr><td><strong>Self-correction</strong></td><td>P3</td><td>An external verifier and a deterministic completion gate (&sect;4, A6)</td></tr>
+<tr><td><strong>Impact-awareness</strong></td><td>P1, P3</td><td>The change-closure <span class="mono">&Delta;*</span> computed on the graph (&sect;3.2, A1)</td></tr>
+</table>
+
+<p>The critical word is <em>external</em>. Because <span class="mono">&theta;</span> is frozen (P2) and context is bounded (P3), none of these can be fixed by prompting harder or by fine-tuning alone. The architecture must live <em>around</em> the model, hold state <em>outside</em> it, and enforce behaviour the model cannot be relied upon to produce on its own. The rest of this paper makes "cannot be relied upon" precise and shows what "enforce" must therefore mean.</p>
+
+
+<h2 id="defs">3&ensp;Definitions</h2>
+
+<h3>3.1&ensp;The stateful substrate operator</h3>
+
+<p>The architecture turns the stateless map (1) into a stateful operator by threading an external memory <span class="mono">M</span> through it.</p>
+
+<div class="defn"><div class="hd">Definition 1 <span class="name">(Cognitive substrate)</span></div><div class="bd">
+<p>A <em>cognitive substrate</em> over a frozen model <span class="mono">f<sub>&theta;</sub></span> is an operator</p>
+<div class="eq"><span class="lbl">(2)</span><span class="mono">(y<sub>t</sub>, M<sub>t+1</sub>) = F(x<sub>t</sub>, M<sub>t</sub>; f<sub>&theta;</sub>)</span></div>
+<p>where <span class="mono">M<sub>t</sub></span> is a persistent store that survives between calls, <span class="mono">x<sub>t</sub></span> is the request at step <span class="mono">t</span>, and <span class="mono">y<sub>t</sub></span> is the output. The store carries what P1&ndash;P3 deny the model: prior state, learned priors, the world-model, and the reflection log. <span class="mono">F</span> is required to <em>read</em> <span class="mono">M<sub>t</sub></span> into the model's context before sampling and to <em>write back</em> <span class="mono">M<sub>t+1</sub></span> after &mdash; the closed loop the bare model (1) does not have.</p>
+</div></div>
+
+<p>Three environmental capabilities are needed to realize <span class="mono">M</span> and the read/write loop. The reliability framework calls these its <em>primitives</em>. It labels them P1/P2/P3, which collides with the model properties of &sect;2; we therefore rename them <strong>&Pi;<sub>1</sub>, &Pi;<sub>2</sub>, &Pi;<sub>3</sub></strong> and use that notation for the remainder of the paper.</p>
+
+<table>
+<tr><th>Primitive</th><th>Definition</th><th>forgekit binding</th><th>Generic binding</th></tr>
+<tr><td><strong>&Pi;<sub>1</sub> &mdash; persistent store</strong></td><td>Files the agent can read/write that survive sessions and travel with the project</td><td>git repo: <span class="mono">CLAUDE.md</span>, <span class="mono">docs/*.md</span>, <span class="mono">.claude/**</span></td><td>any VCS; any repo-reading agent</td></tr>
+<tr><td><strong>&Pi;<sub>2</sub> &mdash; lifecycle interception</strong></td><td>Deterministic code executed at fixed points of the agent loop (start, end-of-turn)</td><td>hooks: <span class="mono">SessionStart</span>, <span class="mono">Stop</span>, <span class="mono">UserPromptSubmit</span></td><td>pre-commit hooks; CI jobs; IDE tasks</td></tr>
+<tr><td><strong>&Pi;<sub>3</sub> &mdash; instruction channel</strong></td><td>Standing instructions loaded into the model's context</td><td><span class="mono">CLAUDE.md</span>, <span class="mono">.claude/rules/</span>, skills</td><td><span class="mono">AGENTS.md</span>, <span class="mono">.cursorrules</span>, system prompts</td></tr>
+</table>
+
+<div class="callout key">
+<h4>The design law, stated early because everything depends on it</h4>
+<p><strong>&Pi;<sub>3</sub> is probabilistic; &Pi;<sub>2</sub> is deterministic.</strong> Instructions (&Pi;<sub>3</sub>) raise the probability that the model behaves correctly; interception (&Pi;<sub>2</sub>) executes regardless of what the model decides. A reliable substrate needs both, and &sect;4 proves it cannot be built from either alone.</p>
+</div>
+
+<h3>3.2&ensp;The repository as a typed artifact graph (the world-model)</h3>
+
+<p>The imagination/world-model faculty is realized concretely as a graph over the project's artifacts &mdash; the generalization that lets "impact on code" become "impact on <em>everything that describes or depends on</em> the code".</p>
+
+<div class="defn"><div class="hd">Definition 2 <span class="name">(Typed artifact graph)</span></div><div class="bd">
+<p>Let the project be a finite set of artifacts <span class="mono">A = {a<sub>1</sub>, &hellip;, a<sub>n</sub>}</span> with a type function <span class="mono">&tau; : A &rarr; {code, test, doc, config, diagram}</span> and a dependency relation <span class="mono">R &sube; A &times; A</span>, where <span class="mono">(a,b) &isin; R</span> means "<span class="mono">a</span> describes, verifies, exercises, or references <span class="mono">b</span>". <span class="mono">R = R<sub>declared</sub> &cup; R<sub>discovered</sub></span>: declared edges come from a curated documentation map (high precision, small); discovered edges are found mechanically &mdash; <span class="mono">a</span> mentions an identifier defined in <span class="mono">b</span> &mdash; by text search.</p>
+</div></div>
+
+<p>The substrate's Prototype&nbsp;I builds this graph from source: an AST parser extracts the code nodes and their edges, so <span class="mono">R<sub>discovered</sub></span> over <span class="mono">{code, test}</span> is computed exactly rather than by grep. The reliability framework's contribution is to widen <span class="mono">&tau;</span> beyond code, making documentation a first-class dependent so that a code change can be seen to obligate a doc change.</p>
+
+<div class="defn"><div class="hd">Definition 3 <span class="name">(Dependents operator and change closure)</span></div><div class="bd">
+<p>For a set <span class="mono">X &sube; A</span>, the <em>dependents</em> operator is</p>
+<div class="eq"><span class="lbl">(3)</span><span class="mono">N(X) = { a &isin; A : &exist; b &isin; X, (a,b) &isin; R }</span></div>
+<p>&mdash; everything that describes, verifies, or references anything in <span class="mono">X</span>. A task seeds a change set <span class="mono">&Delta;<sub>0</sub> &sube; A</span> (the files the request names or obviously touches). The <em>required change closure</em> is the least fixpoint</p>
+<div class="eq"><span class="lbl">(4)</span><span class="mono">&Delta;<sub>k+1</sub> = &Delta;<sub>k</sub> &cup; N(&Delta;<sub>k</sub>),&emsp;&Delta;* = &Delta;<sub>k</sub> where &Delta;<sub>k+1</sub> = &Delta;<sub>k</sub></span>.</div>
+<p>Since <span class="mono">A</span> is finite and the sequence is monotone (<span class="mono">&Delta;<sub>0</sub> &sube; &Delta;<sub>1</sub> &sube; &hellip; &sube; A</span>), the fixpoint exists and is reached in at most <span class="mono">|A|</span> steps (Kleene's theorem on a finite lattice). In practice depth 2&ndash;3 suffices.</p>
+</div></div>
+
+<div class="callout key">
+<h4>Anchor identity #1: the impact oracle <em>is</em> &Delta;*</h4>
+<p>The substrate's Impact Oracle computes a file's blast radius by reverse reachability on the dependency graph &mdash; which is exactly the closure (4). The oracle adds a real-valued <em>confidence</em> that decays with graph distance, where the framework's <span class="mono">N(&middot;)</span> is boolean; thresholding the oracle's confidence recovers <span class="mono">N</span>. They are the same computation. This is why the prototype achieves <em>perfect recall</em> on impacted files (&sect;10): reverse reachability, run to fixpoint, cannot miss a reachable dependent.</p>
+</div>
+
+<h3>3.3&ensp;The faculties as operators on the store</h3>
+
+<p>Each faculty is a well-typed operation on <span class="mono">M</span>, and each will be realized by one of the algorithms A1&ndash;A7 (&sect;6):</p>
+
+<div class="defn"><div class="hd">Definition 4 <span class="name">(Faculty operators)</span></div><div class="bd">
+<ul style="margin:2px 0">
+<li><strong>retrieve</strong> <span class="mono">: (x, M) &rarr; c</span> &mdash; select the context <span class="mono">c &sube; M</span> relevant to <span class="mono">x</span>, favouring entries whose validity has been externally confirmed (validity-anchored memory). <em>(memory; A5)</em></li>
+<li><strong>impact</strong> <span class="mono">: (&Delta;<sub>0</sub>, R) &rarr; &Delta;*</span> &mdash; the closure (4). <em>(impact-awareness; A1)</em></li>
+<li><strong>simulate</strong> <span class="mono">: (edit, M) &rarr; predicted-effects</span> &mdash; consequence estimation over the graph before acting. <em>(imagination; A1)</em></li>
+<li><strong>verify</strong> <span class="mono">: (y, criteria) &rarr; {pass, fail, doubts}</span> &mdash; an <em>external</em> check, never the generator's self-report. <em>(self-correction; A3, A6)</em></li>
+<li><strong>route</strong> <span class="mono">: x &rarr; tier</span> and <span class="mono">: fact &rarr; store-home</span> &mdash; transparent classification of effort and of knowledge placement. <em>(M1; A7)</em></li>
+<li><strong>write-back</strong> <span class="mono">: (M, outcome) &rarr; M&prime;</span> &mdash; the bounded-compression checkpoint that makes learning survive P1/P2. <em>(memory + learning; A4)</em></li>
+</ul>
+</div></div>
+
+<p>With the object (Def. 1), the world-model (Defs. 2&ndash;3), and the faculties (Def. 4) in hand, we can state the result the architecture rests on.</p>
+
+
+<h2 id="duality">4&ensp;The central result &mdash; the two-layer duality theorem</h2>
+
+<p>Everything so far has assumed that "the architecture must enforce behaviour the model cannot be relied upon to produce." We now make "cannot be relied upon" precise and derive what "enforce" must mean.</p>
+
+<div class="defn"><div class="hd">Definition 5 <span class="name">(The two layers)</span></div><div class="bd">
+<p>A substrate's behaviour-shaping is partitioned into two layers over the frozen model:</p>
+<ul style="margin:2px 0">
+<li>The <strong>probabilistic layer</strong> (&Pi;<sub>3</sub>): standing instructions loaded into context &mdash; <span class="mono">CLAUDE.md</span>, rules, skills, protocol cards. Let <span class="mono">p</span> = P(the agent performs the required behaviour on a task &mdash; e.g. the full closure &Delta;* &mdash; under the instruction layer alone).</li>
+<li>The <strong>deterministic layer</strong> (&Pi;<sub>2</sub>): code executed at fixed lifecycle points independent of the model's choices &mdash; hooks that inject state, or that block a turn. A deterministic check <span class="mono">j</span> catches a target miss with probability <span class="mono">c<sub>j</sub></span>, and for a decidable structural signal <span class="mono">c<sub>j</sub> &rarr; 1</span>.</li>
+</ul>
+</div></div>
+
+<div class="thm"><div class="hd">Theorem D <span class="name">(Two-layer duality &mdash; neither layer alone suffices)</span></div><div class="bd">
+<p>Let a task require a behaviour whose omission is a <em>silent miss</em>. Under the instruction layer alone the per-task silent-miss probability is <span class="mono">1&minus;p</span>; under a deterministic layer of <span class="mono">k</span> checks the residual silent-miss probability is</p>
+<div class="eq"><span class="lbl">(5)</span><span class="mono">P(silent miss) = (1&minus;p) &middot; &prod;<sub>j=1..k</sub> (1&minus;c<sub>j</sub>)</span>.</div>
+<p>Then, for any model whose instruction-following is imperfect (<span class="mono">p&lt;1</span>) and any deterministic layer that is not omniscient (<span class="mono">c<sub>j</sub>&lt;1</span> for every <span class="mono">j</span>):</p>
+<ol style="margin:6px 0">
+<li><strong>The probabilistic layer alone cannot reach reliability.</strong> With <span class="mono">k=0</span>, <span class="mono">P(silent miss)=1&minus;p&gt;0</span>, and over <span class="mono">n</span> tasks <span class="mono">P(&ge;1 miss)=1&minus;p<sup>n</sup> &rarr; 1</span>. No amount of instruction-writing removes the residual, because instructions are context, not enforcement.</li>
+<li><strong>The deterministic layer alone cannot reach reliability either.</strong> A decidable check bounds only the <em>structural</em> signal it was built to detect; semantic correctness is undecidable (&sect;12), so <span class="mono">&prod;(1&minus;c<sub>j</sub>)&gt;0</span> for the semantic class. Without the instruction layer raising <span class="mono">p</span>, the factor <span class="mono">(1&minus;p)</span> stays near 1 and the product is dominated by it.</li>
+<li><strong>Their composition is strictly better than either factor.</strong> Because <span class="mono">0&lt;(1&minus;p)&lt;1</span> and each <span class="mono">0&lt;(1&minus;c<sub>j</sub>)&lt;1</span>, the product (5) is strictly smaller than <span class="mono">(1&minus;p)</span> and strictly smaller than any single <span class="mono">(1&minus;c<sub>j</sub>)</span>. Reliability is the <em>product</em> of a soft factor and hard factors, and needs both kinds present.</li>
+</ol>
+<p class="qed">&#9633;</p>
+</div></div>
+
+<div class="proof">
+Equation (5) is the probability that the behaviour is both omitted by the agent (the independent event of probability <span class="mono">1&minus;p</span>) and undetected by every one of the <span class="mono">k</span> checks (each failing to catch with probability <span class="mono">1&minus;c<sub>j</sub></span>, taken as conditionally independent given the miss). Claim&nbsp;1: set <span class="mono">k=0</span>, the empty product is 1, so <span class="mono">P=1&minus;p</span>; the <span class="mono">n</span>-task bound is the complement of <span class="mono">n</span> independent successes, <span class="mono">p<sup>n</sup></span>. Claim&nbsp;2: for the semantic-miss class every decidable <span class="mono">c<sub>j</sub></span> is bounded below 1 (Rice's theorem: non-trivial semantic properties of programs are undecidable), so the product cannot vanish; with <span class="mono">p</span> not raised, <span class="mono">(1&minus;p)</span> is near 1. Claim&nbsp;3: multiplying a number in <span class="mono">(0,1)</span> by further numbers in <span class="mono">(0,1)</span> strictly decreases it below every factor. &#9633;
+</div>
+
+<figure>
+<img src="{{artifact:art_5f049677-4c3c-40f2-8905-dd01c966e9ae}}" alt="The two-layer duality architecture">
+<figcaption><strong>Figure 1. The two-layer duality.</strong> The probabilistic instruction layer (&Pi;<sub>3</sub>, purple) raises <span class="mono">p</span> by loading context but may drift (dashed arrows); the deterministic interception layer (&Pi;<sub>2</sub>, teal) executes regardless of the model's choice and either passes the turn or blocks it (exit&nbsp;2) back into the model for repair. The persistent store (&Pi;<sub>1</sub>) feeds both. What escapes both layers is the residual <span class="mono">(1&minus;p)&middot;&prod;(1&minus;c<sub>j</sub>)</span>, handed to review or a later commit/CI gate. The whole sits inside a stewardship boundary (amāna, &sect;9). Neither layer alone suffices &mdash; the formal content of the discipline <em>never trust the output; earn trust with a check</em>.</figcaption>
+</figure>
+
+<div class="callout key">
+<h4>What the theorem says in one sentence</h4>
+<p>The practitioner's rule &mdash; <em>never trust the probability engine's output; verify it</em> &mdash; is the statement <span class="mono">(1&minus;p)&gt;0</span>. Theorem&nbsp;D turns that intuition into a design mandate: because the soft layer can never drive <span class="mono">(1&minus;p)</span> to zero, a deterministic layer <em>must</em> exist to multiply it down; and because the hard layer can never catch the semantic class, the soft layer must exist to shrink what reaches it. The substrate is two-layered not by taste but by theorem.</p>
+</div>
+
+<h2 id="failure">5&ensp;The probabilistic failure model</h2>
+
+<p>Theorem&nbsp;D's equation (5) is worth reading as an engineering instrument, because it explains a lived experience and prices every design choice.</p>
+
+<h3>5.1&ensp;Why "it works, then forgets" is a certainty, not bad luck</h3>
+<p>With the instruction layer alone, the chance of at least one partial-work incident over <span class="mono">n</span> tasks is <span class="mono">1&minus;p<sup>n</sup></span>. Even an excellent <span class="mono">p=0.9</span> gives <strong>65% after 10 tasks and 96% after 30</strong>. The agent that "usually remembers the docs" is, over a project's lifetime, near-certain to forget them at least once. The failure is geometric, so no degree of prompt-polishing escapes it &mdash; only a factor <span class="mono">(1&minus;c<sub>j</sub>)</span> below 1 can bend the curve.</p>
+
+<h3>5.2&ensp;Why the deterministic gate is worth exactly one factor</h3>
+<p>Add one gate whose target is the decidable signal "code changed and no doc/state artifact changed." That signal is checkable in microseconds and <span class="mono">c<sub>1</sub>&asymp;0.95</span>. With <span class="mono">p=0.7</span>, the per-task silent-miss rate falls from <span class="mono">30%</span> to <span class="mono">(1&minus;0.7)&middot;(1&minus;0.95)=1.5%</span> &mdash; a twentyfold reduction from a twenty-line hook. Crucially the <em>class</em> of surviving misses changes from "forgot the docs entirely" (structural, now caught) to "updated the docs imperfectly" (semantic, handed to review). The gate does not make the model think; it removes an entire failure mode from the model's shoulders.</p>
+
+<h3>5.3&ensp;The lattice of gates</h3>
+<p>The same classifier can run at three lifecycle points, and (5) shows their catches multiply: a turn-level Stop hook <span class="mono">&sub;</span> a commit-level pre-commit hook <span class="mono">&sub;</span> a PR-level CI job. Each later gate catches what earlier ones missed &mdash; the product (5) with <span class="mono">k=3</span>. This is also the answer to portability: where hooks are unavailable, the <em>same</em> deterministic check re-binds as a pre-commit hook or a CI step, moving the enforcement point without changing the mathematics.</p>
+
+<div class="callout warn">
+<h4>The honest cost side</h4>
+<p>The model also prices the developer's real pain. Each silent miss costs a rework loop of expected size <span class="mono">(1&minus;p)&middot;(1+r)</span>, where <span class="mono">r</span> is the re-explaining overhead that session-amnesia (F2) inflates. The architecture attacks both factors: gates convert silent misses into <em>same-session</em> fixes (<span class="mono">r&rarr;0</span>, caught before the developer sees the result), and persistence makes any residual loop cheap because the context is already standing. This is where the theory meets the user's stated grievance &mdash; wasted tokens, time, and quality &mdash; and answers it with a quantity, not a promise.</p>
+</div>
+
+
+<h2 id="algos">6&ensp;The unified algorithm set &mdash; the TASK loop</h2>
+
+<p>The faculties of Def.&nbsp;4 are realized by seven algorithms. They are the reliability framework's A1&ndash;A7, recast here as the operations of the substrate: each is a faculty made mechanical, each binds to one lifecycle point, and together they form a single loop whose progress is guaranteed by an explicit worklist and whose floor is guaranteed by a deterministic gate.</p>
+
+<div class="algo"><div class="hd">A1 &mdash; IMPACT-CLOSURE&emsp;<span style="font-weight:400;font-style:italic">(impact-awareness · simulate · before any code)</span></div><div class="bd">
+<pre>function IMPACT_CLOSURE(request):
+    &Delta;  &larr; seeds(request)                    # named files + search hits
+    W  &larr; &Delta; ; frontier &larr; &Delta;
+    while frontier &ne; &empty;:                    # BFS to the fixpoint &Delta;* (Def. 3)
+        E &larr; grep_edges(I(frontier))        #   R_discovered
+            &cup; map_edges(frontier)           #   R_declared
+            &cup; interface_edges(frontier)     #   callers, overrides, migrations, DI wiring
+        new &larr; E \ W ;  W &larr; W &cup; new ;  frontier &larr; new
+    check_constraints(W, DECISIONS)         # flag conflicts, never override (I3)
+    return { (a, &tau;(a), action(a), risk(a)) : a &isin; W }   # the impact table</pre>
+<p class="small">Terminates in &le;|A| rounds (Thm.&nbsp;T5); on termination <span class="mono">W &supe; &Delta;*</span> over discoverable+declared edges. This is <em>simulate</em> and <em>impact</em> of Def.&nbsp;4, and it is exactly what the Impact Oracle prototype computes (&sect;10).</p>
+</div></div>
+
+<div class="algo"><div class="hd">A2 &mdash; EXECUTE-FULL&emsp;<span style="font-weight:400;font-style:italic">(world-model · act on the whole closure)</span></div><div class="bd">
+<pre>implement every row of the impact table (code AND tests),
+    following conventions drawn from the store M (I3);
+partial implementation of the table = definitionally incomplete (Def. Done).</pre>
+</div></div>
+
+<div class="algo"><div class="hd">A3 &mdash; SYNC-VERIFY&emsp;<span style="font-weight:400;font-style:italic">(self-correction · make every artifact true again)</span></div><div class="bd">
+<pre>function SYNC_VERIFY(changed):
+    I &larr; identifiers(diff(changed))
+    for a in DocSet &cup; map_artifacts:
+        hits &larr; grep(a, I)
+        if hits &ne; &empty;:  read(a); update stale content to match code
+        else:         record verified-unaffected(a, "no mention of I")   # checked, not assumed
+    if structure_changed: update ARCHITECTURE + diagrams + the map itself
+    if user_facing:       append CHANGELOG
+    update STATE ; return {updated[], verified_unaffected[], doubts[]}</pre>
+<p class="small">The <em>verify</em> operator: no artifact is ever declared unaffected without the check running &mdash; invariant I1's "&or; verified-unaffected" made mechanical. The <span class="mono">doubts[]</span> channel enforces I3 (surface ambiguity, do not guess).</p>
+</div></div>
+
+<div class="algo"><div class="hd">A4 &mdash; HANDOFF&emsp;<span style="font-weight:400;font-style:italic">(memory · write-back · session end)</span></div><div class="bd">
+<pre>function HANDOFF(K):
+    ensure SYNC_VERIFY ran
+    &sigma; &larr; select(K, priority=[goal, next, decisions, gotchas, in_progress, done+why])
+    write STATE &larr; &sigma;,  |&sigma;| &le; B lines        # REWRITE (bounded), not append
+    mirror durable decisions &rarr; DECISIONS       # append-only log
+    if a convention was corrected &rarr; update CLAUDE.md / rules   (self-maintenance)
+    propose commit                              # committing = portable memory</pre>
+<p class="small">The bounded-compression checkpoint (<span class="mono">|&sigma;|&le;B&asymp;150</span>) keeps the loader's cost O(B) forever &mdash; the snapshot+WAL pattern: STATE is the mutable snapshot, DECISIONS the durable log.</p>
+</div></div>
+
+<div class="algo"><div class="hd">A5 &mdash; REHYDRATE&emsp;<span style="font-weight:400;font-style:italic">(memory · retrieve · session start)</span></div><div class="bd">
+<pre>on SessionStart(startup | resume | clear):
+    record baseline b &larr; git HEAD             # enables the gate's session diff (A6)
+    inject: STATE (&le;8KB) + last 10 commits + uncommitted files + DoD reminder</pre>
+<p class="small">The <em>retrieve</em> operator, made deterministic: continuity moves from "the agent may read the file" to "the context always contains it" &mdash; the same &Pi;<sub>3</sub>&rarr;&Pi;<sub>2</sub> upgrade as the gate.</p>
+</div></div>
+
+<div class="algo"><div class="hd">A6 &mdash; COMPLETION-GATE&emsp;<span style="font-weight:400;font-style:italic">(self-correction · the deterministic floor · end of turn)</span></div><div class="bd">
+<pre>on Stop(session s):
+    C &larr; (diff base(s)..HEAD) &cup; worktree changes  &minus; internal bookkeeping paths
+    code &larr; C &cap; CodeClass \ DocClass \ .claude/    # regex-classified
+    docs &larr; C &cap; DocClass
+    if code &ne; &empty; &and; docs = &empty;:  exit 2 + repair checklist + set marker   # BLOCK once
+    else:                     exit 0                                      # ALLOW</pre>
+<p class="small">The hard factor <span class="mono">c<sub>1</sub></span> of Theorem&nbsp;D. STATE counts as a doc artifact, so the weakest way to satisfy the gate is to update session state &mdash; which is exactly the continuity invariant I2. One check enforces a floor for <em>both</em> F1 and F2. Full decision table and safety proofs in &sect;7.</p>
+</div></div>
+
+<div class="algo"><div class="hd">A7 &mdash; KNOWLEDGE-ROUTER&emsp;<span style="font-weight:400;font-style:italic">(M1 routing · where every fact lives)</span></div><div class="bd">
+<pre>route(f):                                       # first match wins (total function, Thm. T6)
+    needed every session, stable      &rarr; CLAUDE.md            (always loaded, &le;200 lines)
+    relevant only to paths g          &rarr; .claude/rules/x  (paths: g; loads on match)
+    a procedure / workflow            &rarr; skill               (loads on invocation)
+    specialist's accumulated patterns &rarr; subagent memory
+    current work status               &rarr; STATE.md            (rewritten, injected)
+    decision + rationale              &rarr; DECISIONS.md        (append-only)</pre>
+<p class="small">Keeps always-loaded context O(bounded) while total persisted knowledge grows without limit &mdash; the mathematical reason the substrate scales. This is the second face of routing: M1's complexity-router chooses a <em>model tier</em> by task difficulty; A7 chooses a <em>storage home</em> by knowledge type. Both are transparent and deterministic, and both reject an opaque-LLM classifier for the same reason &mdash; it would reintroduce the very <span class="mono">(1&minus;p)</span> the hard layer exists to remove.</p>
+</div></div>
+
+<h3>6.1&ensp;The loop</h3>
+<p>The seven compose into one meta-algorithm that fits every task, from a one-line fix to a multi-file feature:</p>
+<div class="eq"><span class="mono">TASK(t): &emsp;A5 rehydrate &rarr; A1 impact-closure &rarr; A2 execute &rarr; verify &rarr; A3 sync &rarr; A4 handoff &rarr; A6 gate</span></div>
+<p>Formally, iterate until the unsynced set <span class="mono">U = { a &isin; &Delta;* : &not;updated(a) &and; &not;verified(a) } = &empty;</span> &mdash; a fixpoint loop whose progress is guaranteed by A1's explicit worklist and whose floor is guaranteed by A6. The soft stages (A1&ndash;A5, driven by instructions) raise <span class="mono">p</span>; the gate (A6, deterministic) guarantees the floor; persistence (A4/A5 over &Pi;<sub>1</sub>) carries <span class="mono">essential(K)</span> across the session boundary.</p>
+
+<figure>
+<img src="{{artifact:art_f0decf80-d016-496f-8032-f7b2e73e71b2}}" alt="The unified TASK loop">
+<figcaption><strong>Figure 2. The unified TASK loop.</strong> Seven stages, each bound to its faculty, its algorithm (A1&ndash;A7), and its Qur'anic anchor (&sect;9). The loop runs to the fixpoint <span class="mono">U=&empty;</span> at the hub &mdash; no unsynced artifact remains. Soft stages raise <span class="mono">p</span>; the gate is the deterministic floor; the store carries state across the boundary. Rehydrate re-arms the baseline that the gate diffs against, closing the cycle across sessions.</figcaption>
+</figure>
+
+
+<h2 id="invariants">7&ensp;The four invariants and the six correctness theorems</h2>
+
+<p>The TASK loop serves four invariants. Stated as logic, they port to any environment that supplies &Pi;<sub>1</sub>&ndash;&Pi;<sub>3</sub>.</p>
+
+<table>
+<tr><th>Invariant</th><th>Statement</th><th>Kills</th></tr>
+<tr><td><strong>I1 &mdash; Consistency</strong></td><td>&forall;(a,b)&isin;R: changed(b) in task t &rArr; updated(a) &or; verified-unaffected(a) in the same t. "No artifact lies about the code."</td><td>F1</td></tr>
+<tr><td><strong>I2 &mdash; Continuity</strong></td><td>At every session boundary: essential(K) &sube; P, and the loader injects it. Corollary: everything essential lives in <em>committed</em> files &mdash; the only channel that crosses machines, terminals, web, and teammates.</td><td>F2</td></tr>
+<tr><td><strong>I3 &mdash; No fabrication</strong></td><td>Every convention the agent acts on is derived from repo evidence, or documented in P, or asked &mdash; never sampled from priors. Unattended: assumptions are stated explicitly, never silent.</td><td>the amnesia root (&sect;5)</td></tr>
+<tr><td><strong>I4 &mdash; Verified currency</strong></td><td>Facts about the outside world (library versions, APIs) are checked against current sources at use time; the outcome is recorded. Training memory is a stale cache.</td><td>stale-knowledge drift</td></tr>
+</table>
+
+<p>In Hoare-triple form, every task must satisfy</p>
+<div class="eq"><span class="mono">{ P consistent &and; context loaded }&emsp;execute(t)&emsp;{ Done(t) &and; P consistent &and; &sigma; updated }</span></div>
+<p>where the gate (A6) checks a decidable necessary condition of the postcondition and the algorithms construct it. <strong>I3 is the invariant the user named as the deepest problem</strong> &mdash; "the biggest problem is assumption." It is the direct architectural answer to the amnesia equation of &sect;5: an under-specified input must be met with supplied context, a stated assumption, or a halt &mdash; never a silent guess drawn from the prior.</p>
+
+<h3>7.1&ensp;The correctness theorems</h3>
+<p>Six properties are proved of the deterministic layer. They are what make the hard factor of Theorem&nbsp;D trustworthy &mdash; a gate that could loop, brick a session, or miss its target signal would not earn its place.</p>
+
+<div class="thm"><div class="hd">T1 <span class="name">(No infinite loop; any stop sequence terminates in &le;2 attempts)</span></div><div class="bd">
+<div class="proof">A block sets a per-session marker before exiting&nbsp;2; marker creation is monotone. Any later attempt matches the marker row &rArr; ALLOW. Independently, the continuation carries <span class="mono">stop_hook_active</span> &rArr; ALLOW. Two independent guards, either sufficient; even if the process dies between marker-set and exit, the marker is already on disk. &#9633;</div>
+</div></div>
+
+<div class="thm"><div class="hd">T2 <span class="name">(Fail-open: no hook failure can brick a session)</span></div><div class="bd">
+<div class="proof">Every external call is guarded (<span class="mono">|| true</span>, <span class="mono">2&gt;/dev/null</span>, a jq&rarr;python3&rarr;empty fallback chain); every guard-failure path leads to a row whose decision is ALLOW. The only exit-2 path is the deliberate block row. The SessionStart hook only ever exits&nbsp;0. &#9633;</div>
+</div></div>
+
+<div class="thm"><div class="hd">T3 <span class="name">(Soundness of the block signal &mdash; no false silence)</span></div><div class="bd">
+<div class="proof">On the first stop of a session with usable git: <span class="mono">C</span> is the union of the baseline diff and an untracked-inclusive worktree scan, so every changed path is in <span class="mono">C</span>; classification is a total function of path; the row order reaches the block row exactly when code changed and no doc changed. Hence a silent code-only completion is impossible at the session's first completion &mdash; the agent must fix the docs or explicitly justify and update STATE, both visible to the developer. &#9633;</div>
+</div></div>
+
+<div class="thm"><div class="hd">T4 <span class="name">(Continuity under handoff)</span></div><div class="bd">
+<div class="proof">If A4 ran and its commit is pushed/pulled, then for any next session on any machine the loader injects <span class="mono">&sigma;</span> at start (A5 reads the committed file), so <span class="mono">essential(K<sub>i</sub>) &cap; &sigma; &sube; K<sub>i+1</sub>(0)</span>. Residual risk is exactly selection error in the handoff (what it chose not to write), bounded by the priority order and by DECISIONS catching the durable class. &#9633;</div>
+</div></div>
+
+<div class="thm"><div class="hd">T5 <span class="name">(Closure termination, A1)</span></div><div class="bd">
+<div class="proof">A monotone worklist on the finite set <span class="mono">A</span>: each round adds &ge;1 artifact or stops, so &le;|A| rounds. This is the finite-lattice Kleene fixpoint of Def.&nbsp;3. &#9633;</div>
+</div></div>
+
+<div class="thm"><div class="hd">T6 <span class="name">(Router totality, A7)</span></div><div class="bd">
+<div class="proof">The routing chain ends in catch-alls per scope; every fact matches &ge;1 arm; first-match makes the assignment unique. Hence <span class="mono">route</span> is a total function &mdash; every piece of knowledge has exactly one home, which is what keeps the always-loaded budget bounded. &#9633;</div>
+</div></div>
+
+<div class="callout key">
+<h4>How the theorems earn Theorem D</h4>
+<p>Theorem&nbsp;D says reliability needs a deterministic factor with <span class="mono">c<sub>j</sub>&rarr;1</span> on its target signal. T3 is precisely that guarantee (the block fires exactly on the target signal); T1&nbsp;and&nbsp;T2 ensure the factor is safe to add (it never loops, never bricks); T5&nbsp;and&nbsp;T6 ensure the soft-layer machinery it composes with is well-defined (the closure terminates, the router is total); T4 extends the guarantee across the session boundary that F2 attacks. The six local proofs are what make the one global theorem deployable rather than merely true.</p>
+</div>
+
+<h2 id="crosswalk">8&ensp;The crosswalk &mdash; one object, three vocabularies</h2>
+<p>The table below is the operational proof of the paper's claim: every concept appears in all three vocabularies, and the final column states the relationship that makes them one object. Three rows (marked &#9679;) are not analogies but identities &mdash; the same mathematics under two names. The full machine-readable crosswalk is a companion artifact.</p>
+<div class="callout warn"><h4>Notation reconciliation &mdash; the P1/P2/P3 collision</h4>
+<p>Both source frameworks independently use the labels P1/P2/P3. In the substrate paper they are model <em>properties</em> (P1 statelessness, P2 frozen weights, P3 bounded context, &sect;2); in the reliability framework they are the three <em>primitives</em> (persistent store, lifecycle interception, instruction channel). This paper keeps P1&ndash;P3 for the model properties and renames the primitives <strong>&Pi;<sub>1</sub>/&Pi;<sub>2</sub>/&Pi;<sub>3</sub></strong> throughout (&sect;3.1). Every reference to a primitive in this paper is written &Pi;<sub>n</sub>.</p></div>
+<table>
+<tr><th>#</th><th>Unified concept</th><th>Substrate (S)</th><th>E2E Framework (E)</th><th>forgekit (K)</th><th>Relationship</th></tr>
+<tr><td>1</td><td><strong>The frozen core</strong></td><td>y = f_theta(x): stateless map, fixed weights, bounded context (properties P1,P2,P3)</td><td>the agent/model whose behavior instructions can only raise the PROBABILITY of (p&lt;1)</td><td>Claude / Codex / Cursor / Gemini / Aider — the model the kit wraps, never modifies</td><td>identical object: all three treat the model as a fixed probabilistic map to be wrapped, not retrained</td></tr>
+<tr><td>2</td><td><strong>Impact-awareness / partial-work failure</strong> &#9679;</td><td>Faculty: impact-awareness gap; the developer silently simulates &#x27;what will this edit break&#x27;. Prototype I = Impact Oracle (reverse-dependency blast radius with confidence decay)</td><td>F1 partial work; dependents operator N(X); required change closure Delta* = least fixpoint of X |-&gt; X ∪ N(X); Done predicate; Algorithm A1 IMPACT-CLOSURE</td><td>/impact skill; documentation-map.md (R_declared); grep identifier sweep (R_discovered)</td><td>IDENTICAL MATHEMATICS. The Impact Oracle computes N(X) by reverse reachability on the dependency graph; Delta* is exactly the oracle&#x27;s transitive blast-radius set. The oracle adds a confidence-decay weight the framework&#x27;s set-theoretic N(X) leaves boolean.</td></tr>
+<tr><td>3</td><td><strong>Memory / session-amnesia failure</strong></td><td>Faculty: persistent memory gap; each context window is ephemeral. Validity-anchored memory (facts carry confirmed/discredited state updated by verified outcomes)</td><td>F2 session amnesia; continuity invariant I2 (essential(K_i) ⊆ P and loader L must load it); handoff operator H; K_{i+1}(0)=L(P)</td><td>docs/STATE.md (bounded snapshot) + docs/DECISIONS.md (append-only log); /handoff writes it; SessionStart hook injects it</td><td>Same failure, same fix (external bounded-compression checkpoint). Substrate adds validity-anchoring (prune by whether a past prediction was externally confirmed); framework adds the snapshot+WAL split (STATE mutable vs DECISIONS append-only).</td></tr>
+<tr><td>4</td><td><strong>Why assumptions happen (the root the user named)</strong> &#9679;</td><td>M2 assumption/uncertainty gate: under-specified input -&gt; the model confabulates a convention</td><td>amnesia equation: when f ∈ essential(K) is missing from L(P), assumption ≈ argmax P(convention | training data) — the mathematically EXPECTED result of missing context, not misbehavior. Invariant I3 (no fabrication)</td><td>CLAUDE.md No-assumptions rule; intent-router SPEC card (&#x27;state assumptions explicitly&#x27;)</td><td>The framework gives the substrate&#x27;s M2 gate its formal justification: assumption is argmax over the prior, so the fix is to supply context (raise what L loads) OR gate on missing context (halt), never to hope.</td></tr>
+<tr><td>5</td><td><strong>Self-correction / verification</strong></td><td>M6 inline verification; Prototype-II verify step; self-correction faculty</td><td>Algorithm A6 COMPLETION-GATE (deterministic Stop-hook floor); Hoare postcondition Done(t); the verification operator in A3 (verified-unaffected requires an actual grep, not an assumption)</td><td>docs-guard.sh Stop hook (blocks finish if code changed but no doc/state artifact did); reviewer agent verdict</td><td>Same verify-gate. Substrate framed it as a mechanism; framework proves it terminates (T1) and is sound (T3) and makes it the deterministic layer of the duality.</td></tr>
+<tr><td>6</td><td><strong>Complexity routing</strong></td><td>M1 complexity-aware router (transparent additive rubric); Prototype-II router</td><td>Algorithm A7 KNOWLEDGE-ROUTER (where every fact lives, keeps always-loaded context bounded); System 1/System 2 effort routing; intent DFA</td><td>intent-router.sh (UserPromptSubmit hook, keyword DFA, &lt;10ms, zero-token); effort-routing rule in CLAUDE.md; per-agent model: fields</td><td>Two facets of one routing principle. Substrate M1 routes by TASK COMPLEXITY -&gt; model tier (cost). Framework A7 routes by KNOWLEDGE TYPE -&gt; storage home (context budget). Both are transparent/deterministic, both reject an opaque-LLM classifier for the same reason.</td></tr>
+<tr><td>7</td><td><strong>Task decomposition</strong></td><td>M3 task/session decomposition</td><td>HTN closure -&gt; ordered task list (A1 output is the worklist); the meta-algorithm TASK(t)</td><td>sdlc-pilot 7-phase skill; subagents; git worktrees</td><td>Same: decompose the goal into the closure&#x27;s ordered worklist before building.</td></tr>
+<tr><td>8</td><td><strong>Goal-anchoring</strong></td><td>M4 goal-anchoring (goal drift: to a text model a long story and long code are the same object)</td><td>BDI Desires = written goal + acceptance criteria in STATE.md; I2 keeps them across sessions; acceptance criteria written at SPEC, consumed at VERIFY</td><td>docs/STATE.md &#x27;Current goal&#x27; + &#x27;Acceptance criteria&#x27;; sdlc-pilot SPEC-&gt;VERIFY gate</td><td>Substrate names the drift; framework anchors it in a persisted, re-injected Desire so every session optimizes the same target.</td></tr>
+<tr><td>9</td><td><strong>Anti-over-engineering</strong></td><td>M5 anti-over-engineering (scope minimality; the residual whitespace)</td><td>amana / scope-boundedness (agent may not exceed asked scope); I3 (no invented structure)</td><td>CLAUDE.md effort routing &#x27;trivial -&gt; do it directly, no ceremony&#x27;; least-privilege defaults</td><td>Weakest-covered in all three; substrate marks it residual-gap, framework encodes it as a stewardship bound, kit as an effort-routing default.</td></tr>
+<tr><td>10</td><td><strong>World-model of the codebase</strong></td><td>Faculty: world-model; Prototype-I codebase world-model (AST -&gt; persistent dependency graph)</td><td>the typed artifact graph (A, tau, R = R_declared ∪ R_discovered)</td><td>documentation-map.md + the repo itself + ARCHITECTURE.md</td><td>Same graph. Substrate builds it from AST for code; framework generalizes the node type to {code,test,doc,config,diagram} so DOCS become first-class dependents — the key generalization that turns &#x27;impact on code&#x27; into &#x27;impact on all artifacts&#x27;.</td></tr>
+<tr><td>11</td><td><strong>Continual learning from outcomes</strong></td><td>Faculty: learning without touching theta (non-parametric always-on + parametric LoRA/EWC)</td><td>Reflexion loop made cross-session (I3/I4); DECISIONS.md as precedent DB; A4 mirrors durable lessons</td><td>Reflexion rule in CLAUDE.md; STATE gotchas; agents&#x27; memory: project</td><td>Same &#x27;learn without retraining&#x27; stance. Both store verbal lessons externally and re-inject; substrate adds the parametric option, framework keeps it purely non-parametric (committed files).</td></tr>
+<tr><td>12</td><td><strong>Rehydration (session start)</strong></td><td>closed-loop write-back/read-back band in the substrate architecture</td><td>Algorithm A5 CONTEXT-REHYDRATE; loader L; records git baseline for the gate</td><td>session-context.sh SessionStart hook; /catchup skill (deep variant)</td><td>The read side of the substrate&#x27;s memory loop, made deterministic (inject, don&#x27;t hope the agent reads).</td></tr>
+<tr><td>13</td><td><strong>Independent verification / judge</strong></td><td>self-correction faculty; the honest-negative-result caution (models correct poorly alone)</td><td>LLM-as-Judge applied: reviewer agent (fresh context, explicit criteria, adversarial); self-consistency for critical changes (majority of N)</td><td>reviewer.md agent; DoD item 7</td><td>Substrate cited the finding that self-correction alone is weak; framework operationalizes the fix (an EXTERNAL judge), which is the same &#x27;trust only an external check&#x27; principle as the gate.</td></tr>
+<tr><td>14</td><td><strong>The two-layer duality (THE central new insight)</strong> &#9679;</td><td>implicit: the substrate wraps a probabilistic core with deterministic external structure, but v2 never states it as a law</td><td>DESIGN LAW: instructions (Pi3) are PROBABILISTIC (raise p); interception (Pi2) is DETERMINISTIC (guarantee a floor c-&gt;1). P(silent miss) = (1-p)·prod_j(1-c_j). Since p&lt;1 always, neither layer alone suffices.</td><td>the split itself: CLAUDE.md/rules/skills = soft layer; hooks (docs-guard, session-context, intent-router) = hard layer</td><td>THIS is what the kit gives the substrate theory: the reason the substrate must be TWO layers, stated as a theorem. The user&#x27;s own discipline (&#x27;never trust AI output — it is calculated probability&#x27;) is exactly (1-p)&gt;0, which forces the deterministic layer.</td></tr>
+<tr><td>15</td><td><strong>The probabilistic failure model</strong></td><td>eval honesty: perfect accuracy shows separation not a benchmark; p&lt;1</td><td>P(&gt;=1 miss) = 1 - p^n over n tasks (0.9 -&gt; 65% at 10, 96% at 30); layered: P(silent miss)=(1-p)·prod(1-c_j)</td><td>the lattice of gates: turn-level (hook) ⊂ commit-level (pre-commit) ⊂ PR-level (CI)</td><td>The math that makes &#x27;it works sometimes then forgets&#x27; a geometric certainty rather than bad luck — and quantifies why each added deterministic gate multiplies down the residual.</td></tr>
+<tr><td>16</td><td><strong>Stewardship / governance boundary</strong></td><td>STEWARDSHIP/amana wrapper (33:72) around the whole architecture</td><td>amana in I3/I4 as no-fabrication + verified-currency; least privilege, reversibility, logged rationale, scope-boundedness</td><td>committed-files-only (auditable), block-at-most-once (no nagging), fail-open safety (T2), DOCS_GUARD_DISABLE auditable escape hatch</td><td>The ethical frame the substrate draws from the lens is realized as concrete safety properties in the framework (fail-open, reversibility) and kit (auditable hooks).</td></tr>
+</table>
+<div class="callout key"><h4>The three anchor identities</h4><ol style="margin:4px 0">
+<li><strong>Impact-Oracle blast-radius &equiv; change-closure &Delta;*.</strong> Reverse reachability on the dependency graph is the least fixpoint of <span class="mono">X&nbsp;&#8614;&nbsp;X&nbsp;&cup;&nbsp;N(X)</span>. The oracle weights it with confidence decay; the framework&rsquo;s <span class="mono">N(&middot;)</span> is its boolean core.</li>
+<li><strong>M2 assumption gate &equiv; the amnesia equation.</strong> <span class="mono">assumption &asymp; argmax P(convention&nbsp;|&nbsp;training)</span> is <em>why</em> an under-specified prompt is answered with a confabulated convention &mdash; so the gate supplies the missing context or halts; it never hopes.</li>
+<li><strong>The substrate&rsquo;s two layers &equiv; the design law.</strong> Instructions raise <span class="mono">p&lt;1</span>; interception guarantees a floor <span class="mono">c&rarr;1</span>. Theorem&nbsp;D. This is the formal statement of the governing discipline.</li>
+</ol></div>
+<h2 id="lens">9&ensp;The Qur&rsquo;anic epistemology &mdash; the full fourteen mappings</h2>
+<div class="callout warn">
+<h4>How the lens is used, and how it is not</h4>
+<p>The Qur&rsquo;an is used here as a <em>framing lens and ethics source</em>, never as technical authority for an engineering claim. No verse proves that an algorithm works or a data structure is correct &mdash; those stand or fall on their engineering merits alone (&sect;4&ndash;&sect;7). What the lens supplies is (1)&nbsp;a vocabulary for the agent&rsquo;s epistemic obligations &mdash; what it owes to truthfulness, verification, and stewardship; (2)&nbsp;a hierarchy of knowledge (&lsquo;ilm&nbsp;&rarr;&nbsp;fahm&nbsp;&rarr;&nbsp;&#7717;ikma) that motivates a <em>layered</em> memory rather than a flat store; and (3)&nbsp;ethical constraints on autonomy (am&#257;na, tabayyun) that translate into concrete safeguards. A mapping marked <span class="tag lb">load-bearing</span> directly motivates a specific architectural decision &mdash; e.g. a <em>mandatory</em> gate, not an optional one; a mapping marked <span class="tag mp">metaphor</span> is illustrative. Even load-bearing mappings must be independently defensible: the verse explains <em>why</em> we insist, not <em>that</em> it works.</p>
+<p class="small">All Arabic is the clean Uthmani-script edition and all translations are Abdel Haleem, retrieved verbatim via the quran.ai connector; tafsir references are Ibn Kathir. No Qur&rsquo;anic text is reproduced from model memory.</p>
+</div>
+<p>The fourteen mappings are the epistemology behind the architecture: each names an obligation that a probabilistic engine, left alone, will not honour, and which the deterministic layer therefore exists to enforce. Twelve are load-bearing; two are metaphor. They are grouped by the faculty they govern.</p>
+<h3>9.1&ensp;Impact-awareness &mdash; know before you act</h3>
+<div class="quran">
+<div class="rf">Q 17:36 &mdash; l&#257; taqfu m&#257; laysa laka bihi &lsquo;ilm <span class="tag lb">load-bearing</span></div>
+<div class="ar">وَلَا تَقْفُ مَا لَيْسَ لَكَ بِهِ عِلْمٌ ۚ إِنَّ السَّمْعَ وَالْبَصَرَ وَالْفُؤَادَ كُلُّ أُولَٰئِكَ كَانَ عَنْهُ مَسْئُولًا</div>
+<div class="tr">&ldquo;Do not follow blindly what you do not know to be true: ears, eyes, and heart, you will be questioned about all these.&rdquo;</div>
+<div class="pr">Before any mutation, the agent must run a pre-action check of what will be affected, whether it has sufficient context, and whether the predicted outcome is evidence-supported rather than pattern-matched. This is <em>anchor identity&nbsp;#1</em>: the impact closure &Delta;* (A1) computed before coding. Ibn Kathir glosses the verse (via Qatadah) as a prohibition on claiming knowledge one lacks &mdash; for the agent: do not call a file safe to modify without reading it, nor a test passing without running it. The verse&rsquo;s &lsquo;ears, eyes, and heart &hellip; questioned&rsquo; maps to the audit trail: every channel used is logged so the decision can be reconstructed.</div>
+</div>
+<h3>9.2&ensp;Self-correction &mdash; verify, reflect, iterate</h3>
+<div class="quran">
+<div class="rf">Q 49:6 &mdash; fa-tabayyan&#363; (the verification gate) <span class="tag lb">load-bearing</span></div>
+<div class="ar">يَا أَيُّهَا الَّذِينَ آمَنُوا إِن جَاءَكُمْ فَاسِقٌ بِنَبَإٍ فَتَبَيَّنُوا أَن تُصِيبُوا قَوْمًا بِجَهَالَةٍ فَتُصْبِحُوا عَلَىٰ مَا فَعَلْتُمْ نَادِمِينَ</div>
+<div class="tr">&ldquo;Believers, if a troublemaker brings you news, check it first, in case you wrong others unwittingly and later regret what you have done,&rdquo;</div>
+<div class="pr">The operative term <em>tabayyun</em> demands active investigation, not passive acceptance &mdash; a mandatory step between receiving information and acting. This is the completion gate A6 and the external verifier of Def.&nbsp;4: before applying a fix based on an error report, a request, or its own diagnosis, the agent re-reads the file and re-confirms the error. The gate is <em>architectural</em> (a deterministic pipeline step), not advisory &mdash; the verse&rsquo;s command is categorical, exactly the hard factor <span class="mono">c&rarr;1</span> of Theorem&nbsp;D.</div>
+</div>
+<div class="quran">
+<div class="rf">Q 4:82 &mdash; tadabbur (self-consistency) <span class="tag lb">load-bearing</span></div>
+<div class="ar">أَفَلَا يَتَدَبَّرُونَ الْقُرْآنَ ۚ وَلَوْ كَانَ مِنْ عِندِ غَيْرِ اللَّهِ لَوَجَدُوا فِيهِ اخْتِلَافًا كَثِيرًا</div>
+<div class="tr">&ldquo;Will they not think about this Quran? If it had been from anyone other than God, they would have found much inconsistency in it.&rdquo;</div>
+<div class="pr">&lsquo;They would have found much inconsistency&rsquo; makes internal contradiction evidence of flawed origin &mdash; the argument behind self-consistency checking (SYNC-VERIFY&rsquo;s <span class="mono">doubts[]</span> channel, and the majority-of-N escalation of the reviewer). If a planned change contradicts the agent&rsquo;s stated reasoning or the tests it just read, the metacognitive pass flags it and halts.</div>
+</div>
+<div class="quran">
+<div class="rf">Q 47:24 &mdash; tadabbur (&lsquo;locks on hearts&rsquo;) <span class="tag mp">metaphor</span></div>
+<div class="ar">أَفَلَا يَتَدَبَّرُونَ الْقُرْآنَ أَمْ عَلَىٰ قُلُوبٍ أَقْفَالُهَا</div>
+<div class="tr">&ldquo;Will they not contemplate the Quran? Do they have locks on their hearts?&rdquo;</div>
+<div class="pr">The &lsquo;locks on hearts&rsquo; image maps to a real failure mode: when context saturates, the agent becomes functionally unable to reconsider. The metacognitive controller must be able to reset the working context and re-examine from a fresh framing &mdash; structured backtracking, the fresh-context reviewer that never inherits the builder&rsquo;s narrative.</div>
+</div>
+<h3>9.3&ensp;World-model &mdash; know what already exists</h3>
+<div class="quran">
+<div class="rf">Q 2:31&ndash;32 &mdash; ta&lsquo;l&#299;m al-asm&#257;&rsquo; <span class="tag lb">load-bearing</span></div>
+<div class="ar">وَعَلَّمَ آدَمَ الْأَسْمَاءَ كُلَّهَا ثُمَّ عَرَضَهُمْ عَلَى الْمَلَائِكَةِ فَقَالَ أَنبِئُونِي بِأَسْمَاءِ هَٰؤُلَاءِ إِن كُنتُمْ صَادِقِينَ ﴿٣١﴾
+قَالُوا سُبْحَانَكَ لَا عِلْمَ لَنَا إِلَّا مَا عَلَّمْتَنَا ۖ إِنَّكَ أَنتَ الْعَلِيمُ الْحَكِيمُ ﴿٣٢﴾</div>
+<div class="tr">&ldquo;(2:31) He taught Adam all the names [of things], then He showed them to the angels and said, ‘Tell me the names of these if you truly [think you can].’ (2:32) They said, ‘May You be glorified! We have knowledge only of what You have taught us. You are the All Knowing and All Wise.’&rdquo;</div>
+<div class="pr">&lsquo;He taught Adam all the names&rsquo; &mdash; knowledge begins with naming entities and their relations. This is the typed artifact graph (Defs.&nbsp;2&ndash;3): not a flat file listing but a semantic map of which function calls which, which test covers which class. The angels&rsquo; &lsquo;we have knowledge only of what You have taught us&rsquo; is precisely the model&rsquo;s situation &mdash; it knows only its context window; the external world-model supplies the names of entities that exceed it.</div>
+</div>
+<h3>9.4&ensp;Continual learning &mdash; knowledge as ongoing increase</h3>
+<div class="quran">
+<div class="rf">Q 20:114 &mdash; rabbi zidn&#299; &lsquo;ilm&#257; <span class="tag lb">load-bearing</span></div>
+<div class="ar">فَتَعَالَى اللَّهُ الْمَلِكُ الْحَقُّ ۗ وَلَا تَعْجَلْ بِالْقُرْآنِ مِن قَبْلِ أَن يُقْضَىٰ إِلَيْكَ وَحْيُهُ ۖ وَقُل رَّبِّ زِدْنِي عِلْمًا</div>
+<div class="tr">&ldquo;exalted be God, the one who is truly in control. [Prophet], do not rush to recite before the revelation is fully complete but say, ‘Lord, increase me in knowledge!’&rdquo;</div>
+<div class="pr">&lsquo;Do not rush &hellip; but say, increase me in knowledge&rsquo; &mdash; two mechanisms at once. The prohibition on rushing before revelation is complete is the halt-on-incomplete-context rule (I3). The prayer for increase is the cross-session experience store that grows priors without touching &theta; (P2): learning is external memory that changes what the agent <em>sees</em> next, not a weight update.</div>
+</div>
+<div class="quran">
+<div class="rf">Q 39:9 &mdash; hal yastaw&#299; <span class="tag mp">metaphor</span></div>
+<div class="ar">أَمَّنْ هُوَ قَانِتٌ آنَاءَ اللَّيْلِ سَاجِدًا وَقَائِمًا يَحْذَرُ الْآخِرَةَ وَيَرْجُو رَحْمَةَ رَبِّهِ ۗ قُلْ هَلْ يَسْتَوِي الَّذِينَ يَعْلَمُونَ وَالَّذِينَ لَا يَعْلَمُونَ ۗ إِنَّمَا يَتَذَكَّرُ أُولُو الْأَلْبَابِ</div>
+<div class="tr">&ldquo;What about someone who worships devoutly during the night, bowing down, standing in prayer, ever mindful of the life to come, hoping for his Lord’s mercy? Say, ‘How can those who know be equal to those who do not know?’ Only those who have understanding will take heed.&rdquo;</div>
+<div class="pr">&lsquo;How can those who know be equal to those who do not?&rsquo; establishes that knowledge is not fungible with ignorance &mdash; motivating the architecture&rsquo;s distinction between <em>grounded</em> mode (relevant prior experience loaded) and <em>ungrounded</em> mode (base model alone), and surfacing that distinction to the user rather than hiding it.</div>
+</div>
+<h3>9.5&ensp;Persistent memory &mdash; externalize to endure</h3>
+<div class="quran">
+<div class="rf">Q 96:1&ndash;5 &mdash; iqra&rsquo; / &lsquo;allama bi-l-qalam <span class="tag lb">load-bearing</span></div>
+<div class="ar">اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ ﴿١﴾
+خَلَقَ الْإِنسَانَ مِنْ عَلَقٍ ﴿٢﴾
+اقْرَأْ وَرَبُّكَ الْأَكْرَمُ ﴿٣﴾
+الَّذِي عَلَّمَ بِالْقَلَمِ ﴿٤﴾
+عَلَّمَ الْإِنسَانَ مَا لَمْ يَعْلَمْ ﴿٥﴾</div>
+<div class="tr">&ldquo;(96:1) Read! In the name of your Lord who created: (96:2) He created man from a clinging form. (96:3) Read! Your Lord is the Most Bountiful One (96:4) who taught by [means of] the pen, (96:5) who taught man what he did not know.&rdquo;</div>
+<div class="pr">&lsquo;Who taught by the pen&rsquo; &mdash; al-qalam is the instrument of externalization, turning ephemeral thought into durable record. Every context window is ephemeral (unwritten thought), so the persistent store (&Pi;<sub>1</sub>) is &lsquo;the pen&rsquo;: write-back (A4) captures what is learned, retrieval (A5) reloads it next session, consolidation organizes raw experience into structured knowledge. &lsquo;Taught man what he did not know&rsquo; &mdash; the pen does not merely record; it grants access beyond unaided capacity.</div>
+</div>
+<h3>9.6&ensp;Stewardship &mdash; the weight of the trust</h3>
+<div class="quran">
+<div class="rf">Q 33:72 &mdash; al-am&#257;na (the Trust) <span class="tag lb">load-bearing</span></div>
+<div class="ar">إِنَّا عَرَضْنَا الْأَمَانَةَ عَلَى السَّمَاوَاتِ وَالْأَرْضِ وَالْجِبَالِ فَأَبَيْنَ أَن يَحْمِلْنَهَا وَأَشْفَقْنَ مِنْهَا وَحَمَلَهَا الْإِنسَانُ ۖ إِنَّهُ كَانَ ظَلُومًا جَهُولًا</div>
+<div class="tr">&ldquo;We offered the Trust to the heavens, the earth, and the mountains, yet they refused to undertake it and were afraid of it; mankind undertook it- they have always been inept and foolish.&rdquo;</div>
+<div class="pr">An agent that can modify a codebase bears a trust. The verse&rsquo;s structure is decisive: the heavens refused the trust, recognizing its weight; the human bore it and was called <em>&#7827;al&#363;man jah&#363;l&#257;</em> (given to wrongdoing and ignorance). The design is therefore dual: (a)&nbsp;the agent operates within explicit authorization &mdash; it may not exceed asked scope (M5, anti-over-engineering); (b)&nbsp;the architecture <em>assumes the agent will err</em> and builds in rollback, sandboxing, and incremental commit as structural safeguards. Ibn Kathir&rsquo;s gloss (Ibn Abb&#257;s) ties am&#257;na to accountability &mdash; outcome-linked feedback: actions must be traceable to outcomes, and outcomes feed the learning store. This is the governance boundary around Figures&nbsp;1 and&nbsp;2, realized concretely as fail-open safety (T2), reversibility, and auditable hooks.</div>
+</div>
+<h3>9.7&ensp;The four governing concepts</h3>
+<p>Beyond the verses, four Qur&rsquo;anic concepts structure the whole architecture, each load-bearing:</p>
+<ul>
+<li><strong>&lsquo;ilm &rarr; fahm &rarr; &#7717;ikma</strong> (knowledge &rarr; understanding &rarr; wisdom) &mdash; the epistemological hierarchy that mandates a <em>layered</em> memory: raw logs (&lsquo;ilm) at the base, a consolidation pass extracting patterns (fahm), a decision-support layer applying them (&#7717;ikma). Dumping everything into one flat vector store collapses the hierarchy &mdash; this is the architectural argument for STATE vs DECISIONS vs ARCHITECTURE as distinct stores with distinct update rules, not one file.</li>
+<li><strong>&#7717;if&#7827; + mur&#257;ja&lsquo;a</strong> (preservation + spaced review) &mdash; memory is not write-once: a maintenance cycle reinforces recurring patterns, decays stale entries, and resolves contradictions. This is the memory-scoring rule (importance &times; recency-decay) and the validity-anchoring of Def.&nbsp;4.</li>
+<li><strong>tabayyun</strong> (verification before action) &mdash; the categorical gate of &sect;9.2, the hard factor of Theorem&nbsp;D.</li>
+<li><strong>tadabbur</strong> (structured reflection on consequences; root d-b-r, &lsquo;what follows&rsquo;) &mdash; the metacognitive controller as a trace-<em>forward</em> through the dependency graph: what comes after this change, what breaks, what it assumes. This is A1&rsquo;s consequence simulation, not a vague &lsquo;think again&rsquo;.</li>
+</ul>
+<div class="callout eth">
+<h4>The lens in one line</h4>
+<p>Every faculty the model lacks corresponds to an obligation the tradition names: <em>l&#257; taqfu</em> (do not act without knowledge) &rarr; impact-closure; <em>tabayyun</em> (verify the report) &rarr; the gate; <em>ta&lsquo;l&#299;m al-asm&#257;&rsquo;</em> (know the names) &rarr; the world-model; <em>al-qalam</em> (the pen) &rarr; persistent memory; <em>rabbi zidn&#299; &lsquo;ilm&#257;</em> (increase me in knowledge) &rarr; continual learning; <em>al-am&#257;na</em> (the trust) &rarr; the stewardship boundary. The engineering says <em>how</em>; the lens says <em>why it is owed</em>.</p>
+</div>
+
+<h2 id="prototypes">10&ensp;The prototypes &mdash; instantiating the deterministic layer</h2>
+
+<p>Theory earns its keep when it runs. Two prototypes instantiate the deterministic layer's two hard functions &mdash; the impact closure (A1) and the routing/gate pair (A7 + A6) &mdash; and both are evaluated with the honesty the governing discipline demands: a perfect score on a self-built set demonstrates that a rubric <em>can separate</em> cases, never that it is a field benchmark.</p>
+
+<h3>10.1&ensp;Prototype I &mdash; the impact oracle (A1 made real)</h3>
+<p>An AST parser builds the typed artifact graph over a Python codebase; reverse reachability with confidence decay computes a file's blast radius &mdash; the closure &Delta;* of Def.&nbsp;3. Evaluated by mutation against two baselines:</p>
+<table>
+<tr><th>Method</th><th>Precision</th><th>Recall</th><th>F1</th><th>Reading</th></tr>
+<tr><td>edited-file only</td><td>1.00</td><td>0.53</td><td>0.65</td><td>never over-warns, misses half the blast radius</td></tr>
+<tr><td>grep baseline</td><td>0.73</td><td>0.94</td><td>0.79</td><td>strong, but can still miss</td></tr>
+<tr><td><strong>graph oracle</strong></td><td>0.63</td><td><strong>1.00</strong></td><td>0.75</td><td><strong>perfect recall &mdash; never misses an impacted file</strong></td></tr>
+</table>
+<p>The oracle does not win on F1 &mdash; and the paper says so. Its distinguishing property is <strong>perfect recall</strong>, which is the safety property for the question "what will my edit break?": a reverse-reachability closure run to fixpoint <em>cannot miss a reachable dependent</em> (Thm.&nbsp;T5). It trades precision for that guarantee, tunable by the confidence threshold (best F1&nbsp;=&nbsp;0.79 at threshold&nbsp;0.4). It scales: 303-node stdlib module in 18&nbsp;ms, 1903-node module in 91&nbsp;ms. This is anchor identity&nbsp;#1 confirmed on real code.</p>
+
+<h3>10.2&ensp;Prototype II &mdash; the complexity-router and assumption-gate (A7 + A6 + M1 + M2)</h3>
+<p>A transparent, feature-based rubric routes each task to a model tier (cheap/mid/premium) and gates under-specified requests before they reach a model at all &mdash; the assumption gate that answers the user's "biggest problem is assumption." The routing decision explains itself; it does <em>not</em> ask another opaque model, because that would reintroduce the <span class="mono">(1&minus;p)</span> the deterministic layer exists to remove. Evaluated live on real models (haiku/sonnet/opus):</p>
+<table>
+<tr><th>Metric</th><th>Result</th></tr>
+<tr><td>Gate accuracy (should-ask, 30 tasks)</td><td><strong>30/30</strong>, precision = recall = 1.00</td></tr>
+<tr><td>Routing (well-specified tasks)</td><td><strong>21/21</strong> exact tier</td></tr>
+<tr><td>Real cost saved vs always-premium</td><td><strong>62.1%</strong> on measured tokens</td></tr>
+<tr><td>Execution-verified routed-down outputs</td><td><strong>3/3</strong> passed real test cases</td></tr>
+</table>
+<div class="callout warn">
+<h4>The honest caveat, stated wherever the numbers appear</h4>
+<p>The 30-task set is hand-labelled and the thresholds were tuned against it, so these numbers show the rubric <em>can separate</em> the cases &mdash; they are not a field benchmark. The cost figures, by contrast, are exact arithmetic on <em>real measured token counts</em> from live calls, and the correctness sub-experiment actually executed the cheaper models' code against test cases (the honesty core: routing down is only a saving if the cheap output is correct). Both prototypes ship as runnable packages with passing test suites.</p>
+</div>
+
+<h2 id="forgekit">11&ensp;forgekit &mdash; the deployed binding</h2>
+<p>The theory is implementation-independent; <em>forgekit</em> is one binding of it, and its precursor <em>claude-e2e-kit</em> is the reference realization on Claude Code. The mapping is exact:</p>
+<table>
+<tr><th>Framework object</th><th>forgekit / claude-e2e-kit</th><th>Faculty / algorithm</th></tr>
+<tr><td>&Pi;<sub>1</sub> persistent store</td><td><span class="mono">CLAUDE.md</span>, <span class="mono">docs/STATE.md</span>, <span class="mono">docs/DECISIONS.md</span>, <span class="mono">docs/ARCHITECTURE.md</span></td><td>memory</td></tr>
+<tr><td>&Pi;<sub>2</sub> interception</td><td><span class="mono">session-context.sh</span> (SessionStart), <span class="mono">docs-guard.sh</span> (Stop), <span class="mono">intent-router.sh</span> (UserPromptSubmit)</td><td>A5, A6, routing</td></tr>
+<tr><td>&Pi;<sub>3</sub> instructions</td><td><span class="mono">CLAUDE.md</span> DoD + No-assumptions + Reflexion + effort-routing; <span class="mono">.claude/rules/</span></td><td>I1&ndash;I4, M1&ndash;M6</td></tr>
+<tr><td>&Delta;* construction (A1)</td><td><span class="mono">/impact</span> skill + <span class="mono">documentation-map.md</span></td><td>impact-awareness</td></tr>
+<tr><td>Verify operator (A3)</td><td><span class="mono">/sync-docs</span> + <span class="mono">doc-sync</span> agent (project memory)</td><td>self-correction</td></tr>
+<tr><td>Handoff (A4) / rehydrate (A5)</td><td><span class="mono">/handoff</span> &rarr; STATE; SessionStart injection + <span class="mono">/catchup</span></td><td>memory</td></tr>
+<tr><td>Independent judge</td><td><span class="mono">reviewer</span> agent (fresh context, adversarial, criteria-based)</td><td>self-correction</td></tr>
+<tr><td>Phase gates</td><td><span class="mono">sdlc-pilot</span> 7-phase skill (SPEC&hellip;MAINTAIN)</td><td>decomposition, goal-anchoring</td></tr>
+</table>
+<p>The kit grounds its mechanisms in the same literature the substrate's faculties cite &mdash; CoALA's four memories, MemGPT's paging, Generative Agents' recency&times;importance scoring, Reflexion's verbal reinforcement, ReAct's reason&ndash;act interleaving, LLM-as-Judge's independent evaluator, AlphaCodium's phase-gated flow, Voyager's growing skill library, and the classical decision loops (BDI, OODA/PDCA, HTN). It is the same architecture, cited from the same shelf, and shipped. The two prototypes of &sect;10 slot in as the mechanical cores of <span class="mono">/impact</span> and the effort-router.</p>
+
+<div class="callout key">
+<h4>Why one binding matters for the theory</h4>
+<p>That an independent team, starting from production failures rather than from cognitive faculties, built the same seven algorithms and stated the same design law is the strongest available evidence that the architecture is <em>discovered, not invented</em> &mdash; a convergent solution to a structural problem, the way distributed systems converge on snapshot+WAL. The synthesis does not merge two guesses; it records a convergence.</p>
+</div>
+
+<h2 id="limits">12&ensp;Honest limits &mdash; what no architecture can guarantee</h2>
+<ul>
+<li><strong>Semantic correctness is undecidable.</strong> The gate proves "a doc artifact changed", not "the docs are now true"; A3's grep proves "mentions were visited", not "the prose is accurate". By Rice's theorem the last layer is unavoidable &mdash; tests for behaviour, human review for meaning. The architecture's job is to make that review <em>cheap</em>: everything arrives already-attempted, with an updated / verified / doubts report.</li>
+<li><strong>The soft layer's <span class="mono">p</span> is real but bounded.</strong> Theorem&nbsp;D quantifies the residual; it does not abolish it. A determined agent can satisfy the letter of a gate (touch STATE with one line) without its spirit &mdash; which is why no single layer is trusted, by design.</li>
+<li><strong>R<sub>discovered</sub> misses unnamed coupling.</strong> A doc that describes behaviour without naming any identifier has no grep edge; such couplings must be lifted into R<sub>declared</sub> (the documentation map) &mdash; exactly what that table is for.</li>
+<li><strong>One prototype is not five faculties.</strong> The substrate prototypes instantiate impact-awareness and routing/gating well; memory, learning, and imagination remain the harder research frontier, and the honest ecosystem map marks the assumption gate (M2) and outcome-based learning as genuine whitespace the current stack does not fill.</li>
+<li><strong>The lens is framing, not proof.</strong> Every Qur'anic mapping motivates a design choice; none of them <em>validate</em> one. The engineering in &sect;4&ndash;&sect;7 stands on its own or not at all &mdash; the tradition tells us why a safeguard is owed, never that it works.</li>
+</ul>
+
+<h2 id="conclusion">13&ensp;Conclusion</h2>
+<p>A language model that writes code is a fixed probabilistic map, and three independent efforts &mdash; one from cognition, one from production failures, one from a shipped codebase &mdash; converged on the same remedy: wrap it in an external, stateful architecture that supplies the faculties it structurally lacks. This paper showed they describe one object. The impact-awareness faculty <em>is</em> the change-closure fixpoint; the assumption gate <em>is</em> the amnesia equation; and both rest on a single theorem &mdash; reliability is the product of a <em>probabilistic</em> instruction layer that raises <span class="mono">p&lt;1</span> and a <em>deterministic</em> interception layer that guarantees a floor, with neither alone sufficient.</p>
+<p>That theorem is the formal content of a plain discipline: <em>the output of a probability engine is never to be trusted on its own; trust is earned by an external check.</em> The Qur'anic lens gives that discipline its oldest names &mdash; <em>l&#257; taqfu</em>, do not pursue what you do not know; <em>tabayyun</em>, verify the report before you act; <em>al-am&#257;na</em>, the weight of a trust accepted by one who may err. The mathematics says how to build the check. The tradition says why it is owed. The codebase shows it runs.</p>
+<p class="small" style="margin-top:20px;color:#888">Companion artifacts: the three-way crosswalk (JSON + markdown), the graded reference set (Appendix&nbsp;A), and two runnable prototype packages (impact-oracle, router-gate). This synthesis consolidates and does not supersede the v2 <em>Theory&nbsp;&rarr;&nbsp;Evidence&nbsp;&rarr;&nbsp;Build-Map</em> edition, which carries the empirical evidence layer and the full ecosystem map.</p>
+
+<h2 id="appendix-refs">Appendix A&ensp;&mdash;&ensp;Graded reference set (new sources)</h2>
+<p>The synthesis draws in a body of cognitive-architecture and process literature beyond the substrate paper's original 32 references. Each new source was independently verified this pass &mdash; modern arXiv sources by direct metadata fetch, classical works by primary-host search or established secondary knowledge &mdash; and graded: <strong>confirmed</strong> (record retrieved, attribution matches), <strong>traceable</strong> (the work clearly exists and is correctly attributed, but rests on established secondary knowledge rather than a single retrievable record), <strong>unverifiable</strong> (could not confirm). The tally: <strong>8 confirmed, 6 traceable, 0 unverifiable.</strong></p>
+<table>
+<tr><th>Source</th><th>ID</th><th>Grade</th><th>Note</th></tr>
+<tr><td><strong>Cognitive Architectures for Language Agents</strong><br><span class="small">Theodore R. Sumers, Shunyu Yao, Karthik Narasi, 2023</span></td><td class="mono">2309.02427</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Unifies memory, planning/reasoning, action, and learning modules into a single CoALA framework for language agents, giving the cognitive-substrate work&#x27;s memory/im&hellip;</td></tr>
+<tr><td><strong>ReAct: Synergizing Reasoning and Acting in Language </strong><br><span class="small">Shunyu Yao, Jeffrey Zhao, Dian Yu et al., 2022</span></td><td class="mono">2210.03629</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Interleaves reasoning traces with actions in a single LLM prompt loop, the foundational pattern the cognitive-substrate and reliability-framework agent loops build on.</td></tr>
+<tr><td><strong>A Survey on LLM-as-a-Judge</strong><br><span class="small">Jiawei Gu, Xuhui Jiang, Zhichao Shi et al., 2024</span></td><td class="mono">2411.15594</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Surveys the emerging practice of using LLMs themselves as evaluators/judges, directly relevant to any impact-awareness or self-correction mechanism that relies on an LL&hellip;</td></tr>
+<tr><td><strong>Code Generation with AlphaCodium: From Prompt Engine</strong><br><span class="small">Tal Ridnik, Dedy Kredo, Itamar Friedman, 2024</span></td><td class="mono">2401.08500</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Replaces single-shot prompting with an iterative &#x27;flow engineering&#x27; test-generate-fix loop for code generation, an applied precedent for the reliability frame&hellip;</td></tr>
+<tr><td><strong>SWE-agent: Agent-Computer Interfaces Enable Automate</strong><br><span class="small">John Yang, Carlos E. Jimenez, Alexander Wettig, 2024</span></td><td class="mono">2405.15793</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Introduces an agent-computer interface (a constrained action/observation space) purpose-built for LM agents doing software engineering, directly relevant to forgekit&#x&hellip;</td></tr>
+<tr><td><strong>Voyager: An Open-Ended Embodied Agent with Large Lan</strong><br><span class="small">Guanzhi Wang, Yuqi Xie, Yunfan Jiang et al., 2023</span></td><td class="mono">2305.16291</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; title/authors match claim exactly. Demonstrates a lifelong-learning embodied agent that maintains and grows a skill library over time, the clearest existing analogue to persistent, growing external memor&hellip;</td></tr>
+<tr><td><strong>Agentic AI in the Software Development Lifecycle: Ar</strong><br><span class="small">Happy Bhati, 2026</span></td><td class="mono">2604.26275</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; the ID resolves to a REAL paper dated 2026-04-29 (April 2026, which is in the past relative to today, 2026-07-11 — so &#x27;future-dated&#x27; only relative to the cited work&#x27;s original claim date, &hellip;</td></tr>
+<tr><td><strong>Agent-as-a-Judge</strong><br><span class="small">Runyang You, Hongru Cai, Caiqi Zhang et al., 2026</span></td><td class="mono">2601.05111</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">Retrieved via arXiv metadata API; ID resolves to a REAL paper dated 2026-01-08. Title is exactly &#x27;Agent-as-a-Judge&#x27; and abstract frames it as &#x27;the first comprehensive survey&#x27; of the Agent-as-a-Judge paradigm, matching&hellip;</td></tr>
+<tr><td><strong>Agent-as-a-Judge: Evaluate Agents with Agents</strong><br><span class="small">Zhuge, Zhao, Ashley, Wang, Khizbullin, Xiong, , 2024</span></td><td class="mono">2410.10934</td><td style="color:#2f6b45;font-weight:700">confirmed</td><td class="small">The founding Agent-as-a-Judge paper that coined the term; added on the verification track&#x27;s explicit recommendation to disambiguate from the 2026 survey (2601.05111).</td></tr>
+<tr><td><strong>HTN Planning: Complexity and Expressivity</strong><br><span class="small">Erol, Hendler, Nau, 1994</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">Classical AI-planning paper, no arXiv/OpenAlex record. Verified via live web_search (this turn) against AAAI&#x27;s own paper page, Semantic Scholar, and a downstream paper&#x27;s reference list (arXiv:1403.7426, &#x27;An Overview of Hie&hellip;</td></tr>
+<tr><td><strong>BDI Agents: From Theory to Practice</strong><br><span class="small">Rao, Georgeff, 1995</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">Classical agent-architecture paper, no DOI/arXiv record. Verified via live web_search (this turn) against the AAAI-hosted PDF (cdn.aaai.org/ICMAS/1995/ICMAS95-042.pdf), gabormelli.com/RKB, and multiple independent downstream reference li&hellip;</td></tr>
+<tr><td><strong>Thinking, Fast and Slow</strong><br><span class="small">Kahneman, D., 2011</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">Classical trade/academic book, not indexed on arXiv or as a journal article with a DOI in the usual sense; existence and content (System 1 / System 2 dual-process framing) are well-established general knowledge, not independently re-veri&hellip;</td></tr>
+<tr><td><strong>Über das Gedächtnis: Untersuchungen zur experimentel</strong><br><span class="small">Ebbinghaus, H., 1885</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">Foundational 1885 monograph establishing the forgetting curve; predates modern indexing entirely, existence is well-established historical/secondary knowledge, not independently re-verified against a bibliographic API in this pass.</td></tr>
+<tr><td><strong>OODA Loop (Observe-Orient-Decide-Act)</strong><br><span class="small">Boyd, J.R., None</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">No formal published paper exists — Boyd never formally published the OODA loop in a journal; it survives via briefing-slide decks and secondary military-strategy literature. Rubric correctly flags this as having &#x27;no formal paper.&#x&hellip;</td></tr>
+<tr><td><strong>PDCA / Plan-Do-Check-Act cycle (the &#x27;Shewhart Cycle&#x27;</strong><br><span class="small">Shewhart, W.A. (originator); Deming, W.E. (pop, None</span></td><td class="mono">&mdash;</td><td style="color:#8a6d1f;font-weight:700">traceable</td><td class="small">Management/quality-control doctrine spanning multiple books across decades, not a single citable paper. Existence and attribution (Shewhart origin, Deming popularization) are well-established secondary knowledge, not independently re-ver&hellip;</td></tr>
+</table>
+<div class="callout warn">
+<h4>The two future-dated identifiers &mdash; verified, not assumed</h4>
+<p>Two IDs in the source material are dated 2026. Both <em>resolve to real preprints</em> whose content matches the claim, confirmed by direct arXiv fetch rather than by topic plausibility. <span class="mono">arXiv:2604.26275</span> ("Agentic SDLC", Apr 2026) is a genuine but <em>single-author, non-peer-reviewed</em> preprint &mdash; cited as a recent preprint claim, not an established result. <span class="mono">arXiv:2601.05111</span> ("Agent-as-a-Judge", Jan 2026) is a real survey, but is a <em>different paper</em> from the founding work that coined the term &mdash; Zhuge et al. 2024 (<span class="mono">arXiv:2410.10934</span>), which is the reference this paper uses for the independent-judge concept in &sect;11. Both are recorded here so the distinction is not lost.</p>
+</div>
+<h2 id="refs">References</h2>
+<h4>Memory &amp; persistence</h4>
+<ol class="refs">
+<li><strong>Weston, Chopra, Bordes</strong> (2014). Memory Networks. <a href="https://arxiv.org/abs/1410.3916">arXiv:1410.3916</a>.</li>
+<li><strong>Sukhbaatar, Szlam, Weston, Fergus</strong> (2015). End-To-End Memory Networks. <a href="https://arxiv.org/abs/1503.08895">arXiv:1503.08895</a>.</li>
+<li><strong>Graves, Wayne, Danihelka</strong> (2014). Neural Turing Machines. <a href="https://arxiv.org/abs/1410.5401">arXiv:1410.5401</a>.</li>
+<li><strong>Graves et al.</strong> (2016). Hybrid computing using a neural network with dynamic external memory. <a href="https://doi.org/10.1038/nature20101">Nature</a>.</li>
+<li><strong>Lewis et al.</strong> (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. <a href="https://arxiv.org/abs/2005.11401">arXiv:2005.11401 / NeurIPS</a>.</li>
+<li><strong>Packer et al.</strong> (2023). MemGPT: Towards LLMs as Operating Systems. <a href="https://arxiv.org/abs/2310.08560">arXiv:2310.08560</a>.</li>
+<li><strong>Park et al.</strong> (2023). Generative Agents: Interactive Simulacra of Human Behavior. <a href="https://arxiv.org/abs/2304.03442">arXiv:2304.03442</a>.</li>
+<li><strong>McClelland, McNaughton, O&#x27;Reilly</strong> (1995). Why there are complementary learning systems in the hippocampus and neocortex. <a href="search: OpenAlex (title match)">Psychological Review</a>.</li>
+<li><strong>Kumaran, Hassabis, McClelland</strong> (2016). What Learning Systems do Intelligent Agents Need? Complementary Learning Systems Theory Updated. <a href="https://doi.org/10.1016/j.tics.2016.05.004">Trends in Cognitive Sciences, 10.1016/j.tics.2016.05.004</a>.</li>
+<li><strong>Theodore R. Sumers, Shunyu Yao, Karthik Narasimhan et al.</strong> (2023). Cognitive Architectures for Language Agents. <a href="http://arxiv.org/abs/2309.02427v3">arXiv:2309.02427</a>.</li>
+<li><strong>Ebbinghaus, H.</strong> (1885). Über das Gedächtnis: Untersuchungen zur experimentellen Psychologie (Memory: A Contribution to Experimental Psychology). Leipzig: Duncker &amp; Humblot (book/monograph).</li>
+</ol>
+<h4>Learning without weight updates</h4>
+<ol class="refs">
+<li><strong>Kirkpatrick et al.</strong> (2017). Overcoming catastrophic forgetting in neural networks. <a href="https://arxiv.org/abs/1612.00796">PNAS / arXiv:1612.00796</a>.</li>
+<li><strong>Sun et al.</strong> (2020). Test-Time Training with Self-Supervision for Generalization under Distribution Shifts. <a href="https://arxiv.org/abs/1909.13231">arXiv:1909.13231 / ICML 2020</a>.</li>
+<li><strong>Ba, Hinton, Mnih, Leibo, Ionescu</strong> (2016). Using Fast Weights to Attend to the Recent Past. <a href="https://arxiv.org/abs/1610.06258">arXiv:1610.06258</a>.</li>
+<li><strong>Hu et al.</strong> (2021). LoRA: Low-Rank Adaptation of Large Language Models. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a>.</li>
+<li><strong>von Oswald et al.</strong> (2022). Transformers Learn In-Context by Gradient Descent. <a href="https://arxiv.org/abs/2212.07677">arXiv:2212.07677</a>.</li>
+<li><strong>Dai et al.</strong> (2022). Why Can GPT Learn In-Context? Language Models Implicitly Perform Gradient Descent as Meta-Optimizers. <a href="https://arxiv.org/abs/2212.10559">arXiv:2212.10559</a>.</li>
+<li><strong>Guanzhi Wang, Yuqi Xie, Yunfan Jiang et al.</strong> (2023). Voyager: An Open-Ended Embodied Agent with Large Language Models. <a href="http://arxiv.org/abs/2305.16291v2">arXiv:2305.16291</a>.</li>
+</ol>
+<h4>Reasoning, verification &amp; judgement</h4>
+<ol class="refs">
+<li><strong>Cobbe et al.</strong> (2021). Training Verifiers to Solve Math Word Problems. <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a>.</li>
+<li><strong>Lightman et al.</strong> (2023). Let&#x27;s Verify Step by Step. <a href="https://arxiv.org/abs/2305.20050">arXiv:2305.20050</a>.</li>
+<li><strong>Shinn et al.</strong> (2023). Reflexion: Language Agents with Verbal Reinforcement Learning. <a href="https://arxiv.org/abs/2303.11366">arXiv:2303.11366</a>.</li>
+<li><strong>Madaan et al.</strong> (2023). Self-Refine: Iterative Refinement with Self-Feedback. <a href="https://arxiv.org/abs/2303.17651">arXiv:2303.17651</a>.</li>
+<li><strong>Wang et al.</strong> (2022). Self-Consistency Improves Chain of Thought Reasoning in Language Models. <a href="https://arxiv.org/abs/2203.11171">arXiv:2203.11171</a>.</li>
+<li><strong>Huang et al.</strong> (2023). Large Language Models Cannot Self-Correct Reasoning Yet. <a href="https://arxiv.org/abs/2310.01798">arXiv:2310.01798</a>.</li>
+<li><strong>Shunyu Yao, Jeffrey Zhao, Dian Yu et al.</strong> (2022). ReAct: Synergizing Reasoning and Acting in Language Models. <a href="http://arxiv.org/abs/2210.03629v3">arXiv:2210.03629</a>.</li>
+<li><strong>Jiawei Gu, Xuhui Jiang, Zhichao Shi et al.</strong> (2024). A Survey on LLM-as-a-Judge. <a href="http://arxiv.org/abs/2411.15594v6">arXiv:2411.15594</a>.</li>
+<li><strong>Zhuge, Zhao, Ashley, Wang, Khizbullin, Xiong, Liu, Chang, Krishnamoorthi, Tian, Shi, Chandra, Schmidhuber</strong> (2024). Agent-as-a-Judge: Evaluate Agents with Agents. <a href="https://arxiv.org/abs/2410.10934">arXiv:2410.10934</a>.</li>
+<li><strong>Runyang You, Hongru Cai, Caiqi Zhang et al.</strong> (2026). Agent-as-a-Judge. <a href="http://arxiv.org/abs/2601.05111v1">arXiv:2601.05111</a>.</li>
+<li><strong>Kahneman, D.</strong> (2011). Thinking, Fast and Slow. Farrar, Straus and Giroux (book).</li>
+</ol>
+<h4>World-model &amp; code structure</h4>
+<ol class="refs">
+<li><strong>Ha, Schmidhuber</strong> (2018). World Models. <a href="https://arxiv.org/abs/1803.10122">arXiv:1803.10122</a>.</li>
+<li><strong>Schrittwieser et al.</strong> (2020). Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model. <a href="https://arxiv.org/abs/1911.08265">arXiv:1911.08265 / Nature</a>.</li>
+<li><strong>Hafner et al.</strong> (2023). Mastering Diverse Domains through World Models. <a href="https://arxiv.org/abs/2301.04104">arXiv:2301.04104</a>.</li>
+<li><strong>Hafner et al.</strong> (2019). Dream to Control: Learning Behaviors by Latent Imagination. <a href="https://arxiv.org/abs/1912.01603">arXiv:1912.01603</a>.</li>
+<li><strong>Friston</strong> (2010). The free-energy principle: a unified brain theory?. <a href="https://doi.org/10.1038/nrn2787">Nature Reviews Neuroscience</a>.</li>
+<li><strong>Allamanis, Brockschmidt, Khademi</strong> (2018). Learning to Represent Programs with Graphs. <a href="https://arxiv.org/abs/1711.00740">arXiv:1711.00740 / ICLR 2018</a>.</li>
+<li><strong>Yamaguchi, Golde, Arp, Rieck</strong> (2014). Modeling and Discovering Vulnerabilities with Code Property Graphs. <a href="https://doi.org/10.1109/sp.2014.44">IEEE S&amp;P 2014</a>.</li>
+<li><strong>Alon, Zilberstein, Levy, Yahav</strong> (2019). code2vec: Learning Distributed Representations of Code. <a href="https://doi.org/10.1145/3290353">POPL 2019 / PACMPL</a>.</li>
+<li><strong>Horwitz, Reps, Binkley</strong> (1990). Interprocedural Slicing Using Dependence Graphs. <a href="https://doi.org/10.1145/77606.77608">ACM TOPLAS</a>.</li>
+<li><strong>Tip</strong> (1994). A Survey of Program Slicing Techniques. <a href="search: OpenAlex">Journal of Programming Languages</a>.</li>
+<li><strong>Ferrante, Ottenstein, Warren</strong> (1987). The Program Dependence Graph and Its Use in Optimization. <a href="https://doi.org/10.1145/24039.24041">ACM TOPLAS</a>.</li>
+</ol>
+<h4>Agent process &amp; software lifecycle</h4>
+<ol class="refs">
+<li><strong>Tal Ridnik, Dedy Kredo, Itamar Friedman</strong> (2024). Code Generation with AlphaCodium: From Prompt Engineering to Flow Engineering. <a href="http://arxiv.org/abs/2401.08500v1">arXiv:2401.08500</a>.</li>
+<li><strong>John Yang, Carlos E. Jimenez, Alexander Wettig et al.</strong> (2024). SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering. <a href="http://arxiv.org/abs/2405.15793v3">arXiv:2405.15793</a>.</li>
+<li><strong>Erol, Hendler, Nau</strong> (1994). HTN Planning: Complexity and Expressivity. <a href="https://aaai.org/papers/01123-htn-planning-complexity-and-expressivity/">Proceedings of the 12th National Conference on Artificial Intelligence (AAAI-94), Vol. 2, pp. 1123-1128</a>.</li>
+<li><strong>Rao, Georgeff</strong> (1995). BDI Agents: From Theory to Practice. <a href="https://cdn.aaai.org/ICMAS/1995/ICMAS95-042.pdf">Proceedings of the First International Conference on Multiagent Systems (ICMAS-95), pp. 312-319</a>.</li>
+<li><strong>Boyd, J.R.</strong> (None). OODA Loop (Observe-Orient-Decide-Act). Unpublished briefings/lectures (e.g. &#x27;A Discourse on Winning and Losing&#x27;, unpublished collection of briefing slides, c. 1976-1996); no single peer-reviewed paper.</li>
+<li><strong>Shewhart, W.A. (originator); Deming, W.E. (popularizer)</strong> (None). PDCA / Plan-Do-Check-Act cycle (the &#x27;Shewhart Cycle&#x27;, popularized by Deming). Originates in Shewhart, Statistical Method from the Viewpoint of Quality Control (1939); popularized in Deming, Out of the Crisis (1982) and later works.</li>
+<li><strong>Happy Bhati</strong> (2026). Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering. <a href="http://arxiv.org/abs/2604.26275v1">arXiv:2604.26275</a>.</li>
+</ol>
+
+<h2 id="appendix-crosswalk">Appendix B&ensp;&mdash;&ensp;The crosswalk artifact</h2>
+<p>The full three-way crosswalk (&sect;8) is provided as a machine-readable companion in two forms: <span class="mono">crosswalk.json</span> (structured, with the notation reconciliation and the three anchor identities) and <span class="mono">crosswalk.md</span> (readable table). Together with this paper, the two graded map files from the v2 edition (evidence map, ecosystem map), and the two runnable prototype packages (impact-oracle, router-gate), they form the complete synthesis deliverable set.</p>
+<hr class="sec">
+<p class="small" style="color:#999;text-align:center;margin-top:30px">
+A Formal Theory of the Cognitive Substrate for Coding Agents &mdash; synthesis edition.<br>
+Unifying the substrate faculties, the end-to-end reliability framework, and the forgekit implementation.<br>
+The mathematics says how the check is built; the tradition says why it is owed; the codebase shows it runs.
+</p>
+</body>
+</html>
