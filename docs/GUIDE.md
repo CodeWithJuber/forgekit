@@ -275,13 +275,13 @@ Forge anchor — goal-drift check
 ```
 
 `src/auth.js` maps to the goal (named file + where `verifyToken` lives); `src/report.js`
-doesn't — so it's surfaced as drift to confirm or undo. Advisory by design, and graded: each
-file's on-goal confidence is a noisy-OR over how many goal concepts it exhibits in its path
-**and** the identifiers it defines (via the atlas), so a file that implements the goal but never
-spells it in its path is still caught. `forge substrate` folds this in automatically. The result
-carries `driftScore` — the mean off-goal-ness (1 − that confidence) across the checkpoint's
-changes, the graded signal the `cusum` change-point detector accumulates to catch _sustained_
-small drift.
+doesn't — so it's surfaced as drift to confirm or undo. Advisory by design. The on-goal/off-goal
+call is graded and identifier-aware: each file's on-goal confidence is a noisy-OR over how many
+goal concepts it exhibits in its path **and** the identifiers it defines (via the atlas), so a
+file that implements the goal but never spells it in its path is still classed on-goal. `forge
+substrate` folds this in automatically. The result carries `driftScore` — the fraction of the
+checkpoint's changes classed off-goal — the signal the `cusum` change-point detector accumulates
+to catch _sustained_ small drift (an on-goal checkpoint scores 0 and drains the chart).
 
 **The goal persists.** `forge anchor set "<goal>"` stores it in `.forge/goal.md`; every
 new session re-injects it at SessionStart, a bare `forge anchor` checks against it, and

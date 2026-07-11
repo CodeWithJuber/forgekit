@@ -260,8 +260,10 @@ intent signal — same math, different stop-set data.
 were the last hand-static holdouts are now formulas. Goal-drift no longer classifies a changed
 file by a binary path-substring match; `onGoalScore` is a **noisy-OR** (`1 − (1 − p)^hits`, the
 same estimator `lessons.js` uses) over how many distinct goal concepts the file exhibits in its
-path **and** its atlas-defined identifiers — so `driftScore` is a true continuous Dₜ that
-generalizes the old off-goal fraction (identical on 0/1 scores, graded otherwise). The M2
+path **and** its atlas-defined identifiers, thresholded at the single-hit floor — so a file that
+implements the goal without naming it in its path is still classed on-goal. `driftScore` stays the
+off-goal fraction (the `cusum` operating point is unchanged; an on-goal checkpoint scores 0 and
+drains the chart); the grading sharpens _which_ files count as drift, not the detector's tuning. The M2
 completeness score `s(x)` is a **logistic** over its features (concreteness, named specifics,
 vagueness, a smooth `tanh` length term) instead of an additive rubric with magic coefficients and
 discontinuous word-count steps — the `sigmoid` bounds it to (0,1) with no clamp, every feature's

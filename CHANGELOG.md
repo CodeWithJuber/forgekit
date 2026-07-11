@@ -8,13 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Goal-drift is graded, not a substring match (`src/anchor.js`).** A changed file's
-  on-goal-ness is now a **noisy-OR** (`1 − (1 − p)^hits`) over how many distinct goal
-  concepts it exhibits in its path **and** the identifiers it defines (via the atlas) —
-  so a file that implements the goal but never names it in its path is caught
-  deterministically, not just by the opt-in LLM pass. `driftScore` becomes a true
-  continuous Dₜ that strictly generalizes the old off-goal fraction (identical on 0/1
-  scores, graded otherwise), sharpening the CUSUM drift detector's input.
+- **Goal-drift classification is graded and identifier-aware (`src/anchor.js`).** A changed
+  file's on-goal/off-goal call is now a **noisy-OR** (`1 − (1 − p)^hits`) over how many
+  distinct goal concepts it exhibits in its path **and** the identifiers it defines (via the
+  atlas), thresholded at the single-hit floor — replacing the binary path-substring match, so
+  a file that implements the goal but never names it in its path is caught deterministically,
+  not just by the opt-in LLM pass. `driftScore` stays the off-goal fraction, so the CUSUM
+  detector's operating point is unchanged (an on-goal checkpoint scores 0 and drains the chart);
+  the sharper classification is what improves the signal.
 - **Specification completeness is a logistic estimator (`src/preflight.js`).** The M2
   assumption gate's `s(x)` completeness score is now a logistic over its features
   (concreteness, named specifics, vagueness, a smooth `tanh` length term) — replacing the
