@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- security: drop two inert `curl`-pipe deny rules from the settings template.
+  Claude Code only honors `:*` as a trailing wildcard, so the trailing pipe made
+  the colon a literal and the rules matched nothing. Real pipe-to-shell
+  enforcement already lives in `protect-paths.sh`, now tightened to also catch a
+  no-space pipe and a `zsh` target. Adds a regression test for template rule
+  shape.
+
 ## [0.12.3] - 2026-07-11
 
 ### Fixed
