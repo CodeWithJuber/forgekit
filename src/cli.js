@@ -1533,6 +1533,63 @@ async function run(argv) {
       if (r.fail) process.exitCode = 1;
       return;
     }
+    if (sub === "interact") {
+      // The Playwright interaction loop (ROADMAP "Next"): drive the page and check what
+      // it DOES — keyboard reach, a visible focus ring, console cleanliness, reduced-
+      // motion honesty. Advisory by default (the `behavioral` oracle is cross-family-
+      // gated); --enforce or FORGE_ENFORCE=1 turns a fail into a non-zero exit. Playwright
+      // is an optional tier (ADR-0005) — its absence is a note and exit 0, never a failure.
+      const { runInteractions, recordInteraction } = await import("./uiinteract.js");
+      const args = argv.slice(2);
+      const json = args.includes("--json");
+      const remote = args.includes("--remote");
+      const record = args.includes("--record");
+      const enforce = args.includes("--enforce") || process.env.FORGE_ENFORCE === "1";
+      const targets = args.filter((a) => !a.startsWith("--"));
+      if (targets.length !== 1) {
+        console.error(
+          `usage: ${BRAND.cli} uicheck interact <file-or-url> [--record] [--enforce] [--json] [--remote]`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const r = await runInteractions(targets[0], { remote, cwd: process.cwd() });
+      if (!r.ok) {
+        const reason = "reason" in r ? r.reason : "interaction run failed";
+        if ("skipped" in r && r.skipped) {
+          // Graceful absence (ADR-0005): a missing optional tier is not a failure.
+          if (json) console.log(JSON.stringify({ skipped: true, reason }, null, 2));
+          else {
+            heading(`${BRAND.brand} uicheck interact — skipped (no browser runtime)\n`);
+            console.log(`  ${reason}`);
+            console.log(
+              "  enable it: npm i -D playwright-core   (or point FORGE_PLAYWRIGHT at an existing install)",
+            );
+          }
+          return; // exit 0 — the advisory tier is absent
+        }
+        console.error(reason);
+        process.exitCode = 1;
+        return;
+      }
+      const recorded = record ? recordInteraction(process.cwd(), r.url, r.verdict) : null;
+      if (json) {
+        console.log(JSON.stringify({ url: r.url, ...r.verdict, recorded }, null, 2));
+      } else {
+        heading(`${BRAND.brand} uicheck interact — browser interaction checks\n`);
+        console.log(`  driven:        ${r.url} (headless, prefers-reduced-motion)`);
+        for (const c of r.verdict.checks) console.log(`  ${c.ok ? "✓" : "✗"} ${c.id}: ${c.detail}`);
+        console.log(`\n  ${r.verdict.pass ? "✓ PASS" : "✗ FAIL"}${enforce ? "" : "  (advisory)"}`);
+        if (recorded)
+          console.log(
+            recorded.recorded
+              ? `  recorded as behavioral evidence on design claim ${recorded.claimId.slice(0, 12)}`
+              : `  not recorded: ${recorded.reason}`,
+          );
+      }
+      if (!r.verdict.pass && enforce) process.exitCode = 1;
+      return;
+    }
     if (sub === "fingerprint" || sub === "design") {
       const ui = await import("./uifingerprint.js");
       // `--taste <name>` (design only) takes a VALUE — splice it out before the
