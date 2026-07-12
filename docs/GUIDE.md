@@ -204,6 +204,30 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
+**`forge route calibrate`** is the *advisory → gated promotion* (overview §4): it fits an
+affine correction of the rubric's score toward a held-out labeled fixture and reports
+whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
+margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
+generalized in `src/promote.js` so any advisory signal (routing weights here;
+consolidation and hazard next) can only become active by measurement, never by assertion.
+It is advisory: routing keeps the rubric until a promoted calibration is explicitly
+adopted.
+
+```console
+$ forge route calibrate
+Forge route calibrate — outcome-calibrated routing (measured gate)
+
+  samples: 24 labeled task(s)
+  held-out MAE: rubric 0.152 · calibrated 0.226
+  → keep the rubric — baseline retained — candidate did not beat it by the margin
+
+  advisory — routing stays on the rubric until a promoted calibration is adopted
+```
+
+Here the gate does exactly its job: the rubric already generalizes well, the affine
+calibration would make held-out error *worse*, so it is **refused**. A promotion only
+happens when the measurement earns it — an assertion never does.
+
 ### `forge config` — provider setup
 
 Shows, switches, and registers model providers, and sets the default model. Forge

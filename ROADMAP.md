@@ -72,9 +72,12 @@ confidence only from independent oracles, and merges across teammates conflict-f
 - **Playwright loop** — still open: interaction checks and feeding verdicts back as
   oracle evidence on design claims (fingerprinting itself shipped as
   `forge uicheck visual`).
-- **Advisory → gated promotions** — outcome-calibrated routing weights, consolidation
-  promotion (ʿilm→fahm), M6 hazard estimates: advisory today, become blocking only
-  once fixtures measure them (overview §4 honesty register).
+- **Advisory → gated promotions** — the measured-promotion gate has shipped
+  (`src/promote.js`, generalizing the risk predictor's kill-criteria): a candidate only
+  replaces a baseline when it beats it on held-out data, never by assertion. First
+  application: outcome-calibrated routing (`forge route calibrate`). Remaining
+  applications of the same gate: consolidation promotion (ʿilm→fahm) and M6 hazard
+  estimates.
 
 ## Later / exploring
 

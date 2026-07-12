@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Measured-promotion gate + outcome-calibrated routing (`forge route calibrate`)** —
+  a reusable `src/promote.js` generalizes the risk predictor's kill-criteria: an
+  advisory signal (a calibrated weight, later a consolidation cluster or hazard
+  estimate) may become active **only** if it beats the current baseline on held-out
+  data under a metric+margin — the honesty register (overview §4), never an assertion.
+  First application: `forge route calibrate` fits an affine correction of the routing
+  rubric toward a held-out labeled fixture and promotes it only if it lowers held-out
+  MAE. Advisory by default — routing keeps the rubric until a promotion is adopted
+  (`calibratedComplexity` mirrors `predictor.riskFor`). Zero deps, fully unit-tested.
+
 ## [0.12.4] - 2026-07-11
 
 ### Fixed
