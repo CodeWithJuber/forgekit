@@ -38,7 +38,7 @@ function checkTooling(out) {
       ? ok("claude CLI", "found — LLM proposer uses it (FORGE_LLM=1)")
       : warn(
           "claude CLI",
-          "not found — LLM proposer falls back to direct HTTP (needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)",
+          "not found — LLM proposer falls back to direct HTTP (needs ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY)",
         ),
   );
 }
