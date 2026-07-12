@@ -210,7 +210,11 @@ Shows, switches, and registers model providers, and sets the default model. Forg
 auto-detects the provider from the environment with zero config — the priority order is
 `LITELLM_BASE_URL` → `ANTHROPIC_BASE_URL` (a URL that answers `/health` or names a
 gateway is classified as one) → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` →
-`ANTHROPIC_AUTH_TOKEN`. An explicit `.forge/providers.json` always wins over detection.
+`ANTHROPIC_AUTH_TOKEN` → `OPENAI_API_KEY` → `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+Anthropic credentials win when present (forge is Claude-native); OpenAI and Gemini are
+picked up as the zero-config fallback when they are the only key set, and are reached
+over their OpenAI-compatible chat/completions surface. An explicit
+`.forge/providers.json` always wins over detection.
 
 ```console
 $ forge config show          # active provider + how it was resolved
@@ -978,9 +982,11 @@ code reads but this table misses fails CI on the forge repo):
 | `ANTHROPIC_MODEL` / `FORGE_MODEL`                              | pin one model — bypasses tier routing entirely                                                                |
 | `LITELLM_BASE_URL` / `LITELLM_API_KEY`                         | hosted LiteLLM gateway endpoint + key (highest detection priority)                                            |
 | `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                           |
+| `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); zero-config fallback after Anthropic                    |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; zero-config fallback after Anthropic               |
 | `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                |
 | `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                |
-| `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
+| `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent |
 | `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
 | `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |

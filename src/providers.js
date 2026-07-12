@@ -75,7 +75,44 @@ const BUILTIN_PROVIDERS = {
       fable: "forge-complex",
     },
   },
+  // OpenAI and Gemini are reached over their OpenAI-compatible chat/completions
+  // surface (format: "openai" — see src/llm.js), so a native key works with zero
+  // config. Tier→model maps size the model to the task, same as the Anthropic table;
+  // rotate them via `forge config provider add` when the vendor rolls the lineup.
+  openai: {
+    type: "openai",
+    format: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    envKey: "OPENAI_API_KEY",
+    models: {
+      haiku: "gpt-5-nano",
+      sonnet: "gpt-5-mini",
+      opus: "gpt-5",
+      fable: "gpt-5",
+    },
+  },
+  gemini: {
+    type: "gemini",
+    format: "openai",
+    label: "Google Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    envKey: "GEMINI_API_KEY",
+    models: {
+      haiku: "gemini-2.5-flash-lite",
+      sonnet: "gemini-2.5-flash",
+      opus: "gemini-2.5-pro",
+      fable: "gemini-2.5-pro",
+    },
+  },
 };
+
+/** Resolve the Gemini key env var name (GEMINI_API_KEY preferred, GOOGLE_API_KEY alias). */
+function geminiKeyEnv() {
+  if (process.env.GEMINI_API_KEY) return "GEMINI_API_KEY";
+  if (process.env.GOOGLE_API_KEY) return "GOOGLE_API_KEY";
+  return null;
+}
 
 function defaults() {
   return {
@@ -240,6 +277,17 @@ export function autoDetectProvider() {
     };
   }
 
+  // Anthropic stays the default when its credentials are present; OpenAI and Gemini
+  // are picked up only as the sole configured provider (zero-config fallback).
+  if (process.env.OPENAI_API_KEY) {
+    return { name: "openai", ...BUILTIN_PROVIDERS.openai, source: "OPENAI_API_KEY" };
+  }
+
+  const geminiKey = geminiKeyEnv();
+  if (geminiKey) {
+    return { name: "gemini", ...BUILTIN_PROVIDERS.gemini, envKey: geminiKey, source: geminiKey };
+  }
+
   return null;
 }
 
@@ -291,6 +339,25 @@ export function listDetectedProviders() {
       type: "anthropic",
       label: "Anthropic (via auth token)",
       source: "ANTHROPIC_AUTH_TOKEN",
+      available: true,
+    });
+  }
+  if (process.env.OPENAI_API_KEY) {
+    detected.push({
+      name: "openai",
+      type: "openai",
+      label: "OpenAI",
+      source: "OPENAI_API_KEY",
+      available: true,
+    });
+  }
+  const geminiKey = geminiKeyEnv();
+  if (geminiKey) {
+    detected.push({
+      name: "gemini",
+      type: "gemini",
+      label: "Google Gemini",
+      source: geminiKey,
       available: true,
     });
   }
@@ -348,6 +415,9 @@ export function providerStatus(root = process.cwd()) {
     { key: "LITELLM_API_KEY", set: Boolean(process.env.LITELLM_API_KEY) },
     { key: "ANTHROPIC_BASE_URL", set: Boolean(process.env.ANTHROPIC_BASE_URL) },
     { key: "OPENROUTER_API_KEY", set: Boolean(process.env.OPENROUTER_API_KEY) },
+    { key: "OPENAI_API_KEY", set: Boolean(process.env.OPENAI_API_KEY) },
+    { key: "GEMINI_API_KEY", set: Boolean(process.env.GEMINI_API_KEY) },
+    { key: "GOOGLE_API_KEY", set: Boolean(process.env.GOOGLE_API_KEY) },
     { key: "ANTHROPIC_API_KEY", set: Boolean(process.env.ANTHROPIC_API_KEY) },
     { key: "ANTHROPIC_AUTH_TOKEN", set: Boolean(process.env.ANTHROPIC_AUTH_TOKEN) },
     { key: "ANTHROPIC_MODEL", set: Boolean(process.env.ANTHROPIC_MODEL) },

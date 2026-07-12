@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI + Gemini provider detection** — `autoDetectProvider()` now recognizes
+  `OPENAI_API_KEY` and `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) as zero-config
+  fallbacks after Anthropic, exposing `openai` and `gemini` as built-in providers
+  with tier→model maps. Both are reached over their OpenAI-compatible
+  chat/completions surface: `src/llm.js` gained an OpenAI-compatible wire format
+  (`resolveHttpProvider()` now returns a `format` field) alongside the Anthropic
+  Messages path, so a native key from either vendor works with no manual config.
+  Anthropic credentials still win when present. `forge config` status and
+  `listDetectedProviders()` surface the new keys.
+
 ## [0.12.4] - 2026-07-11
 
 ### Fixed
