@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { hasSecret } from "./recall.js";
+import { ledgerOnly } from "./util.js";
 
 export const lessonsDir = (root = process.cwd()) => join(root, ".forge", "lessons");
 
@@ -90,6 +91,10 @@ export function save(root, lesson) {
       reason: "refused: lesson looks like it contains a secret/credential",
     };
   }
+  // Legacy-store retirement: the ledger already holds this lesson (recordLessonEvent
+  // shadows every save), so under FORGE_LEDGER_ONLY skip the .md file — the ledger is
+  // the store. The secret check above still runs so nothing unsafe is minted either way.
+  if (ledgerOnly()) return { ok: true, ledgerOnly: true };
   const dir = lessonsDir(root);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${lesson.id}.md`), text);

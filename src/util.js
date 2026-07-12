@@ -16,6 +16,14 @@ export const clamp01 = (x) => Math.max(0, Math.min(1, x));
 export const MS_PER_DAY = 86400000;
 export const epochDay = () => Math.floor(Date.now() / MS_PER_DAY);
 
+// Legacy-store retirement (ROADMAP): the PCM ledger is already the convergent WRITE
+// store (dual-write via ledger_bridge) and serves a merged read (ledger_read). With
+// FORGE_LEDGER_ONLY=1 the legacy files (lessons/*.md, recall/brain fact files) stop
+// being written and reads come from the ledger alone — the ledger becomes the only
+// store. Default off: the legacy files remain the canonical local copy.
+export const ledgerOnly = () =>
+  process.env.FORGE_LEDGER_ONLY === "1" || process.env.FORGE_LEDGER_ONLY === "true";
+
 export function hasBin(bin) {
   try {
     execFileSync(bin, ["--version"], { stdio: "ignore" });

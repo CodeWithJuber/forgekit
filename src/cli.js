@@ -257,6 +257,9 @@ async function run(argv) {
           const { shadowFact } = await import("./ledger_bridge.js");
           shadowFact(join(store, "ledger"), name, body);
         } catch {}
+        // Re-index after the shadow so a ledger-only store's MEMORY.md includes the fact
+        // (its only copy now lives in the ledger, written just above).
+        r.reindex(store);
       }
       console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
       if (!res.ok) process.exitCode = 1;
@@ -739,6 +742,9 @@ async function run(argv) {
         const { repoLedger } = await import("./ledger_store.js");
         shadowFact(repoLedger(process.cwd()), name, body);
       } catch {}
+      // Rebuild the inlined index after the shadow so a ledger-only brain's
+      // AGENTS.brain.md includes the fact (its only copy now lives in the ledger).
+      b.buildIndex(b.brainStore(process.cwd()));
     }
     console.log(
       res.ok
