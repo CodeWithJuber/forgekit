@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { gatewayModelId } from "./gateway_model_map.js";
 import { MODELS } from "./model_tiers.js";
 
 const PROVIDERS_FILE = "providers.json";
@@ -133,12 +134,22 @@ export function envModelOverride() {
   return process.env.ANTHROPIC_MODEL?.trim() || process.env.FORGE_MODEL?.trim() || null;
 }
 
-/** Resolve a tier key (haiku/sonnet/opus/fable) to the active provider's model ID. */
+/** True when `id` is a stock Anthropic public id from model_tiers (i.e. the passthrough default,
+ *  not a deliberately-configured gateway alias). Only stock ids are candidates for a gateway remap. */
+function isStockId(id) {
+  return id != null && Object.values(MODELS).some((m) => m.id === id);
+}
+
+/** Resolve a tier key (haiku/sonnet/opus/fable) to the active provider's model ID.
+ *  When the provider is a custom gateway and the resolved id is a stock Anthropic public id the
+ *  gateway may not serve, remap it onto a real advertised model (gateway_model_map). Explicit
+ *  aliases and direct-Anthropic setups are returned untouched — silent, zero-breaking fallback. */
 export function resolveModel(root, tierKey) {
   const override = envModelOverride();
   if (override) return override;
   const provider = activeProvider(root);
-  return provider.models?.[tierKey] ?? MODELS[tierKey]?.id ?? null;
+  const configured = provider.models?.[tierKey] ?? MODELS[tierKey]?.id ?? null;
+  return isStockId(configured) ? gatewayModelId(tierKey, configured) : configured;
 }
 
 /** Switch the active provider. Returns the new active config. */
@@ -224,11 +235,19 @@ export function autoDetectProvider() {
   }
 
   if (process.env.OPENROUTER_API_KEY) {
-    return { name: "openrouter", ...BUILTIN_PROVIDERS.openrouter, source: "OPENROUTER_API_KEY" };
+    return {
+      name: "openrouter",
+      ...BUILTIN_PROVIDERS.openrouter,
+      source: "OPENROUTER_API_KEY",
+    };
   }
 
   if (process.env.ANTHROPIC_API_KEY) {
-    return { name: "anthropic", ...BUILTIN_PROVIDERS.anthropic, source: "ANTHROPIC_API_KEY" };
+    return {
+      name: "anthropic",
+      ...BUILTIN_PROVIDERS.anthropic,
+      source: "ANTHROPIC_API_KEY",
+    };
   }
 
   if (process.env.ANTHROPIC_AUTH_TOKEN) {
@@ -349,7 +368,10 @@ export function providerStatus(root = process.cwd()) {
     { key: "ANTHROPIC_BASE_URL", set: Boolean(process.env.ANTHROPIC_BASE_URL) },
     { key: "OPENROUTER_API_KEY", set: Boolean(process.env.OPENROUTER_API_KEY) },
     { key: "ANTHROPIC_API_KEY", set: Boolean(process.env.ANTHROPIC_API_KEY) },
-    { key: "ANTHROPIC_AUTH_TOKEN", set: Boolean(process.env.ANTHROPIC_AUTH_TOKEN) },
+    {
+      key: "ANTHROPIC_AUTH_TOKEN",
+      set: Boolean(process.env.ANTHROPIC_AUTH_TOKEN),
+    },
     { key: "ANTHROPIC_MODEL", set: Boolean(process.env.ANTHROPIC_MODEL) },
   ];
 
