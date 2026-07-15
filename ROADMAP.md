@@ -7,7 +7,7 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.12.4)
+## Now (`master`, v0.13.0)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
 routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file
@@ -63,12 +63,6 @@ confidence only from independent oracles, and merges across teammates conflict-f
 - **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
   Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
   zero-config contract.
-- **Legacy store retirement** — the read-path flip has shipped: every read surface
-  (cortex injection/status, the substrate advisory, routing, `recall list`, brain's
-  AGENTS.md index) is now a merged view (legacy ∪ ledger) via `src/ledger_read.js`,
-  so teammate knowledge from `forge ledger merge` reaches injection. The legacy
-  formats (`lessons/*.md`, recall/brain fact files) are still written as the canonical
-  local state; the remaining step is retiring them so the ledger is the only store.
 - **Playwright loop** — still open: interaction checks and feeding verdicts back as
   oracle evidence on design claims (fingerprinting itself shipped as
   `forge uicheck visual`).

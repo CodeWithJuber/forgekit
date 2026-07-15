@@ -250,6 +250,18 @@ Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
 `ANTHROPIC_AUTH_TOKEN` set (LiteLLM-style gateways), detection classifies the gateway,
 auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
 
+**Custom gateways that rename models.** The tier table ships public Anthropic IDs
+(`claude-haiku-4-5-…`, `claude-sonnet-5`, …), but a self-hosted gateway often serves its
+own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway base URL is
+set, Forge asks it once per process (`GET /v1/models`) and scores each advertised model
+against every tier's family — the family word (haiku/sonnet/opus/fable) gates the match, the
+overlap score picks the best id — then remaps each tier onto a real gateway model. It is a
+silent, zero-config fallback: no gateway, an unreachable `/v1/models`, or no family match and
+the stock IDs are used unchanged; direct `api.anthropic.com` sessions never probe. An explicit
+model in `.forge/providers.json` (or `ANTHROPIC_MODEL`) always wins over the remap. `forge
+doctor` prints the resolved `tier→model` mapping under **gateway models** so you can verify it
+and pin explicit IDs if a family scored wrong.
+
 ### `forge impact <symbol|file>` — what will this edit break?
 
 Reverse-dependency blast radius from the atlas graph. Run `forge atlas build` first.
@@ -509,6 +521,15 @@ paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id
 moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
 tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
 target the per-user ledger beside the global recall store, `--json` for scripts.
+
+**Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
+(every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
+Set **`FORGE_LEDGER_ONLY=1`** to finish the job: the legacy files (`.forge/lessons/*.md`,
+recall/brain fact files) stop being written and every read — cortex injection, routing,
+`recall`/`brain` — comes from the ledger alone. Run `forge ledger import` first (idempotent)
+so nothing local is stranded; the ledger is content-addressed and merges conflict-free, so
+it is a complete standalone store. Default off keeps the legacy files as the canonical
+local copy.
 
 ### `forge reuse` — proof-carrying code cache
 
@@ -1007,6 +1028,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
 | `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
 | `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
+| `FORGE_LEDGER_ONLY`                                            | `1` retires the legacy stores — stop writing `lessons/*.md` + recall/brain fact files; the ledger is the only store (reads materialize from it) |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |
 | `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                   |
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                         |

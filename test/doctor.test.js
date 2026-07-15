@@ -55,6 +55,23 @@ test("doctor surfaces the new tooling / guards-exec / atlas / pricing checks", (
   }
 });
 
+test("doctor stays silent about gateway models when no custom gateway is configured", () => {
+  const save = {
+    l: process.env.LITELLM_BASE_URL,
+    a: process.env.ANTHROPIC_BASE_URL,
+  };
+  try {
+    // Direct Anthropic (default endpoint) or nothing configured → no probe, no "gateway models" row.
+    process.env.LITELLM_BASE_URL = "";
+    process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+    const labels = doctor({ targetRoot: fixture() }).results.map((r) => r.label);
+    assert.ok(!labels.includes("gateway models"), "no gateway check for a direct-API session");
+  } finally {
+    process.env.LITELLM_BASE_URL = save.l ?? "";
+    process.env.ANTHROPIC_BASE_URL = save.a ?? "";
+  }
+});
+
 test("doctor checks plugin manifests and hook compatibility", () => {
   const results = doctor({ targetRoot: fixture() }).results;
   const claude = results.find((r) => r.label === "Claude plugin hooks");
