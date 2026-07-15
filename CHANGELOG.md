@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-15
+
 ### Added
 
 - Custom-gateway model remap (`src/gateway_model_map.js`). The tier table pins public
@@ -724,7 +726,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.1...v0.12.2
