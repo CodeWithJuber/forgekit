@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Custom-gateway model remap (`src/gateway_model_map.js`). The tier table pins public
+  Anthropic IDs that a self-hosted LiteLLM/proxy gateway may not serve; when a non-default
+  gateway base URL is set, Forge fetches `GET /v1/models` once per process and scores each
+  advertised model against every tier's family (family-word gate + `setOverlap` name-token
+  score, deterministic tie-break) to remap `haiku/sonnet/opus/fable` onto the gateway's real
+  IDs. `forge doctor` surfaces the resolved `tier→model` mapping under a **gateway models** row.
+  Zero breaking change — the `MODELS` export shape is unchanged, it fails safe to the stock ID
+  on no gateway / unreachable `/v1/models` / no family match, and an explicit
+  `.forge/providers.json` alias or `ANTHROPIC_MODEL` override always wins. Direct
+  `api.anthropic.com` sessions never probe and are byte-identical.
+
 ## [0.12.4] - 2026-07-11
 
 ### Fixed
