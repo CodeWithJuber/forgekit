@@ -18,6 +18,48 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Playwright stays an optional tier (ADR-0005) with a graceful skip. New
   `src/uiinteract.js` (`runInteractions`, `summarizeVerdict`, `verdictOutcome`,
   `recordInteraction`) with a browser-free test suite.
+## [0.15.0] - 2026-07-15
+
+### Added
+
+- measured-promotion gate + outcome-calibrated routing
+
+## [0.14.0] - 2026-07-15
+
+### Added
+
+- **Measured-promotion gate + outcome-calibrated routing (`forge route calibrate`)** —
+  a reusable `src/promote.js` generalizes the risk predictor's kill-criteria: an
+  advisory signal (a calibrated weight, later a consolidation cluster or hazard
+  estimate) may become active **only** if it beats the current baseline on held-out
+  data under a metric+margin — the honesty register (overview §4), never an assertion.
+  First application: `forge route calibrate` fits an affine correction of the routing
+  rubric toward a held-out labeled fixture and promotes it only if it lowers held-out
+  MAE. Advisory by default — routing keeps the rubric until a promotion is adopted
+  (`calibratedComplexity` mirrors `predictor.riskFor`). Zero deps, fully unit-tested.
+- **Legacy-store retirement (`FORGE_LEDGER_ONLY`)** — the PCM ledger can now be the
+  *only* store. Since P1 it has been the convergent write store (dual-write) with a
+  merged read (`ledger_read`); with `FORGE_LEDGER_ONLY=1` the legacy files
+  (`.forge/lessons/*.md`, recall/brain fact files) stop being written and every read
+  materializes from the ledger — cortex confirm/create/distill dedup against
+  `ledgerLessons`, `mergedLessons` returns the ledger view, and `recall.readFact` falls
+  back to the ledger (also fixing merged teammate facts that had no local file). Run
+  `forge ledger import` first to backfill. Default off keeps the legacy files canonical.
+
+## [0.13.0] - 2026-07-15
+
+### Added
+
+- Custom-gateway model remap (`src/gateway_model_map.js`). The tier table pins public
+  Anthropic IDs that a self-hosted LiteLLM/proxy gateway may not serve; when a non-default
+  gateway base URL is set, Forge fetches `GET /v1/models` once per process and scores each
+  advertised model against every tier's family (family-word gate + `setOverlap` name-token
+  score, deterministic tie-break) to remap `haiku/sonnet/opus/fable` onto the gateway's real
+  IDs. `forge doctor` surfaces the resolved `tier→model` mapping under a **gateway models** row.
+  Zero breaking change — the `MODELS` export shape is unchanged, it fails safe to the stock ID
+  on no gateway / unreachable `/v1/models` / no family match, and an explicit
+  `.forge/providers.json` alias or `ANTHROPIC_MODEL` override always wins. Direct
+  `api.anthropic.com` sessions never probe and are byte-identical.
 
 ## [0.12.4] - 2026-07-11
 
@@ -724,7 +766,10 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.1...v0.12.2

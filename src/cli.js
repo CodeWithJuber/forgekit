@@ -257,6 +257,9 @@ async function run(argv) {
           const { shadowFact } = await import("./ledger_bridge.js");
           shadowFact(join(store, "ledger"), name, body);
         } catch {}
+        // Re-index after the shadow so a ledger-only store's MEMORY.md includes the fact
+        // (its only copy now lives in the ledger, written just above).
+        r.reindex(store);
       }
       console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
       if (!res.ok) process.exitCode = 1;
@@ -739,6 +742,9 @@ async function run(argv) {
         const { repoLedger } = await import("./ledger_store.js");
         shadowFact(repoLedger(process.cwd()), name, body);
       } catch {}
+      // Rebuild the inlined index after the shadow so a ledger-only brain's
+      // AGENTS.brain.md includes the fact (its only copy now lives in the ledger).
+      b.buildIndex(b.brainStore(process.cwd()));
     }
     console.log(
       res.ok
@@ -1124,6 +1130,28 @@ async function run(argv) {
       console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
       console.log(
         "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
+      );
+      return;
+    }
+    if (argv[1] === "calibrate") {
+      // Advisory → gated promotion (ROADMAP): measure whether an affine calibration of the
+      // routing rubric beats the raw rubric on the held-out fixture. Advisory — routing
+      // keeps the rubric unless the gate promotes AND a caller adopts the calibration.
+      const res = r.calibrateRouting();
+      if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
+      heading(`${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`);
+      console.log(`  samples: ${res.n} labeled task(s)`);
+      if (res.baselineMetric !== undefined)
+        console.log(
+          `  held-out MAE: rubric ${res.baselineMetric} · calibrated ${res.candidateMetric}`,
+        );
+      console.log(
+        res.mode === "candidate"
+          ? `  → PROMOTE calibration — ${res.reason} (a=${res.model.a.toFixed(3)}, b=${res.model.b.toFixed(3)})`
+          : `  → keep the rubric — ${res.reason}`,
+      );
+      console.log(
+        "\n  advisory — routing stays on the rubric until a promoted calibration is adopted",
       );
       return;
     }

@@ -12,6 +12,7 @@ import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
 import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
+import { promotionGate } from "./promote.js";
 import { activeProvider, envModelOverride } from "./providers.js";
 import { clamp01, contentHash, epochDay } from "./util.js";
 
@@ -214,6 +215,113 @@ export function rubricComplexity(task = "") {
     ...(sig.nSteps >= 2 ? [{ weight: s.steps, reason: `${sig.nSteps} numbered steps` }] : []),
   ];
   return { score, band, confidence, knn, neighbors, signals: sig, reasons, strongTopicSignal };
+}
+
+// ---------------------------------------------------------------------------
+// Outcome-calibrated routing (ROADMAP: advisory → gated promotion). The rubric above
+// is the advisory baseline. Below: fit an affine correction of its score toward labeled
+// complexities and PROMOTE it over the raw rubric ONLY if it beats the rubric on a
+// held-out fixture (promote.js measured gate) — never on assertion. recommend() keeps
+// the raw rubric unless a caller opts into the returned calibration, so this stays
+// advisory until the measurement earns the promotion (overview §4 honesty register).
+// ---------------------------------------------------------------------------
+
+/**
+ * Held-out labeled complexities, DISTINCT from EXEMPLARS (the k-NN bank), so the gate
+ * measures generalization, not memorization. Interleaved by tier so any strided split is
+ * balanced. y matches the recommend() cutoffs: ~0.08 trivial · ~0.42 library-level ·
+ * ~0.78 algorithmic/systems · ~0.85 architectural.
+ */
+export const CALIBRATION_SAMPLES = [
+  { text: "print numbers from 1 to 100", y: 0.08 },
+  { text: "implement a fixed-size ring buffer", y: 0.42 },
+  { text: "detect a cycle in a directed graph", y: 0.78 },
+  { text: "design a multi-tenant billing subsystem", y: 0.85 },
+  { text: "trim whitespace from a string", y: 0.08 },
+  { text: "group a list of records by a key", y: 0.42 },
+  { text: "implement quicksort in place", y: 0.78 },
+  { text: "plan a migration from a monolith to services", y: 0.85 },
+  { text: "swap two variables", y: 0.08 },
+  { text: "flatten a deeply nested array", y: 0.42 },
+  { text: "build a thread-safe bounded blocking queue", y: 0.78 },
+  { text: "architect an event-sourced order pipeline", y: 0.85 },
+  { text: "return the length of an array", y: 0.08 },
+  { text: "add pagination to a list query", y: 0.42 },
+  { text: "write an lru eviction policy with o(1) operations", y: 0.78 },
+  { text: "design cross-region data replication", y: 0.85 },
+  { text: "convert a string to uppercase", y: 0.08 },
+  { text: "build a simple event emitter class", y: 0.42 },
+  { text: "parse arithmetic expressions with operator precedence", y: 0.78 },
+  { text: "define the module boundaries for a new platform", y: 0.85 },
+  { text: "add two integers", y: 0.08 },
+  { text: "validate an email address format", y: 0.42 },
+  { text: "coordinate leader election across nodes", y: 0.78 },
+  { text: "design an auth system with roles and sessions", y: 0.85 },
+];
+
+/** Least-squares affine calibration a·x + b mapping a rubric score x to the label y. Pure. */
+export function fitComplexityCalibration(train) {
+  const n = train.length;
+  if (!n) return { a: 1, b: 0 };
+  const mx = train.reduce((s, r) => s + r.x, 0) / n;
+  const my = train.reduce((s, r) => s + r.y, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const r of train) {
+    num += (r.x - mx) * (r.y - my);
+    den += (r.x - mx) ** 2;
+  }
+  const a = den ? num / den : 1;
+  return { a, b: my - a * mx };
+}
+
+/** Apply an affine calibration, clamped to [0,1]. */
+export const applyCalibration = ({ a, b }, x) => clamp01(a * x + b);
+
+// Strided split (every 5th sample to the held-out test set): deterministic and, with the
+// interleaved fixture, tier-balanced — no RNG (Math.random is unavailable to scripts).
+/** @returns {[any[], any[]]} */
+const stridedSplit = (samples) => {
+  const train = [];
+  const test = [];
+  samples.forEach((s, i) => {
+    (i % 5 === 0 ? test : train).push(s);
+  });
+  return [train, test];
+};
+
+/**
+ * Run the measured-promotion gate on the routing rubric: fit an affine correction on the
+ * training split and promote it only if it lowers held-out MAE past the margin.
+ * @param {{text:string,y:number}[]} [samples] labeled tasks (default: the held-out fixture)
+ * @param {{margin?:number, minSamples?:number}} [opts]
+ */
+export function calibrateRouting(samples = CALIBRATION_SAMPLES, opts = {}) {
+  const enriched = samples.map((s) => ({ ...s, x: rubricComplexity(s.text).score }));
+  return promotionGate(enriched, {
+    baseline: (s) => s.x,
+    fit: fitComplexityCalibration,
+    predict: (model, s) => applyCalibration(model, s.x),
+    label: (s) => s.y,
+    split: stridedSplit,
+    minSamples: opts.minSamples ?? 20,
+    margin: opts.margin ?? 0.01,
+    lowerIsBetter: true,
+  });
+}
+
+/**
+ * The live complexity estimate: the calibrated mapping ONLY if the gate blessed it
+ * (mirrors predictor.riskFor). Falls back to the raw rubric otherwise.
+ * @param {string} task
+ * @param {{mode:string, model?:{a:number,b:number}}} [promotion] result of calibrateRouting
+ */
+export function calibratedComplexity(task, promotion) {
+  const base = rubricComplexity(task);
+  if (promotion?.mode === "candidate" && promotion.model) {
+    return { ...base, score: applyCalibration(promotion.model, base.score), calibrated: true };
+  }
+  return { ...base, calibrated: false };
 }
 
 const WEIGHTS = {

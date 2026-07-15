@@ -11,6 +11,7 @@
 //   - ZERO-DEP. Access is a `claude -p` CLI shell-out; the runner is injectable so the pure
 //     prompt/parse/verify logic is fully testable without the CLI or the network.
 import { execFileSync, spawnSync } from "node:child_process";
+import { gatewayModelId } from "./gateway_model_map.js";
 import { buildHttpRunner as httpRunner } from "./llm.js";
 import { MODELS } from "./model_tiers.js";
 import { envModelOverride } from "./providers.js";
@@ -31,7 +32,11 @@ function hasClaude() {
   if (!_claudeChecked) {
     _claudeChecked = true;
     try {
-      const r = spawnSync("which", ["claude"], { encoding: "utf8", timeout: 2000, stdio: "pipe" });
+      const r = spawnSync("which", ["claude"], {
+        encoding: "utf8",
+        timeout: 2000,
+        stdio: "pipe",
+      });
       _claudeAvail = r.status === 0;
     } catch {
       _claudeAvail = false;
@@ -43,7 +48,11 @@ function hasClaude() {
 /** Build an injectable LLM runner. Tries direct HTTP when `claude` CLI is unavailable
  *  or when FORGE_LLM_HTTP=1. Falls back to `claude -p` otherwise. */
 export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
-  const resolvedModel = envModelOverride() || MODELS[model]?.id || model;
+  const override = envModelOverride();
+  const stock = override || MODELS[model]?.id || model;
+  // A forced override is honored verbatim; otherwise remap the tier's stock id onto a custom
+  // gateway's real model when one is advertised (no-op for direct Anthropic — see gateway_model_map).
+  const resolvedModel = override ? stock : gatewayModelId(model, stock);
   if (process.env.FORGE_LLM_HTTP === "1" || !hasClaude()) {
     return httpRunner({ model: resolvedModel, timeoutMs });
   }
