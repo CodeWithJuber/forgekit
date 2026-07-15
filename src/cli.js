@@ -1133,6 +1133,28 @@ async function run(argv) {
       );
       return;
     }
+    if (argv[1] === "calibrate") {
+      // Advisory → gated promotion (ROADMAP): measure whether an affine calibration of the
+      // routing rubric beats the raw rubric on the held-out fixture. Advisory — routing
+      // keeps the rubric unless the gate promotes AND a caller adopts the calibration.
+      const res = r.calibrateRouting();
+      if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
+      heading(`${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`);
+      console.log(`  samples: ${res.n} labeled task(s)`);
+      if (res.baselineMetric !== undefined)
+        console.log(
+          `  held-out MAE: rubric ${res.baselineMetric} · calibrated ${res.candidateMetric}`,
+        );
+      console.log(
+        res.mode === "candidate"
+          ? `  → PROMOTE calibration — ${res.reason} (a=${res.model.a.toFixed(3)}, b=${res.model.b.toFixed(3)})`
+          : `  → keep the rubric — ${res.reason}`,
+      );
+      console.log(
+        "\n  advisory — routing stays on the rubric until a promoted calibration is adopted",
+      );
+      return;
+    }
     const json = argv.includes("--json");
     const apply = argv.includes("--apply");
     const providerIdx = argv.indexOf("--provider");

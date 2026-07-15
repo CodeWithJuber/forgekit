@@ -10,6 +10,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Measured-promotion gate + outcome-calibrated routing (`forge route calibrate`)** —
+  a reusable `src/promote.js` generalizes the risk predictor's kill-criteria: an
+  advisory signal (a calibrated weight, later a consolidation cluster or hazard
+  estimate) may become active **only** if it beats the current baseline on held-out
+  data under a metric+margin — the honesty register (overview §4), never an assertion.
+  First application: `forge route calibrate` fits an affine correction of the routing
+  rubric toward a held-out labeled fixture and promotes it only if it lowers held-out
+  MAE. Advisory by default — routing keeps the rubric until a promotion is adopted
+  (`calibratedComplexity` mirrors `predictor.riskFor`). Zero deps, fully unit-tested.
 - **Legacy-store retirement (`FORGE_LEDGER_ONLY`)** — the PCM ledger can now be the
   *only* store. Since P1 it has been the convergent write store (dual-write) with a
   merged read (`ledger_read`); with `FORGE_LEDGER_ONLY=1` the legacy files
