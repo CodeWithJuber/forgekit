@@ -204,6 +204,30 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
+**`forge route calibrate`** is the *advisory → gated promotion* (overview §4): it fits an
+affine correction of the rubric's score toward a held-out labeled fixture and reports
+whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
+margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
+generalized in `src/promote.js` so any advisory signal (routing weights here;
+consolidation and hazard next) can only become active by measurement, never by assertion.
+It is advisory: routing keeps the rubric until a promoted calibration is explicitly
+adopted.
+
+```console
+$ forge route calibrate
+Forge route calibrate — outcome-calibrated routing (measured gate)
+
+  samples: 24 labeled task(s)
+  held-out MAE: rubric 0.152 · calibrated 0.226
+  → keep the rubric — baseline retained — candidate did not beat it by the margin
+
+  advisory — routing stays on the rubric until a promoted calibration is adopted
+```
+
+Here the gate does exactly its job: the rubric already generalizes well, the affine
+calibration would make held-out error *worse*, so it is **refused**. A promotion only
+happens when the measurement earns it — an assertion never does.
+
 ### `forge config` — provider setup
 
 Shows, switches, and registers model providers, and sets the default model. Forge
@@ -229,6 +253,18 @@ $ forge config setup         # guided first-time setup
 Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
 `ANTHROPIC_AUTH_TOKEN` set (LiteLLM-style gateways), detection classifies the gateway,
 auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
+
+**Custom gateways that rename models.** The tier table ships public Anthropic IDs
+(`claude-haiku-4-5-…`, `claude-sonnet-5`, …), but a self-hosted gateway often serves its
+own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway base URL is
+set, Forge asks it once per process (`GET /v1/models`) and scores each advertised model
+against every tier's family — the family word (haiku/sonnet/opus/fable) gates the match, the
+overlap score picks the best id — then remaps each tier onto a real gateway model. It is a
+silent, zero-config fallback: no gateway, an unreachable `/v1/models`, or no family match and
+the stock IDs are used unchanged; direct `api.anthropic.com` sessions never probe. An explicit
+model in `.forge/providers.json` (or `ANTHROPIC_MODEL`) always wins over the remap. `forge
+doctor` prints the resolved `tier→model` mapping under **gateway models** so you can verify it
+and pin explicit IDs if a family scored wrong.
 
 ### `forge impact <symbol|file>` — what will this edit break?
 
@@ -490,6 +526,15 @@ moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
 tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
 target the per-user ledger beside the global recall store, `--json` for scripts.
 
+**Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
+(every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
+Set **`FORGE_LEDGER_ONLY=1`** to finish the job: the legacy files (`.forge/lessons/*.md`,
+recall/brain fact files) stop being written and every read — cortex injection, routing,
+`recall`/`brain` — comes from the ledger alone. Run `forge ledger import` first (idempotent)
+so nothing local is stranded; the ledger is content-addressed and merges conflict-free, so
+it is a complete standalone store. Default off keeps the legacy files as the canonical
+local copy.
+
 ### `forge reuse` — proof-carrying code cache
 
 Verified code becomes an `artifact` claim keyed by a normalized task fingerprint; a
@@ -619,8 +664,8 @@ tree (your uncommitted changes wouldn't be in the run); commit/stash first or pa
 
 ### `forge uicheck` — deterministic UI checks
 
-Four subcommands: three are static parsing — no LLM, no screenshots — and `visual`
-optionally drives a real browser.
+Five subcommands: three are static parsing — no LLM, no screenshots — and `visual`
+and `interact` optionally drive a real browser.
 
 **`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
 `forge uicheck <fg> <bg>` still works):
@@ -677,6 +722,33 @@ Forge uicheck visual — rendered fingerprint + design gate
   ✓ spacing-scale: 100% of 6 spacing value(s) on the 4px base (ε 0.5px)
 
   ✓ PASS
+```
+
+**`interact <file-or-url> [--record] [--enforce] [--json] [--remote]`** — the Playwright
+_interaction_ loop: where `visual` fingerprints what the page **paints**, `interact`
+checks what it **does**, headless under `prefers-reduced-motion`. Four checks:
+`console-clean` (no console errors on load), `keyboard-reachable` (Tab lands on an
+interactive control), `focus-visible` (the focused control shows a visible focus ring —
+WCAG 2.4.7), and `reduced-motion` (nothing animates when reduced motion is requested).
+The verdict is **advisory** by default — it is recorded through the ledger's weakest,
+cross-family-gated `behavioral` oracle, so a lone interaction run can never move a claim
+on its own (overview §4 honesty register). `--record` appends the verdict as evidence on
+your minted project `fingerprint` claim; `--enforce` (or `FORGE_ENFORCE=1`) turns a fail
+into a non-zero exit. Playwright and the loopback-only target guard are shared with
+`visual` (same _optional tier_, same `--remote` rule).
+
+```console
+$ forge uicheck interact src/dash.html --record
+Forge uicheck interact — browser interaction checks
+
+  driven:        file:///…/src/dash.html (headless, prefers-reduced-motion)
+  ✓ console-clean: no console errors on load
+  ✓ keyboard-reachable: Tab reached <button>
+  ✓ focus-visible: the focused control shows a visible focus indicator
+  ✓ reduced-motion: no animations run under prefers-reduced-motion
+
+  ✓ PASS  (advisory)
+  recorded as behavioral evidence on design claim e7a90b12cd34
 ```
 
 ### `forge dash [--port N]` — the local dashboard
@@ -989,6 +1061,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent |
 | `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
 | `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
+| `FORGE_LEDGER_ONLY`                                            | `1` retires the legacy stores — stop writing `lessons/*.md` + recall/brain fact files; the ledger is the only store (reads materialize from it) |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |
 | `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                   |
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                         |

@@ -7,7 +7,7 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.12.4)
+## Now (`master`, v0.16.0)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
 routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file
@@ -66,12 +66,18 @@ confidence only from independent oracles, and merges across teammates conflict-f
   so teammate knowledge from `forge ledger merge` reaches injection. The legacy
   formats (`lessons/*.md`, recall/brain fact files) are still written as the canonical
   local state; the remaining step is retiring them so the ledger is the only store.
+- **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
+  Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
+  zero-config contract.
 - **Playwright loop** — still open: interaction checks and feeding verdicts back as
   oracle evidence on design claims (fingerprinting itself shipped as
   `forge uicheck visual`).
-- **Advisory → gated promotions** — outcome-calibrated routing weights, consolidation
-  promotion (ʿilm→fahm), M6 hazard estimates: advisory today, become blocking only
-  once fixtures measure them (overview §4 honesty register).
+- **Advisory → gated promotions** — the measured-promotion gate has shipped
+  (`src/promote.js`, generalizing the risk predictor's kill-criteria): a candidate only
+  replaces a baseline when it beats it on held-out data, never by assertion. First
+  application: outcome-calibrated routing (`forge route calibrate`). Remaining
+  applications of the same gate: consolidation promotion (ʿilm→fahm) and M6 hazard
+  estimates.
 
 ## Later / exploring
 
