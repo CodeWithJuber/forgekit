@@ -250,6 +250,20 @@ runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commi
 when none exist, and exits `3` (a clean skip, not a failure) otherwise — so releases cut
 themselves without a chore/docs merge spamming the registry.
 
+**Custom-gateway model remap (`src/gateway_model_map.js`).** The tier table (`model_tiers.json`)
+pins public Anthropic IDs, but a self-hosted LiteLLM/proxy gateway serves its own model names, so a
+stock ID sent verbatim 404s. When a non-default gateway base URL is configured, the module fetches
+`GET /v1/models` **once per process** (a spawned-node child with the key in env, never argv — the
+`llm.js` pattern) and scores each advertised id against every tier's family: the family word
+(haiku/sonnet/opus/fable) is a hard gate, the `setOverlap` coefficient of the tier's name tokens
+picks the best match, ties break toward the id closest to the canonical name. `resolveModel`
+(providers) and `buildRunner` (adjudicate) consult it only when the resolved id is a _stock_ ID —
+an explicit `.forge/providers.json` alias or `ANTHROPIC_MODEL` override is never touched — and it
+fails safe to the stock ID on no gateway / unreachable `/v1/models` / no family match, so direct
+`api.anthropic.com` users are byte-identical. `forge doctor`'s **gateway models** row prints the
+resolved `tier→model` mapping for verification. The `MODELS` export shape is unchanged: this is a
+resolution-time layer, not a table edit.
+
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
 confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops

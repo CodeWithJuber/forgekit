@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use forgekit, please cite it using this metadata."
 title: "Forge (forgekit)"
-version: 0.12.4
-date-released: "2026-07-11"
+version: 0.13.0
+date-released: "2026-07-15"
 abstract: >-
   One brain for every AI coding agent — the cognitive substrate every frozen model is
   missing. Forge gives a stateless model the memory, blast-radius foresight, and

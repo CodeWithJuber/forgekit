@@ -226,6 +226,18 @@ Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
 `ANTHROPIC_AUTH_TOKEN` set (LiteLLM-style gateways), detection classifies the gateway,
 auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
 
+**Custom gateways that rename models.** The tier table ships public Anthropic IDs
+(`claude-haiku-4-5-…`, `claude-sonnet-5`, …), but a self-hosted gateway often serves its
+own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway base URL is
+set, Forge asks it once per process (`GET /v1/models`) and scores each advertised model
+against every tier's family — the family word (haiku/sonnet/opus/fable) gates the match, the
+overlap score picks the best id — then remaps each tier onto a real gateway model. It is a
+silent, zero-config fallback: no gateway, an unreachable `/v1/models`, or no family match and
+the stock IDs are used unchanged; direct `api.anthropic.com` sessions never probe. An explicit
+model in `.forge/providers.json` (or `ANTHROPIC_MODEL`) always wins over the remap. `forge
+doctor` prints the resolved `tier→model` mapping under **gateway models** so you can verify it
+and pin explicit IDs if a family scored wrong.
+
 ### `forge impact <symbol|file>` — what will this edit break?
 
 Reverse-dependency blast radius from the atlas graph. Run `forge atlas build` first.

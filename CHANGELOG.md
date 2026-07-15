@@ -16,6 +16,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ledgerLessons`, `mergedLessons` returns the ledger view, and `recall.readFact` falls
   back to the ledger (also fixing merged teammate facts that had no local file). Run
   `forge ledger import` first to backfill. Default off keeps the legacy files canonical.
+## [0.13.0] - 2026-07-15
+
+### Added
+
+- Custom-gateway model remap (`src/gateway_model_map.js`). The tier table pins public
+  Anthropic IDs that a self-hosted LiteLLM/proxy gateway may not serve; when a non-default
+  gateway base URL is set, Forge fetches `GET /v1/models` once per process and scores each
+  advertised model against every tier's family (family-word gate + `setOverlap` name-token
+  score, deterministic tie-break) to remap `haiku/sonnet/opus/fable` onto the gateway's real
+  IDs. `forge doctor` surfaces the resolved `tier→model` mapping under a **gateway models** row.
+  Zero breaking change — the `MODELS` export shape is unchanged, it fails safe to the stock ID
+  on no gateway / unreachable `/v1/models` / no family match, and an explicit
+  `.forge/providers.json` alias or `ANTHROPIC_MODEL` override always wins. Direct
+  `api.anthropic.com` sessions never probe and are byte-identical.
 
 ## [0.12.4] - 2026-07-11
 
@@ -722,7 +736,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.1...v0.12.2

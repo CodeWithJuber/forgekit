@@ -8,6 +8,7 @@ import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
+import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
@@ -309,6 +310,42 @@ function checkProvider(out, targetRoot) {
   }
 }
 
+// Custom-gateway model mapping: stock Anthropic ids can 404 on a self-hosted gateway that
+// serves its own names. Surface the tier→gateway-model remap so the user can VERIFY it (and
+// pin explicit ids if a family scored wrong). Only speaks for a non-default gateway base URL —
+// direct api.anthropic.com sessions never probe, so this stays silent and network-free there.
+function checkGateway(out) {
+  const base = gatewayBase();
+  if (!base) return; // direct Anthropic or no gateway configured — nothing to remap
+  let m;
+  try {
+    m = gatewayModelMap({ base });
+  } catch {
+    m = null;
+  }
+  if (!m || m.reachable === false) {
+    out.push(
+      warn(
+        "gateway models",
+        `${base} — /v1/models unreachable; using stock IDs (may 404 if this gateway renames models)`,
+      ),
+    );
+    return;
+  }
+  const entries = Object.entries(m.models);
+  if (!entries.length) {
+    out.push(
+      warn(
+        "gateway models",
+        `${base} serves ${m.catalog.length} model(s) but none matched a tier family — set explicit IDs via \`${BRAND.cli} config provider add\``,
+      ),
+    );
+    return;
+  }
+  const summary = entries.map(([tier, v]) => `${tier}→${v.id}`).join(", ");
+  out.push(ok("gateway models", `${base}: ${summary}`));
+}
+
 // Docs↔code drift — a self-check of the forge package's own docs, so it only runs
 // when doctor is pointed at the forge repo itself (contributors + CI), never at a
 // host project whose README rightly says nothing about forge commands.
@@ -342,6 +379,7 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
   checkProvider(results, targetRoot);
+  checkGateway(results);
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);
