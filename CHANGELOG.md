@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-15
+
 ### Added
 
 - **OpenAI + Gemini provider detection** — `autoDetectProvider()` now recognizes
@@ -17,6 +19,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Messages path, so a native key from either vendor works with no manual config.
   Anthropic credentials still win when present. `forge config` status and
   `listDetectedProviders()` surface the new keys.
+
 ## [0.16.0] - 2026-07-15
 
 ### Added
@@ -780,7 +783,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.13.0...v0.14.0
