@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-15
+
+### Added
+
+- measured-promotion gate + outcome-calibrated routing
+
 ## [0.14.0] - 2026-07-15
 
 ### Added
@@ -748,7 +754,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.12.3...v0.12.4
