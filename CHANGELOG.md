@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Playwright interaction loop** — `forge uicheck interact <file-or-url>` drives the
+  page headless under `prefers-reduced-motion` and checks what it *does*
+  (console-clean, keyboard-reachable, focus-visible, reduced-motion), where
+  `uicheck visual` only fingerprints what it paints. The verdict is recorded through
+  the ledger's cross-family-gated `behavioral` oracle (advisory by default;
+  `--record` appends it as evidence on the project `fingerprint` claim, `--enforce`
+  gates). Reuses the visual gate's Playwright resolver + loopback-only target guard;
+  Playwright stays an optional tier (ADR-0005) with a graceful skip. New
+  `src/uiinteract.js` (`runInteractions`, `summarizeVerdict`, `verdictOutcome`,
+  `recordInteraction`) with a browser-free test suite.
 ## [0.15.0] - 2026-07-15
 
 ### Added

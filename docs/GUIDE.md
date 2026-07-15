@@ -660,8 +660,8 @@ tree (your uncommitted changes wouldn't be in the run); commit/stash first or pa
 
 ### `forge uicheck` — deterministic UI checks
 
-Four subcommands: three are static parsing — no LLM, no screenshots — and `visual`
-optionally drives a real browser.
+Five subcommands: three are static parsing — no LLM, no screenshots — and `visual`
+and `interact` optionally drive a real browser.
 
 **`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
 `forge uicheck <fg> <bg>` still works):
@@ -718,6 +718,33 @@ Forge uicheck visual — rendered fingerprint + design gate
   ✓ spacing-scale: 100% of 6 spacing value(s) on the 4px base (ε 0.5px)
 
   ✓ PASS
+```
+
+**`interact <file-or-url> [--record] [--enforce] [--json] [--remote]`** — the Playwright
+_interaction_ loop: where `visual` fingerprints what the page **paints**, `interact`
+checks what it **does**, headless under `prefers-reduced-motion`. Four checks:
+`console-clean` (no console errors on load), `keyboard-reachable` (Tab lands on an
+interactive control), `focus-visible` (the focused control shows a visible focus ring —
+WCAG 2.4.7), and `reduced-motion` (nothing animates when reduced motion is requested).
+The verdict is **advisory** by default — it is recorded through the ledger's weakest,
+cross-family-gated `behavioral` oracle, so a lone interaction run can never move a claim
+on its own (overview §4 honesty register). `--record` appends the verdict as evidence on
+your minted project `fingerprint` claim; `--enforce` (or `FORGE_ENFORCE=1`) turns a fail
+into a non-zero exit. Playwright and the loopback-only target guard are shared with
+`visual` (same _optional tier_, same `--remote` rule).
+
+```console
+$ forge uicheck interact src/dash.html --record
+Forge uicheck interact — browser interaction checks
+
+  driven:        file:///…/src/dash.html (headless, prefers-reduced-motion)
+  ✓ console-clean: no console errors on load
+  ✓ keyboard-reachable: Tab reached <button>
+  ✓ focus-visible: the focused control shows a visible focus indicator
+  ✓ reduced-motion: no animations run under prefers-reduced-motion
+
+  ✓ PASS  (advisory)
+  recorded as behavioral evidence on design claim e7a90b12cd34
 ```
 
 ### `forge dash [--port N]` — the local dashboard
