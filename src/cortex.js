@@ -5,7 +5,7 @@
 // without any hook wiring.
 
 import { recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
-import { mergedLessons } from "./ledger_read.js";
+import { ledgerLessons, mergedLessons } from "./ledger_read.js";
 import {
   confidenceOf,
   confirm,
@@ -16,7 +16,14 @@ import {
   selectForInjection,
 } from "./lessons.js";
 import { appendEpisode, load, readEpisodes, save } from "./lessons_store.js";
-import { slug } from "./util.js";
+import { ledgerOnly, slug } from "./util.js";
+
+// The lesson set the confirm-vs-create dedup compares against. Normally the legacy
+// files (canonical local state); under FORGE_LEDGER_ONLY there are none, so the ledger's
+// own materialized lessons (same legacy ids via provenance.task) are the dedup source —
+// a recurring local mistake then appends confirm evidence to its existing claim instead
+// of minting a duplicate.
+const localLessons = (root, nowDay) => (ledgerOnly() ? ledgerLessons(root, nowDay) : load(root));
 
 const lessonIdFor = (ctx) => `lsn_${slug(ctx.symbols?.[0] || ctx.files?.[0] || "ctx") || "ctx"}`;
 
@@ -82,7 +89,7 @@ export function recordMistake(root, { signals, context, nowDay, episodeId, disti
   // repo never owned. Creating locally is correct AND convergent: the new lesson's shadow
   // claim content-addresses to the teammate's claim, so both sides' evidence lands on ONE
   // claim at the next `forge ledger merge`.
-  const existing = matchingLessons(load(root), context)[0];
+  const existing = matchingLessons(localLessons(root, nowDay), context)[0];
   if (existing) {
     const c = confirm(existing, nowDay);
     const updated = {
@@ -155,7 +162,7 @@ export function recordContradiction(root, { context, nowDay, episodeId }) {
   // Legacy-only for the same reason as recordMistake: contradict() saves the legacy
   // file, so only lessons that HAVE one are targets. A teammate's claim still converges
   // — the same reversal, recurring locally, mints the local twin whose evidence merges.
-  const targets = matchingLessons(load(root), context, ["active", "quarantined"]);
+  const targets = matchingLessons(localLessons(root, nowDay), context, ["active", "quarantined"]);
   const results = targets.map((l) => {
     const updated = contradict(l, nowDay);
     const saved = save(root, updated).ok;
@@ -208,8 +215,10 @@ export function startupBlock(root, nowDay = 0, budget = 8) {
  *  refused — e.g. the distilled text tripped secret-refusal). */
 export function applyDistillation(root, lessonId, distilled) {
   if (!distilled) return false;
-  // Legacy-only read: distillation EDITS the legacy file, so only file-backed lessons apply.
-  const lesson = load(root).find((l) => l.id === lessonId);
+  // Normally EDITS the legacy file, so read the file-backed lessons; under
+  // FORGE_LEDGER_ONLY there are none, so resolve the target from the ledger and let the
+  // supersede below rewrite it there (save() is a ledger-only no-op that still succeeds).
+  const lesson = localLessons(root, 0).find((l) => l.id === lessonId);
   if (!lesson) return false;
   const updated = {
     ...lesson,

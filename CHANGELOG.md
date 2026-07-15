@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Legacy-store retirement (`FORGE_LEDGER_ONLY`)** — the PCM ledger can now be the
+  *only* store. Since P1 it has been the convergent write store (dual-write) with a
+  merged read (`ledger_read`); with `FORGE_LEDGER_ONLY=1` the legacy files
+  (`.forge/lessons/*.md`, recall/brain fact files) stop being written and every read
+  materializes from the ledger — cortex confirm/create/distill dedup against
+  `ledgerLessons`, `mergedLessons` returns the ledger view, and `recall.readFact` falls
+  back to the ledger (also fixing merged teammate facts that had no local file). Run
+  `forge ledger import` first to backfill. Default off keeps the legacy files canonical.
 ## [0.13.0] - 2026-07-15
 
 ### Added

@@ -498,6 +498,15 @@ moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
 tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
 target the per-user ledger beside the global recall store, `--json` for scripts.
 
+**Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
+(every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
+Set **`FORGE_LEDGER_ONLY=1`** to finish the job: the legacy files (`.forge/lessons/*.md`,
+recall/brain fact files) stop being written and every read — cortex injection, routing,
+`recall`/`brain` — comes from the ledger alone. Run `forge ledger import` first (idempotent)
+so nothing local is stranded; the ledger is content-addressed and merges conflict-free, so
+it is a complete standalone store. Default off keeps the legacy files as the canonical
+local copy.
+
 ### `forge reuse` — proof-carrying code cache
 
 Verified code becomes an `artifact` claim keyed by a normalized task fingerprint; a
@@ -995,6 +1004,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages API) instead of the `claude` CLI; automatic when the CLI is absent |
 | `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
 | `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
+| `FORGE_LEDGER_ONLY`                                            | `1` retires the legacy stores — stop writing `lessons/*.md` + recall/brain fact files; the ledger is the only store (reads materialize from it) |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |
 | `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                   |
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                         |
