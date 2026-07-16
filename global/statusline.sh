@@ -31,15 +31,27 @@ fi
 [ -n "${dir:-}" ] || dir="$PWD"
 short="${dir/#$HOME/\~}"
 
-# Palette (256-color): muted structure, one ember accent, green/red reserved for the diff.
+# Palette — the exact forgekit brand tokens (brand.json.colors.dark) rendered in
+# 24-bit truecolor so the ember and warm-taupe greys are on-brand, not the nearest
+# off-brand xterm-256 index. Named block; one ember accent, green/red only for the
+# diff. Falls back to the closest 256-color indices when the terminal can't do
+# truecolor (COLORTERM unset / not 24-bit), so it degrades instead of mis-rendering.
 e=$(printf '\033')
 R="${e}[0m"
 BOLD="${e}[1m"
-DIM="${e}[38;5;245m"
-MUTED="${e}[38;5;247m"
-EMBER="${e}[38;5;209m"
-GREEN="${e}[38;5;114m"
-RED="${e}[38;5;174m"
+if [[ "${COLORTERM:-}" == *truecolor* || "${COLORTERM:-}" == *24bit* ]]; then
+  DIM="${e}[38;2;125;114;99m"    # faint   #7d7263  warm taupe
+  MUTED="${e}[38;2;169;158;144m" # muted   #a99e90
+  EMBER="${e}[38;2;242;100;48m"  # brand   #f26430  ember
+  GREEN="${e}[38;2;103;232;165m" # ok      #67e8a5
+  RED="${e}[38;2;224;96;90m"     # diff-removed (warm red, distinct from ember)
+else
+  DIM="${e}[38;5;245m"
+  MUTED="${e}[38;5;247m"
+  EMBER="${e}[38;5;209m"
+  GREEN="${e}[38;5;114m"
+  RED="${e}[38;5;174m"
+fi
 SEP=" ${DIM}·${R} "
 
 # dir

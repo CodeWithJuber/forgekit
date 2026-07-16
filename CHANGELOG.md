@@ -40,6 +40,11 @@ design` passes spacing-scale, radius-levels, and shadow-levels with a healthy
   `apple-touch-icon.png`), and consistent `canonical` == `og:url`. The status page
   gained a full Open Graph / Twitter / `SoftwareApplication` JSON-LD head; the deploy
   workflow copies the brand assets to the Pages root so the absolute URLs resolve.
+- **Brand-aligned status line.** `global/statusline.sh` now renders the exact brand
+  tokens (ember `#f26430`, warm-taupe greys) in 24-bit truecolor from a named palette
+  block, with a 256-color fallback when the terminal can't do truecolor. New
+  `test/statusline.test.js` smoke-tests the segments, the exact truecolor hexes, the
+  fallback, and graceful degradation on minimal input.
 
 ### Fixed
 
