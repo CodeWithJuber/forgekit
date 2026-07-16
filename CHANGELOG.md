@@ -24,6 +24,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sticky-nav blur is compositor-light. Light-mode accents are darkened to meet AA
   contrast on the light paper.
 
+### Added
+
+- **Social + icon metadata on both public pages.** The landing and generated status
+  pages now ship `og:image` / `twitter:image` (a 1200×630 brand card,
+  `docs/assets/og.png`, rasterized once via Chromium — an author artifact, not a
+  runtime dep), a favicon + apple-touch-icon (`docs/assets/favicon.svg` /
+  `apple-touch-icon.png`), and consistent `canonical` == `og:url`. The status page
+  gained a full Open Graph / Twitter / `SoftwareApplication` JSON-LD head; the deploy
+  workflow copies the brand assets to the Pages root so the absolute URLs resolve.
+
 ## [0.17.0] - 2026-07-15
 
 ### Added

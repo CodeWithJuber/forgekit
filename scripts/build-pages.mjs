@@ -5,7 +5,12 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rootTokensCss } from "../src/brand.js";
+import { BRAND, rootTokensCss } from "../src/brand.js";
+
+// The deployed site base (no trailing slash), from the single brand.json source.
+// Absolute URLs are required for og:image/canonical and must resolve on the Pages
+// project site (/forgekit/...), so both public surfaces derive them from here.
+const SITE = (BRAND.site?.url ?? "").replace(/\/+$/, "");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public", "index.html");
@@ -164,7 +169,18 @@ export function render(d) {
   const live = d.github
     ? `<span class="chip">${esc(d.github.stars)} stars</span><span class="chip">${esc(d.github.forks)} forks</span><span class="chip">${esc(d.github.issues)} open issues</span>`
     : `<span class="chip">live GitHub stats disabled</span>`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>forgekit status — live repository data</title><meta name="description" content="${esc(d.description)}"><meta name="theme-color" content="#171310"><style>
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: d.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Linux, Windows",
+    softwareVersion: d.version,
+    url: `${SITE}/status/`,
+    description: d.description,
+    offers: { "@type": "Offer", price: "0" },
+  });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>forgekit status — live repository data</title><meta name="description" content="${esc(d.description)}"><meta name="theme-color" content="#171310"><link rel="canonical" href="${SITE}/status/"><link rel="icon" type="image/svg+xml" href="${SITE}/favicon.svg"><link rel="apple-touch-icon" href="${SITE}/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="forgekit"><meta property="og:title" content="forgekit status — live repository data"><meta property="og:description" content="${esc(d.description)}"><meta property="og:url" content="${SITE}/status/"><meta property="og:image" content="${SITE}/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="forgekit status — live repository data"><meta name="twitter:description" content="${esc(d.description)}"><meta name="twitter:image" content="${SITE}/og.png"><script type="application/ld+json">${jsonLd}</script><style>
 ${rootTokensCss()}
 :root{--r-s:6px;--r-m:12px;--r-pill:999px}
 *{box-sizing:border-box}

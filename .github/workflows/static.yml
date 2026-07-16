@@ -40,6 +40,9 @@ jobs:
           mkdir -p _site/status
           cp landing/index.html _site/index.html
           cp public/index.html _site/status/index.html
+          # Brand assets referenced by absolute URL from both pages (favicon,
+          # apple-touch-icon, 1200x630 og card). Served from the Pages root.
+          cp docs/assets/og.png docs/assets/favicon.svg docs/assets/apple-touch-icon.png _site/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
