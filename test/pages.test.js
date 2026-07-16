@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { collect, render } from "../scripts/build-pages.mjs";
+import { BRAND } from "../src/brand.js";
 
 const repo = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const landing = repo("landing/index.html");
@@ -22,12 +23,23 @@ test("pages renderer uses repo data and accessible landmarks", async () => {
 // loaded, an empty changes list, hardcoded metrics). Each assertion below is a defect that
 // silently returned before nothing checked it.
 
-test("landing + status share the SAME core brand tokens (one palette, not two)", async () => {
+test("landing + status derive the SAME palette from brand.json (one source, dark+light)", async () => {
   const status = render(await collect({ live: false }));
-  // The warm ember/near-black set both pages must carry verbatim.
-  for (const hex of ["#171310", "#201a15", "#272019", "#372c22", "#f26430", "#f2ede7"]) {
-    assert.ok(landing.includes(hex), `landing page is missing shared token ${hex}`);
-    assert.ok(status.includes(hex), `status page is missing shared token ${hex}`);
+  // brand.json.colors is the single source of the palette. Every hex it defines — for BOTH
+  // schemes — must appear verbatim on both public pages. Change a hex there and this fails
+  // until every surface is updated, which is what makes brand.json the source of truth.
+  const hexes = (palette) => Object.values(palette).filter((v) => v.startsWith("#"));
+  for (const [scheme, palette] of Object.entries(BRAND.colors)) {
+    for (const hex of hexes(palette)) {
+      assert.ok(
+        landing.includes(hex),
+        `landing missing ${scheme} token ${hex} (brand.json.colors.${scheme})`,
+      );
+      assert.ok(
+        status.includes(hex),
+        `status missing ${scheme} token ${hex} (brand.json.colors.${scheme})`,
+      );
+    }
   }
 });
 
