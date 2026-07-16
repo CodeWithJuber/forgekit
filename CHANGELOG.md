@@ -23,6 +23,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SVG icons in a hairline-divided layout instead of a uniform card grid, and the
   sticky-nav blur is compositor-light. Light-mode accents are darkened to meet AA
   contrast on the light paper.
+- **Accessibility + design-system hygiene.** All accent/supplementary-text pairs on
+  both themes are now verified ≥4.5:1 (bumped `--faint` in dark + light, and light
+  `--brand`/`--ok`, at the single brand.json source). Border-radii are collapsed onto
+  a deliberate 3-level scale (`--radius-sm` / `--radius` / pill), so `forge uicheck
+design` passes spacing-scale, radius-levels, and shadow-levels with a healthy
+  slop-distance. Focus rings appear instantly (no animated outline), motion is
+  transform/opacity-only under `prefers-reduced-motion`.
 
 ### Added
 

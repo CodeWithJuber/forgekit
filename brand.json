@@ -28,7 +28,7 @@
       "panel-2": "#272019",
       "text": "#f2ede7",
       "muted": "#a99e90",
-      "faint": "#7d7263",
+      "faint": "#8a7d6d",
       "line": "#372c22",
       "line-strong": "#4a3b2e",
       "brand": "#f26430",
@@ -43,12 +43,12 @@
       "panel-2": "#efe7db",
       "text": "#201a15",
       "muted": "#6b5f50",
-      "faint": "#8a7c6a",
+      "faint": "#7e7161",
       "line": "#e2d6c4",
       "line-strong": "#cbbba3",
-      "brand": "#c14e1f",
+      "brand": "#ba4b1e",
       "brand-2": "#b8481c",
-      "ok": "#1f8f52",
+      "ok": "#1b7e48",
       "shadow": "0 24px 64px rgba(32, 26, 21, 0.12)"
     }
   }
