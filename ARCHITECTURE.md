@@ -240,9 +240,14 @@ every intra-repo Markdown anchor (`#x` and `path.md#x`) against the target's rea
 (GitHub-exact slugs — em-dashes yield `--`, never collapsed), killing the dead-anchor class;
 and `checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
 version. The two public pages
-(`landing/index.html` + the `build-pages.mjs` status page) share one set of design tokens,
-enforced for parity (plus non-empty changes list, no phantom webfont) by
-`test/pages.test.js` — so neither the docs' numbers nor the site's look can silently drift.
+(`landing/index.html` + the `build-pages.mjs` status page) derive from ONE color source —
+`brand.json.colors` (full dark + light palettes), emitted as CSS by `src/brand.js`
+(`rootTokensCss()`). `test/pages.test.js` enforces full-palette parity: every hex in
+`brand.json` must appear on both surfaces, so the palette can't fork into "two palettes
+claiming to be one" again (plus non-empty changes list, no phantom webfont, present
+social/favicon metadata). `checkDiagrams` extends the same single-source rule to Mermaid —
+every `%%{init` theme must carry the brand's ember + warm-black hexes — so neither the docs'
+numbers nor the site's look can silently drift.
 
 **Auto-release (`.github/workflows/bump.yml` + `scripts/bump.mjs`).** A push to `master`
 runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commit landed

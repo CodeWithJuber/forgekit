@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { collect, render } from "../scripts/build-pages.mjs";
+import { BRAND } from "../src/brand.js";
 
 const repo = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const landing = repo("landing/index.html");
@@ -22,12 +23,23 @@ test("pages renderer uses repo data and accessible landmarks", async () => {
 // loaded, an empty changes list, hardcoded metrics). Each assertion below is a defect that
 // silently returned before nothing checked it.
 
-test("landing + status share the SAME core brand tokens (one palette, not two)", async () => {
+test("landing + status derive the SAME palette from brand.json (one source, dark+light)", async () => {
   const status = render(await collect({ live: false }));
-  // The warm ember/near-black set both pages must carry verbatim.
-  for (const hex of ["#171310", "#201a15", "#272019", "#372c22", "#f26430", "#f2ede7"]) {
-    assert.ok(landing.includes(hex), `landing page is missing shared token ${hex}`);
-    assert.ok(status.includes(hex), `status page is missing shared token ${hex}`);
+  // brand.json.colors is the single source of the palette. Every hex it defines — for BOTH
+  // schemes — must appear verbatim on both public pages. Change a hex there and this fails
+  // until every surface is updated, which is what makes brand.json the source of truth.
+  const hexes = (palette) => Object.values(palette).filter((v) => v.startsWith("#"));
+  for (const [scheme, palette] of Object.entries(BRAND.colors)) {
+    for (const hex of hexes(palette)) {
+      assert.ok(
+        landing.includes(hex),
+        `landing missing ${scheme} token ${hex} (brand.json.colors.${scheme})`,
+      );
+      assert.ok(
+        status.includes(hex),
+        `status missing ${scheme} token ${hex} (brand.json.colors.${scheme})`,
+      );
+    }
   }
 });
 
@@ -65,6 +77,66 @@ test("landing benchmark metrics are numbers reports/benchmarks.md actually measu
   assert.ok(metrics.length > 0, "landing states at least one ms metric");
   for (const [, n] of metrics)
     assert.ok(measured.has(`${n} ms`), `landing claims ${n} ms but no benchmark row measures it`);
+});
+
+// Metadata + freshness enforcement — each assertion below is a defect this change
+// fixed (blank social cards, missing favicon, canonical/og drift, stale landing
+// version, a repaint-heavy nav blur, the generated status page shipping in the
+// tarball). They stay fixed because the test fails the moment they regress.
+
+test("both public pages ship social image + favicon (no blank cards)", async () => {
+  const status = render(await collect({ live: false }));
+  for (const [name, html] of [
+    ["landing", landing],
+    ["status", status],
+  ]) {
+    assert.match(
+      html,
+      /property="og:image"[^>]*content="https:\/\/[^"]+\.png"/,
+      `${name}: absolute og:image`,
+    );
+    assert.match(
+      html,
+      /name="twitter:image"[^>]*content="https:\/\/[^"]+\.png"/,
+      `${name}: twitter:image`,
+    );
+    assert.match(html, /rel="icon"[^>]*image\/svg/, `${name}: svg favicon`);
+    assert.match(html, /rel="apple-touch-icon"/, `${name}: apple-touch-icon`);
+  }
+});
+
+test("canonical == og:url on both pages", async () => {
+  const status = render(await collect({ live: false }));
+  for (const [name, html] of [
+    ["landing", landing],
+    ["status", status],
+  ]) {
+    const canon = html.match(/rel="canonical"\s+href="([^"]+)"/)?.[1];
+    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)"/)?.[1];
+    assert.ok(canon, `${name}: has canonical`);
+    assert.equal(canon, ogUrl, `${name}: canonical must equal og:url`);
+  }
+});
+
+test("landing states the current package version, never a stale one", () => {
+  const { version } = JSON.parse(repo("package.json"));
+  const shown = [...landing.matchAll(/forgekit v(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+  assert.ok(shown.length > 0, "landing states its version");
+  for (const v of shown)
+    assert.equal(v, version, `landing shows v${v}, package.json is ${version}`);
+});
+
+test("sticky-nav blur stays compositor-light (<=8px)", () => {
+  for (const [, px] of landing.matchAll(/backdrop-filter:\s*blur\((\d+)px\)/g))
+    assert.ok(Number(px) <= 8, `backdrop blur ${px}px > 8px is repaint-heavy on scroll`);
+});
+
+test("the generated status page is not shipped in the npm tarball", () => {
+  const { files } = JSON.parse(repo("package.json"));
+  assert.ok(
+    !files.includes("public"),
+    "public/ is a build artifact (regenerated at deploy), not a shipped file",
+  );
 });
 
 test("pages optional integration can validate live GitHub data", async (t) => {

@@ -6,6 +6,65 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Single design-token source.** `brand.json` gained a `colors` block (full dark +
+  light palettes) as the one source of the visual palette, plus `fonts` and `site`.
+  `src/brand.js` exposes it via `cssVars(scheme)` + `rootTokensCss()` pure helpers;
+  the generated status page (`scripts/build-pages.mjs`) now injects tokens from that
+  one source (and gains light mode), and `test/pages.test.js` enforces full-palette
+  parity — every dark and light hex in `brand.json` must appear on both public pages,
+  so the landing page and status page can no longer fork into two palettes claiming
+  to be one.
+- **Landing page redesign.** Rebuilt `landing/index.html` on a Stat-Led structure:
+  the real shipped hero diagram is now embedded (inlined so it resolves in local
+  preview and at the deployed site root), the fake terminal chrome, placeholder
+  digit/glyph icons, and faux-live pulse dot are gone, capabilities use real inline
+  SVG icons in a hairline-divided layout instead of a uniform card grid, and the
+  sticky-nav blur is compositor-light. Light-mode accents are darkened to meet AA
+  contrast on the light paper.
+- **Accessibility + design-system hygiene.** All accent/supplementary-text pairs on
+  both themes are now verified ≥4.5:1 (bumped `--faint` in dark + light, and light
+  `--brand`/`--ok`, at the single brand.json source). Border-radii are collapsed onto
+  a deliberate 3-level scale (`--radius-sm` / `--radius` / pill), so `forge uicheck
+design` passes spacing-scale, radius-levels, and shadow-levels with a healthy
+  slop-distance. Focus rings appear instantly (no animated outline), motion is
+  transform/opacity-only under `prefers-reduced-motion`.
+
+### Added
+
+- **Social + icon metadata on both public pages.** The landing and generated status
+  pages now ship `og:image` / `twitter:image` (a 1200×630 brand card,
+  `docs/assets/og.png`, rasterized once via Chromium — an author artifact, not a
+  runtime dep), a favicon + apple-touch-icon (`docs/assets/favicon.svg` /
+  `apple-touch-icon.png`), and consistent `canonical` == `og:url`. The status page
+  gained a full Open Graph / Twitter / `SoftwareApplication` JSON-LD head; the deploy
+  workflow copies the brand assets to the Pages root so the absolute URLs resolve.
+- **Brand-aligned status line.** `global/statusline.sh` now renders the exact brand
+  tokens (ember `#f26430`, warm-taupe greys) in 24-bit truecolor from a named palette
+  block, with a 256-color fallback when the terminal can't do truecolor. New
+  `test/statusline.test.js` smoke-tests the segments, the exact truecolor hexes, the
+  fallback, and graceful degradation on minimal input.
+- **Mermaid theme-value guard.** `forge docs check`'s `checkDiagrams` now verifies each
+  `%%{init` block carries the brand's actual color values (ember + warm-black from
+  `brand.json`), not just that a theme directive is present — a diagram can no longer
+  declare a theme and still render off-brand. README leads with a `Start in 60 seconds`
+  block, and `ARCHITECTURE.md` documents `brand.json` as the single color source.
+
+### Fixed
+
+- **Status-page metrics were silently stale.** The `impact` and `saved` regexes in
+  `scripts/build-pages.mjs` no longer matched the current README, so those
+  "repo-sourced" numbers were really hardcoded fallbacks. Regexes fixed to parse the
+  README, and a non-match is now a hard build error (`mustMatch`) instead of a silent
+  fallback; the dead `claim` field is removed.
+- **Generated status page no longer ships stale/leaky.** `public/index.html` is a
+  build artifact (regenerated at deploy), so it is now gitignored and dropped from
+  the npm `files` list — a stale committed copy (old version + a dev-branch name
+  leaked into a visible chip) can no longer be published in the tarball.
+- **Landing → status link** now points at the absolute Pages URL, so it resolves in
+  local file preview instead of 404-ing on `./status/`.
+
 ## [0.17.0] - 2026-07-15
 
 ### Added
@@ -25,7 +84,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Playwright interaction loop** — `forge uicheck interact <file-or-url>` drives the
-  page headless under `prefers-reduced-motion` and checks what it *does*
+  page headless under `prefers-reduced-motion` and checks what it _does_
   (console-clean, keyboard-reachable, focus-visible, reduced-motion), where
   `uicheck visual` only fingerprints what it paints. The verdict is recorded through
   the ledger's cross-family-gated `behavioral` oracle (advisory by default;
@@ -55,7 +114,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   MAE. Advisory by default — routing keeps the rubric until a promotion is adopted
   (`calibratedComplexity` mirrors `predictor.riskFor`). Zero deps, fully unit-tested.
 - **Legacy-store retirement (`FORGE_LEDGER_ONLY`)** — the PCM ledger can now be the
-  *only* store. Since P1 it has been the convergent write store (dual-write) with a
+  _only_ store. Since P1 it has been the convergent write store (dual-write) with a
   merged read (`ledger_read`); with `FORGE_LEDGER_ONLY=1` the legacy files
   (`.forge/lessons/*.md`, recall/brain fact files) stop being written and every read
   materializes from the ledger — cortex confirm/create/distill dedup against

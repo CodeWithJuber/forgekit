@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <radialGradient id="og-glow" cx="82%" cy="-6%" r="70%">
+      <stop offset="0%" stop-color="#f26430" stop-opacity="0.22"/>
+      <stop offset="70%" stop-color="#f26430" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="og-ember" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f26430"/>
+      <stop offset="100%" stop-color="#f7a072"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#171310"/>
+  <rect width="1200" height="630" fill="url(#og-glow)"/>
+
+  <!-- wordmark -->
+  <g transform="translate(96,104)">
+    <rect x="0" y="-4" width="60" height="60" rx="18" fill="url(#og-ember)"/>
+    <text x="30" y="38" text-anchor="middle" font-size="34" font-weight="800" fill="#171310">F</text>
+    <text x="82" y="40" font-size="40" font-weight="800" fill="#f2ede7" letter-spacing="-1">forge<tspan fill="#f26430">kit</tspan></text>
+  </g>
+
+  <text x="98" y="252" font-size="13.5" letter-spacing="6" fill="#f26430" font-weight="700">ONE BRAIN FOR EVERY AI CODING AGENT</text>
+
+  <!-- headline -->
+  <text x="94" y="342" font-size="76" font-weight="800" fill="#f2ede7" letter-spacing="-3">Give every coding agent</text>
+  <text x="94" y="430" font-size="76" font-weight="800" letter-spacing="-3" fill="#f26430">the same working memory.</text>
+
+  <!-- subline -->
+  <text x="98" y="492" font-size="26" fill="#a99e90">Proof-carrying memory · impact foresight · reuse · enforced guardrails —</text>
+  <text x="98" y="528" font-size="26" fill="#a99e90">compiled to native config for the agents your team already runs.</text>
+
+  <!-- footer chips -->
+  <g transform="translate(98,566)" font-size="20" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="0" y="20" fill="#7d7263">MIT</text>
+    <text x="70" y="20" fill="#372c22">·</text>
+    <text x="92" y="20" fill="#7d7263">zero runtime dependencies</text>
+    <text x="392" y="20" fill="#372c22">·</text>
+    <text x="414" y="20" fill="#7d7263">Claude Code, Codex, Cursor, Gemini, Aider &amp; more</text>
+  </g>
+</svg>

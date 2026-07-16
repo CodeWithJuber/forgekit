@@ -10,7 +10,18 @@
     />
     <meta name="theme-color" content="#171310" />
     <link rel="canonical" href="https://codewithjuber.github.io/forgekit/" />
+    <!-- Favicon + apple-touch-icon (deployed to the Pages root by static.yml). -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="https://codewithjuber.github.io/forgekit/favicon.svg"
+    />
+    <link
+      rel="apple-touch-icon"
+      href="https://codewithjuber.github.io/forgekit/apple-touch-icon.png"
+    />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="forgekit" />
     <meta
       property="og:title"
       content="forgekit — cognitive infrastructure for AI coding agents"
@@ -23,7 +34,31 @@
       property="og:url"
       content="https://codewithjuber.github.io/forgekit/"
     />
+    <!-- Absolute image URL required by scrapers; 1200x630 card rasterized once via
+         Chromium (docs/assets/og.png), copied to the Pages root by static.yml. -->
+    <meta
+      property="og:image"
+      content="https://codewithjuber.github.io/forgekit/og.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="forgekit — give every coding agent the same working memory."
+    />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="forgekit — cognitive infrastructure for AI coding agents"
+    />
+    <meta
+      name="twitter:description"
+      content="One brain for every AI coding agent: proof-carrying memory, impact foresight, reuse, and enforced guardrails compiled to native config."
+    />
+    <meta
+      name="twitter:image"
+      content="https://codewithjuber.github.io/forgekit/og.png"
+    />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -32,15 +67,20 @@
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows",
         "license": "https://opensource.org/licenses/MIT",
-        "url": "https://github.com/CodeWithJuber/forgekit",
+        "url": "https://codewithjuber.github.io/forgekit/",
         "description": "Cross-tool config compiler and cognitive substrate with proof-carrying memory, impact prediction, reuse, and guardrails for AI coding agents.",
         "offers": { "@type": "Offer", "price": "0" }
       }
     </script>
     <style>
-      /* One design system, shared verbatim with the status page (scripts/build-pages.mjs):
-         the same warm ember/near-black tokens, one accent, a system font stack (no webfont
-         to silently fail to load). test/pages.test.js enforces this token parity. */
+      /* Hallmark · macrostructure: Stat-Led · genre: modern-minimal · tone: technical
+       * nav: N1b canonical · footer: Ft statement · theme: Ember (dark paper · warm accent · geometric-sans)
+       * pre-emit critique: P5 H4 E5 S5 R5 V4
+       * One design system, shared verbatim with the status page (scripts/build-pages.mjs):
+       * the same warm ember/near-black tokens sourced from brand.json.colors, one accent,
+       * a system font stack (no webfont to silently fail). test/pages.test.js enforces
+       * the full-palette parity (dark + light) against brand.json — this file's :root block
+       * is not a second source, it is a reconciled mirror. */
       :root {
         color-scheme: dark;
         --bg: #171310;
@@ -49,7 +89,7 @@
         --panel-2: #272019;
         --text: #f2ede7;
         --muted: #a99e90;
-        --faint: #7d7263;
+        --faint: #8a7d6d;
         --line: #372c22;
         --line-strong: #4a3b2e;
         --brand: #f26430;
@@ -57,11 +97,12 @@
         --ok: #67e8a5;
         --shadow: 0 24px 64px rgba(23, 19, 16, 0.56);
         --radius: 20px;
-        --radius-sm: 12px;
+        --radius-sm: 10px;
         --max: 1180px;
         --mono:
           ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
         --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
       }
       @media (prefers-color-scheme: light) {
         :root {
@@ -72,14 +113,24 @@
           --panel-2: #efe7db;
           --text: #201a15;
           --muted: #6b5f50;
-          --faint: #8a7c6a;
+          --faint: #7e7161;
           --line: #e2d6c4;
           --line-strong: #cbbba3;
+          /* Accents darkened for AA contrast (>=4.5:1) on the light paper — the raw
+             peach/mint tints read at ~2:1 on #f7f3ed. Single source: brand.json.colors.light. */
+          --brand: #ba4b1e;
+          --brand-2: #b8481c;
+          --ok: #1b7e48;
           --shadow: 0 24px 64px rgba(32, 26, 21, 0.12);
         }
       }
       * {
         box-sizing: border-box;
+      }
+      /* Gate 34: overflow-x clip on BOTH html and body — never hidden. */
+      html,
+      body {
+        overflow-x: clip;
       }
       html {
         scroll-behavior: smooth;
@@ -111,11 +162,12 @@
       a {
         color: inherit;
       }
+      /* Focus ring shows instantly — never transition outline (a11y). */
       a:focus-visible,
       button:focus-visible {
         outline: 3px solid var(--brand-2);
-        outline-offset: 4px;
-        border-radius: 10px;
+        outline-offset: 3px;
+        border-radius: var(--radius-sm);
       }
       .wrap {
         width: min(var(--max), calc(100% - 40px));
@@ -131,21 +183,26 @@
         background: var(--text);
         color: var(--bg);
         padding: 10px 14px;
+        border-radius: var(--radius-sm);
         z-index: 30;
       }
       .skip:focus {
         top: 16px;
       }
+
+      /* ---- Nav (N1b canonical) ---------------------------------------- */
       .nav {
         position: sticky;
         top: 0;
         z-index: 20;
         border-bottom: 1px solid var(--line);
-        background: color-mix(in srgb, var(--bg) 76%, transparent);
-        backdrop-filter: blur(18px);
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        /* Gate: compositor-friendly blur — kept ≤8px so the sticky nav doesn't
+           trigger a heavy repaint on every scroll frame. */
+        backdrop-filter: blur(8px);
       }
       .nav-inner {
-        min-height: 72px;
+        min-height: 68px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -160,14 +217,15 @@
         letter-spacing: -0.02em;
       }
       .logo {
-        width: 34px;
-        height: 34px;
-        border-radius: 11px;
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-sm);
         display: grid;
         place-items: center;
         background: linear-gradient(135deg, var(--brand), var(--brand-2));
-        color: #171310;
-        box-shadow: 0 14px 40px rgba(242, 100, 48, 0.28);
+        color: var(--bg);
+        font-weight: 800;
+        box-shadow: 0 12px 34px rgba(242, 100, 48, 0.26);
       }
       .brand em {
         color: var(--brand);
@@ -176,12 +234,13 @@
       .nav-links {
         display: flex;
         align-items: center;
-        gap: 20px;
+        gap: 22px;
         font-size: 14px;
       }
       .nav-links a {
         color: var(--muted);
         text-decoration: none;
+        transition: color 0.16s var(--ease-out);
       }
       .nav-links a:hover {
         color: var(--text);
@@ -190,7 +249,14 @@
         color: var(--text);
         border: 1px solid var(--line-strong);
         border-radius: 999px;
-        padding: 8px 14px;
+        padding: 8px 15px;
+        transition:
+          border-color 0.16s var(--ease-out),
+          background 0.16s var(--ease-out);
+      }
+      .nav-links .pill:hover {
+        border-color: var(--brand);
+        background: color-mix(in srgb, var(--brand) 12%, transparent);
       }
       @media (max-width: 760px) {
         .nav-links a:not(.pill) {
@@ -200,48 +266,48 @@
           width: min(var(--max), calc(100% - 28px));
         }
       }
+
+      /* ---- Hero (Stat-Led) -------------------------------------------- */
       .hero {
-        padding: 88px 0 64px;
-      }
-      .hero-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.72fr);
-        gap: 42px;
-        align-items: center;
+        padding: 84px 0 40px;
       }
       .eyebrow {
         display: inline-flex;
         gap: 10px;
         align-items: center;
-        margin: 0 0 18px;
+        margin: 0 0 20px;
         color: var(--brand-2);
         font: 700 12px var(--mono);
         letter-spacing: 0.14em;
         text-transform: uppercase;
       }
+      /* Honest status dot — a plain marker, not a faux-live pulse. No glow ring,
+         no animation pretending to be a heartbeat. */
       .dot {
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         border-radius: 999px;
         background: var(--ok);
-        box-shadow: 0 0 0 6px rgba(103, 232, 165, 0.14);
       }
       h1 {
         margin: 0;
-        max-width: 900px;
-        font-size: clamp(40px, 6vw, 64px);
-        line-height: 1.03;
+        max-width: 15ch;
+        font-size: clamp(40px, 6vw, 66px);
+        line-height: 1.02;
         letter-spacing: -0.03em;
         font-weight: 700;
+        overflow-wrap: anywhere;
+        min-width: 0;
       }
       h1 span {
         color: var(--brand);
       }
       .lede {
         margin: 24px 0 0;
-        max-width: 710px;
+        max-width: 62ch;
         color: var(--muted);
-        font-size: clamp(18px, 2vw, 22px);
+        font-size: clamp(18px, 2vw, 21px);
+        text-wrap: pretty;
       }
       .actions {
         display: flex;
@@ -257,9 +323,18 @@
         gap: 10px;
         border-radius: 999px;
         border: 1px solid var(--line-strong);
-        padding: 12px 20px;
+        padding: 12px 22px;
         text-decoration: none;
         font-weight: 750;
+        white-space: nowrap;
+        transition:
+          background 0.16s var(--ease-out),
+          border-color 0.16s var(--ease-out),
+          color 0.16s var(--ease-out),
+          transform 0.12s var(--ease-out);
+      }
+      .btn:active {
+        transform: translateY(1px);
       }
       .btn-primary {
         background: var(--text);
@@ -274,13 +349,13 @@
         color: var(--brand-2);
       }
       .command {
-        margin-top: 18px;
-        display: inline-flex;
+        margin-top: 20px;
+        display: flex;
         max-width: 100%;
         align-items: center;
         gap: 12px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-sm);
         padding: 12px 14px;
         background: var(--panel);
         box-shadow: var(--shadow);
@@ -289,105 +364,136 @@
       }
       .command .prompt {
         color: var(--brand);
+        flex: none;
       }
-      .command button {
-        border: 1px solid var(--line);
-        background: var(--panel-2);
-        color: var(--muted);
-        border-radius: 10px;
-        padding: 6px 10px;
-        cursor: pointer;
-        font: 700 12px var(--mono);
-      }
-      .panel {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: var(--panel);
-        box-shadow: var(--shadow);
-        overflow: hidden;
-      }
-      .agent-card {
-        padding: 22px;
-      }
-      .agent-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: start;
-        border-bottom: 1px solid var(--line);
-        padding-bottom: 18px;
-      }
-      .agent-head strong {
-        display: block;
-        font-size: 18px;
-      }
-      .badge {
-        border: 1px solid rgba(103, 232, 165, 0.32);
-        color: var(--ok);
-        border-radius: 999px;
-        padding: 5px 10px;
-        font: 700 11px var(--mono);
+      .command code {
+        flex: 1;
         white-space: nowrap;
       }
-      .checks {
-        display: grid;
-        gap: 12px;
-        margin: 20px 0 0;
-        padding: 0;
-        list-style: none;
-      }
-      .checks li {
-        display: grid;
-        grid-template-columns: 28px 1fr;
-        gap: 12px;
-        align-items: start;
+      .command button {
+        flex: none;
+        border: 1px solid var(--line-strong);
+        background: var(--panel-2);
         color: var(--muted);
+        border-radius: var(--radius-sm);
+        padding: 6px 12px;
+        cursor: pointer;
+        font: 700 12px var(--mono);
+        transition:
+          color 0.16s var(--ease-out),
+          border-color 0.16s var(--ease-out);
       }
-      .check {
-        width: 28px;
-        height: 28px;
-        border-radius: 10px;
-        display: grid;
-        place-items: center;
-        color: #171310;
-        background: var(--ok);
-        font-weight: 900;
+      .command button:hover {
+        color: var(--text);
+        border-color: var(--brand);
       }
-      .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 14px;
-        margin: 34px 0 0;
+
+      /* ---- Hero diagram (the real, shipped SVG) ----------------------- */
+      .diagram {
+        margin: 56px 0 0;
       }
-      .metric {
+      .diagram figure {
+        margin: 0;
         border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 20px;
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+      /* The real shipped hero art, inlined so it resolves in local preview AND on
+         the deployed site root (the deploy copies only index.html, not docs/assets).
+         Two palettes baked in — toggle by scheme, never recolor via CSS. */
+      .hero-art {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .hero-art-light {
+        display: none;
+      }
+      @media (prefers-color-scheme: light) {
+        .hero-art-dark {
+          display: none;
+        }
+        .hero-art-light {
+          display: block;
+        }
+      }
+      .diagram figcaption {
+        color: var(--faint);
+        font: 500 13px var(--mono);
+        margin-top: 14px;
+        text-align: center;
+      }
+
+      /* ---- Stat band -------------------------------------------------- */
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        margin: 56px 0 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
         background: var(--panel);
       }
-      .metric b {
+      .stat {
+        padding: 26px 24px;
+        border-right: 1px solid var(--line);
+      }
+      .stat:last-child {
+        border-right: 0;
+      }
+      .stat b {
         display: block;
-        font: 850 clamp(24px, 4vw, 36px) var(--mono);
+        font: 850 clamp(26px, 4vw, 38px) var(--mono);
         letter-spacing: -0.04em;
         color: var(--brand-2);
       }
-      .metric span {
+      .stat span {
+        display: block;
+        margin-top: 6px;
         color: var(--muted);
         font-size: 14px;
       }
+      .stat small {
+        display: block;
+        margin-top: 8px;
+        color: var(--faint);
+        font: 400 11px var(--mono);
+      }
+      @media (max-width: 860px) {
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .stat:nth-child(2) {
+          border-right: 0;
+        }
+        .stat:nth-child(1),
+        .stat:nth-child(2) {
+          border-bottom: 1px solid var(--line);
+        }
+      }
+      @media (max-width: 460px) {
+        .stats {
+          grid-template-columns: 1fr;
+        }
+        .stat {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .stat:last-child {
+          border-bottom: 0;
+        }
+      }
+
+      /* ---- Sections --------------------------------------------------- */
       section {
         padding: 84px 0;
         border-top: 1px solid var(--line);
       }
-      .section-head {
-        display: grid;
-        grid-template-columns: minmax(0, 0.75fr) minmax(260px, 0.45fr);
-        gap: 32px;
-        align-items: end;
-        margin-bottom: 34px;
-      }
       .kicker {
-        margin: 0 0 10px;
+        margin: 0 0 12px;
         color: var(--brand);
         font: 800 12px var(--mono);
         letter-spacing: 0.14em;
@@ -395,132 +501,178 @@
       }
       h2 {
         margin: 0;
-        max-width: 760px;
-        font-size: clamp(30px, 5vw, 54px);
-        line-height: 1.04;
-        letter-spacing: -0.045em;
+        max-width: 20ch;
+        font-size: clamp(30px, 5vw, 50px);
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        overflow-wrap: anywhere;
+        min-width: 0;
       }
       .sub {
         color: var(--muted);
-        margin: 0;
+        margin: 16px 0 0;
         font-size: 18px;
+        max-width: 60ch;
+        text-wrap: pretty;
       }
-      .cards {
+
+      /* Capability list — icon + copy rows divided by hairlines, NOT a grid of
+         identical bordered icon-tiles (breaks the card-in-card / icon-grid tell). */
+      .caps {
+        margin: 48px 0 0;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0 56px;
+      }
+      .cap {
+        display: grid;
+        grid-template-columns: 40px 1fr;
         gap: 18px;
+        align-items: start;
+        padding: 26px 0;
+        border-top: 1px solid var(--line);
       }
-      .card {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: var(--panel);
-        padding: 24px;
-        min-height: 100%;
-      }
-      .card h3 {
-        margin: 14px 0 8px;
-        font-size: 21px;
-        letter-spacing: -0.02em;
-      }
-      .card p {
-        margin: 0;
-        color: var(--muted);
-      }
-      .icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(
-          135deg,
-          rgba(242, 100, 48, 0.2),
-          rgba(247, 160, 114, 0.18)
-        );
-        border: 1px solid var(--line);
-        font: 900 18px var(--mono);
+      .cap-ico {
+        width: 40px;
+        height: 40px;
         color: var(--brand-2);
       }
+      .cap-ico svg {
+        width: 100%;
+        height: 100%;
+      }
+      .cap h3 {
+        margin: 2px 0 8px;
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+      .cap p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      @media (max-width: 760px) {
+        .caps {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Workflow — steps beside an honestly-labelled code listing (no fake
+         terminal window: no traffic-light dots, no mock title bar). */
       .split {
         display: grid;
-        grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
-        gap: 22px;
-        align-items: stretch;
-      }
-      .terminal {
-        background: var(--panel-2);
-        color: var(--text);
-        border-radius: var(--radius);
-        overflow: hidden;
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow);
-      }
-      .term-bar {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        border-bottom: 1px solid var(--line);
-        padding: 12px 16px;
-        color: var(--muted);
-        font: 700 12px var(--mono);
-      }
-      .term-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: var(--faint);
-      }
-      pre {
-        margin: 0;
-        padding: 22px;
-        overflow-x: auto;
-        font: 13px/1.7 var(--mono);
-      }
-      .code-dim {
-        color: var(--faint);
-      }
-      .code-hot {
-        color: var(--brand-2);
-      }
-      .code-ok {
-        color: #67e8a5;
+        grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
+        gap: 40px;
+        align-items: start;
       }
       .steps {
         display: grid;
         gap: 12px;
+        margin-top: 32px;
+        counter-reset: step;
       }
       .step {
         display: grid;
-        grid-template-columns: 38px 1fr;
-        gap: 14px;
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: var(--panel);
-        padding: 18px;
+        grid-template-columns: 34px 1fr;
+        gap: 16px;
+        align-items: start;
+        padding: 18px 0;
+        border-top: 1px solid var(--line);
       }
       .step-num {
-        width: 38px;
-        height: 38px;
-        border-radius: 14px;
+        counter-increment: step;
+        width: 34px;
+        height: 34px;
+        border-radius: var(--radius-sm);
         display: grid;
         place-items: center;
         background: var(--panel-2);
+        border: 1px solid var(--line);
         color: var(--brand-2);
-        font: 900 13px var(--mono);
+        font: 800 14px var(--mono);
+      }
+      .step-num::before {
+        content: counter(step);
       }
       .step h3 {
-        margin: 0 0 4px;
+        margin: 4px 0 4px;
         font-size: 17px;
       }
       .step p {
         margin: 0;
         color: var(--muted);
       }
+      figure.listing {
+        margin: 32px 0 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      figure.listing figcaption {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--line);
+        color: var(--faint);
+        font: 600 12px var(--mono);
+        letter-spacing: 0.04em;
+      }
+      pre {
+        margin: 0;
+        padding: 20px;
+        overflow-x: auto;
+        font: 13px/1.7 var(--mono);
+        color: var(--text);
+      }
+      .c-dim {
+        color: var(--faint);
+      }
+      .c-hot {
+        color: var(--brand-2);
+      }
+      .c-ok {
+        color: var(--ok);
+      }
+
+      /* Evidence — two honest limits, real icons. */
+      .honesty {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 40px;
+        margin-top: 44px;
+      }
+      .honest {
+        display: grid;
+        grid-template-columns: 40px 1fr;
+        gap: 18px;
+        align-items: start;
+        padding-top: 26px;
+        border-top: 2px solid var(--brand);
+      }
+      .honest .cap-ico {
+        color: var(--brand);
+      }
+      .honest h3 {
+        margin: 2px 0 8px;
+        font-size: 19px;
+      }
+      .honest p {
+        margin: 0;
+        color: var(--muted);
+      }
+      @media (max-width: 640px) {
+        .honesty {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+      }
+
+      /* Data sources */
       .sources {
         display: grid;
         gap: 10px;
         padding: 0;
-        margin: 0;
+        margin: 32px 0 0;
         list-style: none;
       }
       .sources li {
@@ -528,15 +680,12 @@
         border-left: 3px solid var(--brand);
         padding: 8px 0 8px 14px;
         color: var(--muted);
+        font: 500 14px var(--mono);
       }
-      .honesty {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 18px;
-      }
+
       footer {
         border-top: 1px solid var(--line);
-        padding: 32px 0;
+        padding: 34px 0;
         color: var(--muted);
       }
       .foot {
@@ -548,43 +697,31 @@
       .foot a {
         color: var(--muted);
         text-decoration: none;
-        margin-left: 14px;
+        margin-left: 16px;
+        white-space: nowrap;
+      }
+      .foot a:first-child {
+        margin-left: 0;
       }
       .foot a:hover {
         color: var(--text);
       }
-      @media (max-width: 920px) {
-        .hero-grid,
-        .section-head,
+
+      @media (max-width: 900px) {
         .split {
           grid-template-columns: 1fr;
-        }
-        .metric-grid,
-        .cards {
-          grid-template-columns: repeat(2, 1fr);
         }
       }
       @media (max-width: 560px) {
         .hero {
-          padding-top: 56px;
-        }
-        .metric-grid,
-        .cards,
-        .honesty {
-          grid-template-columns: 1fr;
-        }
-        .command {
-          display: flex;
-        }
-        h1 {
-          font-size: clamp(40px, 14vw, 60px);
+          padding-top: 52px;
         }
         section {
           padding: 60px 0;
         }
         .foot a {
           margin-left: 0;
-          margin-right: 12px;
+          margin-right: 14px;
         }
       }
     </style>
@@ -600,7 +737,7 @@
           <a href="#platform">Platform</a>
           <a href="#workflow">Workflow</a>
           <a href="#evidence">Evidence</a>
-          <a href="./status/">Status</a>
+          <a href="https://codewithjuber.github.io/forgekit/status/">Status</a>
           <a class="pill" href="https://github.com/CodeWithJuber/forgekit"
             >GitHub ↗</a
           >
@@ -610,164 +747,806 @@
 
     <main id="main">
       <section class="hero" id="top" aria-labelledby="hero-title">
-        <div class="wrap hero-grid">
-          <div>
-            <p class="eyebrow">
-              <span class="dot" aria-hidden="true"></span> forgekit v0.17.0 ·
-              MIT · zero runtime dependencies
-            </p>
-            <h1 id="hero-title">
-              Give every coding agent the same <span>working memory.</span>
-            </h1>
-            <p class="lede">
-              Forgekit turns one source of truth into native configuration for
-              AI coding tools, then adds proof-carrying lessons, blast-radius
-              prediction, reuse search, and pre-action guardrails so agents act
-              from shared evidence instead of fresh guesses.
-            </p>
-            <div class="actions" aria-label="Primary calls to action">
-              <a
-                class="btn btn-primary"
-                href="https://github.com/CodeWithJuber/forgekit#readme"
-                >Read the docs</a
+        <div class="wrap">
+          <p class="eyebrow">
+            <span class="dot" aria-hidden="true"></span> forgekit v0.17.0 · MIT
+            · zero runtime dependencies
+          </p>
+          <h1 id="hero-title">
+            Give every coding agent the same <span>working memory.</span>
+          </h1>
+          <p class="lede">
+            forgekit turns one source of truth into native configuration for AI
+            coding tools, then adds proof-carrying lessons, blast-radius
+            prediction, reuse search, and pre-action guardrails — so agents act
+            from shared evidence instead of fresh guesses.
+          </p>
+          <div class="actions" aria-label="Primary calls to action">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/CodeWithJuber/forgekit#readme"
+              >Read the docs</a
+            >
+            <a class="btn btn-secondary" href="#workflow">See the workflow</a>
+          </div>
+          <div class="command" role="group" aria-label="Install command">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code
+              >npm install -g @codewithjuber/forgekit &amp;&amp; forge
+              init</code
+            >
+            <button
+              type="button"
+              data-copy="npm install -g @codewithjuber/forgekit && forge init"
+            >
+              copy
+            </button>
+          </div>
+
+          <div class="diagram">
+            <figure>
+              <svg
+                class="hero-art hero-art-dark"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 960 420"
+                role="img"
+                aria-label="forgekit wraps a stateless model with memory, foresight, and guardrails, then delivers one config to nine AI coding tools: Claude Code, Codex, Cursor, Gemini, Aider, and more."
+                font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
               >
-              <a class="btn btn-secondary" href="#workflow">See the workflow</a>
-            </div>
-            <div class="command" role="group" aria-label="Install command">
-              <span class="prompt" aria-hidden="true">$</span>
-              <span>npm install -g @codewithjuber/forgekit && forge init</span>
-              <button
-                type="button"
-                data-copy="npm install -g @codewithjuber/forgekit && forge init"
+                <defs>
+                  <radialGradient id="glow" cx="30%" cy="35%" r="75%">
+                    <stop
+                      offset="0%"
+                      stop-color="#f26430"
+                      stop-opacity="0.16"
+                    />
+                    <stop offset="70%" stop-color="#f26430" stop-opacity="0" />
+                  </radialGradient>
+                  <linearGradient id="ember" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#f26430" />
+                    <stop offset="100%" stop-color="#d94e1f" />
+                  </linearGradient>
+                </defs>
+                <rect width="960" height="420" rx="20" fill="#171310" />
+                <rect width="960" height="420" rx="20" fill="url(#glow)" />
+                <g transform="translate(40,40)">
+                  <path
+                    d="M12 0 14.2 7.2 21.5 7.5 15.7 11.9 18 19 12 14.6 6 19 8.3 11.9 2.5 7.5 9.8 7.2Z"
+                    fill="#f26430"
+                  />
+                  <text
+                    x="34"
+                    y="15"
+                    font-size="19"
+                    font-weight="700"
+                    fill="#f2ede7"
+                  >
+                    forge
+                    <tspan fill="#f26430">kit</tspan>
+                  </text>
+                </g>
+                <text
+                  x="40"
+                  y="92"
+                  font-size="13"
+                  letter-spacing="0.14em"
+                  fill="#f26430"
+                  font-weight="600"
+                >
+                  ONE BRAIN FOR EVERY AI CODING AGENT
+                </text>
+                <g transform="translate(60,150)">
+                  <rect
+                    x="0"
+                    y="0"
+                    width="196"
+                    height="150"
+                    rx="14"
+                    fill="#201a15"
+                    stroke="#372c22"
+                    stroke-width="1.5"
+                  />
+                  <text
+                    x="98"
+                    y="34"
+                    text-anchor="middle"
+                    font-size="14"
+                    font-weight="700"
+                    fill="#f2ede7"
+                  >
+                    stateless model
+                  </text>
+                  <text
+                    x="98"
+                    y="56"
+                    text-anchor="middle"
+                    font-size="11.5"
+                    fill="#a99e90"
+                  >
+                    one context window
+                  </text>
+                  <text
+                    x="98"
+                    y="72"
+                    text-anchor="middle"
+                    font-size="11.5"
+                    fill="#a99e90"
+                  >
+                    wiped every call
+                  </text>
+                  <g
+                    stroke="#7d7263"
+                    stroke-width="1.5"
+                    fill="none"
+                    opacity="0.7"
+                  >
+                    <path d="M52 96 a20 20 0 1 1 -8 12" />
+                    <path
+                      d="M44 108 l-1 12 l11 -5 Z"
+                      fill="#7d7263"
+                      stroke="none"
+                    />
+                  </g>
+                  <text x="112" y="112" font-size="11" fill="#7d7263">
+                    no memory
+                  </text>
+                  <text x="112" y="128" font-size="11" fill="#7d7263">
+                    no foresight
+                  </text>
+                </g>
+                <g transform="translate(360,150)">
+                  <rect
+                    x="0"
+                    y="-6"
+                    width="232"
+                    height="168"
+                    rx="16"
+                    fill="#201a15"
+                    stroke="#f26430"
+                    stroke-width="1.5"
+                  />
+                  <text
+                    x="116"
+                    y="18"
+                    text-anchor="middle"
+                    font-size="13"
+                    font-weight="700"
+                    fill="#f26430"
+                  >
+                    the cognitive substrate
+                  </text>
+                  <g transform="translate(16,34)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#272019"
+                      stroke="#372c22"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#f2ede7"
+                    >
+                      memory
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#a99e90">
+                      proof-carrying, team-shared
+                    </text>
+                  </g>
+                  <g transform="translate(16,74)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#272019"
+                      stroke="#372c22"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#f2ede7"
+                    >
+                      foresight
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#a99e90">
+                      predicts an edit's blast radius
+                    </text>
+                  </g>
+                  <g transform="translate(16,114)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#272019"
+                      stroke="#372c22"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#f2ede7"
+                    >
+                      guardrails
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#a99e90">
+                      enforced hooks, not prose
+                    </text>
+                  </g>
+                </g>
+                <g stroke="#f26430" stroke-width="2" fill="none">
+                  <path d="M256 225 L352 225" />
+                  <path
+                    d="M352 225 l-11 -5 l0 10 Z"
+                    fill="#f26430"
+                    stroke="none"
+                  />
+                </g>
+                <g transform="translate(700,150)">
+                  <rect
+                    x="0"
+                    y="-6"
+                    width="200"
+                    height="168"
+                    rx="16"
+                    fill="#201a15"
+                    stroke="#372c22"
+                    stroke-width="1.5"
+                  />
+                  <rect
+                    x="16"
+                    y="16"
+                    width="168"
+                    height="32"
+                    rx="9"
+                    fill="url(#ember)"
+                  />
+                  <text
+                    x="100"
+                    y="37"
+                    text-anchor="middle"
+                    font-size="13"
+                    font-weight="700"
+                    fill="#171310"
+                  >
+                    one config
+                  </text>
+                  <g font-size="10.5" fill="#f2ede7">
+                    <text x="20" y="72">Claude Code</text>
+                    <text x="112" y="72">Codex</text>
+                    <text x="20" y="92">Cursor</text>
+                    <text x="112" y="92">Gemini</text>
+                    <text x="20" y="112">Aider</text>
+                    <text x="112" y="112">Copilot</text>
+                    <text x="20" y="132">Windsurf</text>
+                    <text x="112" y="132">Zed</text>
+                    <text x="20" y="152">Continue</text>
+                    <text x="112" y="152" fill="#a99e90">+ MCP</text>
+                  </g>
+                </g>
+                <g stroke="#f26430" stroke-width="2" fill="none">
+                  <path d="M592 225 L692 225" />
+                  <path
+                    d="M692 225 l-11 -5 l0 10 Z"
+                    fill="#f26430"
+                    stroke="none"
+                  />
+                </g>
+                <text
+                  x="480"
+                  y="356"
+                  text-anchor="middle"
+                  font-size="12"
+                  fill="#a99e90"
+                >
+                  every task passes a fast gate · every verified outcome flows
+                  back into the shared memory
+                </text>
+                <text
+                  x="480"
+                  y="388"
+                  text-anchor="middle"
+                  font-size="11.5"
+                  fill="#7d7263"
+                >
+                  author once · zero runtime dependencies · plain-git team
+                  memory
+                </text>
+              </svg>
+              <svg
+                class="hero-art hero-art-light"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 960 420"
+                aria-hidden="true"
+                font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
               >
-                copy
-              </button>
+                <defs>
+                  <radialGradient id="glowL" cx="30%" cy="35%" r="75%">
+                    <stop
+                      offset="0%"
+                      stop-color="#f26430"
+                      stop-opacity="0.10"
+                    />
+                    <stop offset="70%" stop-color="#f26430" stop-opacity="0" />
+                  </radialGradient>
+                  <linearGradient id="emberL" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#f26430" />
+                    <stop offset="100%" stop-color="#d94e1f" />
+                  </linearGradient>
+                </defs>
+                <rect width="960" height="420" rx="20" fill="#faf7f3" />
+                <rect width="960" height="420" rx="20" fill="url(#glowL)" />
+                <rect
+                  x="0.75"
+                  y="0.75"
+                  width="958.5"
+                  height="418.5"
+                  rx="19"
+                  fill="none"
+                  stroke="#e0d6c8"
+                  stroke-width="1.5"
+                />
+                <g transform="translate(40,40)">
+                  <path
+                    d="M12 0 14.2 7.2 21.5 7.5 15.7 11.9 18 19 12 14.6 6 19 8.3 11.9 2.5 7.5 9.8 7.2Z"
+                    fill="#f26430"
+                  />
+                  <text
+                    x="34"
+                    y="15"
+                    font-size="19"
+                    font-weight="700"
+                    fill="#171310"
+                  >
+                    forge
+                    <tspan fill="#d94e1f">kit</tspan>
+                  </text>
+                </g>
+                <text
+                  x="40"
+                  y="92"
+                  font-size="13"
+                  letter-spacing="0.14em"
+                  fill="#d94e1f"
+                  font-weight="600"
+                >
+                  ONE BRAIN FOR EVERY AI CODING AGENT
+                </text>
+                <g transform="translate(60,150)">
+                  <rect
+                    x="0"
+                    y="0"
+                    width="196"
+                    height="150"
+                    rx="14"
+                    fill="#ffffff"
+                    stroke="#e0d6c8"
+                    stroke-width="1.5"
+                  />
+                  <text
+                    x="98"
+                    y="34"
+                    text-anchor="middle"
+                    font-size="14"
+                    font-weight="700"
+                    fill="#171310"
+                  >
+                    stateless model
+                  </text>
+                  <text
+                    x="98"
+                    y="56"
+                    text-anchor="middle"
+                    font-size="11.5"
+                    fill="#6b6155"
+                  >
+                    one context window
+                  </text>
+                  <text
+                    x="98"
+                    y="72"
+                    text-anchor="middle"
+                    font-size="11.5"
+                    fill="#6b6155"
+                  >
+                    wiped every call
+                  </text>
+                  <g
+                    stroke="#9a8f80"
+                    stroke-width="1.5"
+                    fill="none"
+                    opacity="0.8"
+                  >
+                    <path d="M52 96 a20 20 0 1 1 -8 12" />
+                    <path
+                      d="M44 108 l-1 12 l11 -5 Z"
+                      fill="#9a8f80"
+                      stroke="none"
+                    />
+                  </g>
+                  <text x="112" y="112" font-size="11" fill="#9a8f80">
+                    no memory
+                  </text>
+                  <text x="112" y="128" font-size="11" fill="#9a8f80">
+                    no foresight
+                  </text>
+                </g>
+                <g transform="translate(360,150)">
+                  <rect
+                    x="0"
+                    y="-6"
+                    width="232"
+                    height="168"
+                    rx="16"
+                    fill="#ffffff"
+                    stroke="#f26430"
+                    stroke-width="1.5"
+                  />
+                  <text
+                    x="116"
+                    y="18"
+                    text-anchor="middle"
+                    font-size="13"
+                    font-weight="700"
+                    fill="#d94e1f"
+                  >
+                    the cognitive substrate
+                  </text>
+                  <g transform="translate(16,34)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#f7f2ec"
+                      stroke="#e0d6c8"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#171310"
+                    >
+                      memory
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#6b6155">
+                      proof-carrying, team-shared
+                    </text>
+                  </g>
+                  <g transform="translate(16,74)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#f7f2ec"
+                      stroke="#e0d6c8"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#171310"
+                    >
+                      foresight
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#6b6155">
+                      predicts an edit's blast radius
+                    </text>
+                  </g>
+                  <g transform="translate(16,114)">
+                    <rect
+                      x="0"
+                      y="0"
+                      width="200"
+                      height="34"
+                      rx="9"
+                      fill="#f7f2ec"
+                      stroke="#e0d6c8"
+                      stroke-width="1"
+                    />
+                    <circle cx="20" cy="17" r="5" fill="#f26430" />
+                    <text
+                      x="36"
+                      y="16"
+                      font-size="12.5"
+                      font-weight="600"
+                      fill="#171310"
+                    >
+                      guardrails
+                    </text>
+                    <text x="36" y="29" font-size="10.5" fill="#6b6155">
+                      enforced hooks, not prose
+                    </text>
+                  </g>
+                </g>
+                <g stroke="#f26430" stroke-width="2" fill="none">
+                  <path d="M256 225 L352 225" />
+                  <path
+                    d="M352 225 l-11 -5 l0 10 Z"
+                    fill="#f26430"
+                    stroke="none"
+                  />
+                </g>
+                <g transform="translate(700,150)">
+                  <rect
+                    x="0"
+                    y="-6"
+                    width="200"
+                    height="168"
+                    rx="16"
+                    fill="#ffffff"
+                    stroke="#e0d6c8"
+                    stroke-width="1.5"
+                  />
+                  <rect
+                    x="16"
+                    y="16"
+                    width="168"
+                    height="32"
+                    rx="9"
+                    fill="url(#emberL)"
+                  />
+                  <text
+                    x="100"
+                    y="37"
+                    text-anchor="middle"
+                    font-size="13"
+                    font-weight="700"
+                    fill="#ffffff"
+                  >
+                    one config
+                  </text>
+                  <g font-size="10.5" fill="#171310">
+                    <text x="20" y="72">Claude Code</text>
+                    <text x="112" y="72">Codex</text>
+                    <text x="20" y="92">Cursor</text>
+                    <text x="112" y="92">Gemini</text>
+                    <text x="20" y="112">Aider</text>
+                    <text x="112" y="112">Copilot</text>
+                    <text x="20" y="132">Windsurf</text>
+                    <text x="112" y="132">Zed</text>
+                    <text x="20" y="152">Continue</text>
+                    <text x="112" y="152" fill="#6b6155">+ MCP</text>
+                  </g>
+                </g>
+                <g stroke="#f26430" stroke-width="2" fill="none">
+                  <path d="M592 225 L692 225" />
+                  <path
+                    d="M692 225 l-11 -5 l0 10 Z"
+                    fill="#f26430"
+                    stroke="none"
+                  />
+                </g>
+                <text
+                  x="480"
+                  y="356"
+                  text-anchor="middle"
+                  font-size="12"
+                  fill="#6b6155"
+                >
+                  every task passes a fast gate · every verified outcome flows
+                  back into the shared memory
+                </text>
+                <text
+                  x="480"
+                  y="388"
+                  text-anchor="middle"
+                  font-size="11.5"
+                  fill="#9a8f80"
+                >
+                  author once · zero runtime dependencies · plain-git team
+                  memory
+                </text>
+              </svg>
+            </figure>
+            <figcaption>
+              One substrate — memory, foresight, guardrails — compiled to native
+              config for every agent your team already runs.
+            </figcaption>
+          </div>
+
+          <div class="stats" aria-label="Measured repository outcomes">
+            <div class="stat">
+              <b>118 ms</b>
+              <span>full pre-action gate</span>
+              <small>reports/benchmarks.md</small>
             </div>
-          </div>
-          <aside
-            class="panel agent-card"
-            aria-label="Forge pre-action gate summary"
-          >
-            <div class="agent-head">
-              <div>
-                <strong>Pre-action gate</strong
-                ><span class="sub">Evidence before edits, every time.</span>
-              </div>
-              <span class="badge">measured</span>
+            <div class="stat">
+              <b>0.43 ms</b>
+              <span>blast-radius lookup</span>
+              <small>reports/benchmarks.md</small>
             </div>
-            <ul class="checks">
-              <li>
-                <span class="check" aria-hidden="true">✓</span
-                ><span
-                  >Reuse candidates are searched before new code is
-                  written.</span
-                >
-              </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span
-                ><span
-                  >Impact atlas predicts likely files, tests, and blast
-                  radius.</span
-                >
-              </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span
-                ><span
-                  >Lessons carry provenance and gain trust only from oracle
-                  outcomes.</span
-                >
-              </li>
-              <li>
-                <span class="check" aria-hidden="true">✓</span
-                ><span
-                  >Guardrails compile to Claude Code, Codex, Cursor, Gemini,
-                  Aider, and more.</span
-                >
-              </li>
-            </ul>
-          </aside>
-        </div>
-        <div class="wrap metric-grid" aria-label="Measured repository outcomes">
-          <div class="metric">
-            <b>118 ms</b
-            ><span>full pre-action gate from repository benchmarks</span>
-          </div>
-          <div class="metric">
-            <b>0.43 ms</b
-            ><span>blast-radius lookup from benchmark reports</span>
-          </div>
-          <div class="metric">
-            <b>62.1%</b><span>measured routing-stage cost saved</span>
-          </div>
-          <div class="metric">
-            <b>0</b><span>runtime dependencies in package.json</span>
+            <div class="stat">
+              <b>62.1%</b>
+              <span>routing cost saved</span>
+              <small>white-paper prototype</small>
+            </div>
+            <div class="stat">
+              <b>0</b>
+              <span>runtime dependencies</span>
+              <small>package.json</small>
+            </div>
           </div>
         </div>
       </section>
 
       <section id="platform" aria-labelledby="platform-title">
         <div class="wrap">
-          <div class="section-head">
-            <div>
-              <p class="kicker">Platform</p>
-              <h2 id="platform-title">
-                A cognitive substrate, packaged like developer tooling.
-              </h2>
-            </div>
-            <p class="sub">
-              The site uses only repository-backed claims: README, CHANGELOG,
-              package metadata, benchmark reports, and optional GitHub API
-              counters on the status page.
-            </p>
-          </div>
-          <div class="cards">
-            <article class="card">
-              <div class="icon">01</div>
-              <h3>Cross-tool config</h3>
-              <p>
-                Author rules once, then compile native config layers for the
-                agents your team already uses.
-              </p>
+          <p class="kicker">Platform</p>
+          <h2 id="platform-title">
+            A cognitive substrate, packaged like developer tooling.
+          </h2>
+          <p class="sub">
+            Every claim here is repository-backed: README, CHANGELOG, package
+            metadata, benchmark reports, and optional GitHub counters on the
+            status page. No mock marketing data.
+          </p>
+          <div class="caps">
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 3 3 8l9 5 9-5-9-5Z" />
+                  <path d="m3 12 9 5 9-5" />
+                  <path d="m3 16 9 5 9-5" />
+                </svg>
+              </span>
+              <div>
+                <h3>Cross-tool config</h3>
+                <p>
+                  Author rules once, then compile native config layers for the
+                  agents your team already uses.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">02</div>
-              <h3>Proof-carrying memory</h3>
-              <p>
-                Every durable lesson includes evidence, provenance, confidence,
-                decay, and merge behavior.
-              </p>
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 3 5 6v5c0 4 3 7 7 8 4-1 7-4 7-8V6l-7-3Z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </span>
+              <div>
+                <h3>Proof-carrying memory</h3>
+                <p>
+                  Every durable lesson carries evidence, provenance, confidence,
+                  decay, and merge behavior.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">03</div>
-              <h3>Impact foresight</h3>
-              <p>
-                Before editing, Forge predicts affected files and tests so
-                agents can plan smaller, safer changes.
-              </p>
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <circle cx="12" cy="12" r="8" opacity=".55" />
+                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+              </span>
+              <div>
+                <h3>Impact foresight</h3>
+                <p>
+                  Before editing, Forge predicts affected files and tests so
+                  agents plan smaller, safer changes.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">04</div>
-              <h3>Reuse-first retrieval</h3>
-              <p>
-                Agents are pushed toward existing code paths and prior fixes
-                before inventing another solution.
-              </p>
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                  <path d="M21 3v5h-5" />
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                  <path d="M3 21v-5h5" />
+                </svg>
+              </span>
+              <div>
+                <h3>Reuse-first retrieval</h3>
+                <p>
+                  Agents are pushed toward existing code paths and prior fixes
+                  before inventing another solution.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">05</div>
-              <h3>Guardrails that run</h3>
-              <p>
-                Scope, assumptions, anchoring, cost, and secret-redaction checks
-                are enforced by CLI hooks.
-              </p>
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="4" y="10" width="16" height="10" rx="2" />
+                  <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                  <path d="m10 15 1.5 1.5L15 13" />
+                </svg>
+              </span>
+              <div>
+                <h3>Guardrails that run</h3>
+                <p>
+                  Scope, assumptions, anchoring, cost, and secret-redaction
+                  checks are enforced by CLI hooks.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">06</div>
-              <h3>Team memory through git</h3>
-              <p>
-                Knowledge moves with the repository, not with a single chat
-                transcript or vendor workspace.
-              </p>
+            <article class="cap">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="6" cy="6" r="2.5" />
+                  <circle cx="6" cy="18" r="2.5" />
+                  <circle cx="18" cy="8" r="2.5" />
+                  <path d="M6 8.5v7" />
+                  <path d="M18 10.5a7 7 0 0 1-6 6" />
+                </svg>
+              </span>
+              <div>
+                <h3>Team memory through git</h3>
+                <p>
+                  Knowledge moves with the repository, not with a single chat
+                  transcript or vendor workspace.
+                </p>
+              </div>
             </article>
           </div>
         </div>
@@ -778,7 +1557,7 @@
           <div>
             <p class="kicker">Workflow</p>
             <h2 id="workflow-title">
-              Install once. Gate every meaningful agent action.
+              Install once. Gate every meaningful action.
             </h2>
             <p class="sub">
               The CLI stays small and dependency-free, while optional live
@@ -787,17 +1566,17 @@
             </p>
             <div class="steps" aria-label="Setup steps">
               <div class="step">
-                <span class="step-num">1</span>
+                <span class="step-num" aria-hidden="true"></span>
                 <div>
                   <h3>Initialize the substrate</h3>
                   <p>
-                    Run the installer and generate project-local agent
+                    Run the installer to generate project-local agent
                     instructions, hooks, and memory stores.
                   </p>
                 </div>
               </div>
               <div class="step">
-                <span class="step-num">2</span>
+                <span class="step-num" aria-hidden="true"></span>
                 <div>
                   <h3>Let agents plan with evidence</h3>
                   <p>
@@ -807,88 +1586,111 @@
                 </div>
               </div>
               <div class="step">
-                <span class="step-num">3</span>
+                <span class="step-num" aria-hidden="true"></span>
                 <div>
                   <h3>Promote only verified lessons</h3>
                   <p>
                     Tests and human corrections update memory; self-graded
-                    claims do not become trusted facts.
+                    claims never become trusted facts.
                   </p>
                 </div>
               </div>
             </div>
           </div>
-          <div class="terminal" aria-label="Example Forge terminal output">
-            <div class="term-bar">
-              <span class="term-dot"></span><span class="term-dot"></span
-              ><span class="term-dot"></span><span>forge substrate</span>
-            </div>
-            <pre><code><span class="code-dim">$</span> forge substrate "Change auth validation and update tests"
-<span class="code-ok">✓</span> loaded team rules from AGENTS.md
-<span class="code-ok">✓</span> found reuse candidates before implementation
-<span class="code-ok">✓</span> predicted blast radius and test targets
-<span class="code-hot">!</span> assumption requires citation before action
-<span class="code-ok">✓</span> emits native config for agent tools</code></pre>
-          </div>
+          <figure class="listing" aria-label="Example forge substrate output">
+            <figcaption>forge substrate — example gate output</figcaption>
+            <pre><code><span class="c-dim">$</span> forge substrate "Change auth validation and update tests"
+<span class="c-ok">✓</span> loaded team rules from AGENTS.md
+<span class="c-ok">✓</span> found reuse candidates before implementation
+<span class="c-ok">✓</span> predicted blast radius and test targets
+<span class="c-hot">!</span> assumption requires citation before action
+<span class="c-ok">✓</span> emitted native config for agent tools</code></pre>
+          </figure>
         </div>
       </section>
 
       <section id="evidence" aria-labelledby="evidence-title">
         <div class="wrap">
-          <div class="section-head">
-            <div>
-              <p class="kicker">Evidence</p>
-              <h2 id="evidence-title">
-                Professional, but honest about limits.
-              </h2>
-            </div>
-            <p class="sub">
-              The strongest design choice is restraint: measured numbers are
-              labeled as measured, targets stay targets, and generated pages
-              document their sources.
-            </p>
-          </div>
+          <p class="kicker">Evidence</p>
+          <h2 id="evidence-title">Professional, but honest about limits.</h2>
+          <p class="sub">
+            The strongest design choice is restraint: measured numbers are
+            labeled as measured, targets stay targets, and generated pages
+            document their sources.
+          </p>
           <div class="honesty">
-            <article class="card">
-              <div class="icon">↯</div>
-              <h3>Approximate impact atlas</h3>
-              <p>
-                Import-graph predictions are useful for gating and planning, not
-                presented as perfect dependency analysis.
-              </p>
+            <article class="honest">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="6" cy="7" r="2" />
+                  <circle cx="18" cy="6" r="2" />
+                  <circle cx="16" cy="17" r="2" />
+                  <circle cx="7" cy="16" r="2" />
+                  <path
+                    d="m8 7.6 8-1M7 9v5M8.6 15.6l5.6 1M17.6 7.9l-1.4 7.2"
+                    stroke-dasharray="2.5 2.5"
+                  />
+                </svg>
+              </span>
+              <div>
+                <h3>Approximate impact atlas</h3>
+                <p>
+                  Import-graph predictions are useful for gating and planning,
+                  not presented as perfect dependency analysis.
+                </p>
+              </div>
             </article>
-            <article class="card">
-              <div class="icon">%</div>
-              <h3>Cost claims stay scoped</h3>
-              <p>
-                The page shows the measured routing-stage savings rather than
-                blending measured data with aspirational targets.
-              </p>
+            <article class="honest">
+              <span class="cap-ico" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M4 15a8 8 0 0 1 16 0" />
+                  <path d="m12 15 4.5-4.5" />
+                  <circle cx="12" cy="15" r="1.3" />
+                  <path d="M4 15h1M19 15h1M12 7v1" />
+                </svg>
+              </span>
+              <div>
+                <h3>Cost claims stay scoped</h3>
+                <p>
+                  The page shows measured routing-stage savings rather than
+                  blending measured data with aspirational targets.
+                </p>
+              </div>
             </article>
           </div>
         </div>
       </section>
 
       <section id="sources" aria-labelledby="sources-title">
-        <div class="wrap split">
-          <div>
-            <p class="kicker">Data sources</p>
-            <h2 id="sources-title">No mock marketing data.</h2>
-            <p class="sub">
-              Every metric and product claim on this site comes from local
-              repository files or the optional public GitHub repository endpoint
-              used by the generated status page.
-            </p>
-          </div>
-          <div class="card">
-            <ul class="sources">
-              <li>package.json</li>
-              <li>README.md</li>
-              <li>CHANGELOG.md</li>
-              <li>reports/benchmarks.md</li>
-              <li>https://api.github.com/repos/CodeWithJuber/forgekit</li>
-            </ul>
-          </div>
+        <div class="wrap">
+          <p class="kicker">Data sources</p>
+          <h2 id="sources-title">No mock marketing data.</h2>
+          <p class="sub">
+            Every metric and product claim on this site comes from local
+            repository files or the optional public GitHub repository endpoint
+            used by the generated status page.
+          </p>
+          <ul class="sources">
+            <li>package.json</li>
+            <li>README.md</li>
+            <li>CHANGELOG.md</li>
+            <li>reports/benchmarks.md</li>
+            <li>https://api.github.com/repos/CodeWithJuber/forgekit</li>
+          </ul>
         </div>
       </section>
     </main>
@@ -908,7 +1710,7 @@
             href="https://github.com/CodeWithJuber/forgekit/blob/master/SECURITY.md"
             >Security</a
           >
-          <a href="./status/">Status</a>
+          <a href="https://codewithjuber.github.io/forgekit/status/">Status</a>
         </div>
       </div>
     </footer>

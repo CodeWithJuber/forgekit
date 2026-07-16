@@ -116,9 +116,13 @@ test("docsCheck: an undocumented MCP tool is flagged", () => {
   assert.ok(r.issues.some((i) => i.check === "mcp-tools" && i.detail.includes(TOOLS[0].name)));
 });
 
+// A theme that carries the actual brand color VALUES (ember #f26430 + warm-black
+// #171310), not just the `%%{init` directive.
+const BRAND_INIT =
+  "%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','lineColor':'#f26430','tertiaryColor':'#171310'}}}%%";
+
 test("docsCheck: a branded mermaid diagram with <br/> passes; diagrams is a checked dimension", () => {
-  const good =
-    "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A[\"a<br/>b\"] --> B[\"c\"]\n```\n";
+  const good = `\`\`\`mermaid\n${BRAND_INIT}\nflowchart LR\n  A["a<br/>b"] --> B["c"]\n\`\`\`\n`;
   const r = docsCheck({
     root: fixtureRoot((f) => ({
       ...f,
@@ -127,6 +131,20 @@ test("docsCheck: a branded mermaid diagram with <br/> passes; diagrams is a chec
   });
   assert.deepEqual(r.issues, []);
   assert.ok(r.checked.includes("diagrams"));
+});
+
+test("docsCheck: a mermaid theme missing the brand color values is flagged", () => {
+  // Has `%%{init` but not the brand.json hexes — declares a theme, renders off-brand.
+  const bad = "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A --> B\n```\n";
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\n${bad}`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(
+    r.issues.some((i) => i.check === "diagrams" && /missing the brand/.test(i.detail)),
+    "a theme without the brand hexes is flagged",
+  );
 });
 
 test("docsCheck: an unstyled mermaid diagram (no branded theme) is flagged", () => {

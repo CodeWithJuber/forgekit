@@ -11,5 +11,45 @@
     "atlas": "code-graph (symbol/call index)",
     "lean": "minimalism discipline",
     "recall": "cross-session memory"
+  },
+  "site": {
+    "url": "https://codewithjuber.github.io/forgekit/",
+    "repo": "https://github.com/CodeWithJuber/forgekit"
+  },
+  "fonts": {
+    "sans": "system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+    "mono": "ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, monospace"
+  },
+  "colors": {
+    "dark": {
+      "bg": "#171310",
+      "bg-2": "#201a15",
+      "panel": "#201a15",
+      "panel-2": "#272019",
+      "text": "#f2ede7",
+      "muted": "#a99e90",
+      "faint": "#8a7d6d",
+      "line": "#372c22",
+      "line-strong": "#4a3b2e",
+      "brand": "#f26430",
+      "brand-2": "#f7a072",
+      "ok": "#67e8a5",
+      "shadow": "0 24px 64px rgba(23, 19, 16, 0.56)"
+    },
+    "light": {
+      "bg": "#f7f3ed",
+      "bg-2": "#fffdf9",
+      "panel": "#fffdf9",
+      "panel-2": "#efe7db",
+      "text": "#201a15",
+      "muted": "#6b5f50",
+      "faint": "#7e7161",
+      "line": "#e2d6c4",
+      "line-strong": "#cbbba3",
+      "brand": "#ba4b1e",
+      "brand-2": "#b8481c",
+      "ok": "#1b7e48",
+      "shadow": "0 24px 64px rgba(32, 26, 21, 0.12)"
+    }
   }
 }
