@@ -45,6 +45,11 @@ design` passes spacing-scale, radius-levels, and shadow-levels with a healthy
   block, with a 256-color fallback when the terminal can't do truecolor. New
   `test/statusline.test.js` smoke-tests the segments, the exact truecolor hexes, the
   fallback, and graceful degradation on minimal input.
+- **Mermaid theme-value guard.** `forge docs check`'s `checkDiagrams` now verifies each
+  `%%{init` block carries the brand's actual color values (ember + warm-black from
+  `brand.json`), not just that a theme directive is present — a diagram can no longer
+  declare a theme and still render off-brand. README leads with a `Start in 60 seconds`
+  block, and `ARCHITECTURE.md` documents `brand.json` as the single color source.
 
 ### Fixed
 

@@ -200,6 +200,24 @@ function checkDiagrams(root, issues) {
           severity: "error",
           detail: `${rel}: a mermaid diagram has no branded \`%%{init\` theme — it renders in Mermaid's off-brand default`,
         });
+      } else {
+        // Presence of `%%{init` isn't enough — the theme must carry the actual brand
+        // VALUES from the single color source (brand.json.colors.dark), or a diagram can
+        // declare a theme and still render in off-brand colors. Require the load-bearing
+        // identity hexes: the ember accent and the warm-black canvas.
+        const dark = BRAND.colors?.dark ?? {};
+        for (const [role, hex] of [
+          ["ember accent (lineColor)", dark.brand],
+          ["warm-black canvas (tertiaryColor)", dark.bg],
+        ]) {
+          if (hex && !block.toLowerCase().includes(hex.toLowerCase())) {
+            issues.push({
+              check: "diagrams",
+              severity: "error",
+              detail: `${rel}: a mermaid \`%%{init\` theme is missing the brand ${role} \`${hex}\` — it declares a theme but not the brand.json colors`,
+            });
+          }
+        }
       }
       if (block.includes("\\n")) {
         issues.push({

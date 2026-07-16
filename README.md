@@ -26,8 +26,21 @@ delivers them into every tool you use.
 > **Status: beta.** The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards) is
 > tested and in daily use; some flags may change before `1.0`.
 
+## Start in 60 seconds
+
+```bash
+npm install -g @codewithjuber/forgekit   # or: npm install -g github:CodeWithJuber/forgekit
+forge init                               # emit every AI tool's native config from one source
+forge doctor                             # verify providers, hooks, and MCP wiring
+```
+
+That's it — your agents now share one source of truth. The
+[full quickstart](#60-second-quickstart) walks through the loop; [Commands](#commands)
+lists everything `forge` can do.
+
 ## Contents
 
+- [Start in 60 seconds](#start-in-60-seconds)
 - [The problem](#the-problem)
 - [How it works — the loop](#how-it-works--the-loop)
 - [What you get](#what-you-get)
