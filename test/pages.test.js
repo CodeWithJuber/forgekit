@@ -79,6 +79,66 @@ test("landing benchmark metrics are numbers reports/benchmarks.md actually measu
     assert.ok(measured.has(`${n} ms`), `landing claims ${n} ms but no benchmark row measures it`);
 });
 
+// Metadata + freshness enforcement — each assertion below is a defect this change
+// fixed (blank social cards, missing favicon, canonical/og drift, stale landing
+// version, a repaint-heavy nav blur, the generated status page shipping in the
+// tarball). They stay fixed because the test fails the moment they regress.
+
+test("both public pages ship social image + favicon (no blank cards)", async () => {
+  const status = render(await collect({ live: false }));
+  for (const [name, html] of [
+    ["landing", landing],
+    ["status", status],
+  ]) {
+    assert.match(
+      html,
+      /property="og:image"[^>]*content="https:\/\/[^"]+\.png"/,
+      `${name}: absolute og:image`,
+    );
+    assert.match(
+      html,
+      /name="twitter:image"[^>]*content="https:\/\/[^"]+\.png"/,
+      `${name}: twitter:image`,
+    );
+    assert.match(html, /rel="icon"[^>]*image\/svg/, `${name}: svg favicon`);
+    assert.match(html, /rel="apple-touch-icon"/, `${name}: apple-touch-icon`);
+  }
+});
+
+test("canonical == og:url on both pages", async () => {
+  const status = render(await collect({ live: false }));
+  for (const [name, html] of [
+    ["landing", landing],
+    ["status", status],
+  ]) {
+    const canon = html.match(/rel="canonical"\s+href="([^"]+)"/)?.[1];
+    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)"/)?.[1];
+    assert.ok(canon, `${name}: has canonical`);
+    assert.equal(canon, ogUrl, `${name}: canonical must equal og:url`);
+  }
+});
+
+test("landing states the current package version, never a stale one", () => {
+  const { version } = JSON.parse(repo("package.json"));
+  const shown = [...landing.matchAll(/forgekit v(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+  assert.ok(shown.length > 0, "landing states its version");
+  for (const v of shown)
+    assert.equal(v, version, `landing shows v${v}, package.json is ${version}`);
+});
+
+test("sticky-nav blur stays compositor-light (<=8px)", () => {
+  for (const [, px] of landing.matchAll(/backdrop-filter:\s*blur\((\d+)px\)/g))
+    assert.ok(Number(px) <= 8, `backdrop blur ${px}px > 8px is repaint-heavy on scroll`);
+});
+
+test("the generated status page is not shipped in the npm tarball", () => {
+  const { files } = JSON.parse(repo("package.json"));
+  assert.ok(
+    !files.includes("public"),
+    "public/ is a build artifact (regenerated at deploy), not a shipped file",
+  );
+});
+
 test("pages optional integration can validate live GitHub data", async (t) => {
   if (process.env.RUN_INTEGRATION !== "1") {
     t.skip("set RUN_INTEGRATION=1 to hit GitHub API");
