@@ -41,6 +41,20 @@ design` passes spacing-scale, radius-levels, and shadow-levels with a healthy
   gained a full Open Graph / Twitter / `SoftwareApplication` JSON-LD head; the deploy
   workflow copies the brand assets to the Pages root so the absolute URLs resolve.
 
+### Fixed
+
+- **Status-page metrics were silently stale.** The `impact` and `saved` regexes in
+  `scripts/build-pages.mjs` no longer matched the current README, so those
+  "repo-sourced" numbers were really hardcoded fallbacks. Regexes fixed to parse the
+  README, and a non-match is now a hard build error (`mustMatch`) instead of a silent
+  fallback; the dead `claim` field is removed.
+- **Generated status page no longer ships stale/leaky.** `public/index.html` is a
+  build artifact (regenerated at deploy), so it is now gitignored and dropped from
+  the npm `files` list — a stale committed copy (old version + a dev-branch name
+  leaked into a visible chip) can no longer be published in the tarball.
+- **Landing → status link** now points at the absolute Pages URL, so it resolves in
+  local file preview instead of 404-ing on `./status/`.
+
 ## [0.17.0] - 2026-07-15
 
 ### Added

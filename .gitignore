@@ -14,3 +14,6 @@ npm-debug.log*
 
 # Local backups the installer creates
 .backup-*/
+
+# Generated status page — built fresh at deploy (scripts/build-pages.mjs)
+public/

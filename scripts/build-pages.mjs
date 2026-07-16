@@ -28,9 +28,18 @@ const readme = read("README.md");
 const changelog = read("CHANGELOG.md");
 const benchmarks = read("reports/benchmarks.md");
 
-function lineMatch(text, re, fallback = "") {
+// A repo-sourced metric MUST parse from the README — a silent fallback is how the
+// site drifted into showing hardcoded numbers the README no longer stated. If the
+// phrasing changes, fail the build loudly so the regex (or the README) gets fixed.
+function mustMatch(text, re, label) {
   const m = text.match(re);
-  return m?.[1]?.trim() ?? fallback;
+  if (!m?.[1]?.trim()) {
+    throw new Error(
+      `build-pages: metric "${label}" no longer matches ${re} in README.md — ` +
+        `update the regex or the README (no silent fallback).`,
+    );
+  }
+  return m[1].trim();
 }
 function latestChanges() {
   // Walk version sections in order and use the first one that actually has bullets —
@@ -152,10 +161,9 @@ export async function collect({ live = process.env.BUILD_PAGES_LIVE === "1" } = 
     branch: git(["branch", "--show-current"]),
     generated: new Date().toISOString(),
     github,
-    claim: lineMatch(readme, /\*\*(Author[\s\S]*?)\*\*/m, pkg.description),
-    speed: lineMatch(readme, /\*\*A full pre-action gate in ([^*]+)\*\*/m, "118 ms"),
-    impact: lineMatch(readme, /answers in \*\*([^*]+)\*\*/m, "0.43 ms"),
-    saved: lineMatch(readme, /measured \*\*([^*]+)\*\*/m, "62.1% cost saved"),
+    speed: mustMatch(readme, /\*\*A full pre-action gate in ([^*]+)\*\*/m, "speed"),
+    impact: mustMatch(readme, /\*\*Blast radius in ([^*]+)\*\*/m, "impact"),
+    saved: mustMatch(readme, /\*\*([\d.]+% cost saved)/m, "saved"),
     benchUpdated: statSync(join(root, "reports/benchmarks.md")).mtime.toISOString().slice(0, 10),
     latest: latestChanges(),
     benchMentions: (benchmarks.match(/^## /gm) ?? []).length,
