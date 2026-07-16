@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Single design-token source.** `brand.json` gained a `colors` block (full dark +
+  light palettes) as the one source of the visual palette, plus `fonts` and `site`.
+  `src/brand.js` exposes it via `cssVars(scheme)` + `rootTokensCss()` pure helpers;
+  the generated status page (`scripts/build-pages.mjs`) now injects tokens from that
+  one source (and gains light mode), and `test/pages.test.js` enforces full-palette
+  parity — every dark and light hex in `brand.json` must appear on both public pages,
+  so the landing page and status page can no longer fork into two palettes claiming
+  to be one.
+- **Landing page redesign.** Rebuilt `landing/index.html` on a Stat-Led structure:
+  the real shipped hero diagram is now embedded (inlined so it resolves in local
+  preview and at the deployed site root), the fake terminal chrome, placeholder
+  digit/glyph icons, and faux-live pulse dot are gone, capabilities use real inline
+  SVG icons in a hairline-divided layout instead of a uniform card grid, and the
+  sticky-nav blur is compositor-light. Light-mode accents are darkened to meet AA
+  contrast on the light paper.
+
 ## [0.17.0] - 2026-07-15
 
 ### Added
@@ -25,7 +43,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Playwright interaction loop** — `forge uicheck interact <file-or-url>` drives the
-  page headless under `prefers-reduced-motion` and checks what it *does*
+  page headless under `prefers-reduced-motion` and checks what it _does_
   (console-clean, keyboard-reachable, focus-visible, reduced-motion), where
   `uicheck visual` only fingerprints what it paints. The verdict is recorded through
   the ledger's cross-family-gated `behavioral` oracle (advisory by default;
@@ -55,7 +73,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   MAE. Advisory by default — routing keeps the rubric until a promotion is adopted
   (`calibratedComplexity` mirrors `predictor.riskFor`). Zero deps, fully unit-tested.
 - **Legacy-store retirement (`FORGE_LEDGER_ONLY`)** — the PCM ledger can now be the
-  *only* store. Since P1 it has been the convergent write store (dual-write) with a
+  _only_ store. Since P1 it has been the convergent write store (dual-write) with a
   merged read (`ledger_read`); with `FORGE_LEDGER_ONLY=1` the legacy files
   (`.forge/lessons/*.md`, recall/brain fact files) stop being written and every read
   materializes from the ledger — cortex confirm/create/distill dedup against
