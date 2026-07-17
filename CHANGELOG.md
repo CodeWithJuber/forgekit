@@ -16,6 +16,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   high-traffic commands are migrated), read through new `commandSummary`/`commandHelp`
   helpers. An unknown command now suggests the nearest match ("did you mean …?") via a
   character-bigram `suggest()` over the existing `setOverlap` similarity.
+- **`forge doctor --fix` — one-command auto-repair.** Each safely fixable finding now
+  carries a repair that reuses an existing idempotent function: missing
+  hooks/permissions in `~/.claude/settings.json` → `mergeSettings`, a missing ledger
+  union-merge rule → `ensureLedgerGitattributes`, a missing/stale `AGENTS.md` → `sync`,
+  and non-executable guards → `chmod +x`. `forge doctor --fix` runs the repairs, prints a
+  `repairs:` block, then re-checks; a second run is a clean no-op. Unsafe findings
+  (provider keys, MCP count, pricing, gateway) stay report-only. The `node` check is now
+  reconciled with `package.json` engines (`>=20`): fail below 18, warn on 18–19, ok on 20+.
+  > > > > > > > 98789f2 (feat(doctor): --fix auto-repair (reuse mergeSettings/sync/gitattributes/chmod) + node threshold)
 
 ## [0.20.0] - 2026-07-17
 
