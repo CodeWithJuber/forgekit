@@ -1,0 +1,87 @@
+---
+title: "Cross-session memory"
+description: "Session anchoring, the completion gate, handoff snapshots, and the decision log — the layer that kills session amnesia and partial work."
+---
+
+Two failure modes this layer exists to kill: **partial work** (code changes without the
+artifacts that depend on it) and **session amnesia** (the next session re-assumes what
+this one knew). Instructions raise the _probability_ of correct behavior; deterministic
+hooks guarantee a _floor_.
+
+## Session anchoring
+
+On `SessionStart` (`src/session.js`), Forge records `HEAD` once per session, prunes
+week-old session artifacts, and injects a fresh orientation:
+
+<CardGroup cols={2}>
+  <Card title="Learned lessons" icon="graduation-cap">
+    Cortex lessons mined from past corrections.
+  </Card>
+  <Card title="The anchored goal" icon="bullseye">
+    The stated goal, so drift can be measured against it.
+  </Card>
+  <Card title="The handoff snapshot" icon="camera">
+    The bounded `.forge/state.md` the last session wrote.
+  </Card>
+  <Card title="Recent commits + changes" icon="code-commit">
+    Recent commits and uncommitted changes — evidence, not priors.
+  </Card>
+</CardGroup>
+
+A fresh session orients on evidence, not priors.
+
+## The completion gate
+
+The only Stop-path guard that may answer is `completion-gate.sh`
+(`src/gate.js`). It runs synchronously; the lesson-mining `cortex.sh stop` stays detached
+and can never block.
+
+The changed set is **session-scoped**: files from commits whose committer time is at or
+after session start, plus working-tree changes minus the dirt snapshotted at
+`SessionStart` — so pre-existing edits, branch switches, and `git pull`s are never pinned
+on the agent.
+
+<Note>
+  If code moved with no doc or state artifact following, the gate **blocks once** with a
+  repair checklist as the reason. Every other case allows, and every internal error
+  allows (fail-open). `FORGE_STOPGATE=0` disables it.
+</Note>
+
+The repair checklist points at the tools that finish the work:
+
+```bash
+forge docs sync                      # sweep the diff for stale doc mentions
+forge handoff "<done>" --next "<next>"   # write the bounded session snapshot
+forge decide "<decision> — <reason>"     # record a choice so no session re-decides it
+```
+
+## Handoff and decisions
+
+Two stores keep knowledge across sessions:
+
+| Store               | Semantics                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| `.forge/state.md`   | A bounded **rewrite** (snapshot) — loader cost stays `O(bound)` forever.             |
+| `.forge/decisions.md` | Append-only **ADR-lite** (`D-####`) with a machine-readable decision ledger twin.  |
+
+Both refuse secrets at write. `state.md` is re-injected each session start;
+`decisions.md` is read before re-deciding anything a past session settled.
+
+```bash
+forge handoff "<what's done>" --next "<what's next>"
+forge decide "<decision> — <reason>"
+forge decide                 # read the log before re-deciding
+```
+
+## The diff-driven docs sweep
+
+`forge docs sync` answers the diff-shaped question: changed identifiers (paths,
+definitions, and called symbols, from added _and_ removed lines) swept against every doc
+artifact → UPDATED / STALE (with file:line hits) / VERIFIED-UNAFFECTED, with the reason
+recorded. It is a pure reporter; the completion gate provides the teeth.
+
+<Warning>
+  `recall` and `cortex` are file-and-prompt memory only — **not** weight-level learning.
+  Consolidation is a summarizer that can hallucinate, so it stays advisory,
+  human-reviewable, and secret-free.
+</Warning>

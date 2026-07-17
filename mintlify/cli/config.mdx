@@ -1,0 +1,91 @@
+---
+title: "Config commands"
+description: "Providers, cost, dashboards, brand, atlas, and stack: config, cost, dash, brand, atlas, stack — plus the v0.19+ report and tools commands."
+---
+
+The Config group covers providers, observability, the code graph, and stack detection.
+
+## `forge config`
+
+Provider setup — show / switch / add providers, set the default model.
+
+```bash
+forge config               # show current config
+forge config switch <provider>
+forge config add <provider>
+```
+
+## `forge cost`
+
+Real per-day spend via measured stage factors.
+
+```bash
+forge cost                 # real per-day spend
+forge cost --stages        # measured per-stage cost factors
+```
+
+<Note>
+  Reports **measured stages only** — a stage with no events says "no data", never a
+  default.
+</Note>
+
+## `forge dash`
+
+Local dashboard over the ledger, metrics, and blast radius.
+
+```bash
+forge dash                 # localhost-only, read-only (default port 4242)
+```
+
+## `forge brand`
+
+Print the active brand token map.
+
+```bash
+forge brand
+```
+
+The brand is stored as one token (`brand.json`); a rebrand is a single edit.
+
+## `forge atlas`
+
+Build / query the code graph.
+
+```bash
+forge atlas build [path]   # walk the tree → .forge/atlas.json
+forge atlas query "what calls Z"
+forge atlas has <symbol>   # hallucinated-symbol check
+```
+
+The atlas is plain JSON — any tool reads it, no MCP required.
+
+## `forge stack`
+
+Detect this repo's real stack from its manifests.
+
+```bash
+forge stack
+```
+
+Reads `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`,
+`composer.json`, `pom.xml` / `build.gradle`, and `*.csproj`, and reports languages,
+frameworks, package managers, and the repo's **actual** test commands — which feed the
+substrate's verification checklist.
+
+## `forge report` <sub>v0.19+</sub>
+
+Generate a static HTML report of the repo's Forge state — the ledger, metrics, and blast
+radius rendered to a self-contained file you can share or archive.
+
+```bash
+forge report
+```
+
+## `forge tools` <sub>v0.19+</sub>
+
+Select this repo's primary AI coding tool and wire the matching `.gitignore` entries, so
+generated config and `.forge/` artifacts are ignored correctly for your setup.
+
+```bash
+forge tools
+```

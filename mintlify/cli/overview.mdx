@@ -1,0 +1,61 @@
+---
+title: "CLI overview"
+description: "Every forge command, grouped by Core, Memory, Substrate, Quality, and Config — the command surface is data, reconciled against the docs by a strict drift check."
+---
+
+The `forge` command surface is defined as data (`src/commands.js`) and reconciled against
+the docs by `forge docs check`, so a command can't ship or disappear without the docs
+noticing. Commands are organized into five groups.
+
+<CardGroup cols={2}>
+  <Card title="Core" icon="gear" href="/cli/core">
+    Bootstrap and maintain: `init`, `sync`, `doctor`, `catalog`, `docs`, `update`.
+  </Card>
+  <Card title="Memory" icon="brain" href="/cli/memory">
+    Cross-session and team memory: `cortex`, `recall`, `remember`, `brain`, `ledger`,
+    `reuse`, `handoff`, `decide`.
+  </Card>
+  <Card title="Substrate" icon="diagram-project" href="/cli/substrate">
+    The pre-action gate and its stages: `substrate`, `preflight`, `route`, `impact`,
+    `scope`, `context`, `anchor`, `diagnose`, `imagine`, `lean`.
+  </Card>
+  <Card title="Quality" icon="shield-check" href="/cli/quality">
+    Verification and safety: `verify`, `scan`, `spec`, `taste`, `uicheck`, `harden`.
+  </Card>
+  <Card title="Config" icon="sliders" href="/cli/config">
+    Providers, cost, dashboards, brand, atlas, stack: `config`, `cost`, `dash`, `brand`,
+    `atlas`, `stack`.
+  </Card>
+</CardGroup>
+
+## Conventions
+
+- **Advisory by default.** Set `FORGE_ENFORCE=1` to turn the substrate into a hard block
+  on the strongest signals (vacuous prompt, un-assemblable required context, blast radius
+  over the default 25-file threshold).
+- **Quiet by default.** The per-command `Forge <cmd> — …` title is branding chrome behind
+  `--verbose` / `FORGE_VERBOSE`; a command emits its result first.
+- **Pipe-friendly output.** Plain text when piped; on a TTY it adds brand-palette color
+  and confidence meters. `NO_COLOR` turns color off, `FORCE_COLOR=1` forces it on.
+- **`--json`** is available on the substrate and most analysis commands for scripting.
+
+<Note>
+  Run `forge --help` for the always-current list, or `forge catalog` for the Start-Here
+  index of every tool, crew, and guard with a one-line why.
+</Note>
+
+## New in v0.19+
+
+Several commands and flags are landing in the v0.19 line. They are documented in their
+group pages and flagged inline:
+
+| Command / flag         | Group    | What it does                                    |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `forge know`           | Memory   | Route a fact to its correct storage home.       |
+| `forge deja`           | Memory   | Similar-past-work lookup.                       |
+| `forge precommit`      | Quality  | Commit-level verification gate.                 |
+| `forge radar`          | Quality  | Dependency-currency rings.                      |
+| `forge report`         | Config   | Static HTML report of the repo's Forge state.   |
+| `forge tools`          | Config   | Primary-tool selection + gitignore wiring.      |
+| `forge verify --deep`  | Quality  | Multi-lens consensus verification.              |
+| `forge update --to`    | Core     | Pin or downgrade to a specific version.         |

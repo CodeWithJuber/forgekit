@@ -1,0 +1,90 @@
+---
+title: "Verification gates"
+description: "Independent verification, the hallucinated-symbol flag, spec-as-contract, and the skill-gate — checks you can run that reduce, but never certify, correctness."
+---
+
+Nothing is "done" without a check you can run — a test, a build exit code, a screenshot.
+Forge's verification gates each add one more catch. With per-task miss rate `1 − p` and a
+gate catch rate `c`, silent misses fall to `(1 − p)(1 − c)`, and every gate here is one
+more `c`.
+
+<Warning>
+  **Verification reduces, does not certify.** Crew verifiers and the hallucinated-symbol
+  flag cut review burden; they do not prove the code correct. Tests and human
+  corrections always win.
+</Warning>
+
+## Independent verification — `forge verify`
+
+An independent gate: it runs the repo's real tests, flags hallucinated symbols, and
+checks provenance.
+
+```bash
+forge verify              # tests + hallucinated-symbol + provenance
+forge verify --deep       # multi-lens consensus — several independent checks must agree
+```
+
+<Note>
+  `--deep` (v0.19+) escalates to a multi-lens consensus: the change must clear several
+  independent verification lenses, not just one.
+</Note>
+
+## The hallucinated-symbol flag — `forge atlas has`
+
+`forge atlas has <symbol>` is the hallucination check: if the model calls a symbol that
+is not in the code graph, the gate flags it.
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas has useAuth    # "not found" = likely hallucinated
+```
+
+The atlas is plain JSON on purpose — Codex, Cursor, Gemini, and Aider read
+`.forge/atlas.json` via the CLI or plain `jq`, with no MCP dependency to consume.
+
+## Spec-as-contract — `forge spec`
+
+Pin behavior to a spec and detect drift from it:
+
+```bash
+forge spec init            # scaffold an OpenSpec contract
+forge spec lock            # lock the current spec as the contract
+forge spec check           # report drift against the locked contract
+```
+
+## The skill-gate — `forge scan`
+
+Before installing a skill or MCP server, vet it for injection, RCE, or exfiltration:
+
+```bash
+forge scan <path-to-SKILL.md-or-.mcp.json>
+```
+
+## Hardening — `forge harden`
+
+Wire the security controls that keep secrets and unsafe changes out:
+
+```bash
+forge harden               # gitleaks pre-commit + sandbox settings
+```
+
+## Commit-level gate — `forge precommit`
+
+<Note>
+  `forge precommit` (v0.19+) is a commit-level gate — it runs the verification floor at
+  commit time so partial or unverified work is caught before it lands.
+</Note>
+
+## UI checks — `forge uicheck`
+
+Deterministic UI checks, no LLM and no screenshots for the first three lenses:
+
+```bash
+forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
+forge uicheck fingerprint <file...>  # deterministic design fingerprint
+forge uicheck design <file...>       # slop-distance + conformance gate
+forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+```
+
+Pair it with `forge taste` to pick one visual direction (brutalist, corporate,
+editorial, minimalist, playful) and parameterize the `design` gate thresholds.

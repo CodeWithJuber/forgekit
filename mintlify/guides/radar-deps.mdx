@@ -1,0 +1,69 @@
+---
+title: "Keeping dependencies current with radar"
+description: "forge radar groups your dependencies into currency rings so stale or drifting dependencies surface before they bite."
+---
+
+<Note>
+  `forge radar` is landing in the v0.19 line. This guide describes how it fits the
+  existing dependency-currency discipline; run `forge --help` to confirm availability in
+  your installed version.
+</Note>
+
+One of Forge's engineering rules is: _before adding a dependency, verify the current best
+option from live sources, and prefer what the project already uses._ `forge radar` makes
+the standing state of your dependencies visible so that rule has data behind it.
+
+## The idea: currency rings
+
+`forge radar` groups the project's dependencies into concentric **currency rings** by how
+current each one is — from up-to-date at the center out to stale or drifting at the edge.
+Reading the rings is a fast way to answer "what have we let drift?" without auditing every
+package by hand.
+
+```bash
+forge radar
+```
+
+## Where the dependency list comes from
+
+Radar builds on the same manifest reading that powers `forge stack`, which detects the
+repo's real stack from its dependency manifests:
+
+```bash
+forge stack     # languages, frameworks, package managers, real test commands
+```
+
+Because detection is data-driven and fail-safe across ecosystems (`package.json`,
+`pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`, `pom.xml` /
+`build.gradle`, `*.csproj`), radar can reason about currency for the same set of manifests
+`stack` understands.
+
+## Using it in the loop
+
+<Steps>
+  <Step title="Check the rings before a dependency change">
+    Run `forge radar` to see which dependencies are already drifting before you add or
+    bump one.
+  </Step>
+  <Step title="Prefer what's already current">
+    If a capable, current dependency already sits in an inner ring, reuse it rather than
+    adding a new one — the smallest change that fits wins.
+  </Step>
+  <Step title="Record the decision">
+    When you do bump or replace a dependency, record why:
+    ```bash
+    forge decide "bump <dep> to <version> — <reason>"
+    ```
+    so a future session reads the choice instead of re-litigating it.
+  </Step>
+</Steps>
+
+<Warning>
+  Radar reports currency; it does not upgrade for you. Treat its rings as advisory input
+  to a human decision — and verify any bump with the repo's real tests
+  (`forge verify`) before calling it done.
+</Warning>
+
+<Card title="Verify the change" icon="arrow-right" href="/cli/quality">
+  After a dependency bump, run the Quality gates — `forge verify` and `forge precommit`.
+</Card>

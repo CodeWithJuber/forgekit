@@ -1,0 +1,76 @@
+---
+title: "Core commands"
+description: "Bootstrap and maintain a repo: init, sync, doctor, catalog, docs, and update."
+---
+
+The Core group bootstraps a repo and keeps it healthy.
+
+## `forge init`
+
+Scaffold this repo's config — emits every tool from one shared source.
+
+```bash
+forge init
+```
+
+Emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and the rest
+(plus MCP server config for Roo Code and VS Code), and the `.gitattributes` union-merge
+rule the ledger needs.
+
+## `forge sync`
+
+Recompile the canonical source into each tool's native config files.
+
+```bash
+forge sync
+```
+
+Idempotent — it only rewrites what changed. Run it after editing `source/rules.json` or a
+per-repo `.forge/rules.json`.
+
+## `forge doctor`
+
+Health-check installed tools, guards, MCP auth, and config drift.
+
+```bash
+forge doctor
+```
+
+Pass/fail across tools, guards, MCP wiring, config drift, and update status. Every path
+is fail-open. A **gateway models** row prints the resolved `tier → model` mapping when a
+custom gateway is configured.
+
+## `forge catalog`
+
+Start Here — list every tool, crew, and guard with a one-line why.
+
+```bash
+forge catalog
+```
+
+## `forge docs`
+
+Docs ↔ code drift.
+
+```bash
+forge docs check     # registry reconcile — commands, env vars, MCP tools, CHANGELOG
+forge docs sync      # diff-driven stale-docs sweep
+```
+
+<Note>
+  `docs check` fails CI when commands, env vars, MCP tools, or the CHANGELOG drift from
+  the code. `docs sync` sweeps the diff and reports UPDATED / STALE / VERIFIED-UNAFFECTED.
+</Note>
+
+## `forge update`
+
+Self-update across all three install modes.
+
+```bash
+forge update              # apply the update (git checkout or npm/copy install)
+forge update --check      # report whether a newer version is available
+forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
+```
+
+Every path is fail-open — offline, no upstream, or detached HEAD returns "unknown", never
+an error. `FORGE_NO_UPDATE_CHECK=1` silences the doctor notice.

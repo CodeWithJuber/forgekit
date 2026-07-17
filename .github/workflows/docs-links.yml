@@ -1,0 +1,32 @@
+name: docs-links
+
+# Advisory broken-link check for the Mintlify site. Runs only on PRs that touch the
+# mintlify/ folder. Non-blocking: the job reports findings but does not fail the PR
+# (continue-on-error), so a transient link check never gates a merge. Mintlify deploys
+# via its GitHub App, not from CI — there is intentionally no deploy workflow here.
+
+on:
+  pull_request:
+    paths:
+      - "mintlify/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  broken-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check internal links
+        working-directory: mintlify
+        continue-on-error: true
+        run: npx --yes mintlify broken-links
