@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,7 @@ import {
   ratify,
   readEvidence,
   reindex,
+  repoLedger,
   stats,
   tombstone,
   verify,
@@ -31,7 +33,12 @@ import {
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-ledger-"));
 const fact = (name, text, t = 0) =>
-  mintClaim({ kind: "fact", body: { name, text }, provenance: { author: "tester" }, t }).claim;
+  mintClaim({
+    kind: "fact",
+    body: { name, text },
+    provenance: { author: "tester" },
+    t,
+  }).claim;
 const ev = (result, ref, t = 0) => outcomeRecord({ oracle: "test.run", result, ref, t }).outcome;
 
 test("putClaim/loadClaims: roundtrip; rewrite of the same claim is a no-op", () => {
@@ -104,7 +111,12 @@ test("appendEvidence: appends, dedupes by hash, requires the claim to exist and 
   assert.equal(readEvidence(dir, c.id).length, 1);
   assert.equal(appendEvidence(dir, "f".repeat(64), o).ok, false, "evidence for a ghost claim");
   assert.equal(
-    appendEvidence(dir, c.id, { oracle: "made.up", result: "confirm", ref: "x", h: "y" }).ok,
+    appendEvidence(dir, c.id, {
+      oracle: "made.up",
+      result: "confirm",
+      ref: "x",
+      h: "y",
+    }).ok,
     false,
     "unknown oracle rejected at the store boundary too",
   );
@@ -146,7 +158,14 @@ test("verify: catches forged evidence — wrong content hash, unknown oracle, in
     '{"author":"","h":"deadbeef","oracle":"test.run","ref":"x","result":"confirm","t":0,"w":0.8}',
     // correctly sealed record naming an oracle that doesn't exist
     JSON.stringify(
-      sealRecord({ author: "", oracle: "made.up", ref: "x", result: "confirm", t: 0, w: 1 }),
+      sealRecord({
+        author: "",
+        oracle: "made.up",
+        ref: "x",
+        result: "confirm",
+        t: 0,
+        w: 1,
+      }),
     ),
   ].join("\n");
   writeFileSync(logPath, `${readFileSync(logPath, "utf8")}${forged}\n`);
@@ -306,8 +325,13 @@ test("blame: full accountability view — mints, evidence, retractions, per-auth
   appendEvidence(
     dir,
     c.id,
-    outcomeRecord({ oracle: "ci.run", result: "confirm", ref: "ci:42", author: "bob", t: 2 })
-      .outcome,
+    outcomeRecord({
+      oracle: "ci.run",
+      result: "confirm",
+      ref: "ci:42",
+      author: "bob",
+      t: 2,
+    }).outcome,
   );
   tombstone(dir, c.id, { reason: "superseded", t: 3, author: "carol" });
   const b = blame(dir, c.id.slice(0, 8), 3);
@@ -318,4 +342,42 @@ test("blame: full accountability view — mints, evidence, retractions, per-auth
   assert.ok(b.val > 0.5);
   assert.ok(b.trust.alice >= 0.5 && b.trust.alice <= 1);
   assert.equal(blame(dir, "zz", 3), null);
+});
+
+// ---------------------------------------------------------------------------
+// P0-10 — resolvable typed evidence refs: a git: ref must resolve in THIS repo.
+// ---------------------------------------------------------------------------
+
+test("appendEvidence: a git: ref is rejected unless the object exists in the repo", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ledger-git-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "f.txt"), "hello\n");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+
+  const dir = repoLedger(root); // <root>/.forge/ledger — repoRootOf() resolves back to root
+  const c = fact("build", "the git ref is real");
+  putClaim(dir, c);
+
+  // real HEAD sha resolves via `git cat-file -e` → accepted
+  const good = outcomeRecord({ oracle: "ci.run", result: "confirm", ref: `git:${head}` }).outcome;
+  assert.equal(appendEvidence(dir, c.id, good).ok, true, "resolvable HEAD sha accepted");
+
+  // a bogus sha does not resolve → rejected before it can affect confidence
+  const bogus = outcomeRecord({
+    oracle: "ci.run",
+    result: "confirm",
+    ref: `git:${"0".repeat(40)}`,
+  }).outcome;
+  const r = appendEvidence(dir, c.id, bogus);
+  assert.equal(r.ok, false, "unresolvable git sha rejected");
+  assert.match(r.reason, /unresolvable/);
+
+  // verify() also names the unresolvable ref if one slipped in
+  const store = verify(dir);
+  assert.equal(store.outcomes, 1, "only the resolvable outcome counts");
 });

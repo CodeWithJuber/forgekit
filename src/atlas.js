@@ -528,17 +528,31 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
   return atlas;
 }
 
-/** True if any tracked file's current content hash differs from the atlas (or a file vanished). */
+/**
+ * True if the atlas no longer reflects the repo: a tracked file changed or vanished,
+ * OR the current eligible-file inventory differs from the indexed one (a brand-new or
+ * removed eligible file). Inventory drift is invisible to a fileHashes-only scan — the
+ * new file isn't in the map — so it's re-walked here with build()'s OWN walk/eligibility
+ * (never a second extension list). Skipped when the graph was capped (files were dropped,
+ * so a size diff is expected, not staleness).
+ */
 export function isStale(root, atlas) {
   if (!atlas?.fileHashes) return true;
-  for (const [rel, h] of Object.entries(atlas.fileHashes)) {
+  const indexed = new Set(Object.keys(atlas.fileHashes));
+  for (const rel of indexed) {
     let text;
     try {
       text = readFileSync(join(root, rel), "utf8");
     } catch {
       return true; // a tracked file was deleted
     }
-    if (hash(text) !== h) return true;
+    if (hash(text) !== atlas.fileHashes[rel]) return true; // a tracked file changed
+  }
+  if (!atlas.capped) {
+    const current = [];
+    walk(root, current, 20000);
+    if (current.length !== indexed.size) return true; // a file was added or removed
+    for (const p of current) if (!indexed.has(relative(root, p))) return true;
   }
   return false;
 }

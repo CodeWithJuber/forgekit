@@ -60,14 +60,23 @@ test("claimId: provenance and evidence never affect the address (teammates conve
 });
 
 test("mintClaim: normalizes non-JSON values so different Dates can't collide on one id", () => {
-  const d1 = mintClaim({ kind: "fact", body: { name: "d", text: new Date(0) } });
-  const d2 = mintClaim({ kind: "fact", body: { name: "d", text: new Date(86400000) } });
+  const d1 = mintClaim({
+    kind: "fact",
+    body: { name: "d", text: new Date(0) },
+  });
+  const d2 = mintClaim({
+    kind: "fact",
+    body: { name: "d", text: new Date(86400000) },
+  });
   assert.ok(d1.ok && d2.ok);
   assert.notEqual(d1.claim.id, d2.claim.id, "Dates serialize to ISO strings, not {}");
 });
 
 test("mintClaim: refuses secrets, unknown kinds, and non-object bodies", () => {
-  const s = mintClaim({ kind: "fact", body: { name: "k", text: fakeAnthropic() } });
+  const s = mintClaim({
+    kind: "fact",
+    body: { name: "k", text: fakeAnthropic() },
+  });
   assert.equal(s.ok, false);
   assert.match(s.reason, /secret/);
   assert.equal(mintClaim({ kind: "nope", body: {} }).ok, false);
@@ -78,16 +87,50 @@ test("outcomeRecord: requires a known oracle, a valid result, and a verifiable r
   assert.equal(outcomeRecord({ oracle: "vibes", result: "confirm", ref: "r" }).ok, false);
   assert.equal(outcomeRecord({ oracle: "test.run", result: "maybe", ref: "r" }).ok, false);
   assert.equal(outcomeRecord({ oracle: "test.run", result: "confirm", ref: "" }).ok, false);
-  const ok = outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:1", t: 3 });
+  const ok = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: "run:1",
+    t: 3,
+  });
   assert.ok(ok.ok);
   assert.match(ok.outcome.h, /^[0-9a-f]{64}$/);
   assert.equal(ok.outcome.w, 0.8);
 });
 
+test("outcomeRecord: typed git ref is resolved; unresolvable is rejected, untyped is accepted", () => {
+  const resolveGit = (sha) => sha === "cafebabe"; // pretend only this object exists
+  // a git: ref whose object resolves is accepted
+  const good = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: "git:cafebabe",
+    resolveGit,
+  });
+  assert.ok(good.ok, "resolvable git ref accepted");
+  // a git: ref that does not resolve is rejected with a reason
+  const bad = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: "git:deadbeef",
+    resolveGit,
+  });
+  assert.equal(bad.ok, false, "unresolvable git ref rejected");
+  assert.match(bad.reason, /unresolvable/);
+  // a typed-but-empty ref is rejected on format
+  assert.equal(outcomeRecord({ oracle: "test.run", result: "confirm", ref: "git:" }).ok, false);
+  // an untyped/legacy ref is accepted unchanged (back-compat)
+  assert.ok(outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:1" }).ok);
+});
+
 // --- confidence: the decayed Beta posterior -----------------------------------------
 
 const mkClaim = (evidence = []) => {
-  const m = mintClaim({ kind: "fact", body: { name: "f", text: "body" }, t: 0 });
+  const m = mintClaim({
+    kind: "fact",
+    body: { name: "f", text: "body" },
+    t: 0,
+  });
   return { ...m.claim, evidence };
 };
 const ev = (result, t, oracle = "test.run") =>
@@ -104,7 +147,13 @@ test("val: monotone in confirmations (more independent evidence is never worse)"
   for (let n = 1; n <= 5; n++) {
     const outs = Array.from(
       { length: n },
-      (_, i) => outcomeRecord({ oracle: "ci.run", result: "confirm", ref: `r:${i}`, t: 0 }).outcome,
+      (_, i) =>
+        outcomeRecord({
+          oracle: "ci.run",
+          result: "confirm",
+          ref: `r:${i}`,
+          t: 0,
+        }).outcome,
     );
     const v = val(mkClaim(outs), 0);
     assert.ok(v > prev, `val(${n} confirms)=${v} must exceed ${prev}`);
@@ -200,7 +249,10 @@ test("claimText: every retrievable kind exposes its human text (not canonical JS
     },
   }).claim;
   assert.equal(claimText(lesson), "w c k s");
-  const fact = mintClaim({ kind: "fact", body: { name: "n", text: "t" } }).claim;
+  const fact = mintClaim({
+    kind: "fact",
+    body: { name: "n", text: "t" },
+  }).claim;
   assert.equal(claimText(fact), "n t");
   const diag = mintClaim({
     kind: "diagnosis",
@@ -217,10 +269,16 @@ test("clusters: near-duplicates group, distinct claims stay apart", () => {
     kind: "fact",
     body: { name: "note", text: `${long} is impossible` },
   }).claim;
-  const c2 = mintClaim({ kind: "fact", body: { name: "note", text: `${long} is unlikely` } }).claim;
+  const c2 = mintClaim({
+    kind: "fact",
+    body: { name: "note", text: `${long} is unlikely` },
+  }).claim;
   const c3 = mintClaim({
     kind: "fact",
-    body: { name: "note", text: "the deploy pipeline needs the staging flag set first" },
+    body: {
+      name: "note",
+      text: "the deploy pipeline needs the staging flag set first",
+    },
   }).claim;
   const groups = clusters([c1, c2, c3], { tau: 0.5 });
   assert.equal(groups.length, 1);
@@ -234,7 +292,10 @@ test("score: outcome-confirmed claims outrank merely-similar unconfirmed ones", 
   const confirmed = {
     ...mintClaim({
       kind: "fact",
-      body: { name: "a", text: "check callers before renaming a shared symbol" },
+      body: {
+        name: "a",
+        text: "check callers before renaming a shared symbol",
+      },
       t: 0,
     }).claim,
     evidence: [ev("confirm", 0), ev("confirm", 0, "human.accept")],
@@ -249,14 +310,20 @@ test("score: outcome-confirmed claims outrank merely-similar unconfirmed ones", 
 
 test("retrieve: excludes tombstoned and dormant claims, caps at budget", () => {
   const alive = mkClaim([ev("confirm", 0)]);
-  const dead = { ...mkClaim(), tombstone: { reason: "retracted", t: 0, author: "" } };
+  const dead = {
+    ...mkClaim(),
+    tombstone: { reason: "retracted", t: 0, author: "" },
+  };
   const dormant = mkClaim([
     ev("contradict", 0, "human.revert"),
     ev("contradict", 0, "human.accept"),
     ev("contradict", 0, "test.run"),
     ev("contradict", 0, "ci.run"),
   ]);
-  const out = retrieve("body", [alive, dead, dormant], { nowDay: 0, budget: 10 });
+  const out = retrieve("body", [alive, dead, dormant], {
+    nowDay: 0,
+    budget: 10,
+  });
   assert.deepEqual(
     out.map((r) => r.claim.id),
     [alive.id],
@@ -276,8 +343,16 @@ const state = (claims, evidence = {}, tombstones = {}, provenance = {}) => ({
 });
 
 test("mergeStates: commutative, associative, idempotent — replicas converge in any order", () => {
-  const c1 = mintClaim({ kind: "fact", body: { name: "1", text: "one" }, t: 1 }).claim;
-  const c2 = mintClaim({ kind: "fact", body: { name: "2", text: "two" }, t: 2 }).claim;
+  const c1 = mintClaim({
+    kind: "fact",
+    body: { name: "1", text: "one" },
+    t: 1,
+  }).claim;
+  const c2 = mintClaim({
+    kind: "fact",
+    body: { name: "2", text: "two" },
+    t: 2,
+  }).claim;
   const c3 = mintClaim({
     kind: "lesson",
     body: { whatWentWrong: "w", correctedBehavior: "c", trigger: {} },
@@ -307,7 +382,11 @@ test("mergeStates: commutative, associative, idempotent — replicas converge in
 });
 
 test("mergeStates: concurrent retractions both survive; the view picks one deterministically", () => {
-  const c = mintClaim({ kind: "fact", body: { name: "x", text: "y" }, t: 0 }).claim;
+  const c = mintClaim({
+    kind: "fact",
+    body: { name: "x", text: "y" },
+    t: 0,
+  }).claim;
   const sA = state([c], {}, { [c.id]: [tomb("wrong", 3, "alice")] });
   const sB = state([c], {}, { [c.id]: [tomb("stale", 2, "bob")] });
   const ab = mergeStates(sA, sB);
@@ -322,7 +401,11 @@ test("mergeStates: concurrent retractions both survive; the view picks one deter
 });
 
 test("mergeStates: evidence unions dedupe by hash; val is identical after any merge order", () => {
-  const c = mintClaim({ kind: "fact", body: { name: "x", text: "y" }, t: 0 }).claim;
+  const c = mintClaim({
+    kind: "fact",
+    body: { name: "x", text: "y" },
+    t: 0,
+  }).claim;
   const e1 = ev("confirm", 1);
   const e2 = ev("contradict", 2);
   const sA = state([c], { [c.id]: [e1] });
@@ -355,7 +438,10 @@ test("authorTrust: bootstrap 1.0, degrades with contradicted claims, floors at 0
     ...mint("b", "alice"),
     evidence: [out("confirm", "r1", "ci"), out("confirm", "r2", "ci")],
   };
-  const selfServing = { ...mint("c", "bob"), evidence: [out("confirm", "r3", "bob")] };
+  const selfServing = {
+    ...mint("c", "bob"),
+    evidence: [out("confirm", "r3", "bob")],
+  };
   const wrongOften = {
     ...mint("d", "carol"),
     evidence: Array.from({ length: 20 }, (_, i) => out("contradict", `r${i}`, "ci")),
@@ -370,8 +456,13 @@ test("authorTrust: bootstrap 1.0, degrades with contradicted claims, floors at 0
 
 test("val with trust: a distrusted author's evidence moves confidence less", () => {
   const claim = mkClaim([
-    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "r", author: "carol", t: 0 })
-      .outcome,
+    outcomeRecord({
+      oracle: "test.run",
+      result: "confirm",
+      ref: "r",
+      author: "carol",
+      t: 0,
+    }).outcome,
   ]);
   const flat = val(claim, 0);
   const weighted = val(claim, 0, { trust: { carol: 0.5 } });

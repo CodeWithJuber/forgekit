@@ -4,6 +4,7 @@
 // claim — evidence, provenance, tombstones — that git union-merges without conflicts
 // (`forge init` emits the .gitattributes rule). Everything author- or time-varying is
 // a log line; nothing on disk is ever edited in place.
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -13,7 +14,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   authorTrust,
   canonicalize,
@@ -28,6 +29,7 @@ import {
   sealRecord,
   sortRecords,
   val,
+  validateRef,
   validOutcome,
 } from "./ledger.js";
 
@@ -41,6 +43,25 @@ export const GITATTRIBUTES_RULE = [
   "# PCM ledger logs are hash-deduped append-only sets - union merge is conflict-free (forge)",
   ".forge/ledger/*/*.log merge=union",
 ].join("\n");
+
+// A ledger lives at <root>/.forge/ledger, so the repo root is two levels up — the cwd a
+// `git:` evidence ref must resolve against.
+const repoRootOf = (dir) => dirname(dirname(dir));
+
+// `git:` ref resolver: the object must exist in THIS repo (`git cat-file -e <sha>`), a non-zero
+// exit → unresolvable. Only ever invoked by validateRef for git-typed refs, so non-git refs
+// (and non-git repos) never spawn git.
+const gitResolver = (root) => (sha) => {
+  try {
+    execFileSync("git", ["cat-file", "-e", sha], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const LOGS = ["evidence", "provenance", "tombstones"];
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
@@ -100,7 +121,12 @@ function* walkClaimFiles(dir) {
       const parsed = readJson(path);
       // Verify the address: a tampered/corrupt claim is surfaced as claim:null.
       const valid = parsed && claimId(parsed.kind, parsed.body, parsed.scope) === id;
-      yield { id, path, raw: readFileSync(path, "utf8"), claim: valid ? { ...parsed, id } : null };
+      yield {
+        id,
+        path,
+        raw: readFileSync(path, "utf8"),
+        claim: valid ? { ...parsed, id } : null,
+      };
     }
   }
 }
@@ -114,10 +140,16 @@ function* walkClaimFiles(dir) {
  */
 export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
-    return { ok: false, reason: "claim id does not match canonical content hash" };
+    return {
+      ok: false,
+      reason: "claim id does not match canonical content hash",
+    };
   const text = claimBytes(claim);
   if (hasSecret(text))
-    return { ok: false, reason: "refused: claim looks like it contains a secret/credential" };
+    return {
+      ok: false,
+      reason: "refused: claim looks like it contains a secret/credential",
+    };
   const path = claimPath(dir, claim.id);
   const already = existsSync(path);
   const healthy = already && readJson(path) !== null && readFileSync(path, "utf8") === text;
@@ -129,9 +161,15 @@ export function putClaim(dir, claim) {
   return { ok: true, id: claim.id, existed: already && healthy };
 }
 
-/** Append one evidence outcome (deduped by its content hash — append is idempotent). */
+/** Append one evidence outcome (deduped by its content hash — append is idempotent). A typed,
+ *  unresolvable ref (e.g. a `git:` sha absent from this repo) is REJECTED here, before it can
+ *  reach val() and buy confidence. */
 export function appendEvidence(dir, id, outcome) {
   if (!validOutcome(outcome)) return { ok: false, reason: "invalid outcome (use outcomeRecord)" };
+  const v = validateRef(outcome.ref, {
+    resolveGit: gitResolver(repoRootOf(dir)),
+  });
+  if (!v.ok) return { ok: false, reason: v.reason ?? "unresolvable evidence ref" };
   return appendRecord(dir, "evidence", id, outcome);
 }
 
@@ -166,10 +204,23 @@ export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
     provenance: { agent: "dash", author },
     t,
   });
-  if (!minted.ok) return { ok: false, reason: "reason" in minted ? minted.reason : "mint failed" };
+  if (!minted.ok)
+    return {
+      ok: false,
+      reason: "reason" in minted ? minted.reason : "mint failed",
+    };
   const put = putClaim(dir, minted.claim);
-  if (!put.ok) return { ok: false, reason: put.reason ?? "could not persist the decision claim" };
-  return { ok: true, decisionId: minted.claim.id, ratifies: target.id, existed: put.existed };
+  if (!put.ok)
+    return {
+      ok: false,
+      reason: put.reason ?? "could not persist the decision claim",
+    };
+  return {
+    ok: true,
+    decisionId: minted.claim.id,
+    ratifies: target.id,
+    existed: put.existed,
+  };
 }
 
 /** Load the full ledger state {claims, evidence, provenance, tombstones}. */
@@ -289,6 +340,7 @@ export function verify(dir) {
   let claims = 0;
   let outcomes = 0;
   const ids = [];
+  const resolveGit = gitResolver(repoRootOf(dir));
   for (const { id, raw, claim } of walkClaimFiles(dir)) {
     if (!claim) issues.push(`claim ${id}: unparseable or id mismatch`);
     else {
@@ -320,7 +372,13 @@ export function verify(dir) {
           if (!validOutcome(o)) issues.push(`${where}: invalid outcome (oracle/result/ref)`);
           else if (o.w !== ORACLES[o.oracle].w)
             issues.push(`${where}: recorded weight ${o.w} != oracle table ${ORACLES[o.oracle].w}`);
-          else outcomes++;
+          else {
+            // Typed, unresolvable refs (e.g. a `git:` sha absent from this repo) are named
+            // so CI catches evidence that can never be re-derived.
+            const v = validateRef(o.ref, { resolveGit });
+            if (!v.ok) issues.push(`${where}: ${v.reason ?? "unresolvable evidence ref"}`);
+            else outcomes++;
+          }
         }
         if (hasSecret(line)) issues.push(`${where}: secret-like content`);
       }

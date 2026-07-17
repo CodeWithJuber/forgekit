@@ -140,21 +140,65 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
   };
 }
 
+// Typed evidence refs are `<type>:<value>`. Only these types are recognized; anything
+// else (or a ref with no `type:` prefix) is treated as an untyped/legacy ref and accepted
+// unchanged for back-compat. `git:` is the one type forge can cheaply AND soundly resolve —
+// the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is supplied;
+// the rest are format-checked (a non-empty value) since resolving them is not cheap/sound.
+export const REF_TYPES = new Set(["git", "file", "test", "ci", "human"]);
+
+/** Parse a typed ref into {type, value}, or null for an untyped/legacy ref. */
+export function parseRef(ref) {
+  const m = /^([a-z]+):(.*)$/.exec(String(ref ?? ""));
+  if (!m || !REF_TYPES.has(m[1])) return null;
+  return { type: m[1], value: m[2] };
+}
+
+/**
+ * Validate an evidence ref. Untyped/legacy → accepted. Typed-but-empty → rejected.
+ * `git:` → resolved through the injected `resolveGit(sha)` predicate (execFileSync lives in
+ * the impure store, keeping this module pure); a git ref that does not resolve is rejected.
+ * @param {string} ref
+ * @param {{resolveGit?: (sha:string)=>boolean}} [opts]
+ * @returns {{ok: boolean, reason?: string}}
+ */
+export function validateRef(ref, { resolveGit } = {}) {
+  const parsed = parseRef(ref);
+  if (!parsed) return { ok: true }; // untyped/legacy — kept for back-compat
+  if (!parsed.value) return { ok: false, reason: `evidence ref "${ref}" is typed but empty` };
+  if (parsed.type === "git" && typeof resolveGit === "function" && !resolveGit(parsed.value))
+    return {
+      ok: false,
+      reason: `evidence ref "${ref}" is unresolvable (no such git object)`,
+    };
+  return { ok: true };
+}
+
 /**
  * Build an evidence outcome. Evidence without a verifiable ref (commit SHA, test-run
- * id, episode id, CI URL) is rejected — "the model said so" is not evidence. The
- * oracle's table weight is recorded for audit, but val() re-reads the table.
- * @param {{oracle:string, result:"confirm"|"contradict", ref:string, author?:string, t?:number}} f
+ * id, episode id, CI URL) is rejected — "the model said so" is not evidence. A typed ref
+ * (`git:`/`file:`/`test:`/`ci:`/`human:`) is validated; a `git:` ref is resolved when a
+ * `resolveGit` predicate is supplied. The oracle's table weight is recorded for audit,
+ * but val() re-reads the table.
+ * @param {{oracle:string, result:"confirm"|"contradict", ref:string, author?:string, t?:number, resolveGit?:(sha:string)=>boolean}} f
  * @returns {{ok:true, outcome:any}|{ok:false, reason:string}}
  */
-export function outcomeRecord({ oracle, result, ref, author = "", t = 0 }) {
+export function outcomeRecord({ oracle, result, ref, author = "", t = 0, resolveGit }) {
   const o = ORACLES[oracle];
   if (!o) return { ok: false, reason: `unknown oracle: ${oracle}` };
   if (result !== "confirm" && result !== "contradict")
-    return { ok: false, reason: `result must be confirm|contradict, got: ${result}` };
+    return {
+      ok: false,
+      reason: `result must be confirm|contradict, got: ${result}`,
+    };
   if (!ref || typeof ref !== "string")
     return { ok: false, reason: "evidence requires a verifiable ref" };
-  return { ok: true, outcome: sealRecord({ author, oracle, ref, result, t, w: o.w }) };
+  const v = validateRef(ref, { resolveGit });
+  if (!v.ok) return { ok: false, reason: v.reason ?? "invalid evidence ref" };
+  return {
+    ok: true,
+    outcome: sealRecord({ author, oracle, ref, result, t, w: o.w }),
+  };
 }
 
 /** An evidence record val() will count: known oracle, valid result, a ref, a hash. */
@@ -375,7 +419,10 @@ export function retrieve(
   const boundSim = sim ? (_qs, c) => sim(q, c) : undefined;
   return claims
     .filter((c) => !c.tombstone && !isDormant(c, nowDay))
-    .map((c) => ({ claim: c, score: score(qs, c, { nowDay, weights, sim: boundSim }) }))
+    .map((c) => ({
+      claim: c,
+      score: score(qs, c, { nowDay, weights, sim: boundSim }),
+    }))
     .sort((a, b) => b.score - a.score || (a.claim.id < b.claim.id ? -1 : 1))
     .slice(0, budget);
 }
