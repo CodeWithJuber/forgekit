@@ -1,14 +1,16 @@
 // forge consensus — multi-lens verification (`verify --deep`). Where plain `verify`
 // asks one oracle (the project's tests) plus one heuristic (unknown symbols), this
 // module runs a LENSES table of independent checks and aggregates them exactly the
-// way lessons.js scores mistakes: noisy-OR P(defect) = 1 − ∏(1 − wᵢsᵢ) with a
-// cross-family gate (≥2 evidence families, or a solo-trusted lens) so a pile of
-// correlated structural signals can never block on its own.
+// way lessons.js scores mistakes: a noisy-OR defect risk score (heuristic), p = 1 −
+// ∏(1 − wᵢsᵢ) — the field is `p` — with a cross-family gate (≥2 evidence families, or a
+// solo-trusted lens) so a pile of correlated structural signals can never block on its
+// own. `p` is a calibrated heuristic, NOT a proof or a measured defect probability.
 //
-// Mizan (weighed judgment): the verdict ships WITH its evidence. Every lens reports
-// whether it ran and what it saw, and the Theorem-D residual ∏ⱼ(1 − cⱼ) over the
-// lenses that actually ran states how much silent-miss probability remains even on
-// PASS — a green light is a measured claim, never a vibe. The reviewer lens (LLM
+// Mizan (weighed judgment — a philosophical/ethical framing, not a technical guarantee):
+// the verdict ships WITH its evidence. Every lens reports whether it ran and what it saw,
+// and the remaining-unchecked-weight bound ∏ⱼ(1 − cⱼ) over the lenses that actually ran
+// (the field is `residual`) states how much silent-miss weight remains even on PASS — a
+// green light is an evidenced heuristic claim, never a vibe, and never a proof. The reviewer lens (LLM
 // majority-of-N) is opt-in, fail-safe, and can never block alone: it is a proposer
 // in the adjudicate.js sense, one voice among deterministic checks.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -51,10 +53,12 @@ export const BLOCK_THRESHOLD = 0.5;
 /**
  * Aggregate lens events — byte-for-byte the scoreMistake shape (lessons.js):
  * noisy-OR over firing lenses (bounded in [0,1), so many weak signals can't fake
- * one strong one) + the cross-family gate. `residual` is the Theorem-D term
- * ∏ⱼ(1 − cⱼ) over every lens that RAN (firing or clean): what a PASS still misses.
+ * one strong one) + the cross-family gate. `p` is the defect risk score (heuristic).
+ * `residual` is the remaining-unchecked-weight bound ∏ⱼ(1 − cⱼ) over every lens that
+ * RAN (firing or clean): the share of silent-miss weight a PASS still leaves uncovered.
  * @param {LensEvent[]} events
  * @returns {{p:number, fires:boolean, families:string[], residual:number, block:boolean}}
+ *   `p` = defect risk score (heuristic); `residual` = remaining unchecked weight.
  */
 export function aggregate(events) {
   const ran = (events ?? []).filter((e) => e && LENSES[e.lens] && e.ran !== false);

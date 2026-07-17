@@ -7,9 +7,11 @@ description: "Forge is the cognitive substrate every stateless model is missing 
 context window, wiped every call. It has no memory of what your team learned, no
 foresight about what an edit will break, and no enforced guardrails. Forge
 (`@codewithjuber/forgekit`) is the **cognitive substrate** — the layer that runs
-_before_ the model edits code, supplying proof-carrying memory, impact foresight, and
-enforced guardrails — and a **cross-tool config compiler** that delivers that brain as
-native config into every tool at once.
+_before_ the model edits code, supplying evidence-referenced, content-addressed memory (we
+call it "proof-carrying memory"), heuristic impact foresight, and enforced guardrails — and
+a **cross-tool config compiler** that delivers that brain as native config into every tool
+at once. Claude Code is the deepest-tested integration; the others receive native config and
+MCP tools with less real-world exercise.
 
 <CardGroup cols={3}>
   <Card title="Memory" icon="brain">
@@ -69,8 +71,10 @@ state between calls; Forge is the state.
 ## What you get
 
 - **Memory that persists across sessions and teammates.** Every lesson, fact, and
-  verified reuse is _proof-carrying memory (PCM)_ — a claim trusted only once independent
-  oracles raise its confidence above a floor.
+  verified reuse is _proof-carrying memory (PCM)_ — our name for evidence-referenced,
+  content-addressed memory: a claim that carries references to its evidence and is trusted
+  only once independent oracles raise its confidence above a floor. The "proof" is that
+  evidence trail, not a formal proof.
 - **Foresight before you break things.** Ask "what does changing `verifyToken` break?"
   and get the blast radius from the code graph, including coupled files you never named.
 - **Guardrails that can't be forgotten.** Deterministic hooks enforce protected paths,

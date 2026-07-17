@@ -160,7 +160,7 @@ export function ambiguityMarkers(text) {
   return [...new Set(out)];
 }
 
-// M2 completeness model — a logistic (log-odds) estimator of specification completeness s(x),
+// M2 completeness model — a logistic (log-odds) specification completeness heuristic score s(x),
 // replacing the older additive scorer whose magic coefficients + discontinuous word-count steps
 // the audit flagged as "graded-but-uncalibrated". Each feature contributes a signed amount to the
 // log-odds and the sigmoid maps the sum to [0,1] — so the estimate is smooth (no step jumps),
@@ -198,7 +198,12 @@ export function completenessFeatures(task) {
   };
 }
 
-/** Completeness s(x) ∈ (0,1) as a logistic over the feature vector. */
+/**
+ * Specification completeness heuristic score s(x) ∈ (0,1) — a logistic over the feature
+ * vector. It is a calibrated heuristic that reframes how completely a task is specified;
+ * it is NOT a probability that the task is sufficiently specified, and carries no
+ * empirical guarantee. Only the numeric scale is [0,1].
+ */
 export function completenessScore(features, weights = COMPLETENESS_WEIGHTS) {
   const z =
     weights.bias +

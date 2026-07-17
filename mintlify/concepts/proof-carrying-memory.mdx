@@ -8,6 +8,13 @@ _claim_ that carries its own evidence. It is trusted only once independent oracl
 (tests, CI, a human accept/revert) raise its confidence above a floor. A wrong lesson
 decays out instead of ossifying.
 
+<Note>
+  "Proof-carrying memory" is our name for **evidence-referenced, content-addressed
+  memory** — a claim addressed by the hash of its content and linked to the oracle
+  outcomes that back it. The "proof" is that evidence trail plus the confidence rule, **not
+  a formal machine-checked proof**; there is no theorem prover in the loop.
+</Note>
+
 ## One store, many writers
 
 All memory subsystems converge on one store. `recall`, `remember`/`brain`, `cortex`
