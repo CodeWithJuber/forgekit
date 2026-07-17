@@ -1468,8 +1468,13 @@ async function run(argv) {
       console.log(JSON.stringify(rec, null, 2));
     } else {
       heading(`${BRAND.brand} route — cheapest capable model\n`);
+      const { priceOf } = await import("./model_tiers.js");
+      const price = priceOf(rec.key) || {
+        inCost: rec.model.inCost,
+        outCost: rec.model.outCost,
+      };
       console.log(
-        `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+        `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${price.inCost}/$${price.outCost} per M tok, current effective)`,
       );
       console.log(`    ${rec.model.use}`);
       console.log(

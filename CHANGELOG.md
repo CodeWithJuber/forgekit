@@ -39,6 +39,14 @@ init` wires only forge's own server. New `forge integrations` command adds an op
   verifier ran), drives real test commands off the stack detector, and includes untracked
   files in provenance (P0-09). Ledger evidence refs are validated — a typed `git:<sha>`
   ref must resolve before it can affect confidence (P0-10).
+- **Effective-date pricing.** Model prices support scheduled `{effectiveFrom,
+effectiveUntil}` windows resolved by `priceOf(model, date)`; Sonnet 5 now carries its
+  $2/$10 introductory rate (through 2026-08-31) and the $3/$15 successor, and `forge route`
+  shows the current effective price (P0-12).
+- **Release integrity.** A reusable `quality-gate` workflow (tests, Biome, typecheck,
+  ShellCheck, zero-dep assertion, version-drift, docs check, `npm pack`) is now required by
+  CI, the version bump, and the release — a tag/publish can no longer proceed on `npm test`
+  alone while other gates fail (P0-11).
 - **Honest claims & wording.** Dropped scanner "ok to install" certification language
   (S-01); renamed `P(defect)`→`defectRiskScore` and `residual`→`remainingUncheckedWeight`
   in output; reframed the preflight score as a heuristic; qualified "proof-carrying
