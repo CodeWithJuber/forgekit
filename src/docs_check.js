@@ -10,14 +10,20 @@ import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { TOOLS } from "./mcp_tools.js";
-import { MODELS } from "./model_tiers.js";
+import { allPricePairs } from "./model_tiers.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
 const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
 
 // Env vars read in src that are NOT user-facing contract: child-process plumbing and
 // values injected by host tools rather than set by users.
-const INTERNAL_ENV = new Set(["_FORGE_LLM_KEY", "FORGE_EMBED_KEY", "CLAUDE_PLUGIN_ROOT"]);
+const INTERNAL_ENV = new Set([
+  "_FORGE_LLM_KEY",
+  "FORGE_EMBED_KEY",
+  "CLAUDE_PLUGIN_ROOT",
+  // Standard XDG base-dir var forge honors for its state home — not forge's own surface.
+  "XDG_STATE_HOME",
+]);
 
 // Prefixes that mark an env var as OURS to document. A doc may freely mention other
 // tools' vars (GITHUB_TOKEN, PATH) — those aren't claims about forge's own surface.
@@ -278,13 +284,15 @@ function checkChangelog(root, issues) {
  * (the actual failure mode: a figure that went stale to a value the table no longer has).
  */
 function checkModelTiers(docs, issues) {
-  const models = Object.values(MODELS);
+  // Accept any price across flat + scheduled windows so a documented intro/standard rate
+  // (effective-date pricing, P0-12) isn't mis-flagged as stale.
+  const pairs = allPricePairs();
   const PRICE_RE = /\$(\d+)\/\$(\d+)\s*per\s*M\s*tok/gi;
   for (const [file, text] of Object.entries(docs)) {
     for (const m of text.matchAll(PRICE_RE)) {
       const inC = Number(m[1]);
       const outC = Number(m[2]);
-      if (!models.some((mo) => mo.inCost === inC && mo.outCost === outC)) {
+      if (!pairs.some((p) => p.inCost === inC && p.outCost === outC)) {
         issues.push({
           check: "model-tiers",
           severity: "error",

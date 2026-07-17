@@ -36,6 +36,24 @@ test("re-running is idempotent (nothing rewritten)", () => {
   assert.equal(written.length, 0, `second sync wrote ${written.map((r) => r.target)}`);
 });
 
+test("a hand-edited managed body (marker intact) is detected and restored", () => {
+  const root = fixture();
+  sync({ targetRoot: root });
+  const agents = join(root, "AGENTS.md");
+  const original = readFileSync(agents, "utf8");
+  // Tamper with the body but keep the forge:sync marker line untouched.
+  const tampered = original.replace(/## Workflow/, "## Workflow\n- SNEAKY injected rule");
+  assert.notEqual(tampered, original, "tampering changed the body");
+  writeFileSync(agents, tampered);
+  const second = sync({ targetRoot: root });
+  const wrote = second.report.filter((r) => r.action === "written").map((r) => r.target);
+  assert.ok(
+    wrote.some((t) => t.includes("AGENTS.md")),
+    "sync must rewrite a body-edited AGENTS.md, not trust the intact marker",
+  );
+  assert.equal(readFileSync(agents, "utf8"), original, "canonical body restored");
+});
+
 test("adopts an existing unmanaged CLAUDE.md: prepends @AGENTS.md, preserves content, idempotent", () => {
   const root = fixture();
   writeFileSync(join(root, "CLAUDE.md"), "# my own claude file\nkeep me\n");
@@ -69,4 +87,31 @@ test("per-repo .forge/rules.json extends the shared source", () => {
   );
   sync({ targetRoot: root });
   assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /## ProjectX/);
+});
+
+test("minimal profile emits only the core-safety section (P1-02)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), JSON.stringify({ profile: "minimal" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Core safety/, "core-safety present");
+  assert.doesNotMatch(md, /## AI interfaces & design quality/, "full pack sections dropped");
+});
+
+test("config disableSections drops a named section; config.rules appends (P1-03)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge/forge.config.json"),
+    JSON.stringify({
+      disableSections: ["ai-ux"],
+      rules: [{ title: "ProjectY", rules: ["custom rule"] }],
+    }),
+  );
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.doesNotMatch(md, /## AI interfaces & design quality/, "disabled section dropped");
+  assert.match(md, /## ProjectY/, "config.rules appended");
+  assert.match(md, /## Workflow/, "other sections preserved");
 });

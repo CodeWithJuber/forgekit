@@ -39,6 +39,19 @@ if [ -n "${cmd:-}" ]; then
     *"git push --force"*|*"git push -f"*) deny "force-push blocked. Ask the user first." ;;
     *"DROP TABLE"*|*"DROP DATABASE"*|*"TRUNCATE "*) deny "destructive SQL detected. Confirm with the user." ;;
   esac
+  # Close the Bash secret-READ bypass (P0-04): the Read tool denies .env/keys, but a shell
+  # `cat .env` / `git show HEAD:.env` sidesteps that. Match a reader command anchored to a
+  # real command boundary (start, or after ; | &) so prose inside a quoted arg (a commit
+  # message mentioning ".env") isn't a false positive, AND require a protected path token.
+  # Best-effort defence in depth — a content scan like `rg TOKEN .` with no named path can't
+  # be caught here; that's what secret-redact.sh is for.
+  reader='(^|[;&|])[[:space:]]*((cat|less|more|head|tail|nl|xxd|od|strings|base64|rg|grep|ag)[[:space:]]|git[[:space:]]+(show|log)[[:space:]])'
+  # \b anchors the extensions so `.key` matches a real key file but NOT `Object.keys`,
+  # and `.env` matches `.env`/`.env.prod` but NOT `.environment`.
+  secret='(\.env(\.[A-Za-z0-9_-]+)?\b|id_rsa\b|id_ed25519\b|\.pem\b|\.key\b|/secrets/|/\.ssh/)'
+  if printf '%s' "$cmd" | grep -qE "$reader" && printf '%s' "$cmd" | grep -qE "$secret"; then
+    deny "reading a protected secret path via Bash is blocked. Read it yourself if intended."
+  fi
   # Pipe-to-shell (e.g. curl … | sh). Boundary-aware so legit `… | shellcheck` is not caught.
   if [[ "$cmd" =~ \|[[:space:]]*(sh|bash|zsh)([[:space:]]|$) ]]; then
     deny "piping content to a shell is blocked."

@@ -1,0 +1,36 @@
+# The single quality gate required before merge, tag, AND npm publish (P0-11). CI, the
+# version bump, and the release all call this reusable workflow, so a release can no longer
+# ship on `npm test` alone while lint/typecheck/shellcheck/docs/pack quietly fail — every
+# path runs the exact same checks from one source of truth.
+name: Quality gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Full quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the docs CHANGELOG check compares src vs CHANGELOG.md commit times
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm audit --audit-level=critical
+      - name: ShellCheck
+        run: shellcheck --severity=error $(git ls-files '*.sh')
+      - name: Assert zero runtime dependencies
+        run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
+      - run: node scripts/bump.mjs check
+      - run: node src/cli.js docs check
+      - run: npm pack --dry-run

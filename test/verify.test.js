@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { extractCalledSymbols, findUnknownSymbols } from "../src/verify.js";
+import { extractCalledSymbols, findUnknownSymbols, verify } from "../src/verify.js";
+
+const gitRepo = () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-verify-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  return root;
+};
 
 test("extractCalledSymbols finds call sites, skips methods and builtins", () => {
   const src = [
@@ -50,15 +63,28 @@ test("checkpointCadence computes n* = ceil(checkCost / (pErr·tokensPerStep·cos
   assert.equal(checkpointCadence({ pErr: 0.05, tokensPerStep: 200, checkCost: 105 }), 11);
   // costPerToken scales the at-risk side
   assert.equal(
-    checkpointCadence({ pErr: 0.05, tokensPerStep: 200, costPerToken: 2, checkCost: 100 }),
+    checkpointCadence({
+      pErr: 0.05,
+      tokensPerStep: 200,
+      costPerToken: 2,
+      checkCost: 100,
+    }),
     5,
   );
 });
 
 test("checkpointCadence: riskier (cheaper) tiers checkpoint more often", async () => {
   const { checkpointCadence } = await import("../src/verify.js");
-  const haiku = checkpointCadence({ pErr: 0.2, tokensPerStep: 500, checkCost: 400 });
-  const opus = checkpointCadence({ pErr: 0.01, tokensPerStep: 500, checkCost: 400 });
+  const haiku = checkpointCadence({
+    pErr: 0.2,
+    tokensPerStep: 500,
+    checkCost: 400,
+  });
+  const opus = checkpointCadence({
+    pErr: 0.01,
+    tokensPerStep: 500,
+    checkCost: 400,
+  });
   assert.ok(haiku < opus, `higher hazard → smaller n* (${haiku} < ${opus})`);
 });
 
@@ -75,4 +101,26 @@ test("checkpointCadence fails safe on degenerate inputs (check every step)", asy
   const { checkpointCadence } = await import("../src/verify.js");
   assert.equal(checkpointCadence({ pErr: Number.NaN, tokensPerStep: 100, checkCost: 100 }), 1);
   assert.equal(checkpointCadence({ pErr: 0, tokensPerStep: 100, checkCost: 0 }), 1);
+});
+
+// ---------------------------------------------------------------------------
+// P0-09 — evidence-aware verdict: NOT_CONFIGURED (never ok) and untracked provenance.
+// ---------------------------------------------------------------------------
+
+test("verify: a repo with no test runner is NOT_CONFIGURED and NOT ok (nothing ran)", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "a.js"), "export function f(){ return 1 }\n");
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "NOT_CONFIGURED", "no runner detected");
+  assert.equal(r.tests.ran, false);
+  assert.equal(r.ok, false, "nothing ran must never be ok:true");
+});
+
+test("verify: an untracked source file appears in provenance (changedFiles + untracked)", () => {
+  const root = gitRepo();
+  // untracked (never `git add`ed) — invisible to `git diff`, but part of the change.
+  writeFileSync(join(root, "brand_new.js"), "export function shipped(){ return 2 }\n");
+  const r = verify({ targetRoot: root });
+  assert.ok(r.changedFiles.includes("brand_new.js"), "untracked file in changedFiles");
+  assert.ok(r.provenance.untracked.includes("brand_new.js"), "untracked file in provenance stamp");
 });

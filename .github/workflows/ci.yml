@@ -1,6 +1,7 @@
-# CI gate for every push and PR: test matrix (Node 20/22 — matches the ">=20" engines
-# field; 18 is EOL), Biome lint+format, ShellCheck, the zero-runtime-dependency assertion,
-# the version-drift guard, and dependency review. All must pass to merge.
+# CI gate for every push and PR: the Node 20/22 test matrix (matches the ">=20" engines
+# field; 18 is EOL) plus the shared quality gate (Biome, typecheck, ShellCheck, zero-dep
+# assertion, version-drift, docs-drift, pack). The quality gate is the SAME reusable workflow
+# the version bump and release require, so none of the three can drift from the others.
 name: CI
 
 on:
@@ -28,59 +29,9 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  lint:
-    name: Lint & format (Biome)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run typecheck
-      - run: npm audit --audit-level=critical
-
-  shellcheck:
-    name: ShellCheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # Fail only on errors; the guards trip style/warning false-positives (e.g. SC2034 on
-      # vars used cross-file via the sourced _guardlib.sh).
-      - run: shellcheck --severity=error $(git ls-files '*.sh')
-
-  no-runtime-deps:
-    name: Assert zero runtime dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
-      - run: npm pack --dry-run
-
-  version-drift:
-    name: Version fields agree
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # package.json, package-lock.json, .claude-plugin/plugin.json, .codex-plugin/plugin.json,
-      # and CITATION.cff must all carry the same version (scripts/bump.mjs keeps them in sync).
-      - run: node scripts/bump.mjs check
-
-  docs-drift:
-    name: Docs match code
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # the CHANGELOG check compares src vs CHANGELOG.md commit times
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-      # Commands, env vars, MCP tools, and CHANGELOG reconciled against the code —
-      # a feature can't merge with its docs missing (src/docs_check.js).
-      - run: node src/cli.js docs check
+  quality-gate:
+    name: Quality gate
+    uses: ./.github/workflows/reusable-quality-gate.yml
 
   dependency-review:
     name: Dependency review

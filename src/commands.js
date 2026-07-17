@@ -78,7 +78,7 @@ export const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
   ledger:
-    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
+    "evidence-referenced memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
@@ -101,36 +101,41 @@ export const COMMANDS = {
   report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
+  integrations:
+    "opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with --yes",
 };
 
+// Groups order the --help surface from the stable reliability loop down to experiments.
+// "Labs" is the audit's P1-01 signal: those commands are experimental, not part of the
+// core loop — grouped here so new users see the load-bearing beams first (nothing is
+// removed; the full surface still ships).
 export const GROUPS = {
-  Core: ["init", "sync", "doctor", "tools", "catalog", "docs", "update"],
-  Memory: [
-    "cortex",
-    "deja",
-    "recall",
-    "remember",
-    "brain",
-    "ledger",
-    "reuse",
-    "handoff",
-    "decide",
-    "know",
-  ],
+  Core: ["init", "sync", "doctor", "tools", "catalog", "docs", "update", "config"],
   Substrate: [
     "substrate",
     "preflight",
-    "route",
     "impact",
     "scope",
     "context",
-    "anchor",
-    "diagnose",
+    "route",
+    "verify",
+    "precommit",
+  ],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
+  Quality: ["scan", "spec", "harden", "radar"],
+  Config: ["brand", "atlas", "stack", "integrations", "cost"],
+  "Labs (experimental)": [
+    "taste",
+    "uicheck",
     "imagine",
     "lean",
+    "anchor",
+    "diagnose",
+    "dash",
+    "report",
+    "deja",
+    "reuse",
   ],
-  Quality: ["verify", "precommit", "radar", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "report", "brand", "atlas", "stack"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

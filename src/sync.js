@@ -34,12 +34,56 @@ export function assemble(rules) {
   return `${out.join("\n").trimEnd()}\n`;
 }
 
+// The `minimal` profile: only the five non-negotiable safety rules, for repos that don't
+// want forge's full engineering-philosophy pack imposed on an existing architecture (P1-02).
+const MINIMAL_SECTION = {
+  id: "core-safety",
+  title: "Core safety",
+  rules: [
+    "Never expose or write secrets, tokens, or keys into code, commits, or output.",
+    "Inspect the surrounding code before editing; match the existing conventions.",
+    "Verify before claiming completion — run tests/build/lint and show the command + output.",
+    "Respect the repository's existing architecture and conventions over any default.",
+    "Ask before destructive or irreversible actions (rm -rf, history rewrite, prod changes).",
+  ],
+};
+
+/** Read the optional per-repo config (`.forge/forge.config.json`). Invalid JSON is ignored
+ *  (fail-open) so a typo can't break `forge sync`. */
+export function loadConfig(targetRoot) {
+  const p = join(targetRoot, ".forge/forge.config.json");
+  if (!existsSync(p)) return {};
+  try {
+    const cfg = JSON.parse(readFileSync(p, "utf8"));
+    return cfg && typeof cfg === "object" ? cfg : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Resolve the rule set for a repo with explicit, deterministic override semantics (P1-03):
+ *   1. profile — `minimal` replaces the pack with the core-safety section; otherwise the
+ *      full source pack.
+ *   2. disableSections — drop sections by id or title.
+ *   3. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
+ */
 function loadRules(targetRoot) {
+  const cfg = loadConfig(targetRoot);
   const base = JSON.parse(readFileSync(join(BRAND.root, "source/rules.json"), "utf8"));
+  if (cfg.profile === "minimal") {
+    base.sections = [MINIMAL_SECTION];
+  } else if (Array.isArray(cfg.disableSections) && cfg.disableSections.length) {
+    const drop = new Set(cfg.disableSections);
+    base.sections = (base.sections || []).filter((s) => !drop.has(s.id) && !drop.has(s.title));
+  }
   const override = join(targetRoot, ".forge/rules.json");
   if (existsSync(override)) {
     const extra = JSON.parse(readFileSync(override, "utf8"));
     base.sections = [...(base.sections || []), ...(extra.sections || [])];
+  }
+  if (Array.isArray(cfg.rules) && cfg.rules.length) {
+    base.sections = [...(base.sections || []), ...cfg.rules];
   }
   return base;
 }

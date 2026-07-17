@@ -6,6 +6,73 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed (audit remediation)
+
+- **Onboarding & state safety.** `forge init` no longer silently replaces a
+  present-but-unparseable `~/.claude/settings.json` (it refuses and preserves the
+  original), backs the file up before changing it, and writes atomically
+  (temp + rename). Hook/statusline commands now resolve to the installed package
+  (`~/.forge/…` → `<pkg>/global/…`) so npm-global installs don't reference an
+  unmaterialized `~/.forge`. Personal recall moved to the XDG state dir instead of
+  the source tree; `install.sh` separates read-only assets from mutable state,
+  migrates any `global/recall/facts`, and no longer routes path ops through `eval`.
+- **Security defaults.** Removed broad default Bash read allows
+  (`cat`/`head`/`tail`/`rg`/`git show`/`git log`) so secret-file reads prompt
+  instead of auto-approving, and moved dependency installs (`npm ci`/`npm install`/…)
+  to `ask`. `protect-paths` now blocks reading a protected path via Bash
+  (e.g. `cat .env`, `git show HEAD:.env`). Secret redaction is reimplemented in Node
+  (`secret-redact.mjs`) with no `jq` dependency and prints a visible DEGRADED warning
+  rather than silently no-op'ing; `forge doctor` treats missing `node` as a failure.
+- **Managed-file integrity.** `writeIfChanged` and `forge doctor` now compare the full
+  file body against the canonical source instead of trusting the embedded `forge:sync`
+  marker, so a hand-edited managed file (`AGENTS.md`, etc.) with an intact marker is
+  detected and restored on `forge sync` (P0-08).
+- **Third-party MCP is opt-in.** `context7` is no longer installed by default; `forge
+init` wires only forge's own server. New `forge integrations` command adds an optional
+  server (e.g. `context7`) after showing its package, network behaviour, and the files it
+  touches, writing only with `--yes` (P0-06). MCP emitters now refresh a drifted
+  forge-owned entry instead of leaving a stale one (user servers untouched).
+- **Core correctness.** Atlas staleness is inventory-aware (a new/removed file now
+  invalidates the graph), and `forge impact`/`substrate` report "impact unavailable" on a
+  stale/missing atlas instead of presenting 0 impacted files as trustworthy (P0-07).
+  `forge verify` returns `PASS | FAIL | INCOMPLETE | NOT_CONFIGURED` (never "pass" when no
+  verifier ran), drives real test commands off the stack detector, and includes untracked
+  files in provenance (P0-09). Ledger evidence refs are validated — a typed `git:<sha>`
+  ref must resolve before it can affect confidence (P0-10).
+- **Effective-date pricing.** Model prices support scheduled `{effectiveFrom,
+effectiveUntil}` windows resolved by `priceOf(model, date)`; Sonnet 5 now carries its
+  $2/$10 introductory rate (through 2026-08-31) and the $3/$15 successor, and `forge route`
+  shows the current effective price (P0-12).
+- **Release integrity.** A reusable `quality-gate` workflow (tests, Biome, typecheck,
+  ShellCheck, zero-dep assertion, version-drift, docs check, `npm pack`) is now required by
+  CI, the version bump, and the release — a tag/publish can no longer proceed on `npm test`
+  alone while other gates fail (P0-11).
+- **Honest claims & wording.** Dropped scanner "ok to install" certification language
+  (S-01); renamed `P(defect)`→`defectRiskScore` and `residual`→`remainingUncheckedWeight`
+  in output; reframed the preflight score as a heuristic; qualified "proof-carrying
+  memory" as evidence-referenced and "zero-config" as guided/low-configuration across the
+  docs; added a beta status block and per-benchmark sample sizes.
+
+### Added / changed (product)
+
+- **Policy profiles & repo config.** `forge init --profile minimal|standard|web-app|
+backend-service|library|regulated` writes `.forge/forge.config.json`; the `minimal`
+  profile emits only the five core-safety rules instead of the full engineering pack
+  (P1-02). `forge.config.json` gives explicit override semantics — `profile`,
+  `disableSections` (drop by id/title), and `rules` (append) with deterministic order
+  (P1-03).
+- **Change-obligation guidance.** The completion gate now spells out change-type
+  obligations (code → docs + a test, config → config docs; test-only owes nothing) so it
+  points at the right artifact instead of accepting any doc/state touch as done (P1-05).
+- **Subsystem health.** `forge doctor` reports each key subsystem (secret-redaction,
+  guards, atlas, managed-config, pricing) in a standard `ACTIVE|DEGRADED|UNAVAILABLE|
+FAILED` vocabulary so a degraded control stays visible (P1-06).
+- **Help grouping.** Experimental commands are grouped under "Labs (experimental)" in
+  `forge --help`, separating the core reliability loop from experiments (P1-01).
+- **UI rule.** Replaced the "make chain-of-thought visible" AI-UX rule with safe-rationale
+  guidance (assumptions, tool actions, sources, verification evidence — no hidden reasoning
+  traces) (P1-04).
+
 ## [0.21.1] - 2026-07-17
 
 ### Fixed

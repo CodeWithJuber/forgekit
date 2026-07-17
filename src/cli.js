@@ -109,22 +109,47 @@ async function run(argv) {
       }
       return;
     }
-    const { report, bytes, settings, detected } =
-      /** @type {{report: {action: string, target: string}[], bytes: number, settings: any, detected: any}} */ (
-        init({ targetRoot: process.cwd(), noSettings })
-      );
+    const profileIdx = argv.indexOf("--profile");
+    const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
+    const {
+      report,
+      bytes,
+      settings,
+      detected,
+      profile: profileResult,
+    } = /** @type {any} */ (
+      init({
+        targetRoot: process.cwd(),
+        noSettings,
+        profile,
+      })
+    );
+    if (profileResult?.error) {
+      console.error(`  ${profileResult.error}`);
+      process.exitCode = 1;
+      return;
+    }
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
-    if (settings?.action === "merged" && "added" in settings) {
-      console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+    if (profileResult?.profile) {
+      console.log(`  profile:  ${profileResult.profile} → .forge/forge.config.json`);
+    }
+    if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
+      const verb = settings.action === "created" ? "created" : "merged";
+      const what = settings.added.length ? settings.added.join(", ") : "defaults";
+      console.log(`  settings: ${verb} ${what} into ${settings.path}`);
+      if ("backup" in settings && settings.backup)
+        console.log(`            backup: ${settings.backup}`);
     } else if (settings?.action === "unchanged" && "path" in settings) {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
+    } else if (settings?.action === "error") {
+      console.log(`  settings: NOT written — ${settings.reason}`);
     }
     if (detected) {
       console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
@@ -314,12 +339,12 @@ async function run(argv) {
   if (cmd === "doctor") {
     const { doctor } = await import("./doctor.js");
     const fix = argv.includes("--fix");
-    const { results, failed, repairs } = doctor({
+    const { results, failed, repairs, health } = doctor({
       targetRoot: process.cwd(),
       fix,
     });
     if (argv.includes("--json")) {
-      console.log(JSON.stringify({ results, failed, repairs }, null, 2));
+      console.log(JSON.stringify({ results, failed, repairs, health }, null, 2));
       if (failed) process.exitCode = 1;
       return;
     }
@@ -342,6 +367,11 @@ async function run(argv) {
       }
     }
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
+    // Subsystem health in the standard vocabulary (P1-06) — a degraded control stays visible.
+    const healthLine = Object.entries(health)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("  ");
+    console.log(`\n  health: ${healthLine}`);
     console.log(
       `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
     );
@@ -381,6 +411,43 @@ async function run(argv) {
       console.log(`\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`);
       process.exitCode = 1;
     }
+    return;
+  }
+  if (cmd === "integrations") {
+    const { listIntegrations, planIntegration, addIntegration } = await import("./integrations.js");
+    const sub = argv[1];
+    if (sub === "add") {
+      const name = argv[2];
+      const plan = planIntegration(name);
+      if (!plan.ok) {
+        console.error(plan.reason);
+        process.exitCode = 1;
+        return;
+      }
+      if (!argv.includes("--yes")) {
+        heading(`${BRAND.brand} integrations — add ${name}\n`);
+        console.log(`  This adds a THIRD-PARTY MCP server to every detected tool's config:`);
+        console.log(`    package: ${plan.pkg}`);
+        console.log(`    network: ${plan.network}`);
+        console.log(`    purpose: ${plan.why}`);
+        console.log(`    writes:  .mcp.json, .cursor/mcp.json, .gemini/…, .codex/…, .continue/…`);
+        console.log(
+          `\n  Not installed. Re-run with --yes to apply:  ${BRAND.cli} integrations add ${name} --yes`,
+        );
+        return;
+      }
+      const res = addIntegration(name, { targetRoot: process.cwd() });
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      heading(`${BRAND.brand} integrations — add ${name}\n`);
+      console.log(`  added ${name} → ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+      return;
+    }
+    // Default: list what's available.
+    heading(`${BRAND.brand} integrations — opt-in third-party MCP servers\n`);
+    for (const it of listIntegrations()) {
+      console.log(`  ${it.name.padEnd(12)} ${it.why}  (${it.pkg})`);
+    }
+    console.log(`\n  Add one with:  ${BRAND.cli} integrations add <name>`);
     return;
   }
   if (cmd === "recall") {
@@ -901,7 +968,7 @@ async function run(argv) {
       console.log("  no obvious red flags");
     }
     console.log(
-      `\n  ${r.critical ? "BLOCKED — critical finding, do not install" : "ok to install"}`,
+      `\n  ${r.verdict || (r.critical ? "BLOCKED — critical finding" : "no critical signature detected — not a safety certification")}`,
     );
     if (r.critical) process.exitCode = 1;
     return;
@@ -940,11 +1007,13 @@ async function run(argv) {
         for (const f of r.findings) console.log(`  ! ${f}`);
       }
       console.log(
-        `\n  P(defect):  ${bar(r.p)} ${r.p.toFixed(2)}${
+        `\n  defectRiskScore:  ${bar(r.p)} ${r.p.toFixed(2)} (heuristic, not a calibrated probability)${
           r.families.length ? `  (families: ${r.families.join(", ")})` : ""
         }`,
       );
-      console.log(`  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`);
+      console.log(
+        `  remainingUncheckedWeight: ${r.residual.toFixed(3)} — Theorem-D silent-miss bound (heuristic)`,
+      );
       console.log(
         `\n  ${
           r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
@@ -1498,8 +1567,13 @@ async function run(argv) {
       console.log(JSON.stringify(rec, null, 2));
     } else {
       heading(`${BRAND.brand} route — cheapest capable model\n`);
+      const { priceOf } = await import("./model_tiers.js");
+      const price = priceOf(rec.key) || {
+        inCost: rec.model.inCost,
+        outCost: rec.model.outCost,
+      };
       console.log(
-        `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+        `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${price.inCost}/$${price.outCost} per M tok, current effective)`,
       );
       console.log(`    ${rec.model.use}`);
       console.log(

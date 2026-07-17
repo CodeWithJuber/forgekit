@@ -60,6 +60,15 @@ Before installing a skill or MCP server, vet it for injection, RCE, or exfiltrat
 forge scan <path-to-SKILL.md-or-.mcp.json>
 ```
 
+<Warning>
+  A clean scan is **not a safety certification.** The built-in heuristic only catches
+  known attack shapes (critical) and a few high-severity patterns; a pass means _"no
+  critical signature detected"_, not _"safe to install"_. Always review the source,
+  permissions, package provenance, and network behaviour yourself. A **high**-severity
+  finding is not marked safe even though it does not hard-block. The external scanner is
+  opt-in and runs no network call unless you enable it.
+</Warning>
+
 ## Hardening — `forge harden`
 
 Wire the security controls that keep secrets and unsafe changes out:

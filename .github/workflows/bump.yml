@@ -39,7 +39,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Never tag a tree that fails the FULL quality gate (not just tests) — P0-11.
+  gate:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):')
+    uses: ./.github/workflows/reusable-quality-gate.yml
+
   bump:
+    needs: gate
     runs-on: ubuntu-latest
     # Never react to our own release commit (belt-and-suspenders behind GitHub's recursion guard).
     if: >-
@@ -54,7 +62,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test # never tag a broken tree
       - name: Bump version fields + rotate CHANGELOG
         id: bump
         # On push, always "auto"; on manual dispatch, honor the chosen input.

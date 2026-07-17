@@ -15,7 +15,7 @@ import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
-import { extractHash, hashContent } from "./emit/_shared.js";
+import { hashContent, mdHeader } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
 import { ensureLedgerGitattributes, mergeSettings } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
@@ -65,13 +65,23 @@ function checkSettings(out, settingsPath) {
   });
 }
 
-// External tools the guards/commands depend on. jq is the important one — several guards
-// (secret-redact, protect-paths) degrade to a naive parse or a no-op without it.
+// External tools the guards/commands depend on. secret-redact now runs in Node (no jq),
+// so node is the security-critical dependency; jq only helps protect-paths parse more
+// precisely (it has a grep fallback either way).
 function checkTooling(out) {
+  // node powers secret redaction — its absence means tool output is NOT scanned for secrets.
+  out.push(
+    hasBin("node")
+      ? ok("node", "found — secret-redact scans tool output")
+      : fail(
+          "node",
+          "not found — secret-redact CANNOT run; tool output is NOT scanned for secrets",
+        ),
+  );
   out.push(
     hasBin("jq")
-      ? ok("jq", "found — guards parse hook JSON safely")
-      : warn("jq", "not found — secret-redact/protect-paths degrade without it; install jq"),
+      ? ok("jq", "found — protect-paths parses hook JSON precisely")
+      : warn("jq", "not found — protect-paths falls back to grep parsing (still enforced)"),
   );
   out.push(
     hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),
@@ -298,12 +308,18 @@ function checkDrift(out, targetRoot) {
     });
     return;
   }
-  const current = hashContent(canonical(targetRoot));
-  const onDisk = extractHash(readFileSync(agents, "utf8"));
+  // Compare the actual file to the full expected content, not just the embedded marker —
+  // a hand-edited body with an intact marker would otherwise report "in sync" (P0-08).
+  const body = canonical(targetRoot);
+  const expected = `${mdHeader(hashContent(body))}\n${body}\n`;
+  const actual = readFileSync(agents, "utf8");
   out.push(
-    current === onDisk
+    actual === expected
       ? ok("AGENTS.md", "in sync")
-      : { ...warn("AGENTS.md", "stale — run `forge sync`"), fix: syncFix },
+      : {
+          ...warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
+          fix: syncFix,
+        },
   );
 }
 
@@ -455,6 +471,36 @@ function checkUpdate(out) {
   } catch {}
 }
 
+// The important subsystems and the check label each derives its health from.
+const HEALTH_SUBSYSTEMS = {
+  "secret-redaction": "node", // secret-redact runs the JS redactor; no node → FAILED
+  guards: "guards exec",
+  atlas: "atlas",
+  "managed-config": "AGENTS.md",
+  pricing: "model pricing",
+};
+
+/**
+ * Standard subsystem-health vocabulary (P1-06): ACTIVE | DEGRADED | UNAVAILABLE | FAILED,
+ * derived from the SAME checks the report uses (no parallel source), so a degraded security
+ * or verification control is never invisible behind a green overall status.
+ * @param {Array<{status:string,label:string}>} results
+ */
+export function subsystemHealth(results) {
+  const state = (label) => {
+    const r = results.find((x) => x.label === label);
+    if (!r) return "UNAVAILABLE";
+    if (r.status === "fail") return "FAILED";
+    if (r.status === "warn") return "DEGRADED";
+    return "ACTIVE";
+  };
+  const health = {};
+  for (const [subsystem, label] of Object.entries(HEALTH_SUBSYSTEMS)) {
+    health[subsystem] = state(label);
+  }
+  return health;
+}
+
 function runChecks(targetRoot, settingsPath) {
   const results = [];
   checkNode(results);
@@ -511,5 +557,6 @@ export function doctor({ targetRoot = process.cwd(), fix = false, settingsPath }
     results,
     failed: results.filter((r) => r.status === "fail").length,
     repairs,
+    health: subsystemHealth(results),
   };
 }

@@ -4,9 +4,10 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
+import { detectStack } from "./stack.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -28,35 +29,70 @@ function git(args, cwd) {
   }
 }
 
-// Run the project's own tests (JS or Python). The gate trusts these, not a benchmark. Bounded by
-// a timeout (FORGE_VERIFY_TIMEOUT_MS, default 10 min) so a hanging test can't hang the gate — a
-// timeout is reported as an honest "did not complete", never as a pass.
+// Run the project's OWN tests, driven off the stack detector (never a benchmark). The verdict
+// is an honest four-state `status`:
+//   PASS           — a real verifier ran and passed
+//   FAIL           — a real verifier ran and failed
+//   NOT_CONFIGURED — no test runner exists for this repo (nothing ran → NEVER ok)
+//   INCOMPLETE     — a runner was expected but couldn't complete (timeout, or no concrete
+//                    executor for the detected command)
+// `ran`/`passed` are kept for back-compat (consensus.js reads them). Bounded by a timeout
+// (FORGE_VERIFY_TIMEOUT_MS, default 10 min) so a hanging test can't hang the gate.
+/**
+ * @typedef {object} VerifyTests
+ * @property {boolean} ran
+ * @property {boolean} [passed]
+ * @property {"PASS"|"FAIL"|"INCOMPLETE"|"NOT_CONFIGURED"} status
+ * @property {string} [runner]
+ * @property {boolean} [timedOut]
+ * @property {string[]} [detected]
+ * @property {string} [output]
+ */
+/**
+ * @param {string} cwd
+ * @returns {VerifyTests}
+ */
 function runTests(cwd) {
   const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || 600000;
   const run = (cmd, args) =>
     execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: "pipe", timeout });
+  // Detect the repo's real test commands (no test script → none → NOT_CONFIGURED, not a
+  // forced npm-test failure).
+  let detected = [];
   try {
-    if (existsSync(join(cwd, "package.json"))) {
+    detected = detectStack(cwd).testCommands;
+  } catch {}
+  if (!detected.length) return { ran: false, status: "NOT_CONFIGURED" };
+  // Concrete runners forge can actually execute. npm test is only real if a package.json exists.
+  const npm =
+    detected.some((c) => /(^|\s)(npm|pnpm|yarn|bun)\s+test\b/.test(c)) &&
+    existsSync(join(cwd, "package.json"));
+  const pytest = detected.some((c) => /\bpytest\b/.test(c));
+  try {
+    if (npm) {
       run("npm", ["test"]);
-      return { ran: true, passed: true, runner: "npm test" };
+      return { ran: true, passed: true, status: "PASS", runner: "npm test" };
     }
-    if (existsSync(join(cwd, "pyproject.toml")) || existsSync(join(cwd, "pytest.ini"))) {
+    if (pytest) {
       run("pytest", ["-q"]);
-      return { ran: true, passed: true, runner: "pytest" };
+      return { ran: true, passed: true, status: "PASS", runner: "pytest" };
     }
-    return { ran: false };
+    // A runner was detected but forge has no concrete executor for it — expected, didn't complete.
+    return { ran: false, status: "INCOMPLETE", detected };
   } catch (e) {
     if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
       return {
         ran: true,
         passed: false,
         timedOut: true,
+        status: "INCOMPLETE",
         output: `test run exceeded ${timeout}ms`,
       };
     }
     return {
       ran: true,
       passed: false,
+      status: "FAIL",
       output: String(e.stdout || e.message || "").slice(-600),
     };
   }
@@ -84,25 +120,49 @@ export function checkpointCadence({ pErr, tokensPerStep, costPerToken = 1, check
   return Math.min(50, Math.max(1, n)); // zero risk → Infinity → the 50-step ceiling
 }
 
+/**
+ * Independent verification pass over the working change.
+ * @param {{targetRoot?: string, base?: string}} [opts]
+ * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
+ *   changedFiles: string[], added: string}}
+ *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER
+ *   when nothing ran. `changedFiles` includes untracked files; `added` includes their contents.
+ */
 export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   const diff =
     git(["diff", "--unified=0", base], targetRoot) ||
     git(["diff", "--unified=0", "--cached"], targetRoot);
-  const added = diff
+  const diffAdded = diff
     .split("\n")
     .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
     .map((l) => l.slice(1))
     .join("\n");
-  // Mirror the diff's --cached fallback so the file list is derived from the SAME diff
-  // that produced `added` — otherwise a base whose worktree matches HEAD but whose index
-  // differs yields `added` from --cached while changedFiles stays empty, silently
-  // weakening the structural lenses (impact/docsdrift) that key off changedFiles.
-  const changedFiles = (
-    git(["diff", "--name-only", base], targetRoot) ||
-    git(["diff", "--name-only", "--cached"], targetRoot)
-  )
+  // Untracked (new, not-yet-added) files are part of the change too — a brand-new source file
+  // and its call sites would be invisible to `git diff`. Fold their paths into changedFiles and
+  // their contents into `added` so provenance and the hallucination check both see them (P0-09).
+  const untracked = git(["ls-files", "--others", "--exclude-standard"], targetRoot)
     .split("\n")
     .filter(Boolean);
+  // Mirror the diff's --cached fallback so the base file list is derived from the SAME diff that
+  // produced `added` (a base whose worktree matches HEAD but whose index differs would otherwise
+  // yield `added` from --cached while changedFiles stayed empty, weakening impact/docsdrift).
+  const changedFiles = [
+    ...new Set([
+      ...(
+        git(["diff", "--name-only", base], targetRoot) ||
+        git(["diff", "--name-only", "--cached"], targetRoot)
+      )
+        .split("\n")
+        .filter(Boolean),
+      ...untracked,
+    ]),
+  ];
+  let added = diffAdded;
+  for (const f of untracked) {
+    try {
+      added += `\n${readFileSync(join(targetRoot, f), "utf8")}`;
+    } catch {}
+  }
 
   // Verify runs AFTER edits — a cached, stale atlas would miss newly-added-but-undefined symbols
   // (false negatives) or flag just-defined ones (false positives). Rebuild when stale; the
@@ -118,6 +178,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   const provenance = {
     base,
     changedFiles,
+    untracked,
     tests,
     symbolsChecked: symbols.length,
     unknownSymbols: unknown,
@@ -125,9 +186,11 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
   writeFileSync(join(targetRoot, ".forge", "provenance.json"), JSON.stringify(provenance, null, 2));
 
-  // Hard gate = the project's own tests. Unknown symbols are advisory (heuristic).
-  const ok = tests.ran ? tests.passed === true : true;
-  // `added` (the raw added diff lines) rides along for the deep lenses (consensus.js:
-  // secrets + reviewer read the same bytes this pass already parsed — one diff, one truth).
+  // Hard gate = the project's own tests, keyed off the honest four-state verdict. `ok` is TRUE
+  // only when a real verifier PASSED — never when nothing ran (NOT_CONFIGURED/INCOMPLETE).
+  // Unknown symbols stay advisory (heuristic).
+  const ok = tests.status === "PASS";
+  // `added` (added diff lines + untracked file bodies) rides along for the deep lenses
+  // (consensus.js: secrets + reviewer read the same bytes this pass already parsed).
   return { ok, provenance, unknown, tests, changedFiles, added };
 }

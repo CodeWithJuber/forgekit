@@ -13,3 +13,8 @@ paths = [
   '''^research/formal-synthesis/graded_reference_set\.json$''',
   '''^research/formal-synthesis/merged_references\.json$''',
 ]
+# Obvious placeholder credentials used as test fixtures to exercise the secret
+# redactor/scanner — sequential-hex tokens that are unmistakably fake, not real secrets.
+regexes = [
+  '''ghp_0123456789abcdef0123456789abcdef0123''',
+]
