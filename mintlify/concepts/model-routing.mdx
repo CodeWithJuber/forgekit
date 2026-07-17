@@ -1,0 +1,81 @@
+---
+title: "Model routing"
+description: "A deterministic, diffable rubric picks the cheapest capable model tier before dispatch — with a fail-safe remap for self-hosted gateways."
+---
+
+Forge recommends the cheapest capable model for a task **before** dispatch, from a
+deterministic rubric you can read in the repo (`src/model_tiers.json`). Unlike a gateway
+that decides inside the proxy at request time, the routing decision is visible and
+diffable in git.
+
+## Recommend a tier — `forge route`
+
+```bash
+forge route "<task>"            # cheapest capable model tier for the task
+forge route gateway             # emit LiteLLM gateway config
+```
+
+The recommendation is exemplar k-NN math over a labeled bank (English + Hinglish rows)
+under an overlap-similarity metric with a confidence gate — not a keyword lookup.
+
+<Note>
+  Start at the recommended `route.tier` and escalate only after an external verifier
+  fails, never preemptively. This keeps spend down without capping capability when a task
+  genuinely needs it.
+</Note>
+
+## Intent, then tier
+
+Routing shares its math with intent detection (`src/intent.js`): a prompt maps to an
+intent by the same exemplar k-NN estimator. Note the two use different stop-sets — route
+treats generic verbs (`fix` / `add` / `build`) as complexity noise, but those verbs are
+exactly the intent signal.
+
+## The tier table
+
+The tier table (`src/model_tiers.json`) pins public Anthropic model IDs by family
+(haiku / sonnet / opus / fable). Doc prices are reconciled against this file by the docs
+check, so prose and the table can't drift.
+
+## Self-hosted gateway remap
+
+A self-hosted LiteLLM or proxy gateway serves its own model names, so a stock ID sent
+verbatim would 404. When a non-default gateway base URL is configured, Forge
+(`src/gateway_model_map.js`) fetches `GET /v1/models` **once per process** and scores
+each advertised id against every tier's family:
+
+<Steps>
+  <Step title="Hard family gate">
+    The family word (haiku / sonnet / opus / fable) must match — it is a hard gate.
+  </Step>
+  <Step title="Best overlap wins">
+    Among the family, the `setOverlap` coefficient of the tier's name tokens picks the
+    best match.
+  </Step>
+  <Step title="Tie-break to canonical">
+    Ties break toward the id closest to the canonical name.
+  </Step>
+</Steps>
+
+<Warning>
+  The remap consults the gateway **only** when the resolved id is a _stock_ ID — an
+  explicit `.forge/providers.json` alias or an `ANTHROPIC_MODEL` override is never
+  touched. It fails safe to the stock ID on no gateway, an unreachable `/v1/models`, or
+  no family match, so direct `api.anthropic.com` users are byte-identical.
+</Warning>
+
+`forge doctor`'s **gateway models** row prints the resolved `tier → model` mapping for
+verification.
+
+## Providers and cost
+
+```bash
+forge config               # show / switch / add providers, set the default model
+forge cost                 # real per-day spend
+forge cost --stages        # measured per-stage cost factors
+```
+
+<Note>
+  `forge cost --stages` reports **measured stages only** — a stage with no events says
+  "no data", never a default. A number is an assumption until measured.
+</Note>

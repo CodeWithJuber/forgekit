@@ -1,0 +1,129 @@
+---
+title: "Introduction"
+description: "Forge is the cognitive substrate every stateless model is missing — memory, foresight, and guardrails — delivered as native config to every AI coding agent."
+---
+
+**One brain for every AI coding agent.** A large language model is stateless: one
+context window, wiped every call. It has no memory of what your team learned, no
+foresight about what an edit will break, and no enforced guardrails. Forge
+(`@codewithjuber/forgekit`) is the **cognitive substrate** — the layer that runs
+_before_ the model edits code, supplying proof-carrying memory, impact foresight, and
+enforced guardrails — and a **cross-tool config compiler** that delivers that brain as
+native config into every tool at once.
+
+<CardGroup cols={3}>
+  <Card title="Memory" icon="brain">
+    Proof-carrying memory that persists across sessions and teammates. Every lesson,
+    fact, and verified reuse is a claim that carries its own evidence.
+  </Card>
+  <Card title="Foresight" icon="radar">
+    The blast radius of an edit — the set of files it is predicted to touch, read from
+    a code graph, including coupled files you never named.
+  </Card>
+  <Card title="Guardrails" icon="shield">
+    Deterministic hooks enforce the rules a model must never break. They survive a
+    context compaction the way prose in a config file does not.
+  </Card>
+</CardGroup>
+
+## The problem
+
+A large language model is stateless — one context window, wiped every call.
+
+- It has **no memory** of what your team already learned.
+- It has **no foresight** about what an edit will break.
+- It has **no enforced guardrails** — prose rules get forgotten after a compaction.
+
+And every tool wants its own config file (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`,
+`GEMINI.md`, MCP…). Forge is the cognitive substrate that supplies the three missing
+things, and the compiler that delivers it into every tool from one source.
+
+## The thesis
+
+A model can't learn from your codebase between calls: its weights are frozen and its
+working memory is wiped after every response. Memory, foresight, and self-checking
+can't be prompted into it — they have to be supplied from _outside_. That outside layer
+is the cognitive substrate. Formally, inference is a fixed function `y = f(x)` with no
+state between calls; Forge is the state.
+
+<Steps>
+  <Step title="Author once">
+    Write your rules and substrate defaults in one canonical source
+    (`source/rules.json`, `source/substrate.json`, `source/mcp.json`).
+  </Step>
+  <Step title="Compile everywhere">
+    `forge sync` compiles that source into each tool's native config — nine AI coding
+    tools plus MCP — with a content-hash header, so drift is detectable and re-running
+    is a no-op.
+  </Step>
+  <Step title="Gate every task">
+    `forge substrate "<task>"` runs one deterministic pre-action pass: assumptions,
+    routing, reuse, context, blast radius, scope, and goal anchor.
+  </Step>
+  <Step title="Learn from outcomes">
+    Only independent oracles — tests, CI, a human accept/revert — move a memory's
+    confidence, so a wrong lesson decays out instead of ossifying.
+  </Step>
+</Steps>
+
+## What you get
+
+- **Memory that persists across sessions and teammates.** Every lesson, fact, and
+  verified reuse is _proof-carrying memory (PCM)_ — a claim trusted only once independent
+  oracles raise its confidence above a floor.
+- **Foresight before you break things.** Ask "what does changing `verifyToken` break?"
+  and get the blast radius from the code graph, including coupled files you never named.
+- **Guardrails that can't be forgotten.** Deterministic hooks enforce protected paths,
+  cost budgets, and doom-loop detection — they survive a context compaction.
+- **Work that finishes end to end.** A completion gate blocks "done" once per session
+  when code moved but no doc or state artifact followed, with the repair checklist as
+  the answer.
+- **One config for 9 tools.** Author your rules once; Forge emits each tool's native
+  config, plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain
+  files in git, no server.
+
+## Which tools does Forge feed?
+
+Forge emits config for **nine tools**, plus an MCP server for Roo Code and VS Code:
+Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, and Continue.
+Each reads the same rules from its own native file.
+
+## Honest limits
+
+Forge states its own ceiling everywhere.
+
+<Warning>
+  Forge **reduces, does not eliminate** rule drift. It is a transparency and reliability
+  layer, not a replacement for tests, review, or judgement.
+</Warning>
+
+- **Guards enforce only what is expressible as a hook** (paths, format, diff-size,
+  budget). Semantic rules ("prefer functional") stay prose and will sometimes be ignored.
+- **Verification reduces, does not certify.** Crew verifiers and the hallucinated-symbol
+  flag cut review burden; they do not prove the code correct.
+- **No weight-level learning.** `recall` / `cortex` are file-and-prompt memory only — no
+  RL, no fine-tuning.
+- **The impact graph is regex-approximate** — conservative, not a sound call graph.
+- **Tests and human corrections always win.**
+
+<Note>
+  Forge is **beta**. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
+  is tested and in daily use; some flags may change before `1.0`.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install, run `forge init`, and pass your first task through the substrate.
+  </Card>
+  <Card title="Core concepts" icon="diagram-project" href="/concepts/config-compiler">
+    The four-layer compiler, proof-carrying memory, and the pre-action gate.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    Every command, grouped by Core, Memory, Substrate, Quality, and Config.
+  </Card>
+  <Card title="Team memory" icon="users" href="/guides/team-memory">
+    Fold a teammate's ledger in, conflict-free, over plain git.
+  </Card>
+</CardGroup>

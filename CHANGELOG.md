@@ -6,6 +6,89 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge know` — the A7 knowledge-router.** Total routing (formal-synthesis
+  Theorem T6) of any fact to its storage home: exemplar k-NN over a labeled bank
+  (`src/knowledge_router.js`) picks among claude-md / rule / skill / state /
+  decision / ledger-fact / recall; below-confidence facts fall back to the ledger
+  (provenance `fallback`) instead of being dropped. Append-only homes are written
+  directly (decide log, repo-ledger fact claim, personal recall store), curated
+  files get advice naming the right command, secrets are refused before dispatch,
+  and `--dry-run`/`--json` route without writing. Distilled Cortex lessons that
+  read like decisions or durable facts auto-route to those homes (fail-open).
+- **Commit-level gate rung (`forge precommit`).** The gate lattice's middle rung
+  (turn ⊂ commit ⊂ PR): `src/commit_gate.js` classifies staged files with the same
+  registry-derived classifier as the Stop gate (code staged with no doc/state artifact
+  → finding) and runs the built-in secret detector over staged added lines as a
+  gitleaks fallback. `FORGE_COMMIT_GATE` sets the mode (`warn` default · `block` ·
+  `0` kill switch); a detected secret blocks in every mode. `forge harden` now installs
+  a pre-commit hook that runs gitleaks when present, then the commit gate — and never
+  clobbers a user-authored hook (writes `pre-commit.forge` beside it instead).
+- **Pin/downgrade via `update --to <version>`.** New `applyUpdateTo` in
+  `src/update.js`: for a git checkout it fetches tags, verifies the release tag
+  exists (unknown version → honest miss, never a throw), and detached-checkouts
+  the tag with a note on how to return to latest; npm-global installs get the
+  exact `npm i -g <pkg>@<version>` instruction instead.
+- **Multi-lens verification consensus.** `forge verify --deep` (new `src/consensus.js`)
+  runs a LENSES table over the diff — tests, unknown symbols, unreviewed impact
+  radius, docs drift, secrets in added lines, spec-lock drift, plus an optional
+  `--llm` majority-of-3 reviewer panel — and aggregates noisy-OR
+  `P(defect)=1−∏(1−wᵢsᵢ)` with the same cross-family gate as the lesson miner: a
+  lone structural signal (or the model reviewer alone) never blocks; a failing test
+  suite or a leaked secret blocks solo. Findings extend `.forge/provenance.json`
+  with per-lens evidence and the Theorem-D residual `∏(1−cⱼ)` over the lenses that
+  ran, and each run appends one `stage:"verify"` metrics record.
+- **`forge radar` — dependency-currency rings (I4 verified currency).** New zero-dep
+  `src/radar.js` reads this repo's Node manifests, probes the registry (injectable
+  `fetchImpl`; metadata + bulk advisories; 4s timeout) and classifies every dependency
+  into an adopt/trial/assess/hold ring from _evidence_ — staleness (540-day half-life),
+  major-version lag, severity-weighted advisories, deprecation; atlas usage is stakes,
+  not risk. Deprecated or a critical advisory → `hold`; fewer than two verified evidence
+  kinds → `assess` (never adopt on absence). Cached at `.forge/radar.json`
+  (`FORGE_RADAR_TTL_H`, default 24h); `--offline` serves the stale cache or fails
+  honestly; `--refresh` re-probes; `--json` for tooling. A network scan records I4
+  evidence into the ledger (`currency:<dep>` facts, supersede semantics) plus a metrics
+  line, and the pre-edit hook surfaces a cache-only advisory when a file imports a `hold`
+  dependency (kill switch `FORGE_RADAR=0`).
+- **Cross-machine memory sync.** `forge ledger sync` push-pulls the PCM ledger through a
+  git ref (`refs/forge/ledger` via `hash-object`/`mktree`/`commit-tree` plumbing;
+  non-fast-forward races re-merge and retry ≤3 — monotone by the CRDT join, so nothing is
+  lost) or a shared directory (bidirectional union-merge; `FORGE_SYNC_DIR` is the default
+  dir target). Target precedence: `--dir` > `--remote`/`--ref` > the repo's git remote >
+  `FORGE_SYNC_DIR` > an honest "no target". `--personal` syncs the per-user ledger beside
+  the recall store, making recall facts portable across machines. Fails open (offline,
+  missing remote, or corrupt remote blob → an honest reason, never a throw); the git
+  runner is injectable so tests drive it with local bare remotes and never touch the
+  network.
+- **Anti-repetition memory (`forge deja`).** A first-try success mints no Cortex lesson,
+  so its trace used to be discarded when the session ended — the root of cross-session
+  repetition. Now every session Stop mints one `summary` claim (an existing ledger kind)
+  with a secret-redacted gist of the task and the files touched, attaching a `test.run`
+  confirm outcome when the session's own tests passed (so verified work outranks a mere
+  attempt). New `src/deja.js` `dejaLookup` ranks prior summaries/lessons/diagnoses via the
+  same Eq. 3 retrieval as `ledger query`; `forge deja "<task>"` surfaces them, and the
+  pre-action substrate shows a one-line "déjà vu" advisory when a prompt matches prior
+  solved work. Kill switch `FORGE_DEJA=0`. Because summaries are ordinary ledger claims,
+  `forge ledger merge` carries them between machines.
+- **Dashboard v2 (`forge dash`).** The localhost lens gains four panels over the
+  durable `.forge/` stores plus live refresh: Radar (dependency-currency rings read
+  from the `.forge/radar.json` cache — never fetches), Trends (per-stage
+  `metrics.jsonl` history bucketed by day as inline-SVG sparklines, 90-day window),
+  Memory browser (ranked recall search over the ledger via `retrieve`, with
+  confidence and freshness bars), and Session timeline (durable mint/tombstone events
+  across sessions). New read-only endpoints `GET /api/history`, `/api/claims?q=&kind=`,
+  `/api/radar`, and `/api/timeline`; the page polls every 5s, paused while the tab is
+  hidden. The append-only write discipline (only `POST /api/ratify` and `/api/retract`)
+  is unchanged, and corrupt or missing stores degrade to empty sections.
+- **Static HTML report (`forge report`).** New zero-dep `src/report.js` emits a
+  self-contained `.forge/report.html` — the offline twin of `forge dash` (no server, no
+  fetch, no CDN, no JS to read it). `renderReport` is pure and reuses `dashData`, buckets
+  `metrics.jsonl` into a 90-day activity sparkline (server-side inline SVG), reads the
+  `.forge/radar.json` cache directly and defensively (absent → the radar section is
+  omitted), and draws its palette from `rootTokensCss()` so it matches the dashboard.
+  `--out <path>` overrides the default location.
+
 ## [0.19.0] - 2026-07-17
 
 ### Added

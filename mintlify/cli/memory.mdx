@@ -1,0 +1,107 @@
+---
+title: "Memory commands"
+description: "Cross-session and team memory: cortex, recall, remember, brain, ledger, reuse, handoff, and decide — all converging on the proof-carrying ledger."
+---
+
+The Memory group manages cross-session and team memory. All of it converges on the
+proof-carrying ledger under `.forge/ledger/`. See
+[Proof-carrying memory](/concepts/proof-carrying-memory) for the model.
+
+## `forge cortex`
+
+Self-correcting project memory — lessons mined from corrections.
+
+```bash
+forge cortex status        # what's been learned
+forge cortex why <symbol>  # why a lesson applies here
+```
+
+## `forge recall`
+
+Manage cross-session personal memory.
+
+```bash
+forge recall list          # facts the recall-load guard injects next session
+forge recall add "db port" "Postgres is on 5433 here, not 5432"
+forge recall consolidate   # summarize (advisory, human-reviewable)
+```
+
+## `forge remember`
+
+Add a durable, repo-committable fact to this repo's portable memory.
+
+```bash
+forge remember "<fact>"
+```
+
+## `forge brain`
+
+Show or rebuild the portable project-memory index.
+
+```bash
+forge brain                # show the index
+forge brain --rebuild      # rebuild it
+```
+
+## `forge ledger`
+
+Proof-carrying memory — the content-addressed claim store.
+
+```bash
+forge ledger stats                 # what the repo knows, by kind and trust level
+forge ledger verify                # re-check claims are in normal form
+forge ledger show <id>             # a claim and its evidence
+forge ledger blame <id-prefix>     # who minted it, every oracle outcome, per-author trust
+forge ledger query "<text>"        # retrieve by relevance
+forge ledger ratify <id>           # human accept
+forge ledger retract <id>          # tombstone a claim
+forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
+forge ledger import                # bridge legacy stores into the ledger
+```
+
+Add `--personal` for the per-user ledger.
+
+## `forge reuse`
+
+Proof-carrying code cache — served only when its evidence still holds.
+
+```bash
+forge reuse query "<spec>"                 # verified code you already have
+forge reuse mint "<spec>" --file <path>    # add an artifact to the cache
+forge reuse stats                          # cache stats
+```
+
+## `forge handoff`
+
+Bounded session snapshot — rewrites `.forge/state.md`, re-injected each session start.
+
+```bash
+forge handoff "<what's done>" --next "<what's next>"
+```
+
+## `forge decide`
+
+Append-only decision log — `D-####` ADR-lite entries in `.forge/decisions.md`.
+
+```bash
+forge decide "<decision> — <reason>"
+forge decide                 # read the log before re-deciding
+```
+
+## `forge know` <sub>v0.19+</sub>
+
+Route a fact to its correct storage home — decides whether a piece of knowledge belongs
+in `recall`, `remember`/`brain`, a decision, or a cortex lesson, and files it there.
+
+```bash
+forge know "<fact>"
+```
+
+## `forge deja` <sub>v0.19+</sub>
+
+Similar-past-work lookup — surfaces prior work in the ledger that resembles what you're
+about to do, so you reuse the proof instead of regenerating.
+
+```bash
+forge deja "<what you're about to build>"
+```

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Forge",
+  "colors": {
+    "primary": "#f26430",
+    "light": "#f7a072",
+    "dark": "#ba4b1e"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": ["introduction", "quickstart", "installation"]
+          },
+          {
+            "group": "Core concepts",
+            "pages": [
+              "concepts/config-compiler",
+              "concepts/proof-carrying-memory",
+              "concepts/pre-action-gate",
+              "concepts/cross-session-memory",
+              "concepts/verification-gates",
+              "concepts/model-routing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI reference",
+        "icon": "terminal",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "cli/overview",
+              "cli/core",
+              "cli/memory",
+              "cli/substrate",
+              "cli/quality",
+              "cli/config"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "icon": "compass",
+        "groups": [
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/zero-config-onboarding",
+              "guides/team-memory",
+              "guides/radar-deps"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/CodeWithJuber/forgekit"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "https://github.com/CodeWithJuber/forgekit#start-in-60-seconds"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/CodeWithJuber/forgekit"
+    }
+  }
+}

@@ -107,3 +107,75 @@ export function applyUpdate({ root = BRAND.root } = {}) {
     };
   }
 }
+
+/**
+ * Pin or downgrade the live install to an exact released version. Git checkout:
+ * fetch tags (best-effort — the tag may already be local), verify the release tag
+ * exists, then a detached checkout with a note on how to get back to latest.
+ * npm/copy installs get the exact `npm i -g <pkg>@<version>` instruction instead.
+ * Never throws — a missing tag or a dirty tree is an honest `{ok:false, reason}`.
+ * @param {string} version - target version, with or without a leading "v"
+ * @param {{root?: string}} [opts]
+ * @returns {{ok:boolean, mode:string, tag?:string, changed?:boolean, before?:string,
+ *   after?:string, note?:string, instruction?:string, reason?:string, detail?:string}}
+ */
+export function applyUpdateTo(version, { root = BRAND.root } = {}) {
+  const want = String(version ?? "")
+    .trim()
+    .replace(/^v/, "");
+  // Empty or flag-shaped (`--to --json`) input: fail before touching git at all.
+  if (!want || want.startsWith("-"))
+    return {
+      ok: false,
+      mode: "none",
+      reason: `missing version — usage: \`${BRAND.cli} update --to <version>\` (e.g. --to 0.17.0)`,
+    };
+  if (!isGitCheckout(root))
+    return {
+      ok: false,
+      mode: "npm-or-copy",
+      instruction: `npm install -g ${npmName(root)}@${want}`,
+      reason: "not a git checkout — pin via npm",
+    };
+  try {
+    execFileSync("git", ["fetch", "--tags", "--quiet"], {
+      cwd: root,
+      stdio: "ignore",
+      timeout: 8000,
+    });
+  } catch {} // offline / no remote is fine — the tag may already be local
+  // Release tags here are `vX.Y.Z`, but accept a bare `X.Y.Z` tag too.
+  const tag = [`v${want}`, want].find((t) =>
+    git(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${t}^{commit}`]),
+  );
+  if (!tag)
+    return {
+      ok: false,
+      mode: "git",
+      reason: `no release tag v${want} found (tags fetched) — see \`git tag\` for available versions`,
+    };
+  const before = git(root, ["rev-parse", "HEAD"]);
+  try {
+    execFileSync("git", ["checkout", "--quiet", "--detach", tag], {
+      cwd: root,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      mode: "git",
+      reason: "checkout failed (uncommitted changes?) — stash or commit, then retry",
+      detail: String(e.message || e).slice(-200),
+    };
+  }
+  const after = git(root, ["rev-parse", "HEAD"]);
+  return {
+    ok: true,
+    mode: "git",
+    tag,
+    changed: before !== after,
+    before: before.slice(0, 8),
+    after: after.slice(0, 8),
+    note: `detached at ${tag} — \`git checkout <branch>\` then \`${BRAND.cli} update\` returns to latest`,
+  };
+}

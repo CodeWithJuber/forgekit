@@ -1,0 +1,107 @@
+---
+title: "Quickstart"
+description: "Install Forge, emit every tool's config from one source, and run your first pre-action gate — in about 60 seconds."
+---
+
+Get from zero to a configured repo and your first substrate check in about a minute.
+
+## 1. Install
+
+<CodeGroup>
+
+```bash Plugin (Claude Code / Codex)
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+```bash npm (any tool)
+npm install -g @codewithjuber/forgekit
+```
+
+```bash No registry
+npm install -g github:CodeWithJuber/forgekit
+```
+
+</CodeGroup>
+
+The plugin path is recommended for Claude Code and Codex — the guards auto-wire and
+there is nothing to merge. See [Installation](/installation) for the full matrix,
+including the symlink dev setup.
+
+## 2. Configure a repo
+
+<Steps>
+  <Step title="Emit every tool's config">
+    ```bash
+    cd ~/your-project
+    forge init
+    ```
+    This emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and
+    the rest — plus the `.gitattributes` union-merge rule the ledger needs. Claude Code,
+    Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and Continue now read the
+    **same** rules, each from its own native file.
+  </Step>
+  <Step title="Health-check the setup">
+    ```bash
+    forge doctor
+    ```
+    A pass/fail check of installed tools, guards, MCP auth, and config drift.
+  </Step>
+  <Step title="Change a rule later">
+    Edit `source/rules.json` (or drop a per-repo `.forge/rules.json`), then recompile:
+    ```bash
+    forge sync
+    ```
+    `sync` is idempotent — it only rewrites what changed.
+  </Step>
+</Steps>
+
+## 3. Run the pre-action gate
+
+The substrate is the layer that runs _before_ the model edits code. One command runs
+the whole gate:
+
+```bash
+forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
+#   → assumption verdict · cheapest capable model · predicted blast radius
+#     (including files you didn't name) · scope clusters · verification checklist
+```
+
+<Note>
+  On Claude Code the substrate runs on **every prompt automatically** via a
+  `UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets
+  a native config rule plus 19 MCP tools it can call itself.
+</Note>
+
+If `forge substrate` says `ASK FIRST`, ask the returned questions before editing. Read
+the predicted impacted files — the blast radius — before any mutating change.
+
+```bash
+forge substrate "<task>" --json   # machine-readable verdict
+forge impact <symbol-or-file>     # the blast radius on its own
+```
+
+## 4. Explore the extras
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas query useAuth  # where is it defined? (cheaper than grep-and-read)
+forge atlas has useAuth    # does it exist? "not found" = likely hallucinated
+forge recall add "db port" "Postgres is on 5433 here, not 5432"
+forge catalog              # the Start-Here index of everything
+```
+
+## 5. Day two: the ledger is learning
+
+Everything the substrate learned on day one landed as claims in `.forge/ledger/`. This
+is proof-carrying memory — now it starts paying off:
+
+```bash
+forge ledger stats                              # what the repo knows, by kind and trust
+forge ledger blame <id-prefix>                  # who minted a claim, every oracle outcome
+forge reuse query "<what you're about to build>"  # verified code you already have
+```
+
+<Card title="Keep going" icon="arrow-right" href="/concepts/pre-action-gate">
+  Read how the pre-action gate composes its stages into one verdict.
+</Card>

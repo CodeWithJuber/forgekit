@@ -7,7 +7,7 @@ import { BRAND } from "./brand.js";
 import { COMMANDS, GROUPS } from "./commands.js";
 // Color is capability-gated (FORCE_COLOR > NO_COLOR > TERM=dumb > TTY) — piped
 // output stays byte-plain, so nothing downstream ever parses an escape code.
-import { bar, heading as fmtHeading, paint } from "./fmt.js";
+import { bar, heading as fmtHeading, paint, table } from "./fmt.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
@@ -79,8 +79,26 @@ async function run(argv) {
     return;
   }
   if (cmd === "update") {
-    const { applyUpdate, updateStatus } = await import("./update.js");
+    const { applyUpdate, applyUpdateTo, updateStatus } = await import("./update.js");
     const json = argv.includes("--json");
+    const toIdx = argv.indexOf("--to");
+    if (toIdx !== -1) {
+      const r = applyUpdateTo(argv[toIdx + 1], {});
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} update — pin\n`);
+      if (r.ok)
+        console.log(
+          r.changed
+            ? `  pinned ${r.before} → ${r.after} (${r.tag}). ${r.note}`
+            : `  already at ${r.tag}. ${r.note}`,
+        );
+      else if (r.instruction) console.log(`  ${r.reason}:\n    ${r.instruction}`);
+      else {
+        console.log(`  ${r.reason}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
     if (argv.includes("--check")) {
       const s = updateStatus({});
       if (json) return console.log(JSON.stringify(s, null, 2));
@@ -129,6 +147,56 @@ async function run(argv) {
     row("tools", s.tools);
     row("notes", s.notes);
     console.log(`  ${"evidence:".padEnd(11)} ${s.evidence.join(", ")}`);
+    return;
+  }
+  if (cmd === "radar") {
+    // Dependency-currency rings from live registry evidence (mizan — every ring ships its
+    // evidence; missing evidence never upgrades a dep). Injectable/cached/offline-honest.
+    const { radarScan } = await import("./radar.js");
+    const offline = argv.includes("--offline");
+    const refresh = argv.includes("--refresh");
+    const r = await radarScan(process.cwd(), { offline, refresh });
+    if (argv.includes("--json")) return console.log(JSON.stringify(r, null, 2));
+    if (!r.ok) {
+      console.log(`${BRAND.brand} radar — ${r.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    heading(`${BRAND.brand} radar — dependency currency (rings from registry evidence)\n`);
+    const deps = r.deps ?? {};
+    const names = Object.keys(deps);
+    if (!names.length) {
+      console.log("  no Node dependencies to probe (no package.json deps found).");
+    } else {
+      const roleFor = (ring) =>
+        ring === "adopt" ? "ok" : ring === "trial" ? "accent" : ring === "hold" ? "err" : "warn";
+      // Order by ring severity, then by usage (stakes), then name — the risky, load-bearing first.
+      const rank = { hold: 0, assess: 1, trial: 2, adopt: 3 };
+      names.sort(
+        (a, b) =>
+          (rank[deps[a].ring] ?? 9) - (rank[deps[b].ring] ?? 9) ||
+          (deps[b].usage ?? 0) - (deps[a].usage ?? 0) ||
+          (a < b ? -1 : 1),
+      );
+      const rows = names.map((n) => {
+        const d = deps[n];
+        return [
+          paint(d.ring, roleFor(d.ring)),
+          n,
+          `${d.installed ?? "?"}→${d.latest ?? "?"}`,
+          bar(d.score ?? 0),
+          (d.reasons ?? []).slice(0, 2).join("; ") || paint("no risk signals", "dim"),
+        ];
+      });
+      console.log(table(rows));
+    }
+    if (r.stale)
+      console.log(
+        `\n  ${paint(`served from cache (${Math.round(r.ageH)}h old) — ${offline ? "--offline" : "registry unreachable"}`, "dim")}`,
+      );
+    else if (r.source === "cache")
+      console.log(`\n  ${paint("served from cache (within TTL)", "dim")}`);
+    for (const s of r.skipped ?? []) console.log(`  ${paint(`${s.language}: ${s.reason}`, "dim")}`);
     return;
   }
   if (cmd === "catalog") {
@@ -478,6 +546,53 @@ async function run(argv) {
         );
       return;
     }
+    if (sub === "sync") {
+      const { ledgerSync, defaultRef } = await import("./ledger_sync.js");
+      const di = args.indexOf("--dir");
+      const re = args.indexOf("--remote");
+      const rf = args.indexOf("--ref");
+      const r = ledgerSync({
+        dir,
+        root,
+        personal,
+        dirTarget: di >= 0 ? args[di + 1] : undefined,
+        remote: re >= 0 ? args[re + 1] : undefined,
+        ref: rf >= 0 ? args[rf + 1] : undefined,
+      });
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} ledger sync\n`);
+      if (!r.ok) {
+        console.error(`  ${paint(r.reason ?? "sync failed", "err")}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (r.mode === "dir") {
+        console.log(
+          table([
+            [paint("target", "dim"), r.dir],
+            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
+            [paint("pushed", "dim"), `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`],
+          ]),
+        );
+      } else {
+        console.log(
+          table([
+            [paint("ref", "dim"), `${r.remote} ${r.ref}`],
+            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
+            [
+              paint("pushed", "dim"),
+              r.upToDate
+                ? paint("up to date — nothing to push", "dim")
+                : `yes (retries ${r.retries})`,
+            ],
+          ]),
+        );
+      }
+      for (const n of r.notes ?? []) console.log(paint(`  note: ${n}`, "warn"));
+      if (r.mode === "ref" && r.ref === defaultRef(personal))
+        console.log(paint("\n  synced through a git ref — CRDT, converges in any order", "dim"));
+      return;
+    }
     if (sub === "import") {
       const b = await import("./ledger_bridge.js");
       let r;
@@ -505,7 +620,7 @@ async function run(argv) {
       return;
     }
     console.error(
-      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | import) [--personal] [--json]`,
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
     );
     process.exitCode = 1;
     return;
@@ -717,8 +832,53 @@ async function run(argv) {
     return;
   }
   if (cmd === "verify") {
-    const { verify } = await import("./verify.js");
     const json = argv.includes("--json");
+    if (argv.includes("--deep")) {
+      const { verifyDeep, LENSES } = await import("./consensus.js");
+      // `--llm` opts the reviewer panel in for this run; otherwise FORGE_LLM decides.
+      const r = verifyDeep({
+        targetRoot: process.cwd(),
+        llm: argv.includes("--llm") ? true : undefined,
+      });
+      if (json) {
+        console.log(JSON.stringify(r, null, 2));
+        if (!r.ok) process.exitCode = 1;
+        return;
+      }
+      heading(`${BRAND.brand} verify --deep — multi-lens consensus\n`);
+      console.log(
+        table(
+          r.lenses.map((l) => {
+            const meta = LENSES[l.lens];
+            const state =
+              l.ran === false
+                ? paint("— skipped", "dim")
+                : l.s > 0
+                  ? paint("● finding", meta.solo ? "err" : "warn")
+                  : paint("✓ clean", "ok");
+            return [l.lens, meta.family, `w=${meta.weight}`, state];
+          }),
+        ),
+      );
+      if (r.findings.length) {
+        console.log();
+        for (const f of r.findings) console.log(`  ! ${f}`);
+      }
+      console.log(
+        `\n  P(defect):  ${bar(r.p)} ${r.p.toFixed(2)}${
+          r.families.length ? `  (families: ${r.families.join(", ")})` : ""
+        }`,
+      );
+      console.log(`  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`);
+      console.log(
+        `\n  ${
+          r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
+        }`,
+      );
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    const { verify } = await import("./verify.js");
     const r = verify({ targetRoot: process.cwd() });
     if (json) {
       console.log(JSON.stringify(r, null, 2));
@@ -872,10 +1032,27 @@ async function run(argv) {
     const { harden } = await import("./harden.js");
     const r = harden({ targetRoot: process.cwd() });
     heading(`${BRAND.brand} harden\n`);
-    console.log(`  gitleaks pre-commit: ${r.gitleaks}`);
+    console.log(`  gitleaks:            ${r.gitleaks}`);
+    console.log(`  pre-commit gate:     ${r.precommit}`);
     console.log(
       `  sandbox settings:    ${r.sandbox} — merge into ~/.claude/settings.json to enable (84% fewer prompts)`,
     );
+    return;
+  }
+  if (cmd === "precommit") {
+    // The commit-level rung of the gate lattice (turn ⊂ commit ⊂ PR): the harden-installed
+    // pre-commit hook execs this, and it can be run by hand before committing. Exit code
+    // carries the decision (1 = refuse the commit); fail-open inside commitGate.
+    const { commitGate, renderCommitGate } = await import("./commit_gate.js");
+    const r = commitGate(process.cwd());
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.allow) process.exitCode = 1;
+      return;
+    }
+    heading(`${BRAND.brand} precommit — commit-level completeness + secret gate\n`);
+    console.log(renderCommitGate(r));
+    if (!r.allow) process.exitCode = 1;
     return;
   }
   if (cmd === "cortex") {
@@ -911,6 +1088,47 @@ async function run(argv) {
       console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
     }
     console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
+    return;
+  }
+  if (cmd === "deja") {
+    const { dejaFromLedger } = await import("./deja.js");
+    const { claimText, val } = await import("./ledger.js");
+    const { epochDay } = await import("./util.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge deja "<task you are about to start>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const nowDay = epochDay();
+    const hits = dejaFromLedger(process.cwd(), task, { nowDay, budget: 8 });
+    if (json)
+      return console.log(
+        JSON.stringify(
+          hits.map((h) => ({
+            id: h.claim.id,
+            kind: h.claim.kind,
+            score: h.score,
+            verified: val(h.claim, nowDay) > 0.5,
+            day: h.claim.provenance?.t ?? 0,
+            gist: claimText(h.claim).slice(0, 120),
+          })),
+          null,
+          2,
+        ),
+      );
+    heading(`${BRAND.brand} déjà vu — have you done this before?\n`);
+    if (!hits.length) return console.log("  no similar prior task in memory — this looks new.");
+    for (const h of hits) {
+      const verified = val(h.claim, nowDay) > 0.5;
+      console.log(
+        `  ${bar(h.score, 8)} ${h.score.toFixed(3)}  ${paint(h.claim.kind.padEnd(9), "accent")} ${verified ? paint("verified", "ok") : paint("attempted", "warn")}  day ${h.claim.provenance?.t ?? 0}  ${claimText(h.claim).replace(/\s+/g, " ").trim().slice(0, 80)}`,
+      );
+    }
     return;
   }
   if (cmd === "preflight") {
@@ -1339,6 +1557,45 @@ async function run(argv) {
     console.log(`  recorded ${r.id}: ${r.text}`);
     return;
   }
+  if (cmd === "know") {
+    // A7 knowledge-router: total routing (T6) of a fact to its storage home — an unsure
+    // fact still lands (ledger fallback), it is never dropped.
+    const { HOMES, routeFact, storeFact } = await import("./knowledge_router.js");
+    const json = argv.includes("--json");
+    const dry = argv.includes("--dry-run");
+    const text = argv
+      .slice(1)
+      .filter((a) => a !== "--json" && a !== "--dry-run")
+      .join(" ");
+    if (!text) {
+      console.error(`usage: ${BRAND.cli} know "<fact>" [--dry-run] [--json]`);
+      process.exitCode = 1;
+      return;
+    }
+    const route = routeFact(text);
+    const r = storeFact(process.cwd(), text, {
+      mode: dry ? "advise" : "auto",
+      route,
+    });
+    if (json) return console.log(JSON.stringify({ ...route, ...r, dryRun: dry }, null, 2));
+    heading(`${BRAND.brand} know — knowledge routing (A7)\n`);
+    const why =
+      route.provenance === "fallback"
+        ? "fallback — resembles no exemplar; the ledger absorbs unsure placements"
+        : `confidence ${route.confidence}`;
+    console.log(`  home:     ${route.home} (${why}) → ${HOMES[route.home].where}`);
+    const near = route.neighbors[0];
+    if (near) console.log(`  nearest:  "${near.text}" (${near.sim.toFixed(3)})`);
+    if (!r.ok) {
+      console.error(`  ${r.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (r.stored) console.log(`  stored:   ${r.ref}`);
+    else if (dry) console.log("  (dry-run — nothing written)");
+    if (r.advice) console.log(`  advice:   ${r.advice}`);
+    return;
+  }
   if (cmd === "diagnose") {
     const { diagnose, THRASH_K } = await import("./diagnose.js");
     const json = argv.includes("--json");
@@ -1600,7 +1857,10 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = await runInteractions(targets[0], { remote, cwd: process.cwd() });
+      const r = await runInteractions(targets[0], {
+        remote,
+        cwd: process.cwd(),
+      });
       if (!r.ok) {
         const reason = "reason" in r ? r.reason : "interaction run failed";
         if ("skipped" in r && r.skipped) {
@@ -1766,6 +2026,30 @@ async function run(argv) {
     }
     console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
     console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
+    return;
+  }
+  if (cmd === "report") {
+    // Static twin of `dash`: emit ONE self-contained HTML file (no server, opens
+    // offline) instead of serving a live localhost lens. `--out <path>` overrides the
+    // default `.forge/report.html`.
+    const { renderReport, writeReport } = await import("./report.js");
+    const oi = argv.indexOf("--out");
+    heading(`${BRAND.brand} report — static snapshot of .forge/\n`);
+    if (oi >= 0) {
+      const out = argv[oi + 1];
+      if (!out) {
+        console.error("usage: forge report [--out <path>]");
+        process.exitCode = 1;
+        return;
+      }
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(out, renderReport(process.cwd()));
+      console.log(`  wrote ${out}`);
+      return;
+    }
+    const path = writeReport(process.cwd());
+    console.log(`  wrote ${path}`);
+    console.log("  open it in a browser — fully offline, no server needed.");
     return;
   }
   if (cmd === "dash") {

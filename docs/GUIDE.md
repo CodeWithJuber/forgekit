@@ -28,10 +28,10 @@ Every command is real and wired. Grouped by what it does:
 | Group                        | Commands                                                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                           |
-| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide`                                     |
+| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
 | **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
 | **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
-| **Verification & safety**    | `forge verify` · `forge scan` · `forge spec`                                                                                                                               |
+| **Verification & safety**    | `forge verify` · `forge precommit` · `forge radar` · `forge scan` · `forge spec`                                                                                           |
 | **UI / design**              | `forge taste` · `forge uicheck`                                                                                                                                            |
 | **Dashboard**                | `forge dash`                                                                                                                                                               |
 
@@ -204,7 +204,7 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
-**`forge route calibrate`** is the *advisory → gated promotion* (overview §4): it fits an
+**`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
 affine correction of the rubric's score toward a held-out labeled fixture and reports
 whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
 margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
@@ -225,7 +225,7 @@ Forge route calibrate — outcome-calibrated routing (measured gate)
 ```
 
 Here the gate does exactly its job: the rubric already generalizes well, the affine
-calibration would make held-out error *worse*, so it is **refused**. A promotion only
+calibration would make held-out error _worse_, so it is **refused**. A promotion only
 happens when the measurement earns it — an assertion never does.
 
 ### `forge config` — provider setup
@@ -355,6 +355,31 @@ nothing durable recorded the choice. `forge decide` appends one ADR-lite line to
 design: a decision that stops being true gets a _new_ entry, never an edit — the log is
 history, and `forge docs sync` exempts it for exactly that reason.
 
+### `forge know "<fact>"` — route any fact to its storage home
+
+The substrate has several memory shelves (decisions, ledger facts, personal recall,
+handoff state, contributor rules…) and the routing discipline used to be prose — exactly
+what sessions forget, so knowledge landed nowhere and was re-learned. `forge know` makes
+the routing a function, and a **total** one (formal-synthesis Theorem T6): the same
+exemplar k-NN as `forge route`/intent classification picks the home, and a fact that
+resembles nothing in the bank falls back to the ledger (where unverified claims decay
+toward _unsure_) — it is never dropped.
+
+```console
+$ forge know "we chose sqlite over postgres because zero ops"
+  home:     decision (confidence 0.667) → .forge/decisions.md + ledger
+  nearest:  "we chose sqlite over postgres because zero ops" (0.667)
+  stored:   D-0008
+```
+
+Append-only homes (`decision`, `ledger-fact`, `recall`) are written directly; curated
+files (`claude-md`, `rule`, `skill`, `state`) get advice naming the right command instead
+of a blind write — routing to `state`, for example, points at `forge handoff`. `--dry-run`
+routes without writing anything; `--json` for tooling. Secrets are refused before any
+dispatch, like every forge store. With `ENABLE_CORTEX_DISTILL=1`, distilled Cortex lessons
+that read like decisions or durable facts are auto-routed to those homes too (fail-open,
+best-effort).
+
 ### `forge docs sync` — which prose did this diff make stale?
 
 `forge docs check` reconciles the registries; `docs sync` answers the diff-shaped
@@ -402,6 +427,40 @@ Forge verify
   PASS
 ```
 
+**`forge verify --deep` — multi-lens consensus.** The deep mode runs a table of
+independent lenses over the same diff — the test suite, unknown symbols, atlas
+dependents the diff never touched, code-without-docs drift, secret-shaped tokens in
+the added lines, spec-lock drift, and (opt-in) a reviewer panel — and aggregates them
+the way the lesson miner scores mistakes: noisy-OR `P(defect) = 1 − ∏(1 − wᵢsᵢ)` with
+a **cross-family gate**, so any number of correlated structural signals stays advisory
+while a failing test suite or a leaked secret blocks on its own. Every run reports the
+Theorem-D residual `∏(1 − cⱼ)` over the lenses that actually ran — how much
+silent-miss probability a PASS still carries — and extends `.forge/provenance.json`
+with the per-lens evidence plus one `stage:"verify"` metrics record.
+
+`--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
+over the added lines, strict-majority vote, abstaining honestly when fewer than half
+the replies are usable. The panel is a proposer, never a judge — it can only block
+together with a second evidence family.
+
+```console
+$ forge verify --deep
+  tests      outcome     w=0.8   ✓ clean
+  symbols    structural  w=0.4   ✓ clean
+  impact     structural  w=0.35  ● finding
+  docsdrift  structural  w=0.3   ✓ clean
+  secrets    security    w=0.9   ✓ clean
+  speclock   structural  w=0.4   — skipped
+  reviewer   model       w=0.3   — skipped
+
+  ! dependents of the changed code are not in this diff: src/route.js
+
+  P(defect):  █░░░░░░░░░ 0.07  (families: structural)
+  residual:   0.005 — Theorem-D silent-miss bound
+
+  PASS
+```
+
 ### `forge atlas build | query | has` — the code-graph
 
 ```console
@@ -444,6 +503,45 @@ Detection reads `package.json` (deps → frameworks, lockfile → package manage
 `pom.xml`/`build.gradle`, and `*.csproj`. Widening it is adding a data row, not code.
 `--json` for tooling. Nothing detected → an honest "no known stack".
 
+### `forge radar` — is what this repo stands on still current?
+
+`forge stack` says _what_ this repo is built on; `forge radar` says whether it's still
+_current_. It reads the Node manifests, probes the registry for each dependency, and places
+every one in a ring computed from evidence — no hardcoded package lists:
+
+```console
+$ forge radar
+  hold   left-pad     1.3.0→1.3.0   ██████████  marked deprecated by its maintainer
+  assess got          9.6.0→14.4.5  ███████░░░  high advisory: SSRF via redirect; 5 majors behind (v9→v14)
+  trial  express      4.18.2→4.21.0 ████░░░░░░  latest published 210d ago (half-life 540d)
+  adopt  zod          3.23.8→3.23.8 █░░░░░░░░░
+  Go: currency probe is Node-first
+```
+
+Rings are a **formula over registry evidence** (mizan — every ring ships the evidence that
+earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
+lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
+(import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
+Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
+two verified evidence kinds → **`assess` (never `adopt` on absence)** — missing evidence never
+upgrades a dep. Otherwise `score < .25 → adopt`, `< .5 → trial`, else `assess`.
+
+The scan is cached at `.forge/radar.json` (TTL 24h, override with `FORGE_RADAR_TTL_H`).
+`--offline` serves the stale cache (flagged with its age) or fails honestly rather than
+guessing; `--refresh` re-probes; `--json` for tooling. The network probe is injectable and
+never runs inside a hook or test. A network scan also records **I4 verified-currency evidence**
+into the ledger — one `currency:<dep>` fact per dependency, superseding the prior verification
+(latest stays live, history in tombstones) — and a `radar` metrics line.
+
+Once a scan exists, the **pre-edit hook** surfaces a one-line advisory (cache-only — hooks
+never fetch) when you open a file that imports a `hold` dep (or an `assess` dep with an open
+advisory): _"radar — src/x.js imports left-pad (ring hold: marked deprecated…). Check `forge
+radar` before building on it."_ Silence it with `FORGE_RADAR=0`.
+
+The `dev-radar` skill is the LLM _wide scan_ across the ecosystem; `forge radar` is the
+deterministic _repo instrument_ — it implements `global/rules/tech-currency.md` against THIS
+repo's actual manifests.
+
 ### `forge update` — self-update
 
 No more manual "am I on the latest?". `forge update --check` reports whether a newer
@@ -452,6 +550,13 @@ bare `forge update` applies it (`git pull --ff-only` for a checkout — symlink/
 installs go live immediately; npm-global installs get the `npm i -g` command). `forge
 doctor` also surfaces a one-line notice when behind (cached, never nags; silence it with
 `FORGE_NO_UPDATE_CHECK=1`). Fail-open: offline or a non-git install never errors.
+
+`forge update --to <version>` pins or downgrades to an exact release: for a git
+checkout it fetches tags, verifies the release tag exists (a version that was never
+released is an honest miss, not an error dump), and does a detached checkout at that
+tag — the printed note tells you how to get back to latest (`git checkout <branch>`,
+then `forge update`). npm-global installs get the exact `npm i -g <pkg>@<version>`
+command instead. Accepts `0.17.0` or `v0.17.0`.
 
 ### `forge recall add | list | consolidate` — cross-session memory
 
@@ -481,6 +586,33 @@ Forge cortex — self-correcting project memory
 ```
 
 `forge cortex why <symbol>` shows the lessons that would be injected when you touch it.
+
+### `forge deja "<task>"` — have you done this before?
+
+Cortex only learns from _corrections_ — a first-try success mints no lesson, so its
+trace is discarded when the session ends and the next session starts blind. That is the
+root of the "why do I keep re-solving the same thing across sessions" complaint. So at
+every session Stop the substrate mints one `summary` claim (an existing ledger kind) of
+the solved task: a secret-redacted gist of the first prompt plus the files touched. If
+the session's own tests passed, it attaches one `test.run` confirm outcome — so a
+verified success outranks a mere attempt.
+
+`forge deja` ranks those prior sessions (plus lessons and diagnoses) for a task you're
+about to start, using the same Eq. 3 retrieval the ledger query uses:
+
+```console
+$ forge deja "add rate limiting to the export endpoint"
+Forge déjà vu — have you done this before?
+
+  ██████░░ 0.712  summary   verified   day 20641  add throttling to the export route — files: src/export.js
+  ███░░░░░ 0.402  lesson    attempted  day 20630  forgot to update the OpenAPI spec after changing a route
+```
+
+The same top hit surfaces as a one-line advisory in the pre-action substrate when a
+prompt closely matches prior solved work. Set `FORGE_DEJA=0` to disable both the Stop-hook
+summary and the advisory. Because summaries are ordinary ledger claims, `forge ledger
+merge` (and a future `forge ledger sync`) carry them between machines — so the
+anti-repetition works across every surface you work on, not just one checkout.
 
 ### `forge ledger` — proof-carrying team memory
 
@@ -525,6 +657,21 @@ paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id
 moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
 tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
 target the per-user ledger beside the global recall store, `--json` for scripts.
+
+`forge ledger sync` is `merge` without a path argument — a transport that moves the CRDT
+state between machines. Target precedence: `--dir <path>` (a shared folder, bidirectional
+union-merge) beats `--remote <name>`/`--ref <ref>`, which beat the repo's own git remote,
+which beats **`FORGE_SYNC_DIR`** (the default dir target when nothing else resolves); with
+none of these it prints an honest "no sync target". Ref mode is pure git plumbing: one
+commit per sync on `refs/forge/ledger` whose tree is a single `state.json` blob
+(`hash-object` → `mktree` → `commit-tree` → `update-ref` → `push`); pull is `fetch` the
+ref → read the blob → `importState`. A non-fast-forward push (a teammate synced first) is
+never a conflict — it re-fetches, re-imports (monotone by the semilattice join), rebuilds
+on the new parent and retries ≤3 times, so no claim is ever lost and re-running sync with
+nothing new is a byte-level no-op (the remote tree already equals ours). Everything
+fails open: offline, a missing remote, or a corrupt remote blob all return an honest
+reason instead of throwing. With `--personal` the transport runs over the per-user ledger
+the recall store shadows into, so recall facts become portable across machines.
 
 **Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
 (every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
@@ -755,14 +902,34 @@ Forge uicheck interact — browser interaction checks
 
 A read-only lens over `.forge/` — stdlib `node:http`, localhost-only, one
 self-contained HTML page (no CDN, no build step). Panels: Ledger (claims with val bars,
-contested claims, per-author trust), Cost/Cache (measured stage counters), and Impact
-(blast-radius explorer). Every claim row shows its `forge ledger blame` command.
+contested claims, per-author trust), Cost/Cache (measured stage counters), Impact
+(blast-radius explorer), Radar (dependency-currency rings read from the `.forge/radar.json`
+cache), Trends (per-stage metrics history as inline-SVG sparklines), Memory browser
+(ranked recall search over the ledger with confidence + freshness bars), and Session
+timeline (durable mint/tombstone events across sessions). The page live-refreshes every 5s,
+paused while the tab is hidden. Every claim row shows its `forge ledger blame` command.
 
 ```console
 $ forge dash
 Forge dash — read-only lens on .forge/
 
   http://127.0.0.1:4242  (localhost-only · Ctrl-C to stop)
+```
+
+### `forge report [--out <path>]` — the static HTML report
+
+The offline twin of `forge dash`: instead of serving a live localhost lens, it renders
+ONE self-contained HTML file — no server, no fetch, no CDN, no JavaScript needed to read
+it — that you can open offline, email, or attach to a PR. It reuses the same `dashData`
+payload, buckets `.forge/metrics.jsonl` into a 90-day activity sparkline (server-side
+inline SVG), and folds in the tech-radar cache (`.forge/radar.json`) when present. The
+palette is the brand's own token block (`rootTokensCss`), so the report matches the
+dashboard exactly. Default output is `.forge/report.html`; `--out` overrides it.
+
+```console
+$ forge report
+  wrote /repo/.forge/report.html
+  open it in a browser — fully offline, no server needed.
 ```
 
 ### `forge cost --stages` — the measured cost report
@@ -792,22 +959,23 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 
 ### The rest
 
-| Command                          | Answers                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `forge init`                     | Emit every tool's native config from one source.                                                                                |
-| `forge sync`                     | Recompile `source/` → each tool's files (idempotent).                                                                           |
-| `forge doctor`                   | Health check: layers, install, drift, cortex.                                                                                   |
-| `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).      |
-| `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above). |
-| `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                  |
-| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                               |
-| `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                      |
-| `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                    |
-| `forge harden`                   | Wire gitleaks pre-commit + sandbox settings.                                                                                    |
-| `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                   |
-| `forge brand`                    | Print the active brand token map.                                                                                               |
-| `forge lean "<task>"`            | Scope-minimality footprint for a task — advisory (the Lean Path as a command).                                                  |
-| `forge taste [<style>]`          | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads).                        |
+| Command                          | Answers                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forge init`                     | Emit every tool's native config from one source.                                                                                                                                                                                                                                                    |
+| `forge sync`                     | Recompile `source/` → each tool's files (idempotent).                                                                                                                                                                                                                                               |
+| `forge doctor`                   | Health check: layers, install, drift, cortex.                                                                                                                                                                                                                                                       |
+| `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).                                                                                                                                                                          |
+| `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above).                                                                                                                                                                     |
+| `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                                                                                                                                                                                      |
+| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                                                                                                                                                                                                   |
+| `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                                                                                                                                                                                          |
+| `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                        |
+| `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                         |
+| `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines. `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode. |
+| `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                       |
+| `forge brand`                    | Print the active brand token map.                                                                                                                                                                                                                                                                   |
+| `forge lean "<task>"`            | Scope-minimality footprint for a task — advisory (the Lean Path as a command).                                                                                                                                                                                                                      |
+| `forge taste [<style>]`          | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads).                                                                                                                                                                                            |
 
 ### Use it in a script
 
@@ -1046,40 +1214,43 @@ Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name
 The complete env contract (`forge docs check` keeps this table honest — a variable the
 code reads but this table misses fails CI on the forge repo):
 
-| Variable                                                       | Does                                                                                                          |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`                                            | direct Anthropic auth (also used by gateways when set)                                                        |
-| `ANTHROPIC_AUTH_TOKEN`                                         | gateway/proxy Bearer credential — recognized everywhere the API key is                                        |
-| `ANTHROPIC_BASE_URL`                                           | custom API endpoint; gateway-looking URLs auto-classify as LiteLLM                                            |
-| `ANTHROPIC_MODEL` / `FORGE_MODEL`                              | pin one model — bypasses tier routing entirely                                                                |
-| `LITELLM_BASE_URL` / `LITELLM_API_KEY`                         | hosted LiteLLM gateway endpoint + key (highest detection priority)                                            |
-| `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                           |
-| `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); zero-config fallback after Anthropic                    |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; zero-config fallback after Anthropic               |
-| `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                |
-| `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                |
+| Variable                                                       | Does                                                                                                                                                      |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                                            | direct Anthropic auth (also used by gateways when set)                                                                                                    |
+| `ANTHROPIC_AUTH_TOKEN`                                         | gateway/proxy Bearer credential — recognized everywhere the API key is                                                                                    |
+| `ANTHROPIC_BASE_URL`                                           | custom API endpoint; gateway-looking URLs auto-classify as LiteLLM                                                                                        |
+| `ANTHROPIC_MODEL` / `FORGE_MODEL`                              | pin one model — bypasses tier routing entirely                                                                                                            |
+| `LITELLM_BASE_URL` / `LITELLM_API_KEY`                         | hosted LiteLLM gateway endpoint + key (highest detection priority)                                                                                        |
+| `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                                                                       |
+| `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); zero-config fallback after Anthropic                                                                |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; zero-config fallback after Anthropic                                                           |
+| `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                                                            |
+| `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                                                            |
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent |
-| `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                   |
-| `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                              |
-| `FORGE_LEDGER_ONLY`                                            | `1` retires the legacy stores — stop writing `lessons/*.md` + recall/brain fact files; the ledger is the only store (reads materialize from it) |
-| `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                           |
-| `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                   |
-| `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                         |
-| `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                              |
-| `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                 |
-| `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                            |
-| `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                            |
-| `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                      |
-| `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                               |
-| `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                    |
-| `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                               |
-| `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                 |
-| `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                |
-| `NO_COLOR`                                                     | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention       |
-| `FORCE_COLOR`                                                  | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR`           |
-| `TERM` / `COLORTERM`                                           | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues         |
-| `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                 |
-| `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                       |
+| `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                                                               |
+| `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook AGENTS.md auto-repair                                                                                                          |
+| `FORGE_LEDGER_ONLY`                                            | `1` retires the legacy stores — stop writing `lessons/*.md` + recall/brain fact files; the ledger is the only store (reads materialize from it)           |
+| `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                                                                       |
+| `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                                                               |
+| `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                                                                     |
+| `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                                                                          |
+| `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                                                             |
+| `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                        |
+| `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                        |
+| `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                  |
+| `FORGE_RADAR` | `0` disables the pre-edit dependency-currency advisory |
+| `FORGE_RADAR_TTL_H` | `forge radar` cache TTL in hours (default 24) |
+| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
+| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
+| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
+| `FORGE_COMMIT_GATE` | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode |
+| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
+| `FORGE_VERBOSE` | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`) |
+| `NO_COLOR` | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention |
+| `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
+| `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
+| `FORGE_NO_UPDATE_CHECK` | `1` silences the `forge doctor` update notice |
+| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 
 ---
 

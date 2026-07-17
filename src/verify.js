@@ -47,7 +47,12 @@ function runTests(cwd) {
     return { ran: false };
   } catch (e) {
     if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
-      return { ran: true, passed: false, timedOut: true, output: `test run exceeded ${timeout}ms` };
+      return {
+        ran: true,
+        passed: false,
+        timedOut: true,
+        output: `test run exceeded ${timeout}ms`,
+      };
     }
     return {
       ran: true,
@@ -113,5 +118,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
 
   // Hard gate = the project's own tests. Unknown symbols are advisory (heuristic).
   const ok = tests.ran ? tests.passed === true : true;
-  return { ok, provenance, unknown, tests, changedFiles };
+  // `added` (the raw added diff lines) rides along for the deep lenses (consensus.js:
+  // secrets + reviewer read the same bytes this pass already parsed — one diff, one truth).
+  return { ok, provenance, unknown, tests, changedFiles, added };
 }
