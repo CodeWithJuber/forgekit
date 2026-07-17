@@ -231,15 +231,18 @@ parses) swept against every doc artifact → UPDATED / STALE (file:line hits) /
 VERIFIED-UNAFFECTED with the reason recorded. Pure reporter; the gate provides the teeth.
 
 **Docs-check now guards more than names (`src/docs_check.js`).** Beyond
-commands/env/MCP-tools/CHANGELOG, five reconcilers close the blind spots behind recurring
+commands/env/MCP-tools/CHANGELOG, six reconcilers close the blind spots behind recurring
 "docs rot" complaints: `checkDiagrams` scans every `mermaid` block across all Markdown for
 the branded `%%{init` theme and literal-`\n` node breaks; `checkModelTiers` reconciles doc
 prose prices against `src/model_tiers.json`; `checkBenchmarks` reconciles bolded `N ms`
 README claims against the measured table in `reports/benchmarks.md`; `checkLinks` resolves
 every intra-repo Markdown anchor (`#x` and `path.md#x`) against the target's real headings
 (GitHub-exact slugs — em-dashes yield `--`, never collapsed), killing the dead-anchor class;
-and `checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
-version. The two public pages
+`checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
+version; and `checkCrosswalk` resolves every `.js`/`.sh` binding the research paper's
+crosswalk (`research/formal-synthesis/crosswalk.json`) claims for this repo against the
+files that actually exist in `src/`, `global/guards/`, and `hooks/` (kit-only names opt
+out with a `kit:` prefix), so the paper's stated bindings can no longer trail the code. The two public pages
 (`landing/index.html` + the `build-pages.mjs` status page) derive from ONE color source —
 `brand.json.colors` (full dark + light palettes), emitted as CSS by `src/brand.js`
 (`rootTokensCss()`). `test/pages.test.js` enforces full-palette parity: every hex in

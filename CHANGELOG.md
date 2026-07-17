@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Color-aware CLI output.** New zero-dep `src/fmt.js`: `supportsColor` honoring the
+  `FORCE_COLOR` > `NO_COLOR` > `TERM=dumb` > TTY precedence, brand-token painting
+  (24-bit from `brand.json` when `COLORTERM` declares truecolor, portable 16-color
+  fallback otherwise), visible-width-aligned `table`, and `bar` confidence meters —
+  adopted across `ledger` (stats/blame/query), `cortex`, `route`, `doctor`, and
+  `cost` output plus the `--verbose` title line. Piped output stays escape-free.
+
+### Fixed
+
+- **Research crosswalk reconciled with the code.** The formal-synthesis paper's
+  crosswalk (rows 5/6/12/14 and the README §11 binding paragraph) cited hooks that
+  no longer exist (`docs-guard.sh`, `session-context.sh`, `intent-router.sh`); the
+  bindings now name the real system (`cortex.sh` → `src/gate.js` stopGate,
+  `src/session.js` rehydrationBlock, `src/intent.js` exemplar k-NN), with kit-only
+  names marked by a `kit:` prefix. A new `crosswalk` docs-check reconciler fails CI
+  when any non-`kit:` `.js`/`.sh` binding in `crosswalk.json` names a file that does
+  not exist in `src/`, `global/guards/`, or `hooks/`.
+
 ## [0.18.0] - 2026-07-16
 
 ### Changed
