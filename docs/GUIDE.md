@@ -27,7 +27,7 @@ Every command is real and wired. Grouped by what it does:
 
 | Group                        | Commands                                                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                           |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge tools` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`           |
 | **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
 | **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
 | **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
@@ -557,6 +557,33 @@ released is an honest miss, not an error dump), and does a detached checkout at 
 tag — the printed note tells you how to get back to latest (`git checkout <branch>`,
 then `forge update`). npm-global installs get the exact `npm i -g <pkg>@<version>`
 command instead. Accepts `0.17.0` or `v0.17.0`.
+
+### `forge tools` — one repo, one agent tool (gitignore the rest)
+
+`forge sync` emits config for **every** supported agent tool from one source — great for
+portability, noisy for a repo where only one tool is ever used: `.cursor/`, `.gemini/`,
+`.codex/`, `.zed/`, `.aider.conf.yml`, and friends all show up as tracked clutter. `forge
+tools` fixes that without changing what `sync` emits.
+
+- `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
+  auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
+  `.codex/`, `.zed/`, `.vscode/`) and which targets are currently gitignored.
+- `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
+  `zed` · `vscode` · `aider` · `continue` · `windsurf`) as this repo's primary tool in
+  `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
+  (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
+  emitted artifacts. Your own `.gitignore` lines are never touched, and the shared
+  `AGENTS.md` plus the primary tool's own files always stay tracked.
+- `forge tools --reset` — clear the config and strip the managed block (only the block).
+
+This is **opt-in** — plain `forge sync` never writes `.gitignore`. The block lists the
+exact target paths `sync` reports, so it always matches what Forge actually emits.
+
+```console
+$ forge tools claude
+  primary tool   claude
+  gitignored     .aider.conf.yml, .codex/config.toml, .cursor/mcp.json, .gemini/settings.json, .zed/settings.json  (block written)
+```
 
 ### `forge recall add | list | consolidate` — cross-session memory
 

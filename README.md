@@ -180,49 +180,50 @@ it self-silences once init runs and `FORGE_NO_HINT=1` mutes it entirely. `instal
 this wiring for you via `forge init --settings-only` — an idempotent, marker-guarded merge
 that never clobbers your existing settings.
 
-| Group                      | Command           | Does                                                                                                                                   |
-| -------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                                        |
-|                            | `forge sync`      | recompile canonical source → each tool's native files (idempotent)                                                                     |
-|                            | `forge doctor`    | pass/fail health check: tools, guards, MCP, drift, update                                                                              |
-|                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it, `--to <version>` pins/downgrades                           |
-|                            | `forge docs`      | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions                         |
-|                            | `forge config`    | provider setup — show / switch / add providers, set the default model                                                                  |
-|                            | `forge harden`    | wire the pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                   |
-|                            | `forge catalog`   | Start-Here index of every tool / crew / guard                                                                                          |
-|                            | `forge brand`     | print the brand token map                                                                                                              |
-| **Memory & team**          | `forge ledger`    | proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import                               |
-|                            | `forge recall`    | cross-session personal memory — list / add / consolidate                                                                               |
-|                            | `forge remember`  | durable, repo-committable fact                                                                                                         |
-|                            | `forge brain`     | portable project-memory index                                                                                                          |
-|                            | `forge cortex`    | self-correcting lessons — `status` / `why`                                                                                             |
-|                            | `forge deja`      | anti-repetition — ranks prior solved/verified sessions for a task you're about to start (`FORGE_DEJA=0` disables)                      |
-|                            | `forge reuse`     | proof-carrying code cache — query / mint / stats                                                                                       |
-|                            | `forge handoff`   | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start                                 |
-|                            | `forge decide`    | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding                     |
-|                            | `forge know`      | route any fact to its storage home (decision / ledger / recall / …) — total routing, an unsure fact still lands                        |
-| **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass                                                                                                   |
-|                            | `forge preflight` | assumption / info-gap check                                                                                                            |
-|                            | `forge route`     | cheapest capable model tier (`route gateway` emits LiteLLM config)                                                                     |
-|                            | `forge impact`    | predict blast radius for a symbol or file                                                                                              |
-|                            | `forge scope`     | cluster + surface coupled files                                                                                                        |
-|                            | `forge imagine`   | consequence sim + minimal dry-run suite (`--run` executes it sandboxed)                                                                |
-|                            | `forge context`   | budgeted context assembly + completeness gate                                                                                          |
-|                            | `forge atlas`     | build / query / has (hallucinated-symbol check) the code graph                                                                         |
-|                            | `forge stack`     | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                |
-|                            | `forge anchor`    | goal-drift check (advisory) — `set`/`show`/`clear` persists the goal across sessions                                                   |
-|                            | `forge diagnose`  | doom-loop: same failure 3× → diagnosis + escalation                                                                                    |
-|                            | `forge lean`      | scope-minimality footprint (advisory)                                                                                                  |
-|                            | `forge cost`      | real per-day spend · measured stage factors (`--stages`)                                                                               |
-| **Verification & safety**  | `forge verify`    | independent gate — tests + hallucinated-symbol flag + provenance; `--deep` multi-lens consensus (`--llm` reviewer panel)               |
-|                            | `forge precommit` | commit-level gate rung — staged code w/o docs + secret scan (`FORGE_COMMIT_GATE=block\|warn\|0`)                                       |
-|                            | `forge radar`     | dependency-currency rings (adopt/trial/assess/hold) from registry evidence — cached, offline-honest                                    |
-|                            | `forge scan`      | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil                                                                     |
-|                            | `forge spec`      | spec-as-contract drift — init / lock / check                                                                                           |
-| **UI / design**            | `forge taste`     | pick one visual direction → DESIGN.md                                                                                                  |
-|                            | `forge uicheck`   | contrast · fingerprint · design · visual (WCAG · slop+conformance · Playwright)                                                        |
-| **Observability**          | `forge dash`      | localhost-only live dashboard: ledger, metrics trends, radar rings, memory browser, session timeline, blast radius (default port 4242) |
-|                            | `forge report`    | static, self-contained HTML snapshot of `.forge/` (`.forge/report.html`) — opens offline, no server                                    |
+| Group                      | Command           | Does                                                                                                                                                                 |
+| -------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                                                                      |
+|                            | `forge sync`      | recompile canonical source → each tool's native files (idempotent)                                                                                                   |
+|                            | `forge tools`     | primary-tool config — gitignore secondary-tool artifacts (`.cursor/`, `.gemini/`, …) for tools this repo doesn't use; `forge tools <name>` sets it, `--reset` clears |
+|                            | `forge doctor`    | pass/fail health check: tools, guards, MCP, drift, update                                                                                                            |
+|                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it, `--to <version>` pins/downgrades                                                         |
+|                            | `forge docs`      | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions                                                       |
+|                            | `forge config`    | provider setup — show / switch / add providers, set the default model                                                                                                |
+|                            | `forge harden`    | wire the pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                 |
+|                            | `forge catalog`   | Start-Here index of every tool / crew / guard                                                                                                                        |
+|                            | `forge brand`     | print the brand token map                                                                                                                                            |
+| **Memory & team**          | `forge ledger`    | proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import                                                             |
+|                            | `forge recall`    | cross-session personal memory — list / add / consolidate                                                                                                             |
+|                            | `forge remember`  | durable, repo-committable fact                                                                                                                                       |
+|                            | `forge brain`     | portable project-memory index                                                                                                                                        |
+|                            | `forge cortex`    | self-correcting lessons — `status` / `why`                                                                                                                           |
+|                            | `forge deja`      | anti-repetition — ranks prior solved/verified sessions for a task you're about to start (`FORGE_DEJA=0` disables)                                                    |
+|                            | `forge reuse`     | proof-carrying code cache — query / mint / stats                                                                                                                     |
+|                            | `forge handoff`   | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start                                                               |
+|                            | `forge decide`    | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding                                                   |
+|                            | `forge know`      | route any fact to its storage home (decision / ledger / recall / …) — total routing, an unsure fact still lands                                                      |
+| **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass                                                                                                                                 |
+|                            | `forge preflight` | assumption / info-gap check                                                                                                                                          |
+|                            | `forge route`     | cheapest capable model tier (`route gateway` emits LiteLLM config)                                                                                                   |
+|                            | `forge impact`    | predict blast radius for a symbol or file                                                                                                                            |
+|                            | `forge scope`     | cluster + surface coupled files                                                                                                                                      |
+|                            | `forge imagine`   | consequence sim + minimal dry-run suite (`--run` executes it sandboxed)                                                                                              |
+|                            | `forge context`   | budgeted context assembly + completeness gate                                                                                                                        |
+|                            | `forge atlas`     | build / query / has (hallucinated-symbol check) the code graph                                                                                                       |
+|                            | `forge stack`     | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                              |
+|                            | `forge anchor`    | goal-drift check (advisory) — `set`/`show`/`clear` persists the goal across sessions                                                                                 |
+|                            | `forge diagnose`  | doom-loop: same failure 3× → diagnosis + escalation                                                                                                                  |
+|                            | `forge lean`      | scope-minimality footprint (advisory)                                                                                                                                |
+|                            | `forge cost`      | real per-day spend · measured stage factors (`--stages`)                                                                                                             |
+| **Verification & safety**  | `forge verify`    | independent gate — tests + hallucinated-symbol flag + provenance; `--deep` multi-lens consensus (`--llm` reviewer panel)                                             |
+|                            | `forge precommit` | commit-level gate rung — staged code w/o docs + secret scan (`FORGE_COMMIT_GATE=block\|warn\|0`)                                                                     |
+|                            | `forge radar`     | dependency-currency rings (adopt/trial/assess/hold) from registry evidence — cached, offline-honest                                                                  |
+|                            | `forge scan`      | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil                                                                                                   |
+|                            | `forge spec`      | spec-as-contract drift — init / lock / check                                                                                                                         |
+| **UI / design**            | `forge taste`     | pick one visual direction → DESIGN.md                                                                                                                                |
+|                            | `forge uicheck`   | contrast · fingerprint · design · visual (WCAG · slop+conformance · Playwright)                                                                                      |
+| **Observability**          | `forge dash`      | localhost-only live dashboard: ledger, metrics trends, radar rings, memory browser, session timeline, blast radius (default port 4242)                               |
+|                            | `forge report`    | static, self-contained HTML snapshot of `.forge/` (`.forge/report.html`) — opens offline, no server                                                                  |
 
 **→ Every command with a worked example and real output:
 [`docs/GUIDE.md`](docs/GUIDE.md).**

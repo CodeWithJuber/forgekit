@@ -2148,6 +2148,65 @@ async function run(argv) {
     });
     return; // the process stays alive serving — that's the command
   }
+  if (cmd === "tools") {
+    const { resolvePrimaryTool, applyPrimaryTool, clearRepoConfig, KNOWN_TOOLS } = await import(
+      "./repo_config.js"
+    );
+    const { removeGitignoreBlock, readGitignoreBlock } = await import("./gitignore.js");
+    const root = process.cwd();
+    const json = argv.includes("--json");
+
+    if (argv.includes("--reset")) {
+      const cleared = clearRepoConfig(root);
+      const gi = removeGitignoreBlock(root);
+      if (json)
+        return console.log(
+          JSON.stringify({ reset: true, config: cleared.cleared, gitignore: gi.action }, null, 2),
+        );
+      heading(`${BRAND.brand} tools — reset\n`);
+      console.log(
+        `  primary-tool config ${cleared.cleared ? "cleared" : "was unset"} · .gitignore block ${gi.action}`,
+      );
+      return;
+    }
+
+    const name = argv.slice(1).find((a) => !a.startsWith("--"));
+    if (name) {
+      if (!KNOWN_TOOLS.includes(name)) {
+        console.error(`Unknown tool: ${name}\nKnown tools: ${KNOWN_TOOLS.join(", ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      const r = await applyPrimaryTool(root, name);
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} tools — primary set\n`);
+      console.log(`  primary tool   ${paint(r.primaryTool, "ok")}`);
+      console.log(
+        `  gitignored     ${r.targets.length ? r.targets.join(", ") : "none"}  (block ${r.gitignore})`,
+      );
+      console.log(`\n  ${BRAND.cli} tools --reset  to undo`);
+      return;
+    }
+
+    const { tool, source } = resolvePrimaryTool(root);
+    const ignored = readGitignoreBlock(root);
+    if (json)
+      return console.log(
+        JSON.stringify({ primaryTool: tool, source, gitignored: ignored }, null, 2),
+      );
+    const origin =
+      source === "config"
+        ? "from config"
+        : source === "auto-detect"
+          ? "auto-detected"
+          : "unset — emitting all tools";
+    heading(`${BRAND.brand} tools — agent-tool config\n`);
+    console.log(`  primary tool   ${tool ? paint(tool, "ok") : "none"} (${origin})`);
+    console.log(`  gitignored     ${ignored.length ? ignored.join(", ") : "none"}`);
+    console.log(`\n  Set primary:   ${BRAND.cli} tools <name>   (${KNOWN_TOOLS.join(" | ")})`);
+    console.log(`  Clear:         ${BRAND.cli} tools --reset`);
+    return;
+  }
   if (!(cmd in COMMANDS)) {
     const near = suggest(cmd, Object.keys(COMMANDS));
     console.error(

@@ -31,6 +31,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   When a real command runs before settings are forge-managed, one tip line to stderr
   points at `forge init` / `forge doctor --fix`; it is stateless, self-silences once
   init runs, and `FORGE_NO_HINT=1` mutes it.
+- **`forge tools` — primary-tool config + auto-gitignore for secondary-tool artifacts.**
+  A repo that only uses one agent no longer has to track every other tool's emitted
+  files. `forge tools <name>` records the primary tool in `.forge/config.json` and writes
+  a marked, reversible block into `.gitignore` (`# forge:gitignore:begin … :end`, managed
+  by `src/gitignore.js`) that ignores exactly the NON-primary emit targets — computed from
+  `sync()`'s own report rows, so the block always matches what Forge emits. User lines,
+  the shared `AGENTS.md`, and the primary tool's own files are never touched. `forge tools`
+  shows the detected/primary tool (auto-detected from which agent folder exists, mirroring
+  provider detection) and what's gitignored; `forge tools --reset` clears the config and
+  strips only the block. Opt-in — plain `forge sync` never writes `.gitignore`.
 
 ## [0.20.0] - 2026-07-17
 
