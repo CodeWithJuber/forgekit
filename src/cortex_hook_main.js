@@ -97,7 +97,10 @@ async function main() {
       const r = stopGate(root, sid, hook);
       try {
         const { record } = await import("./metrics.js");
-        record(root, { stage: "gate", outcome: r.allow ? "stop-pass" : "stop-block" });
+        record(root, {
+          stage: "gate",
+          outcome: r.allow ? "stop-pass" : "stop-block",
+        });
       } catch {}
       if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
     } catch {}
@@ -131,7 +134,8 @@ async function main() {
     const loop = doomLoopAdvisory(readSession(root, sid));
     const advice = loop || (await preEditAdvisory(root, hook.tool_input?.file_path, today));
     const docs = await staleDocsAdvisory(root, hook.tool_input?.file_path);
-    const combined = [advice, docs].filter(Boolean).join("\n\n");
+    const currency = await currencyAdvisory(root, hook.tool_input?.file_path);
+    const combined = [advice, docs, currency].filter(Boolean).join("\n\n");
     if (combined) emit("PreToolUse", combined);
   } else if (mode === "preflight") {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)
@@ -143,7 +147,10 @@ async function main() {
       // blocking the hook. A failing write is silently swallowed.
       try {
         const { record } = await import("./metrics.js");
-        record(root, { stage: "gate", outcome: result.gate?.halted ? "halt" : "pass" });
+        record(root, {
+          stage: "gate",
+          outcome: result.gate?.halted ? "halt" : "pass",
+        });
         if (result.route?.key) {
           record(root, { stage: "route", tier: result.route.tier });
         }
@@ -161,7 +168,9 @@ async function main() {
         const goal = getGoal(root);
         if (goal) {
           const { goalDrift } = await import("./anchor.js");
-          const d = goalDrift(root, goal, { changed: result.goalAnchor?.changed });
+          const d = goalDrift(root, goal, {
+            changed: result.goalAnchor?.changed,
+          });
           appendSessionEvent(root, sid, { type: "drift", score: d.driftScore });
         }
         const a = result.assumption;
@@ -231,6 +240,19 @@ async function staleDocsAdvisory(root, file) {
     const docs = impact(atlas, rel, { maxHops: 2 }).impactedFiles.filter((f) => f.endsWith(".md"));
     if (!docs.length) return "";
     return `Forge impact — docs that reference ${rel}: ${docs.slice(0, 5).join(", ")}. If this change alters behavior, update them in the same pass (\`forge impact ${rel}\` for the full list).`;
+  } catch {
+    return "";
+  }
+}
+
+// Dependency-currency advisory before an edit: if the file imports a dep the last `forge
+// radar` scan put in "hold" (deprecated / critical advisory), say so. CACHE-ONLY — a hook
+// never fetches. Kill switch FORGE_RADAR=0. Fail-safe like everything else here.
+async function currencyAdvisory(root, file) {
+  if (!file) return "";
+  try {
+    const { radarAdvisory } = await import("./radar.js");
+    return radarAdvisory(root, file);
   } catch {
     return "";
   }

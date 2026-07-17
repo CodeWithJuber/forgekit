@@ -149,6 +149,56 @@ async function run(argv) {
     console.log(`  ${"evidence:".padEnd(11)} ${s.evidence.join(", ")}`);
     return;
   }
+  if (cmd === "radar") {
+    // Dependency-currency rings from live registry evidence (mizan — every ring ships its
+    // evidence; missing evidence never upgrades a dep). Injectable/cached/offline-honest.
+    const { radarScan } = await import("./radar.js");
+    const offline = argv.includes("--offline");
+    const refresh = argv.includes("--refresh");
+    const r = await radarScan(process.cwd(), { offline, refresh });
+    if (argv.includes("--json")) return console.log(JSON.stringify(r, null, 2));
+    if (!r.ok) {
+      console.log(`${BRAND.brand} radar — ${r.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    heading(`${BRAND.brand} radar — dependency currency (rings from registry evidence)\n`);
+    const deps = r.deps ?? {};
+    const names = Object.keys(deps);
+    if (!names.length) {
+      console.log("  no Node dependencies to probe (no package.json deps found).");
+    } else {
+      const roleFor = (ring) =>
+        ring === "adopt" ? "ok" : ring === "trial" ? "accent" : ring === "hold" ? "err" : "warn";
+      // Order by ring severity, then by usage (stakes), then name — the risky, load-bearing first.
+      const rank = { hold: 0, assess: 1, trial: 2, adopt: 3 };
+      names.sort(
+        (a, b) =>
+          (rank[deps[a].ring] ?? 9) - (rank[deps[b].ring] ?? 9) ||
+          (deps[b].usage ?? 0) - (deps[a].usage ?? 0) ||
+          (a < b ? -1 : 1),
+      );
+      const rows = names.map((n) => {
+        const d = deps[n];
+        return [
+          paint(d.ring, roleFor(d.ring)),
+          n,
+          `${d.installed ?? "?"}→${d.latest ?? "?"}`,
+          bar(d.score ?? 0),
+          (d.reasons ?? []).slice(0, 2).join("; ") || paint("no risk signals", "dim"),
+        ];
+      });
+      console.log(table(rows));
+    }
+    if (r.stale)
+      console.log(
+        `\n  ${paint(`served from cache (${Math.round(r.ageH)}h old) — ${offline ? "--offline" : "registry unreachable"}`, "dim")}`,
+      );
+    else if (r.source === "cache")
+      console.log(`\n  ${paint("served from cache (within TTL)", "dim")}`);
+    for (const s of r.skipped ?? []) console.log(`  ${paint(`${s.language}: ${s.reason}`, "dim")}`);
+    return;
+  }
   if (cmd === "catalog") {
     const { catalog } = await import("./init.js");
     const c = catalog();

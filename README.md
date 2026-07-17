@@ -208,11 +208,13 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 |                            | `forge cost`      | real per-day spend · measured stage factors (`--stages`)                                                                 |
 | **Verification & safety**  | `forge verify`    | independent gate — tests + hallucinated-symbol flag + provenance; `--deep` multi-lens consensus (`--llm` reviewer panel) |
 |                            | `forge precommit` | commit-level gate rung — staged code w/o docs + secret scan (`FORGE_COMMIT_GATE=block\|warn\|0`)                         |
+|                            | `forge radar`     | dependency-currency rings (adopt/trial/assess/hold) from registry evidence — cached, offline-honest                      |
 |                            | `forge scan`      | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil                                                       |
 |                            | `forge spec`      | spec-as-contract drift — init / lock / check                                                                             |
 | **UI / design**            | `forge taste`     | pick one visual direction → DESIGN.md                                                                                    |
 |                            | `forge uicheck`   | contrast · fingerprint · design · visual (WCAG · slop+conformance · Playwright)                                          |
 | **Observability**          | `forge dash`      | localhost-only read-only dashboard over ledger, metrics, blast radius (default port 4242)                                |
+
 
 **→ Every command with a worked example and real output:
 [`docs/GUIDE.md`](docs/GUIDE.md).**

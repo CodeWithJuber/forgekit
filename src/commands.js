@@ -12,6 +12,8 @@ export const COMMANDS = {
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   stack:
     "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
+  radar:
+    "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
@@ -88,6 +90,7 @@ export const GROUPS = {
   Quality: [
     "verify",
     "precommit",
+    "radar",
     "scan",
     "spec",
     "taste",

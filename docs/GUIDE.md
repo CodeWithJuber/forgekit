@@ -31,7 +31,7 @@ Every command is real and wired. Grouped by what it does:
 | **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
 | **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
 | **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
-| **Verification & safety**    | `forge verify` · `forge precommit` · `forge scan` · `forge spec`                                                                                                           |
+| **Verification & safety**    | `forge verify` · `forge precommit` · `forge radar` · `forge scan` · `forge spec`                                                                                           |
 | **UI / design**              | `forge taste` · `forge uicheck`                                                                                                                                            |
 | **Dashboard**                | `forge dash`                                                                                                                                                               |
 
@@ -502,6 +502,45 @@ Detection reads `package.json` (deps → frameworks, lockfile → package manage
 `pyproject.toml`/`requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`,
 `pom.xml`/`build.gradle`, and `*.csproj`. Widening it is adding a data row, not code.
 `--json` for tooling. Nothing detected → an honest "no known stack".
+
+### `forge radar` — is what this repo stands on still current?
+
+`forge stack` says _what_ this repo is built on; `forge radar` says whether it's still
+_current_. It reads the Node manifests, probes the registry for each dependency, and places
+every one in a ring computed from evidence — no hardcoded package lists:
+
+```console
+$ forge radar
+  hold   left-pad     1.3.0→1.3.0   ██████████  marked deprecated by its maintainer
+  assess got          9.6.0→14.4.5  ███████░░░  high advisory: SSRF via redirect; 5 majors behind (v9→v14)
+  trial  express      4.18.2→4.21.0 ████░░░░░░  latest published 210d ago (half-life 540d)
+  adopt  zod          3.23.8→3.23.8 █░░░░░░░░░
+  Go: currency probe is Node-first
+```
+
+Rings are a **formula over registry evidence** (mizan — every ring ships the evidence that
+earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
+lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
+(import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
+Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
+two verified evidence kinds → **`assess` (never `adopt` on absence)** — missing evidence never
+upgrades a dep. Otherwise `score < .25 → adopt`, `< .5 → trial`, else `assess`.
+
+The scan is cached at `.forge/radar.json` (TTL 24h, override with `FORGE_RADAR_TTL_H`).
+`--offline` serves the stale cache (flagged with its age) or fails honestly rather than
+guessing; `--refresh` re-probes; `--json` for tooling. The network probe is injectable and
+never runs inside a hook or test. A network scan also records **I4 verified-currency evidence**
+into the ledger — one `currency:<dep>` fact per dependency, superseding the prior verification
+(latest stays live, history in tombstones) — and a `radar` metrics line.
+
+Once a scan exists, the **pre-edit hook** surfaces a one-line advisory (cache-only — hooks
+never fetch) when you open a file that imports a `hold` dep (or an `assess` dep with an open
+advisory): _"radar — src/x.js imports left-pad (ring hold: marked deprecated…). Check `forge
+radar` before building on it."_ Silence it with `FORGE_RADAR=0`.
+
+The `dev-radar` skill is the LLM _wide scan_ across the ecosystem; `forge radar` is the
+deterministic _repo instrument_ — it implements `global/rules/tech-currency.md` against THIS
+repo's actual manifests.
 
 ### `forge update` — self-update
 
@@ -1137,17 +1176,20 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                        |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                        |
 | `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                  |
-| `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                                                                           |
-| `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                                                                |
-| `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                                                                           |
-| `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                |
-| `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                             |
-| `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                            |
-| `NO_COLOR`                                                     | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention                                                   |
-| `FORCE_COLOR`                                                  | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR`                                                       |
-| `TERM` / `COLORTERM`                                           | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues                                                     |
-| `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                                                             |
-| `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                                                                   |
+
+| `FORGE_RADAR` | `0` disables the pre-edit dependency-currency advisory |
+| `FORGE_RADAR_TTL_H` | `forge radar` cache TTL in hours (default 24) |
+| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
+| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
+| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
+| `FORGE_COMMIT_GATE` | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode |
+| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
+| `FORGE_VERBOSE` | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`) |
+| `NO_COLOR` | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention |
+| `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
+| `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
+| `FORGE_NO_UPDATE_CHECK` | `1` silences the `forge doctor` update notice |
+| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 
 ---
 

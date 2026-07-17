@@ -39,7 +39,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   suite or a leaked secret blocks solo. Findings extend `.forge/provenance.json`
   with per-lens evidence and the Theorem-D residual `∏(1−cⱼ)` over the lenses that
   ran, and each run appends one `stage:"verify"` metrics record.
-  > > > > > > > da582d1 (feat(verify): multi-lens consensus (noisy-OR + cross-family gate, optional N-sample reviewer))
+- **`forge radar` — dependency-currency rings (I4 verified currency).** New zero-dep
+  `src/radar.js` reads this repo's Node manifests, probes the registry (injectable
+  `fetchImpl`; metadata + bulk advisories; 4s timeout) and classifies every dependency
+  into an adopt/trial/assess/hold ring from _evidence_ — staleness (540-day half-life),
+  major-version lag, severity-weighted advisories, deprecation; atlas usage is stakes,
+  not risk. Deprecated or a critical advisory → `hold`; fewer than two verified evidence
+  kinds → `assess` (never adopt on absence). Cached at `.forge/radar.json`
+  (`FORGE_RADAR_TTL_H`, default 24h); `--offline` serves the stale cache or fails
+  honestly; `--refresh` re-probes; `--json` for tooling. A network scan records I4
+  evidence into the ledger (`currency:<dep>` facts, supersede semantics) plus a metrics
+  line, and the pre-edit hook surfaces a cache-only advisory when a file imports a `hold`
+  dependency (kill switch `FORGE_RADAR=0`).
 
 ## [0.19.0] - 2026-07-17
 
