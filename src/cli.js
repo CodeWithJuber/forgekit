@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
@@ -12,6 +15,28 @@ import { printCommandHelp } from "./help.js";
 import { suggest } from "./math.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
+
+// Commands that are themselves the onboarding path — nudging on them would be circular.
+const HINT_SKIP = new Set(["init", "help", "version"]);
+
+/** First-run nudge: if the user has never run `forge init` (no forge-managed marker in
+ *  ~/.claude/settings.json) and is invoking a real command, print ONE tip line to stderr.
+ *  Stateless — zero writes — and self-silences the moment `init` (or install.sh) writes the
+ *  marker. FORGE_NO_HINT=1 mutes it. Never throws; a missing/garbage settings file just
+ *  means "not yet managed". */
+function maybeFirstRunHint(cmd) {
+  if (process.env.FORGE_NO_HINT === "1") return;
+  if (!(cmd in COMMANDS) || HINT_SKIP.has(cmd)) return;
+  try {
+    const settings = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
+    if (settings?._forge === "forge-managed") return;
+  } catch {
+    // missing or unparseable → not managed → fall through and hint
+  }
+  console.error(
+    `Tip: run \`${BRAND.cli} init\` to wire hooks/permissions, or \`${BRAND.cli} doctor --fix\`. Silence: FORGE_NO_HINT=1.`,
+  );
+}
 
 // Per-command title lines ("Forge <cmd> — …") are branding chrome, not results. They
 // print only when asked (`--verbose` or FORGE_VERBOSE=1); by default a command emits
@@ -57,6 +82,7 @@ async function run(argv) {
     process.exitCode = printCommandHelp(cmd);
     return;
   }
+  maybeFirstRunHint(cmd);
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -69,10 +95,24 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
-    const { report, bytes, settings, detected } = init({
-      targetRoot: process.cwd(),
-      noSettings,
-    });
+    // --settings-only: wire hooks + permissions into ~/.claude/settings.json ONLY (the
+    // idempotent, marker-guarded merge install.sh calls) — no repo emit, no AGENTS.md.
+    if (argv.includes("--settings-only")) {
+      const { settings } = init({ settingsOnly: true, noSettings });
+      heading(`${BRAND.brand} init — settings merge only\n`);
+      if (settings?.action === "merged" && "added" in settings) {
+        console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+      } else if (settings?.action === "unchanged" && "path" in settings) {
+        console.log(`  settings: already up to date (${settings.path})`);
+      } else if (settings?.action === "skipped") {
+        console.log("  settings: skipped (--no-settings)");
+      }
+      return;
+    }
+    const { report, bytes, settings, detected } =
+      /** @type {{report: {action: string, target: string}[], bytes: number, settings: any, detected: any}} */ (
+        init({ targetRoot: process.cwd(), noSettings })
+      );
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);

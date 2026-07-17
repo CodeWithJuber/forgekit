@@ -174,6 +174,12 @@ Output is plain text when piped; on a TTY it adds brand-palette color and confid
 meters. `NO_COLOR` turns color off, `FORCE_COLOR=1` forces it on (e.g. in CI, `0`
 forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 
+The first time you run a real command before `~/.claude/settings.json` is forge-managed,
+one tip line points at `forge init` (or `forge doctor --fix`) to wire hooks + permissions;
+it self-silences once init runs and `FORGE_NO_HINT=1` mutes it entirely. `install.sh` does
+this wiring for you via `forge init --settings-only` — an idempotent, marker-guarded merge
+that never clobbers your existing settings.
+
 | Group                      | Command           | Does                                                                                                                                   |
 | -------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                                        |

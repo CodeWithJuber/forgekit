@@ -148,11 +148,29 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   };
 }
 
-/** Scaffold this repo's cross-tool config (emit every tool) in one step. */
-export function init({ targetRoot = process.cwd(), noSettings = false } = {}) {
+/**
+ * Scaffold this repo's cross-tool config (emit every tool) in one step.
+ *
+ * `settingsOnly` runs the idempotent, marker-guarded `mergeSettings` ONLY — no repo
+ * emit, no AGENTS.md, no gitattributes. That is the surface `install.sh` calls to wire
+ * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
+ * @param {{targetRoot?: string, noSettings?: boolean, settingsOnly?: boolean, settingsPath?: string}} [opts]
+ */
+export function init({
+  targetRoot = process.cwd(),
+  noSettings = false,
+  settingsOnly = false,
+  settingsPath,
+} = {}) {
+  if (settingsOnly) {
+    return {
+      settings: mergeSettings({ noSettings, settingsPath }),
+      settingsOnly: true,
+    };
+  }
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
-  const settings = mergeSettings({ noSettings });
+  const settings = mergeSettings({ noSettings, settingsPath });
   const detected = autoDetectProvider();
   return { ...r, settings, detected };
 }

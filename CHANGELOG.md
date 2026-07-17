@@ -24,7 +24,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `repairs:` block, then re-checks; a second run is a clean no-op. Unsafe findings
   (provider keys, MCP count, pricing, gateway) stay report-only. The `node` check is now
   reconciled with `package.json` engines (`>=20`): fail below 18, warn on 18–19, ok on 20+.
-  > > > > > > > 98789f2 (feat(doctor): --fix auto-repair (reuse mergeSettings/sync/gitattributes/chmod) + node threshold)
+- **Zero-config settings wiring + first-run hint.** `forge init --settings-only`
+  runs only the idempotent, `_forge`-marker-guarded settings merge (hooks +
+  permissions into `~/.claude/settings.json`) with no repo emit, and `install.sh`
+  now calls it instead of printing a block to paste by hand (honoring `--dry-run`).
+  When a real command runs before settings are forge-managed, one tip line to stderr
+  points at `forge init` / `forge doctor --fix`; it is stateless, self-silences once
+  init runs, and `FORGE_NO_HINT=1` mutes it.
 
 ## [0.20.0] - 2026-07-17
 
