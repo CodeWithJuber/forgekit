@@ -3,7 +3,7 @@
 // COMMANDS table docs_check reconciles, via commandHelp() (which normalizes string and
 // object entries), so a command's help can never drift from its documented existence.
 import { BRAND } from "./brand.js";
-import { commandHelp, COMMANDS } from "./commands.js";
+import { COMMANDS, commandHelp } from "./commands.js";
 import { heading, paint } from "./fmt.js";
 import { suggest } from "./math.js";
 

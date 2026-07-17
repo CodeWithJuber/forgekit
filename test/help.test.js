@@ -44,10 +44,7 @@ test("commandHelp: unknown command → null", () => {
 
 test("suggest: finds the nearest command and abstains below the floor", () => {
   const names = Object.keys(COMMANDS);
-  assert.ok(
-    ["docs", "doctor"].includes(suggest("docto", names)),
-    "close typo → a real command",
-  );
+  assert.ok(["docs", "doctor"].includes(suggest("docto", names)), "close typo → a real command");
   assert.equal(suggest("verifyy", names), "verify", "trailing typo → verify");
   assert.equal(suggest("zzzzzzzzz", names), null, "nothing close → null");
   assert.equal(suggest("", names), null, "empty → null");
