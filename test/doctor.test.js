@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -94,4 +94,57 @@ test("doctor checks plugin manifests and hook compatibility", () => {
   assert.match(claude.note, /additive hook command/);
   assert.equal(codex.status, "ok");
   assert.match(codex.note, /no repo-level hook takeover/);
+});
+
+test("doctor --fix turns a missing-hooks settings warn into ok via mergeSettings", () => {
+  const root = fixture();
+  const settingsPath = join(fixture(), "settings.json"); // absent → not forge-managed
+
+  const before = doctor({ targetRoot: root, settingsPath }).results.find(
+    (r) => r.label === "settings",
+  );
+  assert.ok(before, "settings check ran");
+  assert.equal(before.status, "warn");
+  assert.ok(before.fix, "warn carries a fix descriptor");
+
+  const fixed = doctor({ targetRoot: root, settingsPath, fix: true });
+  const settings = fixed.results.find((r) => r.label === "settings");
+  assert.equal(settings.status, "ok", "settings warn → ok after --fix");
+  assert.ok(
+    fixed.repairs.some((rep) => rep.id === "settings" && rep.ok),
+    "a settings repair was recorded",
+  );
+  // mergeSettings actually wrote the marker + hooks.
+  const written = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.equal(written._forge, "forge-managed");
+  assert.ok(written.hooks && Object.keys(written.hooks).length, "hooks merged in");
+});
+
+test("doctor --fix adds the ledger union-merge rule to .gitattributes", () => {
+  const root = fixture();
+  // A populated ledger makes the 'ledger merge' check run (empty ledgers report ok early).
+  mkdirSync(join(root, ".forge", "ledger", "claims"), { recursive: true });
+  const settingsPath = join(fixture(), "settings.json");
+
+  const before = doctor({ targetRoot: root, settingsPath }).results.find(
+    (r) => r.label === "ledger merge",
+  );
+  assert.equal(before.status, "warn");
+
+  doctor({ targetRoot: root, settingsPath, fix: true });
+  const attrs = join(root, ".gitattributes");
+  assert.ok(existsSync(attrs), ".gitattributes was created");
+  assert.match(readFileSync(attrs, "utf8"), /\.forge\/ledger\//);
+});
+
+test("doctor --fix is idempotent — a second run repairs nothing", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge", "ledger", "claims"), { recursive: true });
+  const settingsPath = join(fixture(), "settings.json");
+
+  const first = doctor({ targetRoot: root, settingsPath, fix: true });
+  assert.ok(first.repairs.length > 0, "first --fix run does work");
+
+  const second = doctor({ targetRoot: root, settingsPath, fix: true });
+  assert.equal(second.repairs.length, 0, "second --fix run is a no-op");
 });

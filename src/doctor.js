@@ -1,6 +1,14 @@
 // forge doctor — turn silent misconfiguration into an actionable pass/fail list
 // (chezmoi-doctor pattern). Exits non-zero only on hard failures, not warnings.
-import { accessSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isStale, load as loadAtlas } from "./atlas.js";
@@ -9,10 +17,11 @@ import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
 import { hashContent, mdHeader } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
+import { ensureLedgerGitattributes, mergeSettings } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { canonical } from "./sync.js";
+import { canonical, sync } from "./sync.js";
 import { updateStatus } from "./update.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -22,6 +31,39 @@ const fail = (label, note = "") => ({ status: "fail", label, note });
 import { hasBin } from "./util.js";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const readJsonSafe = (p) => {
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+};
+
+// The user's ~/.claude/settings.json must carry Forge's hooks + permissions or none of the
+// session-start rehydrate / advisory hooks fire — the silent-onboarding failure. Fixable by
+// re-running the same idempotent merge init uses (mergeSettings), marker-guarded so it never
+// clobbers hand-written entries.
+function checkSettings(out, settingsPath) {
+  const path = settingsPath || join(homedir(), ".claude", "settings.json");
+  const data = readJsonSafe(path);
+  const managed = !!data?._forge;
+  const hasHooks = !!(data?.hooks && Object.keys(data.hooks).length);
+  if (managed && hasHooks) {
+    out.push(ok("settings", "forge-managed hooks + permissions present"));
+    return;
+  }
+  const note = data
+    ? "not forge-managed — hooks/permissions missing; run `forge doctor --fix` or `forge init`"
+    : "missing — run `forge doctor --fix` or `forge init`";
+  out.push({
+    ...warn("settings", note),
+    fix: {
+      id: "settings",
+      label: "merge forge hooks + permissions into settings.json",
+      run: () => mergeSettings({ settingsPath }),
+    },
+  });
+}
 
 // External tools the guards/commands depend on. secret-redact now runs in Node (no jq),
 // so node is the security-critical dependency; jq only helps protect-paths parse more
@@ -67,14 +109,27 @@ function checkGuardsExecutable(out) {
       return true;
     }
   });
-  out.push(
-    notExec.length
-      ? warn(
-          "guards exec",
-          `${notExec.length} not executable (chmod +x): ${notExec.slice(0, 3).join(", ")}`,
-        )
-      : ok("guards exec", `${scripts.length} guard(s) executable`),
-  );
+  if (notExec.length) {
+    out.push({
+      ...warn(
+        "guards exec",
+        `${notExec.length} not executable (chmod +x): ${notExec.slice(0, 3).join(", ")}`,
+      ),
+      fix: {
+        id: "guards",
+        label: `chmod +x ${notExec.length} guard(s)`,
+        run: () => {
+          for (const f of notExec) {
+            const p = join(dir, f);
+            chmodSync(p, statSync(p).mode | 0o111);
+          }
+          return { chmodded: notExec.length };
+        },
+      },
+    });
+  } else {
+    out.push(ok("guards exec", `${scripts.length} guard(s) executable`));
+  }
 }
 
 // Model prices drift; a stale table quietly misinforms the cost/route commands.
@@ -105,12 +160,20 @@ function checkAtlas(out, targetRoot) {
   );
 }
 
+// Reconciled with package.json `engines` (>=20): >=20 ok, 18–19 warn (works, upgrade
+// recommended), <18 hard fail. Ends the old 18-vs-20 threshold mismatch. No auto-fix — the
+// runtime can't upgrade itself.
 function checkNode(out) {
   const major = Number(process.versions.node.split(".")[0]);
   out.push(
-    major >= 18
+    major >= 20
       ? ok("node", `v${process.versions.node}`)
-      : fail("node", `v${process.versions.node} < 18`),
+      : major >= 18
+        ? warn(
+            "node",
+            `v${process.versions.node} — Forge targets Node >=20 (package.json engines); 18–19 works but upgrade recommended`,
+          )
+        : fail("node", `v${process.versions.node} < 18`),
   );
 }
 
@@ -232,9 +295,17 @@ function checkInstall(out) {
 }
 
 function checkDrift(out, targetRoot) {
+  const syncFix = {
+    id: "agents",
+    label: "emit/refresh AGENTS.md (forge sync)",
+    run: () => sync({ targetRoot }),
+  };
   const agents = join(targetRoot, "AGENTS.md");
   if (!existsSync(agents)) {
-    out.push(warn("AGENTS.md", "not emitted here — run `forge sync`"));
+    out.push({
+      ...warn("AGENTS.md", "not emitted here — run `forge sync`"),
+      fix: syncFix,
+    });
     return;
   }
   // Compare the actual file to the full expected content, not just the embedded marker —
@@ -245,7 +316,10 @@ function checkDrift(out, targetRoot) {
   out.push(
     actual === expected
       ? ok("AGENTS.md", "in sync")
-      : warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
+      : {
+          ...warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
+          fix: syncFix,
+        },
   );
 }
 
@@ -297,10 +371,17 @@ function checkLedger(out, targetRoot) {
   out.push(
     hasRule
       ? ok("ledger merge", "union-merge driver present in .gitattributes")
-      : warn(
-          "ledger merge",
-          "no union-merge rule — run `forge init` or teammate merges will conflict",
-        ),
+      : {
+          ...warn(
+            "ledger merge",
+            "no union-merge rule — run `forge init` or teammate merges will conflict",
+          ),
+          fix: {
+            id: "gitattributes",
+            label: "add ledger union-merge rule to .gitattributes",
+            run: () => ensureLedgerGitattributes(targetRoot),
+          },
+        },
   );
   const v = ledgerVerify(dir);
   out.push(
@@ -420,9 +501,10 @@ export function subsystemHealth(results) {
   return health;
 }
 
-export function doctor({ targetRoot = process.cwd() } = {}) {
+function runChecks(targetRoot, settingsPath) {
   const results = [];
   checkNode(results);
+  checkSettings(results, settingsPath);
   checkProvider(results, targetRoot);
   checkGateway(results);
   checkBrandConsistency(results);
@@ -439,9 +521,42 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkCortex(results, targetRoot);
   checkLedger(results, targetRoot);
   checkUpdate(results);
+  return results;
+}
+
+/**
+ * Health-check this repo + the user's config. With `fix:true`, each warn/fail result carrying
+ * a `{id,label,run}` descriptor has its idempotent repair run (mergeSettings / ensureLedger-
+ * gitattributes / sync / chmod — all safe, no-op if already applied), then every check re-runs
+ * so the returned `results` reflect the repaired state. Unsafe findings (provider keys, MCP,
+ * pricing, gateway) carry no descriptor and stay report-only.
+ * @param {{targetRoot?: string, fix?: boolean, settingsPath?: string}} [opts]
+ */
+export function doctor({ targetRoot = process.cwd(), fix = false, settingsPath } = {}) {
+  let results = runChecks(targetRoot, settingsPath);
+  const repairs = [];
+  if (fix) {
+    for (const r of results) {
+      if ((r.status === "warn" || r.status === "fail") && r.fix) {
+        try {
+          const detail = r.fix.run();
+          repairs.push({ id: r.fix.id, label: r.fix.label, ok: true, detail });
+        } catch (err) {
+          repairs.push({
+            id: r.fix.id,
+            label: r.fix.label,
+            ok: false,
+            error: err.message,
+          });
+        }
+      }
+    }
+    results = runChecks(targetRoot, settingsPath);
+  }
   return {
     results,
     failed: results.filter((r) => r.status === "fail").length,
+    repairs,
     health: subsystemHealth(results),
   };
 }

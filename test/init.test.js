@@ -93,6 +93,33 @@ test("mergeSettings backs up an existing valid file and resolves guard paths abs
   );
 });
 
+test("init({settingsOnly}) merges hooks + permissions but never emits repo config", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-settingsonly-"));
+  const settingsPath = join(root, ".claude", "settings.json");
+  const r = init({ targetRoot: root, settingsOnly: true, settingsPath });
+  // Settings were written and marked forge-managed.
+  assert.ok(existsSync(settingsPath), "settings.json written");
+  const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.equal(settings._forge, "forge-managed", "marker stamped");
+  assert.ok(settings.hooks, "hooks merged");
+  assert.ok(settings.permissions, "permissions merged");
+  assert.equal(r.settings.path, settingsPath, "reports the merged path");
+  // But NO repo emit: none of the per-tool config files exist.
+  assert.ok(!existsSync(join(root, "AGENTS.md")), "no AGENTS.md emitted");
+  assert.ok(!existsSync(join(root, "CLAUDE.md")), "no CLAUDE.md emitted");
+  assert.ok(!existsSync(join(root, ".aider.conf.yml")), "no .aider.conf.yml emitted");
+  assert.ok(!existsSync(join(root, ".gitattributes")), "no gitattributes emitted");
+});
+
+test("init({settingsOnly}) is idempotent — a second run reports unchanged", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-settingsonly-idem-"));
+  const settingsPath = join(root, ".claude", "settings.json");
+  const first = init({ targetRoot: root, settingsOnly: true, settingsPath });
+  assert.equal(first.settings.action, "merged");
+  const second = init({ targetRoot: root, settingsOnly: true, settingsPath });
+  assert.equal(second.settings.action, "unchanged", "re-run never clobbers");
+});
+
 test("catalog indexes tools (with a why), crew, and guards", () => {
   const c = catalog();
   assert.ok(

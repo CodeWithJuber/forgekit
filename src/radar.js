@@ -362,10 +362,15 @@ export function usageFromAtlas(root, names) {
     return counts;
   }
   const edges = Array.isArray(atlas?.edges) ? atlas.edges : [];
+  // Most-specific name wins: test longer names first so `lodash.debounce` (a real,
+  // distinct package) is credited its own import rather than being swallowed by the
+  // `lodash.` member-prefix of the shorter `lodash`, which alphabetical manifest order
+  // would otherwise test first.
+  const ordered = [...names].sort((a, b) => b.length - a.length);
   for (const e of edges) {
     if (e?.kind !== "imports") continue;
     const target = String(e.target ?? "");
-    for (const n of names) {
+    for (const n of ordered) {
       if (target === n || target.startsWith(`${n}/`) || target.startsWith(`${n}.`)) {
         counts[n]++;
         break;

@@ -26,9 +26,14 @@ import { epochDay, gitAuthor } from "./util.js";
  *  edges, fingerprints) are not "have I done this task before" memory. */
 export const DEJA_KINDS = ["summary", "lesson", "diagnosis"];
 
-/** Retrieval score below which a hit is noise, not a déjà vu — calibrated in tests.
- *  The advisory stays silent under this floor so an unrelated task says nothing. */
-export const DEJA_FLOOR = 0.55;
+/** Retrieval score below which a hit is noise, not a déjà vu — calibrated against the
+ *  REAL range of retrieve() for repo-scoped `summary` claims. score() = σ(a·rel+b·rec+g·val)
+ *  × SCOPE_WEIGHT.repo (ledger.js): with a+b+g=1 the σ term is < 0.7311 and the 0.6 repo
+ *  weight caps a same-day identical-task hit at ≈0.42, while an unrelated task sits ≈0.34.
+ *  The floor must live in that band — 0.55 (the old value) exceeded the ceiling, so the
+ *  advisory could NEVER fire. 0.39 clears the noise floor with margin and still catches a
+ *  strong match. A test drives the full path so this stays inside the achievable range. */
+export const DEJA_FLOOR = 0.39;
 
 // Same test-command grammar cortex_hook.js keys its S1 signal on — a passing run here
 // is exactly what "this session's work was verified" means. Kept local (one small

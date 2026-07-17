@@ -245,13 +245,29 @@ function writeProfile(targetRoot, profile) {
 
 /**
  * Scaffold this repo's cross-tool config (emit every tool) in one step.
- * @param {{targetRoot?: string, noSettings?: boolean, profile?: string}} [opts]
+ *
+ * `settingsOnly` runs the idempotent, marker-guarded `mergeSettings` ONLY — no repo
+ * emit, no AGENTS.md, no gitattributes. That is the surface `install.sh` calls to wire
+ * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string}} [opts]
  */
-export function init({ targetRoot = process.cwd(), noSettings = false, profile } = {}) {
+export function init({
+  targetRoot = process.cwd(),
+  noSettings = false,
+  profile,
+  settingsOnly = false,
+  settingsPath,
+} = {}) {
+  if (settingsOnly) {
+    return {
+      settings: mergeSettings({ noSettings, settingsPath }),
+      settingsOnly: true,
+    };
+  }
   const profileResult = writeProfile(targetRoot, profile);
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
-  const settings = mergeSettings({ noSettings });
+  const settings = mergeSettings({ noSettings, settingsPath });
   const detected = autoDetectProvider();
   return { ...r, settings, detected, profile: profileResult };
 }

@@ -77,24 +77,23 @@ install_forge() {
 
   case ":$PATH:" in *":$BIN_DIR:"*) : ;; *) say "note: add $BIN_DIR to PATH (e.g. echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc)";; esac
 
+  # Wire guards + statusline into settings.json via the idempotent, marker-guarded merge
+  # (`forge init --settings-only`) instead of printing a block to paste by hand. mergeSettings
+  # never clobbers existing entries — it unions hooks/permissions and stamps a _forge marker,
+  # so re-running install.sh is a no-op. Under --dry-run we print the call for transparency.
+  if [ "$DRY" = 1 ]; then
+    say "[dry-run] would merge guards + statusline into $CLAUDE_DIR/settings.json via:"
+    say "[dry-run]   node \"$REPO/src/cli.js\" init --settings-only"
+    say "[dry-run] (idempotent + _forge-marker-guarded — existing settings are preserved)"
+  else
+    say "Merging guards + statusline into $CLAUDE_DIR/settings.json (idempotent, never clobbers)"
+    node "$REPO/src/cli.js" init --settings-only 2>&1 | sed 's/^/  /' \
+      || say "note: settings merge skipped — run \`forge init --settings-only\` once node is available"
+  fi
+
   cat <<EOF
 
-  Done. Guards + statusline need ONE manual merge into $CLAUDE_DIR/settings.json
-  (kept manual so your existing settings are never clobbered):
-
-    "statusLine": { "type": "command", "command": "bash $FORGE_ASSETS/statusline.sh" },
-    "hooks": {
-      "UserPromptSubmit": [ { "hooks": [ { "type": "command",
-        "command": "bash $FORGE_ASSETS/guards/cortex.sh preflight" } ] } ],
-      "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
-        "hooks": [ { "type": "command", "command": "bash $FORGE_ASSETS/guards/protect-paths.sh" } ] } ],
-      "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",
-        "hooks": [ { "type": "command", "command": "bash $FORGE_ASSETS/guards/format-on-edit.sh" } ] } ],
-      "Stop": [ { "hooks": [ { "type": "command",
-        "command": "bash $FORGE_ASSETS/guards/completion-gate.sh" } ] } ]
-    }
-
-  Or install the plugin instead (guards auto-wire): /plugin marketplace add <this-repo> then /plugin install forgekit.
+  Done. Or install the plugin instead (guards auto-wire): /plugin marketplace add <this-repo> then /plugin install forgekit.
   Run \`forge doctor\` to verify.
 EOF
 }

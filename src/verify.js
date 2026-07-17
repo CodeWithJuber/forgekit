@@ -139,13 +139,21 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     .join("\n");
   // Untracked (new, not-yet-added) files are part of the change too — a brand-new source file
   // and its call sites would be invisible to `git diff`. Fold their paths into changedFiles and
-  // their contents into `added` so provenance and the hallucination check both see them.
+  // their contents into `added` so provenance and the hallucination check both see them (P0-09).
   const untracked = git(["ls-files", "--others", "--exclude-standard"], targetRoot)
     .split("\n")
     .filter(Boolean);
+  // Mirror the diff's --cached fallback so the base file list is derived from the SAME diff that
+  // produced `added` (a base whose worktree matches HEAD but whose index differs would otherwise
+  // yield `added` from --cached while changedFiles stayed empty, weakening impact/docsdrift).
   const changedFiles = [
     ...new Set([
-      ...git(["diff", "--name-only", base], targetRoot).split("\n").filter(Boolean),
+      ...(
+        git(["diff", "--name-only", base], targetRoot) ||
+        git(["diff", "--name-only", "--cached"], targetRoot)
+      )
+        .split("\n")
+        .filter(Boolean),
       ...untracked,
     ]),
   ];

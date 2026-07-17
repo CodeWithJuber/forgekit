@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test(".claude/settings.json wires only real, executable guards via ${CLAUDE_PROJECT_DIR}", () => {
+test(".claude/settings.json wires only real, executable scripts via ${CLAUDE_PROJECT_DIR}", () => {
   const s = JSON.parse(readFileSync(join(repo, ".claude", "settings.json"), "utf8"));
   const commands = Object.values(s.hooks)
     .flat()
@@ -17,11 +17,11 @@ test(".claude/settings.json wires only real, executable guards via ${CLAUDE_PROJ
   assert.ok(commands.length >= 10, "the full guard set is wired");
   for (const cmd of commands) {
     assert.match(cmd, /\$\{CLAUDE_PROJECT_DIR\}/, `resolves through the project dir: ${cmd}`);
-    // extract the .sh path (first token ending in .sh)
-    const m = cmd.match(/global\/guards\/([\w-]+\.sh)/);
-    assert.ok(m, `references a guard script: ${cmd}`);
-    const path = join(repo, "global", "guards", m[1]);
-    accessSync(path, constants.X_OK); // exists AND executable, else throws
+    // A wired script is either a global guard or a repo-local hook (e.g. the web
+    // session-start install hook) — both must exist AND be executable.
+    const m = cmd.match(/\}"?\/((?:global\/guards|\.claude\/hooks)\/[\w-]+\.sh)/);
+    assert.ok(m, `references a guard or repo hook script: ${cmd}`);
+    accessSync(join(repo, m[1]), constants.X_OK); // exists AND executable, else throws
   }
 });
 

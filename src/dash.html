@@ -145,6 +145,57 @@
         font-size: 12px;
         padding: var(--s2) 0;
       }
+      [hidden] {
+        display: none;
+      }
+
+      /* First-run empty state: one plain-language banner keyed off meta.empty, so a
+         fresh .forge/ reads as "nothing here yet" instead of blank panels. */
+      .empty-banner {
+        grid-column: 1 / -1;
+        background: var(--ember-wash);
+        border: 1px solid var(--ember);
+        border-radius: var(--r-m);
+        padding: var(--s4);
+        color: var(--fg);
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .empty-banner b {
+        color: var(--ember);
+      }
+
+      /* Panel legend: a "?" toggle that explains what each panel means in one plain
+         sentence — the dashboard was called confusing, so every lens gets a caption. */
+      #legend-toggle.on {
+        color: var(--ember);
+        border-color: var(--ember);
+      }
+      .legend dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: var(--s2) var(--s4);
+      }
+      .legend dt {
+        font: 600 11px var(--mono);
+        color: var(--ember);
+        white-space: nowrap;
+      }
+      .legend dd {
+        margin: 0;
+        color: var(--muted);
+      }
+      @media (max-width: 560px) {
+        .legend dl {
+          grid-template-columns: 1fr;
+          gap: var(--s1) 0;
+        }
+        .legend dt {
+          margin-top: var(--s2);
+        }
+      }
 
       /* stat tiles */
       .stats {
@@ -434,10 +485,64 @@
         ><b>forge</b> dash <span id="hdr-repo" class="muted"></span
       ></span>
       <span id="hdr-meta"></span>
+      <button
+        id="legend-toggle"
+        type="button"
+        aria-expanded="false"
+        title="what does each panel mean?"
+      >
+        ? legend
+      </button>
       <button id="refresh" type="button">refresh</button>
     </header>
 
     <main>
+      <div id="empty-state" class="empty-banner" hidden>
+        <b>No data in .forge/ yet</b> — run
+        <span class="mono">forge sync</span>, then work a session. Claims, cost,
+        and trends fill in here as the substrate records what happens.
+      </div>
+
+      <section class="panel wide legend" id="legend" hidden>
+        <h2>What each panel means</h2>
+        <dl>
+          <dt>Ledger</dt>
+          <dd>
+            Proof-carrying claims the substrate has learned, each scored by how
+            often evidence has confirmed it (val).
+          </dd>
+          <dt>Cost / Cache</dt>
+          <dd>
+            Real spend and tokens saved, measured from your session metrics —
+            asserted by nothing, counted from what happened.
+          </dd>
+          <dt>Impact</dt>
+          <dd>
+            The blast radius of a change: which files a given symbol or file
+            would ripple out to.
+          </dd>
+          <dt>Radar</dt>
+          <dd>
+            Whether each dependency is current, deprecated, or worth adopting —
+            grouped into adopt / trial / assess / hold rings.
+          </dd>
+          <dt>Trends</dt>
+          <dd>
+            How each pipeline stage has behaved over the recent window, as a
+            per-stage sparkline of activity.
+          </dd>
+          <dt>Memory browser</dt>
+          <dd>
+            Search past claims, ranked by relevance × freshness × confidence —
+            the same recall that powers <span class="mono">forge deja</span>.
+          </dd>
+          <dt>Session timeline</dt>
+          <dd>
+            The durable history of claims minted and retracted, carried across
+            sessions.
+          </dd>
+        </dl>
+      </section>
       <section class="panel wide" id="ledger-panel">
         <h2>
           Ledger — proof-carrying memory <span class="cmd">.forge/ledger/</span>
@@ -1038,9 +1143,16 @@
         } catch {}
       }
 
+      // First-run banner: shown only when the payload reports an untouched .forge/.
+      function renderEmptyState(d) {
+        const es = $("empty-state");
+        if (es) es.hidden = !d?.meta?.empty;
+      }
+
       async function refresh() {
         const res = await fetch("/api/data");
         DATA = await res.json();
+        renderEmptyState(DATA);
         renderLedger(DATA);
         renderCost(DATA);
         // v2 lenses — each is independent, a failure in one never blanks the others.
@@ -1100,6 +1212,15 @@
           });
       });
       $("refresh").addEventListener("click", refresh);
+      // Panel legend: pure display toggle, no fetch, no writes.
+      $("legend-toggle").addEventListener("click", () => {
+        const legend = $("legend");
+        const btn = $("legend-toggle");
+        const open = legend.hidden;
+        legend.hidden = !open;
+        btn.classList.toggle("on", open);
+        btn.setAttribute("aria-expanded", String(open));
+      });
       $("kind-filter").addEventListener(
         "change",
         () => DATA && renderLedger(DATA),
