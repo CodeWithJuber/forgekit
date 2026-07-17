@@ -17,6 +17,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files get advice naming the right command, secrets are refused before dispatch,
   and `--dry-run`/`--json` route without writing. Distilled Cortex lessons that
   read like decisions or durable facts auto-route to those homes (fail-open).
+- **Commit-level gate rung (`forge precommit`).** The gate lattice's middle rung
+  (turn ⊂ commit ⊂ PR): `src/commit_gate.js` classifies staged files with the same
+  registry-derived classifier as the Stop gate (code staged with no doc/state artifact
+  → finding) and runs the built-in secret detector over staged added lines as a
+  gitleaks fallback. `FORGE_COMMIT_GATE` sets the mode (`warn` default · `block` ·
+  `0` kill switch); a detected secret blocks in every mode. `forge harden` now installs
+  a pre-commit hook that runs gitleaks when present, then the commit gate — and never
+  clobbers a user-authored hook (writes `pre-commit.forge` beside it instead).
 
 ## [0.19.0] - 2026-07-17
 

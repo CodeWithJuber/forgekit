@@ -872,10 +872,27 @@ async function run(argv) {
     const { harden } = await import("./harden.js");
     const r = harden({ targetRoot: process.cwd() });
     heading(`${BRAND.brand} harden\n`);
-    console.log(`  gitleaks pre-commit: ${r.gitleaks}`);
+    console.log(`  gitleaks:            ${r.gitleaks}`);
+    console.log(`  pre-commit gate:     ${r.precommit}`);
     console.log(
       `  sandbox settings:    ${r.sandbox} — merge into ~/.claude/settings.json to enable (84% fewer prompts)`,
     );
+    return;
+  }
+  if (cmd === "precommit") {
+    // The commit-level rung of the gate lattice (turn ⊂ commit ⊂ PR): the harden-installed
+    // pre-commit hook execs this, and it can be run by hand before committing. Exit code
+    // carries the decision (1 = refuse the commit); fail-open inside commitGate.
+    const { commitGate, renderCommitGate } = await import("./commit_gate.js");
+    const r = commitGate(process.cwd());
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.allow) process.exitCode = 1;
+      return;
+    }
+    heading(`${BRAND.brand} precommit — commit-level completeness + secret gate\n`);
+    console.log(renderCommitGate(r));
+    if (!r.allow) process.exitCode = 1;
     return;
   }
   if (cmd === "cortex") {
@@ -1639,7 +1656,10 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = await runInteractions(targets[0], { remote, cwd: process.cwd() });
+      const r = await runInteractions(targets[0], {
+        remote,
+        cwd: process.cwd(),
+      });
       if (!r.ok) {
         const reason = "reason" in r ? r.reason : "interaction run failed";
         if ("skipped" in r && r.skipped) {

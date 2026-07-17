@@ -14,7 +14,9 @@ export const COMMANDS = {
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
   verify: "independent verification gate — tests + hallucinated-symbol + provenance",
-  harden: "wire security controls — gitleaks pre-commit + sandbox settings",
+  precommit:
+    "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+  harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
@@ -60,7 +62,7 @@ export const GROUPS = {
     "imagine",
     "lean",
   ],
-  Quality: ["verify", "scan", "spec", "taste", "uicheck", "harden"],
+  Quality: ["verify", "precommit", "scan", "spec", "taste", "uicheck", "harden"],
   Config: ["config", "cost", "dash", "brand", "atlas", "stack"],
 };
 

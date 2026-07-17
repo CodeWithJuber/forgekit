@@ -1,10 +1,15 @@
 // forge harden — WIRE the mature security controls Anthropic/the community already
 // own: enable the Claude Code sandbox (84% fewer prompts, per Anthropic) and install
-// a Gitleaks pre-commit hook. We never auto-edit ~/.claude/settings.json (no clobber)
-// — we write the sandbox block for the user to merge, and only touch the repo's own hooks.
+// the commit-level gate rung as a pre-commit hook: gitleaks first when it's installed,
+// then the built-in commit gate (`<cli> precommit` — completeness F1 + secret-scan
+// fallback, src/commit_gate.js). We never auto-edit ~/.claude/settings.json (no
+// clobber) — we write the sandbox block for the user to merge — and the same no-clobber
+// rule protects a user-authored pre-commit hook: ours lands beside it as
+// `pre-commit.<cli>` instead of overwriting it.
 
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { BRAND } from "./brand.js";
 import { hasBin as have } from "./util.js";
 
 // The sandbox config to merge into settings — deny the credential dirs an agent should never read.
@@ -13,27 +18,64 @@ const SANDBOX = {
   credentials: { deny: ["~/.aws", "~/.ssh", "GITHUB_TOKEN", "NPM_TOKEN"] },
 };
 
+// The ownership marker: a hook containing this line is OURS to rewrite; anything else
+// is user-authored and never clobbered.
+const MARKER = `installed by ${BRAND.cli} harden`;
+
+/** The pre-commit script: gitleaks when present (deep scan), then the built-in commit
+ *  gate. Fail-open by construction — a missing node or a moved package skips the gate
+ *  instead of bricking every commit on this machine. */
+export function preCommitScript() {
+  const cli = join(BRAND.root, "src", "cli.js");
+  return [
+    "#!/usr/bin/env bash",
+    `# ${MARKER}`,
+    `# commit rung of the gate lattice: gitleaks (if installed) + \`${BRAND.cli} precommit\``,
+    "if command -v gitleaks >/dev/null 2>&1; then",
+    "  gitleaks protect --staged --redact -v || exit 1",
+    "fi",
+    "command -v node >/dev/null 2>&1 || exit 0",
+    `[ -f "${cli}" ] || exit 0`,
+    `exec node "${cli}" precommit`,
+    "",
+  ].join("\n");
+}
+
 export function harden({ targetRoot = process.cwd() } = {}) {
   const report = {};
 
-  // Gitleaks pre-commit (WIRE) — only in a git repo, only if gitleaks is installed.
+  // Pre-commit gate (WIRE) — only in a git repo. gitleaks is now optional: when absent
+  // the hook still runs the built-in secret scan + completeness classifier.
   if (!existsSync(join(targetRoot, ".git"))) {
     report.gitleaks = "not a git repo — skipped";
-  } else if (!have("gitleaks")) {
-    report.gitleaks = "gitleaks not installed — `brew install gitleaks` then re-run";
+    report.precommit = "not a git repo — skipped";
   } else {
+    report.gitleaks = have("gitleaks")
+      ? "installed — the pre-commit hook runs it first"
+      : "not installed — hook falls back to the built-in secret scan (`brew install gitleaks` for deeper coverage)";
     const hooks = join(targetRoot, ".git", "hooks");
     mkdirSync(hooks, { recursive: true });
-    writeFileSync(
-      join(hooks, "pre-commit"),
-      "#!/usr/bin/env bash\n# installed by forge harden\nexec gitleaks protect --staged --redact -v\n",
-    );
+    const hookPath = join(hooks, "pre-commit");
+    let existing = null;
     try {
-      chmodSync(join(hooks, "pre-commit"), 0o755);
+      existing = readFileSync(hookPath, "utf8");
+    } catch {}
+    // No-clobber: a user-authored hook (no marker) is never overwritten — write ours
+    // beside it for the user to merge or exec.
+    const target =
+      existing !== null && !existing.includes(MARKER)
+        ? join(hooks, `pre-commit.${BRAND.cli}`)
+        : hookPath;
+    writeFileSync(target, preCommitScript());
+    try {
+      chmodSync(target, 0o755);
     } catch {
       /* best effort */
     }
-    report.gitleaks = "installed pre-commit";
+    report.precommit =
+      target === hookPath
+        ? `installed pre-commit (gitleaks-if-present + \`${BRAND.cli} precommit\`)`
+        : `existing pre-commit kept — wrote pre-commit.${BRAND.cli} beside it (merge or exec it from your hook)`;
   }
 
   // Sandbox settings (WIRE — Anthropic owns the sandbox; we write the block to merge).

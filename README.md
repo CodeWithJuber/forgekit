@@ -181,7 +181,7 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 |                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it                                         |
 |                            | `forge docs`      | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions     |
 |                            | `forge config`    | provider setup — show / switch / add providers, set the default model                                              |
-|                            | `forge harden`    | wire gitleaks pre-commit + sandbox settings                                                                        |
+|                            | `forge harden`    | wire the pre-commit gate (gitleaks + commit gate) + sandbox settings                                               |
 |                            | `forge catalog`   | Start-Here index of every tool / crew / guard                                                                      |
 |                            | `forge brand`     | print the brand token map                                                                                          |
 | **Memory & team**          | `forge ledger`    | proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import                  |
@@ -207,6 +207,7 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 |                            | `forge lean`      | scope-minimality footprint (advisory)                                                                              |
 |                            | `forge cost`      | real per-day spend · measured stage factors (`--stages`)                                                           |
 | **Verification & safety**  | `forge verify`    | independent gate — tests + hallucinated-symbol flag + provenance                                                   |
+|                            | `forge precommit` | commit-level gate rung — staged code w/o docs + secret scan (`FORGE_COMMIT_GATE=block\|warn\|0`)                   |
 |                            | `forge scan`      | skill-gate: vet a SKILL.md / .mcp.json for injection / RCE / exfil                                                 |
 |                            | `forge spec`      | spec-as-contract drift — init / lock / check                                                                       |
 | **UI / design**            | `forge taste`     | pick one visual direction → DESIGN.md                                                                              |
