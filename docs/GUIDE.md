@@ -631,6 +631,21 @@ moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
 tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
 target the per-user ledger beside the global recall store, `--json` for scripts.
 
+`forge ledger sync` is `merge` without a path argument — a transport that moves the CRDT
+state between machines. Target precedence: `--dir <path>` (a shared folder, bidirectional
+union-merge) beats `--remote <name>`/`--ref <ref>`, which beat the repo's own git remote,
+which beats **`FORGE_SYNC_DIR`** (the default dir target when nothing else resolves); with
+none of these it prints an honest "no sync target". Ref mode is pure git plumbing: one
+commit per sync on `refs/forge/ledger` whose tree is a single `state.json` blob
+(`hash-object` → `mktree` → `commit-tree` → `update-ref` → `push`); pull is `fetch` the
+ref → read the blob → `importState`. A non-fast-forward push (a teammate synced first) is
+never a conflict — it re-fetches, re-imports (monotone by the semilattice join), rebuilds
+on the new parent and retries ≤3 times, so no claim is ever lost and re-running sync with
+nothing new is a byte-level no-op (the remote tree already equals ours). Everything
+fails open: offline, a missing remote, or a corrupt remote blob all return an honest
+reason instead of throwing. With `--personal` the transport runs over the per-user ledger
+the recall store shadows into, so recall facts become portable across machines.
+
 **Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
 (every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
 Set **`FORGE_LEDGER_ONLY=1`** to finish the job: the legacy files (`.forge/lessons/*.md`,
@@ -1176,7 +1191,6 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                        |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                        |
 | `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                  |
-
 | `FORGE_RADAR` | `0` disables the pre-edit dependency-currency advisory |
 | `FORGE_RADAR_TTL_H` | `forge radar` cache TTL in hours (default 24) |
 | `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |

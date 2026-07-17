@@ -29,7 +29,7 @@ export const COMMANDS = {
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   ledger:
-    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / import",
+    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
   reuse:
     "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context:

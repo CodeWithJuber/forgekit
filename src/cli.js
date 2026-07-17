@@ -546,6 +546,53 @@ async function run(argv) {
         );
       return;
     }
+    if (sub === "sync") {
+      const { ledgerSync, defaultRef } = await import("./ledger_sync.js");
+      const di = args.indexOf("--dir");
+      const re = args.indexOf("--remote");
+      const rf = args.indexOf("--ref");
+      const r = ledgerSync({
+        dir,
+        root,
+        personal,
+        dirTarget: di >= 0 ? args[di + 1] : undefined,
+        remote: re >= 0 ? args[re + 1] : undefined,
+        ref: rf >= 0 ? args[rf + 1] : undefined,
+      });
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} ledger sync\n`);
+      if (!r.ok) {
+        console.error(`  ${paint(r.reason ?? "sync failed", "err")}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (r.mode === "dir") {
+        console.log(
+          table([
+            [paint("target", "dim"), r.dir],
+            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
+            [paint("pushed", "dim"), `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`],
+          ]),
+        );
+      } else {
+        console.log(
+          table([
+            [paint("ref", "dim"), `${r.remote} ${r.ref}`],
+            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
+            [
+              paint("pushed", "dim"),
+              r.upToDate
+                ? paint("up to date — nothing to push", "dim")
+                : `yes (retries ${r.retries})`,
+            ],
+          ]),
+        );
+      }
+      for (const n of r.notes ?? []) console.log(paint(`  note: ${n}`, "warn"));
+      if (r.mode === "ref" && r.ref === defaultRef(personal))
+        console.log(paint("\n  synced through a git ref — CRDT, converges in any order", "dim"));
+      return;
+    }
     if (sub === "import") {
       const b = await import("./ledger_bridge.js");
       let r;
@@ -573,7 +620,7 @@ async function run(argv) {
       return;
     }
     console.error(
-      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | import) [--personal] [--json]`,
+      `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
     );
     process.exitCode = 1;
     return;

@@ -51,6 +51,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   evidence into the ledger (`currency:<dep>` facts, supersede semantics) plus a metrics
   line, and the pre-edit hook surfaces a cache-only advisory when a file imports a `hold`
   dependency (kill switch `FORGE_RADAR=0`).
+- **Cross-machine memory sync.** `forge ledger sync` push-pulls the PCM ledger through a
+  git ref (`refs/forge/ledger` via `hash-object`/`mktree`/`commit-tree` plumbing;
+  non-fast-forward races re-merge and retry ≤3 — monotone by the CRDT join, so nothing is
+  lost) or a shared directory (bidirectional union-merge; `FORGE_SYNC_DIR` is the default
+  dir target). Target precedence: `--dir` > `--remote`/`--ref` > the repo's git remote >
+  `FORGE_SYNC_DIR` > an honest "no target". `--personal` syncs the per-user ledger beside
+  the recall store, making recall facts portable across machines. Fails open (offline,
+  missing remote, or corrupt remote blob → an honest reason, never a throw); the git
+  runner is injectable so tests drive it with local bare remotes and never touch the
+  network.
 
 ## [0.19.0] - 2026-07-17
 
