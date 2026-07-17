@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed (audit remediation)
+
+- **Onboarding & state safety.** `forge init` no longer silently replaces a
+  present-but-unparseable `~/.claude/settings.json` (it refuses and preserves the
+  original), backs the file up before changing it, and writes atomically
+  (temp + rename). Hook/statusline commands now resolve to the installed package
+  (`~/.forge/…` → `<pkg>/global/…`) so npm-global installs don't reference an
+  unmaterialized `~/.forge`. Personal recall moved to the XDG state dir instead of
+  the source tree; `install.sh` separates read-only assets from mutable state,
+  migrates any `global/recall/facts`, and no longer routes path ops through `eval`.
+- **Security defaults.** Removed broad default Bash read allows
+  (`cat`/`head`/`tail`/`rg`/`git show`/`git log`) so secret-file reads prompt
+  instead of auto-approving, and moved dependency installs (`npm ci`/`npm install`/…)
+  to `ask`. `protect-paths` now blocks reading a protected path via Bash
+  (e.g. `cat .env`, `git show HEAD:.env`). Secret redaction is reimplemented in Node
+  (`secret-redact.mjs`) with no `jq` dependency and prints a visible DEGRADED warning
+  rather than silently no-op'ing; `forge doctor` treats missing `node` as a failure.
+
 ## [0.20.0] - 2026-07-17
 
 ### Added

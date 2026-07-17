@@ -23,13 +23,23 @@ import { hasBin } from "./util.js";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
-// External tools the guards/commands depend on. jq is the important one — several guards
-// (secret-redact, protect-paths) degrade to a naive parse or a no-op without it.
+// External tools the guards/commands depend on. secret-redact now runs in Node (no jq),
+// so node is the security-critical dependency; jq only helps protect-paths parse more
+// precisely (it has a grep fallback either way).
 function checkTooling(out) {
+  // node powers secret redaction — its absence means tool output is NOT scanned for secrets.
+  out.push(
+    hasBin("node")
+      ? ok("node", "found — secret-redact scans tool output")
+      : fail(
+          "node",
+          "not found — secret-redact CANNOT run; tool output is NOT scanned for secrets",
+        ),
+  );
   out.push(
     hasBin("jq")
-      ? ok("jq", "found — guards parse hook JSON safely")
-      : warn("jq", "not found — secret-redact/protect-paths degrade without it; install jq"),
+      ? ok("jq", "found — protect-paths parses hook JSON precisely")
+      : warn("jq", "not found — protect-paths falls back to grep parsing (still enforced)"),
   );
   out.push(
     hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),
