@@ -13,12 +13,7 @@ import { TOOLS } from "./mcp_tools.js";
 import { MODELS } from "./model_tiers.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
-const DOC_FILES = [
-  "README.md",
-  "docs/GUIDE.md",
-  "ARCHITECTURE.md",
-  "ROADMAP.md",
-];
+const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
 
 // Env vars read in src that are NOT user-facing contract: child-process plumbing and
 // values injected by host tools rather than set by users.
@@ -32,8 +27,7 @@ const INTERNAL_ENV = new Set([
 
 // Prefixes that mark an env var as OURS to document. A doc may freely mention other
 // tools' vars (GITHUB_TOKEN, PATH) — those aren't claims about forge's own surface.
-const ENV_PREFIX_RE =
-  /\b((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX)_[A-Z0-9_]+)\b/g;
+const ENV_PREFIX_RE = /\b((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX)_[A-Z0-9_]+)\b/g;
 
 function readDoc(root, rel) {
   const p = join(root, rel);
@@ -56,12 +50,8 @@ export function envVarsRead(root = BRAND.root) {
   const vars = new Set();
   for (const file of srcFiles(root)) {
     const text = readFileSync(file, "utf8");
-    for (const m of text.matchAll(/process\.env\.([A-Z_][A-Z0-9_]*)/g))
-      vars.add(m[1]);
-    for (const m of text.matchAll(
-      /process\.env\[["']([A-Z_][A-Z0-9_]*)["']\]/g,
-    ))
-      vars.add(m[1]);
+    for (const m of text.matchAll(/process\.env\.([A-Z_][A-Z0-9_]*)/g)) vars.add(m[1]);
+    for (const m of text.matchAll(/process\.env\[["']([A-Z_][A-Z0-9_]*)["']\]/g)) vars.add(m[1]);
   }
   const guards = join(root, "global", "guards");
   if (existsSync(guards)) {
@@ -96,9 +86,7 @@ function checkCommands(docs, issues) {
     }
   }
   for (const [file, text] of Object.entries(docs)) {
-    for (const m of text.matchAll(
-      new RegExp(`\`${BRAND.cli} ([a-z][a-z-]*)\\b`, "g"),
-    )) {
+    for (const m of text.matchAll(new RegExp(`\`${BRAND.cli} ([a-z][a-z-]*)\\b`, "g"))) {
       const name = m[1];
       if (!(name in COMMANDS) && !HIDDEN_COMMANDS.includes(name)) {
         issues.push({
@@ -128,11 +116,7 @@ function checkEnvVars(root, docs, issues) {
   const documented = new Set();
   for (const [file, text] of Object.entries(docs)) {
     for (const m of text.matchAll(ENV_PREFIX_RE)) {
-      if (
-        !documented.has(`${file}:${m[1]}`) &&
-        !read.has(m[1]) &&
-        !INTERNAL_ENV.has(m[1])
-      ) {
+      if (!documented.has(`${file}:${m[1]}`) && !read.has(m[1]) && !INTERNAL_ENV.has(m[1])) {
         documented.add(`${file}:${m[1]}`);
         issues.push({
           check: "env-vars",
@@ -190,12 +174,7 @@ function markdownFiles(root) {
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .map(String)
-    .filter(
-      (f) =>
-        f.endsWith(".md") &&
-        !f.includes("node_modules") &&
-        !f.startsWith(".git/"),
-    );
+    .filter((f) => f.endsWith(".md") && !f.includes("node_modules") && !f.startsWith(".git/"));
 }
 
 // The branded Mermaid theme every diagram shares (see README's `%%{init …}%%`). Without it
@@ -219,10 +198,7 @@ function checkDiagrams(root, issues) {
     for (const m of text.matchAll(MERMAID_BLOCK_RE)) {
       // An intentional example block (e.g. docs showing what a BAD diagram looks like) opts
       // out with an HTML comment `<!-- docs-check-ignore -->` on the line before the fence.
-      if (
-        /docs-check-ignore/.test(text.slice(Math.max(0, m.index - 80), m.index))
-      )
-        continue;
+      if (/docs-check-ignore/.test(text.slice(Math.max(0, m.index - 80), m.index))) continue;
       const block = m[1];
       if (!block.includes("%%{init")) {
         issues.push({
@@ -266,13 +242,9 @@ function checkChangelog(root, issues) {
   const text = readDoc(root, "CHANGELOG.md");
   if (!text) return;
   const sections = [
-    ...text.matchAll(
-      /^## \[([^\]]+)\][^\n]*\n([\s\S]*?)(?=^## \[|\n*$(?![\s\S]))/gm,
-    ),
+    ...text.matchAll(/^## \[([^\]]+)\][^\n]*\n([\s\S]*?)(?=^## \[|\n*$(?![\s\S]))/gm),
   ];
-  const version = JSON.parse(
-    readFileSync(join(root, "package.json"), "utf8"),
-  ).version;
+  const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   const released = sections.filter((s) => s[1].toLowerCase() !== "unreleased");
   if (released.length && released[0][1] !== version) {
     issues.push({
@@ -292,18 +264,13 @@ function checkChangelog(root, issues) {
   }
   const unreleased = sections.find((s) => s[1].toLowerCase() === "unreleased");
   if (unreleased && !unreleased[2].trim()) {
-    const srcT = Number(
-      git(root, ["log", "-1", "--format=%ct", "--", "src"]) || 0,
-    );
-    const clT = Number(
-      git(root, ["log", "-1", "--format=%ct", "--", "CHANGELOG.md"]) || 0,
-    );
+    const srcT = Number(git(root, ["log", "-1", "--format=%ct", "--", "src"]) || 0);
+    const clT = Number(git(root, ["log", "-1", "--format=%ct", "--", "CHANGELOG.md"]) || 0);
     if (srcT && clT && srcT > clT) {
       issues.push({
         check: "changelog",
         severity: "error",
-        detail:
-          "src changed since CHANGELOG.md was last touched, but [Unreleased] is empty",
+        detail: "src changed since CHANGELOG.md was last touched, but [Unreleased] is empty",
       });
     }
   }
@@ -339,8 +306,7 @@ function measuredTimings(root) {
   const set = new Set();
   for (const line of readDoc(root, "reports/benchmarks.md").split("\n")) {
     if (!line.startsWith("|")) continue; // table rows only — not the prose above it
-    for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(ms|µs|s)\b/g))
-      set.add(`${m[1]} ${m[2]}`);
+    for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(ms|µs|s)\b/g)) set.add(`${m[1]} ${m[2]}`);
   }
   return set;
 }
@@ -393,10 +359,8 @@ function headingSlug(text) {
 // (`<a id=…>`, `name=…`, or a `{#custom-id}` suffix).
 function anchorsFor(text) {
   const set = new Set();
-  for (const m of text.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm))
-    set.add(headingSlug(m[1]));
-  for (const m of text.matchAll(/\b(?:id|name)=["']([\w-]+)["']/g))
-    set.add(m[1].toLowerCase());
+  for (const m of text.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) set.add(headingSlug(m[1]));
+  for (const m of text.matchAll(/\b(?:id|name)=["']([\w-]+)["']/g)) set.add(m[1].toLowerCase());
   for (const m of text.matchAll(/\{#([\w-]+)\}/g)) set.add(m[1].toLowerCase());
   return set;
 }
@@ -443,8 +407,7 @@ function checkLinks(root, issues) {
       let targetRel;
       if (!path)
         targetRel = rel; // same-file anchor
-      else if (path.endsWith(".md"))
-        targetRel = normalize(join(dirname(rel), path));
+      else if (path.endsWith(".md")) targetRel = normalize(join(dirname(rel), path));
       else continue; // .html/.pdf/code target — can't resolve headings, skip
       const anchors = anchorsOf(targetRel);
       if (anchors == null) continue; // unreadable/missing target — file existence is another matter
@@ -476,9 +439,7 @@ function checkRoadmap(root, issues) {
   try {
     // Parse leading integers per component so a prerelease tag ("1.2.3-beta.1") still yields
     // [1,2,3], not NaN; guard the read so a missing/corrupt manifest can't abort the whole check.
-    const raw =
-      JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ||
-      "";
+    const raw = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || "";
     const pv = raw.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
     if (!pv) return;
     pkg = [Number(pv[1]), Number(pv[2]), Number(pv[3] || 0)];
@@ -487,8 +448,7 @@ function checkRoadmap(root, issues) {
   }
   const behind =
     road[0] < pkg[0] ||
-    (road[0] === pkg[0] &&
-      (road[1] < pkg[1] || (road[1] === pkg[1] && road[2] < pkg[2])));
+    (road[0] === pkg[0] && (road[1] < pkg[1] || (road[1] === pkg[1] && road[2] < pkg[2])));
   if (behind) {
     issues.push({
       check: "roadmap",
@@ -522,9 +482,7 @@ function checkCrosswalk(root, issues) {
     });
     return;
   }
-  const known = new Set(
-    srcFiles(root).map((f) => String(f).split(/[\\/]/).pop()),
-  );
+  const known = new Set(srcFiles(root).map((f) => String(f).split(/[\\/]/).pop()));
   for (const dir of [join("global", "guards"), "hooks"]) {
     const d = join(root, dir);
     if (!existsSync(d)) continue;

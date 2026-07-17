@@ -5,12 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const guards = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "global",
-  "guards",
-);
+const guards = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
 
 function runGuard(script, input, opts = {}) {
   // spawnSync captures BOTH stdout and stderr regardless of exit code; guards
@@ -91,11 +86,7 @@ test("secret-redact redacts a token without jq (Node path)", () => {
     tool_response: "token=ghp_0123456789abcdef0123456789abcdef0123",
   });
   assert.equal(r.code, 0, "never blocks");
-  assert.doesNotMatch(
-    r.out,
-    /ghp_0123456789abcdef/,
-    "raw token must not survive",
-  );
+  assert.doesNotMatch(r.out, /ghp_0123456789abcdef/, "raw token must not survive");
   assert.match(r.out, /updatedToolOutput/, "emits a redaction rewrite");
 });
 
