@@ -87,6 +87,38 @@ test("dashData: one payload with ledger, metrics, and atlas sections in shape", 
   assert.deepEqual(d.atlas, { built: false, symbols: 0, files: 0 });
 });
 
+test("dashData: meta.empty is true on a bare repo, false once claims/metrics exist", () => {
+  // A bare tmp repo — no ledger claims, no metrics events → first-run empty state.
+  const bare = tmp();
+  const m0 = dashData(bare, { nowDay: NOW }).meta;
+  assert.equal(m0.empty, true, "untouched .forge/ reads as empty");
+  assert.equal(m0.forgeDir, join(bare, ".forge"), "forgeDir points at the store");
+
+  // The populated fixture has both claims and metrics → not empty.
+  const { root } = fixture();
+  assert.equal(dashData(root, { nowDay: NOW }).meta.empty, false);
+
+  // Claims but no metrics → still not empty (either signal counts).
+  const claimsOnly = tmp();
+  mint(repoLedger(claimsOnly), "solo", "one lonely claim");
+  assert.equal(dashData(claimsOnly, { nowDay: NOW }).meta.empty, false);
+
+  // Metrics but no claims → not empty either.
+  const metricsOnly = tmp();
+  record(metricsOnly, { stage: "gate", outcome: "pass" });
+  assert.equal(dashData(metricsOnly, { nowDay: NOW }).meta.empty, false);
+});
+
+test("dashData: meta never throws on a corrupt store, degrades to empty", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge", "ledger"), { recursive: true });
+  writeFileSync(join(root, ".forge", "ledger", "claims"), "not a directory");
+  writeFileSync(join(root, ".forge", "metrics.jsonl"), "{nope\n");
+  const m = dashData(root, { nowDay: NOW }).meta;
+  assert.equal(m.empty, true, "unreadable stores count as no data, not a crash");
+  assert.equal(m.forgeDir, join(root, ".forge"));
+});
+
 test("dashData: atlas section reports a built atlas", () => {
   const { root } = fixture();
   mkdirSync(join(root, ".forge"), { recursive: true });

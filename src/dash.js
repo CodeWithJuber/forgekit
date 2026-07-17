@@ -123,7 +123,15 @@ export function dashData(root, { nowDay = epochDay() } = {}) {
   try {
     spend = estimateSpendFromLogs();
   } catch {}
-  return { repo: basename(root), nowDay, ledger, metrics, atlas, spend };
+  // First-run signal for the empty-state copy: a truly untouched .forge/ has no
+  // ledger claims AND no metrics events. `metrics.recent` is capped but only ever
+  // empty when zero events exist, so it doubles as the metrics-count check — no
+  // extra read, and (like everything above) it never throws.
+  const meta = {
+    empty: (ledger?.stats?.total ?? 0) === 0 && (metrics?.recent?.length ?? 0) === 0,
+    forgeDir: join(root, ".forge"),
+  };
+  return { repo: basename(root), nowDay, meta, ledger, metrics, atlas, spend };
 }
 
 /**

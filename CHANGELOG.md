@@ -41,6 +41,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows the detected/primary tool (auto-detected from which agent folder exists, mirroring
   provider detection) and what's gitignored; `forge tools --reset` clears the config and
   strips only the block. Opt-in — plain `forge sync` never writes `.gitignore`.
+- **`forge dash` first-run clarity.** `dashData` now reports a `meta.empty` /
+  `meta.forgeDir` signal (true when `.forge/` holds no ledger claims and no metrics
+  events), and the dashboard shows a plain-language empty-state banner ("No data in
+  .forge/ yet — run `forge sync`, then work a session") plus a `?` legend that
+  explains what every panel means in one sentence. Display-only — the append-only
+  ratify/retract writes are unchanged.
 
 ## [0.20.0] - 2026-07-17
 
