@@ -7,7 +7,7 @@ import { BRAND } from "./brand.js";
 import { COMMANDS, GROUPS } from "./commands.js";
 // Color is capability-gated (FORCE_COLOR > NO_COLOR > TERM=dumb > TTY) — piped
 // output stays byte-plain, so nothing downstream ever parses an escape code.
-import { bar, heading as fmtHeading, paint } from "./fmt.js";
+import { bar, heading as fmtHeading, paint, table } from "./fmt.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
@@ -735,8 +735,53 @@ async function run(argv) {
     return;
   }
   if (cmd === "verify") {
-    const { verify } = await import("./verify.js");
     const json = argv.includes("--json");
+    if (argv.includes("--deep")) {
+      const { verifyDeep, LENSES } = await import("./consensus.js");
+      // `--llm` opts the reviewer panel in for this run; otherwise FORGE_LLM decides.
+      const r = verifyDeep({
+        targetRoot: process.cwd(),
+        llm: argv.includes("--llm") ? true : undefined,
+      });
+      if (json) {
+        console.log(JSON.stringify(r, null, 2));
+        if (!r.ok) process.exitCode = 1;
+        return;
+      }
+      heading(`${BRAND.brand} verify --deep — multi-lens consensus\n`);
+      console.log(
+        table(
+          r.lenses.map((l) => {
+            const meta = LENSES[l.lens];
+            const state =
+              l.ran === false
+                ? paint("— skipped", "dim")
+                : l.s > 0
+                  ? paint("● finding", meta.solo ? "err" : "warn")
+                  : paint("✓ clean", "ok");
+            return [l.lens, meta.family, `w=${meta.weight}`, state];
+          }),
+        ),
+      );
+      if (r.findings.length) {
+        console.log();
+        for (const f of r.findings) console.log(`  ! ${f}`);
+      }
+      console.log(
+        `\n  P(defect):  ${bar(r.p)} ${r.p.toFixed(2)}${
+          r.families.length ? `  (families: ${r.families.join(", ")})` : ""
+        }`,
+      );
+      console.log(`  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`);
+      console.log(
+        `\n  ${
+          r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
+        }`,
+      );
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    const { verify } = await import("./verify.js");
     const r = verify({ targetRoot: process.cwd() });
     if (json) {
       console.log(JSON.stringify(r, null, 2));

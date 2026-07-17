@@ -427,6 +427,40 @@ Forge verify
   PASS
 ```
 
+**`forge verify --deep` — multi-lens consensus.** The deep mode runs a table of
+independent lenses over the same diff — the test suite, unknown symbols, atlas
+dependents the diff never touched, code-without-docs drift, secret-shaped tokens in
+the added lines, spec-lock drift, and (opt-in) a reviewer panel — and aggregates them
+the way the lesson miner scores mistakes: noisy-OR `P(defect) = 1 − ∏(1 − wᵢsᵢ)` with
+a **cross-family gate**, so any number of correlated structural signals stays advisory
+while a failing test suite or a leaked secret blocks on its own. Every run reports the
+Theorem-D residual `∏(1 − cⱼ)` over the lenses that actually ran — how much
+silent-miss probability a PASS still carries — and extends `.forge/provenance.json`
+with the per-lens evidence plus one `stage:"verify"` metrics record.
+
+`--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
+over the added lines, strict-majority vote, abstaining honestly when fewer than half
+the replies are usable. The panel is a proposer, never a judge — it can only block
+together with a second evidence family.
+
+```console
+$ forge verify --deep
+  tests      outcome     w=0.8   ✓ clean
+  symbols    structural  w=0.4   ✓ clean
+  impact     structural  w=0.35  ● finding
+  docsdrift  structural  w=0.3   ✓ clean
+  secrets    security    w=0.9   ✓ clean
+  speclock   structural  w=0.4   — skipped
+  reviewer   model       w=0.3   — skipped
+
+  ! dependents of the changed code are not in this diff: src/route.js
+
+  P(defect):  █░░░░░░░░░ 0.07  (families: structural)
+  residual:   0.005 — Theorem-D silent-miss bound
+
+  PASS
+```
+
 ### `forge atlas build | query | has` — the code-graph
 
 ```console

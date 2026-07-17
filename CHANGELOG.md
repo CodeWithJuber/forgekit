@@ -30,6 +30,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exists (unknown version → honest miss, never a throw), and detached-checkouts
   the tag with a note on how to return to latest; npm-global installs get the
   exact `npm i -g <pkg>@<version>` instruction instead.
+- **Multi-lens verification consensus.** `forge verify --deep` (new `src/consensus.js`)
+  runs a LENSES table over the diff — tests, unknown symbols, unreviewed impact
+  radius, docs drift, secrets in added lines, spec-lock drift, plus an optional
+  `--llm` majority-of-3 reviewer panel — and aggregates noisy-OR
+  `P(defect)=1−∏(1−wᵢsᵢ)` with the same cross-family gate as the lesson miner: a
+  lone structural signal (or the model reviewer alone) never blocks; a failing test
+  suite or a leaked secret blocks solo. Findings extend `.forge/provenance.json`
+  with per-lens evidence and the Theorem-D residual `∏(1−cⱼ)` over the lenses that
+  ran, and each run appends one `stage:"verify"` metrics record.
+  > > > > > > > da582d1 (feat(verify): multi-lens consensus (noisy-OR + cross-family gate, optional N-sample reviewer))
 
 ## [0.19.0] - 2026-07-17
 
