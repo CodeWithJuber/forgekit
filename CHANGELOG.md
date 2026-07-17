@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-17
+
 ### Added
 
 - **Per-command help + word forms.** `forge <command> --help` / `-h` now works for
@@ -998,7 +1000,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.17.0...v0.18.0
