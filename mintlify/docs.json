@@ -13,7 +13,7 @@
     "dark": "/logo/dark.svg"
   },
   "appearance": {
-    "default": "dark"
+    "default": "system"
   },
   "navigation": {
     "tabs": [
@@ -88,5 +88,22 @@
     "socials": {
       "github": "https://github.com/CodeWithJuber/forgekit"
     }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "assistant",
+      "view",
+      "vscode",
+      "mcp",
+      "chatgpt",
+      "download-pdf",
+      "download-spec",
+      "claude"
+    ],
+    "display": "header"
+  },
+  "markdown": {
+    "schema": false
   }
 }
