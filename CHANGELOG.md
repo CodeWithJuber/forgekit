@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-17
+
 ### Added
 
 - **`forge know` — the A7 knowledge-router.** Total routing (formal-synthesis
@@ -949,7 +951,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.16.0...v0.17.0
