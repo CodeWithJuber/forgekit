@@ -146,10 +146,25 @@ export function gateDecision({
   return { allow: true, row: "no-code-class", classes };
 }
 
+/** The change-type obligation matrix (P1-05): what evidence each kind of change owes, so
+ *  the gate points at the RIGHT artifact instead of treating any doc/state touch as done.
+ *  Derived from the classes already computed — a pure function so it's easy to test.
+ *  @param {{code?: string[], config?: string[], test?: string[]}} classes */
+export function obligationsFor(classes = {}) {
+  const out = [];
+  if (classes.code?.length)
+    out.push(
+      "Code changed → update the docs it affects AND add/adjust a test that exercises the new behaviour (a handoff note alone is not the obligation).",
+    );
+  if (classes.config?.length)
+    out.push("Config changed → update the config/deployment docs that describe it.");
+  return out;
+}
+
 /** The block reason IS the repair procedure — its consumer is the agent itself, and a
  *  checklist converts a failure into a same-turn fix. Stale-doc candidates come from the
  *  CACHED atlas only (a hook never builds). */
-export function repairReason(root, { codeFiles = [], driftAlarm = false } = {}) {
+export function repairReason(root, { codeFiles = [], driftAlarm = false, classes = {} } = {}) {
   let likelyDocs = [];
   try {
     const atlas = loadAtlas(root);
@@ -163,9 +178,13 @@ export function repairReason(root, { codeFiles = [], driftAlarm = false } = {}) 
   } catch {}
   const shown = codeFiles.slice(0, 10).join(", ");
   const more = codeFiles.length > 10 ? ` (+${codeFiles.length - 10} more)` : "";
+  const obligations = obligationsFor(classes);
   const lines = [
     "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.",
     `Changed code: ${shown}${more}`,
+    ...(obligations.length
+      ? ["Obligations for this change:", ...obligations.map((o) => `- ${o}`)]
+      : []),
     "Do what applies before finishing:",
     `1. \`${BRAND.cli} docs sync\` — sweep the diff for stale doc mentions${
       likelyDocs.length ? ` (graph suggests: ${likelyDocs.join(", ")})` : ""
@@ -242,8 +261,17 @@ export function stopGate(root, sid, hook = {}) {
         .filter(Number.isFinite);
       if (scores.length >= 3) driftAlarm = cusum(scores).alarm;
     } catch {}
-    const reason = repairReason(root, { codeFiles: decision.classes.code, driftAlarm });
-    return { allow: false, row: decision.row, reason, classes: decision.classes };
+    const reason = repairReason(root, {
+      codeFiles: decision.classes.code,
+      driftAlarm,
+      classes: decision.classes,
+    });
+    return {
+      allow: false,
+      row: decision.row,
+      reason,
+      classes: decision.classes,
+    };
   } catch {
     return { allow: true, row: "internal-error" };
   }

@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyPath, gateDecision } from "../src/gate.js";
+import { classifyPath, gateDecision, obligationsFor } from "../src/gate.js";
+
+test("obligationsFor derives change-type obligations (P1-05)", () => {
+  const code = obligationsFor({ code: ["src/x.js"] });
+  assert.ok(
+    code.some((o) => /test/.test(o)),
+    "code change obliges a test, not just a handoff note",
+  );
+  const config = obligationsFor({ config: ["Dockerfile"] });
+  assert.ok(config.some((o) => /config/i.test(o)));
+  assert.deepEqual(obligationsFor({ test: ["x.test.js"] }), [], "test-only owes no prose");
+});
 
 test("classifyPath: one total function from the shared registries", () => {
   assert.equal(classifyPath(".forge/state.md"), "docs", "state snapshot IS the doc signal");
@@ -38,7 +49,9 @@ test("gate table: guard rows always allow", () => {
 
 test("gate table: clean and internal-only sessions owe nothing", () => {
   assert.equal(gateDecision({ changed: [] }).row, "no-changes");
-  const internal = gateDecision({ changed: [".forge/lessons/a.md", "AGENTS.md"] });
+  const internal = gateDecision({
+    changed: [".forge/lessons/a.md", "AGENTS.md"],
+  });
   assert.equal(internal.row, "no-changes", "internal artifacts never trigger the gate");
   assert.equal(internal.allow, true);
 });

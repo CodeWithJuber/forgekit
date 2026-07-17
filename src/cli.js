@@ -50,16 +50,33 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
-    const { report, bytes, settings, detected } = init({
+    const profileIdx = argv.indexOf("--profile");
+    const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
+    const {
+      report,
+      bytes,
+      settings,
+      detected,
+      profile: profileResult,
+    } = init({
       targetRoot: process.cwd(),
       noSettings,
+      profile,
     });
+    if (profileResult?.error) {
+      console.error(`  ${profileResult.error}`);
+      process.exitCode = 1;
+      return;
+    }
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
+    if (profileResult?.profile) {
+      console.log(`  profile:  ${profileResult.profile} → .forge/forge.config.json`);
+    }
     if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
       const verb = settings.action === "created" ? "created" : "merged";
       const what = settings.added.length ? settings.added.join(", ") : "defaults";
@@ -260,9 +277,9 @@ async function run(argv) {
   }
   if (cmd === "doctor") {
     const { doctor } = await import("./doctor.js");
-    const { results, failed } = doctor({ targetRoot: process.cwd() });
+    const { results, failed, health } = doctor({ targetRoot: process.cwd() });
     if (argv.includes("--json")) {
-      console.log(JSON.stringify({ results, failed }, null, 2));
+      console.log(JSON.stringify({ results, failed, health }, null, 2));
       if (failed) process.exitCode = 1;
       return;
     }
@@ -273,6 +290,11 @@ async function run(argv) {
     };
     heading(`${BRAND.brand} doctor\n`);
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
+    // Subsystem health in the standard vocabulary (P1-06) — a degraded control stays visible.
+    const healthLine = Object.entries(health)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("  ");
+    console.log(`\n  health: ${healthLine}`);
     console.log(
       `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
     );

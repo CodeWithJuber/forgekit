@@ -390,6 +390,36 @@ function checkUpdate(out) {
   } catch {}
 }
 
+// The important subsystems and the check label each derives its health from.
+const HEALTH_SUBSYSTEMS = {
+  "secret-redaction": "node", // secret-redact runs the JS redactor; no node → FAILED
+  guards: "guards exec",
+  atlas: "atlas",
+  "managed-config": "AGENTS.md",
+  pricing: "model pricing",
+};
+
+/**
+ * Standard subsystem-health vocabulary (P1-06): ACTIVE | DEGRADED | UNAVAILABLE | FAILED,
+ * derived from the SAME checks the report uses (no parallel source), so a degraded security
+ * or verification control is never invisible behind a green overall status.
+ * @param {Array<{status:string,label:string}>} results
+ */
+export function subsystemHealth(results) {
+  const state = (label) => {
+    const r = results.find((x) => x.label === label);
+    if (!r) return "UNAVAILABLE";
+    if (r.status === "fail") return "FAILED";
+    if (r.status === "warn") return "DEGRADED";
+    return "ACTIVE";
+  };
+  const health = {};
+  for (const [subsystem, label] of Object.entries(HEALTH_SUBSYSTEMS)) {
+    health[subsystem] = state(label);
+  }
+  return health;
+}
+
 export function doctor({ targetRoot = process.cwd() } = {}) {
   const results = [];
   checkNode(results);
@@ -409,5 +439,9 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkCortex(results, targetRoot);
   checkLedger(results, targetRoot);
   checkUpdate(results);
-  return { results, failed: results.filter((r) => r.status === "fail").length };
+  return {
+    results,
+    failed: results.filter((r) => r.status === "fail").length,
+    health: subsystemHealth(results),
+  };
 }

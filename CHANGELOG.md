@@ -53,6 +53,26 @@ effectiveUntil}` windows resolved by `priceOf(model, date)`; Sonnet 5 now carrie
   memory" as evidence-referenced and "zero-config" as guided/low-configuration across the
   docs; added a beta status block and per-benchmark sample sizes.
 
+### Added / changed (product)
+
+- **Policy profiles & repo config.** `forge init --profile minimal|standard|web-app|
+backend-service|library|regulated` writes `.forge/forge.config.json`; the `minimal`
+  profile emits only the five core-safety rules instead of the full engineering pack
+  (P1-02). `forge.config.json` gives explicit override semantics — `profile`,
+  `disableSections` (drop by id/title), and `rules` (append) with deterministic order
+  (P1-03).
+- **Change-obligation guidance.** The completion gate now spells out change-type
+  obligations (code → docs + a test, config → config docs; test-only owes nothing) so it
+  points at the right artifact instead of accepting any doc/state touch as done (P1-05).
+- **Subsystem health.** `forge doctor` reports each key subsystem (secret-redaction,
+  guards, atlas, managed-config, pricing) in a standard `ACTIVE|DEGRADED|UNAVAILABLE|
+FAILED` vocabulary so a degraded control stays visible (P1-06).
+- **Help grouping.** Experimental commands are grouped under "Labs (experimental)" in
+  `forge --help`, separating the core reliability loop from experiments (P1-01).
+- **UI rule.** Replaced the "make chain-of-thought visible" AI-UX rule with safe-rationale
+  guidance (assumptions, tool actions, sources, verification evidence — no hidden reasoning
+  traces) (P1-04).
+
 ## [0.20.0] - 2026-07-17
 
 ### Added

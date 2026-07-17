@@ -46,7 +46,9 @@ if [ -n "${cmd:-}" ]; then
   # Best-effort defence in depth — a content scan like `rg TOKEN .` with no named path can't
   # be caught here; that's what secret-redact.sh is for.
   reader='(^|[;&|])[[:space:]]*((cat|less|more|head|tail|nl|xxd|od|strings|base64|rg|grep|ag)[[:space:]]|git[[:space:]]+(show|log)[[:space:]])'
-  secret='(\.env([./A-Za-z0-9_-]*)?|id_rsa|id_ed25519|\.pem|\.key|/secrets/|/\.ssh/)'
+  # \b anchors the extensions so `.key` matches a real key file but NOT `Object.keys`,
+  # and `.env` matches `.env`/`.env.prod` but NOT `.environment`.
+  secret='(\.env(\.[A-Za-z0-9_-]+)?\b|id_rsa\b|id_ed25519\b|\.pem\b|\.key\b|/secrets/|/\.ssh/)'
   if printf '%s' "$cmd" | grep -qE "$reader" && printf '%s' "$cmd" | grep -qE "$secret"; then
     deny "reading a protected secret path via Bash is blocked. Read it yourself if intended."
   fi

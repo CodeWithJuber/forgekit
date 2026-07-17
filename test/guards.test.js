@@ -68,6 +68,20 @@ test("protect-paths allows a normal Bash read (exit 0)", () => {
   assert.equal(r.code, 0);
 });
 
+test("protect-paths does not false-positive on .keys()/.environment (extension-anchored)", () => {
+  for (const command of [
+    'grep -n foo src/x.js; node -e "Object.keys(r)"',
+    "cat src/environment.js",
+    "rg keyword docs/",
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 0, `must not block: ${command}`);
+  }
+});
+
 test("protect-paths does not false-positive on prose mentioning secrets in a quoted arg", () => {
   // A commit message that merely names cat/.env/git show must not be blocked — the reader
   // is anchored to a command boundary, so text inside a quoted arg is safe.

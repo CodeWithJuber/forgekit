@@ -8,6 +8,18 @@ import { doctor } from "../src/doctor.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-"));
 
+test("doctor reports subsystem health in the standard vocabulary (P1-06)", () => {
+  const root = fixture();
+  const { health } = doctor({ targetRoot: root });
+  const allowed = new Set(["ACTIVE", "DEGRADED", "UNAVAILABLE", "FAILED"]);
+  for (const key of ["secret-redaction", "guards", "atlas", "managed-config", "pricing"]) {
+    assert.ok(key in health, `health reports ${key}`);
+    assert.ok(allowed.has(health[key]), `${key}=${health[key]} is a valid state`);
+  }
+  // node is present in this runtime, so redaction is ACTIVE (not silently missing).
+  assert.equal(health["secret-redaction"], "ACTIVE");
+});
+
 test("doctor warns when a repo has more than ~6 MCP servers", () => {
   const root = fixture();
   const servers = {};

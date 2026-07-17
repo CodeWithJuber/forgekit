@@ -55,34 +55,37 @@ export const COMMANDS = {
     "opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with --yes",
 };
 
+// Groups order the --help surface from the stable reliability loop down to experiments.
+// "Labs" is the audit's P1-01 signal: those commands are experimental, not part of the
+// core loop — grouped here so new users see the load-bearing beams first (nothing is
+// removed; the full surface still ships).
 export const GROUPS = {
-  Core: ["init", "sync", "doctor", "catalog", "docs", "update"],
-  Memory: [
-    "cortex",
-    "deja",
-    "recall",
-    "remember",
-    "brain",
-    "ledger",
-    "reuse",
-    "handoff",
-    "decide",
-    "know",
-  ],
+  Core: ["init", "sync", "doctor", "catalog", "docs", "update", "config"],
   Substrate: [
     "substrate",
     "preflight",
-    "route",
     "impact",
     "scope",
     "context",
-    "anchor",
-    "diagnose",
+    "route",
+    "verify",
+    "precommit",
+  ],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
+  Quality: ["scan", "spec", "harden", "radar"],
+  Config: ["brand", "atlas", "stack", "integrations", "cost"],
+  "Labs (experimental)": [
+    "taste",
+    "uicheck",
     "imagine",
     "lean",
+    "anchor",
+    "diagnose",
+    "dash",
+    "report",
+    "deja",
+    "reuse",
   ],
-  Quality: ["verify", "precommit", "radar", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "report", "brand", "atlas", "stack", "integrations"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

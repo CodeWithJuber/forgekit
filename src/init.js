@@ -211,13 +211,49 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   };
 }
 
-/** Scaffold this repo's cross-tool config (emit every tool) in one step. */
-export function init({ targetRoot = process.cwd(), noSettings = false } = {}) {
+/** Valid policy profiles (P1-02). `standard` is the full engineering pack (default). */
+export const PROFILES = [
+  "minimal",
+  "standard",
+  "web-app",
+  "backend-service",
+  "library",
+  "regulated",
+];
+
+/** Persist a chosen profile to `.forge/forge.config.json` so `sync` applies it. Merges into
+ *  any existing config rather than clobbering it. Returns the resolved profile or null. */
+function writeProfile(targetRoot, profile) {
+  if (!profile) return null;
+  if (!PROFILES.includes(profile)) return { error: `unknown profile: ${profile}` };
+  const dir = join(targetRoot, ".forge");
+  const path = join(dir, "forge.config.json");
+  /** @type {Record<string, any>} */
+  let cfg = {};
+  if (existsSync(path)) {
+    try {
+      cfg = JSON.parse(readFileSync(path, "utf8")) || {};
+    } catch {
+      cfg = {};
+    }
+  }
+  cfg.profile = profile;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
+  return { profile };
+}
+
+/**
+ * Scaffold this repo's cross-tool config (emit every tool) in one step.
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string}} [opts]
+ */
+export function init({ targetRoot = process.cwd(), noSettings = false, profile } = {}) {
+  const profileResult = writeProfile(targetRoot, profile);
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
   const settings = mergeSettings({ noSettings });
   const detected = autoDetectProvider();
-  return { ...r, settings, detected };
+  return { ...r, settings, detected, profile: profileResult };
 }
 
 function skillDescription(dir) {

@@ -88,3 +88,30 @@ test("per-repo .forge/rules.json extends the shared source", () => {
   sync({ targetRoot: root });
   assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /## ProjectX/);
 });
+
+test("minimal profile emits only the core-safety section (P1-02)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), JSON.stringify({ profile: "minimal" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Core safety/, "core-safety present");
+  assert.doesNotMatch(md, /## AI interfaces & design quality/, "full pack sections dropped");
+});
+
+test("config disableSections drops a named section; config.rules appends (P1-03)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge/forge.config.json"),
+    JSON.stringify({
+      disableSections: ["ai-ux"],
+      rules: [{ title: "ProjectY", rules: ["custom rule"] }],
+    }),
+  );
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.doesNotMatch(md, /## AI interfaces & design quality/, "disabled section dropped");
+  assert.match(md, /## ProjectY/, "config.rules appended");
+  assert.match(md, /## Workflow/, "other sections preserved");
+});
