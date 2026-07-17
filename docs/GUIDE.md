@@ -231,12 +231,13 @@ happens when the measurement earns it — an assertion never does.
 ### `forge config` — provider setup
 
 Shows, switches, and registers model providers, and sets the default model. Forge
-auto-detects the provider from the environment with zero config — the priority order is
+auto-detects the provider from the environment (guided, low-configuration onboarding — no
+manual config file needed in the common case) — the priority order is
 `LITELLM_BASE_URL` → `ANTHROPIC_BASE_URL` (a URL that answers `/health` or names a
 gateway is classified as one) → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` →
 `ANTHROPIC_AUTH_TOKEN` → `OPENAI_API_KEY` → `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
 Anthropic credentials win when present (forge is Claude-native); OpenAI and Gemini are
-picked up as the zero-config fallback when they are the only key set, and are reached
+picked up as the low-configuration auto-detect fallback when they are the only key set, and are reached
 over their OpenAI-compatible chat/completions surface. An explicit
 `.forge/providers.json` always wins over detection.
 
@@ -260,7 +261,7 @@ own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway 
 set, Forge asks it once per process (`GET /v1/models`) and scores each advertised model
 against every tier's family — the family word (haiku/sonnet/opus/fable) gates the match, the
 overlap score picks the best id — then remaps each tier onto a real gateway model. It is a
-silent, zero-config fallback: no gateway, an unreachable `/v1/models`, or no family match and
+silent, low-configuration fallback: no gateway, an unreachable `/v1/models`, or no family match and
 the stock IDs are used unchanged; direct `api.anthropic.com` sessions never probe. An explicit
 model in `.forge/providers.json` (or `ANTHROPIC_MODEL`) always wins over the remap. `forge
 doctor` prints the resolved `tier→model` mapping under **gateway models** so you can verify it
@@ -431,12 +432,14 @@ Forge verify
 independent lenses over the same diff — the test suite, unknown symbols, atlas
 dependents the diff never touched, code-without-docs drift, secret-shaped tokens in
 the added lines, spec-lock drift, and (opt-in) a reviewer panel — and aggregates them
-the way the lesson miner scores mistakes: noisy-OR `P(defect) = 1 − ∏(1 − wᵢsᵢ)` with
-a **cross-family gate**, so any number of correlated structural signals stays advisory
-while a failing test suite or a leaked secret blocks on its own. Every run reports the
-Theorem-D residual `∏(1 − cⱼ)` over the lenses that actually ran — how much
-silent-miss probability a PASS still carries — and extends `.forge/provenance.json`
-with the per-lens evidence plus one `stage:"verify"` metrics record.
+the way the lesson miner scores mistakes: a noisy-OR **defect risk score (heuristic)**,
+`p = 1 − ∏(1 − wᵢsᵢ)` (shown as `P(defect)` in the CLI), with a **cross-family gate**, so
+any number of correlated structural signals stays advisory while a failing test suite or a
+leaked secret blocks on its own. `p` is a calibrated heuristic, not a measured probability
+of defect. Every run reports the `residual` `∏(1 − cⱼ)` over the lenses that actually ran
+— the **remaining unchecked weight**, i.e. how much silent-miss weight a PASS still leaves
+uncovered — and extends `.forge/provenance.json` with the per-lens evidence plus one
+`stage:"verify"` metrics record.
 
 `--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
 over the added lines, strict-majority vote, abstaining honestly when fewer than half
@@ -518,8 +521,8 @@ $ forge radar
   Go: currency probe is Node-first
 ```
 
-Rings are a **formula over registry evidence** (mizan — every ring ships the evidence that
-earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
+Rings are a **formula over registry evidence** (_mizan_ — a philosophical/ethical framing of
+weighed judgment, not a technical authority; every ring ships the evidence that earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
 lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
 (import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
 Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
@@ -1222,8 +1225,8 @@ code reads but this table misses fails CI on the forge repo):
 | `ANTHROPIC_MODEL` / `FORGE_MODEL`                              | pin one model — bypasses tier routing entirely                                                                                                            |
 | `LITELLM_BASE_URL` / `LITELLM_API_KEY`                         | hosted LiteLLM gateway endpoint + key (highest detection priority)                                                                                        |
 | `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                                                                       |
-| `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); zero-config fallback after Anthropic                                                                |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; zero-config fallback after Anthropic                                                           |
+| `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); low-configuration auto-detect fallback after Anthropic                                              |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; low-configuration auto-detect fallback after Anthropic                                         |
 | `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                                                            |
 | `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                                                            |
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent |
@@ -1238,19 +1241,19 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                        |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                        |
 | `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                  |
-| `FORGE_RADAR` | `0` disables the pre-edit dependency-currency advisory |
-| `FORGE_RADAR_TTL_H` | `forge radar` cache TTL in hours (default 24) |
-| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
-| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
-| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
-| `FORGE_COMMIT_GATE` | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode |
-| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
-| `FORGE_VERBOSE` | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`) |
-| `NO_COLOR` | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention |
-| `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
-| `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
-| `FORGE_NO_UPDATE_CHECK` | `1` silences the `forge doctor` update notice |
-| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
+| `FORGE_RADAR`                                                  | `0` disables the pre-edit dependency-currency advisory                                                                                                    |
+| `FORGE_RADAR_TTL_H`                                            | `forge radar` cache TTL in hours (default 24)                                                                                                             |
+| `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                                                                           |
+| `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                                                                |
+| `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                                                                           |
+| `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                |
+| `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                             |
+| `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                            |
+| `NO_COLOR`                                                     | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention                                                   |
+| `FORCE_COLOR`                                                  | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR`                                                       |
+| `TERM` / `COLORTERM`                                           | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues                                                     |
+| `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                                                             |
+| `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                                                                   |
 
 ---
 
