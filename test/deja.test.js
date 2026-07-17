@@ -131,6 +131,28 @@ test("recordSessionSummary mints a retrievable summary; passing tests make it ve
   assert.equal(hits[0].claim.id, r.id, "the fresh summary is retrievable next session");
 });
 
+test("dejaAdvisory actually fires for a repeated task (DEJA_FLOOR is inside the real range)", () => {
+  // Regression guard: DEJA_FLOOR must sit below the achievable score() ceiling for a
+  // repo-scoped summary (~0.42), or the whole anti-repetition feature is a silent no-op.
+  const root = fixture();
+  recordSessionSummary(
+    root,
+    "sess-oauth",
+    [
+      {
+        type: "prompt",
+        text: "add oauth login flow with pkce to the auth module",
+      },
+      { type: "edit", file: "src/auth.js" },
+    ],
+    200,
+  );
+  const hit = dejaAdvisory(root, "add oauth login flow with pkce to the auth module", 200);
+  assert.ok(hit.includes("déjà vu"), "a repeated task surfaces the advisory");
+  const miss = dejaAdvisory(root, "optimize the image resizing pipeline for thumbnails", 200);
+  assert.equal(miss, "", "an unrelated task stays silent (below the noise floor)");
+});
+
 test("recordSessionSummary is best-effort and returns cleanly on an empty session", () => {
   const root = fixture();
   const r = recordSessionSummary(root, "sess-empty", [], 200);

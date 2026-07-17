@@ -210,10 +210,16 @@ export function syncRef(
   }
 
   // PULL: fetch the remote ledger ref. A missing ref is a first sync, not an error;
-  // anything else (no network, auth) fails open with an honest reason.
+  // anything else (no network, auth) fails open with an honest reason. The ref name is a
+  // single fixed name shared across remotes, so a local ref left over from syncing a
+  // DIFFERENT remote must never be mistaken for THIS remote's state — track whether the
+  // fetch actually found the ref on this remote, and only trust the idempotence
+  // short-circuit when it did (else a new/pruned remote is silently never pushed to).
+  let remoteHasRef = false;
   let pulled = { claims: 0, records: 0 };
   try {
     run(["fetch", remote, `+${ref}:${ref}`], { cwd: root });
+    remoteHasRef = true;
   } catch (e) {
     const msg = String(e?.stderr || e?.message || "");
     if (!/couldn't find remote ref|not our ref|no matching|does not exist/i.test(msg))
@@ -254,7 +260,7 @@ export function syncRef(
       try {
         parentTree = run(["rev-parse", `${ref}^{tree}`], { cwd: root });
       } catch {}
-      if (parentTree === tree)
+      if (remoteHasRef && parentTree === tree)
         return {
           ok: true,
           ...base,
@@ -305,6 +311,7 @@ export function syncRef(
       retries++;
       try {
         run(["fetch", remote, `+${ref}:${ref}`], { cwd: root });
+        remoteHasRef = true; // a race means the remote now has the ref
       } catch {
         return {
           ok: false,

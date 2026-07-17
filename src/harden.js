@@ -7,10 +7,26 @@
 // rule protects a user-authored pre-commit hook: ours lands beside it as
 // `pre-commit.<cli>` instead of overwriting it.
 
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { hasBin as have } from "./util.js";
+
+/** Resolve the real git hooks directory. In a linked worktree or submodule `.git` is a
+ *  FILE (a `gitdir:` pointer), so the naive `<root>/.git/hooks` throws ENOTDIR — ask git
+ *  for the actual path instead, falling back to the classic layout when git is absent. */
+function gitHooksDir(targetRoot) {
+  try {
+    const p = execFileSync("git", ["rev-parse", "--git-path", "hooks"], {
+      cwd: targetRoot,
+      encoding: "utf8",
+    }).trim();
+    return p && (isAbsolute(p) ? p : join(targetRoot, p));
+  } catch {
+    return join(targetRoot, ".git", "hooks");
+  }
+}
 
 // The sandbox config to merge into settings — deny the credential dirs an agent should never read.
 const SANDBOX = {
@@ -53,7 +69,7 @@ export function harden({ targetRoot = process.cwd() } = {}) {
     report.gitleaks = have("gitleaks")
       ? "installed — the pre-commit hook runs it first"
       : "not installed — hook falls back to the built-in secret scan (`brew install gitleaks` for deeper coverage)";
-    const hooks = join(targetRoot, ".git", "hooks");
+    const hooks = gitHooksDir(targetRoot);
     mkdirSync(hooks, { recursive: true });
     const hookPath = join(hooks, "pre-commit");
     let existing = null;
