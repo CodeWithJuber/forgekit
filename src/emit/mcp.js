@@ -24,17 +24,20 @@ function mergeJson(path, key, servers) {
     }
   }
   const bucket = obj[key] || (obj[key] = {});
-  let added = 0;
+  // Managed-entry ownership (P0-06): every server WE emit is forge-managed, so add it when
+  // missing AND refresh it when a prior emission has drifted (stale command/args). Servers
+  // the user added under other names are never touched — we only iterate our own set.
+  let changed = 0;
   for (const [name, def] of Object.entries(servers)) {
-    if (!bucket[name]) {
+    if (!bucket[name] || JSON.stringify(bucket[name]) !== JSON.stringify(def)) {
       bucket[name] = def;
-      added += 1;
+      changed += 1;
     }
   }
-  if (!added) return { action: "unchanged", note: "present" };
+  if (!changed) return { action: "unchanged", note: "present" };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
-  return { action: "written", note: `+${added} server(s)` };
+  return { action: "written", note: `${changed} server(s) written/updated` };
 }
 
 function emitCodexToml(path, servers) {

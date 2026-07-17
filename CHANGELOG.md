@@ -27,6 +27,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file body against the canonical source instead of trusting the embedded `forge:sync`
   marker, so a hand-edited managed file (`AGENTS.md`, etc.) with an intact marker is
   detected and restored on `forge sync` (P0-08).
+- **Third-party MCP is opt-in.** `context7` is no longer installed by default; `forge
+init` wires only forge's own server. New `forge integrations` command adds an optional
+  server (e.g. `context7`) after showing its package, network behaviour, and the files it
+  touches, writing only with `--yes` (P0-06). MCP emitters now refresh a drifted
+  forge-owned entry instead of leaving a stale one (user servers untouched).
+- **Core correctness.** Atlas staleness is inventory-aware (a new/removed file now
+  invalidates the graph), and `forge impact`/`substrate` report "impact unavailable" on a
+  stale/missing atlas instead of presenting 0 impacted files as trustworthy (P0-07).
+  `forge verify` returns `PASS | FAIL | INCOMPLETE | NOT_CONFIGURED` (never "pass" when no
+  verifier ran), drives real test commands off the stack detector, and includes untracked
+  files in provenance (P0-09). Ledger evidence refs are validated — a typed `git:<sha>`
+  ref must resolve before it can affect confidence (P0-10).
+- **Honest claims & wording.** Dropped scanner "ok to install" certification language
+  (S-01); renamed `P(defect)`→`defectRiskScore` and `residual`→`remainingUncheckedWeight`
+  in output; reframed the preflight score as a heuristic; qualified "proof-carrying
+  memory" as evidence-referenced and "zero-config" as guided/low-configuration across the
+  docs; added a beta status block and per-benchmark sample sizes.
 
 ## [0.20.0] - 2026-07-17
 

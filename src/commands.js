@@ -10,7 +10,8 @@ export const COMMANDS = {
     "self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades",
   taste: "enable one UI-taste tool for this repo (no arg = list)",
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
-  stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
+  stack:
+    "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
     "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
   recall: "manage cross-session memory (list / add / consolidate)",
@@ -20,7 +21,8 @@ export const COMMANDS = {
     "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
   precommit:
     "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
-  harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
+  harden:
+    "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
@@ -28,29 +30,41 @@ export const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
   ledger:
-    "proof-carrying memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
-  reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
-  context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
-  preflight: "assumption check — what a task names that the repo doesn't define",
+    "evidence-referenced memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
+  reuse:
+    "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
+  context:
+    "budgeted context assembly + completeness gate — what an edit NEEDS known",
+  preflight:
+    "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
-  substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
-  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
-  anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
-  handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
-  decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
+  substrate:
+    "one pre-action gate: assumptions, route, impact, scope, memory, verify",
+  scope:
+    "decompose files into independent clusters (+ coupled files you didn't name)",
+  anchor:
+    "goal-drift check — are your actual (git) changes still on the stated goal?",
+  handoff:
+    "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
+  decide:
+    "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
   know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
   diagnose:
     "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
-  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
+  imagine:
+    "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck:
     "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
   dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
-  report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
+  report:
+    "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
+  integrations:
+    "opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with --yes",
 };
 
 export const GROUPS = {
@@ -79,8 +93,26 @@ export const GROUPS = {
     "imagine",
     "lean",
   ],
-  Quality: ["verify", "precommit", "radar", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "report", "brand", "atlas", "stack"],
+  Quality: [
+    "verify",
+    "precommit",
+    "radar",
+    "scan",
+    "spec",
+    "taste",
+    "uicheck",
+    "harden",
+  ],
+  Config: [
+    "config",
+    "cost",
+    "dash",
+    "report",
+    "brand",
+    "atlas",
+    "stack",
+    "integrations",
+  ],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

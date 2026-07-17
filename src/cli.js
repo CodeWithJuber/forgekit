@@ -314,6 +314,43 @@ async function run(argv) {
     }
     return;
   }
+  if (cmd === "integrations") {
+    const { listIntegrations, planIntegration, addIntegration } = await import("./integrations.js");
+    const sub = argv[1];
+    if (sub === "add") {
+      const name = argv[2];
+      const plan = planIntegration(name);
+      if (!plan.ok) {
+        console.error(plan.reason);
+        process.exitCode = 1;
+        return;
+      }
+      if (!argv.includes("--yes")) {
+        heading(`${BRAND.brand} integrations — add ${name}\n`);
+        console.log(`  This adds a THIRD-PARTY MCP server to every detected tool's config:`);
+        console.log(`    package: ${plan.pkg}`);
+        console.log(`    network: ${plan.network}`);
+        console.log(`    purpose: ${plan.why}`);
+        console.log(`    writes:  .mcp.json, .cursor/mcp.json, .gemini/…, .codex/…, .continue/…`);
+        console.log(
+          `\n  Not installed. Re-run with --yes to apply:  ${BRAND.cli} integrations add ${name} --yes`,
+        );
+        return;
+      }
+      const res = addIntegration(name, { targetRoot: process.cwd() });
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      heading(`${BRAND.brand} integrations — add ${name}\n`);
+      console.log(`  added ${name} → ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+      return;
+    }
+    // Default: list what's available.
+    heading(`${BRAND.brand} integrations — opt-in third-party MCP servers\n`);
+    for (const it of listIntegrations()) {
+      console.log(`  ${it.name.padEnd(12)} ${it.why}  (${it.pkg})`);
+    }
+    console.log(`\n  Add one with:  ${BRAND.cli} integrations add <name>`);
+    return;
+  }
   if (cmd === "recall") {
     const r = await import("./recall.js");
     const store = r.defaultStore();
@@ -832,7 +869,7 @@ async function run(argv) {
       console.log("  no obvious red flags");
     }
     console.log(
-      `\n  ${r.critical ? "BLOCKED — critical finding, do not install" : "ok to install"}`,
+      `\n  ${r.verdict || (r.critical ? "BLOCKED — critical finding" : "no critical signature detected — not a safety certification")}`,
     );
     if (r.critical) process.exitCode = 1;
     return;
@@ -871,11 +908,13 @@ async function run(argv) {
         for (const f of r.findings) console.log(`  ! ${f}`);
       }
       console.log(
-        `\n  P(defect):  ${bar(r.p)} ${r.p.toFixed(2)}${
+        `\n  defectRiskScore:  ${bar(r.p)} ${r.p.toFixed(2)} (heuristic, not a calibrated probability)${
           r.families.length ? `  (families: ${r.families.join(", ")})` : ""
         }`,
       );
-      console.log(`  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`);
+      console.log(
+        `  remainingUncheckedWeight: ${r.residual.toFixed(3)} — Theorem-D silent-miss bound (heuristic)`,
+      );
       console.log(
         `\n  ${
           r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
