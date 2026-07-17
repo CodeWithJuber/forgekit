@@ -478,6 +478,13 @@ installs go live immediately; npm-global installs get the `npm i -g` command). `
 doctor` also surfaces a one-line notice when behind (cached, never nags; silence it with
 `FORGE_NO_UPDATE_CHECK=1`). Fail-open: offline or a non-git install never errors.
 
+`forge update --to <version>` pins or downgrades to an exact release: for a git
+checkout it fetches tags, verifies the release tag exists (a version that was never
+released is an honest miss, not an error dump), and does a detached checkout at that
+tag — the printed note tells you how to get back to latest (`git checkout <branch>`,
+then `forge update`). npm-global installs get the exact `npm i -g <pkg>@<version>`
+command instead. Accepts `0.17.0` or `v0.17.0`.
+
 ### `forge recall add | list | consolidate` — cross-session memory
 
 Durable facts, one per file, injected at the start of the next session by the

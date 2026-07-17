@@ -178,7 +178,7 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 | **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                    |
 |                            | `forge sync`      | recompile canonical source → each tool's native files (idempotent)                                                 |
 |                            | `forge doctor`    | pass/fail health check: tools, guards, MCP, drift, update                                                          |
-|                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it                                         |
+|                            | `forge update`    | self-update — `--check` reports if a newer version exists, bare applies it, `--to <version>` pins/downgrades       |
 |                            | `forge docs`      | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions     |
 |                            | `forge config`    | provider setup — show / switch / add providers, set the default model                                              |
 |                            | `forge harden`    | wire the pre-commit gate (gitleaks + commit gate) + sandbox settings                                               |

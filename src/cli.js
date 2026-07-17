@@ -79,8 +79,26 @@ async function run(argv) {
     return;
   }
   if (cmd === "update") {
-    const { applyUpdate, updateStatus } = await import("./update.js");
+    const { applyUpdate, applyUpdateTo, updateStatus } = await import("./update.js");
     const json = argv.includes("--json");
+    const toIdx = argv.indexOf("--to");
+    if (toIdx !== -1) {
+      const r = applyUpdateTo(argv[toIdx + 1], {});
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} update — pin\n`);
+      if (r.ok)
+        console.log(
+          r.changed
+            ? `  pinned ${r.before} → ${r.after} (${r.tag}). ${r.note}`
+            : `  already at ${r.tag}. ${r.note}`,
+        );
+      else if (r.instruction) console.log(`  ${r.reason}:\n    ${r.instruction}`);
+      else {
+        console.log(`  ${r.reason}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
     if (argv.includes("--check")) {
       const s = updateStatus({});
       if (json) return console.log(JSON.stringify(s, null, 2));

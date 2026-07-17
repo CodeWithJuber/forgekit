@@ -6,7 +6,8 @@ export const COMMANDS = {
   init: "scaffold this repo's config — emits every tool from one shared source",
   sync: "recompile the canonical source into each tool's native config files",
   doctor: "health-check installed tools, guards, MCP auth, and config drift",
-  update: "self-update — `--check` reports if a newer version is available, bare applies it",
+  update:
+    "self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades",
   taste: "enable one UI-taste tool for this repo (no arg = list)",
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",

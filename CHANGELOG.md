@@ -25,6 +25,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `0` kill switch); a detected secret blocks in every mode. `forge harden` now installs
   a pre-commit hook that runs gitleaks when present, then the commit gate — and never
   clobbers a user-authored hook (writes `pre-commit.forge` beside it instead).
+- **Pin/downgrade via `update --to <version>`.** New `applyUpdateTo` in
+  `src/update.js`: for a git checkout it fetches tags, verifies the release tag
+  exists (unknown version → honest miss, never a throw), and detached-checkouts
+  the tag with a note on how to return to latest; npm-global installs get the
+  exact `npm i -g <pkg>@<version>` instruction instead.
 
 ## [0.19.0] - 2026-07-17
 
