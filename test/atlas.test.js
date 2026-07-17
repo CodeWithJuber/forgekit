@@ -81,6 +81,16 @@ test("isStale detects an edit and a deletion", () => {
   assert.equal(isStale(root, atlas), true, "content change is detected");
 });
 
+test("isStale detects a brand-new eligible file (inventory drift, not just edits)", () => {
+  const root = fixture();
+  const atlas = build({ root });
+  assert.equal(isStale(root, atlas), false, "fresh right after build");
+  // A new eligible file isn't in fileHashes, so a hash-only scan can't see it — the
+  // inventory walk must flag it as stale.
+  writeFileSync(join(root, "c.js"), "export function brandNew(){ return 1 }\n");
+  assert.equal(isStale(root, atlas), true, "new eligible file makes the atlas stale");
+});
+
 test("impact (llm on): a proposed edge survives only if real + grep-verified", () => {
   const root = fixture();
   const atlas = build({ root });
