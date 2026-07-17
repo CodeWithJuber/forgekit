@@ -81,6 +81,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/api/radar`, and `/api/timeline`; the page polls every 5s, paused while the tab is
   hidden. The append-only write discipline (only `POST /api/ratify` and `/api/retract`)
   is unchanged, and corrupt or missing stores degrade to empty sections.
+- **Static HTML report (`forge report`).** New zero-dep `src/report.js` emits a
+  self-contained `.forge/report.html` — the offline twin of `forge dash` (no server, no
+  fetch, no CDN, no JS to read it). `renderReport` is pure and reuses `dashData`, buckets
+  `metrics.jsonl` into a 90-day activity sparkline (server-side inline SVG), reads the
+  `.forge/radar.json` cache directly and defensively (absent → the radar section is
+  omitted), and draws its palette from `rootTokensCss()` so it matches the dashboard.
+  `--out <path>` overrides the default location.
 
 ## [0.19.0] - 2026-07-17
 

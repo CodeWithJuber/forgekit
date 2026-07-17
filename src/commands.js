@@ -48,6 +48,7 @@ export const COMMANDS = {
   uicheck:
     "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
   dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
+  report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
 };
@@ -79,7 +80,7 @@ export const GROUPS = {
     "lean",
   ],
   Quality: ["verify", "precommit", "radar", "scan", "spec", "taste", "uicheck", "harden"],
-  Config: ["config", "cost", "dash", "brand", "atlas", "stack"],
+  Config: ["config", "cost", "dash", "report", "brand", "atlas", "stack"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

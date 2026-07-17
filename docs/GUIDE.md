@@ -916,6 +916,22 @@ Forge dash — read-only lens on .forge/
   http://127.0.0.1:4242  (localhost-only · Ctrl-C to stop)
 ```
 
+### `forge report [--out <path>]` — the static HTML report
+
+The offline twin of `forge dash`: instead of serving a live localhost lens, it renders
+ONE self-contained HTML file — no server, no fetch, no CDN, no JavaScript needed to read
+it — that you can open offline, email, or attach to a PR. It reuses the same `dashData`
+payload, buckets `.forge/metrics.jsonl` into a 90-day activity sparkline (server-side
+inline SVG), and folds in the tech-radar cache (`.forge/radar.json`) when present. The
+palette is the brand's own token block (`rootTokensCss`), so the report matches the
+dashboard exactly. Default output is `.forge/report.html`; `--out` overrides it.
+
+```console
+$ forge report
+  wrote /repo/.forge/report.html
+  open it in a browser — fully offline, no server needed.
+```
+
 ### `forge cost --stages` — the measured cost report
 
 Per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`. A stage with no

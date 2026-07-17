@@ -2028,6 +2028,30 @@ async function run(argv) {
     console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
     return;
   }
+  if (cmd === "report") {
+    // Static twin of `dash`: emit ONE self-contained HTML file (no server, opens
+    // offline) instead of serving a live localhost lens. `--out <path>` overrides the
+    // default `.forge/report.html`.
+    const { renderReport, writeReport } = await import("./report.js");
+    const oi = argv.indexOf("--out");
+    heading(`${BRAND.brand} report — static snapshot of .forge/\n`);
+    if (oi >= 0) {
+      const out = argv[oi + 1];
+      if (!out) {
+        console.error("usage: forge report [--out <path>]");
+        process.exitCode = 1;
+        return;
+      }
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(out, renderReport(process.cwd()));
+      console.log(`  wrote ${out}`);
+      return;
+    }
+    const path = writeReport(process.cwd());
+    console.log(`  wrote ${path}`);
+    console.log("  open it in a browser — fully offline, no server needed.");
+    return;
+  }
   if (cmd === "dash") {
     const { serve } = await import("./dash.js");
     const i = argv.indexOf("--port");
