@@ -1,13 +1,63 @@
 // forge commands — the CLI's command surface as DATA. cli.js renders --help from
 // this table and docs_check.js reconciles README/GUIDE against it, so a command can
-// no longer ship (or disappear) without the docs check noticing. One line per command.
+// no longer ship (or disappear) without the docs check noticing.
+//
+// An entry is EITHER a one-line summary string OR a rich object
+// `{summary, usage?, flags?, examples?, env?}` — both coexist permanently. Read a
+// summary via commandSummary(name) (printHelp is the only value-reader), and the full
+// per-command help via commandHelp(name). docs_check only reads Object.keys(COMMANDS),
+// so migrating a value from string to object never affects the docs reconciler.
 
 export const COMMANDS = {
-  init: "scaffold this repo's config — emits every tool from one shared source",
-  sync: "recompile the canonical source into each tool's native config files",
-  doctor: "health-check installed tools, guards, MCP auth, and config drift",
-  update:
-    "self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades",
+  init: {
+    summary: "scaffold this repo's config — emits every tool from one shared source",
+    usage: "forge init [--no-settings | --settings-only]",
+    flags: [
+      {
+        flag: "--no-settings",
+        desc: "emit tool configs but don't touch ~/.claude/settings.json",
+      },
+      {
+        flag: "--settings-only",
+        desc: "only merge hooks/permissions into settings (skip repo emit)",
+      },
+    ],
+    examples: ["forge init", "forge init --no-settings"],
+  },
+  sync: {
+    summary: "recompile the canonical source into each tool's native config files",
+    usage: "forge sync",
+    examples: ["forge sync"],
+  },
+  doctor: {
+    summary: "health-check installed tools, guards, MCP auth, and config drift",
+    usage: "forge doctor [--fix]",
+    flags: [
+      {
+        flag: "--fix",
+        desc: "auto-repair safely fixable findings, then re-check",
+      },
+    ],
+    examples: ["forge doctor", "forge doctor --fix"],
+  },
+  tools:
+    "primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)",
+  update: {
+    summary:
+      "self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades",
+    usage: "forge update [--check | --to <version>]",
+    flags: [
+      {
+        flag: "--check",
+        desc: "report whether a newer version is available (makes no change)",
+      },
+      {
+        flag: "--to <version>",
+        desc: "pin or downgrade to an exact released version",
+      },
+    ],
+    examples: ["forge update --check", "forge update --to 0.19.0"],
+  },
   taste: "enable one UI-taste tool for this repo (no arg = list)",
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
@@ -54,7 +104,7 @@ export const COMMANDS = {
 };
 
 export const GROUPS = {
-  Core: ["init", "sync", "doctor", "catalog", "docs", "update"],
+  Core: ["init", "sync", "doctor", "tools", "catalog", "docs", "update"],
   Memory: [
     "cortex",
     "deja",
@@ -85,3 +135,36 @@ export const GROUPS = {
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */
 export const HIDDEN_COMMANDS = ["cortex-mcp"];
+
+/**
+ * The one-line summary for a command — works for both string and object entries.
+ * The single value-reader of COMMANDS (printHelp) goes through here so the table can
+ * hold either shape. Unknown name → "".
+ * @param {string} name
+ * @returns {string}
+ */
+export function commandSummary(name) {
+  const e = COMMANDS[name];
+  if (!e) return "";
+  return typeof e === "string" ? e : (e.summary ?? "");
+}
+
+/**
+ * Normalized per-command help — always the full shape regardless of how the entry was
+ * authored. A string entry yields its summary with empty usage/flags/examples/env.
+ * @param {string} name
+ * @returns {{summary:string, usage:string, flags:{flag:string,desc:string}[],
+ *   examples:string[], env:string[]}|null} null for an unknown command
+ */
+export function commandHelp(name) {
+  const e = COMMANDS[name];
+  if (!e) return null;
+  if (typeof e === "string") return { summary: e, usage: "", flags: [], examples: [], env: [] };
+  return {
+    summary: e.summary ?? "",
+    usage: e.usage ?? "",
+    flags: Array.isArray(e.flags) ? e.flags : [],
+    examples: Array.isArray(e.examples) ? e.examples : [],
+    env: Array.isArray(e.env) ? e.env : [],
+  };
+}

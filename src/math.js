@@ -46,3 +46,36 @@ export function setOverlap(a, b) {
   for (const x of small) if (large.has(x)) inter++;
   return inter / small.size;
 }
+
+/** Character-bigram set of a string — the token space for fuzzy name matching. */
+function bigrams(s) {
+  const t = String(s ?? "").toLowerCase();
+  const out = new Set();
+  if (t.length === 1) out.add(t);
+  for (let i = 0; i < t.length - 1; i += 1) out.add(t.slice(i, i + 2));
+  return out;
+}
+
+/**
+ * Nearest candidate to `name` by character-bigram overlap (the same setOverlap the
+ * router/intent k-NN uses), or null when nothing clears `floor`. Powers "did you mean"
+ * on an unknown command without a new dependency or algorithm.
+ * @param {string} name the mistyped token
+ * @param {Iterable<string>} candidates the known good names
+ * @param {number} [floor] minimum overlap to suggest (default 0.4)
+ * @returns {string|null}
+ */
+export function suggest(name, candidates, floor = 0.4) {
+  const b = bigrams(name);
+  if (!b.size) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    const score = setOverlap(b, bigrams(c));
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return bestScore >= floor ? best : null;
+}

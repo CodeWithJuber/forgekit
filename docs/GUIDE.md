@@ -27,7 +27,7 @@ Every command is real and wired. Grouped by what it does:
 
 | Group                        | Commands                                                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                           |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge tools` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`           |
 | **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
 | **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
 | **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
@@ -558,6 +558,33 @@ tag — the printed note tells you how to get back to latest (`git checkout <bra
 then `forge update`). npm-global installs get the exact `npm i -g <pkg>@<version>`
 command instead. Accepts `0.17.0` or `v0.17.0`.
 
+### `forge tools` — one repo, one agent tool (gitignore the rest)
+
+`forge sync` emits config for **every** supported agent tool from one source — great for
+portability, noisy for a repo where only one tool is ever used: `.cursor/`, `.gemini/`,
+`.codex/`, `.zed/`, `.aider.conf.yml`, and friends all show up as tracked clutter. `forge
+tools` fixes that without changing what `sync` emits.
+
+- `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
+  auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
+  `.codex/`, `.zed/`, `.vscode/`) and which targets are currently gitignored.
+- `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
+  `zed` · `vscode` · `aider` · `continue` · `windsurf`) as this repo's primary tool in
+  `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
+  (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
+  emitted artifacts. Your own `.gitignore` lines are never touched, and the shared
+  `AGENTS.md` plus the primary tool's own files always stay tracked.
+- `forge tools --reset` — clear the config and strip the managed block (only the block).
+
+This is **opt-in** — plain `forge sync` never writes `.gitignore`. The block lists the
+exact target paths `sync` reports, so it always matches what Forge actually emits.
+
+```console
+$ forge tools claude
+  primary tool   claude
+  gitignored     .aider.conf.yml, .codex/config.toml, .cursor/mcp.json, .gemini/settings.json, .zed/settings.json  (block written)
+```
+
 ### `forge recall add | list | consolidate` — cross-session memory
 
 Durable facts, one per file, injected at the start of the next session by the
@@ -959,23 +986,23 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 
 ### The rest
 
-| Command                          | Answers                                                                                                                                                                                                                                                                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `forge init`                     | Emit every tool's native config from one source.                                                                                                                                                                                                                                                    |
-| `forge sync`                     | Recompile `source/` → each tool's files (idempotent).                                                                                                                                                                                                                                               |
-| `forge doctor`                   | Health check: layers, install, drift, cortex.                                                                                                                                                                                                                                                       |
-| `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).                                                                                                                                                                          |
-| `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above).                                                                                                                                                                     |
-| `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                                                                                                                                                                                      |
-| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                                                                                                                                                                                                   |
-| `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                                                                                                                                                                                          |
-| `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                        |
-| `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                         |
-| `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines. `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode. |
-| `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                       |
-| `forge brand`                    | Print the active brand token map.                                                                                                                                                                                                                                                                   |
-| `forge lean "<task>"`            | Scope-minimality footprint for a task — advisory (the Lean Path as a command).                                                                                                                                                                                                                      |
-| `forge taste [<style>]`          | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads).                                                                                                                                                                                            |
+| Command                          | Answers                                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forge init`                     | Emit every tool's native config from one source.                                                                                                                                                                                                                                                            |
+| `forge sync`                     | Recompile `source/` → each tool's files (idempotent).                                                                                                                                                                                                                                                       |
+| `forge doctor`                   | Health check: layers, install, drift, cortex. `forge doctor --fix` auto-repairs the safely fixable findings (missing settings hooks/permissions, ledger union-merge rule, stale `AGENTS.md`, non-executable guards) by reusing the same idempotent functions `forge init`/`forge sync` use, then re-checks. |
+| `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).                                                                                                                                                                                  |
+| `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above).                                                                                                                                                                             |
+| `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                                                                                                                                                                                              |
+| `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                                                                                                                                                                                                           |
+| `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                                                                                                                                                                                                  |
+| `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                                |
+| `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                                 |
+| `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines. `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode.         |
+| `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                               |
+| `forge brand`                    | Print the active brand token map.                                                                                                                                                                                                                                                                           |
+| `forge lean "<task>"`            | Scope-minimality footprint for a task — advisory (the Lean Path as a command).                                                                                                                                                                                                                              |
+| `forge taste [<style>]`          | Pick one visual direction → writes `DESIGN.md` (the anti-slop reference `uicheck design --taste` reads).                                                                                                                                                                                                    |
 
 ### Use it in a script
 
@@ -1238,19 +1265,20 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                        |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                        |
 | `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                  |
-| `FORGE_RADAR` | `0` disables the pre-edit dependency-currency advisory |
-| `FORGE_RADAR_TTL_H` | `forge radar` cache TTL in hours (default 24) |
-| `FORGE_SKILLGATE_NOEXTERNAL` | `1` skips the external scanner in `forge scan` (heuristic only) |
-| `ENABLE_CORTEX_DISTILL` | `1` distills new lessons into prose via a cheap model call |
-| `FORGE_STOPGATE` | `0` disables the Stop completion gate (code-without-docs block) |
-| `FORGE_COMMIT_GATE` | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode |
-| `FORGE_INTENT` | `0` disables intent protocol cards on prompts |
-| `FORGE_VERBOSE` | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`) |
-| `NO_COLOR` | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention |
-| `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
-| `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
-| `FORGE_NO_UPDATE_CHECK` | `1` silences the `forge doctor` update notice |
-| `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
+| `FORGE_RADAR`                                                  | `0` disables the pre-edit dependency-currency advisory                                                                                                    |
+| `FORGE_RADAR_TTL_H`                                            | `forge radar` cache TTL in hours (default 24)                                                                                                             |
+| `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                                                                           |
+| `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                                                                |
+| `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                                                                           |
+| `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                |
+| `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                             |
+| `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                            |
+| `FORGE_NO_HINT`                                                | `1` silences the first-run onboarding tip (`forge init` / `forge doctor --fix`) printed once when `~/.claude/settings.json` isn't yet forge-managed       |
+| `NO_COLOR`                                                     | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention                                                   |
+| `FORCE_COLOR`                                                  | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR`                                                       |
+| `TERM` / `COLORTERM`                                           | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues                                                     |
+| `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                                                             |
+| `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                                                                   |
 
 ---
 

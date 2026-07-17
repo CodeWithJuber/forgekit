@@ -6,6 +6,53 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-command help + word forms.** `forge <command> --help` / `-h` now works for
+  every command (intercepted centrally in the dispatcher, no longer silently dropped),
+  alongside the word forms `forge help [command]` and `forge version`. Help renders from
+  the same `COMMANDS` table the docs check reconciles: entries may now be a plain summary
+  string OR a rich `{summary, usage, flags, examples, env}` object (both coexist; the
+  high-traffic commands are migrated), read through new `commandSummary`/`commandHelp`
+  helpers. An unknown command now suggests the nearest match ("did you mean …?") via a
+  character-bigram `suggest()` over the existing `setOverlap` similarity.
+- **`forge doctor --fix` — one-command auto-repair.** Each safely fixable finding now
+  carries a repair that reuses an existing idempotent function: missing
+  hooks/permissions in `~/.claude/settings.json` → `mergeSettings`, a missing ledger
+  union-merge rule → `ensureLedgerGitattributes`, a missing/stale `AGENTS.md` → `sync`,
+  and non-executable guards → `chmod +x`. `forge doctor --fix` runs the repairs, prints a
+  `repairs:` block, then re-checks; a second run is a clean no-op. Unsafe findings
+  (provider keys, MCP count, pricing, gateway) stay report-only. The `node` check is now
+  reconciled with `package.json` engines (`>=20`): fail below 18, warn on 18–19, ok on 20+.
+- **Zero-config settings wiring + first-run hint.** `forge init --settings-only`
+  runs only the idempotent, `_forge`-marker-guarded settings merge (hooks +
+  permissions into `~/.claude/settings.json`) with no repo emit, and `install.sh`
+  now calls it instead of printing a block to paste by hand (honoring `--dry-run`).
+  When a real command runs before settings are forge-managed, one tip line to stderr
+  points at `forge init` / `forge doctor --fix`; it is stateless, self-silences once
+  init runs, and `FORGE_NO_HINT=1` mutes it.
+- **`forge tools` — primary-tool config + auto-gitignore for secondary-tool artifacts.**
+  A repo that only uses one agent no longer has to track every other tool's emitted
+  files. `forge tools <name>` records the primary tool in `.forge/config.json` and writes
+  a marked, reversible block into `.gitignore` (`# forge:gitignore:begin … :end`, managed
+  by `src/gitignore.js`) that ignores exactly the NON-primary emit targets — computed from
+  `sync()`'s own report rows, so the block always matches what Forge emits. User lines,
+  the shared `AGENTS.md`, and the primary tool's own files are never touched. `forge tools`
+  shows the detected/primary tool (auto-detected from which agent folder exists, mirroring
+  provider detection) and what's gitignored; `forge tools --reset` clears the config and
+  strips only the block. Opt-in — plain `forge sync` never writes `.gitignore`.
+- **`forge dash` first-run clarity.** `dashData` now reports a `meta.empty` /
+  `meta.forgeDir` signal (true when `.forge/` holds no ledger claims and no metrics
+  events), and the dashboard shows a plain-language empty-state banner ("No data in
+  .forge/ yet — run `forge sync`, then work a session") plus a `?` legend that
+  explains what every panel means in one sentence. Display-only — the append-only
+  ratify/retract writes are unchanged.
+- **Web session-start install hook.** `.claude/hooks/session-start.sh` (wired into the
+  repo's `SessionStart` hooks alongside the existing recall/cortex context hooks) makes
+  Claude Code on the web ready to lint and test: synchronous, idempotent, gated on
+  `CLAUDE_CODE_REMOTE=true` (a no-op locally), and it skips the install entirely when the
+  dev toolchain is already resolvable.
+
 ## [0.20.0] - 2026-07-17
 
 ### Added

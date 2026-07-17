@@ -1,15 +1,42 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
 // README/GUIDE tables against the same table this help is rendered from.
-import { COMMANDS, GROUPS } from "./commands.js";
+import { COMMANDS, commandSummary, GROUPS } from "./commands.js";
 // Color is capability-gated (FORCE_COLOR > NO_COLOR > TERM=dumb > TTY) — piped
 // output stays byte-plain, so nothing downstream ever parses an escape code.
 import { bar, heading as fmtHeading, paint, table } from "./fmt.js";
+import { printCommandHelp } from "./help.js";
+import { suggest } from "./math.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
+
+// Commands that are themselves the onboarding path — nudging on them would be circular.
+const HINT_SKIP = new Set(["init", "help", "version"]);
+
+/** First-run nudge: if the user has never run `forge init` (no forge-managed marker in
+ *  ~/.claude/settings.json) and is invoking a real command, print ONE tip line to stderr.
+ *  Stateless — zero writes — and self-silences the moment `init` (or install.sh) writes the
+ *  marker. FORGE_NO_HINT=1 mutes it. Never throws; a missing/garbage settings file just
+ *  means "not yet managed". */
+function maybeFirstRunHint(cmd) {
+  if (process.env.FORGE_NO_HINT === "1") return;
+  if (!(cmd in COMMANDS) || HINT_SKIP.has(cmd)) return;
+  try {
+    const settings = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
+    if (settings?._forge === "forge-managed") return;
+  } catch {
+    // missing or unparseable → not managed → fall through and hint
+  }
+  console.error(
+    `Tip: run \`${BRAND.cli} init\` to wire hooks/permissions, or \`${BRAND.cli} doctor --fix\`. Silence: FORGE_NO_HINT=1.`,
+  );
+}
 
 // Per-command title lines ("Forge <cmd> — …") are branding chrome, not results. They
 // print only when asked (`--verbose` or FORGE_VERBOSE=1); by default a command emits
@@ -26,7 +53,7 @@ function printHelp() {
   for (const [group, cmds] of Object.entries(GROUPS)) {
     console.log(`${group}:`);
     for (const name of cmds) {
-      if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${COMMANDS[name]}`);
+      if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${commandSummary(name)}`);
     }
     console.log();
   }
@@ -36,8 +63,26 @@ function printHelp() {
 
 async function run(argv) {
   const [cmd] = argv;
-  if (!cmd || cmd === "-h" || cmd === "--help") return printHelp();
-  if (cmd === "-v" || cmd === "--version") return printVersion();
+  // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
+  if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1])) return printHelp();
+  if (cmd === "-v" || cmd === "--version" || cmd === "version") return printVersion();
+  // Per-command help by word form: `forge help <cmd>`.
+  if (cmd === "help") {
+    process.exitCode = printCommandHelp(argv[1]);
+    return;
+  }
+  // Central interception: `forge <cmd> --help|-h` for ANY real command, BEFORE dispatch,
+  // so every command gets uniform help without each branch parsing its own flag (the
+  // gap the old banner advertised but never delivered). cortex-mcp is exempt (a server).
+  if (
+    cmd !== "cortex-mcp" &&
+    cmd in COMMANDS &&
+    argv.slice(1).some((a) => a === "--help" || a === "-h")
+  ) {
+    process.exitCode = printCommandHelp(cmd);
+    return;
+  }
+  maybeFirstRunHint(cmd);
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -50,10 +95,24 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
-    const { report, bytes, settings, detected } = init({
-      targetRoot: process.cwd(),
-      noSettings,
-    });
+    // --settings-only: wire hooks + permissions into ~/.claude/settings.json ONLY (the
+    // idempotent, marker-guarded merge install.sh calls) — no repo emit, no AGENTS.md.
+    if (argv.includes("--settings-only")) {
+      const { settings } = init({ settingsOnly: true, noSettings });
+      heading(`${BRAND.brand} init — settings merge only\n`);
+      if (settings?.action === "merged" && "added" in settings) {
+        console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+      } else if (settings?.action === "unchanged" && "path" in settings) {
+        console.log(`  settings: already up to date (${settings.path})`);
+      } else if (settings?.action === "skipped") {
+        console.log("  settings: skipped (--no-settings)");
+      }
+      return;
+    }
+    const { report, bytes, settings, detected } =
+      /** @type {{report: {action: string, target: string}[], bytes: number, settings: any, detected: any}} */ (
+        init({ targetRoot: process.cwd(), noSettings })
+      );
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
     heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
@@ -254,9 +313,13 @@ async function run(argv) {
   }
   if (cmd === "doctor") {
     const { doctor } = await import("./doctor.js");
-    const { results, failed } = doctor({ targetRoot: process.cwd() });
+    const fix = argv.includes("--fix");
+    const { results, failed, repairs } = doctor({
+      targetRoot: process.cwd(),
+      fix,
+    });
     if (argv.includes("--json")) {
-      console.log(JSON.stringify({ results, failed }, null, 2));
+      console.log(JSON.stringify({ results, failed, repairs }, null, 2));
       if (failed) process.exitCode = 1;
       return;
     }
@@ -266,6 +329,18 @@ async function run(argv) {
       fail: paint("✗", "err"),
     };
     heading(`${BRAND.brand} doctor\n`);
+    if (fix) {
+      if (repairs.length) {
+        console.log("  repairs:");
+        for (const rep of repairs)
+          console.log(
+            `  ${rep.ok ? paint("✓", "ok") : paint("✗", "err")} ${rep.label}${rep.ok ? "" : ` — ${rep.error}`}`,
+          );
+        console.log("");
+      } else {
+        console.log(`  ${paint("✓", "ok")} nothing to repair\n`);
+      }
+    }
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
     console.log(
       `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
@@ -2073,8 +2148,71 @@ async function run(argv) {
     });
     return; // the process stays alive serving — that's the command
   }
+  if (cmd === "tools") {
+    const { resolvePrimaryTool, applyPrimaryTool, clearRepoConfig, KNOWN_TOOLS } = await import(
+      "./repo_config.js"
+    );
+    const { removeGitignoreBlock, readGitignoreBlock } = await import("./gitignore.js");
+    const root = process.cwd();
+    const json = argv.includes("--json");
+
+    if (argv.includes("--reset")) {
+      const cleared = clearRepoConfig(root);
+      const gi = removeGitignoreBlock(root);
+      if (json)
+        return console.log(
+          JSON.stringify({ reset: true, config: cleared.cleared, gitignore: gi.action }, null, 2),
+        );
+      heading(`${BRAND.brand} tools — reset\n`);
+      console.log(
+        `  primary-tool config ${cleared.cleared ? "cleared" : "was unset"} · .gitignore block ${gi.action}`,
+      );
+      return;
+    }
+
+    const name = argv.slice(1).find((a) => !a.startsWith("--"));
+    if (name) {
+      if (!KNOWN_TOOLS.includes(name)) {
+        console.error(`Unknown tool: ${name}\nKnown tools: ${KNOWN_TOOLS.join(", ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      const r = await applyPrimaryTool(root, name);
+      if (json) return console.log(JSON.stringify(r, null, 2));
+      heading(`${BRAND.brand} tools — primary set\n`);
+      console.log(`  primary tool   ${paint(r.primaryTool, "ok")}`);
+      console.log(
+        `  gitignored     ${r.targets.length ? r.targets.join(", ") : "none"}  (block ${r.gitignore})`,
+      );
+      console.log(`\n  ${BRAND.cli} tools --reset  to undo`);
+      return;
+    }
+
+    const { tool, source } = resolvePrimaryTool(root);
+    const ignored = readGitignoreBlock(root);
+    if (json)
+      return console.log(
+        JSON.stringify({ primaryTool: tool, source, gitignored: ignored }, null, 2),
+      );
+    const origin =
+      source === "config"
+        ? "from config"
+        : source === "auto-detect"
+          ? "auto-detected"
+          : "unset — emitting all tools";
+    heading(`${BRAND.brand} tools — agent-tool config\n`);
+    console.log(`  primary tool   ${tool ? paint(tool, "ok") : "none"} (${origin})`);
+    console.log(`  gitignored     ${ignored.length ? ignored.join(", ") : "none"}`);
+    console.log(`\n  Set primary:   ${BRAND.cli} tools <name>   (${KNOWN_TOOLS.join(" | ")})`);
+    console.log(`  Clear:         ${BRAND.cli} tools --reset`);
+    return;
+  }
   if (!(cmd in COMMANDS)) {
-    console.error(`Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`);
+    const near = suggest(cmd, Object.keys(COMMANDS));
+    console.error(
+      `Unknown command: ${cmd}${near ? ` — did you mean \`${BRAND.cli} ${near}\`?` : ""}\n` +
+        `Run \`${BRAND.cli} --help\` to see commands.`,
+    );
     process.exitCode = 1;
     return;
   }
