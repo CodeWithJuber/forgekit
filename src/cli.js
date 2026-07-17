@@ -4,17 +4,21 @@
 import { BRAND } from "./brand.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
 // README/GUIDE tables against the same table this help is rendered from.
-import { COMMANDS, GROUPS } from "./commands.js";
+import { COMMANDS, commandSummary, GROUPS } from "./commands.js";
+import { printCommandHelp } from "./help.js";
+import { suggest } from "./math.js";
 // Color is capability-gated (FORCE_COLOR > NO_COLOR > TERM=dumb > TTY) — piped
 // output stays byte-plain, so nothing downstream ever parses an escape code.
 import { bar, heading as fmtHeading, paint, table } from "./fmt.js";
 
-const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
+const printVersion = () =>
+  console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
 // Per-command title lines ("Forge <cmd> — …") are branding chrome, not results. They
 // print only when asked (`--verbose` or FORGE_VERBOSE=1); by default a command emits
 // just its output. The `--help`/`--version` banner is unaffected.
-const VERBOSE = process.argv.includes("--verbose") || process.env.FORGE_VERBOSE === "1";
+const VERBOSE =
+  process.argv.includes("--verbose") || process.env.FORGE_VERBOSE === "1";
 const heading = (text) => {
   if (VERBOSE) console.log(fmtHeading(text));
 };
@@ -26,7 +30,8 @@ function printHelp() {
   for (const [group, cmds] of Object.entries(GROUPS)) {
     console.log(`${group}:`);
     for (const name of cmds) {
-      if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${COMMANDS[name]}`);
+      if (COMMANDS[name])
+        console.log(`  ${name.padEnd(12)} ${commandSummary(name)}`);
     }
     console.log();
   }
@@ -36,8 +41,27 @@ function printHelp() {
 
 async function run(argv) {
   const [cmd] = argv;
-  if (!cmd || cmd === "-h" || cmd === "--help") return printHelp();
-  if (cmd === "-v" || cmd === "--version") return printVersion();
+  // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
+  if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1]))
+    return printHelp();
+  if (cmd === "-v" || cmd === "--version" || cmd === "version")
+    return printVersion();
+  // Per-command help by word form: `forge help <cmd>`.
+  if (cmd === "help") {
+    process.exitCode = printCommandHelp(argv[1]);
+    return;
+  }
+  // Central interception: `forge <cmd> --help|-h` for ANY real command, BEFORE dispatch,
+  // so every command gets uniform help without each branch parsing its own flag (the
+  // gap the old banner advertised but never delivered). cortex-mcp is exempt (a server).
+  if (
+    cmd !== "cortex-mcp" &&
+    cmd in COMMANDS &&
+    argv.slice(1).some((a) => a === "--help" || a === "-h")
+  ) {
+    process.exitCode = printCommandHelp(cmd);
+    return;
+  }
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -45,7 +69,9 @@ async function run(argv) {
   }
   if (cmd === "brand") {
     const { brand, cli, pkg, version, layers } = BRAND;
-    return console.log(JSON.stringify({ brand, cli, pkg, version, layers }, null, 2));
+    return console.log(
+      JSON.stringify({ brand, cli, pkg, version, layers }, null, 2),
+    );
   }
   if (cmd === "init") {
     const { init } = await import("./init.js");
@@ -54,32 +80,45 @@ async function run(argv) {
       targetRoot: process.cwd(),
       noSettings,
     });
-    const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
-    heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
-    console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+    const wrote = report
+      .filter((r) => r.action === "written")
+      .map((r) => r.target);
+    heading(
+      `${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`,
+    );
+    console.log(
+      `  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`,
+    );
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
     if (settings?.action === "merged" && "added" in settings) {
-      console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+      console.log(
+        `  settings: merged ${settings.added.join(", ")} into ${settings.path}`,
+      );
     } else if (settings?.action === "unchanged" && "path" in settings) {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
     }
     if (detected) {
-      console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
+      console.log(
+        `  provider: auto-detected ${detected.name} from ${detected.source}`,
+      );
     } else {
       console.log(
         `  provider: none detected — set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or LITELLM_BASE_URL`,
       );
     }
-    console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
+    console.log(
+      `  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``,
+    );
     console.log(`  verify:   \`${BRAND.cli} doctor\``);
     return;
   }
   if (cmd === "update") {
-    const { applyUpdate, applyUpdateTo, updateStatus } = await import("./update.js");
+    const { applyUpdate, applyUpdateTo, updateStatus } =
+      await import("./update.js");
     const json = argv.includes("--json");
     const toIdx = argv.indexOf("--to");
     if (toIdx !== -1) {
@@ -92,7 +131,8 @@ async function run(argv) {
             ? `  pinned ${r.before} → ${r.after} (${r.tag}). ${r.note}`
             : `  already at ${r.tag}. ${r.note}`,
         );
-      else if (r.instruction) console.log(`  ${r.reason}:\n    ${r.instruction}`);
+      else if (r.instruction)
+        console.log(`  ${r.reason}:\n    ${r.instruction}`);
       else {
         console.log(`  ${r.reason}`);
         process.exitCode = 1;
@@ -108,7 +148,9 @@ async function run(argv) {
           `  on v${s.current} (${s.mode}) — can't compare to upstream${s.network === "offline" ? " (offline)" : ""}; update with your installer.`,
         );
       else if (s.behind > 0)
-        console.log(`  ${s.behind} commit(s) behind ${s.upstream} — run \`${BRAND.cli} update\`.`);
+        console.log(
+          `  ${s.behind} commit(s) behind ${s.upstream} — run \`${BRAND.cli} update\`.`,
+        );
       else console.log(`  up to date (v${s.current}).`);
       return;
     }
@@ -135,9 +177,13 @@ async function run(argv) {
     if (argv.includes("--json")) return console.log(JSON.stringify(s, null, 2));
     heading(`${BRAND.brand} stack — detected from this repo's manifests\n`);
     const row = (label, arr) =>
-      arr.length ? console.log(`  ${`${label}:`.padEnd(11)} ${arr.join(", ")}`) : undefined;
+      arr.length
+        ? console.log(`  ${`${label}:`.padEnd(11)} ${arr.join(", ")}`)
+        : undefined;
     if (!s.languages.length) {
-      console.log("  no known stack detected (no package.json/go.mod/Cargo.toml/… found).");
+      console.log(
+        "  no known stack detected (no package.json/go.mod/Cargo.toml/… found).",
+      );
       return;
     }
     row("languages", s.languages);
@@ -162,14 +208,24 @@ async function run(argv) {
       process.exitCode = 1;
       return;
     }
-    heading(`${BRAND.brand} radar — dependency currency (rings from registry evidence)\n`);
+    heading(
+      `${BRAND.brand} radar — dependency currency (rings from registry evidence)\n`,
+    );
     const deps = r.deps ?? {};
     const names = Object.keys(deps);
     if (!names.length) {
-      console.log("  no Node dependencies to probe (no package.json deps found).");
+      console.log(
+        "  no Node dependencies to probe (no package.json deps found).",
+      );
     } else {
       const roleFor = (ring) =>
-        ring === "adopt" ? "ok" : ring === "trial" ? "accent" : ring === "hold" ? "err" : "warn";
+        ring === "adopt"
+          ? "ok"
+          : ring === "trial"
+            ? "accent"
+            : ring === "hold"
+              ? "err"
+              : "warn";
       // Order by ring severity, then by usage (stakes), then name — the risky, load-bearing first.
       const rank = { hold: 0, assess: 1, trial: 2, adopt: 3 };
       names.sort(
@@ -185,7 +241,8 @@ async function run(argv) {
           n,
           `${d.installed ?? "?"}→${d.latest ?? "?"}`,
           bar(d.score ?? 0),
-          (d.reasons ?? []).slice(0, 2).join("; ") || paint("no risk signals", "dim"),
+          (d.reasons ?? []).slice(0, 2).join("; ") ||
+            paint("no risk signals", "dim"),
         ];
       });
       console.log(table(rows));
@@ -196,7 +253,8 @@ async function run(argv) {
       );
     else if (r.source === "cache")
       console.log(`\n  ${paint("served from cache (within TTL)", "dim")}`);
-    for (const s of r.skipped ?? []) console.log(`  ${paint(`${s.language}: ${s.reason}`, "dim")}`);
+    for (const s of r.skipped ?? [])
+      console.log(`  ${paint(`${s.language}: ${s.reason}`, "dim")}`);
     return;
   }
   if (cmd === "catalog") {
@@ -204,16 +262,21 @@ async function run(argv) {
     const c = catalog();
     heading(`${BRAND.brand} catalog — Start Here\n`);
     console.log("  TOOLS (model-invoked skills)");
-    for (const t of c.tools) console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
+    for (const t of c.tools)
+      console.log(`    ${t.name.padEnd(18)} ${t.why.slice(0, 66)}`);
     console.log(`\n  CREW (isolated sub-agents)   ${c.crew.join(" · ")}`);
     console.log(`  GUARDS (enforced hooks)      ${c.guards.join(" · ")}`);
     if (c.taste?.length)
       console.log(
         `  TASTE (design directions)    ${c.taste.join(" · ")}  →  \`${BRAND.cli} taste <style>\``,
       );
-    if (c.cortex) console.log(`\n  CORTEX (self-correcting memory)  ${c.cortex}`);
-    if (c.preflight) console.log(`  PREFLIGHT (before you spend tokens)  ${c.preflight}`);
-    console.log(`\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``);
+    if (c.cortex)
+      console.log(`\n  CORTEX (self-correcting memory)  ${c.cortex}`);
+    if (c.preflight)
+      console.log(`  PREFLIGHT (before you spend tokens)  ${c.preflight}`);
+    console.log(
+      `\n  Full detail: ARCHITECTURE.md · per-tool config: \`${BRAND.cli} sync\``,
+    );
     return;
   }
   if (cmd === "taste") {
@@ -224,7 +287,9 @@ async function run(argv) {
         `${BRAND.brand} taste — pick ONE visual direction per repo (every tool then follows it):\n`,
       );
       for (const s of t.list()) console.log(`  ${s}`);
-      console.log(`\n  apply: \`${BRAND.cli} taste <style>\`  (writes a managed DESIGN.md)`);
+      console.log(
+        `\n  apply: \`${BRAND.cli} taste <style>\`  (writes a managed DESIGN.md)`,
+      );
       return;
     }
     const res = t.apply(style, process.cwd());
@@ -266,7 +331,8 @@ async function run(argv) {
       fail: paint("✗", "err"),
     };
     heading(`${BRAND.brand} doctor\n`);
-    for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
+    for (const r of results)
+      console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
     console.log(
       `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
     );
@@ -286,7 +352,8 @@ async function run(argv) {
       });
       if (json) console.log(JSON.stringify(r, null, 2));
       else console.log(renderDocsSync(r));
-      if (r.error || (argv.includes("--strict") && r.stale.length)) process.exitCode = 1;
+      if (r.error || (argv.includes("--strict") && r.stale.length))
+        process.exitCode = 1;
       return;
     }
     // `check` — self-check of the forge package's own docs against its code (commands
@@ -299,11 +366,16 @@ async function run(argv) {
       return;
     }
     heading(`${BRAND.brand} docs check — docs↔code drift\n`);
-    if (!r.issues.length) console.log(`  ✓ docs and code agree (${r.checked.join(", ")})`);
+    if (!r.issues.length)
+      console.log(`  ✓ docs and code agree (${r.checked.join(", ")})`);
     for (const i of r.issues)
-      console.log(`  ${i.severity === "error" ? "✗" : "!"} [${i.check}] ${i.detail}`);
+      console.log(
+        `  ${i.severity === "error" ? "✗" : "!"} [${i.check}] ${i.detail}`,
+      );
     if (!r.ok) {
-      console.log(`\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`);
+      console.log(
+        `\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`,
+      );
       process.exitCode = 1;
     }
     return;
@@ -314,7 +386,11 @@ async function run(argv) {
     const sub = argv[1] || "list";
     if (sub === "list") {
       const items = r.list(store);
-      console.log(items.length ? items.map((s) => `  - ${s}`).join("\n") : "  (no memories yet)");
+      console.log(
+        items.length
+          ? items.map((s) => `  - ${s}`).join("\n")
+          : "  (no memories yet)",
+      );
     } else if (sub === "add") {
       const name = argv[2];
       const body = argv.slice(3).join(" ");
@@ -348,9 +424,13 @@ async function run(argv) {
         const { reconcileFacts } = await import("./ledger_bridge.js");
         reconcileFacts(store, join(store, "ledger"));
       } catch {}
-      console.log(`  consolidated: ${removed} duplicate(s) removed, ${kept} kept`);
+      console.log(
+        `  consolidated: ${removed} duplicate(s) removed, ${kept} kept`,
+      );
     } else {
-      console.error(`recall: unknown subcommand "${sub}" (list | add | consolidate)`);
+      console.error(
+        `recall: unknown subcommand "${sub}" (list | add | consolidate)`,
+      );
       process.exitCode = 1;
     }
     return;
@@ -365,7 +445,10 @@ async function run(argv) {
     const personal = argv.includes("--personal");
     const args = argv.filter((a) => a !== "--json" && a !== "--personal");
     const dir = personal
-      ? (await import("node:path")).join((await import("./recall.js")).defaultStore(), "ledger")
+      ? (await import("node:path")).join(
+          (await import("./recall.js")).defaultStore(),
+          "ledger",
+        )
       : ls.repoLedger(root);
     const sub = args[1] || "stats";
     const json = argv.includes("--json");
@@ -375,19 +458,25 @@ async function run(argv) {
       if (json) return console.log(JSON.stringify(s, null, 2));
       heading(`${BRAND.brand} ledger — proof-carrying memory\n`);
       console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
-      for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
+      for (const [kind, n] of Object.entries(s.byKind))
+        console.log(`    ${kind}: ${n}`);
       console.log(
         `  val: ${paint(`trusted ${s.val.trusted}`, "ok")} · ${paint(`uncertain ${s.val.uncertain}`, "warn")} · ${paint(`dormant ${s.val.dormant}`, "dim")}`,
       );
       console.log(
-        paint("\n  stored in .forge/ledger/ (git-committable, conflict-free merge)", "dim"),
+        paint(
+          "\n  stored in .forge/ledger/ (git-committable, conflict-free merge)",
+          "dim",
+        ),
       );
       return;
     }
     if (sub === "verify") {
       const r = ls.verify(dir);
       if (json) return console.log(JSON.stringify(r, null, 2));
-      console.log(`  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`);
+      console.log(
+        `  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`,
+      );
       for (const i of r.issues) console.log(`    - ${i}`);
       if (!r.ok) process.exitCode = 1;
       return;
@@ -397,13 +486,17 @@ async function run(argv) {
       const hit = id && id.length >= 2 ? ls.getClaimByPrefix(dir, id) : null;
       if (!hit) {
         console.error(
-          id ? `  no claim matching ${id}` : "usage: forge ledger show <id-prefix (≥2 chars)>",
+          id
+            ? `  no claim matching ${id}`
+            : "usage: forge ledger show <id-prefix (≥2 chars)>",
         );
         process.exitCode = 1;
         return;
       }
       const { val } = await import("./ledger.js");
-      return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
+      return console.log(
+        JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2),
+      );
     }
     if (sub === "merge") {
       const src = args[2];
@@ -419,14 +512,19 @@ async function run(argv) {
       }
       const r = ls.mergeDirs(dir, src);
       if (json) return console.log(JSON.stringify(r, null, 2));
-      console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
+      console.log(
+        `  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`,
+      );
       return;
     }
     if (sub === "blame") {
-      const b = args[2] && args[2].length >= 2 ? ls.blame(dir, args[2], nowDay) : null;
+      const b =
+        args[2] && args[2].length >= 2 ? ls.blame(dir, args[2], nowDay) : null;
       if (!b) {
         console.error(
-          args[2] ? `  no claim matching ${args[2]}` : "usage: forge ledger blame <id-prefix>",
+          args[2]
+            ? `  no claim matching ${args[2]}`
+            : "usage: forge ledger blame <id-prefix>",
         );
         process.exitCode = 1;
         return;
@@ -446,11 +544,16 @@ async function run(argv) {
         );
       for (const t of b.tombstones)
         console.log(
-          paint(`  retract  day ${t.t}  ${t.reason}${t.author ? `  by ${t.author}` : ""}`, "dim"),
+          paint(
+            `  retract  day ${t.t}  ${t.reason}${t.author ? `  by ${t.author}` : ""}`,
+            "dim",
+          ),
         );
       const trusts = Object.entries(b.trust);
       if (trusts.length) {
-        console.log("\n  author trust (earned from oracle outcomes on their claims):");
+        console.log(
+          "\n  author trust (earned from oracle outcomes on their claims):",
+        );
         for (const [a, u] of trusts) console.log(`    ${u.toFixed(2)}  ${a}`);
       }
       return;
@@ -482,7 +585,9 @@ async function run(argv) {
       const ri = args.indexOf("--reason");
       const reason = ri >= 0 ? (args[ri + 1] ?? "") : "";
       if (!id || id.length < 2 || id === "--reason" || !reason) {
-        console.error('usage: forge ledger retract <id-prefix> --reason "<why>"');
+        console.error(
+          'usage: forge ledger retract <id-prefix> --reason "<why>"',
+        );
         process.exitCode = 1;
         return;
       }
@@ -502,7 +607,8 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      if (json) return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
+      if (json)
+        return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
       console.log(
         `  retracted ${hit.id.slice(0, 12)} — ${reason}${r.deduped ? " (already retracted with this record)" : ""}`,
       );
@@ -570,15 +676,24 @@ async function run(argv) {
         console.log(
           table([
             [paint("target", "dim"), r.dir],
-            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
-            [paint("pushed", "dim"), `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`],
+            [
+              paint("pulled", "dim"),
+              `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`,
+            ],
+            [
+              paint("pushed", "dim"),
+              `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`,
+            ],
           ]),
         );
       } else {
         console.log(
           table([
             [paint("ref", "dim"), `${r.remote} ${r.ref}`],
-            [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
+            [
+              paint("pulled", "dim"),
+              `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`,
+            ],
             [
               paint("pushed", "dim"),
               r.upToDate
@@ -590,7 +705,12 @@ async function run(argv) {
       }
       for (const n of r.notes ?? []) console.log(paint(`  note: ${n}`, "warn"));
       if (r.mode === "ref" && r.ref === defaultRef(personal))
-        console.log(paint("\n  synced through a git ref — CRDT, converges in any order", "dim"));
+        console.log(
+          paint(
+            "\n  synced through a git ref — CRDT, converges in any order",
+            "dim",
+          ),
+        );
       return;
     }
     if (sub === "import") {
@@ -637,13 +757,18 @@ async function run(argv) {
       return i >= 0 ? argv[i + 1] : undefined;
     };
     const args = argv.filter(
-      (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--ref",
+      (a, i) =>
+        !a.startsWith("--") &&
+        argv[i - 1] !== "--file" &&
+        argv[i - 1] !== "--ref",
     );
     const sub = args[1] || "stats";
     if (sub === "query") {
       const spec = args.slice(2).join(" ");
       if (!spec) {
-        console.error('usage: forge reuse query "<what you are about to build>" [--json]');
+        console.error(
+          'usage: forge reuse query "<what you are about to build>" [--json]',
+        );
         process.exitCode = 1;
         return;
       }
@@ -665,7 +790,9 @@ async function run(argv) {
         );
       console.log(`  sim: ${r.sim}`);
       if (r.tier === "miss") {
-        console.log("  miss — nothing verified matches; generate, then `forge reuse mint` it");
+        console.log(
+          "  miss — nothing verified matches; generate, then `forge reuse mint` it",
+        );
       } else {
         const a = r.artifact;
         console.log(
@@ -731,7 +858,8 @@ async function run(argv) {
       if (json) return console.log(JSON.stringify(s, null, 2));
       heading(`${BRAND.brand} reuse — proof-carrying code cache\n`);
       console.log(`  lookups: ${s.events}`);
-      for (const [o, n] of Object.entries(s.byOutcome)) console.log(`    ${o}: ${n}`);
+      for (const [o, n] of Object.entries(s.byOutcome))
+        console.log(`    ${o}: ${n}`);
       console.log(`  est. tokens saved: ${s.savedEstimate}`);
       return;
     }
@@ -749,10 +877,14 @@ async function run(argv) {
     const bi = argv.indexOf("--budget");
     const budget = bi >= 0 ? Number(argv[bi + 1]) || undefined : undefined;
     const task = argv
-      .filter((a, i) => i > 0 && !a.startsWith("--") && argv[i - 1] !== "--budget")
+      .filter(
+        (a, i) => i > 0 && !a.startsWith("--") && argv[i - 1] !== "--budget",
+      )
       .join(" ");
     if (!task) {
-      console.error('usage: forge context "<task>" [--budget <tokens>] [--json]');
+      console.error(
+        'usage: forge context "<task>" [--budget <tokens>] [--json]',
+      );
       process.exitCode = 1;
       return;
     }
@@ -800,7 +932,9 @@ async function run(argv) {
       if (!at) return;
       const name = argv[2];
       const yes = a.has(at, name);
-      console.log(`  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`);
+      console.log(
+        `  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`,
+      );
       if (!yes) process.exitCode = 1;
     } else {
       console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
@@ -869,10 +1003,14 @@ async function run(argv) {
           r.families.length ? `  (families: ${r.families.join(", ")})` : ""
         }`,
       );
-      console.log(`  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`);
+      console.log(
+        `  residual:   ${r.residual.toFixed(3)} — Theorem-D silent-miss bound`,
+      );
       console.log(
         `\n  ${
-          r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
+          r.ok
+            ? paint("PASS", "ok")
+            : paint("BLOCKED — cross-family consensus says defect", "err")
         }`,
       );
       if (!r.ok) process.exitCode = 1;
@@ -951,11 +1089,16 @@ async function run(argv) {
     if (argv.includes("--stages")) {
       const { renderCostReport, report } = await import("./cost_report.js");
       const r = report(process.cwd());
-      console.log(argv.includes("--json") ? JSON.stringify(r, null, 2) : renderCostReport(r));
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(r, null, 2)
+          : renderCostReport(r),
+      );
       return;
     }
     const { execFileSync } = await import("node:child_process");
-    const run = (bin, args) => execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
+    const run = (bin, args) =>
+      execFileSync(bin, args, { encoding: "utf8", stdio: "pipe" });
     heading(`${BRAND.brand} cost — real per-day spend (ccusage)\n`);
     try {
       let out;
@@ -979,7 +1122,12 @@ async function run(argv) {
               `    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`,
             );
         }
-        console.log(paint("\n  install ccusage for precise tracking: npm i -g ccusage", "dim"));
+        console.log(
+          paint(
+            "\n  install ccusage for precise tracking: npm i -g ccusage",
+            "dim",
+          ),
+        );
       } else {
         console.log(
           "  ccusage not found. Install for real spend (reads local JSONL, nothing leaves your machine):\n    npm i -g ccusage    # then: forge cost",
@@ -1013,7 +1161,9 @@ async function run(argv) {
     }
     if (sub === "lock") {
       const { count } = s.snapshot(process.cwd());
-      console.log(`  spec-lock: snapshotted ${count} spec(s) → .forge/spec-lock.json`);
+      console.log(
+        `  spec-lock: snapshotted ${count} spec(s) → .forge/spec-lock.json`,
+      );
       return;
     }
     const r = s.check(process.cwd());
@@ -1021,10 +1171,14 @@ async function run(argv) {
     if (r.note) console.log(`  ${r.note}`);
     else if (r.drift.length) {
       for (const d of r.drift) {
-        console.log(`  ✗ ${d.spec} claims \`${d.symbol}\` — no longer defined in the code`);
+        console.log(
+          `  ✗ ${d.spec} claims \`${d.symbol}\` — no longer defined in the code`,
+        );
       }
     } else console.log("  ✓ no drift — every claimed symbol still exists");
-    console.log(`\n  ${r.ok ? "PASS" : "DRIFT — update the spec or restore the symbol"}`);
+    console.log(
+      `\n  ${r.ok ? "PASS" : "DRIFT — update the spec or restore the symbol"}`,
+    );
     if (!r.ok) process.exitCode = 1;
     return;
   }
@@ -1050,7 +1204,9 @@ async function run(argv) {
       if (!r.allow) process.exitCode = 1;
       return;
     }
-    heading(`${BRAND.brand} precommit — commit-level completeness + secret gate\n`);
+    heading(
+      `${BRAND.brand} precommit — commit-level completeness + secret gate\n`,
+    );
     console.log(renderCommitGate(r));
     if (!r.allow) process.exitCode = 1;
     return;
@@ -1083,11 +1239,20 @@ async function run(argv) {
     if (s.topActive.length) {
       console.log("\n  top active (by confidence):");
       for (const t of s.topActive)
-        console.log(`    ${bar(t.confidence, 8)} ${t.confidence.toFixed(2)}  ${t.id}`);
+        console.log(
+          `    ${bar(t.confidence, 8)} ${t.confidence.toFixed(2)}  ${t.id}`,
+        );
     } else {
-      console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
+      console.log(
+        "\n  (no active lessons yet — Cortex learns from corrections as you work)",
+      );
     }
-    console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
+    console.log(
+      paint(
+        "\n  stored in .forge/lessons/ (git-committable, auditable)",
+        "dim",
+      ),
+    );
     return;
   }
   if (cmd === "deja") {
@@ -1100,7 +1265,9 @@ async function run(argv) {
       .filter((a) => a !== "--json")
       .join(" ");
     if (!task) {
-      console.error('usage: forge deja "<task you are about to start>" [--json]');
+      console.error(
+        'usage: forge deja "<task you are about to start>" [--json]',
+      );
       process.exitCode = 1;
       return;
     }
@@ -1122,7 +1289,8 @@ async function run(argv) {
         ),
       );
     heading(`${BRAND.brand} déjà vu — have you done this before?\n`);
-    if (!hits.length) return console.log("  no similar prior task in memory — this looks new.");
+    if (!hits.length)
+      return console.log("  no similar prior task in memory — this looks new.");
     for (const h of hits) {
       const verified = val(h.claim, nowDay) > 0.5;
       console.log(
@@ -1154,7 +1322,9 @@ async function run(argv) {
     );
     const block = clarifyBlock(r);
     console.log(
-      block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
+      block
+        ? `\n${block}`
+        : "\n  ✓ everything this task names is grounded in the codebase.",
     );
     return;
   }
@@ -1178,8 +1348,10 @@ async function run(argv) {
     heading(`${BRAND.brand} impact — blast radius\n`);
     console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
     console.log(`  impacted files: ${r.impactedFiles.length}`);
-    for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
-    if (r.impactedFiles.length > 20) console.log(`    … ${r.impactedFiles.length - 20} more`);
+    for (const file of r.impactedFiles.slice(0, 20))
+      console.log(`    - ${file}`);
+    if (r.impactedFiles.length > 20)
+      console.log(`    … ${r.impactedFiles.length - 20} more`);
     return;
   }
   if (cmd === "substrate") {
@@ -1200,17 +1372,26 @@ async function run(argv) {
   }
   if (cmd === "config") {
     const sub = argv[1] || "show";
-    const { loadProviders, activeProvider, setProvider, addProvider, listProviders, applyRoute } =
-      await import("./providers.js");
+    const {
+      loadProviders,
+      activeProvider,
+      setProvider,
+      addProvider,
+      listProviders,
+      applyRoute,
+    } = await import("./providers.js");
     const json = argv.includes("--json");
     if (sub === "show") {
       const prov = activeProvider(process.cwd());
       const config = loadProviders(process.cwd());
       if (json)
-        return console.log(JSON.stringify({ active: config.active, provider: prov }, null, 2));
+        return console.log(
+          JSON.stringify({ active: config.active, provider: prov }, null, 2),
+        );
       heading(`${BRAND.brand} config\n`);
       console.log(`  provider:  ${prov.name} (${prov.label || prov.name})`);
-      if (prov._autoDetected) console.log(`  detected:  auto (from ${prov._source})`);
+      if (prov._autoDetected)
+        console.log(`  detected:  auto (from ${prov._source})`);
       console.log(`  base URL:  ${prov.baseUrl}`);
       console.log(
         `  env key:   ${prov.envKey || "(none)"}${prov.envKey ? (process.env[prov.envKey] ? " ✓ set" : " ✗ not set") : ""}`,
@@ -1268,13 +1449,17 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      console.log(`  switched to provider "${name}" (${r.provider.label || name})`);
+      console.log(
+        `  switched to provider "${name}" (${r.provider.label || name})`,
+      );
       return;
     }
     if (sub === "model") {
       const tier = argv[2];
       if (!tier) {
-        console.error(`usage: ${BRAND.cli} config model <haiku|sonnet|opus|fable>`);
+        console.error(
+          `usage: ${BRAND.cli} config model <haiku|sonnet|opus|fable>`,
+        );
         process.exitCode = 1;
         return;
       }
@@ -1284,7 +1469,9 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      console.log(`  model set to ${r.model} (${r.modelId})${r.prev ? ` — was: ${r.prev}` : ""}`);
+      console.log(
+        `  model set to ${r.model} (${r.modelId})${r.prev ? ` — was: ${r.prev}` : ""}`,
+      );
       console.log(`  written to ${r.path}`);
       return;
     }
@@ -1297,22 +1484,30 @@ async function run(argv) {
       }
       console.log(`  wrote ${result}`);
       console.log(`\n  setup LiteLLM gateway:`);
-      console.log(`    1. pip install "litellm[proxy]"    # pin an exact verified version`);
+      console.log(
+        `    1. pip install "litellm[proxy]"    # pin an exact verified version`,
+      );
       console.log(`    2. litellm --config litellm.config.yaml`);
       console.log(`    3. export ANTHROPIC_BASE_URL=http://localhost:4000`);
       console.log(`\n  then switch to the gateway provider:`);
       console.log(`    ${BRAND.cli} config provider litellm`);
-      console.log(`\n  routing flows through: forge route → tier alias → LiteLLM → model`);
+      console.log(
+        `\n  routing flows through: forge route → tier alias → LiteLLM → model`,
+      );
       return;
     }
     if (sub === "setup") {
-      const { providerStatus, listDetectedProviders } = await import("./providers.js");
+      const { providerStatus, listDetectedProviders } =
+        await import("./providers.js");
       const prov = activeProvider(process.cwd());
       const status = providerStatus(process.cwd());
       const detected = listDetectedProviders();
       heading(`${BRAND.brand} config setup\n`);
-      console.log(`  active provider: ${prov.name} (${prov.label || prov.name})`);
-      if (prov._autoDetected) console.log(`  source: auto-detected from ${prov._source}`);
+      console.log(
+        `  active provider: ${prov.name} (${prov.label || prov.name})`,
+      );
+      if (prov._autoDetected)
+        console.log(`  source: auto-detected from ${prov._source}`);
       console.log();
       for (const c of status.checks) {
         console.log(`  ${c.ok ? "✓" : "✗"} ${c.detail}`);
@@ -1324,27 +1519,49 @@ async function run(argv) {
       if (detected.length) {
         console.log(`\n  available providers (auto-detected):`);
         for (const d of detected) {
-          console.log(`    ${d.name.padEnd(18)} ${d.label.padEnd(24)} via ${d.source}`);
+          console.log(
+            `    ${d.name.padEnd(18)} ${d.label.padEnd(24)} via ${d.source}`,
+          );
         }
       }
       console.log(`\n  Anthropic Console API key:`);
       console.log(`    1. Go to console.anthropic.com/settings/keys`);
-      console.log(`    2. Create a key, then:  export ANTHROPIC_API_KEY=sk-ant-...`);
+      console.log(
+        `    2. Create a key, then:  export ANTHROPIC_API_KEY=sk-ant-...`,
+      );
       console.log(`\n  OpenRouter API key:`);
       console.log(`    1. Go to openrouter.ai/keys`);
-      console.log(`    2. Create a key, then:  export OPENROUTER_API_KEY=sk-or-...`);
+      console.log(
+        `    2. Create a key, then:  export OPENROUTER_API_KEY=sk-or-...`,
+      );
       console.log(`\n  LiteLLM hosted gateway (no admin access needed):`);
-      console.log(`    export LITELLM_BASE_URL=https://your-gateway.example.com`);
-      console.log(`    export LITELLM_API_KEY=sk-...    # or uses ANTHROPIC_API_KEY`);
+      console.log(
+        `    export LITELLM_BASE_URL=https://your-gateway.example.com`,
+      );
+      console.log(
+        `    export LITELLM_API_KEY=sk-...    # or uses ANTHROPIC_API_KEY`,
+      );
       console.log(`\n  LiteLLM self-hosted gateway:`);
-      console.log(`    ${BRAND.cli} config gateway    # emit litellm.config.yaml`);
+      console.log(
+        `    ${BRAND.cli} config gateway    # emit litellm.config.yaml`,
+      );
       console.log(`    ${BRAND.cli} config provider litellm`);
       console.log(`\n  quick start:`);
-      console.log(`    ${BRAND.cli} config provider anthropic     # direct Anthropic API`);
-      console.log(`    ${BRAND.cli} config provider openrouter    # OpenRouter multi-model`);
-      console.log(`    ${BRAND.cli} config provider litellm       # LiteLLM self-hosted`);
-      console.log(`    ${BRAND.cli} config model sonnet           # set default model tier`);
-      console.log(`    ${BRAND.cli} route "<task>" --apply        # route + apply model`);
+      console.log(
+        `    ${BRAND.cli} config provider anthropic     # direct Anthropic API`,
+      );
+      console.log(
+        `    ${BRAND.cli} config provider openrouter    # OpenRouter multi-model`,
+      );
+      console.log(
+        `    ${BRAND.cli} config provider litellm       # LiteLLM self-hosted`,
+      );
+      console.log(
+        `    ${BRAND.cli} config model sonnet           # set default model tier`,
+      );
+      console.log(
+        `    ${BRAND.cli} route "<task>" --apply        # route + apply model`,
+      );
       return;
     }
     console.error(
@@ -1364,7 +1581,9 @@ async function run(argv) {
       console.log(
         `  wrote ${result} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`,
       );
-      console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
+      console.log(
+        "  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then",
+      );
       console.log(
         "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
       );
@@ -1375,8 +1594,11 @@ async function run(argv) {
       // routing rubric beats the raw rubric on the held-out fixture. Advisory — routing
       // keeps the rubric unless the gate promotes AND a caller adopts the calibration.
       const res = r.calibrateRouting();
-      if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
-      heading(`${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`);
+      if (argv.includes("--json"))
+        return console.log(JSON.stringify(res, null, 2));
+      heading(
+        `${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`,
+      );
       console.log(`  samples: ${res.n} labeled task(s)`);
       if (res.baselineMetric !== undefined)
         console.log(
@@ -1399,7 +1621,10 @@ async function run(argv) {
     const FLAGS = new Set(["--json", "--apply"]);
     const task = argv
       .slice(1)
-      .filter((a, i) => !FLAGS.has(a) && a !== "--provider" && argv[i] !== "--provider")
+      .filter(
+        (a, i) =>
+          !FLAGS.has(a) && a !== "--provider" && argv[i] !== "--provider",
+      )
       .join(" ");
     if (!task) {
       console.error(
@@ -1439,7 +1664,9 @@ async function run(argv) {
       const ar = applyRoute(rec.key);
       if (ar.ok) {
         if (!json)
-          console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
+          console.log(
+            `\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`,
+          );
       } else {
         if (!json) console.error(`\n  apply failed: ${ar.reason}`);
         process.exitCode = 1;
@@ -1473,7 +1700,11 @@ async function run(argv) {
     }
     if (sub === "show") {
       const g = getGoal(process.cwd());
-      console.log(g ? `active goal: ${g}` : 'no active goal — set one: forge anchor set "<goal>"');
+      console.log(
+        g
+          ? `active goal: ${g}`
+          : 'no active goal — set one: forge anchor set "<goal>"',
+      );
       return;
     }
     if (sub === "clear") {
@@ -1560,7 +1791,8 @@ async function run(argv) {
   if (cmd === "know") {
     // A7 knowledge-router: total routing (T6) of a fact to its storage home — an unsure
     // fact still lands (ledger fallback), it is never dropped.
-    const { HOMES, routeFact, storeFact } = await import("./knowledge_router.js");
+    const { HOMES, routeFact, storeFact } =
+      await import("./knowledge_router.js");
     const json = argv.includes("--json");
     const dry = argv.includes("--dry-run");
     const text = argv
@@ -1577,15 +1809,21 @@ async function run(argv) {
       mode: dry ? "advise" : "auto",
       route,
     });
-    if (json) return console.log(JSON.stringify({ ...route, ...r, dryRun: dry }, null, 2));
+    if (json)
+      return console.log(
+        JSON.stringify({ ...route, ...r, dryRun: dry }, null, 2),
+      );
     heading(`${BRAND.brand} know — knowledge routing (A7)\n`);
     const why =
       route.provenance === "fallback"
         ? "fallback — resembles no exemplar; the ledger absorbs unsure placements"
         : `confidence ${route.confidence}`;
-    console.log(`  home:     ${route.home} (${why}) → ${HOMES[route.home].where}`);
+    console.log(
+      `  home:     ${route.home} (${why}) → ${HOMES[route.home].where}`,
+    );
     const near = route.neighbors[0];
-    if (near) console.log(`  nearest:  "${near.text}" (${near.sim.toFixed(3)})`);
+    if (near)
+      console.log(`  nearest:  "${near.text}" (${near.sim.toFixed(3)})`);
     if (!r.ok) {
       console.error(`  ${r.reason}`);
       process.exitCode = 1;
@@ -1604,11 +1842,16 @@ async function run(argv) {
       return i >= 0 ? argv[i + 1] : undefined;
     };
     const args = argv.filter(
-      (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--symbol",
+      (a, i) =>
+        !a.startsWith("--") &&
+        argv[i - 1] !== "--file" &&
+        argv[i - 1] !== "--symbol",
     );
     const errorText = args.slice(1).join(" ");
     if (!errorText) {
-      console.error('usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]');
+      console.error(
+        'usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]',
+      );
       process.exitCode = 1;
       return;
     }
@@ -1629,7 +1872,9 @@ async function run(argv) {
         );
       console.log(`\n  ${r.escalate ?? r.reason}`);
     } else {
-      console.log(`  below the thrash threshold (${THRASH_K}) — recorded; keep going.`);
+      console.log(
+        `  below the thrash threshold (${THRASH_K}) — recorded; keep going.`,
+      );
     }
     return; // advisory — halting the retry loop is the AGENT's move, not an exit code
   }
@@ -1644,7 +1889,9 @@ async function run(argv) {
       .filter((a) => !FLAGS.has(a))
       .join(" ");
     if (!task) {
-      console.error('usage: forge imagine "<task>" [--run] [--allow-dirty] [--json]');
+      console.error(
+        'usage: forge imagine "<task>" [--run] [--allow-dirty] [--json]',
+      );
       process.exitCode = 1;
       return;
     }
@@ -1710,10 +1957,14 @@ async function run(argv) {
       for (const [t, s] of Object.entries(d.perFile))
         console.log(`    ${s === "pass" ? "ok  " : "FAIL"} ${t}`);
     if (d.failed > 0) {
-      console.log("\n  measured consequence: the selected suite BREAKS at HEAD — output tail:");
+      console.log(
+        "\n  measured consequence: the selected suite BREAKS at HEAD — output tail:",
+      );
       console.log(`\n${(d.output || "").replace(/^/gm, "    ")}`);
     } else {
-      console.log("\n  measured consequence: the selected suite is green at HEAD.");
+      console.log(
+        "\n  measured consequence: the selected suite is green at HEAD.",
+      );
     }
     return;
   }
@@ -1764,7 +2015,8 @@ async function run(argv) {
         );
       }
     });
-    if (d.independentGroups === 1) console.log("\n  all coupled — keep as one change.");
+    if (d.independentGroups === 1)
+      console.log("\n  all coupled — keep as one change.");
     return;
   }
   if (cmd === "uicheck") {
@@ -1776,7 +2028,8 @@ async function run(argv) {
       const { visualGate } = await import("./uivisual.js");
       const args = argv.slice(2);
       const tasteIdx = args.indexOf("--taste");
-      const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+      const tasteArg =
+        tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
       const json = args.includes("--json");
       const remote = args.includes("--remote");
       const targets = args.filter((a) => !a.startsWith("--"));
@@ -1796,9 +2049,12 @@ async function run(argv) {
         const reason = "reason" in r ? r.reason : "visual gate failed";
         if ("skipped" in r && r.skipped) {
           // Graceful absence (ADR-0005): a missing optional tier is not a failure.
-          if (json) console.log(JSON.stringify({ skipped: true, reason }, null, 2));
+          if (json)
+            console.log(JSON.stringify({ skipped: true, reason }, null, 2));
           else {
-            heading(`${BRAND.brand} uicheck visual — skipped (no browser runtime)\n`);
+            heading(
+              `${BRAND.brand} uicheck visual — skipped (no browser runtime)\n`,
+            );
             console.log(`  ${reason}`);
             console.log(
               "  enable it: npm i -D playwright-core   (or point FORGE_PLAYWRIGHT at an existing install, e.g. FORGE_PLAYWRIGHT=/path/to/node_modules/playwright-core)",
@@ -1814,10 +2070,17 @@ async function run(argv) {
         const { ok: _ok, fail: _fail, ...body } = r;
         console.log(JSON.stringify(body, null, 2));
       } else {
-        heading(`${BRAND.brand} uicheck visual — rendered fingerprint + design gate\n`);
-        console.log(`  rendered:      ${r.url} (${r.elements} visible element style(s))`);
+        heading(
+          `${BRAND.brand} uicheck visual — rendered fingerprint + design gate\n`,
+        );
+        console.log(
+          `  rendered:      ${r.url} (${r.elements} visible element style(s))`,
+        );
         console.log(`  screenshots:   ${r.screenshots.join(", ")}`);
-        if (r.taste) console.log(`  taste:         ${r.taste} (thresholds from its profile)`);
+        if (r.taste)
+          console.log(
+            `  taste:         ${r.taste} (thresholds from its profile)`,
+          );
         console.log(
           `  slop distance: ${r.slop}  (need ≥ ${r.tauSlop} — farther from generic is better)`,
         );
@@ -1826,7 +2089,8 @@ async function run(argv) {
             ? `  conformance:   ${r.conform}  (need ≤ ${r.tauConform} — closer to the project system is better)`
             : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
         );
-        for (const v of r.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+        for (const v of r.violations)
+          console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
         console.log("");
         for (const c of r.checks)
           console.log(
@@ -1843,12 +2107,14 @@ async function run(argv) {
       // motion honesty. Advisory by default (the `behavioral` oracle is cross-family-
       // gated); --enforce or FORGE_ENFORCE=1 turns a fail into a non-zero exit. Playwright
       // is an optional tier (ADR-0005) — its absence is a note and exit 0, never a failure.
-      const { runInteractions, recordInteraction } = await import("./uiinteract.js");
+      const { runInteractions, recordInteraction } =
+        await import("./uiinteract.js");
       const args = argv.slice(2);
       const json = args.includes("--json");
       const remote = args.includes("--remote");
       const record = args.includes("--record");
-      const enforce = args.includes("--enforce") || process.env.FORGE_ENFORCE === "1";
+      const enforce =
+        args.includes("--enforce") || process.env.FORGE_ENFORCE === "1";
       const targets = args.filter((a) => !a.startsWith("--"));
       if (targets.length !== 1) {
         console.error(
@@ -1865,9 +2131,12 @@ async function run(argv) {
         const reason = "reason" in r ? r.reason : "interaction run failed";
         if ("skipped" in r && r.skipped) {
           // Graceful absence (ADR-0005): a missing optional tier is not a failure.
-          if (json) console.log(JSON.stringify({ skipped: true, reason }, null, 2));
+          if (json)
+            console.log(JSON.stringify({ skipped: true, reason }, null, 2));
           else {
-            heading(`${BRAND.brand} uicheck interact — skipped (no browser runtime)\n`);
+            heading(
+              `${BRAND.brand} uicheck interact — skipped (no browser runtime)\n`,
+            );
             console.log(`  ${reason}`);
             console.log(
               "  enable it: npm i -D playwright-core   (or point FORGE_PLAYWRIGHT at an existing install)",
@@ -1879,14 +2148,25 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const recorded = record ? recordInteraction(process.cwd(), r.url, r.verdict) : null;
+      const recorded = record
+        ? recordInteraction(process.cwd(), r.url, r.verdict)
+        : null;
       if (json) {
-        console.log(JSON.stringify({ url: r.url, ...r.verdict, recorded }, null, 2));
+        console.log(
+          JSON.stringify({ url: r.url, ...r.verdict, recorded }, null, 2),
+        );
       } else {
-        heading(`${BRAND.brand} uicheck interact — browser interaction checks\n`);
-        console.log(`  driven:        ${r.url} (headless, prefers-reduced-motion)`);
-        for (const c of r.verdict.checks) console.log(`  ${c.ok ? "✓" : "✗"} ${c.id}: ${c.detail}`);
-        console.log(`\n  ${r.verdict.pass ? "✓ PASS" : "✗ FAIL"}${enforce ? "" : "  (advisory)"}`);
+        heading(
+          `${BRAND.brand} uicheck interact — browser interaction checks\n`,
+        );
+        console.log(
+          `  driven:        ${r.url} (headless, prefers-reduced-motion)`,
+        );
+        for (const c of r.verdict.checks)
+          console.log(`  ${c.ok ? "✓" : "✗"} ${c.id}: ${c.detail}`);
+        console.log(
+          `\n  ${r.verdict.pass ? "✓ PASS" : "✗ FAIL"}${enforce ? "" : "  (advisory)"}`,
+        );
         if (recorded)
           console.log(
             recorded.recorded
@@ -1903,7 +2183,8 @@ async function run(argv) {
       // file filter so the profile name is never mistaken for a file.
       const args = argv.slice(2);
       const tasteIdx = args.indexOf("--taste");
-      const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+      const tasteArg =
+        tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
       const json = args.includes("--json");
       const files = args.filter((a) => !a.startsWith("--"));
       if (!files.length || (tasteIdx >= 0 && !tasteArg)) {
@@ -1923,9 +2204,13 @@ async function run(argv) {
           });
         }
         if (json) {
-          console.log(JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2));
+          console.log(
+            JSON.stringify(minted ? { fingerprint: fp, minted } : fp, null, 2),
+          );
         } else {
-          heading(`${BRAND.brand} uicheck fingerprint — the design feature vector\n`);
+          heading(
+            `${BRAND.brand} uicheck fingerprint — the design feature vector\n`,
+          );
           console.log(
             `  palette:  ${fp.paletteSize} color(s), hue bins [${fp.hueBuckets.join(" ")}]`,
           );
@@ -1941,7 +2226,10 @@ async function run(argv) {
               console.log(
                 `\n  minted fingerprint claim ${minted.id.slice(0, 12)}${minted.existed ? " (already in ledger)" : ""} — the gate's "home"`,
               );
-            else console.error(`\n  mint failed: ${"reason" in minted ? minted.reason : ""}`);
+            else
+              console.error(
+                `\n  mint failed: ${"reason" in minted ? minted.reason : ""}`,
+              );
           }
         }
         if (minted && !minted.ok) process.exitCode = 1;
@@ -1964,9 +2252,13 @@ async function run(argv) {
       }
       const projectFp = ui.loadProjectFingerprint(process.cwd());
       const tauSlop = profile?.gate?.tau_slop ?? ui.UI_GATE_DEFAULTS.tauSlop;
-      const tauConform = profile?.gate?.tau_conform ?? ui.UI_GATE_DEFAULTS.tauConform;
+      const tauConform =
+        profile?.gate?.tau_conform ?? ui.UI_GATE_DEFAULTS.tauConform;
       const gate = ui.uiGate(fp, { projectFp, tauSlop, tauConform });
-      const checks = [...ui.scaleChecks(fp), ...(profile ? ui.profileChecks(fp, profile) : [])];
+      const checks = [
+        ...ui.scaleChecks(fp),
+        ...(profile ? ui.profileChecks(fp, profile) : []),
+      ];
       const fail = !gate.pass || checks.some((c) => !c.pass);
       if (json) {
         console.log(
@@ -1984,8 +2276,13 @@ async function run(argv) {
           ),
         );
       } else {
-        heading(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
-        if (profile) console.log(`  taste:         ${tasteName} (thresholds from its profile)`);
+        heading(
+          `${BRAND.brand} uicheck design — slop distance + project conformance\n`,
+        );
+        if (profile)
+          console.log(
+            `  taste:         ${tasteName} (thresholds from its profile)`,
+          );
         console.log(
           `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
         );
@@ -1994,7 +2291,8 @@ async function run(argv) {
             ? `  conformance:   ${gate.conform}  (need ≤ ${tauConform} — closer to the project system is better)`
             : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
         );
-        for (const v of gate.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+        for (const v of gate.violations)
+          console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
         console.log("");
         for (const c of checks)
           console.log(
@@ -2005,12 +2303,12 @@ async function run(argv) {
       if (fail) process.exitCode = 1;
       return;
     }
-    const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
-      "./uicheck.js"
-    );
+    const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } =
+      await import("./uicheck.js");
     // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
     // supported (it predates the subcommands and hooks already call it).
-    const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
+    const [fg, bg] =
+      sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
     heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
     if (fg && bg) {
       try {
@@ -2024,8 +2322,12 @@ async function run(argv) {
         return;
       }
     }
-    console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
-    console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
+    console.log(
+      `\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`,
+    );
+    console.log(
+      `  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`,
+    );
     return;
   }
   if (cmd === "report") {
@@ -2063,9 +2365,13 @@ async function run(argv) {
     }
     const server = serve(process.cwd(), { port });
     server.on("listening", () => {
-      const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+      const addr = /** @type {import("node:net").AddressInfo} */ (
+        server.address()
+      );
       heading(`${BRAND.brand} dash — read-only lens on .forge/\n`);
-      console.log(`  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`);
+      console.log(
+        `  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`,
+      );
     });
     server.on("error", (err) => {
       console.error(`  ${err.message}`);
@@ -2074,13 +2380,19 @@ async function run(argv) {
     return; // the process stays alive serving — that's the command
   }
   if (!(cmd in COMMANDS)) {
-    console.error(`Unknown command: ${cmd}\nRun \`${BRAND.cli} --help\` to see commands.`);
+    const near = suggest(cmd, Object.keys(COMMANDS));
+    console.error(
+      `Unknown command: ${cmd}${near ? ` — did you mean \`${BRAND.cli} ${near}\`?` : ""}\n` +
+        `Run \`${BRAND.cli} --help\` to see commands.`,
+    );
     process.exitCode = 1;
     return;
   }
   // ponytail: remaining subcommands land in their build phases; the stub keeps the
   // command surface honest and testable now.
-  console.log(`${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`);
+  console.log(
+    `${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`,
+  );
 }
 
 run(process.argv.slice(2)).catch((err) => {

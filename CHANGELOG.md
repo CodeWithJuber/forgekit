@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-command help + word forms.** `forge <command> --help` / `-h` now works for
+  every command (intercepted centrally in the dispatcher, no longer silently dropped),
+  alongside the word forms `forge help [command]` and `forge version`. Help renders from
+  the same `COMMANDS` table the docs check reconciles: entries may now be a plain summary
+  string OR a rich `{summary, usage, flags, examples, env}` object (both coexist; the
+  high-traffic commands are migrated), read through new `commandSummary`/`commandHelp`
+  helpers. An unknown command now suggests the nearest match ("did you mean …?") via a
+  character-bigram `suggest()` over the existing `setOverlap` similarity.
+
 ## [0.20.0] - 2026-07-17
 
 ### Added
