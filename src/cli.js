@@ -1090,6 +1090,47 @@ async function run(argv) {
     console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
     return;
   }
+  if (cmd === "deja") {
+    const { dejaFromLedger } = await import("./deja.js");
+    const { claimText, val } = await import("./ledger.js");
+    const { epochDay } = await import("./util.js");
+    const json = argv.includes("--json");
+    const task = argv
+      .slice(1)
+      .filter((a) => a !== "--json")
+      .join(" ");
+    if (!task) {
+      console.error('usage: forge deja "<task you are about to start>" [--json]');
+      process.exitCode = 1;
+      return;
+    }
+    const nowDay = epochDay();
+    const hits = dejaFromLedger(process.cwd(), task, { nowDay, budget: 8 });
+    if (json)
+      return console.log(
+        JSON.stringify(
+          hits.map((h) => ({
+            id: h.claim.id,
+            kind: h.claim.kind,
+            score: h.score,
+            verified: val(h.claim, nowDay) > 0.5,
+            day: h.claim.provenance?.t ?? 0,
+            gist: claimText(h.claim).slice(0, 120),
+          })),
+          null,
+          2,
+        ),
+      );
+    heading(`${BRAND.brand} déjà vu — have you done this before?\n`);
+    if (!hits.length) return console.log("  no similar prior task in memory — this looks new.");
+    for (const h of hits) {
+      const verified = val(h.claim, nowDay) > 0.5;
+      console.log(
+        `  ${bar(h.score, 8)} ${h.score.toFixed(3)}  ${paint(h.claim.kind.padEnd(9), "accent")} ${verified ? paint("verified", "ok") : paint("attempted", "warn")}  day ${h.claim.provenance?.t ?? 0}  ${claimText(h.claim).replace(/\s+/g, " ").trim().slice(0, 80)}`,
+      );
+    }
+    return;
+  }
   if (cmd === "preflight") {
     const { preflightRepo, clarifyBlock } = await import("./preflight.js");
     const json = argv.includes("--json");

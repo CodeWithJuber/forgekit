@@ -77,6 +77,16 @@ async function main() {
     const events = readSession(root, sid);
     if (events.length) {
       const results = processSession(root, events, today);
+      // Anti-repetition: a first-try success mints no mistake episode, so its trace
+      // would vanish at clearSession. Mint one `summary` claim of the solved task FIRST
+      // (before the log is cleared) — `forge deja` then finds it next time. Fail-safe;
+      // kill switch FORGE_DEJA=0.
+      if (process.env.FORGE_DEJA !== "0") {
+        try {
+          const { recordSessionSummary } = await import("./deja.js");
+          recordSessionSummary(root, sid, events, today);
+        } catch {}
+      }
       clearSession(root, sid);
       await enrichCreated(root, results);
     }
@@ -189,7 +199,14 @@ async function main() {
         const { intentCard } = await import("./intent.js");
         card = intentCard(root, sid, hook.prompt);
       } catch {}
-      const combined = [advisory, card].filter(Boolean).join("\n\n");
+      // Anti-repetition advisory: one line when a prior solved task closely matches this
+      // prompt (cache-only ledger read, never a fetch). Kill switch FORGE_DEJA=0.
+      let deja = "";
+      try {
+        const { dejaAdvisory } = await import("./deja.js");
+        deja = dejaAdvisory(root, hook.prompt, today);
+      } catch {}
+      const combined = [advisory, card, deja].filter(Boolean).join("\n\n");
       if (combined) emit("UserPromptSubmit", combined);
     }
   }

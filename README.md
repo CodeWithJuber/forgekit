@@ -189,6 +189,7 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 | | `forge remember` | durable, repo-committable fact |
 | | `forge brain` | portable project-memory index |
 | | `forge cortex` | self-correcting lessons — `status` / `why` |
+| | `forge deja` | anti-repetition — ranks prior solved/verified sessions for a task you're about to start (`FORGE_DEJA=0` disables) |
 | | `forge reuse` | proof-carrying code cache — query / mint / stats |
 | | `forge handoff` | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start |
 | | `forge decide` | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding |

@@ -587,6 +587,33 @@ Forge cortex — self-correcting project memory
 
 `forge cortex why <symbol>` shows the lessons that would be injected when you touch it.
 
+### `forge deja "<task>"` — have you done this before?
+
+Cortex only learns from _corrections_ — a first-try success mints no lesson, so its
+trace is discarded when the session ends and the next session starts blind. That is the
+root of the "why do I keep re-solving the same thing across sessions" complaint. So at
+every session Stop the substrate mints one `summary` claim (an existing ledger kind) of
+the solved task: a secret-redacted gist of the first prompt plus the files touched. If
+the session's own tests passed, it attaches one `test.run` confirm outcome — so a
+verified success outranks a mere attempt.
+
+`forge deja` ranks those prior sessions (plus lessons and diagnoses) for a task you're
+about to start, using the same Eq. 3 retrieval the ledger query uses:
+
+```console
+$ forge deja "add rate limiting to the export endpoint"
+Forge déjà vu — have you done this before?
+
+  ██████░░ 0.712  summary   verified   day 20641  add throttling to the export route — files: src/export.js
+  ███░░░░░ 0.402  lesson    attempted  day 20630  forgot to update the OpenAPI spec after changing a route
+```
+
+The same top hit surfaces as a one-line advisory in the pre-action substrate when a
+prompt closely matches prior solved work. Set `FORGE_DEJA=0` to disable both the Stop-hook
+summary and the advisory. Because summaries are ordinary ledger claims, `forge ledger
+merge` (and a future `forge ledger sync`) carry them between machines — so the
+anti-repetition works across every surface you work on, not just one checkout.
+
 ### `forge ledger` — proof-carrying team memory
 
 The convergent store behind cortex, `recall`, `brain`, and `reuse`: every stored unit is

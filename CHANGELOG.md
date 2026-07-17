@@ -61,6 +61,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   missing remote, or corrupt remote blob → an honest reason, never a throw); the git
   runner is injectable so tests drive it with local bare remotes and never touch the
   network.
+- **Anti-repetition memory (`forge deja`).** A first-try success mints no Cortex lesson,
+  so its trace used to be discarded when the session ended — the root of cross-session
+  repetition. Now every session Stop mints one `summary` claim (an existing ledger kind)
+  with a secret-redacted gist of the task and the files touched, attaching a `test.run`
+  confirm outcome when the session's own tests passed (so verified work outranks a mere
+  attempt). New `src/deja.js` `dejaLookup` ranks prior summaries/lessons/diagnoses via the
+  same Eq. 3 retrieval as `ledger query`; `forge deja "<task>"` surfaces them, and the
+  pre-action substrate shows a one-line "déjà vu" advisory when a prompt matches prior
+  solved work. Kill switch `FORGE_DEJA=0`. Because summaries are ordinary ledger claims,
+  `forge ledger merge` carries them between machines.
 
 ## [0.19.0] - 2026-07-17
 
