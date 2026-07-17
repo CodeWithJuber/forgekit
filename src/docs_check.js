@@ -453,6 +453,53 @@ function checkRoadmap(root, issues) {
 }
 
 /**
+ * Research crosswalk bindings: every `.js`/`.sh` file token the formal-synthesis
+ * crosswalk claims as a forgekit binding must name a file that actually exists in
+ * `src/`, `global/guards/`, or `hooks/`. This is the drift that let the paper keep
+ * citing `docs-guard.sh` / `session-context.sh` / `intent-router.sh` long after the
+ * hook system became `cortex.sh` + `cortex_hook_main.js`. Names that belong to the
+ * claude-e2e-kit binding (a different repo) opt out with a `kit:` prefix on their
+ * clause; a missing crosswalk.json (npm installs without research/) is a no-op.
+ */
+function checkCrosswalk(root, issues) {
+  const rel = join("research", "formal-synthesis", "crosswalk.json");
+  const p = join(root, rel);
+  if (!existsSync(p)) return;
+  let rows;
+  try {
+    rows = JSON.parse(readFileSync(p, "utf8")).rows ?? [];
+  } catch {
+    issues.push({
+      check: "crosswalk",
+      severity: "error",
+      detail: `${rel} is not valid JSON`,
+    });
+    return;
+  }
+  const known = new Set(srcFiles(root).map((f) => String(f).split(/[\\/]/).pop()));
+  for (const dir of [join("global", "guards"), "hooks"]) {
+    const d = join(root, dir);
+    if (!existsSync(d)) continue;
+    for (const f of readdirSync(d)) known.add(String(f));
+  }
+  for (const row of rows) {
+    // A `kit:` clause covers everything to the next `;` or `)` — those names live in
+    // the kit repo, not this one, so they are the kit's docs problem, not ours.
+    const ours = String(row.forgekit ?? "").replace(/kit:[^;)]*/g, " ");
+    for (const m of ours.matchAll(/\b([\w./-]+\.(?:js|sh))\b/g)) {
+      const name = m[1].split("/").pop() ?? m[1];
+      if (!known.has(name)) {
+        issues.push({
+          check: "crosswalk",
+          severity: "error",
+          detail: `${rel}: row "${row.concept}" binds ${m[1]}, which exists nowhere in src/, global/guards/, or hooks/ (stale binding — or prefix its clause with kit: if it names the kit, not this repo)`,
+        });
+      }
+    }
+  }
+}
+
+/**
  * Run every reconciler against the forge package tree.
  * @param {{root?: string}} [opts]
  * @returns {{ok: boolean, issues: {check:string, severity:string, detail:string}[], checked: string[]}}
@@ -469,6 +516,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
   checkBenchmarks(root, docs, issues);
   checkLinks(root, issues);
   checkRoadmap(root, issues);
+  checkCrosswalk(root, issues);
   return {
     ok: !issues.some((i) => i.severity === "error"),
     issues,
@@ -482,6 +530,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
       "benchmarks",
       "links",
       "roadmap",
+      "crosswalk",
     ],
   };
 }

@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Research crosswalk reconciled with the code.** The formal-synthesis paper's
+  crosswalk (rows 5/6/12/14 and the README §11 binding paragraph) cited hooks that
+  no longer exist (`docs-guard.sh`, `session-context.sh`, `intent-router.sh`); the
+  bindings now name the real system (`cortex.sh` → `src/gate.js` stopGate,
+  `src/session.js` rehydrationBlock, `src/intent.js` exemplar k-NN), with kit-only
+  names marked by a `kit:` prefix. A new `crosswalk` docs-check reconciler fails CI
+  when any non-`kit:` `.js`/`.sh` binding in `crosswalk.json` names a file that does
+  not exist in `src/`, `global/guards/`, or `hooks/`.
+
 ## [0.18.0] - 2026-07-16
 
 ### Changed

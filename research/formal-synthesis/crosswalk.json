@@ -46,14 +46,14 @@
       "concept": "Self-correction / verification",
       "substrate": "M6 inline verification; Prototype-II verify step; self-correction faculty",
       "framework": "Algorithm A6 COMPLETION-GATE (deterministic Stop-hook floor); Hoare postcondition Done(t); the verification operator in A3 (verified-unaffected requires an actual grep, not an assumption)",
-      "forgekit": "docs-guard.sh Stop hook (blocks finish if code changed but no doc/state artifact did); reviewer agent verdict",
+      "forgekit": "src/gate.js stopGate Stop hook via cortex.sh (blocks finish if code changed but no doc/state artifact did; kit: docs-guard.sh); reviewer agent verdict",
       "relation": "Same verify-gate. Substrate framed it as a mechanism; framework proves it terminates (T1) and is sound (T3) and makes it the deterministic layer of the duality."
     },
     {
       "concept": "Complexity routing",
       "substrate": "M1 complexity-aware router (transparent additive rubric); Prototype-II router",
       "framework": "Algorithm A7 KNOWLEDGE-ROUTER (where every fact lives, keeps always-loaded context bounded); System 1/System 2 effort routing; intent DFA",
-      "forgekit": "intent-router.sh (UserPromptSubmit hook, keyword DFA, <10ms, zero-token); effort-routing rule in CLAUDE.md; per-agent model: fields",
+      "forgekit": "src/intent.js exemplar k-NN intent classifier (UserPromptSubmit via cortex.sh, zero-token; kit: intent-router.sh keyword DFA); effort-routing rule in CLAUDE.md; per-agent model: fields",
       "relation": "Two facets of one routing principle. Substrate M1 routes by TASK COMPLEXITY -> model tier (cost). Framework A7 routes by KNOWLEDGE TYPE -> storage home (context budget). Both are transparent/deterministic, both reject an opaque-LLM classifier for the same reason."
     },
     {
@@ -95,7 +95,7 @@
       "concept": "Rehydration (session start)",
       "substrate": "closed-loop write-back/read-back band in the substrate architecture",
       "framework": "Algorithm A5 CONTEXT-REHYDRATE; loader L; records git baseline for the gate",
-      "forgekit": "session-context.sh SessionStart hook; /catchup skill (deep variant)",
+      "forgekit": "src/session.js rehydrationBlock SessionStart injection via cortex.sh (kit: session-context.sh); /catchup skill (deep variant)",
       "relation": "The read side of the substrate's memory loop, made deterministic (inject, don't hope the agent reads)."
     },
     {
@@ -109,7 +109,7 @@
       "concept": "The two-layer duality (THE central new insight)",
       "substrate": "implicit: the substrate wraps a probabilistic core with deterministic external structure, but v2 never states it as a law",
       "framework": "DESIGN LAW: instructions (Pi3) are PROBABILISTIC (raise p); interception (Pi2) is DETERMINISTIC (guarantee a floor c->1). P(silent miss) = (1-p)\u00b7prod_j(1-c_j). Since p<1 always, neither layer alone suffices.",
-      "forgekit": "the split itself: CLAUDE.md/rules/skills = soft layer; hooks (docs-guard, session-context, intent-router) = hard layer",
+      "forgekit": "the split itself: CLAUDE.md/rules/skills = soft layer; hooks (cortex.sh -> src/gate.js, src/session.js, src/intent.js; kit: docs-guard, session-context, intent-router) = hard layer",
       "relation": "THIS is what the kit gives the substrate theory: the reason the substrate must be TWO layers, stated as a theorem. The user's own discipline ('never trust AI output \u2014 it is calculated probability') is exactly (1-p)>0, which forces the deterministic layer."
     },
     {
