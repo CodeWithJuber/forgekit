@@ -60,12 +60,18 @@ async function run(argv) {
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
-    if (settings?.action === "merged" && "added" in settings) {
-      console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+    if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
+      const verb = settings.action === "created" ? "created" : "merged";
+      const what = settings.added.length ? settings.added.join(", ") : "defaults";
+      console.log(`  settings: ${verb} ${what} into ${settings.path}`);
+      if ("backup" in settings && settings.backup)
+        console.log(`            backup: ${settings.backup}`);
     } else if (settings?.action === "unchanged" && "path" in settings) {
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
+    } else if (settings?.action === "error") {
+      console.log(`  settings: NOT written — ${settings.reason}`);
     }
     if (detected) {
       console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);

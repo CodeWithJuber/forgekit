@@ -38,7 +38,10 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
         Stop: [
           {
             hooks: [
-              { type: "command", command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/lean-guard.sh' },
+              {
+                type: "command",
+                command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/lean-guard.sh',
+              },
             ],
           },
         ],
@@ -59,6 +62,35 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
   const stopHooks = result.hooks.Stop.flatMap((e) => (e.hooks || []).map((h) => h.command));
   const leanCount = stopHooks.filter((c) => c.includes("lean-guard.sh")).length;
   assert.equal(leanCount, 1, "lean-guard.sh must not duplicate");
+});
+
+test("mergeSettings refuses to overwrite a present-but-unparseable settings file", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-corrupt-"));
+  const settingsPath = join(tmp, ".claude", "settings.json");
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  const original = "{ this is not valid json ";
+  writeFileSync(settingsPath, original);
+  const result = mergeSettings({ settingsPath });
+  assert.equal(result.action, "error", "corrupt file must not be silently overwritten");
+  assert.equal(readFileSync(settingsPath, "utf8"), original, "original bytes preserved");
+});
+
+test("mergeSettings backs up an existing valid file and resolves guard paths absolutely", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-backup-"));
+  const settingsPath = join(tmp, ".claude", "settings.json");
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify({ model: "sonnet" }));
+  const result = mergeSettings({ settingsPath });
+  assert.equal(result.action, "merged");
+  assert.ok(result.backup && existsSync(result.backup), "a timestamped backup was written");
+  const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const cmds = (merged.hooks?.UserPromptSubmit || []).flatMap((e) =>
+    (e.hooks || []).map((h) => h.command),
+  );
+  assert.ok(
+    cmds.some((c) => c.includes("/global/guards/") && !c.includes("~/.forge/")),
+    "hook commands resolve to the installed package, not the unmaterialized ~/.forge",
+  );
 });
 
 test("catalog indexes tools (with a why), crew, and guards", () => {

@@ -2,10 +2,12 @@
 // state in one command; catalog is the "Start Here" index of everything active.
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -37,17 +39,47 @@ export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
 
 const FORGE_SETTINGS_MARKER = "forge-managed";
 
-function loadTemplate() {
-  const path = join(BRAND.root, "global", "settings.template.json");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** Rewrite the template's `~/.forge/…` hook + statusline commands to the ACTUAL installed
+ *  package location. The npm global-install path never creates `~/.forge`, so a literal
+ *  `~/.forge/guards/*.sh` reference points at nothing (P0-02). `~/.forge` is the `global/`
+ *  dir (that's what install.sh symlinks), so `~/.forge/X` resolves to `<BRAND.root>/global/X`. */
+function resolveManagedPaths(template) {
+  const base = join(BRAND.root, "global");
+  const fix = (cmd) => (typeof cmd === "string" ? cmd.replaceAll("~/.forge/", `${base}/`) : cmd);
+  if (template.statusLine?.command) template.statusLine.command = fix(template.statusLine.command);
+  for (const entries of Object.values(template.hooks || {})) {
+    for (const entry of entries) {
+      for (const h of entry.hooks || []) h.command = fix(h.command);
+    }
+  }
+  return template;
 }
 
-function readJsonSafe(path) {
+function loadTemplate() {
+  const path = join(BRAND.root, "global", "settings.template.json");
+  return resolveManagedPaths(JSON.parse(readFileSync(path, "utf8")));
+}
+
+/** Read an existing settings file, distinguishing a MISSING file (safe to treat as empty
+ *  and create) from one that is PRESENT BUT UNPARSEABLE (must never be silently replaced —
+ *  P0-01). Returns `{status, data}` with status `missing` | `ok` | `corrupt`. */
+function readExistingSettings(path) {
+  let raw;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    raw = readFileSync(path, "utf8");
   } catch {
-    return null;
+    return { status: "missing", data: {} };
   }
+  try {
+    return { status: "ok", data: JSON.parse(raw) };
+  } catch {
+    return { status: "corrupt", data: null };
+  }
+}
+
+/** Filesystem-safe timestamp for backup filenames. */
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
 /** Deduplicated union of two string arrays. */
@@ -97,7 +129,19 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   if (noSettings) return { action: "skipped", reason: "--no-settings" };
   const target = settingsPath || join(homedir(), ".claude", "settings.json");
   const template = loadTemplate();
-  const existing = readJsonSafe(target) || {};
+  const { status, data } = readExistingSettings(target);
+  // Present-but-unparseable: refuse rather than overwrite the user's real (if broken) file.
+  if (status === "corrupt") {
+    return {
+      action: "error",
+      path: target,
+      reason:
+        "existing settings file is present but not valid JSON — refusing to overwrite. " +
+        "Fix or remove it, or re-run with --no-settings.",
+    };
+  }
+  const existing = data;
+  const before = JSON.stringify(existing);
   const report = { added: [], unchanged: [], path: target };
 
   // Hooks
@@ -137,13 +181,32 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   // Mark as forge-managed (metadata, won't affect Claude Code)
   existing._forge = FORGE_SETTINGS_MARKER;
 
-  // Write back
+  // Nothing to do — don't rewrite (or back up) an already-current file.
+  if (status !== "missing" && JSON.stringify(existing) === before) {
+    return {
+      action: "unchanged",
+      path: target,
+      added: [],
+      unchanged: report.unchanged,
+    };
+  }
+
+  // Back up any existing file, then write atomically (temp + rename) so a crash mid-write
+  // can never leave a truncated settings.json (P0-01).
   const dir = dirname(target);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(target, `${JSON.stringify(existing, null, 2)}\n`);
+  let backup = null;
+  if (status === "ok" && existsSync(target)) {
+    backup = `${target}.forge-bak-${stamp()}`;
+    copyFileSync(target, backup);
+  }
+  const tmp = `${target}.forge-tmp-${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(existing, null, 2)}\n`);
+  renameSync(tmp, target);
 
   return {
-    action: report.added.length ? "merged" : "unchanged",
+    action: report.added.length ? "merged" : "created",
+    backup,
     ...report,
   };
 }

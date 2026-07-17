@@ -17,7 +17,14 @@ import { hasSecret, SECRET_RE } from "./secrets.js";
 export { hasSecret, SECRET_RE };
 
 export function defaultStore() {
-  return join(process.env.FORGE_HOME || join(homedir(), ".forge"), "recall");
+  // Mutable personal memory. FORGE_HOME override wins (tests + recall-load.sh rely on it);
+  // otherwise the XDG state dir — NEVER inside the install/source tree (P0-03). The old
+  // default (~/.forge) was symlinked by install.sh into the clone, leaking personal facts
+  // into the repo working tree.
+  if (process.env.FORGE_HOME) return join(process.env.FORGE_HOME, "recall");
+  const xdg = process.env.XDG_STATE_HOME;
+  const base = xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
+  return join(base, "recall");
 }
 
 const factsDir = (store) => join(store, "facts");

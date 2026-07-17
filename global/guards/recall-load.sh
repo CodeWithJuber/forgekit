@@ -3,8 +3,9 @@
 # stdout from a SessionStart hook is added to the session context.
 set -euo pipefail
 
-# Prefer the Forge recall store; fall back to the legacy memory index.
-MEM="${FORGE_HOME:-$HOME/.forge}/recall/MEMORY.md"
+# Prefer the Forge recall store; fall back to the legacy memory index. The store lives in
+# the XDG state dir (not the source tree) — must match recall.js defaultStore() (P0-03).
+MEM="${FORGE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/forgekit}/recall/MEMORY.md"
 [ -f "$MEM" ] || MEM="$HOME/.claude/memory/MEMORY.md"
 
 [ -f "$MEM" ] || exit 0

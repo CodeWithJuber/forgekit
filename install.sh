@@ -8,7 +8,11 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FORGE_HOME="${FORGE_HOME:-$HOME/.forge}"
+# Read-only assets (guards/statusline/tools) — a symlink into the bundle so hooks resolve.
+FORGE_ASSETS="${FORGE_ASSETS:-$HOME/.forge}"
+# Mutable personal state (recall) — a REAL dir in the XDG state home, NEVER inside the
+# source tree. Keeping these separate is the whole point of P0-03.
+FORGE_HOME="${FORGE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/forgekit}"
 CLAUDE_DIR="$HOME/.claude"
 BIN_DIR="$HOME/.local/bin"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -24,17 +28,18 @@ for arg in "$@"; do
 done
 
 say() { printf '  %s\n' "$*"; }
-act() { if [ "$DRY" = 1 ]; then say "[dry-run] $*"; else eval "$*"; fi; }
+# Run argv directly (no eval — S-02). In dry-run, print the argv instead of executing.
+act() { if [ "$DRY" = 1 ]; then say "[dry-run] $*"; else "$@"; fi; }
 
 # link SRC DEST — back up an existing real file/dir, then symlink.
 link() {
   local src="$1" dest="$2"
   [ -e "$src" ] || { say "skip (missing in bundle): $src"; return; }
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-    act "mv \"$dest\" \"$dest.forge-bak-$STAMP\""; say "backed up existing $dest"
+    act mv "$dest" "$dest.forge-bak-$STAMP"; say "backed up existing $dest"
   fi
-  act "mkdir -p \"$(dirname "$dest")\""
-  act "ln -sfn \"$src\" \"$dest\""
+  act mkdir -p "$(dirname "$dest")"
+  act ln -sfn "$src" "$dest"
   say "linked $dest -> $src"
 }
 
@@ -42,13 +47,29 @@ link() {
 unlink_ours() {
   local dest="$1"
   if [ -L "$dest" ] && case "$(readlink "$dest")" in "$REPO"/*) true;; *) false;; esac; then
-    act "rm -f \"$dest\""; say "removed $dest"
+    act rm -f "$dest"; say "removed $dest"
+  fi
+}
+
+# One-shot migration: older installs symlinked ~/.forge -> <repo>/global, so personal
+# recall facts were written into the source tree (global/recall/facts). Move them out.
+migrate_recall() {
+  local old="$REPO/global/recall/facts"
+  [ -d "$old" ] || return 0
+  act mkdir -p "$FORGE_HOME/recall"
+  if [ ! -e "$FORGE_HOME/recall/facts" ]; then
+    act mv "$old" "$FORGE_HOME/recall/facts"
+    say "migrated personal recall -> $FORGE_HOME/recall/facts (out of the source tree)"
+  else
+    say "note: personal recall found in the source tree at $old; $FORGE_HOME/recall/facts already exists — merge by hand"
   fi
 }
 
 install_forge() {
   say "Installing Forge from $REPO"
-  link "$REPO/global" "$FORGE_HOME"
+  link "$REPO/global" "$FORGE_ASSETS"
+  act mkdir -p "$FORGE_HOME"   # mutable state home (recall) — real dir, outside the source tree
+  migrate_recall
   for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && link "$d" "$CLAUDE_DIR/skills/$(basename "$d")"; done
   for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && link "$f" "$CLAUDE_DIR/agents/$(basename "$f")"; done
   link "$REPO/src/cli.js" "$BIN_DIR/forge"
@@ -61,16 +82,16 @@ install_forge() {
   Done. Guards + statusline need ONE manual merge into $CLAUDE_DIR/settings.json
   (kept manual so your existing settings are never clobbered):
 
-    "statusLine": { "type": "command", "command": "bash $FORGE_HOME/statusline.sh" },
+    "statusLine": { "type": "command", "command": "bash $FORGE_ASSETS/statusline.sh" },
     "hooks": {
       "UserPromptSubmit": [ { "hooks": [ { "type": "command",
-        "command": "bash $FORGE_HOME/guards/cortex.sh preflight" } ] } ],
+        "command": "bash $FORGE_ASSETS/guards/cortex.sh preflight" } ] } ],
       "PreToolUse":  [ { "matcher": "Edit|Write|MultiEdit|Bash",
-        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/protect-paths.sh" } ] } ],
+        "hooks": [ { "type": "command", "command": "bash $FORGE_ASSETS/guards/protect-paths.sh" } ] } ],
       "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit",
-        "hooks": [ { "type": "command", "command": "bash $FORGE_HOME/guards/format-on-edit.sh" } ] } ],
+        "hooks": [ { "type": "command", "command": "bash $FORGE_ASSETS/guards/format-on-edit.sh" } ] } ],
       "Stop": [ { "hooks": [ { "type": "command",
-        "command": "bash $FORGE_HOME/guards/completion-gate.sh" } ] } ]
+        "command": "bash $FORGE_ASSETS/guards/completion-gate.sh" } ] } ]
     }
 
   Or install the plugin instead (guards auto-wire): /plugin marketplace add <this-repo> then /plugin install forgekit.
@@ -83,7 +104,8 @@ uninstall_forge() {
   for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && unlink_ours "$CLAUDE_DIR/skills/$(basename "$d")"; done
   for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && unlink_ours "$CLAUDE_DIR/agents/$(basename "$f")"; done
   unlink_ours "$BIN_DIR/forge"
-  unlink_ours "$FORGE_HOME"
+  unlink_ours "$FORGE_ASSETS"
+  say "Personal state in $FORGE_HOME is left untouched (remove it by hand if you want)."
   say "Done. Any backed-up files remain as *.forge-bak-* next to their originals."
 }
 
