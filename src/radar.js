@@ -11,7 +11,13 @@
 // (fetchImpl) so tests never touch the network, and the pre-edit advisory is CACHE-ONLY —
 // a hook never fetches. The `dev-radar` skill is the LLM wide scan; `forge radar` is the
 // deterministic repo instrument that reads THIS repo's manifests.
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { clamp01, epochDay } from "./util.js";
@@ -35,7 +41,8 @@ const readJson = (root, rel) => {
 
 // A range forge cannot probe against a public registry: workspace protocol, a local path,
 // a git/url dependency. Listed honestly as "local" (unprobed), never silently upgraded.
-const LOCAL_RANGE_RE = /^(workspace:|file:|link:|git\+|git:|https?:|github:|[./])/;
+const LOCAL_RANGE_RE =
+  /^(workspace:|file:|link:|git\+|git:|https?:|github:|[./])/;
 
 /**
  * @typedef {{range:string, source:"dependencies"|"devDependencies", installed:(string|null),
@@ -58,7 +65,10 @@ export function depsFromManifests(root = process.cwd()) {
   if (pkg) {
     const lock = readJson(root, "package-lock.json");
     const installedOf = installedFromLock(lock);
-    for (const source of /** @type {const} */ (["dependencies", "devDependencies"])) {
+    for (const source of /** @type {const} */ ([
+      "dependencies",
+      "devDependencies",
+    ])) {
       const map = pkg[source] || {};
       for (const name of Object.keys(map)) {
         if (name in deps) continue; // a prod dep shadows a dev dep of the same name
@@ -84,20 +94,29 @@ function otherLanguages(root) {
   const has = (rel) => existsSync(join(root, rel));
   if (has("go.mod")) out.push("Go");
   if (has("Cargo.toml")) out.push("Rust");
-  if (has("pyproject.toml") || has("requirements.txt") || has("Pipfile") || has("setup.py"))
+  if (
+    has("pyproject.toml") ||
+    has("requirements.txt") ||
+    has("Pipfile") ||
+    has("setup.py")
+  )
     out.push("Python");
   if (has("Gemfile")) out.push("Ruby");
   if (has("composer.json")) out.push("PHP");
-  if (has("pom.xml") || has("build.gradle") || has("build.gradle.kts")) out.push("Java/Kotlin");
+  if (has("pom.xml") || has("build.gradle") || has("build.gradle.kts"))
+    out.push("Java/Kotlin");
   return out;
 }
 
 /** Installed-version lookup from a package-lock (v2/v3 `packages`, then legacy `dependencies`). */
 function installedFromLock(lock) {
   if (!lock || typeof lock !== "object") return () => null;
-  const packages = lock.packages && typeof lock.packages === "object" ? lock.packages : null;
+  const packages =
+    lock.packages && typeof lock.packages === "object" ? lock.packages : null;
   const legacy =
-    lock.dependencies && typeof lock.dependencies === "object" ? lock.dependencies : null;
+    lock.dependencies && typeof lock.dependencies === "object"
+      ? lock.dependencies
+      : null;
   return (name) => {
     if (packages) {
       const v = packages[`node_modules/${name}`]?.version;
@@ -159,7 +178,10 @@ export function classifyDep(evidence, nowDay = epochDay()) {
 
   // staleness — present iff we know when latest was published.
   if (typeof ev.publishedAt === "number" && Number.isFinite(ev.publishedAt)) {
-    const days = Math.max(0, (nowDay * MS_PER_DAY - ev.publishedAt) / MS_PER_DAY);
+    const days = Math.max(
+      0,
+      (nowDay * MS_PER_DAY - ev.publishedAt) / MS_PER_DAY,
+    );
     signals.staleness = clamp01(1 - 0.5 ** (days / STALENESS_HALF_LIFE_DAYS));
     if (days >= STALENESS_HALF_LIFE_DAYS)
       reasons.push(
@@ -172,7 +194,10 @@ export function classifyDep(evidence, nowDay = epochDay()) {
   if (im != null && lm != null) {
     const behind = Math.max(0, lm - im);
     signals.majorLag = clamp01(behind / 3);
-    if (behind > 0) reasons.push(`${behind} major${behind > 1 ? "s" : ""} behind (v${im}→v${lm})`);
+    if (behind > 0)
+      reasons.push(
+        `${behind} major${behind > 1 ? "s" : ""} behind (v${im}→v${lm})`,
+      );
   }
   // advisories — present iff the advisories probe succeeded (empty array = "none known", risk 0).
   if (Array.isArray(ev.advisories)) {
@@ -216,7 +241,9 @@ export function classifyDep(evidence, nowDay = epochDay()) {
     ring = "hold";
   } else if (kinds.length < MIN_EVIDENCE_FOR_ADOPT) {
     ring = "assess"; // too little verified evidence — never adopt on absence
-    reasons.push(`only ${kinds.length} evidence kind${kinds.length === 1 ? "" : "s"} verified`);
+    reasons.push(
+      `only ${kinds.length} evidence kind${kinds.length === 1 ? "" : "s"} verified`,
+    );
   } else if (score < RING_THRESHOLDS.adopt) {
     ring = "adopt";
   } else if (score < RING_THRESHOLDS.trial) {
@@ -250,13 +277,16 @@ const ABBREVIATED = "application/vnd.npm.install-v1+json";
  */
 export async function probeRegistry(names, opts = {}) {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
-  const timeoutMs = Number.isFinite(opts.timeoutMs) ? Number(opts.timeoutMs) : 4000;
+  const timeoutMs = Number.isFinite(opts.timeoutMs)
+    ? Number(opts.timeoutMs)
+    : 4000;
   const registry = (opts.registry ?? DEFAULT_REGISTRY).replace(/\/+$/, "");
   const installedMap = opts.installed ?? {};
   /** @type {Record<string,DepEvidence>} */
   const results = {};
   const errors = [];
-  if (!fetchImpl || !names?.length) return { ok: !names?.length, results, errors };
+  if (!fetchImpl || !names?.length)
+    return { ok: !names?.length, results, errors };
 
   const getJson = async (url, headers) => {
     const ac = new AbortController();
@@ -288,7 +318,10 @@ export async function probeRegistry(names, opts = {}) {
       const latest = doc?.["dist-tags"]?.latest ?? null;
       ev.latest = typeof latest === "string" ? latest : null;
       const ver = ev.latest ? doc?.versions?.[ev.latest] : null;
-      ev.deprecated = ver ? Boolean(ver.deprecated) : false;
+      // null = unknown (never verified), NOT "not deprecated": if the latest version's
+      // entry is absent from the metadata we could not check, so classifyDep must not
+      // count a spurious evidence kind (mizan — missing evidence never upgrades a dep).
+      ev.deprecated = ver ? Boolean(ver.deprecated) : null;
       const t = doc?.time || {};
       const when = (ev.latest && t[ev.latest]) || t.modified || null;
       const ms = when ? Date.parse(when) : NaN;
@@ -305,17 +338,22 @@ export async function probeRegistry(names, opts = {}) {
   try {
     const body = {};
     for (const name of names)
-      body[name] = [results[name]?.installed || results[name]?.latest].filter(Boolean);
+      body[name] = [results[name]?.installed || results[name]?.latest].filter(
+        Boolean,
+      );
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
     let bulk;
     try {
-      const res = await fetchImpl(`${registry}/-/npm/v1/security/advisories/bulk`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: ac.signal,
-      });
+      const res = await fetchImpl(
+        `${registry}/-/npm/v1/security/advisories/bulk`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          signal: ac.signal,
+        },
+      );
       if (!res?.ok) throw new Error(`http ${res ? res.status : "?"}`);
       bulk = await res.json();
     } finally {
@@ -363,7 +401,11 @@ export function usageFromAtlas(root, names) {
     if (e?.kind !== "imports") continue;
     const target = String(e.target ?? "");
     for (const n of names) {
-      if (target === n || target.startsWith(`${n}/`) || target.startsWith(`${n}.`)) {
+      if (
+        target === n ||
+        target.startsWith(`${n}/`) ||
+        target.startsWith(`${n}.`)
+      ) {
         counts[n]++;
         break;
       }
@@ -374,7 +416,8 @@ export function usageFromAtlas(root, names) {
 
 // --- cache -----------------------------------------------------------------
 
-export const radarCachePath = (root = process.cwd()) => join(root, ".forge", "radar.json");
+export const radarCachePath = (root = process.cwd()) =>
+  join(root, ".forge", "radar.json");
 
 /** Cache TTL in hours (FORGE_RADAR_TTL_H, default 24, NaN-safe). */
 export function radarTtlHours() {
@@ -408,7 +451,8 @@ function writeRadarCache(root, payload) {
 function riskyDeps(deps) {
   const out = new Set();
   for (const [name, d] of Object.entries(deps || {})) {
-    if (d?.ring === "hold" || (d?.ring === "assess" && d?.hasAdvisory)) out.add(name);
+    if (d?.ring === "hold" || (d?.ring === "assess" && d?.hasAdvisory))
+      out.add(name);
   }
   return out;
 }
@@ -425,7 +469,9 @@ function riskyDeps(deps) {
  */
 export async function radarScan(root = process.cwd(), opts = {}) {
   const nowMs = Number.isFinite(opts.now) ? Number(opts.now) : Date.now();
-  const nowDay = Number.isFinite(opts.nowDay) ? Number(opts.nowDay) : epochDay();
+  const nowDay = Number.isFinite(opts.nowDay)
+    ? Number(opts.nowDay)
+    : epochDay();
   const cache = readRadarCache(root);
   const ttlMs = radarTtlHours() * 3600000;
   const ageH = cache ? (nowMs - (cache.t ?? 0)) / 3600000 : Infinity;
@@ -586,7 +632,9 @@ export function radarAdvisory(root, file) {
     const dep = hits[0];
     const d = cache.deps[dep];
     const why = d?.ring === "hold" ? "ring hold" : "ring assess, open advisory";
-    const rel = file.startsWith(`${root}/`) ? file.slice(root.length + 1) : file;
+    const rel = file.startsWith(`${root}/`)
+      ? file.slice(root.length + 1)
+      : file;
     return `${BRAND.brand} radar — ${rel} imports ${dep} (${why}: ${(d?.reasons || [])[0] ?? "unverified currency"}). Check \`${BRAND.cli} radar\` before building on it.`;
   } catch {
     return "";
@@ -603,7 +651,13 @@ function importedPackages(text) {
   let m;
   while ((m = IMPORT_SPEC_RE.exec(text))) {
     const spec = m[1] || m[2] || "";
-    if (!spec || spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:")) continue;
+    if (
+      !spec ||
+      spec.startsWith(".") ||
+      spec.startsWith("/") ||
+      spec.startsWith("node:")
+    )
+      continue;
     const parts = spec.split("/");
     const bare = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
     if (bare) out.add(bare);

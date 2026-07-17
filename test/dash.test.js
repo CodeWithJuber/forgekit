@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { claimsData, dashData, historyData, radarData, serve, timelineData } from "../src/dash.js";
+import {
+  claimsData,
+  dashData,
+  historyData,
+  radarData,
+  serve,
+  timelineData,
+} from "../src/dash.js";
 import { mintClaim, outcomeRecord } from "../src/ledger.js";
 import {
   appendEvidence,
@@ -28,7 +35,11 @@ const mint = (dir, name, text, author = "alice") => {
   return c;
 };
 const ev = (dir, id, result, ref) =>
-  appendEvidence(dir, id, outcomeRecord({ oracle: "test.run", result, ref, t: NOW }).outcome);
+  appendEvidence(
+    dir,
+    id,
+    outcomeRecord({ oracle: "test.run", result, ref, t: NOW }).outcome,
+  );
 
 /** A fixture repo: 3 claims (one contested, one tombstoned) + 2 metrics lines. */
 function fixture() {
@@ -65,7 +76,10 @@ test("dashData: one payload with ledger, metrics, and atlas sections in shape", 
     assert.equal(c.author, "alice");
     assert.equal(typeof c.tombstoned, "boolean");
     assert.equal(typeof c.text, "string");
-    assert.ok(c.text.length > 0, "text comes from claimText, never empty for a fact");
+    assert.ok(
+      c.text.length > 0,
+      "text comes from claimText, never empty for a fact",
+    );
   }
   const tomb = d.ledger.claims.find((c) => c.id8 === retracted.id.slice(0, 8));
   assert.equal(tomb.tombstoned, true);
@@ -77,7 +91,11 @@ test("dashData: one payload with ledger, metrics, and atlas sections in shape", 
   );
   assert.equal(d.ledger.contested[0].val, 0.5);
 
-  assert.equal(typeof d.ledger.trust.alice, "number", "authorTrust map keyed by author");
+  assert.equal(
+    typeof d.ledger.trust.alice,
+    "number",
+    "authorTrust map keyed by author",
+  );
 
   assert.equal(d.metrics.stages.cache.savedEstimate, 1200);
   assert.equal(d.metrics.stages.gate.byOutcome.pass, 1);
@@ -143,15 +161,27 @@ test("serve: / is the page, /api/data is the payload, unknown routes 404, GET-on
     assert.match(page.headers.get("content-type"), /text\/html/);
     const html = await page.text();
     assert.match(html, /forge/);
-    assert.doesNotMatch(html, /https?:\/\/(?!localhost)/, "self-contained — no CDN, no remote");
+    assert.doesNotMatch(
+      html,
+      /https?:\/\/(?!localhost)/,
+      "self-contained — no CDN, no remote",
+    );
 
     const data = await fetch(`${base}/api/data`);
     assert.equal(data.status, 200);
     const d = await data.json();
     assert.equal(d.ledger.stats.total, 3);
 
-    assert.equal((await fetch(`${base}/api/impact`)).status, 400, "missing target");
-    assert.equal((await fetch(`${base}/api/impact?target=x`)).status, 404, "no atlas yet");
+    assert.equal(
+      (await fetch(`${base}/api/impact`)).status,
+      400,
+      "missing target",
+    );
+    assert.equal(
+      (await fetch(`${base}/api/impact?target=x`)).status,
+      404,
+      "no atlas yet",
+    );
     assert.equal((await fetch(`${base}/nope`)).status, 404);
     // The ONLY writes are POST /api/ratify and /api/retract — POST anywhere else is 404,
     // as is any other method on the write routes.
@@ -191,7 +221,9 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
     const out = await r1.json();
     assert.equal(out.ok, true);
     assert.equal(out.ratifies, trusted.id);
-    const decision = loadClaims(repoLedger(root)).find((c) => c.kind === "decision");
+    const decision = loadClaims(repoLedger(root)).find(
+      (c) => c.kind === "decision",
+    );
     assert.deepEqual(decision.body, { ratifies: trusted.id, note: "" });
     assert.equal(decision.provenance.author, "dash-tester");
     // …and the new decision shows up in the read payload.
@@ -207,18 +239,33 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
     assert.equal(r2.status, 200);
     assert.equal((await r2.json()).ok, true);
     const d2 = await (await fetch(`${base}/api/data`)).json();
-    const row = d2.ledger.claims.find((c) => c.id8 === contested.id.slice(0, 8));
+    const row = d2.ledger.claims.find(
+      (c) => c.id8 === contested.id.slice(0, 8),
+    );
     assert.equal(row.tombstoned, true);
-    const onDisk = loadClaims(repoLedger(root)).find((c) => c.id === contested.id);
+    const onDisk = loadClaims(repoLedger(root)).find(
+      (c) => c.id === contested.id,
+    );
     assert.equal(onDisk.tombstone.reason, "wrong port");
     assert.equal(onDisk.tombstone.author, "dash-tester");
 
     // Bad bodies → 400; unknown prefixes → 404. Nothing else was written.
     assert.equal((await post("/api/ratify", "{nope")).status, 400, "bad JSON");
     assert.equal((await post("/api/ratify", {})).status, 400, "missing id");
-    assert.equal((await post("/api/retract", { id: "x" })).status, 400, "1-char prefix refused");
-    assert.equal((await post("/api/ratify", { id: "zz" })).status, 404, "unknown prefix");
-    assert.equal((await post("/api/retract", { id: "zz", reason: "r" })).status, 404);
+    assert.equal(
+      (await post("/api/retract", { id: "x" })).status,
+      400,
+      "1-char prefix refused",
+    );
+    assert.equal(
+      (await post("/api/ratify", { id: "zz" })).status,
+      404,
+      "unknown prefix",
+    );
+    assert.equal(
+      (await post("/api/retract", { id: "zz", reason: "r" })).status,
+      404,
+    );
   } finally {
     delete process.env.FORGE_AUTHOR;
     server.close();
@@ -228,19 +275,30 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
 test("serve: /api/impact traces blast radius once an atlas exists", async () => {
   const root = tmp();
   mkdirSync(join(root, "src"), { recursive: true });
-  writeFileSync(join(root, "src", "a.js"), "export function core() { return 1; }\n");
-  writeFileSync(join(root, "src", "b.js"), 'import { core } from "./a.js";\ncore();\n');
+  writeFileSync(
+    join(root, "src", "a.js"),
+    "export function core() { return 1; }\n",
+  );
+  writeFileSync(
+    join(root, "src", "b.js"),
+    'import { core } from "./a.js";\ncore();\n',
+  );
   const { build } = await import("../src/atlas.js");
   build({ root });
   const server = serve(root, { port: 0 });
   await new Promise((resolve) => server.on("listening", resolve));
   const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
   try {
-    const res = await fetch(`http://127.0.0.1:${addr.port}/api/impact?target=core`);
+    const res = await fetch(
+      `http://127.0.0.1:${addr.port}/api/impact?target=core`,
+    );
     assert.equal(res.status, 200);
     const r = await res.json();
     assert.equal(r.found, true);
-    assert.ok(r.impactedFiles.includes("src/b.js"), "dependent file is in the radius");
+    assert.ok(
+      r.impactedFiles.includes("src/b.js"),
+      "dependent file is in the radius",
+    );
   } finally {
     server.close();
   }
@@ -257,7 +315,10 @@ test("historyData: metrics bucketed by day×stage, saved summed", () => {
   assert.equal(h.stages.cache.saved, 1200);
   assert.equal(h.stages.gate.byOutcome.pass, 1);
   assert.ok(h.buckets.length >= 1, "at least one day bucket");
-  assert.ok(Array.isArray(h.stages.cache.series), "per-stage daily series for sparklines");
+  assert.ok(
+    Array.isArray(h.stages.cache.series),
+    "per-stage daily series for sparklines",
+  );
   assert.equal(h.window, 90);
 });
 
@@ -287,8 +348,14 @@ test("claimsData: no query ranks live claims by val, with fresh + confidence", (
   const { root } = fixture();
   const m = claimsData(root, { nowDay: NOW });
   assert.equal(m.total, 3);
-  assert.ok(m.rows.length >= 2, "tombstoned claim is excluded, live ones shown");
-  assert.ok(!m.rows.some((r) => r.tombstoned), "no-query browse shows only live claims");
+  assert.ok(
+    m.rows.length >= 2,
+    "tombstoned claim is excluded, live ones shown",
+  );
+  assert.ok(
+    !m.rows.some((r) => r.tombstoned),
+    "no-query browse shows only live claims",
+  );
   for (const r of m.rows) {
     assert.equal(typeof r.val, "number");
     assert.equal(typeof r.fresh, "number");
@@ -325,14 +392,27 @@ test("radarData: reads the cache, tolerates shape drift, degrades when absent", 
   const root = tmp();
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(join(root, ".forge", "radar.json"), "{ not json");
-  assert.equal(radarData(root).present, false, "unparseable cache → empty panel");
+  assert.equal(
+    radarData(root).present,
+    false,
+    "unparseable cache → empty panel",
+  );
 
   writeFileSync(
     join(root, ".forge", "radar.json"),
     JSON.stringify({
       t: 1700000000000,
       deps: {
-        left: { ring: "hold", score: 0.9, version: "1.0.0", latest: "3.0.0" },
+        // real radar.js shape: `installed` + `reasons`, not `version`/`evidence`
+        left: {
+          ring: "hold",
+          score: 0.9,
+          installed: "1.0.0",
+          latest: "3.0.0",
+          reasons: ["marked deprecated by its maintainer"],
+        },
+        // legacy shape still tolerated
+        old: { ring: "trial", score: 0.4, version: "2.0.0", latest: "2.5.0" },
         mid: { ring: "trial", score: 0.4 },
         weird: { ring: "??", score: "nope" }, // drift: bad ring, non-numeric score
       },
@@ -340,10 +420,22 @@ test("radarData: reads the cache, tolerates shape drift, degrades when absent", 
   );
   const r = radarData(root);
   assert.equal(r.present, true);
-  assert.equal(r.deps.length, 3);
+  assert.equal(r.deps.length, 4);
   assert.equal(r.deps[0].ring, "hold", "hold sorts first");
+  assert.equal(
+    r.deps[0].version,
+    "1.0.0",
+    "version reads radar's `installed` field",
+  );
+  assert.deepEqual(
+    r.deps[0].reasons,
+    ["marked deprecated by its maintainer"],
+    "reasons carry radar's evidence strings",
+  );
+  const old = r.deps.find((d) => d.name === "old");
+  assert.equal(old.version, "2.0.0", "legacy `version` field still tolerated");
   assert.equal(r.counts.hold, 1);
-  assert.equal(r.counts.trial, 1);
+  assert.equal(r.counts.trial, 2);
   assert.equal(r.counts.assess, 1, "drifted ring falls back to assess");
   const weird = r.deps.find((d) => d.name === "weird");
   assert.equal(weird.score, null, "non-numeric score → null, never NaN");
@@ -354,7 +446,9 @@ test("timelineData: durable mint + tombstone events, newest first", () => {
   const t = timelineData(root);
   assert.ok(t.events.length >= 4, "3 mints + 1 tombstone");
   assert.ok(
-    t.events.some((e) => e.type === "retract" && e.id8 === retracted.id.slice(0, 8)),
+    t.events.some(
+      (e) => e.type === "retract" && e.id8 === retracted.id.slice(0, 8),
+    ),
     "the tombstone shows as a retract event",
   );
   for (let i = 1; i < t.events.length; i++)
