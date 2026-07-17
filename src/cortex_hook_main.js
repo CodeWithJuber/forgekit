@@ -37,7 +37,19 @@ async function enrichCreated(root, results) {
       context: lesson.trigger,
       signals: lesson.provenance?.signals ?? [],
     });
-    if (better) applyDistillation(root, r.id, better);
+    if (!better) continue;
+    applyDistillation(root, r.id, better);
+    // A7 auto-routing: a distilled lesson whose prose reads like a settled decision or
+    // a durable repo fact ALSO lands in that home (decisions.md / ledger) — confidently
+    // (≥0.5) routed knowledge reaches the shelf the next session actually reads.
+    // Fail-open like everything in this file: routing must never break the distill loop.
+    try {
+      const { routeFact, storeFact } = await import("./knowledge_router.js");
+      const text = `${better.correctedBehavior} — ${better.whatWentWrong}`;
+      const route = routeFact(text);
+      if ((route.home === "decision" || route.home === "ledger-fact") && route.confidence >= 0.5)
+        storeFact(root, text, { route });
+    } catch {}
   }
 }
 

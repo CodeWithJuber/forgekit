@@ -1339,6 +1339,45 @@ async function run(argv) {
     console.log(`  recorded ${r.id}: ${r.text}`);
     return;
   }
+  if (cmd === "know") {
+    // A7 knowledge-router: total routing (T6) of a fact to its storage home — an unsure
+    // fact still lands (ledger fallback), it is never dropped.
+    const { HOMES, routeFact, storeFact } = await import("./knowledge_router.js");
+    const json = argv.includes("--json");
+    const dry = argv.includes("--dry-run");
+    const text = argv
+      .slice(1)
+      .filter((a) => a !== "--json" && a !== "--dry-run")
+      .join(" ");
+    if (!text) {
+      console.error(`usage: ${BRAND.cli} know "<fact>" [--dry-run] [--json]`);
+      process.exitCode = 1;
+      return;
+    }
+    const route = routeFact(text);
+    const r = storeFact(process.cwd(), text, {
+      mode: dry ? "advise" : "auto",
+      route,
+    });
+    if (json) return console.log(JSON.stringify({ ...route, ...r, dryRun: dry }, null, 2));
+    heading(`${BRAND.brand} know — knowledge routing (A7)\n`);
+    const why =
+      route.provenance === "fallback"
+        ? "fallback — resembles no exemplar; the ledger absorbs unsure placements"
+        : `confidence ${route.confidence}`;
+    console.log(`  home:     ${route.home} (${why}) → ${HOMES[route.home].where}`);
+    const near = route.neighbors[0];
+    if (near) console.log(`  nearest:  "${near.text}" (${near.sim.toFixed(3)})`);
+    if (!r.ok) {
+      console.error(`  ${r.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (r.stored) console.log(`  stored:   ${r.ref}`);
+    else if (dry) console.log("  (dry-run — nothing written)");
+    if (r.advice) console.log(`  advice:   ${r.advice}`);
+    return;
+  }
   if (cmd === "diagnose") {
     const { diagnose, THRASH_K } = await import("./diagnose.js");
     const json = argv.includes("--json");

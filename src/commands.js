@@ -33,6 +33,7 @@ export const COMMANDS = {
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
   decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
+  know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
   diagnose:
     "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
   imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
@@ -46,7 +47,7 @@ export const COMMANDS = {
 
 export const GROUPS = {
   Core: ["init", "sync", "doctor", "catalog", "docs", "update"],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse", "handoff", "decide"],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "reuse", "handoff", "decide", "know"],
   Substrate: [
     "substrate",
     "preflight",

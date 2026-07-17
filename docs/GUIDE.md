@@ -28,7 +28,7 @@ Every command is real and wired. Grouped by what it does:
 | Group                        | Commands                                                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Config / cross-tool sync** | `forge init` · `forge sync` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                           |
-| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide`                                     |
+| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
 | **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
 | **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
 | **Verification & safety**    | `forge verify` · `forge scan` · `forge spec`                                                                                                                               |
@@ -354,6 +354,31 @@ nothing durable recorded the choice. `forge decide` appends one ADR-lite line to
 `decision` claim in the ledger. Bare `forge decide` lists the last ten. Append-only by
 design: a decision that stops being true gets a _new_ entry, never an edit — the log is
 history, and `forge docs sync` exempts it for exactly that reason.
+
+### `forge know "<fact>"` — route any fact to its storage home
+
+The substrate has several memory shelves (decisions, ledger facts, personal recall,
+handoff state, contributor rules…) and the routing discipline used to be prose — exactly
+what sessions forget, so knowledge landed nowhere and was re-learned. `forge know` makes
+the routing a function, and a **total** one (formal-synthesis Theorem T6): the same
+exemplar k-NN as `forge route`/intent classification picks the home, and a fact that
+resembles nothing in the bank falls back to the ledger (where unverified claims decay
+toward _unsure_) — it is never dropped.
+
+```console
+$ forge know "we chose sqlite over postgres because zero ops"
+  home:     decision (confidence 0.667) → .forge/decisions.md + ledger
+  nearest:  "we chose sqlite over postgres because zero ops" (0.667)
+  stored:   D-0008
+```
+
+Append-only homes (`decision`, `ledger-fact`, `recall`) are written directly; curated
+files (`claude-md`, `rule`, `skill`, `state`) get advice naming the right command instead
+of a blind write — routing to `state`, for example, points at `forge handoff`. `--dry-run`
+routes without writing anything; `--json` for tooling. Secrets are refused before any
+dispatch, like every forge store. With `ENABLE_CORTEX_DISTILL=1`, distilled Cortex lessons
+that read like decisions or durable facts are auto-routed to those homes too (fail-open,
+best-effort).
 
 ### `forge docs sync` — which prose did this diff make stale?
 

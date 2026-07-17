@@ -192,6 +192,7 @@ forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
 |                            | `forge reuse`     | proof-carrying code cache — query / mint / stats                                                                   |
 |                            | `forge handoff`   | bounded session snapshot (`.forge/state.md`) — rewritten each handoff, re-injected every session start             |
 |                            | `forge decide`    | append-only decision log (`.forge/decisions.md`, D-#### ADR-lite) — future sessions read it instead of re-deciding |
+|                            | `forge know`      | route any fact to its storage home (decision / ledger / recall / …) — total routing, an unsure fact still lands    |
 | **Substrate (pre-action)** | `forge substrate` | the full pre-action gate in one pass                                                                               |
 |                            | `forge preflight` | assumption / info-gap check                                                                                        |
 |                            | `forge route`     | cheapest capable model tier (`route gateway` emits LiteLLM config)                                                 |

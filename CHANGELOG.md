@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge know` — the A7 knowledge-router.** Total routing (formal-synthesis
+  Theorem T6) of any fact to its storage home: exemplar k-NN over a labeled bank
+  (`src/knowledge_router.js`) picks among claude-md / rule / skill / state /
+  decision / ledger-fact / recall; below-confidence facts fall back to the ledger
+  (provenance `fallback`) instead of being dropped. Append-only homes are written
+  directly (decide log, repo-ledger fact claim, personal recall store), curated
+  files get advice naming the right command, secrets are refused before dispatch,
+  and `--dry-run`/`--json` route without writing. Distilled Cortex lessons that
+  read like decisions or durable facts auto-route to those homes (fail-open).
+
 ## [0.19.0] - 2026-07-17
 
 ### Added
