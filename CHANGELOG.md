@@ -47,6 +47,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   .forge/ yet — run `forge sync`, then work a session") plus a `?` legend that
   explains what every panel means in one sentence. Display-only — the append-only
   ratify/retract writes are unchanged.
+- **Web session-start install hook.** `.claude/hooks/session-start.sh` (wired into the
+  repo's `SessionStart` hooks alongside the existing recall/cortex context hooks) makes
+  Claude Code on the web ready to lint and test: synchronous, idempotent, gated on
+  `CLAUDE_CODE_REMOTE=true` (a no-op locally), and it skips the install entirely when the
+  dev toolchain is already resolvable.
 
 ## [0.20.0] - 2026-07-17
 
