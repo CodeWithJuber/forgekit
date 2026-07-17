@@ -5,6 +5,9 @@ import { BRAND } from "./brand.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
 // README/GUIDE tables against the same table this help is rendered from.
 import { COMMANDS, GROUPS } from "./commands.js";
+// Color is capability-gated (FORCE_COLOR > NO_COLOR > TERM=dumb > TTY) — piped
+// output stays byte-plain, so nothing downstream ever parses an escape code.
+import { bar, heading as fmtHeading, paint } from "./fmt.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
@@ -13,7 +16,7 @@ const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.v
 // just its output. The `--help`/`--version` banner is unaffected.
 const VERBOSE = process.argv.includes("--verbose") || process.env.FORGE_VERBOSE === "1";
 const heading = (text) => {
-  if (VERBOSE) console.log(text);
+  if (VERBOSE) console.log(fmtHeading(text));
 };
 
 function printHelp() {
@@ -189,10 +192,16 @@ async function run(argv) {
       if (failed) process.exitCode = 1;
       return;
     }
-    const icon = { ok: "✓", warn: "!", fail: "✗" };
+    const icon = {
+      ok: paint("✓", "ok"),
+      warn: paint("!", "warn"),
+      fail: paint("✗", "err"),
+    };
     heading(`${BRAND.brand} doctor\n`);
     for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
-    console.log(`\n${failed === 0 ? "all clear" : `${failed} problem(s)`}`);
+    console.log(
+      `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
+    );
     if (failed) process.exitCode = 1;
     return;
   }
@@ -300,9 +309,11 @@ async function run(argv) {
       console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
       for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
       console.log(
-        `  val: trusted ${s.val.trusted} · uncertain ${s.val.uncertain} · dormant ${s.val.dormant}`,
+        `  val: ${paint(`trusted ${s.val.trusted}`, "ok")} · ${paint(`uncertain ${s.val.uncertain}`, "warn")} · ${paint(`dormant ${s.val.dormant}`, "dim")}`,
       );
-      console.log("\n  stored in .forge/ledger/ (git-committable, conflict-free merge)");
+      console.log(
+        paint("\n  stored in .forge/ledger/ (git-committable, conflict-free merge)", "dim"),
+      );
       return;
     }
     if (sub === "verify") {
@@ -354,17 +365,21 @@ async function run(argv) {
       }
       if (json) return console.log(JSON.stringify(b, null, 2));
       heading(`${BRAND.brand} ledger blame — ${b.kind} ${b.id.slice(0, 12)}\n`);
-      console.log(`  val ${b.val.toFixed(2)} (trust-weighted ${b.valTrustWeighted.toFixed(2)})`);
+      console.log(
+        `  val ${bar(b.val)} ${b.val.toFixed(2)} (trust-weighted ${b.valTrustWeighted.toFixed(2)})`,
+      );
       for (const p of b.minted)
         console.log(
           `  minted  day ${p.t}  by ${p.author || "(unknown)"}${p.agent ? ` · ${p.agent}` : ""}`,
         );
       for (const e of b.evidence)
         console.log(
-          `  ${e.result === "confirm" ? "confirm " : "contradic"}  day ${e.t}  ${e.oracle} → ${e.ref}${e.author ? `  by ${e.author}` : ""}`,
+          `  ${e.result === "confirm" ? paint("confirm ", "ok") : paint("contradic", "err")}  day ${e.t}  ${e.oracle} → ${e.ref}${e.author ? `  by ${e.author}` : ""}`,
         );
       for (const t of b.tombstones)
-        console.log(`  retract  day ${t.t}  ${t.reason}${t.author ? `  by ${t.author}` : ""}`);
+        console.log(
+          paint(`  retract  day ${t.t}  ${t.reason}${t.author ? `  by ${t.author}` : ""}`, "dim"),
+        );
       const trusts = Object.entries(b.trust);
       if (trusts.length) {
         console.log("\n  author trust (earned from oracle outcomes on their claims):");
@@ -455,11 +470,11 @@ async function run(argv) {
             2,
           ),
         );
-      console.log(`  sim: ${simLabel(sim)}`);
+      console.log(paint(`  sim: ${simLabel(sim)}`, "dim"));
       if (!ranked.length) return console.log("  no matching live claims");
       for (const r of ranked)
         console.log(
-          `  ${r.score.toFixed(3)}  ${r.claim.kind.padEnd(9)} ${r.claim.id.slice(0, 8)}  ${claimText(r.claim).slice(0, 90)}`,
+          `  ${bar(r.score, 8)} ${r.score.toFixed(3)}  ${paint(r.claim.kind.padEnd(9), "accent")} ${paint(r.claim.id.slice(0, 8), "dim")}  ${claimText(r.claim).slice(0, 90)}`,
         );
       return;
     }
@@ -804,7 +819,7 @@ async function run(argv) {
               `    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`,
             );
         }
-        console.log("\n  install ccusage for precise tracking: npm i -g ccusage");
+        console.log(paint("\n  install ccusage for precise tracking: npm i -g ccusage", "dim"));
       } else {
         console.log(
           "  ccusage not found. Install for real spend (reads local JSONL, nothing leaves your machine):\n    npm i -g ccusage    # then: forge cost",
@@ -812,7 +827,10 @@ async function run(argv) {
       }
     }
     console.log(
-      `\n  ceiling: FORGE_COST_CEILING (default $10) — the cost-budget guard warns when a day exceeds it.`,
+      paint(
+        `\n  ceiling: FORGE_COST_CEILING (default $10) — the cost-budget guard warns when a day exceeds it.`,
+        "dim",
+      ),
     );
     return;
   }
@@ -887,11 +905,12 @@ async function run(argv) {
     );
     if (s.topActive.length) {
       console.log("\n  top active (by confidence):");
-      for (const t of s.topActive) console.log(`    ${t.confidence.toFixed(2)}  ${t.id}`);
+      for (const t of s.topActive)
+        console.log(`    ${bar(t.confidence, 8)} ${t.confidence.toFixed(2)}  ${t.id}`);
     } else {
       console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
     }
-    console.log("\n  stored in .forge/lessons/ (git-committable, auditable)");
+    console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
     return;
   }
   if (cmd === "preflight") {
@@ -1187,11 +1206,11 @@ async function run(argv) {
     } else {
       heading(`${BRAND.brand} route — cheapest capable model\n`);
       console.log(
-        `  → ${rec.model.name}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
+        `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${rec.model.inCost}/$${rec.model.outCost} per M tok)`,
       );
       console.log(`    ${rec.model.use}`);
       console.log(
-        `    complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
+        `    complexity ${bar(rec.score, 8)} ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
       );
       console.log(
         `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,

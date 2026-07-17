@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Color-aware CLI output.** New zero-dep `src/fmt.js`: `supportsColor` honoring the
+  `FORCE_COLOR` > `NO_COLOR` > `TERM=dumb` > TTY precedence, brand-token painting
+  (24-bit from `brand.json` when `COLORTERM` declares truecolor, portable 16-color
+  fallback otherwise), visible-width-aligned `table`, and `bar` confidence meters —
+  adopted across `ledger` (stats/blame/query), `cortex`, `route`, `doctor`, and
+  `cost` output plus the `--verbose` title line. Piped output stays escape-free.
+
 ### Fixed
 
 - **Research crosswalk reconciled with the code.** The formal-synthesis paper's

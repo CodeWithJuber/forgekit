@@ -169,6 +169,10 @@ Advisory by default. Set `FORGE_ENFORCE=1` to turn the substrate into a hard blo
 strongest signals (vacuous prompt, un-assemblable required context, blast radius over the
 default 25-file threshold).
 
+Output is plain text when piped; on a TTY it adds brand-palette color and confidence
+meters. `NO_COLOR` turns color off, `FORCE_COLOR=1` forces it on (e.g. in CI, `0`
+forces off), and `TERM`/`COLORTERM` follow the usual terminal conventions.
+
 | Group                      | Command           | Does                                                                                                               |
 | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **Config layer**           | `forge init`      | emit every tool's native config from one source                                                                    |

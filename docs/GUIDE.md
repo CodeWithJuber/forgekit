@@ -1075,6 +1075,9 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                               |
 | `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                 |
 | `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                |
+| `NO_COLOR`                                                     | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention       |
+| `FORCE_COLOR`                                                  | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR`           |
+| `TERM` / `COLORTERM`                                           | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues         |
 | `FORGE_NO_UPDATE_CHECK`                                        | `1` silences the `forge doctor` update notice                                                                 |
 | `FORGE_DEBUG`                                                  | `1` writes fail-safe error details to stderr instead of swallowing them                                       |
 
