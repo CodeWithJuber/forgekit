@@ -36,6 +36,24 @@ test("re-running is idempotent (nothing rewritten)", () => {
   assert.equal(written.length, 0, `second sync wrote ${written.map((r) => r.target)}`);
 });
 
+test("a hand-edited managed body (marker intact) is detected and restored", () => {
+  const root = fixture();
+  sync({ targetRoot: root });
+  const agents = join(root, "AGENTS.md");
+  const original = readFileSync(agents, "utf8");
+  // Tamper with the body but keep the forge:sync marker line untouched.
+  const tampered = original.replace(/## Workflow/, "## Workflow\n- SNEAKY injected rule");
+  assert.notEqual(tampered, original, "tampering changed the body");
+  writeFileSync(agents, tampered);
+  const second = sync({ targetRoot: root });
+  const wrote = second.report.filter((r) => r.action === "written").map((r) => r.target);
+  assert.ok(
+    wrote.some((t) => t.includes("AGENTS.md")),
+    "sync must rewrite a body-edited AGENTS.md, not trust the intact marker",
+  );
+  assert.equal(readFileSync(agents, "utf8"), original, "canonical body restored");
+});
+
 test("adopts an existing unmanaged CLAUDE.md: prepends @AGENTS.md, preserves content, idempotent", () => {
   const root = fixture();
   writeFileSync(join(root, "CLAUDE.md"), "# my own claude file\nkeep me\n");

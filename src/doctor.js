@@ -7,7 +7,7 @@ import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
-import { extractHash, hashContent } from "./emit/_shared.js";
+import { hashContent, mdHeader } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
@@ -237,10 +237,15 @@ function checkDrift(out, targetRoot) {
     out.push(warn("AGENTS.md", "not emitted here — run `forge sync`"));
     return;
   }
-  const current = hashContent(canonical(targetRoot));
-  const onDisk = extractHash(readFileSync(agents, "utf8"));
+  // Compare the actual file to the full expected content, not just the embedded marker —
+  // a hand-edited body with an intact marker would otherwise report "in sync" (P0-08).
+  const body = canonical(targetRoot);
+  const expected = `${mdHeader(hashContent(body))}\n${body}\n`;
+  const actual = readFileSync(agents, "utf8");
   out.push(
-    current === onDisk ? ok("AGENTS.md", "in sync") : warn("AGENTS.md", "stale — run `forge sync`"),
+    actual === expected
+      ? ok("AGENTS.md", "in sync")
+      : warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
   );
 }
 

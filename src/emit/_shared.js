@@ -26,10 +26,12 @@ export function extractHash(text) {
   return m ? m[1] : null;
 }
 
-// Write only when the content's marker differs from what's on disk.
+// Write only when the file BODY differs from what's on disk. Comparing the full expected
+// content (not just the embedded marker hash) means a hand-edited body with an intact marker
+// is detected and restored — the marker alone can't be trusted as proof of sync (P0-08).
 export function writeIfChanged(absPath, content) {
   const existing = readIfExists(absPath);
-  if (existing !== null && extractHash(existing) === extractHash(content)) return "unchanged";
+  if (existing === content) return "unchanged";
   mkdirSync(dirname(absPath), { recursive: true });
   writeFileSync(absPath, content);
   return "written";

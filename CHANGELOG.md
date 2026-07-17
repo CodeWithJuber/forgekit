@@ -23,6 +23,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (e.g. `cat .env`, `git show HEAD:.env`). Secret redaction is reimplemented in Node
   (`secret-redact.mjs`) with no `jq` dependency and prints a visible DEGRADED warning
   rather than silently no-op'ing; `forge doctor` treats missing `node` as a failure.
+- **Managed-file integrity.** `writeIfChanged` and `forge doctor` now compare the full
+  file body against the canonical source instead of trusting the embedded `forge:sync`
+  marker, so a hand-edited managed file (`AGENTS.md`, etc.) with an intact marker is
+  detected and restored on `forge sync` (P0-08).
 
 ## [0.20.0] - 2026-07-17
 
