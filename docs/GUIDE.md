@@ -902,8 +902,12 @@ Forge uicheck interact — browser interaction checks
 
 A read-only lens over `.forge/` — stdlib `node:http`, localhost-only, one
 self-contained HTML page (no CDN, no build step). Panels: Ledger (claims with val bars,
-contested claims, per-author trust), Cost/Cache (measured stage counters), and Impact
-(blast-radius explorer). Every claim row shows its `forge ledger blame` command.
+contested claims, per-author trust), Cost/Cache (measured stage counters), Impact
+(blast-radius explorer), Radar (dependency-currency rings read from the `.forge/radar.json`
+cache), Trends (per-stage metrics history as inline-SVG sparklines), Memory browser
+(ranked recall search over the ledger with confidence + freshness bars), and Session
+timeline (durable mint/tombstone events across sessions). The page live-refreshes every 5s,
+paused while the tab is hidden. Every claim row shows its `forge ledger blame` command.
 
 ```console
 $ forge dash

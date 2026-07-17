@@ -71,6 +71,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pre-action substrate shows a one-line "déjà vu" advisory when a prompt matches prior
   solved work. Kill switch `FORGE_DEJA=0`. Because summaries are ordinary ledger claims,
   `forge ledger merge` carries them between machines.
+- **Dashboard v2 (`forge dash`).** The localhost lens gains four panels over the
+  durable `.forge/` stores plus live refresh: Radar (dependency-currency rings read
+  from the `.forge/radar.json` cache — never fetches), Trends (per-stage
+  `metrics.jsonl` history bucketed by day as inline-SVG sparklines, 90-day window),
+  Memory browser (ranked recall search over the ledger via `retrieve`, with
+  confidence and freshness bars), and Session timeline (durable mint/tombstone events
+  across sessions). New read-only endpoints `GET /api/history`, `/api/claims?q=&kind=`,
+  `/api/radar`, and `/api/timeline`; the page polls every 5s, paused while the tab is
+  hidden. The append-only write discipline (only `POST /api/ratify` and `/api/retract`)
+  is unchanged, and corrupt or missing stores degrade to empty sections.
 
 ## [0.19.0] - 2026-07-17
 

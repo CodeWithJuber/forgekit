@@ -47,7 +47,7 @@ export const COMMANDS = {
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
   uicheck:
     "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
-  dash: "local dashboard over the ledger, metrics, and blast radius",
+  dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
 };

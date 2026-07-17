@@ -1,403 +1,1147 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>forge dash</title>
-<style>
-  /* Taste discipline (07-ui-quality-gate.md): ONE accent (forge ember, the brand's
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>forge dash</title>
+    <style>
+      /* Taste discipline (07-ui-quality-gate.md): ONE accent (forge ember, the brand's
      own — not framework blue), a 4px-based spacing scale, exactly two radius levels,
      system sans + one mono. Palette matches the landing page = close to home. */
-  :root {
-    --bg: #171310;
-    --panel: #201a15;
-    --panel-2: #272019;
-    --line: #372c22;
-    --fg: #f2ede7;
-    --muted: #a99e90;
-    --faint: #7d7263;
-    --ember: #f26430;
-    --ember-wash: rgba(242, 100, 48, 0.14);
-    --r-s: 4px;   /* radius level 1: chips, bars, inputs */
-    --r-m: 10px;  /* radius level 2: panels */
-    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--fg);
-    font: 13px/1.55 var(--sans);
-    -webkit-font-smoothing: antialiased;
-  }
-  .mono { font-family: var(--mono); }
-  .muted { color: var(--muted); }
-  .faint { color: var(--faint); }
+      :root {
+        --bg: #171310;
+        --panel: #201a15;
+        --panel-2: #272019;
+        --line: #372c22;
+        --fg: #f2ede7;
+        --muted: #a99e90;
+        --faint: #7d7263;
+        --ember: #f26430;
+        --ember-wash: rgba(242, 100, 48, 0.14);
+        --r-s: 4px; /* radius level 1: chips, bars, inputs */
+        --r-m: 10px; /* radius level 2: panels */
+        --s1: 4px;
+        --s2: 8px;
+        --s3: 12px;
+        --s4: 16px;
+        --s6: 24px;
+        --s8: 32px;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.55 var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .faint {
+        color: var(--faint);
+      }
 
-  header {
-    position: sticky; top: 0; z-index: 5;
-    display: flex; align-items: center; gap: var(--s3);
-    padding: var(--s3) var(--s6);
-    background: rgba(23, 19, 16, 0.85); backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--line);
-  }
-  .spark {
-    width: 8px; height: 8px; border-radius: var(--r-s);
-    background: var(--ember);
-  }
-  .brand { font-family: var(--mono); font-size: 13px; letter-spacing: 0.02em; }
-  .brand b { color: var(--ember); font-weight: 600; }
-  #hdr-meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-  button {
-    font: 12px var(--mono); color: var(--fg); cursor: pointer;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-s);
-    padding: var(--s1) var(--s3);
-  }
-  button:hover { border-color: var(--ember); color: var(--ember); }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: var(--s3);
+        padding: var(--s3) var(--s6);
+        background: rgba(23, 19, 16, 0.85);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--line);
+      }
+      .spark {
+        width: 8px;
+        height: 8px;
+        border-radius: var(--r-s);
+        background: var(--ember);
+      }
+      .brand {
+        font-family: var(--mono);
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+      .brand b {
+        color: var(--ember);
+        font-weight: 600;
+      }
+      #hdr-meta {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      button {
+        font: 12px var(--mono);
+        color: var(--fg);
+        cursor: pointer;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: var(--s1) var(--s3);
+      }
+      button:hover {
+        border-color: var(--ember);
+        color: var(--ember);
+      }
 
-  main {
-    max-width: 1180px; margin: 0 auto; padding: var(--s6);
-    display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4);
-  }
-  .panel {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m);
-    padding: var(--s4); min-width: 0;
-  }
-  .panel.wide { grid-column: 1 / -1; }
-  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
-  .panel h2 {
-    margin: 0 0 var(--s3); font: 600 11px var(--mono);
-    text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted);
-  }
-  .panel h2 .cmd { text-transform: none; letter-spacing: 0; color: var(--faint); float: right; }
-  h3 {
-    margin: var(--s6) 0 var(--s2); font: 600 11px var(--mono);
-    letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase;
-  }
-  .empty { color: var(--faint); font-family: var(--mono); font-size: 12px; padding: var(--s2) 0; }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: var(--s6);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--s4);
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--r-m);
+        padding: var(--s4);
+        min-width: 0;
+      }
+      .panel.wide {
+        grid-column: 1 / -1;
+      }
+      @media (max-width: 880px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      .panel h2 {
+        margin: 0 0 var(--s3);
+        font: 600 11px var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+      }
+      .panel h2 .cmd {
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--faint);
+        float: right;
+      }
+      h3 {
+        margin: var(--s6) 0 var(--s2);
+        font: 600 11px var(--mono);
+        letter-spacing: 0.08em;
+        color: var(--faint);
+        text-transform: uppercase;
+      }
+      .empty {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: var(--s2) 0;
+      }
 
-  /* stat tiles */
-  .stats { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s3); }
-  .stat {
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-s);
-    padding: var(--s2) var(--s3); min-width: 84px;
-  }
-  .stat .n { font: 600 18px var(--mono); display: block; }
-  .stat .n.ember { color: var(--ember); }
-  .stat .l { font-size: 11px; color: var(--faint); }
+      /* stat tiles */
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--s2);
+        margin-bottom: var(--s3);
+      }
+      .stat {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: var(--s2) var(--s3);
+        min-width: 84px;
+      }
+      .stat .n {
+        font: 600 18px var(--mono);
+        display: block;
+      }
+      .stat .n.ember {
+        color: var(--ember);
+      }
+      .stat .l {
+        font-size: 11px;
+        color: var(--faint);
+      }
 
-  /* tables */
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th {
-    text-align: left; font: 600 10px var(--mono); text-transform: uppercase;
-    letter-spacing: 0.1em; color: var(--faint);
-    padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line);
-  }
-  td { padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); vertical-align: top; }
-  tr:last-child td { border-bottom: 0; }
-  tr.tomb td { opacity: 0.45; }
-  tr.tomb .text { text-decoration: line-through; }
-  td.num { font-family: var(--mono); text-align: right; }
-  .tag {
-    font: 11px var(--mono); color: var(--muted);
-    background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: var(--r-s); padding: 0 var(--s1);
-    display: inline-block; white-space: nowrap;
-  }
-  .tag.contested { color: var(--ember); border-color: var(--ember); background: var(--ember-wash); }
+      /* tables */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th {
+        text-align: left;
+        font: 600 10px var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--faint);
+        padding: var(--s1) var(--s2);
+        border-bottom: 1px solid var(--line);
+      }
+      td {
+        padding: var(--s1) var(--s2);
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      tr.tomb td {
+        opacity: 0.45;
+      }
+      tr.tomb .text {
+        text-decoration: line-through;
+      }
+      td.num {
+        font-family: var(--mono);
+        text-align: right;
+      }
+      .tag {
+        font: 11px var(--mono);
+        color: var(--muted);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: 0 var(--s1);
+        display: inline-block;
+        white-space: nowrap;
+      }
+      .tag.contested {
+        color: var(--ember);
+        border-color: var(--ember);
+        background: var(--ember-wash);
+      }
 
-  /* val / trust / confidence bars — width IS the number; label repeats it */
-  .bar {
-    display: inline-block; width: 64px; height: 6px; vertical-align: middle;
-    background: var(--panel-2); border-radius: var(--r-s); overflow: hidden; margin-right: var(--s2);
-  }
-  .bar i { display: block; height: 100%; background: var(--ember); border-radius: var(--r-s); }
-  .bar.dim i { background: var(--faint); }
-  .barnum { font-family: var(--mono); font-size: 11px; }
+      /* val / trust / confidence bars — width IS the number; label repeats it */
+      .bar {
+        display: inline-block;
+        width: 64px;
+        height: 6px;
+        vertical-align: middle;
+        background: var(--panel-2);
+        border-radius: var(--r-s);
+        overflow: hidden;
+        margin-right: var(--s2);
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        background: var(--ember);
+        border-radius: var(--r-s);
+      }
+      .bar.dim i {
+        background: var(--faint);
+      }
+      .barnum {
+        font-family: var(--mono);
+        font-size: 11px;
+      }
 
-  /* the provenance affordance: every number traces to a blame command */
-  .blame {
-    font: 11px var(--mono); color: var(--faint); cursor: copy; white-space: nowrap;
-  }
-  .blame:hover { color: var(--ember); }
-  .blame.copied { color: var(--ember); }
+      /* the provenance affordance: every number traces to a blame command */
+      .blame {
+        font: 11px var(--mono);
+        color: var(--faint);
+        cursor: copy;
+        white-space: nowrap;
+      }
+      .blame:hover {
+        color: var(--ember);
+      }
+      .blame.copied {
+        color: var(--ember);
+      }
 
-  /* the two writes (spec §2): small per-row actions, append-only on the server */
-  .act {
-    font: 11px var(--mono); color: var(--faint); cursor: pointer;
-    border: 1px solid var(--line); border-radius: var(--r-s);
-    padding: 0 var(--s1); white-space: nowrap; display: inline-block;
-  }
-  .act:hover { color: var(--ember); border-color: var(--ember); background: var(--ember-wash); }
-  td.acts { white-space: nowrap; }
+      /* the two writes (spec §2): small per-row actions, append-only on the server */
+      .act {
+        font: 11px var(--mono);
+        color: var(--faint);
+        cursor: pointer;
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: 0 var(--s1);
+        white-space: nowrap;
+        display: inline-block;
+      }
+      .act:hover {
+        color: var(--ember);
+        border-color: var(--ember);
+        background: var(--ember-wash);
+      }
+      td.acts {
+        white-space: nowrap;
+      }
 
-  select, input[type="text"] {
-    font: 12px var(--mono); color: var(--fg);
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-s);
-    padding: var(--s1) var(--s2);
-  }
-  input[type="text"]:focus, select:focus { outline: none; border-color: var(--ember); }
-  .toolbar { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); flex-wrap: wrap; }
-  .toolbar .grow { flex: 1; }
+      select,
+      input[type="text"] {
+        font: 12px var(--mono);
+        color: var(--fg);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: var(--s1) var(--s2);
+      }
+      input[type="text"]:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--ember);
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+        margin-bottom: var(--s3);
+        flex-wrap: wrap;
+      }
+      .toolbar .grow {
+        flex: 1;
+      }
 
-  .log { font: 11px/1.7 var(--mono); color: var(--muted); margin: 0; padding: 0; list-style: none; }
-  .log .st { color: var(--fg); }
-  .log .plus { color: var(--ember); }
-  footer {
-    max-width: 1180px; margin: 0 auto; padding: 0 var(--s6) var(--s8);
-    font: 11px var(--mono); color: var(--faint);
-  }
-</style>
-</head>
-<body>
-  <header>
-    <span class="spark"></span>
-    <span class="brand"><b>forge</b> dash <span id="hdr-repo" class="muted"></span></span>
-    <span id="hdr-meta"></span>
-    <button id="refresh" type="button">refresh</button>
-  </header>
+      .log {
+        font: 11px/1.7 var(--mono);
+        color: var(--muted);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .log .st {
+        color: var(--fg);
+      }
+      .log .plus {
+        color: var(--ember);
+      }
 
-  <main>
-    <section class="panel wide" id="ledger-panel">
-      <h2>Ledger — proof-carrying memory <span class="cmd">.forge/ledger/</span></h2>
-      <div class="stats" id="ledger-stats"></div>
-      <div class="toolbar">
-        <label class="faint mono" for="kind-filter">kind</label>
-        <select id="kind-filter"><option value="">all</option></select>
-        <span class="grow"></span>
-        <span id="claim-count" class="mono faint"></span>
-      </div>
-      <div id="claims"></div>
-      <h3>Contested — val ∈ [0.40, 0.60] with ≥1 contradiction</h3>
-      <div id="contested"></div>
-      <h3>Author trust — earned from oracle outcomes, floored at 0.50</h3>
-      <div id="trust"></div>
-    </section>
+      /* dash v2: sparklines, radar rings, timeline */
+      .spark-svg {
+        display: block;
+        width: 100%;
+        height: 28px;
+      }
+      .trend {
+        display: grid;
+        grid-template-columns: 96px 1fr auto;
+        align-items: center;
+        gap: var(--s3);
+        padding: var(--s1) 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .trend:last-child {
+        border-bottom: 0;
+      }
+      .trend .lbl {
+        font: 11px var(--mono);
+        color: var(--muted);
+      }
+      .trend .n {
+        font: 11px var(--mono);
+        color: var(--faint);
+        text-align: right;
+        white-space: nowrap;
+      }
 
-    <section class="panel" id="cost-panel">
-      <h2>Cost / Cache — measured, not asserted <span class="cmd">.forge/metrics.jsonl</span></h2>
-      <div class="stats" id="cost-stats"></div>
-      <div id="spend-section"></div>
-      <div id="stages"></div>
-      <h3>Recent events</h3>
-      <ul class="log" id="recent"></ul>
-    </section>
+      .rings {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--s2);
+        margin-bottom: var(--s3);
+      }
+      .ringcount {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--s1);
+        font: 11px var(--mono);
+        color: var(--muted);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: var(--r-s);
+        padding: var(--s1) var(--s2);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .dot.adopt {
+        background: #46b17a;
+      }
+      .dot.trial {
+        background: #d9a441;
+      }
+      .dot.assess {
+        background: var(--muted);
+      }
+      .dot.hold {
+        background: var(--ember);
+      }
+      td.ring {
+        white-space: nowrap;
+      }
 
-    <section class="panel" id="impact-panel">
-      <h2>Impact — blast radius <span class="cmd">.forge/atlas.json</span></h2>
-      <div class="toolbar">
-        <input type="text" id="impact-target" placeholder="symbol or file — e.g. dashData" style="flex:1" />
-        <button id="impact-go" type="button">trace</button>
-      </div>
-      <div id="impact-out" class="empty">pick a symbol to see what a change would touch</div>
-    </section>
-  </main>
+      .tl {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font: 11px/1.6 var(--mono);
+      }
+      .tl li {
+        display: grid;
+        grid-template-columns: 44px 60px 1fr;
+        gap: var(--s2);
+        padding: var(--s1) 0;
+        border-bottom: 1px solid var(--line);
+        align-items: baseline;
+      }
+      .tl li:last-child {
+        border-bottom: 0;
+      }
+      .tl .day {
+        color: var(--faint);
+      }
+      .tl .ev {
+        color: var(--muted);
+      }
+      .tl .ev.retract {
+        color: var(--ember);
+      }
+      .tl .txt {
+        color: var(--fg);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      footer {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 var(--s6) var(--s8);
+        font: 11px var(--mono);
+        color: var(--faint);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="spark"></span>
+      <span class="brand"
+        ><b>forge</b> dash <span id="hdr-repo" class="muted"></span
+      ></span>
+      <span id="hdr-meta"></span>
+      <button id="refresh" type="button">refresh</button>
+    </header>
 
-  <footer>lens on .forge/ — every number traces to <span class="mono">forge ledger blame &lt;id&gt;</span>. the only writes are ratify/retract (append-only; CLI twins: <span class="mono">forge ledger ratify|retract</span>).</footer>
+    <main>
+      <section class="panel wide" id="ledger-panel">
+        <h2>
+          Ledger — proof-carrying memory <span class="cmd">.forge/ledger/</span>
+        </h2>
+        <div class="stats" id="ledger-stats"></div>
+        <div class="toolbar">
+          <label class="faint mono" for="kind-filter">kind</label>
+          <select id="kind-filter">
+            <option value="">all</option>
+          </select>
+          <span class="grow"></span>
+          <span id="claim-count" class="mono faint"></span>
+        </div>
+        <div id="claims"></div>
+        <h3>Contested — val ∈ [0.40, 0.60] with ≥1 contradiction</h3>
+        <div id="contested"></div>
+        <h3>Author trust — earned from oracle outcomes, floored at 0.50</h3>
+        <div id="trust"></div>
+      </section>
 
-<script>
-"use strict";
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
-  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      <section class="panel" id="cost-panel">
+        <h2>
+          Cost / Cache — measured, not asserted
+          <span class="cmd">.forge/metrics.jsonl</span>
+        </h2>
+        <div class="stats" id="cost-stats"></div>
+        <div id="spend-section"></div>
+        <div id="stages"></div>
+        <h3>Recent events</h3>
+        <ul class="log" id="recent"></ul>
+      </section>
 
-const bar = (v, { dim = false } = {}) =>
-  '<span class="bar' + (dim ? " dim" : "") + '"><i style="width:' +
-  Math.round(Math.max(0, Math.min(1, v)) * 100) + '%"></i></span><span class="barnum">' +
-  v.toFixed(2) + "</span>";
+      <section class="panel" id="impact-panel">
+        <h2>
+          Impact — blast radius <span class="cmd">.forge/atlas.json</span>
+        </h2>
+        <div class="toolbar">
+          <input
+            type="text"
+            id="impact-target"
+            placeholder="symbol or file — e.g. dashData"
+            style="flex: 1"
+          />
+          <button id="impact-go" type="button">trace</button>
+        </div>
+        <div id="impact-out" class="empty">
+          pick a symbol to see what a change would touch
+        </div>
+      </section>
 
-// Every claim row carries its provenance affordance — click to copy the exact command.
-const blameCell = (id8) =>
-  `<td><span class="blame" data-id8="${esc(id8)}">forge ledger blame ${esc(id8)}</span></td>`;
+      <section class="panel" id="radar-panel">
+        <h2>
+          Radar — dependency currency <span class="cmd">forge radar</span>
+        </h2>
+        <div class="rings" id="radar-rings"></div>
+        <div id="radar-out" class="empty">
+          no radar cache yet — run: forge radar
+        </div>
+      </section>
 
-// The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
-// server stamps YOUR git identity as author); retract = tombstone with a reason.
-// A tombstoned row gets neither — retraction is already the terminal append.
-const actionsCell = (c) => c.tombstoned ? "<td></td>" :
-  '<td class="acts"><span class="act" data-act="ratify" data-id8="' + esc(c.id8) +
-  '" title="promote to hikma — mints a decision claim with you as author">ratify ▸</span> ' +
-  '<span class="act" data-act="retract" data-id8="' + esc(c.id8) +
-  '" title="tombstone this claim with a reason (append-only)">retract ✕</span></td>';
+      <section class="panel" id="history-panel">
+        <h2>
+          Trends — stage history <span class="cmd">.forge/metrics.jsonl</span>
+        </h2>
+        <div id="history-out" class="empty">
+          no metrics yet — stages append as you work
+        </div>
+      </section>
 
-const claimRows = (claims) => claims.map((c) =>
-  '<tr class="' + (c.tombstoned ? "tomb" : "") + '">' +
-  '<td class="mono faint">' + esc(c.id8) + "</td>" +
-  '<td><span class="tag">' + esc(c.kind) + "</span>" +
-  (c.tombstoned ? ' <span class="tag">retracted</span>' : "") + "</td>" +
-  "<td>" + bar(c.val, { dim: c.val < 0.35 }) + "</td>" +
-  '<td class="num">' + c.evidenceCount + "</td>" +
-  '<td class="muted">' + esc(c.author || "—") + "</td>" +
-  '<td class="text">' + esc(c.text) + "</td>" +
-  blameCell(c.id8) + actionsCell(c) + "</tr>").join("");
+      <section class="panel wide" id="memory-panel">
+        <h2>
+          Memory browser — ranked recall
+          <span class="cmd">forge deja "&lt;task&gt;"</span>
+        </h2>
+        <div class="toolbar">
+          <input
+            type="text"
+            id="mem-q"
+            class="grow"
+            placeholder="search claims — rel × freshness × val ranking"
+          />
+          <select id="mem-kind">
+            <option value="">all kinds</option>
+          </select>
+          <span id="mem-count" class="mono faint"></span>
+        </div>
+        <div id="memory-out" class="empty">
+          type to search, or leave blank for the whole ledger by confidence
+        </div>
+      </section>
 
-const claimTable = (claims) =>
-  "<table><thead><tr><th>id</th><th>kind</th><th>val</th><th>evid</th><th>author</th>" +
-  "<th>claim</th><th>provenance</th><th>actions</th></tr></thead><tbody>" + claimRows(claims) + "</tbody></table>";
+      <section class="panel wide" id="timeline-panel">
+        <h2>
+          Session timeline — durable memory events
+          <span class="cmd">.forge/ledger/</span>
+        </h2>
+        <ul class="tl" id="timeline-out"></ul>
+      </section>
+    </main>
 
-let DATA = null;
+    <footer>
+      lens on .forge/ — every number traces to
+      <span class="mono">forge ledger blame &lt;id&gt;</span>. the only writes
+      are ratify/retract (append-only; CLI twins:
+      <span class="mono">forge ledger ratify|retract</span>).
+    </footer>
 
-function renderLedger(d) {
-  const L = d.ledger;
-  $("hdr-repo").textContent = `· ${d.repo}`;
-  $("hdr-meta").textContent =
-    `${L.stats.total} claims · ${L.stats.tombstoned} tombstoned · day ${d.nowDay}`;
-  $("ledger-stats").innerHTML =
-    '<span class="stat"><span class="n">' + L.stats.total + '</span><span class="l">claims</span></span>' +
-    '<span class="stat"><span class="n ember">' + L.stats.val.trusted + '</span><span class="l">trusted ≥0.65</span></span>' +
-    '<span class="stat"><span class="n">' + L.stats.val.uncertain + '</span><span class="l">uncertain</span></span>' +
-    '<span class="stat"><span class="n">' + L.stats.val.dormant + '</span><span class="l">dormant &lt;0.35</span></span>' +
-    Object.entries(L.stats.byKind).map(([k, n]) =>
-      `<span class="stat"><span class="n">${n}</span><span class="l">${esc(k)}</span></span>`).join("");
+    <script>
+      "use strict";
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
 
-  const kinds = Object.keys(L.stats.byKind).sort();
-  const sel = $("kind-filter");
-  const keep = sel.value;
-  sel.innerHTML = '<option value="">all</option>' +
-    kinds.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
-  if (kinds.includes(keep)) sel.value = keep;
+      const bar = (v, { dim = false } = {}) =>
+        '<span class="bar' +
+        (dim ? " dim" : "") +
+        '"><i style="width:' +
+        Math.round(Math.max(0, Math.min(1, v)) * 100) +
+        '%"></i></span><span class="barnum">' +
+        v.toFixed(2) +
+        "</span>";
 
-  const shown = L.claims.filter((c) => !sel.value || c.kind === sel.value);
-  $("claim-count").textContent = `${shown.length} of ${L.stats.total} shown`;
-  $("claims").innerHTML = shown.length ? claimTable(shown)
-    : '<div class="empty">no claims yet — mint one: forge remember "&lt;name&gt;" "&lt;fact&gt;"</div>';
+      // Every claim row carries its provenance affordance — click to copy the exact command.
+      const blameCell = (id8) =>
+        `<td><span class="blame" data-id8="${esc(id8)}">forge ledger blame ${esc(id8)}</span></td>`;
 
-  $("contested").innerHTML = L.contested.length
-    ? `<span class="tag contested">${L.contested.length} contested</span>${claimTable(L.contested)}`
-    : '<div class="empty">none — no live claim is both uncertain and contradicted</div>';
+      // The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
+      // server stamps YOUR git identity as author); retract = tombstone with a reason.
+      // A tombstoned row gets neither — retraction is already the terminal append.
+      const actionsCell = (c) =>
+        c.tombstoned
+          ? "<td></td>"
+          : '<td class="acts"><span class="act" data-act="ratify" data-id8="' +
+            esc(c.id8) +
+            '" title="promote to hikma — mints a decision claim with you as author">ratify ▸</span> ' +
+            '<span class="act" data-act="retract" data-id8="' +
+            esc(c.id8) +
+            '" title="tombstone this claim with a reason (append-only)">retract ✕</span></td>';
 
-  const trust = Object.entries(L.trust).sort((a, b) => b[1] - a[1]);
-  $("trust").innerHTML = trust.length
-    ? "<table><tbody>" + trust.map(([a, u]) =>
-        `<tr><td class="muted">${esc(a)}</td><td>${bar(u)}</td></tr>`).join("") +
-      "</tbody></table>"
-    : '<div class="empty">no authored claims yet</div>';
-}
+      const claimRows = (claims) =>
+        claims
+          .map(
+            (c) =>
+              '<tr class="' +
+              (c.tombstoned ? "tomb" : "") +
+              '">' +
+              '<td class="mono faint">' +
+              esc(c.id8) +
+              "</td>" +
+              '<td><span class="tag">' +
+              esc(c.kind) +
+              "</span>" +
+              (c.tombstoned ? ' <span class="tag">retracted</span>' : "") +
+              "</td>" +
+              "<td>" +
+              bar(c.val, { dim: c.val < 0.35 }) +
+              "</td>" +
+              '<td class="num">' +
+              c.evidenceCount +
+              "</td>" +
+              '<td class="muted">' +
+              esc(c.author || "—") +
+              "</td>" +
+              '<td class="text">' +
+              esc(c.text) +
+              "</td>" +
+              blameCell(c.id8) +
+              actionsCell(c) +
+              "</tr>",
+          )
+          .join("");
 
-function renderCost(d) {
-  const stages = Object.entries(d.metrics.stages);
-  const saved = stages.reduce((n, [, s]) => n + (s.savedEstimate || 0), 0);
-  const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
-  const spend = d.spend;
-  const noData = (!spend || spend.totalCost <= 0) && saved === 0 && events === 0;
-  if (noData) {
-    $("cost-stats").innerHTML =
-      '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>';
-  } else {
-    $("cost-stats").innerHTML =
-      (spend && spend.totalCost > 0
-        ? '<span class="stat"><span class="n ember">$' + spend.totalCost.toFixed(2) + '</span><span class="l">real spend</span></span>' +
-          '<span class="stat"><span class="n">' + spend.sessions + '</span><span class="l">sessions</span></span>'
-        : '') +
-      '<span class="stat"><span class="n' + (spend && spend.totalCost > 0 ? '' : ' ember') + '">' + saved.toLocaleString() + '</span><span class="l">est. tokens saved</span></span>' +
-      '<span class="stat"><span class="n">' + events + '</span><span class="l">stage events</span></span>';
-  }
-  if (spend?.byModel?.length) {
-    $("spend-section").innerHTML = '<h3>Spend by model</h3>' +
-      '<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>' +
-      spend.byModel.map((m) => '<tr><td class="mono">' + esc(m.model) + '</td><td class="num">$' + m.cost.toFixed(4) +
-          '</td><td class="num">' + (m.inTokens || 0).toLocaleString() +
-          '</td><td class="num">' + (m.outTokens || 0).toLocaleString() + '</td></tr>').join('') + '</tbody></table>';
-  } else {
-    $("spend-section").innerHTML =
-      '<div class="empty">no model spend data yet — real costs appear when ccusage is configured</div>';
-  }
-  $("stages").innerHTML = stages.length
-    ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
-      stages.map(([name, s]) =>
-        '<tr><td class="mono">' + esc(name) + '</td><td class="num">' + s.events + "</td><td>" +
-        Object.entries(s.byOutcome || {}).map(([o, n]) =>
-          `<span class="tag">${esc(o)} ${n}</span>`).join(" ") +
-        '</td><td class="num">' + (s.savedEstimate || 0).toLocaleString() + "</td></tr>").join("") +
-      "</tbody></table>"
-    : '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
-  $("recent").innerHTML = d.metrics.recent.slice().reverse().map((e) =>
-    "<li>" + new Date(e.t).toLocaleTimeString() + ' <span class="st">' + esc(e.stage) + "</span> " +
-    esc(e.outcome || "") + (e.savedEstimate ? ` <span class="plus">+${e.savedEstimate}</span>` : "") +
-    "</li>").join("") || '<li class="empty">no recent events — the substrate records cache hits, gate passes, and routing decisions as you work</li>';
-}
+      const claimTable = (claims) =>
+        "<table><thead><tr><th>id</th><th>kind</th><th>val</th><th>evid</th><th>author</th>" +
+        "<th>claim</th><th>provenance</th><th>actions</th></tr></thead><tbody>" +
+        claimRows(claims) +
+        "</tbody></table>";
 
-async function runImpact() {
-  const target = $("impact-target").value.trim();
-  const out = $("impact-out");
-  if (!target) return;
-  if (DATA && !DATA.atlas.built) {
-    out.innerHTML = '<div class="empty">no atlas — run: forge atlas build</div>';
-    return;
-  }
-  out.innerHTML = '<div class="empty">tracing…</div>';
-  const res = await fetch(`/api/impact?target=${encodeURIComponent(target)}`);
-  const r = await res.json();
-  if (!res.ok) { out.innerHTML = `<div class="empty">${esc(r.error || "error")}</div>`; return; }
-  if (!r.found) {
-    out.innerHTML = '<div class="empty">"' + esc(target) + '" not found in the atlas (' +
-      r.totalGraphNodes + " nodes)</div>";
-    return;
-  }
-  out.innerHTML =
-    '<div class="stats">' +
-    '<span class="stat"><span class="n ember">' + r.impactedFiles.length + '</span><span class="l">impacted files</span></span>' +
-    '<span class="stat"><span class="n">' + r.impacted.length + '</span><span class="l">nodes</span></span></div>' +
-    "<table><thead><tr><th>confidence</th><th>hop</th><th>node</th><th>file</th></tr></thead><tbody>" +
-    r.impacted.slice(0, 40).map((x) =>
-      "<tr><td>" + bar(x.confidence) + '</td><td class="num">' + (x.hopDistance ?? "llm") +
-      '</td><td class="mono">' + esc(x.node.name || x.id) + '</td><td class="muted">' +
-      esc(x.node.file || "") + "</td></tr>").join("") +
-    "</tbody></table>" +
-    (r.impacted.length > 40 ? `<div class="empty">… ${r.impacted.length - 40} more</div>` : "") +
-    '<div class="empty" style="margin-top:8px">same trace on the CLI: forge impact ' + esc(target) + "</div>";
-}
+      let DATA = null;
 
-async function refresh() {
-  const res = await fetch("/api/data");
-  DATA = await res.json();
-  renderLedger(DATA);
-  renderCost(DATA);
-}
+      function renderLedger(d) {
+        const L = d.ledger;
+        $("hdr-repo").textContent = `· ${d.repo}`;
+        $("hdr-meta").textContent =
+          `${L.stats.total} claims · ${L.stats.tombstoned} tombstoned · day ${d.nowDay}`;
+        $("ledger-stats").innerHTML =
+          '<span class="stat"><span class="n">' +
+          L.stats.total +
+          '</span><span class="l">claims</span></span>' +
+          '<span class="stat"><span class="n ember">' +
+          L.stats.val.trusted +
+          '</span><span class="l">trusted ≥0.65</span></span>' +
+          '<span class="stat"><span class="n">' +
+          L.stats.val.uncertain +
+          '</span><span class="l">uncertain</span></span>' +
+          '<span class="stat"><span class="n">' +
+          L.stats.val.dormant +
+          '</span><span class="l">dormant &lt;0.35</span></span>' +
+          Object.entries(L.stats.byKind)
+            .map(
+              ([k, n]) =>
+                `<span class="stat"><span class="n">${n}</span><span class="l">${esc(k)}</span></span>`,
+            )
+            .join("");
 
-// The two writes: POST then refresh — the ledger on disk is the only state, the page
-// just re-reads it. retract prompts for its reason (spec: tombstone WITH a reason).
-async function runWrite(act, id8) {
-  const body = { id: id8 };
-  if (act === "retract") {
-    const reason = prompt(`retract ${id8} — reason (recorded in the tombstone):`);
-    if (reason === null) return; // cancelled
-    body.reason = reason;
-  }
-  const res = await fetch(`/api/${act}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const r = await res.json().catch(() => ({}));
-  if (!res.ok) alert(`${act} failed: ${r.reason || r.error || res.status}`);
-  await refresh();
-}
+        const kinds = Object.keys(L.stats.byKind).sort();
+        const sel = $("kind-filter");
+        const keep = sel.value;
+        sel.innerHTML =
+          '<option value="">all</option>' +
+          kinds
+            .map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
+            .join("");
+        if (kinds.includes(keep)) sel.value = keep;
 
-document.addEventListener("click", (ev) => {
-  const act = ev.target.closest(".act");
-  if (act) {
-    runWrite(act.dataset.act, act.dataset.id8).catch(() => {});
-    return;
-  }
-  const el = ev.target.closest(".blame");
-  if (!el) return;
-  navigator.clipboard?.writeText(`forge ledger blame ${el.dataset.id8}`).then(() => {
-    el.classList.add("copied");
-    const prev = el.textContent;
-    el.textContent = "copied ✓";
-    setTimeout(() => { el.textContent = prev; el.classList.remove("copied"); }, 900);
-  });
-});
-$("refresh").addEventListener("click", refresh);
-$("kind-filter").addEventListener("change", () => DATA && renderLedger(DATA));
-$("impact-go").addEventListener("click", runImpact);
-$("impact-target").addEventListener("keydown", (e) => { if (e.key === "Enter") runImpact(); });
+        const shown = L.claims.filter(
+          (c) => !sel.value || c.kind === sel.value,
+        );
+        $("claim-count").textContent =
+          `${shown.length} of ${L.stats.total} shown`;
+        $("claims").innerHTML = shown.length
+          ? claimTable(shown)
+          : '<div class="empty">no claims yet — mint one: forge remember "&lt;name&gt;" "&lt;fact&gt;"</div>';
 
-refresh().catch(() => {
-  $("hdr-meta").textContent = "could not load /api/data";
-});
-</script>
-</body>
+        $("contested").innerHTML = L.contested.length
+          ? `<span class="tag contested">${L.contested.length} contested</span>${claimTable(L.contested)}`
+          : '<div class="empty">none — no live claim is both uncertain and contradicted</div>';
+
+        const trust = Object.entries(L.trust).sort((a, b) => b[1] - a[1]);
+        $("trust").innerHTML = trust.length
+          ? "<table><tbody>" +
+            trust
+              .map(
+                ([a, u]) =>
+                  `<tr><td class="muted">${esc(a)}</td><td>${bar(u)}</td></tr>`,
+              )
+              .join("") +
+            "</tbody></table>"
+          : '<div class="empty">no authored claims yet</div>';
+      }
+
+      function renderCost(d) {
+        const stages = Object.entries(d.metrics.stages);
+        const saved = stages.reduce(
+          (n, [, s]) => n + (s.savedEstimate || 0),
+          0,
+        );
+        const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
+        const spend = d.spend;
+        const noData =
+          (!spend || spend.totalCost <= 0) && saved === 0 && events === 0;
+        if (noData) {
+          $("cost-stats").innerHTML =
+            '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>';
+        } else {
+          $("cost-stats").innerHTML =
+            (spend && spend.totalCost > 0
+              ? '<span class="stat"><span class="n ember">$' +
+                spend.totalCost.toFixed(2) +
+                '</span><span class="l">real spend</span></span>' +
+                '<span class="stat"><span class="n">' +
+                spend.sessions +
+                '</span><span class="l">sessions</span></span>'
+              : "") +
+            '<span class="stat"><span class="n' +
+            (spend && spend.totalCost > 0 ? "" : " ember") +
+            '">' +
+            saved.toLocaleString() +
+            '</span><span class="l">est. tokens saved</span></span>' +
+            '<span class="stat"><span class="n">' +
+            events +
+            '</span><span class="l">stage events</span></span>';
+        }
+        if (spend?.byModel?.length) {
+          $("spend-section").innerHTML =
+            "<h3>Spend by model</h3>" +
+            "<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>" +
+            spend.byModel
+              .map(
+                (m) =>
+                  '<tr><td class="mono">' +
+                  esc(m.model) +
+                  '</td><td class="num">$' +
+                  m.cost.toFixed(4) +
+                  '</td><td class="num">' +
+                  (m.inTokens || 0).toLocaleString() +
+                  '</td><td class="num">' +
+                  (m.outTokens || 0).toLocaleString() +
+                  "</td></tr>",
+              )
+              .join("") +
+            "</tbody></table>";
+        } else {
+          $("spend-section").innerHTML =
+            '<div class="empty">no model spend data yet — real costs appear when ccusage is configured</div>';
+        }
+        $("stages").innerHTML = stages.length
+          ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
+            stages
+              .map(
+                ([name, s]) =>
+                  '<tr><td class="mono">' +
+                  esc(name) +
+                  '</td><td class="num">' +
+                  s.events +
+                  "</td><td>" +
+                  Object.entries(s.byOutcome || {})
+                    .map(([o, n]) => `<span class="tag">${esc(o)} ${n}</span>`)
+                    .join(" ") +
+                  '</td><td class="num">' +
+                  (s.savedEstimate || 0).toLocaleString() +
+                  "</td></tr>",
+              )
+              .join("") +
+            "</tbody></table>"
+          : '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
+        $("recent").innerHTML =
+          d.metrics.recent
+            .slice()
+            .reverse()
+            .map(
+              (e) =>
+                "<li>" +
+                new Date(e.t).toLocaleTimeString() +
+                ' <span class="st">' +
+                esc(e.stage) +
+                "</span> " +
+                esc(e.outcome || "") +
+                (e.savedEstimate
+                  ? ` <span class="plus">+${e.savedEstimate}</span>`
+                  : "") +
+                "</li>",
+            )
+            .join("") ||
+          '<li class="empty">no recent events — the substrate records cache hits, gate passes, and routing decisions as you work</li>';
+      }
+
+      async function runImpact() {
+        const target = $("impact-target").value.trim();
+        const out = $("impact-out");
+        if (!target) return;
+        if (DATA && !DATA.atlas.built) {
+          out.innerHTML =
+            '<div class="empty">no atlas — run: forge atlas build</div>';
+          return;
+        }
+        out.innerHTML = '<div class="empty">tracing…</div>';
+        const res = await fetch(
+          `/api/impact?target=${encodeURIComponent(target)}`,
+        );
+        const r = await res.json();
+        if (!res.ok) {
+          out.innerHTML = `<div class="empty">${esc(r.error || "error")}</div>`;
+          return;
+        }
+        if (!r.found) {
+          out.innerHTML =
+            '<div class="empty">"' +
+            esc(target) +
+            '" not found in the atlas (' +
+            r.totalGraphNodes +
+            " nodes)</div>";
+          return;
+        }
+        out.innerHTML =
+          '<div class="stats">' +
+          '<span class="stat"><span class="n ember">' +
+          r.impactedFiles.length +
+          '</span><span class="l">impacted files</span></span>' +
+          '<span class="stat"><span class="n">' +
+          r.impacted.length +
+          '</span><span class="l">nodes</span></span></div>' +
+          "<table><thead><tr><th>confidence</th><th>hop</th><th>node</th><th>file</th></tr></thead><tbody>" +
+          r.impacted
+            .slice(0, 40)
+            .map(
+              (x) =>
+                "<tr><td>" +
+                bar(x.confidence) +
+                '</td><td class="num">' +
+                (x.hopDistance ?? "llm") +
+                '</td><td class="mono">' +
+                esc(x.node.name || x.id) +
+                '</td><td class="muted">' +
+                esc(x.node.file || "") +
+                "</td></tr>",
+            )
+            .join("") +
+          "</tbody></table>" +
+          (r.impacted.length > 40
+            ? `<div class="empty">… ${r.impacted.length - 40} more</div>`
+            : "") +
+          '<div class="empty" style="margin-top:8px">same trace on the CLI: forge impact ' +
+          esc(target) +
+          "</div>";
+      }
+
+      // ~30-line inline-SVG sparkline — no library, no CDN. Plots a series of numbers
+      // as a polyline scaled to its own min/max, with a dot on the latest point.
+      function sparkline(values, { w = 240, h = 28 } = {}) {
+        const nums = values.map(Number).filter(Number.isFinite);
+        if (!nums.length) return "";
+        const max = Math.max(...nums, 0);
+        const min = Math.min(...nums, 0);
+        const range = max - min || 1;
+        const dx = nums.length > 1 ? w / (nums.length - 1) : 0;
+        const y = (v) => (h - 1 - ((v - min) / range) * (h - 2)).toFixed(1);
+        const pts = nums
+          .map((v, i) => (i * dx).toFixed(1) + "," + y(v))
+          .join(" ");
+        const lx = ((nums.length - 1) * dx).toFixed(1);
+        const ly = y(nums[nums.length - 1]);
+        return (
+          '<svg class="spark-svg" viewBox="0 0 ' +
+          w +
+          " " +
+          h +
+          '" preserveAspectRatio="none">' +
+          '<polyline fill="none" stroke="var(--ember)" stroke-width="1.5" points="' +
+          pts +
+          '"/>' +
+          '<circle cx="' +
+          lx +
+          '" cy="' +
+          ly +
+          '" r="2" fill="var(--ember)"/></svg>'
+        );
+      }
+
+      function renderHistory(h) {
+        const stages = Object.entries(h.stages || {});
+        if (!stages.length) {
+          $("history-out").innerHTML =
+            '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
+          return;
+        }
+        $("history-out").innerHTML = stages
+          .map(([name, s]) => {
+            const series = (s.series || []).map((p) => p.events);
+            const saved = s.saved ? ` · ${s.saved.toLocaleString()} saved` : "";
+            return (
+              '<div class="trend"><span class="lbl">' +
+              esc(name || "—") +
+              "</span>" +
+              sparkline(series) +
+              '<span class="n">' +
+              s.events +
+              " ev" +
+              saved +
+              "</span></div>"
+            );
+          })
+          .join("");
+      }
+
+      function renderRadar(r) {
+        const ringN = r.counts || {};
+        $("radar-rings").innerHTML = ["adopt", "trial", "assess", "hold"]
+          .map(
+            (k) =>
+              '<span class="ringcount"><span class="dot ' +
+              k +
+              '"></span>' +
+              esc(k) +
+              " " +
+              (ringN[k] || 0) +
+              "</span>",
+          )
+          .join("");
+        if (!r.present || !r.deps.length) {
+          $("radar-out").innerHTML =
+            '<div class="empty">no radar cache yet — run: forge radar</div>';
+          return;
+        }
+        $("radar-out").innerHTML =
+          "<table><thead><tr><th>dep</th><th>ring</th><th>score</th><th>version</th></tr></thead><tbody>" +
+          r.deps
+            .map(
+              (d) =>
+                '<tr><td class="mono">' +
+                esc(d.name) +
+                '</td><td class="ring"><span class="dot ' +
+                esc(d.ring) +
+                '"></span> ' +
+                esc(d.ring) +
+                "</td><td>" +
+                (d.score == null
+                  ? '<span class="faint">—</span>'
+                  : bar(d.score, { dim: true })) +
+                '</td><td class="mono faint">' +
+                esc(d.version || "") +
+                (d.latest && d.latest !== d.version
+                  ? " → " + esc(d.latest)
+                  : "") +
+                "</td></tr>",
+            )
+            .join("") +
+          "</tbody></table>";
+      }
+
+      function renderMemory(m) {
+        $("mem-count").textContent = m.rows.length
+          ? `${m.rows.length} of ${m.total}`
+          : "";
+        // keep the kind dropdown in sync with what the ledger holds
+        const sel = $("mem-kind");
+        const keep = sel.value;
+        const kinds = [
+          ...new Set((DATA?.ledger.claims || []).map((c) => c.kind)),
+        ].sort();
+        sel.innerHTML =
+          '<option value="">all kinds</option>' +
+          kinds
+            .map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
+            .join("");
+        sel.value = kinds.includes(keep) ? keep : "";
+        if (!m.rows.length) {
+          $("memory-out").innerHTML =
+            '<div class="empty">no matching claims — try another term, or clear the box</div>';
+          return;
+        }
+        $("memory-out").innerHTML =
+          "<table><thead><tr><th>kind</th><th>confidence</th><th>freshness</th>" +
+          (m.q ? "<th>score</th>" : "") +
+          "<th>claim</th><th>provenance</th></tr></thead><tbody>" +
+          m.rows
+            .map(
+              (c) =>
+                '<tr class="' +
+                (c.tombstoned ? "tomb" : "") +
+                '"><td><span class="tag">' +
+                esc(c.kind) +
+                "</span></td><td>" +
+                bar(c.val, { dim: c.val < 0.35 }) +
+                "</td><td>" +
+                bar(c.fresh, { dim: true }) +
+                "</td>" +
+                (m.q
+                  ? '<td class="num">' +
+                    (c.score == null ? "—" : c.score.toFixed(3)) +
+                    "</td>"
+                  : "") +
+                '<td class="text">' +
+                esc(c.text) +
+                "</td>" +
+                '<td><span class="blame" data-id8="' +
+                esc(c.id8) +
+                '">forge ledger blame ' +
+                esc(c.id8) +
+                "</span></td></tr>",
+            )
+            .join("") +
+          "</tbody></table>";
+      }
+
+      function renderTimeline(t) {
+        $("timeline-out").innerHTML = t.events.length
+          ? t.events
+              .map(
+                (e) =>
+                  '<li><span class="day">d' +
+                  e.day +
+                  '</span><span class="ev ' +
+                  esc(e.type) +
+                  '">' +
+                  esc(e.type) +
+                  " " +
+                  esc(e.kind) +
+                  '</span><span class="txt" title="' +
+                  esc(e.text) +
+                  '">' +
+                  esc(e.text || "—") +
+                  "</span></li>",
+              )
+              .join("")
+          : '<li class="empty">no durable events yet — claims and tombstones appear here across sessions</li>';
+      }
+
+      let memTimer = null;
+      async function refreshMemory() {
+        const q = encodeURIComponent($("mem-q").value.trim());
+        const kind = encodeURIComponent($("mem-kind").value);
+        try {
+          const m = await (
+            await fetch(`/api/claims?q=${q}&kind=${kind}`)
+          ).json();
+          renderMemory(m);
+        } catch {}
+      }
+
+      async function refresh() {
+        const res = await fetch("/api/data");
+        DATA = await res.json();
+        renderLedger(DATA);
+        renderCost(DATA);
+        // v2 lenses — each is independent, a failure in one never blanks the others.
+        const pull = async (path, render) => {
+          try {
+            render(await (await fetch(path)).json());
+          } catch {}
+        };
+        await Promise.all([
+          pull("/api/history", renderHistory),
+          pull("/api/radar", renderRadar),
+          pull("/api/timeline", renderTimeline),
+          refreshMemory(),
+        ]);
+      }
+
+      // The two writes: POST then refresh — the ledger on disk is the only state, the page
+      // just re-reads it. retract prompts for its reason (spec: tombstone WITH a reason).
+      async function runWrite(act, id8) {
+        const body = { id: id8 };
+        if (act === "retract") {
+          const reason = prompt(
+            `retract ${id8} — reason (recorded in the tombstone):`,
+          );
+          if (reason === null) return; // cancelled
+          body.reason = reason;
+        }
+        const res = await fetch(`/api/${act}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok)
+          alert(`${act} failed: ${r.reason || r.error || res.status}`);
+        await refresh();
+      }
+
+      document.addEventListener("click", (ev) => {
+        const act = ev.target.closest(".act");
+        if (act) {
+          runWrite(act.dataset.act, act.dataset.id8).catch(() => {});
+          return;
+        }
+        const el = ev.target.closest(".blame");
+        if (!el) return;
+        navigator.clipboard
+          ?.writeText(`forge ledger blame ${el.dataset.id8}`)
+          .then(() => {
+            el.classList.add("copied");
+            const prev = el.textContent;
+            el.textContent = "copied ✓";
+            setTimeout(() => {
+              el.textContent = prev;
+              el.classList.remove("copied");
+            }, 900);
+          });
+      });
+      $("refresh").addEventListener("click", refresh);
+      $("kind-filter").addEventListener(
+        "change",
+        () => DATA && renderLedger(DATA),
+      );
+      $("impact-go").addEventListener("click", runImpact);
+      $("impact-target").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") runImpact();
+      });
+
+      // Memory browser: debounced live search, plus kind filter re-query.
+      $("mem-q").addEventListener("input", () => {
+        clearTimeout(memTimer);
+        memTimer = setTimeout(() => refreshMemory().catch(() => {}), 180);
+      });
+      $("mem-kind").addEventListener("change", () =>
+        refreshMemory().catch(() => {}),
+      );
+
+      // Live refresh: poll every 5s, paused while the tab is hidden (SSE is a
+      // follow-up; polling a localhost lens is cheap and keeps the base simple).
+      let poll = null;
+      const stopPoll = () => {
+        if (poll) clearInterval(poll);
+        poll = null;
+      };
+      const startPoll = () => {
+        stopPoll();
+        poll = setInterval(() => refresh().catch(() => {}), 5000);
+      };
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) stopPoll();
+        else {
+          refresh().catch(() => {});
+          startPoll();
+        }
+      });
+
+      refresh()
+        .then(startPoll)
+        .catch(() => {
+          $("hdr-meta").textContent = "could not load /api/data";
+        });
+    </script>
+  </body>
 </html>

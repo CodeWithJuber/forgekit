@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { dashData, serve } from "../src/dash.js";
+import { claimsData, dashData, historyData, radarData, serve, timelineData } from "../src/dash.js";
 import { mintClaim, outcomeRecord } from "../src/ledger.js";
 import {
   appendEvidence,
@@ -18,7 +18,12 @@ const tmp = () => mkdtempSync(join(tmpdir(), "forge-dash-"));
 const NOW = 100;
 
 const mint = (dir, name, text, author = "alice") => {
-  const c = mintClaim({ kind: "fact", body: { name, text }, provenance: { author }, t: NOW }).claim;
+  const c = mintClaim({
+    kind: "fact",
+    body: { name, text },
+    provenance: { author },
+    t: NOW,
+  }).claim;
   putClaim(dir, c);
   return c;
 };
@@ -87,9 +92,17 @@ test("dashData: atlas section reports a built atlas", () => {
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(
     join(root, ".forge", "atlas.json"),
-    JSON.stringify({ version: 2, files: 3, symbols: [{ name: "a" }, { name: "b" }] }),
+    JSON.stringify({
+      version: 2,
+      files: 3,
+      symbols: [{ name: "a" }, { name: "b" }],
+    }),
   );
-  assert.deepEqual(dashData(root, { nowDay: NOW }).atlas, { built: true, symbols: 2, files: 3 });
+  assert.deepEqual(dashData(root, { nowDay: NOW }).atlas, {
+    built: true,
+    symbols: 2,
+    files: 3,
+  });
 });
 
 test("dashData: corrupt/missing stores degrade to empty sections, never throw", () => {
@@ -187,7 +200,10 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
     assert.ok(d.ledger.claims.some((c) => c.kind === "decision"));
 
     // retract → the claim reads as tombstoned in the payload, reason preserved on disk.
-    const r2 = await post("/api/retract", { id: contested.id.slice(0, 8), reason: "wrong port" });
+    const r2 = await post("/api/retract", {
+      id: contested.id.slice(0, 8),
+      reason: "wrong port",
+    });
     assert.equal(r2.status, 200);
     assert.equal((await r2.json()).ok, true);
     const d2 = await (await fetch(`${base}/api/data`)).json();
@@ -225,6 +241,157 @@ test("serve: /api/impact traces blast radius once an atlas exists", async () => 
     const r = await res.json();
     assert.equal(r.found, true);
     assert.ok(r.impactedFiles.includes("src/b.js"), "dependent file is in the radius");
+  } finally {
+    server.close();
+  }
+});
+
+// --- dash v2 lenses --------------------------------------------------------
+
+const DAY_MS = 86400000;
+
+test("historyData: metrics bucketed by day×stage, saved summed", () => {
+  const { root } = fixture();
+  const h = historyData(root, { nowDay: NOW });
+  assert.equal(h.totals.events, 2, "two metric lines");
+  assert.equal(h.stages.cache.saved, 1200);
+  assert.equal(h.stages.gate.byOutcome.pass, 1);
+  assert.ok(h.buckets.length >= 1, "at least one day bucket");
+  assert.ok(Array.isArray(h.stages.cache.series), "per-stage daily series for sparklines");
+  assert.equal(h.window, 90);
+});
+
+test("historyData: events older than the cap window are dropped", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const now = 20000; // a day number
+  writeFileSync(
+    join(root, ".forge", "metrics.jsonl"),
+    `${JSON.stringify({ t: (now - 5) * DAY_MS, stage: "gate", outcome: "pass" })}\n` +
+      `${JSON.stringify({ t: (now - 200) * DAY_MS, stage: "gate", outcome: "fail" })}\n`,
+  );
+  const h = historyData(root, { nowDay: now, capDays: 90 });
+  assert.equal(h.totals.events, 1, "only the in-window event survives");
+  assert.equal(h.stages.gate.byOutcome.pass, 1);
+  assert.equal(h.stages.gate.byOutcome.fail, undefined);
+});
+
+test("historyData: corrupt/missing metrics degrade to an empty payload", () => {
+  const empty = historyData(tmp(), { nowDay: NOW });
+  assert.deepEqual(empty.buckets, []);
+  assert.deepEqual(empty.stages, {});
+  assert.equal(empty.totals.events, 0);
+});
+
+test("claimsData: no query ranks live claims by val, with fresh + confidence", () => {
+  const { root } = fixture();
+  const m = claimsData(root, { nowDay: NOW });
+  assert.equal(m.total, 3);
+  assert.ok(m.rows.length >= 2, "tombstoned claim is excluded, live ones shown");
+  assert.ok(!m.rows.some((r) => r.tombstoned), "no-query browse shows only live claims");
+  for (const r of m.rows) {
+    assert.equal(typeof r.val, "number");
+    assert.equal(typeof r.fresh, "number");
+    assert.equal(r.score, null, "no score without a query");
+    assert.equal(r.id8.length, 8);
+  }
+});
+
+test("claimsData: a query ranks via retrieve (scores present) and kind filters", () => {
+  const { root, contested } = fixture();
+  const m = claimsData(root, { q: "dev server port 4242", nowDay: NOW });
+  assert.ok(
+    m.rows.some((r) => r.id8 === contested.id.slice(0, 8)),
+    "the matching claim surfaces",
+  );
+  assert.ok(
+    m.rows.every((r) => typeof r.score === "number"),
+    "query rows carry a retrieval score",
+  );
+  const facts = claimsData(root, { kind: "fact", nowDay: NOW });
+  assert.ok(facts.rows.every((r) => r.kind === "fact"));
+  const none = claimsData(root, { kind: "nonexistent", nowDay: NOW });
+  assert.deepEqual(none.rows, []);
+});
+
+test("radarData: reads the cache, tolerates shape drift, degrades when absent", () => {
+  assert.deepEqual(radarData(tmp()), {
+    present: false,
+    t: null,
+    deps: [],
+    counts: {},
+  });
+
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "radar.json"), "{ not json");
+  assert.equal(radarData(root).present, false, "unparseable cache → empty panel");
+
+  writeFileSync(
+    join(root, ".forge", "radar.json"),
+    JSON.stringify({
+      t: 1700000000000,
+      deps: {
+        left: { ring: "hold", score: 0.9, version: "1.0.0", latest: "3.0.0" },
+        mid: { ring: "trial", score: 0.4 },
+        weird: { ring: "??", score: "nope" }, // drift: bad ring, non-numeric score
+      },
+    }),
+  );
+  const r = radarData(root);
+  assert.equal(r.present, true);
+  assert.equal(r.deps.length, 3);
+  assert.equal(r.deps[0].ring, "hold", "hold sorts first");
+  assert.equal(r.counts.hold, 1);
+  assert.equal(r.counts.trial, 1);
+  assert.equal(r.counts.assess, 1, "drifted ring falls back to assess");
+  const weird = r.deps.find((d) => d.name === "weird");
+  assert.equal(weird.score, null, "non-numeric score → null, never NaN");
+});
+
+test("timelineData: durable mint + tombstone events, newest first", () => {
+  const { root, retracted } = fixture();
+  const t = timelineData(root);
+  assert.ok(t.events.length >= 4, "3 mints + 1 tombstone");
+  assert.ok(
+    t.events.some((e) => e.type === "retract" && e.id8 === retracted.id.slice(0, 8)),
+    "the tombstone shows as a retract event",
+  );
+  for (let i = 1; i < t.events.length; i++)
+    assert.ok(t.events[i - 1].day >= t.events[i].day, "newest first");
+});
+
+test("timelineData: broken ledger degrades to no events", () => {
+  assert.deepEqual(timelineData(tmp()), { count: 0, events: [] });
+});
+
+test("serve: v2 endpoints answer 200 with their payloads", async () => {
+  const { root } = fixture();
+  writeFileSync(
+    join(root, ".forge", "radar.json"),
+    JSON.stringify({ t: 1, deps: { foo: { ring: "adopt", score: 0.1 } } }),
+  );
+  const server = serve(root, { port: 0 });
+  await new Promise((resolve) => server.on("listening", resolve));
+  const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+  const base = `http://127.0.0.1:${addr.port}`;
+  try {
+    const hist = await (await fetch(`${base}/api/history`)).json();
+    assert.equal(hist.totals.events, 2);
+
+    const radar = await (await fetch(`${base}/api/radar`)).json();
+    assert.equal(radar.present, true);
+    assert.equal(radar.deps[0].name, "foo");
+
+    const tl = await (await fetch(`${base}/api/timeline`)).json();
+    assert.ok(tl.events.length >= 3);
+
+    const mem = await (await fetch(`${base}/api/claims?q=port`)).json();
+    assert.equal(mem.q, "port");
+    assert.ok(mem.rows.every((r) => typeof r.score === "number"));
+
+    const memAll = await (await fetch(`${base}/api/claims`)).json();
+    assert.equal(memAll.total, 3);
   } finally {
     server.close();
   }
