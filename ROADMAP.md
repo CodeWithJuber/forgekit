@@ -7,7 +7,7 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.21.0)
+## Now (`master`, v0.21.1)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
 routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file

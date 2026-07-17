@@ -1,6 +1,6 @@
 {
   "name": "forgekit",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "description": "One config, every AI coding tool — cognitive substrate, MCP tools, guards, atlas, recall, and routing from one source.",
   "author": { "name": "CodeWithJuber", "url": "https://github.com/CodeWithJuber" },
   "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
