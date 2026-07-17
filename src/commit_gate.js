@@ -80,13 +80,27 @@ export function stagedAddedLines(root) {
   const raw = gitRaw(root, ["diff", "--cached", "--unified=0", "--no-color"]);
   const byFile = new Map();
   let file = null;
+  // A `+++ ` line is the file header ONLY between `diff --git` and the first `@@`; once
+  // inside a hunk, a `+`-prefixed line is content — including added content that itself
+  // begins with `++ ` (which renders as `+++ ` in the diff and would otherwise be
+  // misread as a header, dropping that line and mis-attributing the ones after it).
+  let inHunk = false;
   for (const line of raw.split("\n")) {
-    if (line.startsWith("+++ ")) {
+    if (line.startsWith("diff --git")) {
+      file = null;
+      inHunk = false;
+      continue;
+    }
+    if (!inHunk && line.startsWith("+++ ")) {
       const p = line.slice(4).trim();
       file = p === "/dev/null" ? null : p.replace(/^"?b\//, "").replace(/"$/, "");
       continue;
     }
-    if (!file || !line.startsWith("+") || line.startsWith("+++")) continue;
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk || !file || !line.startsWith("+")) continue;
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push(line.slice(1));
   }

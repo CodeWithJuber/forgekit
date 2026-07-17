@@ -6,6 +6,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`forge deja` could never fire.** `DEJA_FLOOR` was 0.55, above the ~0.42 ceiling
+  `retrieve()` can produce for a repo-scoped `summary` claim (the σ term is < 0.73 and the
+  0.6 repo scope-weight caps it), so the anti-repetition advisory was a permanent silent
+  no-op. Recalibrated to 0.39 — inside the real band (unrelated ≈0.34, identical ≈0.42) —
+  with an end-to-end test that drives `recordSessionSummary` → `dejaAdvisory` so the floor
+  can't drift out of range again.
+- **`forge harden` crashed in a linked worktree/submodule.** `.git` is a _file_ there, not
+  a directory, so `mkdirSync('.git/hooks')` threw `ENOTDIR` and aborted the whole command.
+  The hooks dir is now resolved via `git rev-parse --git-path hooks`.
+- **`forge ledger sync` could silently skip a push to a new/pruned remote.** The idempotence
+  check compared against a _stale local_ `refs/<cli>/ledger` left from a prior remote; a
+  remote lacking the ref was reported `upToDate` without ever receiving the ledger. It now
+  only trusts the short-circuit when the fetch actually found the ref on this remote.
+- **`forge verify --deep` evidence base could diverge.** `added` fell back to `--cached`
+  but `changedFiles` did not, so the structural lenses (impact/docsdrift) went silent on a
+  base whose worktree matches HEAD while the index differs. `changedFiles` now mirrors the
+  same fallback.
+- **Cortex halt metrics were always "pass".** The preflight hook read `result.gate?.halted`,
+  a field `substrateCheck()` never returns, so the cost dashboard's halt-rate was
+  permanently zero. It now reads the real signal (`assumption.shouldAsk`).
+- **`forge radar` usage misattribution.** A dep whose name is a `name.`-prefix of another
+  (`lodash` vs `lodash.debounce`) could steal the other's import count via a first-match
+  break in alphabetical order; names are now matched most-specific-first.
+- **`forge precommit` diff-header parse.** An added content line beginning with `++ `
+  rendered as `+++ ` and was misread as a file header (dropping that line, mis-attributing
+  the rest); the parser now tracks hunk state so headers are only matched before the `@@`.
+
 ## [0.21.0] - 2026-07-17
 
 ### Added

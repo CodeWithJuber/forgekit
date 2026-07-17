@@ -157,9 +157,13 @@ async function main() {
       // blocking the hook. A failing write is silently swallowed.
       try {
         const { record } = await import("./metrics.js");
+        // substrateCheck() has no `gate` key — the halt signal is the assumption gate
+        // (same source substrate.js recordGate uses: preflight.assumption.shouldAsk).
+        // Reading the missing field recorded every prompt as "pass", so the cost
+        // dashboard's halt-rate was permanently zero.
         record(root, {
           stage: "gate",
-          outcome: result.gate?.halted ? "halt" : "pass",
+          outcome: result.assumption?.shouldAsk ? "halt" : "pass",
         });
         if (result.route?.key) {
           record(root, { stage: "route", tier: result.route.tier });

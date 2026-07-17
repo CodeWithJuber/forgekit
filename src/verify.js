@@ -93,7 +93,16 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
     .map((l) => l.slice(1))
     .join("\n");
-  const changedFiles = git(["diff", "--name-only", base], targetRoot).split("\n").filter(Boolean);
+  // Mirror the diff's --cached fallback so the file list is derived from the SAME diff
+  // that produced `added` — otherwise a base whose worktree matches HEAD but whose index
+  // differs yields `added` from --cached while changedFiles stays empty, silently
+  // weakening the structural lenses (impact/docsdrift) that key off changedFiles.
+  const changedFiles = (
+    git(["diff", "--name-only", base], targetRoot) ||
+    git(["diff", "--name-only", "--cached"], targetRoot)
+  )
+    .split("\n")
+    .filter(Boolean);
 
   // Verify runs AFTER edits — a cached, stale atlas would miss newly-added-but-undefined symbols
   // (false negatives) or flag just-defined ones (false positives). Rebuild when stale; the
