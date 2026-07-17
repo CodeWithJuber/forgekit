@@ -13,13 +13,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { impact, load as loadAtlas } from "./atlas.js";
 import { estimateSpendFromLogs } from "./cost_report.js";
-import {
-  authorTrust,
-  claimText,
-  retrieve,
-  val,
-  validOutcome,
-} from "./ledger.js";
+import { authorTrust, claimText, retrieve, val, validOutcome } from "./ledger.js";
 import {
   getClaimByPrefix,
   loadClaims,
@@ -76,9 +70,7 @@ function ledgerSection(root, nowDay) {
       if (c.tombstone) return false;
       const v = val(c, nowDay);
       if (v < CONTESTED_BAND[0] || v > CONTESTED_BAND[1]) return false;
-      return (c.evidence ?? []).some(
-        (e) => validOutcome(e) && e.result === "contradict",
-      );
+      return (c.evidence ?? []).some((e) => validOutcome(e) && e.result === "contradict");
     })
     .map((c) => claimRow(c, nowDay));
   return {
@@ -150,9 +142,7 @@ export function dashSummary(root, { nowDay = epochDay() } = {}) {
       if (c.tombstone) return false;
       const v = val(c, nowDay);
       if (v < CONTESTED_BAND[0] || v > CONTESTED_BAND[1]) return false;
-      return (c.evidence ?? []).some(
-        (e) => validOutcome(e) && e.result === "contradict",
-      );
+      return (c.evidence ?? []).some((e) => validOutcome(e) && e.result === "contradict");
     }).length;
   } catch {}
   let atlasBuilt = false;
@@ -182,8 +172,7 @@ const CLAIM_BROWSE_BUDGET = 50;
 const TIMELINE_CAP = 60;
 const FRESH_HALF_LIFE_DAYS = 45;
 
-const metricDay = (e) =>
-  Math.floor((Number.isFinite(e?.t) ? e.t : 0) / MS_PER_DAY);
+const metricDay = (e) => Math.floor((Number.isFinite(e?.t) ? e.t : 0) / MS_PER_DAY);
 
 /**
  * Metrics history bucketed by day and by stage, capped to the last `capDays` days
@@ -192,10 +181,7 @@ const metricDay = (e) =>
  * @param {string} root
  * @param {{nowDay?: number, capDays?: number}} [opts]
  */
-export function historyData(
-  root,
-  { nowDay = epochDay(), capDays = HISTORY_CAP_DAYS } = {},
-) {
+export function historyData(root, { nowDay = epochDay(), capDays = HISTORY_CAP_DAYS } = {}) {
   let events = [];
   try {
     events = readMetrics(root);
@@ -236,9 +222,7 @@ export function historyData(
   }
   const bucketList = [...buckets.values()].sort((a, b) => a.day - b.day);
   const stageObj = {};
-  for (const [name, s] of [...stages.entries()].sort(
-    (a, b) => b[1].events - a[1].events,
-  ))
+  for (const [name, s] of [...stages.entries()].sort((a, b) => b[1].events - a[1].events))
     stageObj[name] = {
       events: s.events,
       saved: s.saved,
@@ -293,14 +277,10 @@ export function claimsData(
       .filter((c) => !c.tombstone)
       .map((claim) => ({ claim, score: null }))
       .sort(
-        (a, b) =>
-          val(b.claim, nowDay) - val(a.claim, nowDay) ||
-          (a.claim.id < b.claim.id ? -1 : 1),
+        (a, b) => val(b.claim, nowDay) - val(a.claim, nowDay) || (a.claim.id < b.claim.id ? -1 : 1),
       );
   }
-  let rows = ranked.map(({ claim, score }) =>
-    claimBrowseRow(claim, nowDay, score),
-  );
+  let rows = ranked.map(({ claim, score }) => claimBrowseRow(claim, nowDay, score));
   const wantKind = String(kind ?? "").trim();
   if (wantKind) rows = rows.filter((r) => r.kind === wantKind);
   rows = rows.slice(0, budget);
@@ -467,8 +447,7 @@ async function handleWrite(root, pathname, req, res) {
     return sendJson(res, r.ok ? 200 : 404, r);
   }
   const hit = getClaimByPrefix(dir, id);
-  if (!hit)
-    return sendJson(res, 404, { ok: false, reason: `no claim matching ${id}` });
+  if (!hit) return sendJson(res, 404, { ok: false, reason: `no claim matching ${id}` });
   const reason = typeof body.reason === "string" ? body.reason : "";
   const r = tombstone(dir, hit.id, { author, reason, t });
   return sendJson(res, r.ok ? 200 : 400, { ...r, id: hit.id });
@@ -499,8 +478,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
     }
     if (req.method !== "GET")
       return sendJson(res, 404, {
-        error:
-          "GET only — the two writes are POST /api/ratify and POST /api/retract",
+        error: "GET only — the two writes are POST /api/ratify and POST /api/retract",
       });
     if (url.pathname === "/") {
       res.writeHead(200, {
@@ -510,12 +488,9 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       return res.end(html);
     }
     if (url.pathname === "/api/data") return sendJson(res, 200, dashData(root));
-    if (url.pathname === "/api/history")
-      return sendJson(res, 200, historyData(root));
-    if (url.pathname === "/api/radar")
-      return sendJson(res, 200, radarData(root));
-    if (url.pathname === "/api/timeline")
-      return sendJson(res, 200, timelineData(root));
+    if (url.pathname === "/api/history") return sendJson(res, 200, historyData(root));
+    if (url.pathname === "/api/radar") return sendJson(res, 200, radarData(root));
+    if (url.pathname === "/api/timeline") return sendJson(res, 200, timelineData(root));
     if (url.pathname === "/api/claims")
       return sendJson(
         res,
@@ -527,11 +502,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       );
     if (url.pathname === "/api/spend") {
       const spend = estimateSpendFromLogs();
-      return sendJson(
-        res,
-        200,
-        spend || { totalCost: 0, sessions: 0, byModel: [] },
-      );
+      return sendJson(res, 200, spend || { totalCost: 0, sessions: 0, byModel: [] });
     }
     if (url.pathname === "/api/impact") {
       const target = url.searchParams.get("target");

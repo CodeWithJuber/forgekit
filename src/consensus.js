@@ -57,9 +57,7 @@ export const BLOCK_THRESHOLD = 0.5;
  * @returns {{p:number, fires:boolean, families:string[], residual:number, block:boolean}}
  */
 export function aggregate(events) {
-  const ran = (events ?? []).filter(
-    (e) => e && LENSES[e.lens] && e.ran !== false,
-  );
+  const ran = (events ?? []).filter((e) => e && LENSES[e.lens] && e.ran !== false);
   const firing = ran.filter((e) => clamp01(e.s ?? 0) > 0);
   const product = firing.reduce(
     (acc, e) => acc * (1 - LENSES[e.lens].weight * clamp01(e.s ?? 0)),
@@ -111,9 +109,7 @@ export function impactLens(atlas, changedFiles = []) {
   const changed = new Set(changedFiles);
   const dependents = new Set();
   try {
-    const code = changedFiles
-      .filter((f) => classifyPath(f) === "code")
-      .slice(0, 10);
+    const code = changedFiles.filter((f) => classifyPath(f) === "code").slice(0, 10);
     for (const f of code)
       for (const d of impact(atlas, f, { maxHops: 2 }).impactedFiles)
         if (!changed.has(d) && classifyPath(d) === "code") dependents.add(d);
@@ -241,20 +237,14 @@ function findingsOf(lenses) {
   const out = [];
   for (const l of lenses) {
     if (l.ran === false || !(l.s > 0)) continue;
-    if (l.lens === "tests")
-      out.push(`tests failed (${l.runner ?? "project suite"})`);
+    if (l.lens === "tests") out.push(`tests failed (${l.runner ?? "project suite"})`);
     if (l.lens === "symbols")
-      out.push(
-        `calls symbols defined nowhere in the codebase: ${l.unknown.join(", ")}`,
-      );
+      out.push(`calls symbols defined nowhere in the codebase: ${l.unknown.join(", ")}`);
     if (l.lens === "impact")
-      out.push(
-        `dependents of the changed code are not in this diff: ${l.dependents.join(", ")}`,
-      );
+      out.push(`dependents of the changed code are not in this diff: ${l.dependents.join(", ")}`);
     if (l.lens === "docsdrift")
       out.push(`code changed with no doc artifact: ${l.codeFiles.join(", ")}`);
-    if (l.lens === "secrets")
-      out.push("a secret-shaped token appears in the added lines");
+    if (l.lens === "secrets") out.push("a secret-shaped token appears in the added lines");
     if (l.lens === "speclock")
       out.push(
         `specs still claim symbols the code dropped: ${l.drift
