@@ -45,7 +45,10 @@ if [ -n "${cmd:-}" ]; then
   # message mentioning ".env") isn't a false positive, AND require a protected path token.
   # Best-effort defence in depth — a content scan like `rg TOKEN .` with no named path can't
   # be caught here; that's what secret-redact.sh is for.
-  reader='(^|[;&|])[[:space:]]*((cat|less|more|head|tail|nl|xxd|od|strings|base64|rg|grep|ag)[[:space:]]|git[[:space:]]+(show|log)[[:space:]])'
+  # Git subcommands that can print file/history content (RA-05): show, log, diff,
+  # stash (show -p), cat-file, archive, grep. Subcommand may be followed by a space
+  # or end the command string.
+  reader='(^|[;&|])[[:space:]]*((cat|less|more|head|tail|nl|xxd|od|strings|base64|rg|grep|ag)[[:space:]]|git[[:space:]]+(show|log|diff|stash|cat-file|archive|grep)([[:space:]]|$))'
   # \b anchors the extensions so `.key` matches a real key file but NOT `Object.keys`,
   # and `.env` matches `.env`/`.env.prod` but NOT `.environment`.
   secret='(\.env(\.[A-Za-z0-9_-]+)?\b|id_rsa\b|id_ed25519\b|\.pem\b|\.key\b|/secrets/|/\.ssh/)'

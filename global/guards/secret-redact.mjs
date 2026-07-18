@@ -42,4 +42,13 @@ async function main() {
   }
 }
 
-main().catch(() => process.exit(0));
+// RA-06: never fail silently — a broken redactor means the ORIGINAL, unredacted
+// output passes through, so say so loudly. FORGE_GUARD_STRICT=1 makes the
+// degradation blocking (exit 2 = block per the PreToolUse/PostToolUse hook
+// convention, see protect-paths.sh); the default stays advisory (exit 0).
+main().catch((err) => {
+  process.stderr.write(
+    `forge: secret redaction DEGRADED (${err?.message ?? err})\n`,
+  );
+  process.exit(process.env.FORGE_GUARD_STRICT === "1" ? 2 : 0);
+});

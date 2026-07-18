@@ -94,6 +94,43 @@ test("protect-paths does not false-positive on prose mentioning secrets in a quo
   assert.equal(r.code, 0);
 });
 
+test("protect-paths blocks content-dumping git subcommands on secret paths (RA-05)", () => {
+  for (const command of [
+    "git diff -- .env",
+    "git diff HEAD~1 .env.production",
+    "git stash show -p stash@{0} -- .env",
+    "git cat-file -p HEAD:.env",
+    "git archive HEAD .env",
+    "git grep -h . -- .env",
+    "git show HEAD:.env", // regression: already a reader before RA-05
+    'git diff -- ".env"',
+    "cat './.env'",
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 2, `must block: ${command}`);
+    assert.match(r.err, /protected secret path/, `deny reason for: ${command}`);
+  }
+});
+
+test("protect-paths does not false-positive on benign git commands (RA-05)", () => {
+  for (const command of [
+    "git diff src/verify.js",
+    "git log --oneline",
+    "git status",
+    "git stash list", // no secret token — the permission ask covers stash
+    'git commit -m "update .env docs"', // secret token only inside prose, commit is not a reader
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 0, `must not block: ${command}`);
+  }
+});
+
 test("secret-redact redacts a token without jq (Node path)", () => {
   const r = runGuard("secret-redact.sh", {
     tool_name: "Bash",

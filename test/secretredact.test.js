@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAnthropic } from "./_fixtures.js";
 
-const guard = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "global",
-  "guards",
-  "secret-redact.sh",
-);
+const guardsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
+const guard = join(guardsDir, "secret-redact.sh");
 
 function run(input) {
   const r = spawnSync("bash", [guard], {
@@ -46,6 +43,35 @@ test("secret-redact matches redactSecrets byte-for-byte (shared implementation)"
   assert.equal(r.code, 0);
   const emitted = JSON.parse(r.out).hookSpecificOutput.updatedToolOutput;
   assert.equal(emitted, redactSecrets(input));
+});
+
+// RA-06: a broken redactor must never fail silently — the unredacted output would
+// pass straight through. Copying the .mjs to a dir with no ../../src/secrets.js makes
+// its dynamic import throw, exercising the degradation path.
+function runBrokenRedactor(env = {}) {
+  const tmp = mkdtempSync(join(tmpdir(), "redact-degraded-"));
+  const broken = join(tmp, "secret-redact.mjs");
+  copyFileSync(join(guardsDir, "secret-redact.mjs"), broken);
+  const r = spawnSync("node", [broken], {
+    input: JSON.stringify({
+      tool_response: "possible token ghp_but_module_is_missing",
+    }),
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return { code: r.status ?? 1, out: r.stdout || "", err: r.stderr || "" };
+}
+
+test("secret-redact failure is loud, not silent (DEGRADED warning, exit 0)", () => {
+  const r = runBrokenRedactor({ FORGE_GUARD_STRICT: "" });
+  assert.equal(r.code, 0, "default stays non-blocking");
+  assert.match(r.err, /DEGRADED/);
+});
+
+test("secret-redact failure blocks under FORGE_GUARD_STRICT=1 (exit 2)", () => {
+  const r = runBrokenRedactor({ FORGE_GUARD_STRICT: "1" });
+  assert.equal(r.code, 2, "strict mode blocks per the hook convention");
+  assert.match(r.err, /DEGRADED/);
 });
 
 test("secret-redact catches an unknown-vendor high-entropy token (beyond the old sed list)", () => {
