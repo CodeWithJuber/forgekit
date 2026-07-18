@@ -1,0 +1,91 @@
+---
+title: "أوامر Config"
+description: "المزوِّدون، والتكلفة، ولوحات المعلومات، والعلامة التجارية، والأطلس، والحزمة: config وcost وdash وbrand وatlas وstack — إضافةً إلى أمرَي report وtools في الإصدار v0.19+."
+---
+
+تُغطّي مجموعة Config المزوِّدين، والملاحظة، ورسم الشيفرة، واكتشاف الحزمة.
+
+## `forge config`
+
+إعداد المزوِّد — عرض / تبديل / إضافة المزوِّدين، وضبط النموذج الافتراضي.
+
+```bash
+forge config               # show current config
+forge config switch <provider>
+forge config add <provider>
+```
+
+## `forge cost`
+
+الإنفاق الفعلي في اليوم عبر معاملات المراحل المُقاسة.
+
+```bash
+forge cost                 # real per-day spend
+forge cost --stages        # measured per-stage cost factors
+```
+
+<Note>
+  يُبلَّغ عن **المراحل المُقاسة فقط** — المرحلة التي لا أحداث فيها تقول "لا بيانات"،
+  وليس قيمة افتراضية.
+</Note>
+
+## `forge dash`
+
+لوحة معلومات محلية فوق السجل والقياسات ونصف قطر الانفجار.
+
+```bash
+forge dash                 # localhost-only, read-only (default port 4242)
+```
+
+## `forge brand`
+
+طباعة خريطة رموز العلامة التجارية الفعّالة.
+
+```bash
+forge brand
+```
+
+تُخزَّن العلامة التجارية كرمز واحد (`brand.json`)؛ إعادة التسمية تعديل واحد فقط.
+
+## `forge atlas`
+
+بناء/استعلام رسم الشيفرة.
+
+```bash
+forge atlas build [path]   # walk the tree → .forge/atlas.json
+forge atlas query "what calls Z"
+forge atlas has <symbol>   # hallucinated-symbol check
+```
+
+الأطلس JSON عادي — أي أداة تقرؤه، ولا حاجة إلى MCP.
+
+## `forge stack`
+
+اكتشاف حزمة المستودع الفعلية من ملفات البيانات الوصفية.
+
+```bash
+forge stack
+```
+
+يقرأ `package.json`، و`pyproject.toml`، و`go.mod`، و`Cargo.toml`، و`Gemfile`،
+و`composer.json`، و`pom.xml` / `build.gradle`، و`*.csproj`، ويُبلغ عن اللغات،
+وأُطر العمل، ومديري الحِزم، وأوامر الاختبار **الفعلية** للمستودع — التي تُغذّي قائمة
+تحقق الركيزة.
+
+## `forge report` <sub>v0.19+</sub>
+
+توليد تقرير HTML ثابت عن حالة Forge للمستودع — السجل والقياسات ونصف قطر الانفجار
+مُصيَّرة في ملف مكتفٍ ذاتيًا يمكنك مشاركته أو أرشفته.
+
+```bash
+forge report
+```
+
+## `forge tools` <sub>v0.19+</sub>
+
+اختَر أداة الترميز الأساسية بالذكاء الاصطناعي لهذا المستودع، ووصِّل مدخلات `.gitignore`
+المطابقة، ليتم تجاهل الإعدادات المُولَّدة وقطع `.forge/` تجاهلًا صحيحًا لإعدادك.
+
+```bash
+forge tools
+```

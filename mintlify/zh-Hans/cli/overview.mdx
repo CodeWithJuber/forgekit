@@ -1,0 +1,55 @@
+---
+title: "CLI 概览"
+description: "每一个 forge 命令,按 Core、Memory、Substrate、Quality 和 Config 分组——命令面本身是数据,通过严格的漂移检查与文档相互对账。"
+---
+
+`forge` 命令面被定义为数据(`src/commands.js`),并由 `forge docs check` 与文档对账,因此一个命令无法在不被文档察觉的情况下上线或消失。命令分为五组。
+
+<CardGroup cols={2}>
+  <Card title="Core" icon="gear" href="/zh-Hans/cli/core">
+    引导与维护:`init`、`sync`、`doctor`、`catalog`、`docs`、`update`。
+  </Card>
+  <Card title="Memory" icon="brain" href="/zh-Hans/cli/memory">
+    跨会话与团队记忆:`cortex`、`recall`、`remember`、`brain`、`ledger`、
+    `reuse`、`handoff`、`decide`。
+  </Card>
+  <Card title="Substrate" icon="diagram-project" href="/zh-Hans/cli/substrate">
+    行动前关卡及其各阶段:`substrate`、`preflight`、`route`、`impact`、
+    `scope`、`context`、`anchor`、`diagnose`、`imagine`、`lean`。
+  </Card>
+  <Card title="Quality" icon="shield-check" href="/zh-Hans/cli/quality">
+    验证与安全:`verify`、`scan`、`spec`、`taste`、`uicheck`、`harden`。
+  </Card>
+  <Card title="Config" icon="sliders" href="/zh-Hans/cli/config">
+    提供方、成本、仪表盘、品牌、atlas、stack:`config`、`cost`、`dash`、`brand`、
+    `atlas`、`stack`。
+  </Card>
+</CardGroup>
+
+## 约定
+
+- **默认建议性。** 设置 `FORGE_ENFORCE=1` 可把基座变成对最强信号的硬阻断
+  (空洞的提示、无法装配出必需上下文、爆炸半径超过默认的 25 文件阈值)。
+- **默认安静。** 每个命令的 `Forge <cmd> — …` 标题只是品牌装饰,藏在
+  `--verbose` / `FORGE_VERBOSE` 后面;命令会先输出结果。
+- **管道友好的输出。** 被管道时输出纯文本;在 TTY 上会加上品牌配色和置信度进度条。`NO_COLOR` 关掉颜色,`FORCE_COLOR=1` 强制打开。
+- **`--json`** 在基座和大多数分析命令中可用,便于脚本使用。
+
+<Note>
+  运行 `forge --help` 查看始终最新的命令列表,或 `forge catalog` 查看每个工具、crew 与护栏的 Start-Here 索引及一句话说明。
+</Note>
+
+## v0.19+ 的新增内容
+
+一些命令和参数正在 v0.19 系列中登陆。它们记录在各自的分组页面里,并在正文标注:
+
+| 命令 / 参数            | 分组     | 作用                                              |
+| ---------------------- | -------- | ------------------------------------------------- |
+| `forge know`           | Memory   | 把一条事实路由到它正确的存储归宿。                |
+| `forge deja`           | Memory   | 相似的过往工作查询。                              |
+| `forge precommit`      | Quality  | commit 级别的验证关卡。                            |
+| `forge radar`          | Quality  | 依赖时效性环。                                     |
+| `forge report`         | Config   | 生成本仓库 Forge 状态的静态 HTML 报告。            |
+| `forge tools`          | Config   | 主用工具选择 + gitignore 接线。                    |
+| `forge verify --deep`  | Quality  | 多视角共识验证。                                   |
+| `forge update --to`    | Core     | 锁定或回退到特定版本。                             |

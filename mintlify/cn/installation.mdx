@@ -1,0 +1,105 @@
+---
+title: "安装"
+description: "通往同一棵树的三个入口：插件市场、npm 全局安装，以及一个不走注册表的 github: 安装方式 —— 还有贡献者用的软链接开发方案。"
+---
+
+Forge 采用**一棵树，三个入口**的设计：插件清单、加固过的安装脚本
+和 npm 的 bin 全都指向同一份 `global/` + `source/` 树。
+选一个适合你工具的通道。
+
+## 选择一个通道
+
+<CardGroup cols={2}>
+  <Card title="Plugin（推荐）" icon="puzzle-piece">
+    面向 Claude Code 和 Codex。护栏自动接通；无需手动合并。
+  </Card>
+  <Card title="npm 全局" icon="node-js">
+    面向任何工具。从公共 npm 注册表获取 `forge` CLI。
+  </Card>
+  <Card title="github: 安装" icon="github">
+    不需要注册表 —— 直接从仓库安装。
+  </Card>
+  <Card title="贡献者 / 本地开发" icon="code">
+    克隆 + `npm link`，或者用 `bash install.sh` 走软链接方案。
+  </Card>
+</CardGroup>
+
+## 环境要求
+
+- **Node.js >= 20**
+- **零运行时依赖** —— 一切都是 Node 内置。可选层
+  （`FORGE_EMBED` 向量嵌入、`uicheck visual` 用的 Playwright）是按需开启，不会加进
+  必需依赖。
+
+## 插件市场
+
+对 Claude Code 和 Codex 推荐这条路径，不需要 token 也不需要克隆：
+
+```bash
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+插件通过 `${CLAUDE_PROJECT_DIR}` 把护栏接通，所以动作前门和
+完成门在后台就会触发。
+
+## npm 全局
+
+面向任何工具，来自公共 npm：
+
+```bash
+npm install -g @codewithjuber/forgekit
+forge doctor          # everything green?
+```
+
+## 不走注册表的 github: 安装
+
+```bash
+npm install -g github:CodeWithJuber/forgekit
+```
+
+## 贡献者 / 本地开发
+
+<CodeGroup>
+
+```bash npm link
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+npm link
+```
+
+```bash install.sh (symlink setup)
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+bash install.sh
+```
+
+</CodeGroup>
+
+安装脚本经过加固：幂等、基于软链接、带备份，没有 `curl | sh`。
+
+## 验证
+
+不管你用了哪个通道，都可以确认安装状态：
+
+```bash
+forge doctor          # tools, guards, MCP auth, config drift, update status
+```
+
+<Note>
+  `forge doctor` 也会为 git 克隆版本给出一条不烦人的"落后上游多少提交"的提示。
+  设置 `FORGE_NO_UPDATE_CHECK=1` 可以让它安静下来。所有路径都是 fail-open ——
+  离线或 detached HEAD 都会报告"unknown"，永远不会报错。
+</Note>
+
+## 保持 Forge 最新
+
+```bash
+forge update --check          # report whether a newer version is available
+forge update                  # apply the update (git checkout or npm/copy install)
+forge update --to <version>   # pin or downgrade to a specific version
+```
+
+<Card title="现在去配置一个仓库" icon="arrow-right" href="/cn/quickstart">
+  去快速开始，运行 `forge init` 和你的第一次基底检查。
+</Card>

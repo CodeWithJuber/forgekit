@@ -1,0 +1,103 @@
+---
+title: "Substrate कमांड्स"
+description: "प्री-एक्शन गेट और उसके व्यक्तिगत रूप से कॉल किए जाने योग्य चरण: substrate, preflight, route, impact, scope, context, anchor, diagnose, imagine, और lean।"
+---
+
+Substrate समूह प्री-एक्शन गेट है। `forge substrate` बाकी को एक ही वर्डिक्ट में संयोजित
+करता है; प्रत्येक चरण को अकेले भी कॉल किया जा सकता है। पाइपलाइन के लिए
+[The pre-action gate](/hi/concepts/pre-action-gate) देखें।
+
+## `forge substrate`
+
+एक प्री-एक्शन गेट: अनुमान, रूट, प्रभाव, स्कोप, मेमोरी, वेरीफ़ाई।
+
+```bash
+forge substrate "<task>"
+forge substrate "<task>" --json
+```
+
+यदि यह `okToProceed:false` लौटाता है, तो एडिट करने से पहले लौटाए गए `assumption.questions` पूछें।
+
+## `forge preflight`
+
+अनुमान जाँच — कोई कार्य क्या नाम लेता है जो रेपो परिभाषित नहीं करता।
+
+```bash
+forge preflight "<task>"
+```
+
+## `forge route`
+
+किसी कार्य के लिए सबसे सस्ते समर्थ मॉडल की सिफ़ारिश करें।
+
+```bash
+forge route "<task>"
+forge route gateway        # emit LiteLLM gateway config
+```
+
+## `forge impact`
+
+atlas ग्राफ़ से किसी सिंबल या फ़ाइल के लिए ब्लास्ट रेडियस का पूर्वानुमान लगाएँ।
+
+```bash
+forge impact <symbol-or-file>
+```
+
+## `forge scope`
+
+फ़ाइलों को स्वतंत्र क्लस्टर्स में विघटित करें — साथ ही युग्मित फ़ाइलें जिनका नाम आपने नहीं लिया।
+
+```bash
+forge scope <files...>
+```
+
+## `forge context`
+
+बजट-सीमित कॉन्टेक्स्ट संयोजन + पूर्णता गेट — किसी एडिट को क्या जानना ज़रूरी है।
+
+```bash
+forge context "<task>"
+```
+
+पूर्वानुमानित एडिट सेट पर set-cover के माध्यम से बजट-सीमित कॉन्टेक्स्ट संयोजित करता है,
+एक कंप्रेशन लैडर लागू करता है, और गणना किए गए missing set की रिपोर्ट करता है।
+
+## `forge anchor`
+
+लक्ष्य-ड्रिफ्ट जाँच — क्या आपके वास्तविक (git) परिवर्तन अभी भी बताए गए लक्ष्य पर हैं?
+
+```bash
+forge anchor set "<goal>"   # persist the goal across sessions
+forge anchor show
+forge anchor clear
+```
+
+## `forge diagnose`
+
+डूम-लूप जाँच — एक असफलता दर्ज करें; वही हस्ताक्षर 3× एक निदान + एस्केलेशन बनाता है।
+
+```bash
+forge diagnose "<failure>"
+```
+
+## `forge imagine`
+
+परिणाम सिमुलेशन — किसी कार्य के लिए पूर्वानुमानित ब्रेक्स + न्यूनतम ड्राई-रन टेस्ट सूट।
+
+```bash
+forge imagine "<task>"
+forge imagine "<task>" --run   # execute the minimal suite sandboxed
+```
+
+## `forge lean`
+
+स्कोप-न्यूनता (M5) — डिफ़ के पदचिह्न को उस बनाम मापें जो कार्य ने माँगा था।
+
+```bash
+forge lean
+```
+
+<Note>
+  `route`, `impact`, `scope`, `context`, `anchor`, और `lean` चरण सभी `forge substrate`
+  के अंदर चलते हैं। जब आपको केवल एक ही संकेत चाहिए तो उन्हें अलग-अलग कॉल करें।
+</Note>

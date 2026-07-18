@@ -1,0 +1,97 @@
+---
+title: "快速开始"
+description: "安装 Forge、从单一源生成每个工具的配置、并运行你的第一个预动作门 —— 大约 60 秒。"
+---
+
+从零到配置完成的仓库和第一次基座检查,只需要大约一分钟。
+
+## 1. 安装
+
+<CodeGroup>
+
+```bash Plugin (Claude Code / Codex)
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+```bash npm (any tool)
+npm install -g @codewithjuber/forgekit
+```
+
+```bash No registry
+npm install -g github:CodeWithJuber/forgekit
+```
+
+</CodeGroup>
+
+对于 Claude Code 和 Codex,推荐使用 plugin 方式 —— 护栏会自动接线,无需手动合并。完整的安装矩阵(包括符号链接开发环境)见 [安装](/zh-CN/installation)。
+
+## 2. 配置一个仓库
+
+<Steps>
+  <Step title="生成每个工具的配置">
+    ```bash
+    cd ~/your-project
+    forge init
+    ```
+    这会生成 `AGENTS.md`、`CLAUDE.md`、`.gemini/settings.json`、`.aider.conf.yml` 等 —— 外加账本需要的 `.gitattributes` union-merge 规则。Claude Code、Codex、Cursor、Gemini、Aider、Copilot、Windsurf、Zed 和 Continue 现在都从各自的原生文件读取**同样的**规则。
+  </Step>
+  <Step title="健康检查">
+    ```bash
+    forge doctor
+    ```
+    对已安装工具、护栏、MCP 认证和配置漂移进行通过/失败检查。
+  </Step>
+  <Step title="以后修改规则">
+    编辑 `source/rules.json`(或放一个仓库级的 `.forge/rules.json`),然后重新编译:
+    ```bash
+    forge sync
+    ```
+    `sync` 是幂等的 —— 只重写发生了变化的内容。
+  </Step>
+</Steps>
+
+## 3. 运行预动作门
+
+基座是在模型编辑代码_之前_运行的层。一条命令就能运行整个门:
+
+```bash
+forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
+#   → assumption verdict · cheapest capable model · predicted blast radius
+#     (including files you didn't name) · scope clusters · verification checklist
+```
+
+<Note>
+  在 Claude Code 上,基座通过 `UserPromptSubmit` 钩子在**每个 prompt 上自动运行** —— 仅作建议,对干净任务保持静默。其他每个工具都会获得一条原生配置规则,加上它可以自己调用的 19 个 MCP 工具。
+</Note>
+
+如果 `forge substrate` 返回 `ASK FIRST`,在编辑前先提出返回的问题。在任何变更之前,阅读预测的受影响文件 —— 也就是爆炸半径。
+
+```bash
+forge substrate "<task>" --json   # machine-readable verdict
+forge impact <symbol-or-file>     # the blast radius on its own
+```
+
+## 4. 探索附加功能
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas query useAuth  # where is it defined? (cheaper than grep-and-read)
+forge atlas has useAuth    # does it exist? "not found" = likely hallucinated
+forge recall add "db port" "Postgres is on 5433 here, not 5432"
+forge catalog              # the Start-Here index of everything
+```
+
+## 5. 第二天:账本开始学习
+
+第一天基座学到的一切都作为声明落在 `.forge/ledger/` 中。这就是携证记忆 —— 现在它开始发挥效益:
+
+```bash
+forge ledger stats                              # what the repo knows, by kind and trust
+forge ledger blame <id-prefix>                  # who minted a claim, every oracle outcome
+forge reuse query "<what you're about to build>"  # verified code you already have
+```
+
+<Card title="继续" icon="arrow-right" href="/zh-CN/concepts/pre-action-gate">
+  阅读预动作门如何把各阶段合成为单一裁决。
+</Card>

@@ -1,0 +1,80 @@
+---
+title: "模型路由"
+description: "在分发前，通过一份确定性、可 diff 的评分表挑出最便宜的能胜任的模型层 —— 并且对自建网关有一个安全回退的重映射。"
+---
+
+在分发**之前**，Forge 会根据一份你可以在仓库里读到的确定性评分表
+（`src/model_tiers.json`）为一个任务推荐最便宜的能胜任的模型。和那种
+在请求时由代理内部决定的网关不同，路由决策在 git 里是可见、可 diff 的。
+
+## 推荐一个层 —— `forge route`
+
+```bash
+forge route "<task>"            # cheapest capable model tier for the task
+forge route gateway             # emit LiteLLM gateway config
+```
+
+推荐依据是在一份带标签的样本库（英文 + Hinglish 行）上、
+在重叠相似度度量下、带一个置信度门槛的样本 k-NN 数学 —— 而不是关键词匹配。
+
+<Note>
+  从推荐的 `route.tier` 开始，只在某个外部验证器失败之后再升级，
+  绝不预防性地升级。这样能在任务确实需要能力时不封顶能力，
+  同时把开销压下去。
+</Note>
+
+## 先意图，再层级
+
+路由和意图检测共享同一套数学（`src/intent.js`）：一段提示通过同一个样本
+k-NN 估计器被映射到某个意图。注意两者用的停用词集合不同 —— route 
+把通用动词（`fix` / `add` / `build`）视为复杂度噪音，但那些动词
+恰恰是意图的信号。
+
+## 层级表
+
+层级表（`src/model_tiers.json`）按家族（haiku / sonnet / opus / fable）
+钉死了公开的 Anthropic 模型 ID。文档里的价格由文档检查
+对着这份文件核对，所以自然语言和表不会漂移。
+
+## 自建网关的重映射
+
+一个自建的 LiteLLM 或代理网关会用它自己的模型名，所以原封发送一个
+出厂 ID 会 404。当配置了非默认网关的 base URL 时，Forge
+（`src/gateway_model_map.js`）会**每个进程一次**地 `GET /v1/models`，并把它
+公示的每个 id 对每一层的家族打分：
+
+<Steps>
+  <Step title="家族硬门槛">
+    家族关键词（haiku / sonnet / opus / fable）必须匹配 —— 这是硬门槛。
+  </Step>
+  <Step title="重叠最好的胜出">
+    在同一家族里，用该层名字 token 的 `setOverlap` 系数挑出
+    最佳匹配。
+  </Step>
+  <Step title="平局倒向规范名">
+    平局时倒向最接近规范名的 id。
+  </Step>
+</Steps>
+
+<Warning>
+  只有当解析出来的 id 是 _出厂_ ID 时，重映射才会向网关请求 —— 一个显式的
+  `.forge/providers.json` 别名或 `ANTHROPIC_MODEL` 覆盖永远不会
+  被动。它会在没有网关、无法访问 `/v1/models`，或没有匹配到家族时
+  安全地退回到出厂 ID，所以直连 `api.anthropic.com` 的用户是逐字节相同的。
+</Warning>
+
+`forge doctor` 的 **gateway models** 一行会打印出解析后的 `tier → model`
+映射，方便核对。
+
+## 提供方与成本
+
+```bash
+forge config               # show / switch / add providers, set the default model
+forge cost                 # real per-day spend
+forge cost --stages        # measured per-stage cost factors
+```
+
+<Note>
+  `forge cost --stages` 只报告**实测的阶段** —— 一个没有事件记录的阶段会显示
+  "no data"，绝不会给出默认值。数字在被实测之前只是一个假设。
+</Note>

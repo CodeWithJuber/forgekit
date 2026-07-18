@@ -1,0 +1,77 @@
+---
+title: "أوامر Core"
+description: "تهيئة المستودع والحفاظ عليه: init وsync وdoctor وcatalog وdocs وupdate."
+---
+
+تُهيّئ مجموعة Core المستودع وتحافظ على صحته.
+
+## `forge init`
+
+بناء إعداد المستودع — يُصدر لكل أداة من مصدر مشترك.
+
+```bash
+forge init
+```
+
+يُصدر `AGENTS.md`، و`CLAUDE.md`، و`.gemini/settings.json`، و`.aider.conf.yml`، والباقي
+(إضافةً إلى إعداد خادم MCP لأدوات Roo Code وVS Code)، وقاعدة الدمج الاتحادي في
+`.gitattributes` التي يحتاجها السجل.
+
+## `forge sync`
+
+إعادة تصريف المصدر القانوني إلى ملفات الإعداد الأصلية لكل أداة.
+
+```bash
+forge sync
+```
+
+عديم الأثر — يعيد كتابة ما تغيّر فقط. شغّله بعد تعديل `source/rules.json` أو
+`.forge/rules.json` الخاص بالمستودع.
+
+## `forge doctor`
+
+فحص صحة الأدوات المثبتة، والحواجز، ومصادقة MCP، وانحراف الإعدادات.
+
+```bash
+forge doctor
+```
+
+نجاح/إخفاق عبر الأدوات، والحواجز، وتوصيلات MCP، وانحراف الإعدادات، وحالة التحديث. كل
+مسار يفشل بلطف. يطبع صف **نماذج البوّابة** التعيين المحلول `tier → model` عند إعداد
+بوّابة مخصّصة.
+
+## `forge catalog`
+
+ابدأ من هنا — يعرض كل أداة، وطاقم، وحاجز مع سبب موجز من سطر واحد.
+
+```bash
+forge catalog
+```
+
+## `forge docs`
+
+انحراف التوثيق ↔ الشيفرة.
+
+```bash
+forge docs check     # registry reconcile — commands, env vars, MCP tools, CHANGELOG
+forge docs sync      # diff-driven stale-docs sweep
+```
+
+<Note>
+  يفشل `docs check` في CI عندما تنحرف الأوامر، أو متغيرات البيئة، أو أدوات MCP، أو
+  CHANGELOG عن الشيفرة. يمسح `docs sync` الفرق ويُبلغ عن UPDATED / STALE /
+  VERIFIED-UNAFFECTED.
+</Note>
+
+## `forge update`
+
+تحديث ذاتي عبر أنماط التثبيت الثلاثة كلها.
+
+```bash
+forge update              # apply the update (git checkout or npm/copy install)
+forge update --check      # report whether a newer version is available
+forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
+```
+
+كل مسار يفشل بلطف — دون اتصال أو منبع أو رأس منفصل يُرجَع "غير معروف"، لا خطأ.
+`FORGE_NO_UPDATE_CHECK=1` يُسكت إشعار الطبيب.

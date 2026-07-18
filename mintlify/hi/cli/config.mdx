@@ -1,0 +1,91 @@
+---
+title: "Config कमांड्स"
+description: "प्रोवाइडर्स, लागत, डैशबोर्ड्स, ब्रांड, atlas, और स्टैक: config, cost, dash, brand, atlas, stack — साथ ही v0.19+ report और tools कमांड्स।"
+---
+
+Config समूह प्रोवाइडर्स, ऑब्ज़र्वेबिलिटी, कोड ग्राफ़, और स्टैक डिटेक्शन को कवर करता है।
+
+## `forge config`
+
+प्रोवाइडर सेटअप — प्रोवाइडर्स दिखाएँ / स्विच करें / जोड़ें, डिफ़ॉल्ट मॉडल सेट करें।
+
+```bash
+forge config               # show current config
+forge config switch <provider>
+forge config add <provider>
+```
+
+## `forge cost`
+
+मापित स्टेज फ़ैक्टर्स के माध्यम से वास्तविक प्रति-दिन खर्च।
+
+```bash
+forge cost                 # real per-day spend
+forge cost --stages        # measured per-stage cost factors
+```
+
+<Note>
+  **केवल मापित चरणों** की रिपोर्ट करता है — बिना घटनाओं वाला चरण "no data" कहता है,
+  कभी कोई डिफ़ॉल्ट नहीं।
+</Note>
+
+## `forge dash`
+
+लेजर, मीट्रिक्स, और ब्लास्ट रेडियस पर लोकल डैशबोर्ड।
+
+```bash
+forge dash                 # localhost-only, read-only (default port 4242)
+```
+
+## `forge brand`
+
+सक्रिय ब्रांड टोकन मैप प्रिंट करें।
+
+```bash
+forge brand
+```
+
+ब्रांड एक टोकन (`brand.json`) के रूप में संग्रहीत है; रीब्रांड एक ही संपादन है।
+
+## `forge atlas`
+
+कोड ग्राफ़ बनाएँ / क्वेरी करें।
+
+```bash
+forge atlas build [path]   # walk the tree → .forge/atlas.json
+forge atlas query "what calls Z"
+forge atlas has <symbol>   # hallucinated-symbol check
+```
+
+atlas सादा JSON है — कोई भी टूल पढ़ता है, MCP आवश्यक नहीं।
+
+## `forge stack`
+
+इस रेपो के मैनिफ़ेस्ट से इसका वास्तविक स्टैक पहचानें।
+
+```bash
+forge stack
+```
+
+`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`,
+`composer.json`, `pom.xml` / `build.gradle`, और `*.csproj` पढ़ता है, और भाषाएँ,
+फ़्रेमवर्क, पैकेज मैनेजर, और रेपो की **वास्तविक** टेस्ट कमांड्स रिपोर्ट करता है — जो
+सब्सट्रेट की सत्यापन चेकलिस्ट को फ़ीड करते हैं।
+
+## `forge report` <sub>v0.19+</sub>
+
+रेपो की Forge स्थिति की एक स्टैटिक HTML रिपोर्ट बनाएँ — लेजर, मीट्रिक्स, और ब्लास्ट
+रेडियस एक स्व-निहित फ़ाइल में प्रस्तुत जिसे आप साझा या संग्रह कर सकते हैं।
+
+```bash
+forge report
+```
+
+## `forge tools` <sub>v0.19+</sub>
+
+इस रेपो का प्राथमिक AI कोडिंग टूल चुनें और मिलती-जुलती `.gitignore` प्रविष्टियाँ वायर करें,
+ताकि आपके सेटअप के लिए जनरेट की गई कॉन्फ़िग और `.forge/` आर्टिफ़ैक्ट सही ढंग से अनदेखे हों।
+
+```bash
+forge tools
+```

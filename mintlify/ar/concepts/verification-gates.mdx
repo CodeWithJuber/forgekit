@@ -1,0 +1,98 @@
+---
+title: "بوابات التحقق"
+description: "التحقق المستقل، وعَلَم الرمز المُهلوَس، والمواصفة-كعقد، وبوابة المهارات — فحوصات يمكنك تشغيلها تُقلِّل الأخطاء لكنها لا تُشهد بالصحة أبدًا."
+---
+
+لا شيء يُعد "منجَزًا" دون فحص يمكنك تشغيله — اختبار، أو رمز خروج من البناء، أو لقطة شاشة.
+تضيف كل من بوابات التحقق في Forge حاجزًا إضافيًا للاصطياد. مع معدل إخفاق لكل مهمة قدره
+`1 − p` ومعدل اصطياد للبوابة `c`، تنخفض الإخفاقات الصامتة إلى `(1 − p)(1 − c)`، وكل بوابة
+هنا هي `c` إضافية.
+
+<Warning>
+  **التحقق يُقلِّل الأخطاء، ولا يُشهد بها.** مُحقِّقو الفريق (Crew) وعَلَم الرمز المُهلوَس يقلّلان
+  عبء المراجعة؛ لكنهما لا يثبتان صحة الشيفرة. الاختبارات والتصحيحات البشرية تفوز دائمًا.
+</Warning>
+
+## التحقق المستقل — `forge verify`
+
+بوابة مستقلة: تُشغّل اختبارات المستودع الحقيقية، وتضع علامة على الرموز المُهلوَسة،
+وتتحقق من المصدر (provenance).
+
+```bash
+forge verify              # tests + hallucinated-symbol + provenance
+forge verify --deep       # multi-lens consensus — several independent checks must agree
+```
+
+<Note>
+  يُصعّد `--deep` (v0.19+) إلى إجماع متعدد العدسات: يجب أن يجتاز التغيير عدة عدسات
+  تحقق مستقلة، لا عدسة واحدة فقط.
+</Note>
+
+## عَلَم الرمز المُهلوَس — `forge atlas has`
+
+`forge atlas has <symbol>` هو فحص الهلوسة: إذا استدعى النموذج رمزًا ليس في الرسم البياني
+للشيفرة، تضع البوابة علامة عليه.
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas has useAuth    # "not found" = likely hallucinated
+```
+
+الأطلس (atlas) هو JSON عادي عن قصد — يقرأ Codex وCursor وGemini وAider ملف
+`.forge/atlas.json` عبر CLI أو `jq` العادي، دون أي اعتماد على MCP.
+
+## المواصفة-كعقد — `forge spec`
+
+ثبِّت السلوك في مواصفة واكتشف الانحراف عنها:
+
+```bash
+forge spec init            # scaffold an OpenSpec contract
+forge spec lock            # lock the current spec as the contract
+forge spec check           # report drift against the locked contract
+```
+
+## بوابة المهارات — `forge scan`
+
+قبل تثبيت مهارة أو خادم MCP، افحصه بحثًا عن الحقن، أو تنفيذ الشيفرة عن بُعد (RCE)،
+أو تسريب البيانات:
+
+```bash
+forge scan <path-to-SKILL.md-or-.mcp.json>
+```
+
+<Warning>
+  الفحص النظيف **ليس شهادة أمان.** لا تصطاد الاستدلالات المدمجة سوى أشكال الهجمات المعروفة
+  (الحرجة) وعدد قليل من الأنماط عالية الخطورة؛ اجتيازها يعني _"لم يُكتشف توقيع حرج"_،
+  وليس _"آمن للتثبيت"_. راجع دائمًا المصدر، والأذونات، ومصدر الحزمة، وسلوك الشبكة بنفسك.
+  النتيجة عالية الخطورة **high** لا تُوسم آمنة رغم أنها لا تحجب فعليًا. الماسح الخارجي
+  اختياري ولا يجري أي استدعاء شبكي إلا إذا مكّنتَه.
+</Warning>
+
+## التصليب — `forge harden`
+
+وصِّل ضوابط الأمان التي تُبقي الأسرار والتغييرات غير الآمنة خارج المستودع:
+
+```bash
+forge harden               # gitleaks pre-commit + sandbox settings
+```
+
+## بوابة على مستوى الالتزام — `forge precommit`
+
+<Note>
+  `forge precommit` (v0.19+) هي بوابة على مستوى الالتزام (commit) — تُشغّل الحد الأدنى للتحقق
+  وقت الالتزام حتى يُصطاد العمل الجزئي أو غير المُتحقَق منه قبل أن يهبط.
+</Note>
+
+## فحوصات واجهة المستخدم — `forge uicheck`
+
+فحوصات UI حتمية، دون LLM ودون لقطات شاشة لأول ثلاث عدسات:
+
+```bash
+forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
+forge uicheck fingerprint <file...>  # deterministic design fingerprint
+forge uicheck design <file...>       # slop-distance + conformance gate
+forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+```
+
+قرن ذلك مع `forge taste` لاختيار اتجاه بصري واحد (brutalist، corporate،
+editorial، minimalist، playful) ومعايرة عتبات بوابة `design`.

@@ -1,0 +1,84 @@
+---
+title: "Quality कमांड्स"
+description: "सत्यापन और सुरक्षा: verify, scan, spec, taste, uicheck, और harden — साथ ही v0.19+ precommit और radar गेट्स।"
+---
+
+Quality समूह सत्यापन और सुरक्षा सतह है। ये कैसे संयोजित होते हैं इसके लिए
+[Verification gates](/hi/concepts/verification-gates) देखें।
+
+## `forge verify`
+
+स्वतंत्र सत्यापन गेट — टेस्ट्स + हैलुसिनेटेड-सिंबल + provenance।
+
+```bash
+forge verify
+forge verify --deep       # multi-lens consensus (v0.19+)
+```
+
+## `forge scan`
+
+Skill-गेट — इंस्टॉल से पहले किसी skill या MCP सर्वर की injection / RCE / exfil के लिए जाँच करें।
+
+```bash
+forge scan <path-to-SKILL.md-or-.mcp.json>
+```
+
+## `forge spec`
+
+Spec-as-contract — init (OpenSpec), lock, और drift जाँचें।
+
+```bash
+forge spec init
+forge spec lock
+forge spec check
+```
+
+## `forge taste`
+
+इस रेपो के लिए एक UI-taste टूल सक्षम करें (कोई arg नहीं होने पर विकल्प सूचीबद्ध होते हैं)।
+
+```bash
+forge taste                # list the profiles
+forge taste <profile>      # brutalist · corporate · editorial · minimalist · playful
+```
+
+`DESIGN.md` लिखता है और `uicheck design` गेट थ्रेशोल्ड्स को पैरामीटराइज़ करता है।
+
+## `forge uicheck`
+
+डिटरमिनिस्टिक UI जाँचें।
+
+```bash
+forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
+forge uicheck fingerprint <file...>  # deterministic design fingerprint
+forge uicheck design <file...>       # slop-distance + conformance gate
+forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+```
+
+## `forge harden`
+
+सुरक्षा नियंत्रण वायर करें — gitleaks pre-commit + sandbox सेटिंग्स।
+
+```bash
+forge harden
+```
+
+## `forge precommit` <sub>v0.19+</sub>
+
+कमिट-स्तरीय गेट — कमिट समय पर सत्यापन-न्यूनतम चलाता है ताकि आंशिक या असत्यापित कार्य
+उतरने से पहले पकड़ा जा सके।
+
+```bash
+forge precommit
+```
+
+## `forge radar` <sub>v0.19+</sub>
+
+निर्भरता-नवीनता रिंग्स — प्रोजेक्ट की निर्भरताओं को उनकी नवीनता के अनुसार समूहित करता है,
+ताकि पुरानी या बहती निर्भरताएँ नुक़सान पहुँचाने से पहले सतह पर आ जाएँ।
+
+```bash
+forge radar
+```
+
+रिंग्स कैसे पढ़ें इसके लिए [Keeping dependencies current](/hi/guides/radar-deps) गाइड देखें।

@@ -1,0 +1,99 @@
+---
+title: "Substrate 命令"
+description: "行动前关卡及可单独调用的各阶段:substrate、preflight、route、impact、scope、context、anchor、diagnose、imagine 和 lean。"
+---
+
+Substrate 分组就是行动前关卡。`forge substrate` 把其余各阶段合成一次裁决;每个阶段也都可以单独调用。管道细节请见 [行动前关卡](/zh-Hans/concepts/pre-action-gate)。
+
+## `forge substrate`
+
+一次行动前关卡:假设、路由、影响、范围、记忆、验证。
+
+```bash
+forge substrate "<task>"
+forge substrate "<task>" --json
+```
+
+若返回 `okToProceed:false`,在编辑前先问它返回的 `assumption.questions`。
+
+## `forge preflight`
+
+假设检查——任务点名的东西中,仓库还没定义的部分。
+
+```bash
+forge preflight "<task>"
+```
+
+## `forge route`
+
+为任务推荐能胜任的最便宜模型。
+
+```bash
+forge route "<task>"
+forge route gateway        # 生成 LiteLLM gateway 配置
+```
+
+## `forge impact`
+
+基于 atlas 图,预测一个符号或文件的爆炸半径。
+
+```bash
+forge impact <symbol-or-file>
+```
+
+## `forge scope`
+
+把文件拆分为独立聚类——外加你未点名的耦合文件。
+
+```bash
+forge scope <files...>
+```
+
+## `forge context`
+
+有预算的上下文装配 + 完整性关卡——一次编辑必须知道的信息。
+
+```bash
+forge context "<task>"
+```
+
+通过对预测编辑集的 set-cover 装配一份有预算的上下文,应用一条压缩阶梯,并报告计算出的缺失集。
+
+## `forge anchor`
+
+目标漂移检查——你实际的(git)改动是否仍在既定目标上?
+
+```bash
+forge anchor set "<goal>"   # 让目标跨会话持久保留
+forge anchor show
+forge anchor clear
+```
+
+## `forge diagnose`
+
+死循环检查——记录一次失败;同一签名出现 3 次将会生成一份诊断 + 升级建议。
+
+```bash
+forge diagnose "<failure>"
+```
+
+## `forge imagine`
+
+后果模拟——为任务给出预测的破坏点 + 最小 dry-run 测试套件。
+
+```bash
+forge imagine "<task>"
+forge imagine "<task>" --run   # 在沙箱中执行这套最小测试
+```
+
+## `forge lean`
+
+范围最小性(M5)——衡量 diff 的足迹与任务要求之间的差距。
+
+```bash
+forge lean
+```
+
+<Note>
+  `route`、`impact`、`scope`、`context`、`anchor` 和 `lean` 各阶段都会在 `forge substrate` 内部运行。想只拿其中一个信号时,单独调用它们。
+</Note>

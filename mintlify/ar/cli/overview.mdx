@@ -1,0 +1,60 @@
+---
+title: "نظرة عامة على CLI"
+description: "كل أمر من أوامر forge مُصنَّف حسب المجموعات Core وMemory وSubstrate وQuality وConfig — سطح الأوامر بيانات، ويتم توفيقه مع التوثيق بفحص انحراف صارم."
+---
+
+يُعرَّف سطح أوامر `forge` كبيانات (`src/commands.js`)، ويتم توفيقه مع التوثيق عبر
+`forge docs check`، بحيث لا يستطيع أمر أن يُشحن أو يختفي دون أن يلاحظه التوثيق. تُنظَّم
+الأوامر في خمس مجموعات.
+
+<CardGroup cols={2}>
+  <Card title="Core" icon="gear" href="/ar/cli/core">
+    التهيئة والصيانة: `init`، و`sync`، و`doctor`، و`catalog`، و`docs`، و`update`.
+  </Card>
+  <Card title="Memory" icon="brain" href="/ar/cli/memory">
+    الذاكرة عبر الجلسات وذاكرة الفريق: `cortex`، و`recall`، و`remember`، و`brain`،
+    و`ledger`، و`reuse`، و`handoff`، و`decide`.
+  </Card>
+  <Card title="Substrate" icon="diagram-project" href="/ar/cli/substrate">
+    بوّابة ما قبل الفعل ومراحلها: `substrate`، و`preflight`، و`route`، و`impact`،
+    و`scope`، و`context`، و`anchor`، و`diagnose`، و`imagine`، و`lean`.
+  </Card>
+  <Card title="Quality" icon="shield-check" href="/ar/cli/quality">
+    التحقق والسلامة: `verify`، و`scan`، و`spec`، و`taste`، و`uicheck`، و`harden`.
+  </Card>
+  <Card title="Config" icon="sliders" href="/ar/cli/config">
+    المزوِّدون، والتكلفة، ولوحات المعلومات، والعلامة التجارية، والأطلس، والحزمة:
+    `config`، و`cost`، و`dash`، و`brand`، و`atlas`، و`stack`.
+  </Card>
+</CardGroup>
+
+## الاصطلاحات
+
+- **إرشادي افتراضيًا.** اضبط `FORGE_ENFORCE=1` لتحويل الركيزة إلى حجب صارم على أقوى
+  الإشارات (طلب فارغ، سياق مطلوب غير قابل للتجميع، نصف قطر انفجار يتجاوز عتبة
+  25 ملفًا الافتراضية).
+- **صامت افتراضيًا.** العنوان `Forge <cmd> — …` لكل أمر هو زينة علامة تجارية خلف
+  `--verbose` / `FORGE_VERBOSE`؛ يُصدر الأمر نتيجته أولًا.
+- **مخرَجات ملائمة للأنبوب.** نص عادي عند الأنبوب؛ في الطرفية يضيف ألوان لوحة العلامة
+  التجارية ومقاييس الثقة. `NO_COLOR` يوقف اللون، `FORCE_COLOR=1` يُفرضه.
+- **`--json`** متاح للركيزة ومعظم أوامر التحليل للسكربتات.
+
+<Note>
+  شغّل `forge --help` للقائمة المحدَّثة دائمًا، أو `forge catalog` لفهرس البدء لكل
+  أداة وطاقم وحاجز مع سبب موجز.
+</Note>
+
+## جديد في v0.19+
+
+عدة أوامر وعلامات تصل في خط v0.19. موثقة في صفحات مجموعاتها وموسومة داخل النص:
+
+| الأمر / العلامة        | المجموعة | ماذا يفعل                                        |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `forge know`           | Memory   | توجيه حقيقة إلى موطن تخزينها الصحيح.            |
+| `forge deja`           | Memory   | بحث عن أعمال سابقة مماثلة.                      |
+| `forge precommit`      | Quality  | بوّابة تحقق على مستوى الالتزام.                  |
+| `forge radar`          | Quality  | حلقات حداثة التبعيات.                            |
+| `forge report`         | Config   | تقرير HTML ثابت عن حالة Forge للمستودع.         |
+| `forge tools`          | Config   | اختيار الأداة الأساسية + توصيل gitignore.        |
+| `forge verify --deep`  | Quality  | تحقق بإجماع متعدد العدسات.                       |
+| `forge update --to`    | Core     | التثبيت أو الرجوع إلى إصدار معيّن.               |

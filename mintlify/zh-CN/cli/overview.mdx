@@ -1,0 +1,50 @@
+---
+title: "CLI 概览"
+description: "每一个 forge 命令,按 Core、Memory、Substrate、Quality 和 Config 分组 —— 命令面被视为数据,并由严格的漂移检查与文档对账。"
+---
+
+`forge` 命令面以数据形式定义 (`src/commands.js`),并通过 `forge docs check` 与文档对账,因此任何命令的加入或消失都逃不过文档的注意。命令被组织成五个组。
+
+<CardGroup cols={2}>
+  <Card title="Core" icon="gear" href="/zh-CN/cli/core">
+    引导与维护:`init`、`sync`、`doctor`、`catalog`、`docs`、`update`。
+  </Card>
+  <Card title="Memory" icon="brain" href="/zh-CN/cli/memory">
+    跨会话与团队记忆:`cortex`、`recall`、`remember`、`brain`、`ledger`、`reuse`、`handoff`、`decide`。
+  </Card>
+  <Card title="Substrate" icon="diagram-project" href="/zh-CN/cli/substrate">
+    预动作门及其各阶段:`substrate`、`preflight`、`route`、`impact`、`scope`、`context`、`anchor`、`diagnose`、`imagine`、`lean`。
+  </Card>
+  <Card title="Quality" icon="shield-check" href="/zh-CN/cli/quality">
+    验证与安全:`verify`、`scan`、`spec`、`taste`、`uicheck`、`harden`。
+  </Card>
+  <Card title="Config" icon="sliders" href="/zh-CN/cli/config">
+    提供商、成本、看板、品牌、atlas、技术栈:`config`、`cost`、`dash`、`brand`、`atlas`、`stack`。
+  </Card>
+</CardGroup>
+
+## 约定
+
+- **默认建议模式。** 设置 `FORGE_ENFORCE=1` 可让基座把最强的信号(空洞的 prompt、无法组装的必需上下文、爆炸半径超过默认的 25 文件阈值)变为硬阻断。
+- **默认安静。** 每个命令的 `Forge <cmd> — …` 标题只是品牌装饰,藏在 `--verbose` / `FORGE_VERBOSE` 后面;命令会先输出结果。
+- **管道友好输出。** 管道下是纯文本;TTY 下加上品牌调色板颜色和置信度进度条。`NO_COLOR` 关闭颜色,`FORCE_COLOR=1` 强开。
+- **`--json`** 在基座和大多数分析命令上可用,便于脚本化。
+
+<Note>
+  运行 `forge --help` 获取始终最新的列表,或运行 `forge catalog` 查看每个工具、crew 和护栏并附一行原因说明的 Start-Here 索引。
+</Note>
+
+## v0.19+ 新增
+
+一批命令与参数正在 v0.19 系列陆续落地。它们记录在各自的组页面并在文中标注:
+
+| 命令 / 参数            | 组       | 作用                                            |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `forge know`           | Memory   | 把一条事实路由到它正确的存储归宿。              |
+| `forge deja`           | Memory   | 类似过往工作查找。                              |
+| `forge precommit`      | Quality  | 提交级验证门。                                  |
+| `forge radar`          | Quality  | 依赖时效性同心圆。                              |
+| `forge report`         | Config   | 仓库 Forge 状态的静态 HTML 报告。               |
+| `forge tools`          | Config   | 主工具选择 + gitignore 接线。                   |
+| `forge verify --deep`  | Quality  | 多镜头共识验证。                                |
+| `forge update --to`    | Core     | 锁定或回退到指定版本。                          |

@@ -1,0 +1,101 @@
+---
+title: "Verification gates"
+description: "स्वतंत्र सत्यापन, hallucinated-symbol flag, spec-as-contract, और skill-gate — ऐसे चेक्स जिन्हें आप चला सकते हैं जो सटीकता को घटाते हैं, पर कभी प्रमाणित नहीं करते।"
+---
+
+कोई भी काम तब तक "पूरा" नहीं है जब तक आप एक ऐसा चेक न चला सकें — एक test, एक build exit
+code, एक screenshot। Forge के verification gates प्रत्येक एक और catch जोड़ते हैं।
+प्रति-task miss rate `1 − p` और gate catch rate `c` के साथ, silent misses `(1 − p)(1 − c)`
+तक गिर जाते हैं, और यहाँ हर gate एक और `c` है।
+
+<Warning>
+  **Verification घटाता है, प्रमाणित नहीं करता।** Crew verifiers और hallucinated-symbol
+  flag review burden कम करते हैं; वे कोड को सही साबित नहीं करते। Tests और मानव सुधार
+  हमेशा जीतते हैं।
+</Warning>
+
+## स्वतंत्र सत्यापन — `forge verify`
+
+एक स्वतंत्र gate: यह repo के वास्तविक tests चलाता है, hallucinated symbols flag करता है, और
+provenance जाँचता है।
+
+```bash
+forge verify              # tests + hallucinated-symbol + provenance
+forge verify --deep       # multi-lens consensus — several independent checks must agree
+```
+
+<Note>
+  `--deep` (v0.19+) एक multi-lens consensus तक escalate करता है: बदलाव को कई स्वतंत्र
+  verification lenses से गुज़रना पड़ता है, केवल एक से नहीं।
+</Note>
+
+## Hallucinated-symbol flag — `forge atlas has`
+
+`forge atlas has <symbol>` hallucination check है: यदि मॉडल किसी ऐसे symbol को call
+करता है जो code graph में नहीं है, तो gate उसे flag करता है।
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas has useAuth    # "not found" = likely hallucinated
+```
+
+Atlas जानबूझकर plain JSON है — Codex, Cursor, Gemini, और Aider `.forge/atlas.json`
+को CLI या plain `jq` के ज़रिए पढ़ते हैं, बिना किसी MCP dependency के।
+
+## Spec-as-contract — `forge spec`
+
+व्यवहार को एक spec से pin करें और उससे drift पहचानें:
+
+```bash
+forge spec init            # scaffold an OpenSpec contract
+forge spec lock            # lock the current spec as the contract
+forge spec check           # report drift against the locked contract
+```
+
+## Skill-gate — `forge scan`
+
+किसी skill या MCP server को install करने से पहले, उसे injection, RCE, या exfiltration
+के लिए जाँचें:
+
+```bash
+forge scan <path-to-SKILL.md-or-.mcp.json>
+```
+
+<Warning>
+  Clean scan **safety certification नहीं है।** Built-in heuristic केवल known attack
+  shapes (critical) और कुछ high-severity patterns को पकड़ता है; pass का मतलब है _"कोई
+  critical signature नहीं मिला"_, _"install करने के लिए सुरक्षित"_ नहीं। हमेशा source,
+  permissions, package provenance, और network behaviour ख़ुद review करें। एक
+  **high**-severity finding को safe के रूप में मार्क नहीं किया जाता, भले ही यह hard-block
+  न करे। External scanner opt-in है और जब तक आप उसे enable न करें, कोई network call
+  नहीं करता।
+</Warning>
+
+## Hardening — `forge harden`
+
+Secrets और unsafe changes को बाहर रखने वाले security controls को wire करें:
+
+```bash
+forge harden               # gitleaks pre-commit + sandbox settings
+```
+
+## Commit-level gate — `forge precommit`
+
+<Note>
+  `forge precommit` (v0.19+) एक commit-level gate है — यह commit time पर verification
+  floor चलाता है ताकि आंशिक या unverified काम land होने से पहले पकड़ा जाए।
+</Note>
+
+## UI checks — `forge uicheck`
+
+Deterministic UI checks, पहले तीन lenses के लिए कोई LLM नहीं और कोई screenshots नहीं:
+
+```bash
+forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
+forge uicheck fingerprint <file...>  # deterministic design fingerprint
+forge uicheck design <file...>       # slop-distance + conformance gate
+forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+```
+
+इसे `forge taste` के साथ जोड़ें ताकि एक visual direction चुनें (brutalist, corporate,
+editorial, minimalist, playful) और `design` gate की thresholds को parameterize करें।

@@ -1,0 +1,61 @@
+---
+title: "CLI अवलोकन"
+description: "हर forge कमांड, Core, Memory, Substrate, Quality, और Config के अनुसार समूहित — कमांड सतह डेटा है, जिसे एक कड़ी ड्रिफ्ट चेक द्वारा डॉक्स के विरुद्ध सुलझाया जाता है।"
+---
+
+`forge` कमांड सतह डेटा (`src/commands.js`) के रूप में परिभाषित है और `forge docs check`
+द्वारा डॉक्स के विरुद्ध सुलझाई जाती है, इसलिए कोई कमांड डॉक्स की जानकारी के बिना
+न शिप हो सकती है, न ग़ायब हो सकती है। कमांड्स को पाँच समूहों में संगठित किया गया है।
+
+<CardGroup cols={2}>
+  <Card title="Core" icon="gear" href="/hi/cli/core">
+    बूटस्ट्रैप और रखरखाव: `init`, `sync`, `doctor`, `catalog`, `docs`, `update`।
+  </Card>
+  <Card title="Memory" icon="brain" href="/hi/cli/memory">
+    क्रॉस-सेशन और टीम मेमोरी: `cortex`, `recall`, `remember`, `brain`, `ledger`,
+    `reuse`, `handoff`, `decide`।
+  </Card>
+  <Card title="Substrate" icon="diagram-project" href="/hi/cli/substrate">
+    प्री-एक्शन गेट और उसके चरण: `substrate`, `preflight`, `route`, `impact`,
+    `scope`, `context`, `anchor`, `diagnose`, `imagine`, `lean`।
+  </Card>
+  <Card title="Quality" icon="shield-check" href="/hi/cli/quality">
+    सत्यापन और सुरक्षा: `verify`, `scan`, `spec`, `taste`, `uicheck`, `harden`।
+  </Card>
+  <Card title="Config" icon="sliders" href="/hi/cli/config">
+    प्रोवाइडर्स, लागत, डैशबोर्ड्स, ब्रांड, atlas, स्टैक: `config`, `cost`, `dash`, `brand`,
+    `atlas`, `stack`।
+  </Card>
+</CardGroup>
+
+## परिपाटियाँ
+
+- **डिफ़ॉल्ट रूप से सलाहकारी।** सबसे मज़बूत संकेतों (खोखला प्रॉम्प्ट, असंयोजनीय
+  आवश्यक कॉन्टेक्स्ट, डिफ़ॉल्ट 25-फ़ाइल थ्रेशोल्ड से अधिक ब्लास्ट रेडियस) पर सब्सट्रेट
+  को हार्ड ब्लॉक में बदलने के लिए `FORGE_ENFORCE=1` सेट करें।
+- **डिफ़ॉल्ट रूप से मौन।** प्रति-कमांड `Forge <cmd> — …` शीर्षक `--verbose` /
+  `FORGE_VERBOSE` के पीछे ब्रांडिंग क्रोम है; एक कमांड पहले अपना परिणाम देती है।
+- **पाइप-अनुकूल आउटपुट।** पाइप किए जाने पर सादा पाठ; TTY पर यह ब्रांड-पैलेट रंग और
+  कॉन्फ़िडेंस मीटर जोड़ता है। `NO_COLOR` रंग बंद करता है, `FORCE_COLOR=1` उसे बलपूर्वक चालू करता है।
+- **`--json`** स्क्रिप्टिंग के लिए सब्सट्रेट और अधिकांश एनालिसिस कमांड्स पर उपलब्ध है।
+
+<Note>
+  हमेशा-अद्यतन सूची के लिए `forge --help` चलाएँ, या हर टूल, क्रू, और गार्ड के एक-पंक्ति
+  कारण के साथ Start-Here इंडेक्स के लिए `forge catalog`।
+</Note>
+
+## v0.19+ में नया
+
+कई कमांड्स और फ़्लैग v0.19 लाइन में आ रहे हैं। वे अपने समूह पृष्ठों पर प्रलेखित हैं
+और इनलाइन फ़्लैग किए गए हैं:
+
+| कमांड / फ़्लैग          | समूह     | यह क्या करता है                                 |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `forge know`           | Memory   | किसी तथ्य को उसके सही स्टोरेज गंतव्य पर रूट करें। |
+| `forge deja`           | Memory   | समान-पिछले-कार्य की खोज।                        |
+| `forge precommit`      | Quality  | कमिट-स्तरीय सत्यापन गेट।                        |
+| `forge radar`          | Quality  | निर्भरता-नवीनता रिंग्स।                         |
+| `forge report`         | Config   | रेपो की Forge स्थिति की स्टैटिक HTML रिपोर्ट।   |
+| `forge tools`          | Config   | प्राथमिक-टूल चयन + gitignore वायरिंग।           |
+| `forge verify --deep`  | Quality  | मल्टी-लेंस सर्वसम्मति सत्यापन।                 |
+| `forge update --to`    | Core     | किसी विशिष्ट संस्करण पर पिन या डाउनग्रेड करें।  |

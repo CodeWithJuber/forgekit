@@ -1,0 +1,63 @@
+---
+title: "模型路由"
+description: "一份确定性、可 diff 的评分表在分发之前挑选出能胜任的最便宜模型层——外加针对自托管 gateway 的安全兜底重映射。"
+---
+
+Forge 在分发**之前**为任务推荐能胜任的最便宜模型,依据是一份你可以在仓库里读到的确定性评分表(`src/model_tiers.json`)。与在代理内部于请求时刻做决定的 gateway 不同,路由决定在 git 中是可见且可 diff 的。
+
+## 推荐一个 tier —— `forge route`
+
+```bash
+forge route "<task>"            # 任务的最便宜可胜任模型 tier
+forge route gateway             # 生成 LiteLLM gateway 配置
+```
+
+推荐依据是一个基于样本 k-NN 的数学计算,在一份标注库(英语 + Hinglish 行)上、以重叠相似度作为度量,并带一个置信度阈值——不是关键词查表。
+
+<Note>
+  从推荐的 `route.tier` 开始,只在外部校验者失败后升级,绝不预先升级。这样既压低支出,又不会在任务确实需要时限制能力。
+</Note>
+
+## 先意图,后 tier
+
+路由与意图识别(`src/intent.js`)共享同一套数学:一段提示通过同一个样本 k-NN 估计器映射到一个意图。注意二者使用不同的停用集——route 把泛用动词(`fix` / `add` / `build`)视为复杂度噪声,而这些动词恰是意图的信号。
+
+## Tier 表
+
+tier 表(`src/model_tiers.json`)按家族(haiku / sonnet / opus / fable)固定了 Anthropic 的公开模型 ID。文档里的价格通过文档检查与该文件对账,因此正文和表格不会漂移。
+
+## 自托管 gateway 的重映射
+
+自托管的 LiteLLM 或代理 gateway 会使用它自己的模型名称,所以直接把 stock ID 发过去会 404。当配置了非默认的 gateway base URL 时,Forge
+(`src/gateway_model_map.js`)会**每个进程只**取一次 `GET /v1/models`,并把每个已宣告的 id 对每个 tier 的家族打分:
+
+<Steps>
+  <Step title="家族硬闸">
+    家族关键词(haiku / sonnet / opus / fable)必须匹配——它是硬闸。
+  </Step>
+  <Step title="最佳重叠胜出">
+    在同家族内部,tier 名称 token 的 `setOverlap` 系数选出最佳匹配。
+  </Step>
+  <Step title="平局倒向规范名">
+    平局时,更接近规范名的 id 胜出。
+  </Step>
+</Steps>
+
+<Warning>
+  重映射**仅**在解析出的 id 是 _stock_ ID 时才咨询 gateway——显式的
+  `.forge/providers.json` 别名或 `ANTHROPIC_MODEL` 覆写永远不会被触及。它在没有 gateway、`/v1/models` 不可达或家族不匹配时安全退回到 stock ID,因此直连 `api.anthropic.com` 的用户是逐字节相同的。
+</Warning>
+
+`forge doctor` 的 **gateway models** 行会打印解析出的 `tier → model` 映射以便核对。
+
+## 提供方与成本
+
+```bash
+forge config               # 展示 / 切换 / 添加提供方,设置默认模型
+forge cost                 # 真实的每日花销
+forge cost --stages        # 实测的每阶段成本系数
+```
+
+<Note>
+  `forge cost --stages` **仅报告已实测的阶段**——没有事件的阶段会显示 “no data”,绝不使用默认值。一个数字在被测量之前只是一个假设。
+</Note>

@@ -1,0 +1,67 @@
+---
+title: "用 radar 保持依赖新鲜"
+description: "forge radar 把你的依赖按新鲜程度分到多个环里，让陈旧或漂移中的依赖在咬人之前先浮出水面。"
+---
+
+<Note>
+  `forge radar` 正在 v0.19 线路上落地。这份指南描述它如何嵌入现有的
+  依赖新鲜度纪律；在你安装的版本里可用性以 `forge --help` 为准。
+</Note>
+
+Forge 的工程规则之一是：_在加一个依赖之前，从在线来源确认当下最佳
+的选项，并优先复用项目已经在用的东西。_ `forge radar` 把你依赖的
+当前状态可视化出来，好让这条规则有数据支撑。
+
+## 想法：新鲜度环
+
+`forge radar` 按每个依赖有多"新"把项目的依赖分到一圈圈**新鲜度环**里 —— 
+从中心的最新，到边缘的陈旧或漂移中。读这些环是一种快速回答
+"哪些东西我们让它漂了？"的方法，不用一个包一个包地手工审计。
+
+```bash
+forge radar
+```
+
+## 依赖列表从哪来
+
+Radar 建立在同一套清单读取之上，它也是 `forge stack` 的动力，后者从
+仓库的依赖清单文件里探测它真实的技术栈：
+
+```bash
+forge stack     # languages, frameworks, package managers, real test commands
+```
+
+因为探测是数据驱动的，并且在各生态（`package.json`、
+`pyproject.toml`、`go.mod`、`Cargo.toml`、`Gemfile`、`composer.json`、`pom.xml` /
+`build.gradle`、`*.csproj`）上是安全失败的，radar 可以对 `stack` 认得的
+同一批清单进行新鲜度推理。
+
+## 在循环中使用它
+
+<Steps>
+  <Step title="改依赖之前先看看这些环">
+    在添加或升级依赖之前，先跑一下 `forge radar`，看看哪些依赖
+    已经在漂了。
+  </Step>
+  <Step title="优先用已经新鲜的">
+    如果一个能胜任、又已经很新鲜的依赖已经在内圈里，那就复用它，
+    而不是再加一个新的 —— 最能合身的最小变更胜出。
+  </Step>
+  <Step title="把决定记下来">
+    当你确实要升级或替换一个依赖时，把原因记录下来：
+    ```bash
+    forge decide "bump <dep> to <version> — <reason>"
+    ```
+    这样将来的会话读到这份记录，而不是重新纠结一遍。
+  </Step>
+</Steps>
+
+<Warning>
+  Radar 报告新鲜度；它不会替你升级。把它的环当作一份供人做决定的
+  建议性输入 —— 任何一次升级在被称为完成之前，都要用仓库真正的
+  测试（`forge verify`）来验证一次。
+</Warning>
+
+<Card title="验证变更" icon="arrow-right" href="/cn/cli/quality">
+  依赖升级之后，跑一遍 Quality 门 —— `forge verify` 和 `forge precommit`。
+</Card>
