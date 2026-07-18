@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { BRAND } from "../src/brand.js";
 import {
   catalog,
+  guardKey,
   init,
   LEGACY_PROFILES,
   mergeSettings,
   PROFILES,
+  removeForgeSettings,
+  shellQuote,
   validateProfile,
 } from "../src/init.js";
 
@@ -186,4 +197,202 @@ test("catalog indexes tools (with a why), crew, and guards", () => {
   assert.ok(c.crew.includes("scout"), "has scout crew");
   assert.ok(c.guards.includes("cost-budget"), "has cost-budget guard");
   assert.ok(!c.guards.includes("_guardlib"), "excludes the sourced lib");
+});
+
+// ---------------------------------------------------------------------------
+// RA-12 — quoted hook paths
+// ---------------------------------------------------------------------------
+
+test("shellQuote single-quotes paths (spaces safe) and escapes embedded quotes", () => {
+  assert.equal(shellQuote("/a b/guards/x.sh"), "'/a b/guards/x.sh'");
+  assert.equal(shellQuote("/o'brien/x.sh"), "'/o'\\''brien/x.sh'");
+});
+
+test("guardKey normalizes quoting: quoted, unquoted, tilde, and plugin-root spellings all match", () => {
+  const base = join(BRAND.root, "global");
+  const key = guardKey(`bash ~/.forge/guards/cortex.sh prompt`);
+  assert.equal(key, "cortex.sh prompt");
+  assert.equal(guardKey(`bash '${base}/guards/cortex.sh' prompt`), key);
+  assert.equal(guardKey(`bash ${base}/guards/cortex.sh prompt`), key);
+  assert.equal(guardKey(`bash '/a b/with space/guards/cortex.sh' prompt`), key);
+  assert.equal(guardKey('"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt'), key);
+  // Args are part of identity: `cortex.sh prompt` and `cortex.sh stop` differ.
+  assert.notEqual(guardKey("bash ~/.forge/guards/cortex.sh stop"), key);
+});
+
+test("mergeSettings resolves hook paths QUOTED so an install path with spaces survives", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-quoted-"));
+  const settingsPath = join(tmp, "settings.json");
+  mergeSettings({ settingsPath });
+  const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const base = join(BRAND.root, "global");
+  const cmds = Object.values(merged.hooks)
+    .flat()
+    .flatMap((e) => (e.hooks || []).map((h) => h.command));
+  assert.ok(cmds.length > 0, "hooks merged");
+  for (const c of cmds) {
+    assert.match(c, /'[^']*\.sh'/, `hook path is single-quoted: ${c}`);
+    assert.ok(c.includes(`'${base}/`), `resolved to the quoted install base: ${c}`);
+  }
+  assert.match(merged.statusLine.command, /'[^']*\.sh'/, "statusline path quoted too");
+});
+
+test("old UNQUOTED installed hook entries dedupe against the new quoted template and are healed", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-requote-"));
+  const settingsPath = join(tmp, "settings.json");
+  const base = join(BRAND.root, "global");
+  // What a pre-RA-12 install wrote: resolved absolute path, no quotes.
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `bash ${base}/guards/cortex.sh prompt`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  mergeSettings({ settingsPath });
+  const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const promptCmds = merged.hooks.UserPromptSubmit.flatMap((e) =>
+    (e.hooks || []).map((h) => h.command),
+  ).filter((c) => c.includes("cortex.sh") && c.endsWith("prompt"));
+  assert.equal(promptCmds.length, 1, "no duplicate on re-merge with the quoted template");
+  assert.equal(
+    promptCmds[0],
+    `bash ${shellQuote(`${base}/guards/cortex.sh`)} prompt`,
+    "the old unquoted entry is upgraded to the quoted spelling",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// RA-13 — invalid profile aborts before ANY side effect
+// ---------------------------------------------------------------------------
+
+test("validateProfile accepts known profiles and absence, rejects garbage", () => {
+  assert.deepEqual(validateProfile(undefined), { ok: true });
+  assert.deepEqual(validateProfile("standard"), {
+    ok: true,
+    profile: "standard",
+  });
+  const bad = validateProfile("bogus");
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /unknown profile: bogus/);
+});
+
+test("init with an invalid profile mutates NOTHING — no emit, no .forge, no gitattributes, no settings", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-badprofile-"));
+  const settingsPath = join(root, "home-settings.json");
+  const r = init({ targetRoot: root, profile: "bogus", settingsPath });
+  assert.equal(r.aborted, true, "init reports the abort");
+  assert.match(r.profile.error, /unknown profile: bogus/);
+  assert.ok(!existsSync(join(root, "AGENTS.md")), "no AGENTS.md");
+  assert.ok(!existsSync(join(root, ".forge")), "no .forge/");
+  assert.ok(!existsSync(join(root, ".gitattributes")), "no .gitattributes");
+  assert.ok(!existsSync(settingsPath), "settings untouched");
+  assert.deepEqual(
+    readdirSync(root),
+    [],
+    "target root is byte-for-byte pristine — zero side effects",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// RA-17 — removeForgeSettings reverses the merge
+// ---------------------------------------------------------------------------
+
+test("removeForgeSettings round-trips: merge then remove restores the user's file exactly", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-remove-"));
+  const settingsPath = join(tmp, "settings.json");
+  const original = {
+    model: "opus",
+    statusLine: { type: "command", command: "bash ~/my-own-statusline.sh" },
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Bash",
+          hooks: [{ type: "command", command: "bash ~/my-hook.sh" }],
+        },
+      ],
+    },
+    permissions: { allow: ["Bash(mycmd:*)"], defaultMode: "plan" },
+    custom: { keep: true },
+  };
+  writeFileSync(settingsPath, JSON.stringify(original, null, 2));
+  const merged = mergeSettings({ settingsPath });
+  assert.equal(merged.action, "merged");
+  const r = removeForgeSettings({ settingsPath });
+  assert.equal(r.action, "removed");
+  assert.ok(r.removed.includes("_forge"), "marker removed");
+  assert.ok(r.backup && existsSync(r.backup), "timestamped backup written");
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.deepEqual(after, original, "user-owned content is restored exactly");
+});
+
+test("removeForgeSettings strips a merge into an EMPTY file completely (fresh-install teardown)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-remove-fresh-"));
+  const settingsPath = join(tmp, "settings.json");
+  mergeSettings({ settingsPath }); // creates the file from the template
+  const r = removeForgeSettings({ settingsPath });
+  assert.equal(r.action, "removed");
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.ok(!after._forge, "marker gone");
+  assert.ok(!after.hooks, "no forge hooks remain");
+  assert.ok(!after.permissions, "no forge permissions remain");
+  assert.ok(!after.statusLine, "template statusline removed");
+});
+
+test("removeForgeSettings removes an OLD unquoted install's entries too (quote-normalized match)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-remove-old-"));
+  const settingsPath = join(tmp, "settings.json");
+  const base = join(BRAND.root, "global");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      _forge: "forge-managed",
+      statusLine: { type: "command", command: `bash ${base}/statusline.sh` },
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `bash ${base}/guards/completion-gate.sh`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  const r = removeForgeSettings({ settingsPath });
+  assert.equal(r.action, "removed");
+  assert.ok(r.removed.includes("statusLine"), "unquoted statusline matched and removed");
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.ok(!after.hooks, "unquoted guard hook removed");
+  assert.ok(!after.statusLine, "statusline removed");
+});
+
+test("removeForgeSettings refuses a corrupt file and noops on a missing or unmanaged one", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-remove-edge-"));
+  const corrupt = join(tmp, "corrupt.json");
+  const garbage = "{ not json ";
+  writeFileSync(corrupt, garbage);
+  const bad = removeForgeSettings({ settingsPath: corrupt });
+  assert.equal(bad.action, "error", "corrupt → refuse");
+  assert.equal(readFileSync(corrupt, "utf8"), garbage, "original bytes preserved");
+  const missing = removeForgeSettings({ settingsPath: join(tmp, "nope.json") });
+  assert.equal(missing.action, "noop", "missing → noop");
+  const clean = join(tmp, "clean.json");
+  writeFileSync(clean, JSON.stringify({ model: "opus" }));
+  const noop = removeForgeSettings({ settingsPath: clean });
+  assert.equal(noop.action, "noop", "nothing forge-managed → noop");
+  assert.deepEqual(JSON.parse(readFileSync(clean, "utf8")), { model: "opus" });
 });

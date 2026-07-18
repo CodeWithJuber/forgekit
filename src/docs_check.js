@@ -20,6 +20,9 @@ const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"
 const INTERNAL_ENV = new Set([
   "_FORGE_LLM_KEY",
   "FORGE_EMBED_KEY",
+  // Test-only override of the settings.json path `forge init` targets — plumbing for
+  // exercising merge/remove/exit-code behavior without touching the real ~/.claude.
+  "FORGE_SETTINGS_PATH",
   "CLAUDE_PLUGIN_ROOT",
   // Standard XDG base-dir var forge honors for its state home — not forge's own surface.
   "XDG_STATE_HOME",

@@ -95,17 +95,59 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
+    // Test/plumbing override of the merge target — not user-facing surface.
+    const settingsPath = process.env.FORGE_SETTINGS_PATH || undefined;
+    // RA-11: the settings merge touches GLOBAL state — say so before reporting it,
+    // on merged AND unchanged runs, with the opt-out and the reversal path.
+    const consentLine = (path) =>
+      console.log(
+        `  settings: merging ${BRAND.brand} hooks into ${path} (GLOBAL — affects all repos). ` +
+          `Skip with --no-settings; reverse with \`${BRAND.cli} init --remove-settings\`.`,
+      );
+    // --remove-settings: reverse the merge (RA-17) — strip every template-shaped hook,
+    // permission, statusline, and the _forge marker; user-owned entries stay untouched.
+    if (argv.includes("--remove-settings")) {
+      const { removeForgeSettings } = await import("./init.js");
+      const r = removeForgeSettings({ settingsPath });
+      heading(`${BRAND.brand} init — remove managed settings\n`);
+      if (r.action === "removed") {
+        console.log(`  settings: removed ${r.removed.join(", ")} from ${r.path}`);
+        console.log(`            backup: ${r.backup}`);
+      } else if (r.action === "noop") {
+        console.log(`  settings: nothing to remove (${r.reason})`);
+      } else {
+        console.error(`  settings: NOT modified — ${r.path}: ${r.reason}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
     // --settings-only: wire hooks + permissions into ~/.claude/settings.json ONLY (the
     // idempotent, marker-guarded merge install.sh calls) — no repo emit, no AGENTS.md.
     if (argv.includes("--settings-only")) {
-      const { settings } = init({ settingsOnly: true, noSettings });
+      const { settings } = init({
+        settingsOnly: true,
+        noSettings,
+        settingsPath,
+      });
       heading(`${BRAND.brand} init — settings merge only\n`);
-      if (settings?.action === "merged" && "added" in settings) {
-        console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+      if (
+        (settings?.action === "merged" || settings?.action === "created") &&
+        "added" in settings
+      ) {
+        consentLine(settings.path);
+        const verb = settings.action === "created" ? "created" : "merged";
+        const what = settings.added.length ? settings.added.join(", ") : "defaults";
+        console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       } else if (settings?.action === "unchanged" && "path" in settings) {
+        consentLine(settings.path);
         console.log(`  settings: already up to date (${settings.path})`);
       } else if (settings?.action === "skipped") {
         console.log("  settings: skipped (--no-settings)");
+      } else if (settings?.action === "error") {
+        // RA-04: a refused/failed merge must FAIL the command, not silently exit 0 —
+        // install.sh keys its "install incomplete" path off this exit code.
+        console.error(`  settings: FAILED — ${settings.path}: ${settings.reason}`);
+        process.exitCode = 1;
       }
       return;
     }
@@ -122,6 +164,7 @@ async function run(argv) {
         targetRoot: process.cwd(),
         noSettings,
         profile,
+        settingsPath,
       })
     );
     if (profileResult?.error) {
@@ -144,17 +187,22 @@ async function run(argv) {
       }
     }
     if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
+      consentLine(settings.path);
       const verb = settings.action === "created" ? "created" : "merged";
       const what = settings.added.length ? settings.added.join(", ") : "defaults";
       console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       if ("backup" in settings && settings.backup)
         console.log(`            backup: ${settings.backup}`);
     } else if (settings?.action === "unchanged" && "path" in settings) {
+      consentLine(settings.path);
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
     } else if (settings?.action === "error") {
-      console.log(`  settings: NOT written — ${settings.reason}`);
+      // RA-04: repo files above were still emitted, but the settings merge FAILED —
+      // surface it on stderr and fail the command instead of a quiet exit 0.
+      console.error(`  settings: FAILED — ${settings.reason} (repo files were still emitted)`);
+      process.exitCode = 1;
     }
     if (detected) {
       console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);

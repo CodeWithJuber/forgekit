@@ -163,10 +163,12 @@ export const LEGACY_PROFILES = {
 /**
  * Validate a profile name. Pure. Legacy names map to their real profile with
  * `deprecated` set to the old name so callers can warn BEFORE any side effect.
- * @param {string} p
- * @returns {{ok:true, profile:string, deprecated?:string}|{ok:false, error:string}}
+ * Absence (`undefined`/empty) is valid: no profile was requested (RA-13).
+ * @param {string} [p]
+ * @returns {{ok:true, profile?:string, deprecated?:string}|{ok:false, error:string}}
  */
 export function validateProfile(p) {
+  if (!p) return { ok: true };
   if (PROFILES.includes(p)) return { ok: true, profile: p };
   if (Object.hasOwn(LEGACY_PROFILES, p))
     return { ok: true, profile: LEGACY_PROFILES[p], deprecated: p };

@@ -162,6 +162,15 @@ Then, in your project:
 forge init         # emit every AI tool's native config from one shared source
 forge doctor       # pass/fail health check: tools, guards, MCP, config drift
 forge doctor --fix # auto-repair the safely fixable findings, then re-check
+```
+
+`forge init` also merges Forge's hooks + permissions into `~/.claude/settings.json` —
+that file is **global** (it affects all your repos), so init says so before reporting the
+merge. Opt out with `forge init --no-settings`; reverse a past merge any time with
+`forge init --remove-settings` (your own entries are preserved, and a timestamped backup
+is written first).
+
+```bash
 
 # pre-action check before you (or your agent) edit anything:
 forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
@@ -193,7 +202,8 @@ The first time you run a real command before `~/.claude/settings.json` is forge-
 one tip line points at `forge init` (or `forge doctor --fix`) to wire hooks + permissions;
 it self-silences once init runs and `FORGE_NO_HINT=1` mutes it entirely. `install.sh` does
 this wiring for you via `forge init --settings-only` — an idempotent, marker-guarded merge
-that never clobbers your existing settings.
+that never clobbers your existing settings (skip it with `install.sh --no-settings`;
+`install.sh --uninstall` or `forge init --remove-settings` reverses it).
 
 | Group                      | Command              | Does                                                                                                                                                                 |
 | -------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

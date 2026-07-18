@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Forge installer — idempotent, reversible, offline.
-#   bash install.sh              install (symlink global/ into ~/.forge and ~/.claude, put `forge` on PATH)
-#   bash install.sh --dry-run    print what it would do, change nothing
-#   bash install.sh --uninstall  remove Forge's own symlinks (never touches your other files)
-# It never downloads anything and never edits settings.json for you — it prints the
-# hook/statusline block to merge by hand, so your existing config is untouched.
+# Forge installer — idempotent, reversible, offline. It never downloads anything.
+#   bash install.sh                install (symlink global/ into ~/.forge and ~/.claude, put `forge` on PATH)
+#   bash install.sh --dry-run      print what it would do, change nothing
+#   bash install.sh --no-settings  install, but skip the settings.json merge
+#   bash install.sh --uninstall    remove Forge's symlinks AND the merged settings entries
+# Installing MERGES Forge hooks/permissions/statusline into ~/.claude/settings.json
+# (GLOBAL — affects all repos) via an idempotent, marker-guarded merge: your file is
+# backed up first and existing entries are never clobbered. Skip it with --no-settings;
+# reverse it any time with `install.sh --uninstall` or `forge init --remove-settings`.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,12 +20,13 @@ CLAUDE_DIR="$HOME/.claude"
 BIN_DIR="$HOME/.local/bin"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
-DRY=0; MODE=install
+DRY=0; MODE=install; NO_SETTINGS=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY=1 ;;
+    --no-settings) NO_SETTINGS=1 ;;
     --uninstall) MODE=uninstall ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -80,15 +84,35 @@ install_forge() {
   # Wire guards + statusline into settings.json via the idempotent, marker-guarded merge
   # (`forge init --settings-only`) instead of printing a block to paste by hand. mergeSettings
   # never clobbers existing entries — it unions hooks/permissions and stamps a _forge marker,
-  # so re-running install.sh is a no-op. Under --dry-run we print the call for transparency.
-  if [ "$DRY" = 1 ]; then
-    say "[dry-run] would merge guards + statusline into $CLAUDE_DIR/settings.json via:"
+  # so re-running install.sh is a no-op. A FAILED merge (e.g. corrupt settings.json) must
+  # fail the install loudly (RA-04) — capture output first so the exit status is the node
+  # command's, not sed's, then report INCOMPLETE instead of Done.
+  SETTINGS_FAILED=0
+  if [ "$NO_SETTINGS" = 1 ]; then
+    say "settings merge skipped (--no-settings) — wire hooks later with: forge init --settings-only"
+  elif [ "$DRY" = 1 ]; then
+    say "[dry-run] would merge guards + statusline into $CLAUDE_DIR/settings.json (GLOBAL — affects all repos) via:"
     say "[dry-run]   node \"$REPO/src/cli.js\" init --settings-only"
     say "[dry-run] (idempotent + _forge-marker-guarded — existing settings are preserved)"
   else
-    say "Merging guards + statusline into $CLAUDE_DIR/settings.json (idempotent, never clobbers)"
-    node "$REPO/src/cli.js" init --settings-only 2>&1 | sed 's/^/  /' \
-      || say "note: settings merge skipped — run \`forge init --settings-only\` once node is available"
+    say "Merging guards + statusline into $CLAUDE_DIR/settings.json (GLOBAL — affects all repos; idempotent, backed up, never clobbers)"
+    say "  skip with --no-settings · reverse with \`forge init --remove-settings\` or \`install.sh --uninstall\`"
+    MERGE_OUT=""
+    if MERGE_OUT="$(node "$REPO/src/cli.js" init --settings-only 2>&1)"; then
+      printf '%s\n' "$MERGE_OUT" | sed 's/^/  /'
+    else
+      [ -n "$MERGE_OUT" ] && printf '%s\n' "$MERGE_OUT" | sed 's/^/  /'
+      SETTINGS_FAILED=1
+      echo "  WARNING: settings merge FAILED — hooks/guards are NOT wired" >&2
+    fi
+  fi
+
+  if [ "$SETTINGS_FAILED" = 1 ]; then
+    cat >&2 <<EOF
+
+  Install INCOMPLETE — settings.json was not updated (fix ~/.claude/settings.json, then run: forge init --settings-only)
+EOF
+    exit 1
   fi
 
   cat <<EOF
@@ -99,7 +123,24 @@ EOF
 }
 
 uninstall_forge() {
-  say "Uninstalling Forge (symlinks only; your files are untouched)"
+  say "Uninstalling Forge (symlinks + merged settings entries; your own files are untouched)"
+  # RA-17: reverse the settings merge FIRST (while the repo is still intact) so
+  # ~/.claude/settings.json doesn't keep hooks pointing at removed assets. Fail-soft:
+  # a missing node, or a corrupt settings file, degrades to a manual instruction.
+  if [ "$DRY" = 1 ]; then
+    say "[dry-run] would remove merged settings entries via:"
+    say "[dry-run]   node \"$REPO/src/cli.js\" init --remove-settings"
+  elif command -v node >/dev/null 2>&1; then
+    REMOVE_OUT=""
+    if REMOVE_OUT="$(node "$REPO/src/cli.js" init --remove-settings 2>&1)"; then
+      printf '%s\n' "$REMOVE_OUT" | sed 's/^/  /'
+    else
+      [ -n "$REMOVE_OUT" ] && printf '%s\n' "$REMOVE_OUT" | sed 's/^/  /'
+      say "note: automatic settings cleanup failed — remove the Forge hook/permission/statusline entries from $CLAUDE_DIR/settings.json by hand, or fix the file and run: forge init --remove-settings"
+    fi
+  else
+    say "note: node not found — remove the Forge hook/permission/statusline entries from $CLAUDE_DIR/settings.json by hand, or run \`forge init --remove-settings\` once node is available"
+  fi
   for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && unlink_ours "$CLAUDE_DIR/skills/$(basename "$d")"; done
   for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && unlink_ours "$CLAUDE_DIR/agents/$(basename "$f")"; done
   unlink_ours "$BIN_DIR/forge"

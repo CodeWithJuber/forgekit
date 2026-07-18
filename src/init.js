@@ -40,13 +40,25 @@ export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
 
 const FORGE_SETTINGS_MARKER = "forge-managed";
 
+/** Single-quote a path for safe embedding in a shell command (RA-12): an install
+ *  prefix containing spaces (or any shell metacharacter) must not split into words.
+ *  Embedded single quotes use the standard `'\''` escape. */
+export function shellQuote(path) {
+  return `'${String(path).replaceAll("'", `'\\''`)}'`;
+}
+
 /** Rewrite the template's `~/.forge/…` hook + statusline commands to the ACTUAL installed
  *  package location. The npm global-install path never creates `~/.forge`, so a literal
  *  `~/.forge/guards/*.sh` reference points at nothing (P0-02). `~/.forge` is the `global/`
- *  dir (that's what install.sh symlinks), so `~/.forge/X` resolves to `<BRAND.root>/global/X`. */
+ *  dir (that's what install.sh symlinks), so `~/.forge/X` resolves to `<BRAND.root>/global/X` —
+ *  single-quoted, so an install path with spaces still runs (RA-12). Trailing args stay
+ *  outside the quotes: `bash '<base>/guards/cortex.sh' prompt`. */
 function resolveManagedPaths(template) {
   const base = join(BRAND.root, "global");
-  const fix = (cmd) => (typeof cmd === "string" ? cmd.replaceAll("~/.forge/", `${base}/`) : cmd);
+  const fix = (cmd) =>
+    typeof cmd === "string"
+      ? cmd.replace(/~\/\.forge\/(\S+)/g, (_, rest) => shellQuote(join(base, rest)))
+      : cmd;
   if (template.statusLine?.command) template.statusLine.command = fix(template.statusLine.command);
   for (const entries of Object.values(template.hooks || {})) {
     for (const entry of entries) {
@@ -54,6 +66,18 @@ function resolveManagedPaths(template) {
     }
   }
   return template;
+}
+
+/** Strip shell quoting from a command string so quoted and unquoted spellings of the
+ *  same command compare equal: `bash '/x/a.sh' p` ≡ `bash /x/a.sh p`. Undoes the
+ *  `'\''` embedded-quote escape first, then drops the remaining quote characters.
+ *  Also normalizes the legacy `~/.forge/` prefix to the resolved install base so
+ *  entries merged by very old installs still match. */
+function normalizeCommand(command) {
+  return String(command ?? "")
+    .replaceAll("'\\''", "'")
+    .replace(/["']/g, "")
+    .replaceAll("~/.forge/", `${join(BRAND.root, "global")}/`);
 }
 
 function loadTemplate() {
@@ -91,18 +115,40 @@ function unionStrings(a = [], b = []) {
 }
 
 /** Extract guard identity (basename + trailing args) from a hook command for dedup.
- *  `bash ~/.forge/guards/cortex.sh prompt` and
- *  `"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt` both → `cortex.sh prompt`. */
-function guardKey(command) {
-  const m = command.match(/([^/\\"]+\.sh)\s*(.*)/);
-  return m ? `${m[1]} ${m[2]}`.trim() : command;
+ *  Quote-normalized (RA-12), so all of `bash ~/.forge/guards/cortex.sh prompt`,
+ *  `bash '/install path/global/guards/cortex.sh' prompt`, and
+ *  `"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt` → `cortex.sh prompt` —
+ *  old unquoted installed entries and new quoted template entries must dedupe, or
+ *  every existing install would grow duplicate hooks on re-merge. Exported for tests. */
+export function guardKey(command) {
+  const cmd = normalizeCommand(command);
+  const m = cmd.match(/([^/\\]+\.sh)\s*(.*)/);
+  return m ? `${m[1]} ${m[2]}`.trim() : cmd;
 }
 
-/** Merge Forge hook entries into existing hook arrays, matching by guard identity to avoid duplicates. */
+/** Merge Forge hook entries into existing hook arrays, matching by guard identity to avoid
+ *  duplicates. An existing entry that is the SAME resolved command as the template's — just
+ *  spelled without quotes (a pre-RA-12 install) — is upgraded in place to the quoted form. */
 function mergeHooks(existing = {}, template = {}) {
   const merged = { ...existing };
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
+    // guardKey → template command, to heal old unquoted spellings of the same command.
+    const templateByKey = new Map();
+    for (const entry of entries) {
+      for (const h of entry.hooks || []) {
+        if (h.command) templateByKey.set(guardKey(h.command), h.command);
+      }
+    }
+    for (const entry of existingEntries) {
+      for (const h of entry.hooks || []) {
+        if (!h.command) continue;
+        const tpl = templateByKey.get(guardKey(h.command));
+        if (tpl && tpl !== h.command && normalizeCommand(h.command) === normalizeCommand(tpl)) {
+          h.command = tpl; // same command, pre-quoting spelling → upgrade to the quoted form
+        }
+      }
+    }
     const existingKeys = new Set(
       existingEntries
         .flatMap((e) => (e.hooks || []).map((h) => h.command))
@@ -216,6 +262,131 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
 // and are re-exported here so `import { PROFILES } from "./init.js"` keeps working.
 export { LEGACY_PROFILES, PROFILES, validateProfile } from "./repo_config.js";
 
+/**
+ * Remove every Forge-managed entry that `mergeSettings` added from the user's
+ * ~/.claude/settings.json, using the settings template as the authoritative shape
+ * (RA-17): hook entries whose guardKey matches a template guard (quote-normalized),
+ * permission strings appearing verbatim in the template's allow/ask/deny (removed only
+ * from the same list they are in), the statusLine iff its command matches the template's
+ * resolved command (quote-normalized), the `$schema` iff it is the template's, and the
+ * `_forge` marker. Everything user-owned is preserved unchanged; empty containers left
+ * behind are pruned. Timestamped backup + atomic tmp-file+rename write, same as
+ * `mergeSettings`. Corrupt file → refuses; missing file → noop.
+ * @param {{settingsPath?: string}} [opts]
+ * @returns {{action:"removed", path:string, removed:string[], backup:string}
+ *   | {action:"noop", path:string, reason:string}
+ *   | {action:"error", path:string, reason:string}}
+ */
+export function removeForgeSettings({ settingsPath } = {}) {
+  const target = settingsPath || join(homedir(), ".claude", "settings.json");
+  const { status, data } = readExistingSettings(target);
+  if (status === "missing") return { action: "noop", path: target, reason: "no settings file" };
+  if (status === "corrupt") {
+    return {
+      action: "error",
+      path: target,
+      reason:
+        "existing settings file is present but not valid JSON — refusing to modify. " +
+        "Fix or remove it by hand, then re-run.",
+    };
+  }
+  const template = loadTemplate();
+  const settings = data;
+  /** @type {string[]} */
+  const removed = [];
+
+  // Hooks: drop every hook whose guard identity is one the template installs.
+  const templateKeys = new Set();
+  for (const entries of Object.values(template.hooks || {})) {
+    for (const entry of entries) {
+      for (const h of entry.hooks || []) if (h.command) templateKeys.add(guardKey(h.command));
+    }
+  }
+  if (settings.hooks && typeof settings.hooks === "object") {
+    for (const [event, entries] of Object.entries(settings.hooks)) {
+      if (!Array.isArray(entries)) continue;
+      let changed = false;
+      const kept = [];
+      for (const entry of entries) {
+        if (!entry || !Array.isArray(entry.hooks)) {
+          kept.push(entry);
+          continue;
+        }
+        const hooks = entry.hooks.filter(
+          (h) => !(typeof h?.command === "string" && templateKeys.has(guardKey(h.command))),
+        );
+        if (hooks.length !== entry.hooks.length) changed = true;
+        if (hooks.length) kept.push({ ...entry, hooks });
+      }
+      if (changed) {
+        removed.push(`hooks.${event}`);
+        if (kept.length) settings.hooks[event] = kept;
+        else delete settings.hooks[event];
+      }
+    }
+    if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  }
+
+  // Permissions: remove template strings verbatim, only from the SAME list they sit in.
+  if (settings.permissions && template.permissions) {
+    for (const level of ["allow", "ask", "deny"]) {
+      const tpl = template.permissions[level];
+      const cur = settings.permissions[level];
+      if (!Array.isArray(tpl) || !Array.isArray(cur)) continue;
+      const tplSet = new Set(tpl);
+      const kept = cur.filter((s) => !tplSet.has(s));
+      if (kept.length !== cur.length) {
+        removed.push(`permissions.${level}`);
+        if (kept.length) settings.permissions[level] = kept;
+        else delete settings.permissions[level];
+      }
+    }
+    // Merge residue only: a permissions object reduced to the template's own defaultMode
+    // is what mergeSettings itself left behind — prune it. A user-set custom mode stays.
+    if (
+      settings.permissions &&
+      Object.keys(settings.permissions).length === 1 &&
+      settings.permissions.defaultMode === (template.permissions.defaultMode || "default")
+    ) {
+      delete settings.permissions;
+    } else if (settings.permissions && Object.keys(settings.permissions).length === 0) {
+      delete settings.permissions;
+    }
+  }
+
+  // Statusline: only if it IS the template's (quote-normalized) — a user's own stays.
+  if (
+    settings.statusLine?.command &&
+    template.statusLine?.command &&
+    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command)
+  ) {
+    delete settings.statusLine;
+    removed.push("statusLine");
+  }
+
+  // Schema: mergeSettings sets it only when absent — remove only the template's own value.
+  if (settings.$schema && settings.$schema === template.$schema) delete settings.$schema;
+
+  if ("_forge" in settings) {
+    delete settings._forge;
+    removed.push("_forge");
+  }
+
+  if (!removed.length)
+    return {
+      action: "noop",
+      path: target,
+      reason: "no forge-managed entries found",
+    };
+
+  const backup = `${target}.forge-bak-${stamp()}`;
+  copyFileSync(target, backup);
+  const tmp = `${target}.forge-tmp-${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
+  renameSync(tmp, target);
+  return { action: "removed", path: target, removed, backup };
+}
+
 /** Persist a chosen profile to `.forge/forge.config.json` so `sync` applies it. Merges into
  *  any existing config rather than clobbering it (unknown keys round-trip); a corrupt
  *  config file makes the write refuse loudly instead of discarding the bytes (RA-15).
@@ -255,6 +426,11 @@ export function init({
       settingsOnly: true,
     };
   }
+  // RA-13: an invalid profile aborts BEFORE any filesystem/settings side effect —
+  // no AGENTS.md, no .forge/, no .gitattributes append, no settings merge.
+  const valid = validateProfile(profile);
+  // `=== false` (not `!valid.ok`): tsc only narrows the discriminated union this way here.
+  if (valid.ok === false) return { profile: { error: valid.error }, aborted: true };
   const profileResult = writeProfile(targetRoot, profile);
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);

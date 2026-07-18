@@ -11,7 +11,8 @@
 export const COMMANDS = {
   init: {
     summary: "scaffold this repo's config — emits every tool from one shared source",
-    usage: "forge init [--profile minimal|standard] [--no-settings | --settings-only]",
+    usage:
+      "forge init [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
         flag: "--profile <minimal|standard>",
@@ -19,14 +20,18 @@ export const COMMANDS = {
       },
       {
         flag: "--no-settings",
-        desc: "emit tool configs but don't touch ~/.claude/settings.json",
+        desc: "emit tool configs but don't touch ~/.claude/settings.json (the merge is GLOBAL — it affects all repos)",
       },
       {
         flag: "--settings-only",
         desc: "only merge hooks/permissions into settings (skip repo emit)",
       },
+      {
+        flag: "--remove-settings",
+        desc: "reverse the merge — remove forge-managed hooks/permissions/statusline from ~/.claude/settings.json (backed up first)",
+      },
     ],
-    examples: ["forge init", "forge init --profile minimal", "forge init --no-settings"],
+    examples: ["forge init", "forge init --profile minimal", "forge init --remove-settings"],
   },
   sync: {
     summary: "recompile the canonical source into each tool's native config files",
