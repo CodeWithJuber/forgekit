@@ -1,0 +1,73 @@
+---
+title: "跨会话记忆"
+description: "会话锚定、完成关卡、handoff 快照与决策日志——用来终结会话失忆和部分完成的那一层。"
+---
+
+这一层要终结的两种失效模式:**部分完成**(代码变了,但依赖它的产物没跟上)和 **会话失忆**(下一次会话又要重新假设这一次已知的东西)。指令能提升正确行为的 _概率_;确定性钩子保证一个 _下限_。
+
+## 会话锚定
+
+在 `SessionStart`(`src/session.js`)时,Forge 会记录一次 `HEAD`、修剪一周前的会话产物,并注入一份新的定位信息:
+
+<CardGroup cols={2}>
+  <Card title="习得的经验" icon="graduation-cap">
+    从过往更正中挖出的 cortex 经验。
+  </Card>
+  <Card title="锚定的目标" icon="bullseye">
+    声明的目标,以便据此度量漂移。
+  </Card>
+  <Card title="handoff 快照" icon="camera">
+    上一次会话写下的有边界的 `.forge/state.md`。
+  </Card>
+  <Card title="最近的提交 + 变更" icon="code-commit">
+    最近的提交与未提交改动——作为证据,而非先验。
+  </Card>
+</CardGroup>
+
+一个新会话基于证据、而非先验,来定位自己。
+
+## 完成关卡
+
+Stop 路径上唯一有权作答的 guard 是 `completion-gate.sh`
+(`src/gate.js`)。它同步运行;挖掘经验的 `cortex.sh stop` 保持分离,永远不会阻塞。
+
+变更集是**会话范围**的:提交者时间在会话开始之后的提交所涉及的文件,加上工作区的改动,再减去在 `SessionStart` 时快照的“脏文件”——因此已存在的编辑、分支切换和 `git pull` 永远不会被算到代理头上。
+
+<Note>
+  如果代码动了、却没有跟进文档或状态产物,该关卡会**拦下一次**,并以修复清单作为原因。其他情况一律放行,所有内部错误也放行(fail-open)。`FORGE_STOPGATE=0` 可关闭它。
+</Note>
+
+修复清单指向能把工作收尾的工具:
+
+```bash
+forge docs sync                      # 扫过 diff,找出过期的文档提法
+forge handoff "<done>" --next "<next>"   # 写下有边界的会话快照
+forge decide "<decision> — <reason>"     # 记录一次选择,让下一次会话不再重新决定
+```
+
+## Handoff 与决策
+
+两种存储让知识跨会话延续:
+
+| 存储                  | 语义                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `.forge/state.md`     | 有边界的**重写**(快照)——加载成本永远保持 `O(bound)`。                             |
+| `.forge/decisions.md` | 仅追加的**精简 ADR**(`D-####`),带一份机器可读的决策 ledger 副本。                   |
+
+两者在写入时都拒绝密钥。`state.md` 会在每次会话开始时被重新注入;
+`decisions.md` 会在重新决定过往会话已定的事之前先被读到。
+
+```bash
+forge handoff "<what's done>" --next "<what's next>"
+forge decide "<decision> — <reason>"
+forge decide                 # 在重新决策之前先读一读日志
+```
+
+## diff 驱动的文档清扫
+
+`forge docs sync` 回答这个由 diff 决定形状的问题:变更的标识符
+(来自新增 _与_ 删除行中的路径、定义与被调用符号)对每个文档产物做扫描 → UPDATED / STALE(带 file:line 命中)/ VERIFIED-UNAFFECTED,并记录原因。它是纯报告器;真正咬人的牙齿由完成关卡提供。
+
+<Warning>
+  `recall` 和 `cortex` 仅仅是文件与提示级别的记忆——**不是** 权重级学习。合并操作是一个可能产生幻觉的总结器,所以它保持建议性、人工可复核,并且不包含密钥。
+</Warning>

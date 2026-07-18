@@ -1,0 +1,83 @@
+---
+title: "验证门"
+description: "独立验证、幻觉符号标记、规约即契约、skill 门 —— 这些你可以运行的检查会降低但不认证正确性。"
+---
+
+没有可运行的检查(测试、构建退出码、截图),就不算"完成"。Forge 的每一道验证门都多接住一次。若每任务的漏检率是 `1 − p`、门的捕获率是 `c`,那么静默漏检降到 `(1 − p)(1 − c)`,而这里的每一道门都是多一个 `c`。
+
+<Warning>
+  **验证是减少而不是认证。** Crew 验证者和幻觉符号标记降低审查负担;它们不证明代码正确。测试和人工修正始终最优先。
+</Warning>
+
+## 独立验证 —— `forge verify`
+
+一道独立的门:它运行仓库真正的测试,标记幻觉符号,并检查溯源。
+
+```bash
+forge verify              # tests + hallucinated-symbol + provenance
+forge verify --deep       # multi-lens consensus — several independent checks must agree
+```
+
+<Note>
+  `--deep` (v0.19+) 升级为多镜头共识:该变更必须通过多个独立的验证镜头,而不只是一个。
+</Note>
+
+## 幻觉符号标记 —— `forge atlas has`
+
+`forge atlas has <symbol>` 是幻觉检查:如果模型调用了一个不在代码图中的符号,这道门会标记它。
+
+```bash
+forge atlas build          # index this repo's symbols → .forge/atlas.json
+forge atlas has useAuth    # "not found" = likely hallucinated
+```
+
+atlas 特意采用纯 JSON —— Codex、Cursor、Gemini 和 Aider 都可以通过 CLI 或纯 `jq` 读取 `.forge/atlas.json`,消费端无需 MCP 依赖。
+
+## 规约即契约 —— `forge spec`
+
+把行为绑定到一份规约并检测漂移:
+
+```bash
+forge spec init            # scaffold an OpenSpec contract
+forge spec lock            # lock the current spec as the contract
+forge spec check           # report drift against the locked contract
+```
+
+## skill 门 —— `forge scan`
+
+在安装 skill 或 MCP 服务器之前审查其是否存在注入、RCE 或泄露风险:
+
+```bash
+forge scan <path-to-SKILL.md-or-.mcp.json>
+```
+
+<Warning>
+  一次干净的扫描**不是安全认证**。内置启发式只捕获已知攻击形态(critical)和一部分高严重度模式;通过意味着_"未检测到关键签名"_,而不是_"可以安全安装"_。始终自己审阅源码、权限、包溯源和网络行为。一个**高**严重度发现即便不硬阻断,也不会被标记为安全。外部扫描器是可选加装,除非你启用,否则不会发起网络调用。
+</Warning>
+
+## 加固 —— `forge harden`
+
+接入把密钥和不安全变更挡在门外的安全控制:
+
+```bash
+forge harden               # gitleaks pre-commit + sandbox settings
+```
+
+## 提交级门 —— `forge precommit`
+
+<Note>
+  `forge precommit` (v0.19+) 是一道提交级门 —— 在 commit 时运行验证底线,以便在部分或未验证的工作落库之前捕获它们。
+</Note>
+
+## UI 检查 —— `forge uicheck`
+
+确定性 UI 检查,前三个镜头不用 LLM 也不用截图:
+
+```bash
+forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
+forge uicheck fingerprint <file...>  # deterministic design fingerprint
+forge uicheck design <file...>       # slop-distance + conformance gate
+forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+```
+
+搭配 `forge taste` 选一个视觉方向(brutalist、corporate、editorial、minimalist、playful)并参数化 `design` 门的阈值。

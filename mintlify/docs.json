@@ -16,55 +16,346 @@
     "default": "system"
   },
   "navigation": {
-    "tabs": [
+    "languages": [
       {
-        "tab": "Documentation",
-        "icon": "book-open",
-        "groups": [
+        "language": "en",
+        "default": true,
+        "tabs": [
           {
-            "group": "Get started",
-            "pages": ["introduction", "quickstart", "installation"]
+            "tab": "Documentation",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "Get started",
+                "pages": ["introduction", "quickstart", "installation"]
+              },
+              {
+                "group": "Core concepts",
+                "pages": [
+                  "concepts/config-compiler",
+                  "concepts/proof-carrying-memory",
+                  "concepts/pre-action-gate",
+                  "concepts/cross-session-memory",
+                  "concepts/verification-gates",
+                  "concepts/model-routing"
+                ]
+              }
+            ]
           },
           {
-            "group": "Core concepts",
-            "pages": [
-              "concepts/config-compiler",
-              "concepts/proof-carrying-memory",
-              "concepts/pre-action-gate",
-              "concepts/cross-session-memory",
-              "concepts/verification-gates",
-              "concepts/model-routing"
+            "tab": "CLI reference",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "Reference",
+                "pages": [
+                  "cli/overview",
+                  "cli/core",
+                  "cli/memory",
+                  "cli/substrate",
+                  "cli/quality",
+                  "cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Guides",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "Guides",
+                "pages": [
+                  "guides/zero-config-onboarding",
+                  "guides/team-memory",
+                  "guides/radar-deps"
+                ]
+              }
             ]
           }
         ]
       },
       {
-        "tab": "CLI reference",
-        "icon": "terminal",
-        "groups": [
+        "language": "cn",
+        "tabs": [
           {
-            "group": "Reference",
-            "pages": [
-              "cli/overview",
-              "cli/core",
-              "cli/memory",
-              "cli/substrate",
-              "cli/quality",
-              "cli/config"
+            "tab": "文档",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "开始使用",
+                "pages": ["cn/introduction", "cn/quickstart", "cn/installation"]
+              },
+              {
+                "group": "核心概念",
+                "pages": [
+                  "cn/concepts/config-compiler",
+                  "cn/concepts/proof-carrying-memory",
+                  "cn/concepts/pre-action-gate",
+                  "cn/concepts/cross-session-memory",
+                  "cn/concepts/verification-gates",
+                  "cn/concepts/model-routing"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "CLI 参考",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "参考",
+                "pages": [
+                  "cn/cli/overview",
+                  "cn/cli/core",
+                  "cn/cli/memory",
+                  "cn/cli/substrate",
+                  "cn/cli/quality",
+                  "cn/cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "指南",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "指南",
+                "pages": [
+                  "cn/guides/zero-config-onboarding",
+                  "cn/guides/team-memory",
+                  "cn/guides/radar-deps"
+                ]
+              }
             ]
           }
         ]
       },
       {
-        "tab": "Guides",
-        "icon": "compass",
-        "groups": [
+        "language": "ar",
+        "tabs": [
           {
-            "group": "Guides",
-            "pages": [
-              "guides/zero-config-onboarding",
-              "guides/team-memory",
-              "guides/radar-deps"
+            "tab": "التوثيق",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "ابدأ",
+                "pages": ["ar/introduction", "ar/quickstart", "ar/installation"]
+              },
+              {
+                "group": "المفاهيم الأساسية",
+                "pages": [
+                  "ar/concepts/config-compiler",
+                  "ar/concepts/proof-carrying-memory",
+                  "ar/concepts/pre-action-gate",
+                  "ar/concepts/cross-session-memory",
+                  "ar/concepts/verification-gates",
+                  "ar/concepts/model-routing"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "مرجع CLI",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "المرجع",
+                "pages": [
+                  "ar/cli/overview",
+                  "ar/cli/core",
+                  "ar/cli/memory",
+                  "ar/cli/substrate",
+                  "ar/cli/quality",
+                  "ar/cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "الأدلة",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "الأدلة",
+                "pages": [
+                  "ar/guides/zero-config-onboarding",
+                  "ar/guides/team-memory",
+                  "ar/guides/radar-deps"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "language": "hi",
+        "tabs": [
+          {
+            "tab": "दस्तावेज़",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "शुरू करें",
+                "pages": ["hi/introduction", "hi/quickstart", "hi/installation"]
+              },
+              {
+                "group": "मूल अवधारणाएँ",
+                "pages": [
+                  "hi/concepts/config-compiler",
+                  "hi/concepts/proof-carrying-memory",
+                  "hi/concepts/pre-action-gate",
+                  "hi/concepts/cross-session-memory",
+                  "hi/concepts/verification-gates",
+                  "hi/concepts/model-routing"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "CLI संदर्भ",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "संदर्भ",
+                "pages": [
+                  "hi/cli/overview",
+                  "hi/cli/core",
+                  "hi/cli/memory",
+                  "hi/cli/substrate",
+                  "hi/cli/quality",
+                  "hi/cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "गाइड",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "गाइड",
+                "pages": [
+                  "hi/guides/zero-config-onboarding",
+                  "hi/guides/team-memory",
+                  "hi/guides/radar-deps"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "language": "zh",
+        "tabs": [
+          {
+            "tab": "文档",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "开始使用",
+                "pages": ["zh-CN/introduction", "zh-CN/quickstart", "zh-CN/installation"]
+              },
+              {
+                "group": "核心概念",
+                "pages": [
+                  "zh-CN/concepts/config-compiler",
+                  "zh-CN/concepts/proof-carrying-memory",
+                  "zh-CN/concepts/pre-action-gate",
+                  "zh-CN/concepts/cross-session-memory",
+                  "zh-CN/concepts/verification-gates",
+                  "zh-CN/concepts/model-routing"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "CLI 参考",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "参考",
+                "pages": [
+                  "zh-CN/cli/overview",
+                  "zh-CN/cli/core",
+                  "zh-CN/cli/memory",
+                  "zh-CN/cli/substrate",
+                  "zh-CN/cli/quality",
+                  "zh-CN/cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "指南",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "指南",
+                "pages": [
+                  "zh-CN/guides/zero-config-onboarding",
+                  "zh-CN/guides/team-memory",
+                  "zh-CN/guides/radar-deps"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "language": "zh-Hans",
+        "tabs": [
+          {
+            "tab": "文档",
+            "icon": "book-open",
+            "groups": [
+              {
+                "group": "开始使用",
+                "pages": ["zh-Hans/introduction", "zh-Hans/quickstart", "zh-Hans/installation"]
+              },
+              {
+                "group": "核心概念",
+                "pages": [
+                  "zh-Hans/concepts/config-compiler",
+                  "zh-Hans/concepts/proof-carrying-memory",
+                  "zh-Hans/concepts/pre-action-gate",
+                  "zh-Hans/concepts/cross-session-memory",
+                  "zh-Hans/concepts/verification-gates",
+                  "zh-Hans/concepts/model-routing"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "CLI 参考",
+            "icon": "terminal",
+            "groups": [
+              {
+                "group": "参考",
+                "pages": [
+                  "zh-Hans/cli/overview",
+                  "zh-Hans/cli/core",
+                  "zh-Hans/cli/memory",
+                  "zh-Hans/cli/substrate",
+                  "zh-Hans/cli/quality",
+                  "zh-Hans/cli/config"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "指南",
+            "icon": "compass",
+            "groups": [
+              {
+                "group": "指南",
+                "pages": [
+                  "zh-Hans/guides/zero-config-onboarding",
+                  "zh-Hans/guides/team-memory",
+                  "zh-Hans/guides/radar-deps"
+                ]
+              }
             ]
           }
         ]

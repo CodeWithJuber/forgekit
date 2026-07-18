@@ -1,0 +1,69 @@
+---
+title: "Core 命令"
+description: "引导并维护一个仓库:init、sync、doctor、catalog、docs 和 update。"
+---
+
+Core 组用于引导一个仓库并保持其健康。
+
+## `forge init`
+
+搭建该仓库的配置 —— 从一个共享源为每个工具生成配置。
+
+```bash
+forge init
+```
+
+生成 `AGENTS.md`、`CLAUDE.md`、`.gemini/settings.json`、`.aider.conf.yml` 以及其他文件(加上给 Roo Code 与 VS Code 的 MCP 服务器配置),以及账本需要的 `.gitattributes` union-merge 规则。
+
+## `forge sync`
+
+把规范源重新编译为每个工具的原生配置文件。
+
+```bash
+forge sync
+```
+
+幂等 —— 只重写发生了变化的内容。修改 `source/rules.json` 或仓库级 `.forge/rules.json` 之后运行它。
+
+## `forge doctor`
+
+对已安装工具、护栏、MCP 认证和配置漂移做健康检查。
+
+```bash
+forge doctor
+```
+
+跨工具、护栏、MCP 接线、配置漂移和更新状态给出通过/失败结果。每条路径都失败开放。当配置了自定义网关时,**gateway models** 一行会打印解析后的 `tier → model` 映射。
+
+## `forge catalog`
+
+Start Here —— 列出每个工具、crew 和护栏,并附一行原因说明。
+
+```bash
+forge catalog
+```
+
+## `forge docs`
+
+文档 ↔ 代码 漂移。
+
+```bash
+forge docs check     # registry reconcile — commands, env vars, MCP tools, CHANGELOG
+forge docs sync      # diff-driven stale-docs sweep
+```
+
+<Note>
+  当命令、环境变量、MCP 工具或 CHANGELOG 与代码不一致时,`docs check` 会让 CI 失败。`docs sync` 扫描 diff 并报告 UPDATED / STALE / VERIFIED-UNAFFECTED。
+</Note>
+
+## `forge update`
+
+跨三种安装模式的自更新。
+
+```bash
+forge update              # apply the update (git checkout or npm/copy install)
+forge update --check      # report whether a newer version is available
+forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
+```
+
+每条路径都失败开放 —— 离线、没有上游或 detached HEAD 会返回"unknown",从不作为错误。`FORGE_NO_UPDATE_CHECK=1` 可静默 doctor 的提示。

@@ -1,0 +1,77 @@
+---
+title: "Core कमांड्स"
+description: "रेपो बूटस्ट्रैप और रखरखाव करें: init, sync, doctor, catalog, docs, और update।"
+---
+
+Core समूह एक रेपो को बूटस्ट्रैप करता है और उसे स्वस्थ रखता है।
+
+## `forge init`
+
+इस रेपो का कॉन्फ़िग स्कैफ़ोल्ड करें — एक साझा स्रोत से हर टूल का कॉन्फ़िग निकालता है।
+
+```bash
+forge init
+```
+
+`AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, और बाकी
+निकालता है (साथ ही Roo Code और VS Code के लिए MCP सर्वर कॉन्फ़िग), और लेजर के लिए
+आवश्यक `.gitattributes` यूनियन-मर्ज नियम।
+
+## `forge sync`
+
+कैननिकल स्रोत को हर टूल की नेटिव कॉन्फ़िग फ़ाइलों में पुनः कंपाइल करें।
+
+```bash
+forge sync
+```
+
+Idempotent — यह केवल वही पुनर्लिखित करता है जो बदला है। `source/rules.json` या
+प्रति-रेपो `.forge/rules.json` संपादित करने के बाद इसे चलाएँ।
+
+## `forge doctor`
+
+इंस्टॉल किए गए टूल्स, गार्ड्स, MCP ऑथ, और कॉन्फ़िग ड्रिफ्ट की हेल्थ-चेक।
+
+```bash
+forge doctor
+```
+
+टूल्स, गार्ड्स, MCP वायरिंग, कॉन्फ़िग ड्रिफ्ट, और अपडेट स्थिति पर पास/फ़ेल। हर पथ
+fail-open है। जब कोई कस्टम gateway कॉन्फ़िगर हो तो एक **gateway models** पंक्ति
+हल किए गए `tier → model` मैपिंग को प्रिंट करती है।
+
+## `forge catalog`
+
+Start Here — हर टूल, क्रू, और गार्ड को एक-पंक्ति कारण के साथ सूचीबद्ध करें।
+
+```bash
+forge catalog
+```
+
+## `forge docs`
+
+Docs ↔ code ड्रिफ्ट।
+
+```bash
+forge docs check     # registry reconcile — commands, env vars, MCP tools, CHANGELOG
+forge docs sync      # diff-driven stale-docs sweep
+```
+
+<Note>
+  `docs check` CI को fail करता है जब कमांड्स, env vars, MCP टूल्स, या CHANGELOG
+  कोड से ड्रिफ्ट करते हैं। `docs sync` diff को स्वीप करता है और UPDATED / STALE /
+  VERIFIED-UNAFFECTED रिपोर्ट करता है।
+</Note>
+
+## `forge update`
+
+तीनों इंस्टॉल मोड्स में सेल्फ़-अपडेट।
+
+```bash
+forge update              # apply the update (git checkout or npm/copy install)
+forge update --check      # report whether a newer version is available
+forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
+```
+
+हर पथ fail-open है — ऑफ़लाइन, कोई upstream नहीं, या detached HEAD "unknown" लौटाता है,
+कभी कोई error नहीं। `FORGE_NO_UPDATE_CHECK=1` doctor सूचना को शांत करता है।

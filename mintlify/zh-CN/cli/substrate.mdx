@@ -1,0 +1,99 @@
+---
+title: "Substrate 命令"
+description: "预动作门及其可单独调用的各阶段:substrate、preflight、route、impact、scope、context、anchor、diagnose、imagine 和 lean。"
+---
+
+Substrate 组即预动作门。`forge substrate` 把其余命令合成为单一裁决;每个阶段也可以单独调用。流水线详情见 [预动作门](/zh-CN/concepts/pre-action-gate)。
+
+## `forge substrate`
+
+一个预动作门:假设、路由、影响、范围、记忆、验证。
+
+```bash
+forge substrate "<task>"
+forge substrate "<task>" --json
+```
+
+如果返回 `okToProceed:false`,在编辑前先提出返回的 `assumption.questions`。
+
+## `forge preflight`
+
+假设检查 —— 任务提到的、仓库中没有定义的东西。
+
+```bash
+forge preflight "<task>"
+```
+
+## `forge route`
+
+为一个任务推荐性价比最高、能胜任的模型。
+
+```bash
+forge route "<task>"
+forge route gateway        # emit LiteLLM gateway config
+```
+
+## `forge impact`
+
+从 atlas 图中预测某个符号或文件的爆炸半径。
+
+```bash
+forge impact <symbol-or-file>
+```
+
+## `forge scope`
+
+把文件分解成独立的簇 —— 外加你没点名的耦合文件。
+
+```bash
+forge scope <files...>
+```
+
+## `forge context`
+
+有预算的上下文组装 + 完整性门 —— 一次编辑**需要**知道的东西。
+
+```bash
+forge context "<task>"
+```
+
+对预测的编辑集合使用集合覆盖来组装一个有预算的上下文,套用一层压缩阶梯,并报告计算出的缺失集合。
+
+## `forge anchor`
+
+目标漂移检查 —— 你实际(git)变更是否仍然对准既定目标?
+
+```bash
+forge anchor set "<goal>"   # persist the goal across sessions
+forge anchor show
+forge anchor clear
+```
+
+## `forge diagnose`
+
+死循环检查 —— 记录一次失败;相同签名出现 3 次会生成一份诊断 + 升级。
+
+```bash
+forge diagnose "<failure>"
+```
+
+## `forge imagine`
+
+后果模拟 —— 为某个任务预测的破坏点 + 最小空跑测试集。
+
+```bash
+forge imagine "<task>"
+forge imagine "<task>" --run   # execute the minimal suite sandboxed
+```
+
+## `forge lean`
+
+范围最小性 (M5) —— 衡量 diff 的足迹与任务要求之间的差距。
+
+```bash
+forge lean
+```
+
+<Note>
+  `route`、`impact`、`scope`、`context`、`anchor` 和 `lean` 都会在 `forge substrate` 里运行。当你只需要单一信号时才单独调用它们。
+</Note>

@@ -1,0 +1,105 @@
+---
+title: "इंस्टॉलेशन"
+description: "एक ही पेड़ पर तीन प्रवेश द्वार: प्लगइन मार्केटप्लेस, npm ग्लोबल, और बिना-रजिस्ट्री github: install — साथ ही कंट्रिब्यूटर symlink सेटअप।"
+---
+
+Forge एक **एक पेड़, तीन प्रवेश द्वार** डिज़ाइन का पालन करता है: प्लगइन मैनिफ़ेस्ट,
+हार्डन्ड इंस्टॉलर, और npm bin सभी उसी `global/` + `source/` पेड़ को संदर्भित करते हैं।
+वह चैनल चुनें जो आपके टूल पर सूट करे।
+
+## एक चैनल चुनें
+
+<CardGroup cols={2}>
+  <Card title="प्लगइन (अनुशंसित)" icon="puzzle-piece">
+    Claude Code और Codex के लिए। गार्ड्स स्वतः वायर हो जाते हैं; मर्ज करने के लिए कुछ नहीं।
+  </Card>
+  <Card title="npm ग्लोबल" icon="node-js">
+    किसी भी टूल के लिए। सार्वजनिक npm रजिस्ट्री से `forge` CLI।
+  </Card>
+  <Card title="github: install" icon="github">
+    कोई रजिस्ट्री ज़रूरी नहीं — सीधे रेपो से इंस्टॉल करें।
+  </Card>
+  <Card title="कंट्रिब्यूटर / लोकल dev" icon="code">
+    क्लोन करें + `npm link`, या symlink सेटअप के लिए `bash install.sh`।
+  </Card>
+</CardGroup>
+
+## आवश्यकताएँ
+
+- **Node.js >= 20**
+- **शून्य रनटाइम निर्भरताएँ** — सब कुछ Node बिल्ट-इन है। वैकल्पिक स्तर
+  (`FORGE_EMBED` एम्बेडिंग्स, `uicheck visual` के लिए Playwright) ऑप्ट-इन हैं और
+  कोई आवश्यक निर्भरता नहीं जोड़ते।
+
+## प्लगइन मार्केटप्लेस
+
+Claude Code और Codex के लिए अनुशंसित पथ जिसे न किसी टोकन की ज़रूरत है, न क्लोन की:
+
+```bash
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+प्लगइन गार्ड्स को `${CLAUDE_PROJECT_DIR}` के माध्यम से वायर करता है ताकि प्री-एक्शन गेट
+और कंप्लीशन गेट परिवेश में चलें।
+
+## npm ग्लोबल
+
+किसी भी टूल के लिए, सार्वजनिक npm से:
+
+```bash
+npm install -g @codewithjuber/forgekit
+forge doctor          # everything green?
+```
+
+## बिना-रजिस्ट्री github: install
+
+```bash
+npm install -g github:CodeWithJuber/forgekit
+```
+
+## कंट्रिब्यूटर / लोकल dev
+
+<CodeGroup>
+
+```bash npm link
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+npm link
+```
+
+```bash install.sh (symlink setup)
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+bash install.sh
+```
+
+</CodeGroup>
+
+इंस्टॉलर हार्डन्ड है: idempotent, symlink-आधारित, बैकअप के साथ, और कोई `curl | sh` नहीं।
+
+## सत्यापित करें
+
+आपने जो भी चैनल इस्तेमाल किया हो, इंस्टॉल की पुष्टि करें:
+
+```bash
+forge doctor          # tools, guards, MCP auth, config drift, update status
+```
+
+<Note>
+  `forge doctor` git चेकआउट्स के लिए एक ग़ैर-परेशान करने वाली "commits behind upstream"
+  सूचना भी दिखाता है। इसे शांत करने के लिए `FORGE_NO_UPDATE_CHECK=1` सेट करें।
+  हर पथ fail-open है — ऑफ़लाइन या detached HEAD "unknown" रिपोर्ट करता है, कभी error नहीं।
+</Note>
+
+## Forge को अद्यतन रखना
+
+```bash
+forge update --check          # report whether a newer version is available
+forge update                  # apply the update (git checkout or npm/copy install)
+forge update --to <version>   # pin or downgrade to a specific version
+```
+
+<Card title="अब एक रेपो कॉन्फ़िगर करें" icon="arrow-right" href="/hi/quickstart">
+  `forge init` चलाने और अपना पहला सब्सट्रेट चेक करने के लिए क्विकस्टार्ट पर जाएँ।
+</Card>

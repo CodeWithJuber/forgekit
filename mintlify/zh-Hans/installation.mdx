@@ -1,0 +1,98 @@
+---
+title: "安装"
+description: "一棵树上的三扇前门:插件市场、npm 全局安装,以及免注册表的 github: 安装——外加贡献者的 symlink 开发环境。"
+---
+
+Forge 遵循**一棵树,三扇前门**的设计:插件清单、加固过的安装器和 npm 二进制都引用同一棵 `global/` + `source/` 树。选择适合你工具的通道即可。
+
+## 选择一个通道
+
+<CardGroup cols={2}>
+  <Card title="插件(推荐)" icon="puzzle-piece">
+    适用于 Claude Code 和 Codex。护栏自动接线;无需合并任何东西。
+  </Card>
+  <Card title="npm 全局" icon="node-js">
+    适用于任何工具。从公开 npm registry 安装的 `forge` CLI。
+  </Card>
+  <Card title="github: 安装" icon="github">
+    不需要 registry——直接从仓库安装。
+  </Card>
+  <Card title="贡献者 / 本地开发" icon="code">
+    克隆 + `npm link`,或运行 `bash install.sh` 使用 symlink 方案。
+  </Card>
+</CardGroup>
+
+## 系统要求
+
+- **Node.js >= 20**
+- **零运行时依赖**——一切都用 Node 内置模块。可选层(`FORGE_EMBED` 嵌入、`uicheck visual` 所需的 Playwright)是可选的,不引入必需依赖。
+
+## 插件市场
+
+给 Claude Code 和 Codex 用的推荐路径,不需要 token 也不需要克隆:
+
+```bash
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+插件通过 `${CLAUDE_PROJECT_DIR}` 接线护栏,让行动前关卡和完成关卡在后台自动生效。
+
+## npm 全局安装
+
+任何工具都能用,来自公开 npm:
+
+```bash
+npm install -g @codewithjuber/forgekit
+forge doctor          # 一切都绿了吗?
+```
+
+## 免注册表的 github: 安装
+
+```bash
+npm install -g github:CodeWithJuber/forgekit
+```
+
+## 贡献者 / 本地开发
+
+<CodeGroup>
+
+```bash npm link
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+npm link
+```
+
+```bash install.sh (symlink setup)
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+bash install.sh
+```
+
+</CodeGroup>
+
+安装器是加固过的:幂等、基于 symlink、有备份、且不使用 `curl | sh`。
+
+## 验证
+
+不论你走了哪个通道,都要确认安装成功:
+
+```bash
+forge doctor          # 工具、护栏、MCP 授权、配置漂移、更新状态
+```
+
+<Note>
+  `forge doctor` 还会对 git checkout 用户显示一条不烦人的“落后上游 N 个 commit”提示。设置 `FORGE_NO_UPDATE_CHECK=1` 可将其静默。所有路径都是 fail-open——离线或 detached HEAD 会报告 “unknown”,绝不会报错。
+</Note>
+
+## 保持 Forge 最新
+
+```bash
+forge update --check          # 报告是否有更新可用
+forge update                  # 应用更新(git checkout 或 npm/copy 安装)
+forge update --to <version>   # 锁定或回退到特定版本
+```
+
+<Card title="现在去配置一个仓库" icon="arrow-right" href="/zh-Hans/quickstart">
+  前往快速开始,运行 `forge init` 与第一次基座检查。
+</Card>
