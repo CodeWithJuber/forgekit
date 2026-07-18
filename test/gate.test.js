@@ -56,31 +56,100 @@ test("gate table: clean and internal-only sessions owe nothing", () => {
   assert.equal(internal.allow, true);
 });
 
-test("gate table: THE row — code moved, no doc/state followed → block", () => {
+test("gate table: THE row — code moved with no test evidence → block (RA-10)", () => {
   const r = gateDecision({ changed: ["src/route.js", "src/gate.js"] });
   assert.equal(r.allow, false);
-  assert.equal(r.row, "code-without-docs");
+  assert.equal(r.row, "code-without-test-evidence");
   assert.deepEqual(r.classes.code, ["src/route.js", "src/gate.js"]);
 });
 
-test("gate table: any doc-class artifact (or a state touch) satisfies the floor", () => {
-  assert.equal(gateDecision({ changed: ["src/route.js", "README.md"] }).row, "docs-touched");
-  assert.equal(gateDecision({ changed: ["src/route.js"], stateTouched: true }).row, "docs-touched");
-  assert.equal(gateDecision({ changed: ["docs/GUIDE.md"] }).row, "docs-touched");
+test("gate table: docs/handoff alone no longer satisfy a code change (RA-10)", () => {
+  assert.equal(
+    gateDecision({ changed: ["src/route.js", "README.md"] }).allow,
+    false,
+    "code + docs but NO test evidence blocks — ceremony is not evidence",
+  );
+  assert.equal(
+    gateDecision({ changed: ["src/route.js"], stateTouched: true }).row,
+    "code-without-test-evidence",
+    "a handoff alone can no longer pass a code change",
+  );
   assert.equal(
     gateDecision({ changed: ["src/x.js", ".forge/state.md"] }).row,
-    "docs-touched",
-    "the gitignore-invisible snapshot counts via the changed set too",
+    "code-without-test-evidence",
   );
 });
 
-test("gate table: test-only, config-only, and other-only changes pass (precision rule)", () => {
-  assert.equal(gateDecision({ changed: ["test/gate.test.js"] }).row, "no-code-class");
-  assert.equal(gateDecision({ changed: [".github/workflows/ci.yml"] }).row, "no-code-class");
-  assert.equal(gateDecision({ changed: ["assets/logo.png"] }).row, "no-code-class");
+test("gate table: code + test evidence but NO docs/state → code-without-docs", () => {
+  const r = gateDecision({ changed: ["src/x.js", "test/x.test.js"] });
+  assert.equal(r.allow, false);
+  assert.equal(r.row, "code-without-docs", "reachable only WITH test evidence now");
+});
+
+test("gate table: code + test evidence + docs (or state) → allow code-with-evidence", () => {
+  const tested = gateDecision({
+    changed: ["src/x.js", "test/x.test.js", "README.md"],
+  });
+  assert.equal(tested.allow, true);
+  assert.equal(tested.row, "code-with-evidence");
+  const handoff = gateDecision({
+    changed: ["src/x.js", "test/x.test.js"],
+    stateTouched: true,
+  });
+  assert.equal(handoff.allow, true, "state/handoff still counts as the continuity leg");
+  assert.equal(handoff.row, "code-with-evidence");
+});
+
+test("gate table: a fresh passing verify run is test evidence; stale or FAIL is not", () => {
+  const base = { changed: ["src/x.js", "README.md"] };
+  const fresh = gateDecision({
+    ...base,
+    verifyEvidence: { fresh: true, status: "PASS" },
+  });
+  assert.equal(fresh.allow, true);
+  assert.equal(fresh.row, "code-with-evidence");
   assert.equal(
-    gateDecision({ changed: ["src/x.js", "test/x.test.js"] }).allow,
-    false,
-    "code + tests but NO docs still blocks — tests are not prose",
+    gateDecision({ ...base, verifyEvidence: { fresh: false, status: "PASS" } }).row,
+    "code-without-test-evidence",
+    "a stale provenance stamp proves nothing about THIS session's change",
   );
+  assert.equal(
+    gateDecision({ ...base, verifyEvidence: { fresh: true, status: "FAIL" } }).row,
+    "code-without-test-evidence",
+    "a fresh FAIL is not evidence of completion",
+  );
+  assert.equal(
+    gateDecision({
+      changed: ["src/x.js"],
+      verifyEvidence: { fresh: true, status: "PASS" },
+    }).row,
+    "code-without-docs",
+    "verify evidence covers the test leg only — docs are still owed",
+  );
+});
+
+test("gate table: test-only sessions pass (a regression test owes no prose)", () => {
+  const r = gateDecision({ changed: ["test/gate.test.js"] });
+  assert.equal(r.allow, true);
+  assert.equal(r.row, "test-only");
+});
+
+test("gate table: config-only owes the lighter continuity bar", () => {
+  const bare = gateDecision({ changed: [".github/workflows/ci.yml"] });
+  assert.equal(bare.allow, false);
+  assert.equal(bare.row, "config-without-docs");
+  assert.equal(
+    gateDecision({ changed: [".github/workflows/ci.yml"], stateTouched: true }).allow,
+    true,
+    "a handoff alone satisfies THIS row (config-only)",
+  );
+  assert.equal(
+    gateDecision({ changed: [".github/workflows/ci.yml", "docs/DEPLOY.md"] }).row,
+    "docs-touched",
+  );
+});
+
+test("gate table: docs-only and other-only changes still pass", () => {
+  assert.equal(gateDecision({ changed: ["docs/GUIDE.md"] }).row, "docs-touched");
+  assert.equal(gateDecision({ changed: ["assets/logo.png"] }).row, "no-code-class");
 });

@@ -357,6 +357,7 @@ async function run(argv) {
       ok: paint("✓", "ok"),
       warn: paint("!", "warn"),
       fail: paint("✗", "err"),
+      na: paint("–", "dim"), // not built/applicable — neutral, never a failure
     };
     heading(`${BRAND.brand} doctor\n`);
     if (fix) {

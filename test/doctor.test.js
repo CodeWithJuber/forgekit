@@ -148,3 +148,31 @@ test("doctor --fix is idempotent — a second run repairs nothing", () => {
   const second = doctor({ targetRoot: root, settingsPath, fix: true });
   assert.equal(second.repairs.length, 0, "second --fix run is a no-op");
 });
+
+test("doctor: a missing atlas is UNAVAILABLE, not ACTIVE; a fresh one is ACTIVE (RA-19)", async () => {
+  const bare = fixture();
+  const r = doctor({ targetRoot: bare });
+  const atlasRow = r.results.find((x) => x.label === "atlas");
+  assert.equal(atlasRow.status, "na", "not built is neither ok nor a failure");
+  assert.equal(r.health.atlas, "UNAVAILABLE");
+  assert.equal(r.failed, 0, "na never counts toward failed totals");
+
+  const built = fixture();
+  writeFileSync(join(built, "a.js"), "export const one = 1;\n");
+  const { build } = await import("../src/atlas.js");
+  build({ root: built });
+  const r2 = doctor({ targetRoot: built });
+  assert.equal(r2.results.find((x) => x.label === "atlas").status, "ok");
+  assert.equal(r2.health.atlas, "ACTIVE");
+});
+
+test("doctor --fix records a returned {action:'error'} repair as ok:false (RA-20)", () => {
+  const root = fixture();
+  const settingsPath = join(fixture(), "settings.json");
+  writeFileSync(settingsPath, "{ not: valid json"); // present but unparseable
+  const r = doctor({ targetRoot: root, settingsPath, fix: true });
+  const rep = r.repairs.find((x) => x.id === "settings");
+  assert.ok(rep, "a settings repair was attempted");
+  assert.equal(rep.ok, false, "a returned error object is not success");
+  assert.match(rep.error, /not valid JSON/, "the returned reason is surfaced");
+});
