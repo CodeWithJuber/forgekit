@@ -27,6 +27,9 @@ import { updateStatus } from "./update.js";
 const ok = (label, note = "") => ({ status: "ok", label, note });
 const warn = (label, note = "") => ({ status: "warn", label, note });
 const fail = (label, note = "") => ({ status: "fail", label, note });
+// Not applicable / not built: a subsystem that simply is not there. Neither healthy nor
+// failing — it must not render as ACTIVE (RA-19) and never counts toward failed totals.
+const na = (label, note = "") => ({ status: "na", label, note });
 
 import { hasBin } from "./util.js";
 
@@ -150,7 +153,9 @@ function checkPricing(out) {
 function checkAtlas(out, targetRoot) {
   const atlas = loadAtlas(targetRoot);
   if (!atlas) {
-    out.push(ok("atlas", "not built — run `forge atlas build` for impact/verify"));
+    // "na", not "ok": a missing atlas means impact/verify are UNAVAILABLE, and reporting
+    // it green would surface as an ACTIVE subsystem in the health line (RA-19).
+    out.push(na("atlas", "not built — run `forge atlas build` for impact/verify"));
     return;
   }
   out.push(
@@ -492,6 +497,7 @@ export function subsystemHealth(results) {
     if (!r) return "UNAVAILABLE";
     if (r.status === "fail") return "FAILED";
     if (r.status === "warn") return "DEGRADED";
+    if (r.status === "na") return "UNAVAILABLE"; // not built/applicable ≠ ACTIVE (RA-19)
     return "ACTIVE";
   };
   const health = {};
@@ -540,7 +546,16 @@ export function doctor({ targetRoot = process.cwd(), fix = false, settingsPath }
       if ((r.status === "warn" || r.status === "fail") && r.fix) {
         try {
           const detail = r.fix.run();
-          repairs.push({ id: r.fix.id, label: r.fix.label, ok: true, detail });
+          // Repairs like mergeSettings report failure as a RETURNED {action:"error", reason}
+          // instead of throwing — an errored result must not be recorded as ok (RA-20).
+          const errored = detail && typeof detail === "object" && detail.action === "error";
+          repairs.push({
+            id: r.fix.id,
+            label: r.fix.label,
+            ok: !errored,
+            error: errored ? detail.reason : undefined,
+            detail: errored ? undefined : detail,
+          });
         } catch (err) {
           repairs.push({
             id: r.fix.id,

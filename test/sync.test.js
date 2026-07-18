@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { assemble, sync } from "../src/sync.js";
+import { assemble, autoSyncIfDrifted, sync } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-sync-"));
 
@@ -99,6 +99,42 @@ test("minimal profile emits only the core-safety section (P1-02)", () => {
   assert.doesNotMatch(md, /## AI interfaces & design quality/, "full pack sections dropped");
 });
 
+test("a stored legacy profile name behaves as standard — the full pack (RA-14)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), JSON.stringify({ profile: "web-app" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Workflow/, "full (standard) pack emitted");
+  assert.match(md, /## AI interfaces & design quality/, "no section dropped");
+});
+
+test("corrupt forge.config.json: sync fail-opens to default rules but surfaces a warning (RA-15)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), "{ not json");
+  const res = sync({ targetRoot: root });
+  assert.match(
+    readFileSync(join(root, "AGENTS.md"), "utf8"),
+    /## Workflow/,
+    "default rules still emitted (fail-open)",
+  );
+  assert.ok(
+    res.warnings.some((w) => w.includes("not valid JSON")),
+    `warnings must mention the corrupt config: ${JSON.stringify(res.warnings)}`,
+  );
+});
+
+test("legacy .forge/config.json keys are migration-read into sync's config", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  // Only the LEGACY file exists — profile stored there must still reach loadRules.
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ profile: "minimal" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Core safety/, "minimal profile honored from the legacy file");
+});
+
 test("config disableSections drops a named section; config.rules appends (P1-03)", () => {
   const root = fixture();
   mkdirSync(join(root, ".forge"), { recursive: true });
@@ -114,4 +150,21 @@ test("config disableSections drops a named section; config.rules appends (P1-03)
   assert.doesNotMatch(md, /## AI interfaces & design quality/, "disabled section dropped");
   assert.match(md, /## ProjectY/, "config.rules appended");
   assert.match(md, /## Workflow/, "other sections preserved");
+});
+
+test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as drift", () => {
+  const root = fixture();
+  sync({ targetRoot: root });
+  const p = join(root, "AGENTS.md");
+  const lines = readFileSync(p, "utf8").split("\n");
+  // Keep line 0 (the GENERATED header with the forge:sync:<hash> marker), tamper the body.
+  writeFileSync(
+    p,
+    [lines[0], "# AGENTS.md — quietly rewritten by hand", ...lines.slice(2)].join("\n"),
+  );
+  const r = autoSyncIfDrifted(root);
+  assert.equal(r.synced, true, "marker-only agreement must not pass as in-sync");
+  const restored = readFileSync(p, "utf8");
+  assert.doesNotMatch(restored, /quietly rewritten by hand/, "body restored from canonical");
+  assert.equal(autoSyncIfDrifted(root).synced, false, "after repair: full bytes match again");
 });

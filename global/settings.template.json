@@ -19,7 +19,6 @@
       "Bash(git diff:*)",
       "Bash(git branch:*)",
       "Bash(git add:*)",
-      "Bash(git stash:*)",
       "Bash(ls:*)",
       "Bash(fd:*)",
       "Bash(tree:*)",
@@ -47,6 +46,7 @@
     "ask": [
       "Bash(git push:*)",
       "Bash(git commit:*)",
+      "Bash(git stash:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)",
       "Bash(npm ci)",

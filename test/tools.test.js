@@ -12,9 +12,11 @@ import {
   detectPrimaryTool,
   KNOWN_TOOLS,
   nonPrimaryTargets,
+  readForgeConfig,
   readRepoConfig,
   resolvePrimaryTool,
   rowToolKey,
+  writeForgeConfig,
 } from "../src/repo_config.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -73,6 +75,104 @@ test("malformed config never throws — treated as absent", () => {
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(join(root, ".forge/config.json"), "{ not json");
   assert.deepEqual(readRepoConfig(root), {});
+});
+
+test("readForgeConfig: forge.config.json wins over legacy config.json on key conflicts", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ primaryTool: "cursor" }));
+  writeFileSync(
+    join(root, ".forge/forge.config.json"),
+    JSON.stringify({ primaryTool: "claude", profile: "minimal" }),
+  );
+  const cfg = readForgeConfig(root);
+  assert.equal(cfg.primaryTool, "claude", "unified file wins");
+  assert.equal(cfg.profile, "minimal");
+  assert.deepEqual(readRepoConfig(root), { primaryTool: "claude" });
+});
+
+test("readForgeConfig: corrupt forge.config.json is reported, valid legacy data still read (RA-15)", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), "{ not json");
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ primaryTool: "cursor" }));
+  const cfg = readForgeConfig(root);
+  assert.equal(cfg.corrupt, true, "corruption is reported, not swallowed");
+  assert.equal(cfg.path, join(root, ".forge/forge.config.json"));
+  assert.equal(cfg.primaryTool, "cursor", "valid data from the other file still read");
+  // The filtered primary-tool view stays throw-free and back-compat shaped.
+  assert.deepEqual(readRepoConfig(root), { primaryTool: "cursor" });
+});
+
+test("writeForgeConfig refuses to overwrite a corrupt forge.config.json (RA-15)", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const file = join(root, ".forge/forge.config.json");
+  const original = "{ definitely not json";
+  writeFileSync(file, original);
+  const res = writeForgeConfig(root, (cfg) => {
+    cfg.profile = "minimal";
+  });
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /not valid JSON/);
+  assert.equal(
+    readFileSync(file, "utf8"),
+    original,
+    "corrupt bytes preserved for the human to fix",
+  );
+});
+
+test("writeForgeConfig round-trips unknown keys and folds legacy config.json keys", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge/forge.config.json"),
+    JSON.stringify({
+      profile: "minimal",
+      mcp: { integrations: ["context7"], adopted: ["x"] },
+    }),
+  );
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ primaryTool: "cursor" }));
+  const res = writeForgeConfig(root, (cfg) => {
+    cfg.primaryTool = "claude";
+  });
+  assert.equal(res.ok, true);
+  const written = JSON.parse(readFileSync(join(root, ".forge/forge.config.json"), "utf8"));
+  assert.deepEqual(written, {
+    profile: "minimal",
+    mcp: { integrations: ["context7"], adopted: ["x"] }, // unknown keys round-trip untouched
+    primaryTool: "claude", // legacy key folded in, then mutated
+  });
+  // The legacy file is left in place (documented precedence: forge.config.json wins).
+  assert.ok(existsSync(join(root, ".forge/config.json")));
+});
+
+test("applyPrimaryTool fails loudly on a corrupt forge.config.json — bytes preserved", async () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const file = join(root, ".forge/forge.config.json");
+  writeFileSync(file, "{ not json");
+  await assert.rejects(
+    () => applyPrimaryTool(root, "claude", { syncFn: () => FAKE_REPORT }),
+    /not valid JSON/,
+  );
+  assert.equal(readFileSync(file, "utf8"), "{ not json");
+});
+
+test("clearRepoConfig scrubs primaryTool from both files but preserves other keys", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ primaryTool: "cursor" }));
+  writeFileSync(
+    join(root, ".forge/forge.config.json"),
+    JSON.stringify({ primaryTool: "claude", profile: "minimal" }),
+  );
+  const r = clearRepoConfig(root);
+  assert.equal(r.cleared, true);
+  assert.deepEqual(readRepoConfig(root), {}, "no primary tool resurfaces from the legacy file");
+  const kept = JSON.parse(readFileSync(join(root, ".forge/forge.config.json"), "utf8"));
+  assert.deepEqual(kept, { profile: "minimal" }, "non-primary-tool keys preserved");
+  assert.ok(!existsSync(join(root, ".forge/config.json")), "emptied legacy file deleted");
 });
 
 test("rowToolKey maps labels; shared source is never mapped", () => {
@@ -135,7 +235,7 @@ test("`forge tools --reset` clears config and removes ONLY the block", () => {
   const root = tmp();
   writeFileSync(join(root, ".gitignore"), "node_modules\n");
   runCli(["tools", "claude"], root);
-  assert.ok(existsSync(join(root, ".forge/config.json")));
+  assert.ok(existsSync(join(root, ".forge/forge.config.json")));
   assert.ok(readGitignoreBlock(root).length > 0);
 
   const res = runCli(["tools", "--reset", "--json"], root);

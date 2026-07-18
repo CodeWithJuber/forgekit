@@ -22,5 +22,9 @@ if command -v node >/dev/null 2>&1 && [ -f "$MJS" ]; then
 fi
 
 # A secret-shaped candidate is present but we cannot redact — do NOT silently drop it.
+# FORGE_GUARD_STRICT=1 turns this degradation into a block (exit 2); default is advisory.
 echo "forge secret-redact: DEGRADED — node unavailable or redactor missing; tool output was NOT scanned for secrets. Install Node 20+ to restore redaction." >&2
+if [ "${FORGE_GUARD_STRICT:-0}" = "1" ]; then
+  exit 2
+fi
 exit 0

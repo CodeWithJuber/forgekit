@@ -95,17 +95,59 @@ async function run(argv) {
   if (cmd === "init") {
     const { init } = await import("./init.js");
     const noSettings = argv.includes("--no-settings");
+    // Test/plumbing override of the merge target — not user-facing surface.
+    const settingsPath = process.env.FORGE_SETTINGS_PATH || undefined;
+    // RA-11: the settings merge touches GLOBAL state — say so before reporting it,
+    // on merged AND unchanged runs, with the opt-out and the reversal path.
+    const consentLine = (path) =>
+      console.log(
+        `  settings: merging ${BRAND.brand} hooks into ${path} (GLOBAL — affects all repos). ` +
+          `Skip with --no-settings; reverse with \`${BRAND.cli} init --remove-settings\`.`,
+      );
+    // --remove-settings: reverse the merge (RA-17) — strip every template-shaped hook,
+    // permission, statusline, and the _forge marker; user-owned entries stay untouched.
+    if (argv.includes("--remove-settings")) {
+      const { removeForgeSettings } = await import("./init.js");
+      const r = removeForgeSettings({ settingsPath });
+      heading(`${BRAND.brand} init — remove managed settings\n`);
+      if (r.action === "removed") {
+        console.log(`  settings: removed ${r.removed.join(", ")} from ${r.path}`);
+        console.log(`            backup: ${r.backup}`);
+      } else if (r.action === "noop") {
+        console.log(`  settings: nothing to remove (${r.reason})`);
+      } else {
+        console.error(`  settings: NOT modified — ${r.path}: ${r.reason}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
     // --settings-only: wire hooks + permissions into ~/.claude/settings.json ONLY (the
     // idempotent, marker-guarded merge install.sh calls) — no repo emit, no AGENTS.md.
     if (argv.includes("--settings-only")) {
-      const { settings } = init({ settingsOnly: true, noSettings });
+      const { settings } = init({
+        settingsOnly: true,
+        noSettings,
+        settingsPath,
+      });
       heading(`${BRAND.brand} init — settings merge only\n`);
-      if (settings?.action === "merged" && "added" in settings) {
-        console.log(`  settings: merged ${settings.added.join(", ")} into ${settings.path}`);
+      if (
+        (settings?.action === "merged" || settings?.action === "created") &&
+        "added" in settings
+      ) {
+        consentLine(settings.path);
+        const verb = settings.action === "created" ? "created" : "merged";
+        const what = settings.added.length ? settings.added.join(", ") : "defaults";
+        console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       } else if (settings?.action === "unchanged" && "path" in settings) {
+        consentLine(settings.path);
         console.log(`  settings: already up to date (${settings.path})`);
       } else if (settings?.action === "skipped") {
         console.log("  settings: skipped (--no-settings)");
+      } else if (settings?.action === "error") {
+        // RA-04: a refused/failed merge must FAIL the command, not silently exit 0 —
+        // install.sh keys its "install incomplete" path off this exit code.
+        console.error(`  settings: FAILED — ${settings.path}: ${settings.reason}`);
+        process.exitCode = 1;
       }
       return;
     }
@@ -122,6 +164,7 @@ async function run(argv) {
         targetRoot: process.cwd(),
         noSettings,
         profile,
+        settingsPath,
       })
     );
     if (profileResult?.error) {
@@ -137,19 +180,29 @@ async function run(argv) {
     );
     if (profileResult?.profile) {
       console.log(`  profile:  ${profileResult.profile} → .forge/forge.config.json`);
+      if (profileResult.deprecated) {
+        console.error(
+          `  warning:  profile "${profileResult.deprecated}" is deprecated — treated as "${profileResult.profile}"`,
+        );
+      }
     }
     if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
+      consentLine(settings.path);
       const verb = settings.action === "created" ? "created" : "merged";
       const what = settings.added.length ? settings.added.join(", ") : "defaults";
       console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       if ("backup" in settings && settings.backup)
         console.log(`            backup: ${settings.backup}`);
     } else if (settings?.action === "unchanged" && "path" in settings) {
+      consentLine(settings.path);
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
     } else if (settings?.action === "error") {
-      console.log(`  settings: NOT written — ${settings.reason}`);
+      // RA-04: repo files above were still emitted, but the settings merge FAILED —
+      // surface it on stderr and fail the command instead of a quiet exit 0.
+      console.error(`  settings: FAILED — ${settings.reason} (repo files were still emitted)`);
+      process.exitCode = 1;
     }
     if (detected) {
       console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
@@ -352,6 +405,7 @@ async function run(argv) {
       ok: paint("✓", "ok"),
       warn: paint("!", "warn"),
       fail: paint("✗", "err"),
+      na: paint("–", "dim"), // not built/applicable — neutral, never a failure
     };
     heading(`${BRAND.brand} doctor\n`);
     if (fix) {
@@ -414,7 +468,9 @@ async function run(argv) {
     return;
   }
   if (cmd === "integrations") {
-    const { listIntegrations, planIntegration, addIntegration } = await import("./integrations.js");
+    const { listIntegrations, planIntegration, addIntegration, removeIntegration } = await import(
+      "./integrations.js"
+    );
     const sub = argv[1];
     if (sub === "add") {
       const name = argv[2];
@@ -431,15 +487,48 @@ async function run(argv) {
         console.log(`    network: ${plan.network}`);
         console.log(`    purpose: ${plan.why}`);
         console.log(`    writes:  .mcp.json, .cursor/mcp.json, .gemini/…, .codex/…, .continue/…`);
+        console.log(`    records: .forge/forge.config.json (mcp.integrations — the managed set)`);
         console.log(
           `\n  Not installed. Re-run with --yes to apply:  ${BRAND.cli} integrations add ${name} --yes`,
         );
+        console.log(
+          `  A same-name server you configured yourself is never overwritten unless you also pass --adopt.`,
+        );
         return;
       }
-      const res = addIntegration(name, { targetRoot: process.cwd() });
-      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      const res = addIntegration(name, {
+        targetRoot: process.cwd(),
+        adopt: argv.includes("--adopt"),
+      });
       heading(`${BRAND.brand} integrations — add ${name}\n`);
+      if (res.ok === false) {
+        console.error(`  ${res.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
       console.log(`  added ${name} → ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+      for (const r of res.rows.filter((x) => x.action === "skipped"))
+        console.log(`  ! ${r.target}: ${r.note}`);
+      return;
+    }
+    if (sub === "remove") {
+      const name = argv[2];
+      const res = removeIntegration(name, { targetRoot: process.cwd() });
+      heading(`${BRAND.brand} integrations — remove ${name}\n`);
+      if (res.ok === false) {
+        console.error(`  ${res.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!res.removed) {
+        console.log(`  ${name} is not installed — nothing to remove`);
+        return;
+      }
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      console.log(`  removed ${name} → ${wrote.length ? wrote.join(", ") : "(nothing on disk)"}`);
+      for (const r of res.rows.filter((x) => x.action === "skipped"))
+        console.log(`  ! ${r.target}: ${r.note}`);
       return;
     }
     // Default: list what's available.
@@ -447,7 +536,8 @@ async function run(argv) {
     for (const it of listIntegrations()) {
       console.log(`  ${it.name.padEnd(12)} ${it.why}  (${it.pkg})`);
     }
-    console.log(`\n  Add one with:  ${BRAND.cli} integrations add <name>`);
+    console.log(`\n  Add one with:     ${BRAND.cli} integrations add <name>`);
+    console.log(`  Remove one with:  ${BRAND.cli} integrations remove <name>`);
     return;
   }
   if (cmd === "recall") {
@@ -562,6 +652,10 @@ async function run(argv) {
       const r = ls.mergeDirs(dir, src);
       if (json) return console.log(JSON.stringify(r, null, 2));
       console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
+      if (r.quarantined)
+        console.log(
+          `  quarantined: ${r.quarantined} invalid record(s) (forged hash or unresolvable ref — see quarantine/ in the ledger dir)`,
+        );
       return;
     }
     if (sub === "blame") {
@@ -1014,11 +1108,24 @@ async function run(argv) {
       console.log(
         `  remainingUncheckedWeight: ${r.residual.toFixed(3)} — Theorem-D silent-miss bound (heuristic)`,
       );
+      // The core tests state, spelled out — deep ok REQUIRES a passing core, so the
+      // reader must see whether a verifier actually ran (RA-01).
+      const t = r.tests ?? /** @type {import("./verify.js").VerifyTests} */ ({ ran: false });
       console.log(
-        `\n  ${
-          r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
+        `  tests:            ${t.status ?? "unknown"}${t.runner ? ` (${t.runner})` : ""}${
+          !t.runner && t.detected?.length ? ` (detected: ${t.detected.join(", ")})` : ""
         }`,
       );
+      const detail = t.output || (t.detected ?? []).join(", ");
+      const verdictLine =
+        r.status === "PASS"
+          ? paint("PASS", "ok")
+          : r.status === "NOT_CONFIGURED"
+            ? paint("NOT VERIFIED — no test runner configured (NOT_CONFIGURED)", "warn")
+            : r.status === "INCOMPLETE"
+              ? paint(`NOT VERIFIED — tests incomplete${detail ? ` (${detail})` : ""}`, "warn")
+              : paint("BLOCKED — cross-family consensus says defect", "err");
+      console.log(`\n  ${verdictLine}`);
       if (!r.ok) process.exitCode = 1;
       return;
     }
@@ -1031,16 +1138,32 @@ async function run(argv) {
     }
     heading(`${BRAND.brand} verify\n`);
     console.log(`  changed files:    ${r.changedFiles.length}`);
-    console.log(
-      `  tests:            ${r.tests.ran ? (r.tests.passed ? "✓ pass" : "✗ FAIL") : "— none detected"}`,
-    );
+    // Honest four-state tests line (RA-09): "nothing ran" is never dressed up as a pass,
+    // and a real run names the runner that actually executed.
+    const t = r.tests;
+    const testsLine =
+      t.status === "PASS"
+        ? `✓ pass (${t.runner ?? "project suite"})`
+        : t.status === "FAIL"
+          ? `✗ FAIL (${t.runner ?? "project suite"})`
+          : t.status === "INCOMPLETE"
+            ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
+            : "— NOT CONFIGURED (no test runner detected)";
+    console.log(`  tests:            ${testsLine}`);
     console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
     if (r.unknown.length)
       console.log(
         `  ! not in codebase (possible hallucination): ${r.unknown.slice(0, 12).join(", ")}`,
       );
     console.log(`  provenance:       .forge/provenance.json`);
-    console.log(`\n  ${r.ok ? "PASS" : "BLOCKED — tests failing"}`);
+    // BLOCKED is reserved for a runner that actually FAILED; anything that never ran
+    // to completion is NOT VERIFIED (still exit 1 — unverified is not a pass).
+    const verdict = r.ok
+      ? "PASS"
+      : t.status === "FAIL"
+        ? "BLOCKED — tests failing"
+        : `NOT VERIFIED — ${t.status}`;
+    console.log(`\n  ${verdict}`);
     if (!r.ok) process.exitCode = 1;
     return;
   }

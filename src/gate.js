@@ -1,7 +1,8 @@
 // forge gate — the completion gate: a deterministic floor under "done". Instructions and
 // lessons raise the PROBABILITY that code ships with its docs/state; this Stop hook
-// guarantees a floor: a session that changed code but moved no doc/state artifact is
-// blocked ONCE, with the exact repair procedure as the reason. P(silent miss) =
+// guarantees a floor: a session that changed code but produced no TEST EVIDENCE (a test
+// file moved, or a fresh passing `verify` provenance stamp) or moved no doc/state
+// artifact is blocked ONCE, with the exact repair procedure as the reason. P(silent miss) =
 // (1−p)·∏(1−cⱼ) — the gate is the cⱼ≈1 layer for the structural signal "code moved,
 // nothing followed". Loop-safe (stop_hook_active + once-per-session marker), fail-open
 // on every error path, kill switch FORGE_STOPGATE=0.
@@ -13,7 +14,7 @@
 // to git because .forge/ is gitignored — counts as the doc signal via its mtime against
 // the session baseline (the baseline file's mtime IS the session-start timestamp).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { cusum } from "./anchor.js";
 import { CODE_EXTS, DOC_EXTS, impact, isConfigFile, load as loadAtlas } from "./atlas.js";
@@ -122,8 +123,15 @@ export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
 }
 
 /**
- * PURE decision table (the kit's ten rows, minus the impure guards the orchestrator
- * handles). First match wins; returns {allow, row, classes}.
+ * PURE decision table (first match wins; returns {allow, row, classes}). The teeth
+ * (RA-10): a code change owes TEST EVIDENCE — a test-class file moved with it, or a
+ * fresh passing `verify` run (provenance stamp newer than session start) — AND a
+ * doc/state artifact. A handoff/state touch alone still counts as the continuity
+ * (docs) leg, but it can no longer satisfy the gate by itself when code moved; only
+ * a config-only change keeps that lighter bar.
+ * @param {{stopHookActive?: boolean, isRepo?: boolean, markerExists?: boolean,
+ *   killSwitch?: boolean, changed?: string[], stateTouched?: boolean,
+ *   verifyEvidence?: {fresh: boolean, status: string} | null}} [input]
  */
 export function gateDecision({
   stopHookActive = false,
@@ -132,6 +140,7 @@ export function gateDecision({
   killSwitch = false,
   changed = [],
   stateTouched = false,
+  verifyEvidence = null,
 } = {}) {
   if (stopHookActive) return { allow: true, row: "stop-hook-active" };
   if (!isRepo) return { allow: true, row: "not-a-repo" };
@@ -141,9 +150,26 @@ export function gateDecision({
   for (const f of changed) classes[classifyPath(f)].push(f);
   const external = changed.length - classes.internal.length;
   if (!external && !stateTouched) return { allow: true, row: "no-changes", classes };
-  if (classes.docs.length || stateTouched) return { allow: true, row: "docs-touched", classes };
-  if (classes.code.length) return { allow: false, row: "code-without-docs", classes };
-  return { allow: true, row: "no-code-class", classes };
+  const testEvidence =
+    classes.test.length > 0 ||
+    (verifyEvidence?.fresh === true && verifyEvidence?.status === "PASS");
+  const docEvidence = classes.docs.length > 0 || stateTouched;
+  if (classes.code.length) {
+    if (!testEvidence) return { allow: false, row: "code-without-test-evidence", classes };
+    if (!docEvidence) return { allow: false, row: "code-without-docs", classes };
+    return { allow: true, row: "code-with-evidence", classes };
+  }
+  // Test-only sessions (a regression test owes no prose) pass; config-only still owes
+  // at least the lighter continuity bar (docs or a state/handoff touch).
+  if (classes.test.length && !classes.config.length)
+    return { allow: true, row: "test-only", classes };
+  if (classes.config.length && !docEvidence)
+    return { allow: false, row: "config-without-docs", classes };
+  return {
+    allow: true,
+    row: docEvidence ? "docs-touched" : "no-code-class",
+    classes,
+  };
 }
 
 /** The change-type obligation matrix (P1-05): what evidence each kind of change owes, so
@@ -162,9 +188,18 @@ export function obligationsFor(classes = {}) {
 }
 
 /** The block reason IS the repair procedure — its consumer is the agent itself, and a
- *  checklist converts a failure into a same-turn fix. Stale-doc candidates come from the
- *  CACHED atlas only (a hook never builds). */
-export function repairReason(root, { codeFiles = [], driftAlarm = false, classes = {} } = {}) {
+ *  checklist converts a failure into a same-turn fix. Parameterized by the blocked row
+ *  so it leads with the MISSING leg (test evidence vs docs vs config docs); the old
+ *  "handoff alone satisfies the gate" claim survives only on the config-only row, where
+ *  that lighter bar is real. Stale-doc candidates come from the CACHED atlas only (a
+ *  hook never builds).
+ *  @param {string} root
+ *  @param {{codeFiles?: string[], driftAlarm?: boolean,
+ *    classes?: {code?: string[], config?: string[], test?: string[]}, row?: string}} [opts] */
+export function repairReason(
+  root,
+  { codeFiles = [], driftAlarm = false, classes = {}, row = "code-without-docs" } = {},
+) {
   let likelyDocs = [];
   try {
     const atlas = loadAtlas(root);
@@ -176,30 +211,54 @@ export function repairReason(root, { codeFiles = [], driftAlarm = false, classes
       likelyDocs = [...docs].slice(0, 5);
     }
   } catch {}
-  const shown = codeFiles.slice(0, 10).join(", ");
-  const more = codeFiles.length > 10 ? ` (+${codeFiles.length - 10} more)` : "";
+  const cited = codeFiles.length ? codeFiles : (classes.config ?? []);
+  const shown = cited.slice(0, 10).join(", ");
+  const more = cited.length > 10 ? ` (+${cited.length - 10} more)` : "";
   const obligations = obligationsFor(classes);
+  const docsSyncStep = `\`${BRAND.cli} docs sync\` — sweep the diff for stale doc mentions${
+    likelyDocs.length ? ` (graph suggests: ${likelyDocs.join(", ")})` : ""
+  } and update every hit.`;
+  const handoffStep = (suffix = "") =>
+    `\`${BRAND.cli} handoff "<what you did>" --next "<what's next>"\` — rewrite the session snapshot the next session resumes from${suffix}.`;
+  const decideStep = `\`${BRAND.cli} decide "<choice — reason>"\` if a non-obvious decision was made.`;
+  let headline;
+  const steps = [];
+  if (row === "code-without-test-evidence") {
+    headline = `END-TO-END COMPLETENESS: code changed this session with NO test evidence — no test file moved with it and no fresh passing \`${BRAND.cli} verify\` run backs the change.`;
+    steps.push(
+      `\`${BRAND.cli} verify\` — run the project's own tests against this change (or add/adjust a test that exercises the new behaviour).`,
+      docsSyncStep,
+      handoffStep(),
+      decideStep,
+    );
+  } else if (row === "config-without-docs") {
+    headline =
+      "END-TO-END COMPLETENESS: config changed this session but no doc or state artifact moved with it.";
+    steps.push(
+      docsSyncStep,
+      handoffStep(" (this alone satisfies the gate for a config-only change)"),
+      decideStep,
+    );
+  } else {
+    headline =
+      "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.";
+    steps.push(docsSyncStep, handoffStep(), decideStep);
+  }
+  if (driftAlarm)
+    steps.push(
+      `Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,
+    );
   const lines = [
-    "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.",
-    `Changed code: ${shown}${more}`,
+    headline,
+    ...(shown ? [`Changed ${codeFiles.length ? "code" : "config"}: ${shown}${more}`] : []),
     ...(obligations.length
       ? ["Obligations for this change:", ...obligations.map((o) => `- ${o}`)]
       : []),
     "Do what applies before finishing:",
-    `1. \`${BRAND.cli} docs sync\` — sweep the diff for stale doc mentions${
-      likelyDocs.length ? ` (graph suggests: ${likelyDocs.join(", ")})` : ""
-    } and update every hit.`,
-    `2. \`${BRAND.cli} handoff "<what you did>" --next "<what's next>"\` — rewrite the session snapshot the next session resumes from (this alone satisfies the gate).`,
-    `3. \`${BRAND.cli} decide "<choice — reason>"\` if a non-obvious decision was made.`,
-  ];
-  if (driftAlarm)
-    lines.push(
-      `4. Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,
-    );
-  lines.push(
+    ...steps.map((s, i) => `${i + 1}. ${s}`),
     `If genuinely no doc is affected, tell the user why in one line and still run \`${BRAND.cli} handoff\`.`,
     "(Blocks once per session — stopping again proceeds. Kill switch: FORGE_STOPGATE=0.)",
-  );
+  ];
   return lines.join("\n");
 }
 
@@ -242,7 +301,22 @@ export function stopGate(root, sid, hook = {}) {
       sinceMs: startedAt ?? undefined,
       preDirty: readDirtySnapshot(root, sid) ?? undefined,
     });
-    const decision = gateDecision({ changed, stateTouched });
+    // Test evidence for the RA-10 rows: a `verify` provenance stamp written THIS session
+    // (mtime after session start) whose tests verdict is PASS — the exact field verify.js
+    // writes. Parse-guarded: any trouble → null → the evidence leg simply fails, and the
+    // block-once marker still caps the cost (second stop always proceeds — cannot brick).
+    let verifyEvidence = null;
+    try {
+      const provPath = join(root, ".forge", "provenance.json");
+      const mtime = statSync(provPath).mtimeMs;
+      const status = JSON.parse(readFileSync(provPath, "utf8"))?.tests?.status;
+      if (typeof status === "string")
+        verifyEvidence = {
+          fresh: startedAt != null && mtime > startedAt,
+          status,
+        };
+    } catch {}
+    const decision = gateDecision({ changed, stateTouched, verifyEvidence });
     if (decision.allow) return decision;
     // Marker FIRST: if it can't be persisted, the block-once promise can't be kept —
     // on a read-only checkout that would mean an unsatisfiable block every turn, so
@@ -265,6 +339,7 @@ export function stopGate(root, sid, hook = {}) {
       codeFiles: decision.classes.code,
       driftAlarm,
       classes: decision.classes,
+      row: decision.row,
     });
     return {
       allow: false,

@@ -11,18 +11,27 @@
 export const COMMANDS = {
   init: {
     summary: "scaffold this repo's config — emits every tool from one shared source",
-    usage: "forge init [--no-settings | --settings-only]",
+    usage:
+      "forge init [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
+        flag: "--profile <minimal|standard>",
+        desc: "policy profile: minimal = the five core-safety rules only; standard = the full pack (default). Legacy names (web-app, backend-service, library, regulated) are deprecated aliases of standard.",
+      },
+      {
         flag: "--no-settings",
-        desc: "emit tool configs but don't touch ~/.claude/settings.json",
+        desc: "emit tool configs but don't touch ~/.claude/settings.json (the merge is GLOBAL — it affects all repos)",
       },
       {
         flag: "--settings-only",
         desc: "only merge hooks/permissions into settings (skip repo emit)",
       },
+      {
+        flag: "--remove-settings",
+        desc: "reverse the merge — remove forge-managed hooks/permissions/statusline from ~/.claude/settings.json (backed up first)",
+      },
     ],
-    examples: ["forge init", "forge init --no-settings"],
+    examples: ["forge init", "forge init --profile minimal", "forge init --remove-settings"],
   },
   sync: {
     summary: "recompile the canonical source into each tool's native config files",
@@ -102,7 +111,7 @@ export const COMMANDS = {
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
   integrations:
-    "opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with --yes",
+    "opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it",
 };
 
 // Groups order the --help surface from the stable reliability loop down to experiments.

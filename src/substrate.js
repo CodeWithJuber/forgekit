@@ -234,8 +234,15 @@ export function substrateCheck(
   let atlasFresh = true;
   if (atlas) {
     if (atlasIsStale(root, atlas)) {
-      if (allowBuild) atlas = buildAtlas({ root });
-      else atlasFresh = false; // stale cache, can't rebuild from a hook
+      if (allowBuild) {
+        atlas = buildAtlas({ root });
+      } else {
+        // Stale cache, can't rebuild from a hook. A stale graph is NOT evidence — drop it
+        // entirely so impacts/impactedFiles/predictedTests all derive from nothing instead
+        // of from a snapshot of a repo that no longer exists (RA-07).
+        atlas = null;
+        atlasFresh = false;
+      }
     }
   } else if (allowBuild) {
     atlas = buildAtlas({ root });
@@ -259,7 +266,9 @@ export function substrateCheck(
   // Consequence simulation (Eq 4), class "failing tests": which tests likely break if the
   // impacted files change — the impacted files that ARE tests, plus each impacted source file's
   // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
-  const predictedTests = predictFailingTests(root, impactedFiles);
+  // Gated on atlas freshness (belt and braces with the null atlas above): predictions from a
+  // stale graph are not trustworthy and must not be presented as consequence evidence.
+  const predictedTests = atlasFresh ? predictFailingTests(root, impactedFiles) : [];
   // P3 reuse stage: has this team already built (and verified) this? The explicit gate
   // meters + writes evidence (reuseQuery); the ambient hook path stays read-only
   // (reusePeek) so a per-prompt hook never appends to the ledger or metrics.
@@ -429,12 +438,17 @@ export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
       reason: `Forge gate (enforcing): the required context can't be assembled from this repo — resolve before I edit:\n${qs}${tail}`,
     };
   }
-  const blast = result.impact?.impactedFiles?.length ?? 0;
-  if (blast >= blastThreshold) {
-    return {
-      block: true,
-      reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
-    };
+  // Blast-radius block ONLY on a fresh atlas: a stale/missing graph yields an empty (or
+  // untrustworthy) impacted set, and stale predictions must never hard-block an edit —
+  // the explicit guard documents the intent even though a stale atlas now yields blast 0.
+  if (result.impact?.atlasFresh !== false) {
+    const blast = result.impact?.impactedFiles?.length ?? 0;
+    if (blast >= blastThreshold) {
+      return {
+        block: true,
+        reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
+      };
+    }
   }
   return { block: false };
 }
@@ -476,7 +490,9 @@ export function renderSubstrate(result) {
     if (result.impact.impactedFiles.length > 10)
       lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
   }
-  const tests = result.impact.predictedTests || [];
+  // Predicted tests only speak for a FRESH atlas — right after an "impact: unavailable"
+  // notice, a likely-affected-tests list would contradict it with stale data (RA-07).
+  const tests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
   if (tests.length) {
     lines.push("", `  likely-affected tests (${tests.length}) — run these first:`);
     for (const t of tests.slice(0, 8)) lines.push(`    - ${t}`);
@@ -530,7 +546,8 @@ export function substrateContext(result) {
       `- Predicted blast radius (${files.length}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
     );
   }
-  const predTests = result.impact.predictedTests || [];
+  // Same freshness rule as the renderer: never advise stale test predictions (RA-07).
+  const predTests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
   if (predTests.length)
     lines.push(
       `- Likely-affected tests (${predTests.length}): ${predTests.slice(0, 6).join(", ")}${predTests.length > 6 ? " …" : ""}. Run these first.`,

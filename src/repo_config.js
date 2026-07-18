@@ -1,17 +1,22 @@
-// forge repo config — reads/writes <root>/.forge/config.json, a small per-repo file
-// that records which agent tool this repo actually uses (`primaryTool`). Reading is a
-// pure, throw-free probe; when no config exists the primary tool is auto-detected from
-// which agent folders/files are present (mirrors autoDetectProvider in providers.js).
+// forge repo config — THE single per-repo config module (RA-15). The unified file is
+// <root>/.forge/forge.config.json: profile / disableSections / rules (read by sync)
+// plus primaryTool / tools (read by `forge tools`), and any future keys — unknown keys
+// always round-trip through writeForgeConfig. The legacy <root>/.forge/config.json
+// (primaryTool/tools only) is still migration-read; on key conflicts the unified
+// forge.config.json wins, and the legacy file is left in place.
 //
-// The config drives ONE thing: which emitted targets `forge tools` hides in .gitignore.
-// Default behaviour is unchanged — `forge sync` still emits every tool. Only the
-// secondary-tool artifacts (the ones for tools this repo does NOT use) get gitignored,
-// and only when the user opts in via `forge tools <name>`.
+// Malformed JSON is never silently discarded: reads warn ONCE per process on stderr and
+// report `{corrupt: true, path}` alongside whatever valid data the other file held;
+// writes REFUSE (`{ok:false, reason}`) rather than replace bytes a human may still want
+// to fix. When no config exists the primary tool is auto-detected from which agent
+// folders/files are present (mirrors autoDetectProvider in providers.js).
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { BRAND } from "./brand.js";
 import { ensureGitignoreBlock } from "./gitignore.js";
 
-const CONFIG_REL = ".forge/config.json";
+const FORGE_CONFIG_REL = ".forge/forge.config.json";
+const LEGACY_CONFIG_REL = ".forge/config.json";
 
 // Canonical primary-tool names Forge understands, and the on-disk marker that reveals
 // a tool is in use. Order = auto-detect precedence.
@@ -53,7 +58,125 @@ const TOOL_KEYS = [
   ["roo", /^Roo/],
 ];
 
-const configPath = (root) => join(root, CONFIG_REL);
+const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);
+const legacyConfigPath = (root) => join(root, LEGACY_CONFIG_REL);
+
+// One loud warning per process (not per read) — the cortex hooks re-read config on every
+// event, and repeating the same corruption warning on each hook fire would be spam.
+let warnedCorruptConfig = false;
+function warnCorrupt(path) {
+  if (warnedCorruptConfig) return;
+  warnedCorruptConfig = true;
+  process.stderr.write(
+    `${BRAND.cli}: ${path} is not valid JSON — ignoring it (fix or delete it); refusing to overwrite\n`,
+  );
+}
+
+/**
+ * Parse one config file without ever throwing.
+ * @param {string} path
+ * @returns {{status:"missing"|"ok"|"corrupt", data:Record<string, any>}}
+ */
+function readConfigFile(path) {
+  if (!existsSync(path)) return { status: "missing", data: {} };
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const ok = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+    return { status: "ok", data: ok ? parsed : {} };
+  } catch {
+    return { status: "corrupt", data: {} };
+  }
+}
+
+/**
+ * Read the unified repo config: `.forge/forge.config.json` merged over the legacy
+ * `.forge/config.json` (migration read — the unified file wins on key conflicts).
+ * Never throws. A corrupt file is reported (`corrupt: true`, `path` = the corrupt
+ * file) alongside whatever valid data the other file held, and warned once per
+ * process on stderr — never silently treated as absent.
+ * @param {string} [root]
+ * @returns {Record<string, any> & {corrupt?: true, path?: string}}
+ */
+export function readForgeConfig(root = process.cwd()) {
+  const unified = readConfigFile(forgeConfigPath(root));
+  const legacy = readConfigFile(legacyConfigPath(root));
+  const out = { ...legacy.data, ...unified.data };
+  const corruptPath =
+    unified.status === "corrupt"
+      ? forgeConfigPath(root)
+      : legacy.status === "corrupt"
+        ? legacyConfigPath(root)
+        : null;
+  if (!corruptPath) return out;
+  warnCorrupt(corruptPath);
+  return { ...out, corrupt: true, path: corruptPath };
+}
+
+/**
+ * Read-modify-write of `.forge/forge.config.json` via `mutator(cfg)`. Unknown keys
+ * round-trip untouched (later features store their own keys here). Legacy
+ * `.forge/config.json` keys are folded in on write — the unified file wins on
+ * conflicts and the legacy file itself is left in place. If forge.config.json exists
+ * but is corrupt JSON the write REFUSES and the bytes on disk are preserved.
+ * @param {string} root
+ * @param {(cfg: Record<string, any>) => Record<string, any>|undefined} mutator mutate the
+ *   draft in place (and return it) or return a replacement object
+ * @returns {{ok:true, path:string, config:Record<string, any>}|{ok:false, path:string, reason:string}}
+ */
+export function writeForgeConfig(root, mutator) {
+  const path = forgeConfigPath(root);
+  const unified = readConfigFile(path);
+  if (unified.status === "corrupt") {
+    warnCorrupt(path);
+    return {
+      ok: false,
+      path,
+      reason: `${path} is not valid JSON — refusing to overwrite (fix or delete it)`,
+    };
+  }
+  const legacy = readConfigFile(legacyConfigPath(root));
+  if (legacy.status === "corrupt") warnCorrupt(legacyConfigPath(root));
+  const draft = { ...legacy.data, ...unified.data };
+  const next = mutator(draft) ?? draft;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+  return { ok: true, path, config: next };
+}
+
+// ---------------------------------------------------------------------------
+// Policy profiles (P1-02, RA-14). Defined here — the config module — so sync.js can
+// read them without a static import cycle through init.js (init.js re-exports them).
+// ---------------------------------------------------------------------------
+
+/** Valid policy profiles. `standard` is the full engineering pack (default). */
+export const PROFILES = ["minimal", "standard"];
+
+/** Pre-RA-14 profile names. They were always aliases of the full pack (`sync` only ever
+ *  branched on `minimal`), so they are now accepted as deprecated aliases of `standard`. */
+export const LEGACY_PROFILES = {
+  "web-app": "standard",
+  "backend-service": "standard",
+  library: "standard",
+  regulated: "standard",
+};
+
+/**
+ * Validate a profile name. Pure. Legacy names map to their real profile with
+ * `deprecated` set to the old name so callers can warn BEFORE any side effect.
+ * Absence (`undefined`/empty) is valid: no profile was requested (RA-13).
+ * @param {string} [p]
+ * @returns {{ok:true, profile?:string, deprecated?:string}|{ok:false, error:string}}
+ */
+export function validateProfile(p) {
+  if (!p) return { ok: true };
+  if (PROFILES.includes(p)) return { ok: true, profile: p };
+  if (Object.hasOwn(LEGACY_PROFILES, p))
+    return { ok: true, profile: LEGACY_PROFILES[p], deprecated: p };
+  return {
+    ok: false,
+    error: `unknown profile: ${p} (valid: ${PROFILES.join(", ")}; deprecated aliases of standard: ${Object.keys(LEGACY_PROFILES).join(", ")})`,
+  };
+}
 
 /**
  * The primary tool inferred from on-disk agent markers, or null if none present.
@@ -66,21 +189,13 @@ export function detectPrimaryTool(root = process.cwd()) {
 }
 
 /**
- * Read <root>/.forge/config.json. Never throws — a missing or malformed file yields {}.
+ * Read the primary-tool view of the repo config (unified file, with legacy migration
+ * read). Never throws — missing or malformed files yield {}.
  * @param {string} [root]
  * @returns {{primaryTool?:string, tools?:string[]}}
  */
 export function readRepoConfig(root = process.cwd()) {
-  const file = configPath(root);
-  let raw = {};
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8"));
-      if (parsed && typeof parsed === "object") raw = parsed;
-    } catch {
-      // malformed → treat as absent
-    }
-  }
+  const raw = readForgeConfig(root);
   const out = {};
   if (typeof raw.primaryTool === "string" && raw.primaryTool) out.primaryTool = raw.primaryTool;
   if (Array.isArray(raw.tools)) out.tools = raw.tools.filter((t) => typeof t === "string");
@@ -100,45 +215,43 @@ export function resolvePrimaryTool(root = process.cwd()) {
   return { tool: null, source: "none" };
 }
 
-/** Persist primaryTool into <root>/.forge/config.json, preserving other keys. */
+/** Persist primaryTool into <root>/.forge/forge.config.json, preserving other keys.
+ *  Throws (fail loudly) when the existing file is corrupt JSON — it is never replaced. */
 export function setPrimaryTool(root, tool) {
-  const file = configPath(root);
-  /** @type {Record<string, any>} */
-  let cfg = {};
-  if (existsSync(file)) {
-    try {
-      cfg = JSON.parse(readFileSync(file, "utf8")) || {};
-    } catch {
-      cfg = {};
-    }
-  }
-  cfg.primaryTool = tool;
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(cfg, null, 2)}\n`);
-  return file;
+  const res = writeForgeConfig(root, (cfg) => {
+    cfg.primaryTool = tool;
+    return cfg;
+  });
+  // `=== false` (not `!res.ok`): tsc only narrows the discriminated union this way here.
+  if (res.ok === false) throw new Error(res.reason);
+  return res.path;
 }
 
 /**
- * Clear the primary-tool config. Removes only the `primaryTool` key; if the file is
- * left empty it is deleted. Never throws.
+ * Clear the primary-tool config: removes the `primaryTool`/`tools` keys from BOTH the
+ * unified forge.config.json and the legacy config.json (else a legacy value would
+ * resurface on the next migration read), preserving every other key. A file left empty
+ * is deleted; a corrupt file is left untouched (never rewritten). Never throws.
  * @param {string} root
  * @returns {{cleared:boolean, path:string}}
  */
 export function clearRepoConfig(root) {
-  const file = configPath(root);
-  if (!existsSync(file)) return { cleared: false, path: file };
-  /** @type {Record<string, any>} */
-  let cfg = {};
-  try {
-    cfg = JSON.parse(readFileSync(file, "utf8")) || {};
-  } catch {
-    cfg = {};
+  let had = false;
+  for (const file of [forgeConfigPath(root), legacyConfigPath(root)]) {
+    const { status, data } = readConfigFile(file);
+    if (status === "missing") continue;
+    if (status === "corrupt") {
+      warnCorrupt(file);
+      continue;
+    }
+    if (!("primaryTool" in data) && !("tools" in data)) continue;
+    had = true;
+    delete data.primaryTool;
+    delete data.tools;
+    if (Object.keys(data).length === 0) rmSync(file, { force: true });
+    else writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
   }
-  const had = "primaryTool" in cfg;
-  delete cfg.primaryTool;
-  if (Object.keys(cfg).length === 0) rmSync(file, { force: true });
-  else writeFileSync(file, `${JSON.stringify(cfg, null, 2)}\n`);
-  return { cleared: had, path: file };
+  return { cleared: had, path: forgeConfigPath(root) };
 }
 
 /** Canonical tool key for a sync-report row's tool label, or null when shared/unmapped. */

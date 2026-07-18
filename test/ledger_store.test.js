@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -152,6 +152,7 @@ test("verify: catches forged evidence — wrong content hash, unknown oracle, in
   const c = fact("target", "forgery magnet");
   putClaim(dir, c);
   appendEvidence(dir, c.id, ev("confirm", "run:legit"));
+  const before = val(loadClaims(dir)[0], 0); // one real confirm — the honest baseline
   const logPath = join(dir, "evidence", `${c.id}.log`);
   const forged = [
     // real-looking record whose h doesn't match its content
@@ -174,9 +175,8 @@ test("verify: catches forged evidence — wrong content hash, unknown oracle, in
   assert.ok(v.issues.some((i) => /content hash mismatch/.test(i)));
   assert.ok(v.issues.some((i) => /invalid outcome/.test(i)));
   assert.equal(v.outcomes, 1, "only the legit outcome counts");
-  // And the forged lines can't move confidence either (val ignores them):
-  const honest = val(loadClaims(dir)[0], 0);
-  assert.ok(honest > 0.5 && honest < 0.75, `val=${honest} reflects one real confirm only`);
+  // And the forged lines can't move confidence AT ALL — val is exactly what it was:
+  assert.equal(val(loadClaims(dir)[0], 0), before, "forged lines are invisible to val()");
 });
 
 test("tombstone: append-only records; concurrent retractions coexist; stats reflects it", () => {
@@ -357,14 +357,21 @@ test("appendEvidence: a git: ref is rejected unless the object exists in the rep
   writeFileSync(join(root, "f.txt"), "hello\n");
   g("add", "-A");
   g("commit", "-m", "init");
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
 
   const dir = repoLedger(root); // <root>/.forge/ledger — repoRootOf() resolves back to root
   const c = fact("build", "the git ref is real");
   putClaim(dir, c);
 
   // real HEAD sha resolves via `git cat-file -e` → accepted
-  const good = outcomeRecord({ oracle: "ci.run", result: "confirm", ref: `git:${head}` }).outcome;
+  const good = outcomeRecord({
+    oracle: "ci.run",
+    result: "confirm",
+    ref: `git:${head}`,
+  }).outcome;
   assert.equal(appendEvidence(dir, c.id, good).ok, true, "resolvable HEAD sha accepted");
 
   // a bogus sha does not resolve → rejected before it can affect confidence
@@ -380,4 +387,100 @@ test("appendEvidence: a git: ref is rejected unless the object exists in the rep
   // verify() also names the unresolvable ref if one slipped in
   const store = verify(dir);
   assert.equal(store.outcomes, 1, "only the resolvable outcome counts");
+});
+
+// ---------------------------------------------------------------------------
+// RA-02 — imported/forged ledger evidence must never move confidence: log lines are
+// hash-verified at read time, and imports get the full append gate + quarantine.
+// ---------------------------------------------------------------------------
+
+test("readEvidence/loadState: forged or invalid log lines are invisible at read time", () => {
+  const dir = tmp();
+  const c = fact("readpath", "load-time verification");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", "run:1", 2));
+  const legit = readEvidence(dir, c.id)[0];
+  const path = join(dir, "evidence", `${c.id}.log`);
+  const hostile = [
+    // real-looking record whose h is a lie (would ride the top oracle weight)
+    '{"author":"","h":"deadbeef","oracle":"human.revert","ref":"x","result":"confirm","t":0,"w":1}',
+    // correctly sealed but not a valid outcome (unknown oracle)
+    canonicalize(
+      sealRecord({
+        author: "",
+        oracle: "made.up",
+        ref: "x",
+        result: "confirm",
+        t: 0,
+        w: 1,
+      }),
+    ),
+    // correctly sealed but a typed-and-empty ref
+    canonicalize(
+      sealRecord({
+        author: "",
+        oracle: "test.run",
+        ref: "git:",
+        result: "confirm",
+        t: 0,
+        w: 0.8,
+      }),
+    ),
+  ].join("\n");
+  writeFileSync(path, `${readFileSync(path, "utf8")}${hostile}\n`);
+  assert.deepEqual(readEvidence(dir, c.id), [legit], "only the sealed, valid record survives");
+  assert.deepEqual(loadState(dir).evidence[c.id], [legit], "loadState sees the same single record");
+  assert.equal(loadClaims(dir)[0].evidence.length, 1);
+});
+
+test("mergeDirs: imported forged/unresolvable evidence is quarantined and cannot move val", () => {
+  const dst = tmp();
+  const src = tmp();
+  const c = fact("target", "imports get no bypass");
+  putClaim(dst, c);
+  appendEvidence(dst, c.id, ev("confirm", "run:legit", 1));
+  const before = val(loadClaims(dst)[0], 5);
+  const beforeBytes = readFileSync(join(dst, "evidence", `${c.id}.log`), "utf8");
+
+  // Source replica: the same claim plus two hostile evidence lines written straight
+  // to disk — (a) well-formed but its h is a lie, (b) correctly sealed but its git:
+  // ref resolves to nothing in the destination repo.
+  putClaim(src, c);
+  mkdirSync(join(src, "evidence"), { recursive: true });
+  writeFileSync(
+    join(src, "evidence", `${c.id}.log`),
+    `${[
+      '{"author":"","h":"deadbeef","oracle":"test.run","ref":"x","result":"confirm","t":0,"w":0.8}',
+      canonicalize(
+        sealRecord({
+          author: "",
+          oracle: "ci.run",
+          ref: "git:deadbeefdeadbeef",
+          result: "confirm",
+          t: 0,
+          w: 0.8,
+        }),
+      ),
+    ].join("\n")}\n`,
+  );
+
+  const r = mergeDirs(dst, src);
+  assert.equal(r.quarantined, 2, "both hostile records quarantined");
+  assert.equal(
+    readFileSync(join(dst, "evidence", `${c.id}.log`), "utf8"),
+    beforeBytes,
+    "destination evidence log is byte-identical",
+  );
+  assert.equal(val(loadClaims(dst)[0], 5), before, "val is exactly what it was before the merge");
+  const qPath = join(dst, "quarantine", `${c.id}.log`);
+  assert.ok(existsSync(qPath), "quarantine log exists");
+  const qLog = readFileSync(qPath, "utf8");
+  assert.match(qLog, /hash mismatch/, "the forged-hash record carries its reason");
+  assert.match(qLog, /unresolvable/, "the unresolvable-ref record carries its reason");
+
+  // Re-merge is idempotent: no new quarantine lines, nothing else changes.
+  const again = mergeDirs(dst, src);
+  assert.equal(again.quarantined, 0, "re-merge quarantines nothing new");
+  assert.equal(readFileSync(qPath, "utf8"), qLog, "no duplicate quarantine lines");
+  assert.equal(val(loadClaims(dst)[0], 5), before, "val still untouched after re-merge");
 });

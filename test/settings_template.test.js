@@ -43,6 +43,16 @@ test("`:*` appears only at the end of a Bash specifier", () => {
   }
 });
 
+test("git stash requires confirmation (ask), never pre-allowed (RA-05)", () => {
+  // `git stash show -p` dumps stashed secret-file content with NO path token in
+  // the command string, so the path-token guard can never catch it — the
+  // permission layer is the only defense (and stash mutates state).
+  const allow = template.permissions?.allow ?? [];
+  const ask = template.permissions?.ask ?? [];
+  assert.ok(ask.includes("Bash(git stash:*)"), "git stash:* must be in ask");
+  assert.ok(!allow.includes("Bash(git stash:*)"), "git stash:* must NOT be in allow");
+});
+
 test("the former inert curl-pipe deny rules are absent", () => {
   const deny = template.permissions?.deny ?? [];
   assert.ok(!deny.includes("Bash(curl:* | sh)"), "inert curl|sh rule must stay removed");

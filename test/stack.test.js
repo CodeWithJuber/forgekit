@@ -96,6 +96,36 @@ test("empty repo → empty but safe; corrupt manifest never throws", () => {
   assert.doesNotThrow(() => detectStack(root));
 });
 
+test("testRunners: structured descriptors alongside UNCHANGED testCommands strings", () => {
+  const root = tmp();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      scripts: { test: "vitest run" },
+      devDependencies: { vitest: "2" },
+    }),
+  );
+  writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+  const s = detectStack(root);
+  // strings: back-compat surface, byte-identical to before
+  assert.deepEqual(s.testCommands, ["npx vitest", "pnpm test"]);
+  // descriptors: the DETECTED package manager, structured for a shell-free spawn
+  assert.deepEqual(
+    s.testRunners.find((r) => r.label === "pnpm test"),
+    { bin: "pnpm", args: ["test"], label: "pnpm test" },
+  );
+  const npx = s.testRunners.find((r) => r.label === "npx vitest");
+  assert.ok(npx && !npx.bin, "npx detections stay label-only — forge never executes npx");
+
+  const go = tmp();
+  writeFileSync(join(go, "go.mod"), "module x\n\ngo 1.22\n");
+  const gs = detectStack(go);
+  assert.deepEqual(gs.testCommands, ["go test ./..."]);
+  assert.deepEqual(gs.testRunners, [
+    { bin: "go", args: ["test", "./..."], label: "go test ./..." },
+  ]);
+});
+
 test("CLI: forge stack --json emits the detected stack", () => {
   const root = tmp();
   writeFileSync(join(root, "go.mod"), "module x\n\ngo 1.22\n");

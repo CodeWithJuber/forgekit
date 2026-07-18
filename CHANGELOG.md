@@ -6,6 +6,115 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Only real profiles (RA-14).** `forge init --profile` now accepts `minimal` and
+  `standard` only — the former `web-app`/`backend-service`/`library`/`regulated` names
+  were always aliases of the full pack (sync only ever branched on `minimal`) and are now
+  deprecated aliases of `standard`: accepted with a deprecation warning, stored as
+  `standard`, and a legacy name already stored in an existing config still syncs as
+  standard (with a one-time warning). New exported `validateProfile()` maps legacy names
+  before any side effect.
+- **Honest wording (RA-22, RA-23, RA-24).** package.json's description now says what
+  ships — shared memory, impact analysis, and guardrail hooks emitted as native config —
+  instead of "the cognitive substrate every frozen model is missing". README's loop intro
+  now states that the automatic pre-action check is Claude Code hooks (advisory by
+  default, enforcement opt-in via `FORGE_ENFORCE=1`) while other tools receive
+  instructions and MCP tools to invoke; the comparison table now claims what the ledger
+  does today — evidence must name a known oracle and a typed, format-checked reference at
+  append time — rather than implying stored evidence is re-verified on load.
+
+### Security
+
+- **Git read-command bypasses closed (RA-05).** The `protect-paths` guard now classifies
+  `git diff`, `git stash`, `git cat-file`, `git archive`, and `git grep` as content
+  readers, closing the secret-file read path via git plumbing (`git diff -- .env`,
+  `git cat-file -p HEAD:.env`, `git archive HEAD .env`). The settings template moves
+  `Bash(git stash:*)` from allow to ask: `git stash show -p` can dump stashed secret
+  content with no path token for the guard to match, so the permission prompt is the
+  only defense there.
+- **Secret redactor no longer fails silently (RA-06).** Any redaction failure prints a
+  visible `secret redaction DEGRADED` warning to stderr, and new `FORGE_GUARD_STRICT=1`
+  escalates degraded redaction to a blocking exit instead of passing unredacted output
+  through.
+
+### Fixed
+
+- **`forge verify --deep` can no longer pass when nothing ran (RA-01).** Deep `ok` now
+  requires the core tests status to be PASS in addition to the lens consensus; the
+  result, provenance, and metrics carry an additive four-state `status`
+  (PASS/FAIL/INCOMPLETE/NOT_CONFIGURED), and a repo with no configured verifier exits 1
+  with `NOT VERIFIED` instead of printing PASS.
+- **`forge verify` executes the detected runner (RA-08).** pnpm/yarn/bun repos spawn
+  their own package manager instead of a hardcoded `npm test`; pytest runs directly;
+  non-executable detections (go/cargo/mvn/gradle/dotnet/rspec/phpunit) or a missing
+  binary report an honest INCOMPLETE naming the real command. `detectStack()` gains a
+  structured `testRunners` field (`{bin, args, label}`) alongside the unchanged
+  `testCommands` strings; npx-based runners are report-only and never executed.
+- **CLI verify output distinguishes all four states (RA-09).** `BLOCKED` is reserved for
+  a runner that actually failed; anything that never completed prints `NOT VERIFIED`
+  (still exit 1) instead of the misleading "tests failing".
+- **Ledger log lines are hash-verified at read time (RA-02).** `readLog()` recomputes
+  every record's content hash and drops forged/corrupt lines (evidence lines must also
+  be valid outcomes), so a hand-edited log line can no longer move `val()`. Imports and
+  merges no longer bypass validation: imported evidence goes through the full append
+  gate (oracle/ref checks including `git:` resolution against the destination repo), and
+  rejected records are quarantined as sealed audit lines under `quarantine/<claimId>.log`
+  with a `quarantined` count surfaced by `forge ledger merge`. `validOutcome()` rejects
+  typed-but-empty refs (e.g. `git:`), matching append-time validation.
+- **Stale ambient atlas is no longer authoritative (RA-07).** When the atlas is stale and
+  a hook can't rebuild it, impact, impacted files, and predicted tests are dropped rather
+  than silently computed from stale data; renderers say "impact unavailable" without a
+  contradicting test list, and `FORGE_ENFORCE=1` never hard-blocks on a stale blast
+  radius.
+- **Completion gate enforces real obligations (RA-10).** Code changes now owe test
+  evidence — a test file moved with the change or a fresh passing `forge verify` run — in
+  addition to docs/state; a handoff alone no longer satisfies the gate for code
+  (config-only changes keep the lighter docs-or-handoff bar). Kill switch, block-once,
+  and fail-open behavior are unchanged.
+- **Doctor honesty (RA-19, RA-20).** A missing atlas reports subsystem health
+  `UNAVAILABLE` (new neutral `na` status) instead of `ACTIVE`, and `doctor --fix`
+  records a repair that returns an error object (e.g. `mergeSettings` refusing a corrupt
+  file) as failed with the reason instead of successful.
+- **Settings failures propagate (RA-04).** `forge init` fails (exit 1, stderr) when the
+  settings merge is refused or errors, and `install.sh` reports `Install INCOMPLETE` and
+  exits 1 instead of printing `Done.` when hooks weren't wired.
+- **Hook paths are shell-quoted (RA-12).** Hook and statusline commands merged into
+  `~/.claude/settings.json` single-quote the package path, so installs under a path
+  containing spaces work; old unquoted entries dedupe against and are upgraded to the
+  quoted form on re-merge.
+- **Invalid profile aborts before side effects (RA-13).** An invalid
+  `forge init --profile` value no longer leaves a partial repo scaffold, `.forge/` write,
+  or settings merge behind.
+- **Reversible settings uninstall (RA-11, RA-17, RA-18).** New
+  `forge init --remove-settings` (also run by `install.sh --uninstall`) reverses the
+  settings merge — template-shaped hooks/permissions/statusline and the `_forge` marker
+  are removed with a backup, user entries untouched. The installer header now tells the
+  truth about the global, reversible merge, announces it before merging, and gains
+  `--no-settings` to skip it.
+- **MCP emitters are no longer destructive (RA-03).** Installed integrations are recorded
+  in `.forge/forge.config.json` (`mcp.integrations`), and `forge sync` and
+  `forge integrations add` both emit the same full managed set — the sync/add/sync
+  oscillation that deleted each other's servers is gone.
+- **MCP configs respect ownership (RA-21).** Continue gets one forge-marked YAML per
+  managed server (the legacy combined file is migrated away only when provably forge's),
+  Codex servers live in `# forge:managed:<name>` blocks refreshed by byte-compare, and a
+  same-name JSON entry the user configured is never overwritten — it is reported with an
+  `--adopt` hint instead. New `forge integrations remove <name>` reverses an add,
+  deleting only forge-owned entries, blocks, and files; running it twice is a no-op.
+- **Stop-hook auto-sync detects body drift (RA-16).** Auto-sync now byte-compares
+  `AGENTS.md` against the exact content sync would write instead of trusting the embedded
+  marker hash, so a hand-edited body with an intact marker is repaired.
+- **Repo config consolidated; malformed JSON fails loudly (RA-15).** `src/repo_config.js`
+  is now the single per-repo config module: `readForgeConfig`/`writeForgeConfig` operate
+  on the unified `.forge/forge.config.json` (unknown keys round-trip through writes),
+  migration-read the legacy `.forge/config.json` (`primaryTool`/`tools`; the unified file
+  wins on key conflicts, the legacy file is left in place), and never silently discard
+  corrupt JSON — reads warn once per process on stderr and report the corrupt path, and
+  writers (`forge init --profile`, `forge tools <name>`) refuse to overwrite an
+  unparseable config instead of replacing it with defaults. `forge sync` still fail-opens
+  to default rules on a corrupt config but surfaces a warning in its report.
+
 ## [0.22.0] - 2026-07-17
 
 ### Fixed (audit remediation)

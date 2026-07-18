@@ -162,6 +162,15 @@ Then, in your project:
 forge init         # emit every AI tool's native config from one shared source
 forge doctor       # pass/fail health check: tools, guards, MCP, config drift
 forge doctor --fix # auto-repair the safely fixable findings, then re-check
+```
+
+`forge init` also merges Forge's hooks + permissions into `~/.claude/settings.json` —
+that file is **global** (it affects all your repos), so init says so before reporting the
+merge. Opt out with `forge init --no-settings`; reverse a past merge any time with
+`forge init --remove-settings` (your own entries are preserved, and a timestamped backup
+is written first).
+
+```bash
 
 # pre-action check before you (or your agent) edit anything:
 forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
@@ -193,7 +202,8 @@ The first time you run a real command before `~/.claude/settings.json` is forge-
 one tip line points at `forge init` (or `forge doctor --fix`) to wire hooks + permissions;
 it self-silences once init runs and `FORGE_NO_HINT=1` mutes it entirely. `install.sh` does
 this wiring for you via `forge init --settings-only` — an idempotent, marker-guarded merge
-that never clobbers your existing settings.
+that never clobbers your existing settings (skip it with `install.sh --no-settings`;
+`install.sh --uninstall` or `forge init --remove-settings` reverses it).
 
 | Group                      | Command              | Does                                                                                                                                                                 |
 | -------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -204,7 +214,7 @@ that never clobbers your existing settings.
 |                            | `forge update`       | self-update — `--check` reports if a newer version exists, bare applies it, `--to <version>` pins/downgrades                                                         |
 |                            | `forge docs`         | docs↔code drift — `check` reconciles commands/env/MCP/CHANGELOG; `sync` sweeps the diff for stale doc mentions                                                       |
 |                            | `forge config`       | provider setup — show / switch / add providers, set the default model                                                                                                |
-|                            | `forge integrations` | opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with `--yes`                                                                     |
+|                            | `forge integrations` | opt-in third-party MCP servers (e.g. context7) — `add` records the managed set and writes only with `--yes` (`--adopt` claims a same-name entry you already had); `remove` reverses it |
 |                            | `forge harden`       | wire the pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                 |
 |                            | `forge catalog`      | Start-Here index of every tool / crew / guard                                                                                                                        |
 |                            | `forge brand`        | print the brand token map                                                                                                                                            |
@@ -276,14 +286,14 @@ Structural differences only — each row is checkable against the named source, 
 tables (including what each adjacent tool does _better_) are in
 [`reports/benchmarks.md` → Uniqueness](reports/benchmarks.md#uniqueness--structural-contrasts-with-adjacent-tools):
 
-| Property                                                                                           | Forge                                                                                                     | Note stores / gateways / RAG                                                                                                                                          |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Memory confidence moved **only by independent oracles** (tests, CI, human)                         | yes — closed `ORACLES` table; unverifiable evidence rejected (`src/ledger.js`)                            | note stores keep notes as written                                                                                                                                     |
-| Unreviewed knowledge decays toward _uncertainty_, not deletion                                     | yes — confidence fades over time toward _unsure_; dormant claims kept for audit, never deleted            | notes persist unchanged until deleted                                                                                                                                 |
-| Conflict-free team merge over plain git                                                            | yes — two teammates' memories combine by set-union, so they never conflict (property-tested)              | per-machine SQLite or a hosted store                                                                                                                                  |
-| Routing decision visible and diffable **before** dispatch                                          | yes — a deterministic rubric you can read in the repo (`src/model_tiers.json`)                            | gateways decide inside the proxy at request time                                                                                                                      |
-| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — a cache hit is served only if its evidence clears a confidence floor and still matches today's code | plain RAG serves on similarity alone                                                                                                                                  |
-| **What they do better**                                                                            | —                                                                                                         | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually _move traffic_ (failover, quotas). Forge is a transparency layer, not a replacement |
+| Property                                                                                           | Forge                                                                                                                                                                          | Note stores / gateways / RAG                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory confidence moved **only by independent oracles** (tests, CI, human)                         | yes — closed `ORACLES` table; unverifiable evidence rejected at append, forged log lines fail their content-hash recheck at read and imports are quarantined (`src/ledger.js`) | note stores keep notes as written                                                                                                                                     |
+| Unreviewed knowledge decays toward _uncertainty_, not deletion                                     | yes — confidence fades over time toward _unsure_; dormant claims kept for audit, never deleted                                                                                 | notes persist unchanged until deleted                                                                                                                                 |
+| Conflict-free team merge over plain git                                                            | yes — two teammates' memories combine by set-union, so they never conflict (property-tested)                                                                                   | per-machine SQLite or a hosted store                                                                                                                                  |
+| Routing decision visible and diffable **before** dispatch                                          | yes — a deterministic rubric you can read in the repo (`src/model_tiers.json`)                                                                                                 | gateways decide inside the proxy at request time                                                                                                                      |
+| Cached code served **only with verification evidence**, revalidated against the current code graph | yes — a cache hit is served only if its evidence clears a confidence floor and still matches today's code                                                                      | plain RAG serves on similarity alone                                                                                                                                  |
+| **What they do better**                                                                            | —                                                                                                                                                                              | hosted sync, web UIs, embedding search that catches paraphrase; gateways actually _move traffic_ (failover, quotas). Forge is a transparency layer, not a replacement |
 
 ## Honest limits
 
