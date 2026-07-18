@@ -6,6 +6,11 @@
 // solo-trusted lens) so a pile of correlated structural signals can never block on its
 // own. `p` is a calibrated heuristic, NOT a proof or a measured defect probability.
 //
+// Deep `ok` is a CONJUNCTION: the core verify's tests must be PASS **and** the lens
+// consensus must not block. A core that never ran a verifier (NOT_CONFIGURED /
+// INCOMPLETE) can never yield ok:true — abstaining lenses widen `residual`, they do
+// not manufacture a green light.
+//
 // Mizan (weighed judgment — a philosophical/ethical framing, not a technical guarantee):
 // the verdict ships WITH its evidence. Every lens reports whether it ran and what it saw,
 // and the remaining-unchecked-weight bound ∏ⱼ(1 − cⱼ) over the lenses that actually ran
@@ -269,8 +274,12 @@ const round4 = (x) => Number(Number(x).toFixed(4));
  * Multi-lens verification: run plain `verify()` (tests + unknown symbols + base
  * provenance), add the structural/security lenses and the optional reviewer panel,
  * aggregate, and persist — findings extend `.forge/provenance.json` and one
- * `stage:"verify"` metrics record is appended. Blocks (ok:false) only on
- * cross-family consensus or a solo-trusted lens at P(defect) ≥ BLOCK_THRESHOLD.
+ * `stage:"verify"` metrics record is appended. Blocks on cross-family consensus or
+ * a solo-trusted lens at P(defect) ≥ BLOCK_THRESHOLD, and `ok` additionally
+ * REQUIRES the core tests status to be PASS: a core that never ran a verifier
+ * (NOT_CONFIGURED / INCOMPLETE) is never ok:true, however clean the lenses look.
+ * `status` mirrors the four-state core verdict (non-PASS core wins; else the
+ * consensus decides PASS/FAIL).
  * @param {object} [opts]
  * @param {string} [opts.targetRoot]
  * @param {string} [opts.base]
@@ -305,6 +314,15 @@ export function verifyDeep({
   ];
   const verdict = aggregate(lenses);
   const findings = findingsOf(lenses);
+  // Four-state core verdict (RA-01). Older/injected cores without `status` fall back to
+  // the ran/passed pair; a core whose suite never ran is NOT_CONFIGURED, never PASS.
+  const testsStatus =
+    core.tests?.status ??
+    (core.tests?.ran ? (core.tests.passed ? "PASS" : "FAIL") : "NOT_CONFIGURED");
+  // Deep status: a non-PASS core is the verdict (nothing to consense over); a PASSing
+  // core hands the call to the lens consensus.
+  const status = testsStatus !== "PASS" ? testsStatus : verdict.block ? "FAIL" : "PASS";
+  const ok = testsStatus === "PASS" && !verdict.block;
   const deep = {
     lenses: lenses.map((l) => ({
       lens: l.lens,
@@ -319,6 +337,7 @@ export function verifyDeep({
     fires: verdict.fires,
     residual: round4(verdict.residual),
     block: verdict.block,
+    status, // additive: the four-state deep verdict (RA-01)
   };
   const provenance = { ...core.provenance, deep };
   try {
@@ -330,14 +349,18 @@ export function verifyDeep({
   } catch {}
   recordMetric(targetRoot, {
     stage: "verify",
+    // `outcome` keeps its historical block|pass vocabulary; the four-state verdict
+    // rides along additively as `status`.
     outcome: verdict.block ? "block" : "pass",
+    status,
     mode: "deep",
     lenses: deep.lenses.filter((l) => l.ran).length,
     p: deep.p,
     residual: deep.residual,
   });
   return {
-    ok: !verdict.block,
+    ok,
+    status,
     block: verdict.block,
     p: deep.p,
     fires: verdict.fires,

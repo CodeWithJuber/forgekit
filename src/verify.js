@@ -34,8 +34,11 @@ function git(args, cwd) {
 //   PASS           — a real verifier ran and passed
 //   FAIL           — a real verifier ran and failed
 //   NOT_CONFIGURED — no test runner exists for this repo (nothing ran → NEVER ok)
-//   INCOMPLETE     — a runner was expected but couldn't complete (timeout, or no concrete
-//                    executor for the detected command)
+//   INCOMPLETE     — a runner was expected but couldn't complete (timeout, executor binary
+//                    missing, or no built-in executor for the detected command)
+// The DETECTED runner is what actually executes (a pnpm/yarn/bun repo runs its own package
+// manager, never a hardcoded `npm`), via the executor whitelist below — shell-free spawn of
+// a known bin only, never npx (it can download arbitrary packages).
 // `ran`/`passed` are kept for back-compat (consensus.js reads them). Bounded by a timeout
 // (FORGE_VERIFY_TIMEOUT_MS, default 10 min) so a hanging test can't hang the gate.
 /**
@@ -48,6 +51,20 @@ function git(args, cwd) {
  * @property {string[]} [detected]
  * @property {string} [output]
  */
+// Bins forge is willing to execute directly. Everything else stays report-only.
+const EXECUTORS = new Set(["npm", "pnpm", "yarn", "bun", "pytest"]);
+// Fallback when a detectStack result has no `testRunners` field (older shape):
+// rebuild descriptors from the command strings.
+/** @param {string[]} cmds @returns {import("./stack.js").TestRunner[]} */
+function parseRunnerStrings(cmds) {
+  return cmds.map((c) => {
+    const cmd = c.trim();
+    const pm = /(^|\s)(npm|pnpm|yarn|bun)\s+test\b/.exec(cmd);
+    if (pm) return { bin: pm[2], args: ["test"], label: `${pm[2]} test` };
+    if (/\bpytest\b/.test(cmd)) return { bin: "pytest", args: ["-q"], label: "pytest -q" };
+    return { label: cmd };
+  });
+}
 /**
  * @param {string} cwd
  * @returns {VerifyTests}
@@ -56,43 +73,63 @@ function runTests(cwd) {
   const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || 600000;
   const run = (cmd, args) =>
     execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: "pipe", timeout });
-  // Detect the repo's real test commands (no test script → none → NOT_CONFIGURED, not a
+  // Detect the repo's real test runners (no test script → none → NOT_CONFIGURED, not a
   // forced npm-test failure).
-  let detected = [];
+  let stack = null;
   try {
-    detected = detectStack(cwd).testCommands;
+    stack = detectStack(cwd);
   } catch {}
+  const detected = stack?.testCommands ?? [];
   if (!detected.length) return { ran: false, status: "NOT_CONFIGURED" };
-  // Concrete runners forge can actually execute. npm test is only real if a package.json exists.
-  const npm =
-    detected.some((c) => /(^|\s)(npm|pnpm|yarn|bun)\s+test\b/.test(c)) &&
-    existsSync(join(cwd, "package.json"));
-  const pytest = detected.some((c) => /\bpytest\b/.test(c));
+  const runners = stack?.testRunners?.length ? stack.testRunners : parseRunnerStrings(detected);
+  // First whitelisted descriptor wins. A package-manager runner is only real when a
+  // package.json exists (the guard the old npm-only path had).
+  const candidate = runners.find(
+    (r) =>
+      r?.bin &&
+      EXECUTORS.has(r.bin) &&
+      (r.bin === "pytest" || existsSync(join(cwd, "package.json"))),
+  );
+  if (!candidate) {
+    // Runners were detected but forge has no built-in executor for any of them —
+    // expected, didn't complete. Never guess a different runner.
+    const labels = runners.map((r) => r?.label).filter(Boolean);
+    return {
+      ran: false,
+      status: "INCOMPLETE",
+      detected,
+      output: `detected "${labels.join('", "')}" — no built-in executor; run it yourself and re-verify`,
+    };
+  }
   try {
-    if (npm) {
-      run("npm", ["test"]);
-      return { ran: true, passed: true, status: "PASS", runner: "npm test" };
-    }
-    if (pytest) {
-      run("pytest", ["-q"]);
-      return { ran: true, passed: true, status: "PASS", runner: "pytest" };
-    }
-    // A runner was detected but forge has no concrete executor for it — expected, didn't complete.
-    return { ran: false, status: "INCOMPLETE", detected };
+    run(candidate.bin, candidate.args ?? []);
+    return { ran: true, passed: true, status: "PASS", runner: candidate.label };
   } catch (e) {
+    if (e.code === "ENOENT") {
+      // The detected runner's binary isn't installed here — nothing ran, and silently
+      // substituting another package manager would verify the wrong thing.
+      return {
+        ran: false,
+        status: "INCOMPLETE",
+        detected,
+        output: `detected "${candidate.label}", executor unavailable (${candidate.bin} not on PATH)`,
+      };
+    }
     if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
       return {
         ran: true,
         passed: false,
         timedOut: true,
         status: "INCOMPLETE",
-        output: `test run exceeded ${timeout}ms`,
+        runner: candidate.label,
+        output: `test run (${candidate.label}) exceeded ${timeout}ms`,
       };
     }
     return {
       ran: true,
       passed: false,
       status: "FAIL",
+      runner: candidate.label,
       output: String(e.stdout || e.message || "").slice(-600),
     };
   }

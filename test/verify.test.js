@@ -116,6 +116,50 @@ test("verify: a repo with no test runner is NOT_CONFIGURED and NOT ok (nothing r
   assert.equal(r.ok, false, "nothing ran must never be ok:true");
 });
 
+// ---------------------------------------------------------------------------
+// RA-08 — the DETECTED runner is what executes (or is honestly reported), never
+// a hardcoded `npm test`.
+// ---------------------------------------------------------------------------
+
+test("verify: pnpm repo targets pnpm — with pnpm off PATH it is INCOMPLETE, never a silent npm run", () => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "t",
+      scripts: { test: "node -e 'process.exit(0)'" },
+    }),
+  );
+  writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+  // Empty PATH → spawning pnpm deterministically ENOENTs, whatever this machine has
+  // installed. git/atlas inside verify are fail-safe against the same PATH.
+  const oldPath = process.env.PATH;
+  process.env.PATH = join(root, "no-binaries-here");
+  let r;
+  try {
+    r = verify({ targetRoot: root });
+  } finally {
+    process.env.PATH = oldPath;
+  }
+  assert.equal(r.tests.status, "INCOMPLETE", "nothing ran — and npm was NOT substituted");
+  assert.equal(r.tests.ran, false);
+  assert.equal(r.ok, false);
+  assert.ok(r.tests.output.includes("pnpm"), r.tests.output);
+  assert.ok(r.tests.output.includes("executor unavailable"), r.tests.output);
+});
+
+test("verify: go-only repo is INCOMPLETE with the real label — no built-in executor", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "go.mod"), "module example.com/app\n\ngo 1.22\n");
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE");
+  assert.equal(r.tests.ran, false, "go test is detected but never executed by forge");
+  assert.equal(r.ok, false);
+  assert.ok(r.tests.output.includes("go test ./..."), r.tests.output);
+  assert.ok(r.tests.output.includes("no built-in executor"), r.tests.output);
+  assert.deepEqual(r.tests.detected, ["go test ./..."]);
+});
+
 test("verify: an untracked source file appears in provenance (changedFiles + untracked)", () => {
   const root = gitRepo();
   // untracked (never `git add`ed) — invisible to `git diff`, but part of the change.

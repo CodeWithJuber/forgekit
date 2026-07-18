@@ -1019,11 +1019,24 @@ async function run(argv) {
       console.log(
         `  remainingUncheckedWeight: ${r.residual.toFixed(3)} — Theorem-D silent-miss bound (heuristic)`,
       );
+      // The core tests state, spelled out — deep ok REQUIRES a passing core, so the
+      // reader must see whether a verifier actually ran (RA-01).
+      const t = r.tests ?? /** @type {import("./verify.js").VerifyTests} */ ({ ran: false });
       console.log(
-        `\n  ${
-          r.ok ? paint("PASS", "ok") : paint("BLOCKED — cross-family consensus says defect", "err")
+        `  tests:            ${t.status ?? "unknown"}${t.runner ? ` (${t.runner})` : ""}${
+          !t.runner && t.detected?.length ? ` (detected: ${t.detected.join(", ")})` : ""
         }`,
       );
+      const detail = t.output || (t.detected ?? []).join(", ");
+      const verdictLine =
+        r.status === "PASS"
+          ? paint("PASS", "ok")
+          : r.status === "NOT_CONFIGURED"
+            ? paint("NOT VERIFIED — no test runner configured (NOT_CONFIGURED)", "warn")
+            : r.status === "INCOMPLETE"
+              ? paint(`NOT VERIFIED — tests incomplete${detail ? ` (${detail})` : ""}`, "warn")
+              : paint("BLOCKED — cross-family consensus says defect", "err");
+      console.log(`\n  ${verdictLine}`);
       if (!r.ok) process.exitCode = 1;
       return;
     }
@@ -1036,16 +1049,32 @@ async function run(argv) {
     }
     heading(`${BRAND.brand} verify\n`);
     console.log(`  changed files:    ${r.changedFiles.length}`);
-    console.log(
-      `  tests:            ${r.tests.ran ? (r.tests.passed ? "✓ pass" : "✗ FAIL") : "— none detected"}`,
-    );
+    // Honest four-state tests line (RA-09): "nothing ran" is never dressed up as a pass,
+    // and a real run names the runner that actually executed.
+    const t = r.tests;
+    const testsLine =
+      t.status === "PASS"
+        ? `✓ pass (${t.runner ?? "project suite"})`
+        : t.status === "FAIL"
+          ? `✗ FAIL (${t.runner ?? "project suite"})`
+          : t.status === "INCOMPLETE"
+            ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
+            : "— NOT CONFIGURED (no test runner detected)";
+    console.log(`  tests:            ${testsLine}`);
     console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
     if (r.unknown.length)
       console.log(
         `  ! not in codebase (possible hallucination): ${r.unknown.slice(0, 12).join(", ")}`,
       );
     console.log(`  provenance:       .forge/provenance.json`);
-    console.log(`\n  ${r.ok ? "PASS" : "BLOCKED — tests failing"}`);
+    // BLOCKED is reserved for a runner that actually FAILED; anything that never ran
+    // to completion is NOT VERIFIED (still exit 1 — unverified is not a pass).
+    const verdict = r.ok
+      ? "PASS"
+      : t.status === "FAIL"
+        ? "BLOCKED — tests failing"
+        : `NOT VERIFIED — ${t.status}`;
+    console.log(`\n  ${verdict}`);
     if (!r.ok) process.exitCode = 1;
     return;
   }

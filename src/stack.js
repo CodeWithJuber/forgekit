@@ -92,14 +92,21 @@ function detectNode(root, add) {
   if (existsSync(join(root, "tsconfig.json")) || names.some((n) => n === "typescript"))
     add.language("TypeScript");
   for (const f of hasAnyDep(names, NODE_FRAMEWORKS)) add.framework(f);
-  for (const t of hasAnyDep(names, NODE_TEST)) add.testCmd(runnerCmd(root, t));
+  // npx-based runner detections stay label-only: forge must never EXECUTE npx (it can
+  // download arbitrary packages), so no bin/args descriptor is emitted for them.
+  for (const t of hasAnyDep(names, NODE_TEST)) add.runner({ label: runnerCmd(root, t) });
   // package manager from the lockfile present
   if (existsSync(join(root, "pnpm-lock.yaml"))) add.pm("pnpm");
   else if (existsSync(join(root, "yarn.lock"))) add.pm("yarn");
   else if (existsSync(join(root, "bun.lockb"))) add.pm("bun");
   else if (existsSync(join(root, "package-lock.json"))) add.pm("npm");
-  // an explicit test script beats guessing
-  if (pkg.scripts?.test) add.testCmd(`${pmRun(root)} test`);
+  // an explicit test script beats guessing — executable via the DETECTED package manager
+  if (pkg.scripts?.test)
+    add.runner({
+      bin: pmRun(root),
+      args: ["test"],
+      label: `${pmRun(root)} test`,
+    });
 }
 
 const pmRun = (root) =>
@@ -124,8 +131,9 @@ function detectPython(root, add) {
   else if (reqs) add.evidence("requirements.txt");
   else if (pipfile) add.evidence("Pipfile");
   for (const f of hasAny(blob, PY_FRAMEWORKS)) add.framework(f);
-  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini"))) add.testCmd("pytest -q");
-  else add.testCmd("python -m unittest");
+  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini")))
+    add.runner({ bin: "pytest", args: ["-q"], label: "pytest -q" });
+  else add.runner({ label: "python -m unittest" });
   if (blob.includes("ruff")) add.tool("ruff");
   if (blob.includes("[tool.uv]") || existsSync(join(root, "uv.lock"))) add.pm("uv");
   else if (pipfile) add.pm("pipenv");
@@ -137,7 +145,7 @@ function detectGo(root, add) {
   if (mod == null) return;
   add.language("Go");
   add.evidence("go.mod");
-  add.testCmd("go test ./...");
+  add.runner({ bin: "go", args: ["test", "./..."], label: "go test ./..." });
   const m = /^module\s+(\S+)/m.exec(mod);
   if (m) add.note(`module ${m[1]}`);
   if (/gin-gonic\/gin/.test(mod)) add.framework("Gin");
@@ -151,7 +159,7 @@ function detectRust(root, add) {
   add.language("Rust");
   add.evidence("Cargo.toml");
   add.pm("cargo");
-  add.testCmd("cargo test");
+  add.runner({ bin: "cargo", args: ["test"], label: "cargo test" });
   if (/\bactix-web\b/.test(cargo)) add.framework("Actix");
   if (/\baxum\b/.test(cargo)) add.framework("Axum");
   if (/\brocket\b/.test(cargo)) add.framework("Rocket");
@@ -167,8 +175,18 @@ function detectRuby(root, add) {
   const g = (gemfile || "").toLowerCase();
   if (g.includes("rails")) add.framework("Rails");
   if (g.includes("sinatra")) add.framework("Sinatra");
-  if (g.includes("rspec")) add.testCmd("bundle exec rspec");
-  else add.testCmd("bundle exec rake test");
+  if (g.includes("rspec"))
+    add.runner({
+      bin: "bundle",
+      args: ["exec", "rspec"],
+      label: "bundle exec rspec",
+    });
+  else
+    add.runner({
+      bin: "bundle",
+      args: ["exec", "rake", "test"],
+      label: "bundle exec rake test",
+    });
 }
 
 function detectPhp(root, add) {
@@ -183,7 +201,12 @@ function detectPhp(root, add) {
   });
   if (deps.some((d) => d.startsWith("laravel/"))) add.framework("Laravel");
   if (deps.some((d) => d.startsWith("symfony/"))) add.framework("Symfony");
-  if (deps.some((d) => d.includes("phpunit"))) add.testCmd("./vendor/bin/phpunit");
+  if (deps.some((d) => d.includes("phpunit")))
+    add.runner({
+      bin: "./vendor/bin/phpunit",
+      args: [],
+      label: "./vendor/bin/phpunit",
+    });
 }
 
 function detectJvm(root, add) {
@@ -197,11 +220,11 @@ function detectJvm(root, add) {
   if (pom) {
     add.evidence("pom.xml");
     add.pm("Maven");
-    add.testCmd("mvn test");
+    add.runner({ bin: "mvn", args: ["test"], label: "mvn test" });
   } else {
     add.evidence(existsSync(join(root, "build.gradle.kts")) ? "build.gradle.kts" : "build.gradle");
     add.pm("Gradle");
-    add.testCmd("./gradlew test");
+    add.runner({ bin: "./gradlew", args: ["test"], label: "./gradlew test" });
   }
   if (blob.includes("springframework") || blob.includes("spring-boot")) add.framework("Spring");
 }
@@ -218,7 +241,7 @@ function detectDotnet(root, add) {
   add.language(proj.endsWith(".fsproj") ? "F#" : "C#");
   add.evidence(proj);
   add.pm("dotnet");
-  add.testCmd("dotnet test");
+  add.runner({ bin: "dotnet", args: ["test"], label: "dotnet test" });
 }
 
 const DETECTORS = [
@@ -233,11 +256,25 @@ const DETECTORS = [
 ];
 
 /**
+ * One detected test runner. `label` is the human-readable command string (always
+ * mirrored into `testCommands` for back-compat). `bin`/`args` are the structured,
+ * shell-free spawn descriptor — present only when the command is safe to execute
+ * verbatim (label-only entries, e.g. `npx vitest` or `python -m unittest`, are
+ * report-only: forge never executes them).
+ * @typedef {object} TestRunner
+ * @property {string} label
+ * @property {string} [bin]
+ * @property {string[]} [args]
+ */
+
+/**
  * Detect the repo's real stack by reading its manifests. Pure aside from fs reads;
- * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays.
+ * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays;
+ * `testRunners` is deduped by label and sorted by label.
  * @param {string} [root]
  * @returns {{languages:string[], frameworks:string[], packageManagers:string[],
- *   testCommands:string[], tools:string[], notes:string[], evidence:string[]}}
+ *   testCommands:string[], testRunners:TestRunner[], tools:string[], notes:string[],
+ *   evidence:string[]}}
  */
 export function detectStack(root = process.cwd()) {
   const sets = {
@@ -249,11 +286,19 @@ export function detectStack(root = process.cwd()) {
     notes: new Set(),
     evidence: new Set(),
   };
+  /** @type {Map<string, TestRunner>} */
+  const runners = new Map();
   const add = {
     language: (v) => v && sets.languages.add(v),
     framework: (v) => v && sets.frameworks.add(v),
     pm: (v) => v && sets.packageManagers.add(v),
     testCmd: (v) => v && sets.testCommands.add(v),
+    /** @param {TestRunner} r structured descriptor — the label also lands in testCommands */
+    runner: (r) => {
+      if (!r?.label) return;
+      sets.testCommands.add(r.label);
+      if (!runners.has(r.label)) runners.set(r.label, r);
+    },
     tool: (v) => v && sets.tools.add(v),
     note: (v) => v && sets.notes.add(v),
     evidence: (v) => v && sets.evidence.add(v),
@@ -269,6 +314,7 @@ export function detectStack(root = process.cwd()) {
     frameworks: sort(sets.frameworks),
     packageManagers: sort(sets.packageManagers),
     testCommands: sort(sets.testCommands),
+    testRunners: [...runners.values()].sort((a, b) => a.label.localeCompare(b.label)),
     tools: sort(sets.tools),
     notes: sort(sets.notes),
     evidence: sort(sets.evidence),

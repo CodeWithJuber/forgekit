@@ -345,6 +345,108 @@ test("verifyDeep: reviewer panel joins via injected runner and can tip a second 
   }
 });
 
+// ---------------------------------------------------------------------------
+// RA-01 — deep ok is a conjunction: core tests PASS AND no consensus block.
+// ---------------------------------------------------------------------------
+
+test("verifyDeep: NOT_CONFIGURED core is never ok, even with every lens clean (RA-01)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () => fakeCore({ tests: { ran: false, status: "NOT_CONFIGURED" } }),
+    });
+    assert.equal(r.ok, false, "nothing ran must never be deep-ok");
+    assert.equal(r.status, "NOT_CONFIGURED");
+    assert.equal(r.block, false, "the lenses did not block — the CORE verdict did");
+    const prov = JSON.parse(readFileSync(join(dir, ".forge", "provenance.json"), "utf8"));
+    assert.equal(prov.deep.status, "NOT_CONFIGURED", "deep status persisted additively");
+    assert.equal(prov.deep.block, false, "existing provenance fields untouched");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("verifyDeep: INCOMPLETE core (detected but unexecutable runner) is not ok (RA-01)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () =>
+        fakeCore({
+          tests: {
+            ran: false,
+            status: "INCOMPLETE",
+            detected: ["go test ./..."],
+          },
+        }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, "INCOMPLETE");
+    assert.deepEqual(r.tests.detected, ["go test ./..."], "the detected runner rides along");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("verifyDeep: explicit four-state FAIL core blocks with status FAIL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () => fakeCore({ tests: { ran: true, passed: false, status: "FAIL" } }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, "FAIL");
+    assert.equal(r.block, true, "a failing suite still blocks solo");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("verifyDeep: passing core + clean lenses → ok:true with status PASS", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () => fakeCore(),
+    });
+    assert.equal(r.ok, true, "ran/passed fallback: a status-less passing core still derives PASS");
+    assert.equal(r.status, "PASS");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("verifyDeep: passing core + blocking finding → ok:false with status FAIL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () =>
+        fakeCore({
+          tests: {
+            ran: true,
+            passed: true,
+            status: "PASS",
+            runner: "npm test",
+          },
+          added: `token = "${fakeAnthropic()}"`, // secrets lens blocks solo
+        }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, "FAIL", "consensus block on a PASSing core reads as FAIL");
+    assert.equal(r.block, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("verifyDeep: a secret in the added lines blocks solo", () => {
   const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
   try {
