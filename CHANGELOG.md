@@ -92,6 +92,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are removed with a backup, user entries untouched. The installer header now tells the
   truth about the global, reversible merge, announces it before merging, and gains
   `--no-settings` to skip it.
+- **MCP emitters are no longer destructive (RA-03).** Installed integrations are recorded
+  in `.forge/forge.config.json` (`mcp.integrations`), and `forge sync` and
+  `forge integrations add` both emit the same full managed set — the sync/add/sync
+  oscillation that deleted each other's servers is gone.
+- **MCP configs respect ownership (RA-21).** Continue gets one forge-marked YAML per
+  managed server (the legacy combined file is migrated away only when provably forge's),
+  Codex servers live in `# forge:managed:<name>` blocks refreshed by byte-compare, and a
+  same-name JSON entry the user configured is never overwritten — it is reported with an
+  `--adopt` hint instead. New `forge integrations remove <name>` reverses an add,
+  deleting only forge-owned entries, blocks, and files; running it twice is a no-op.
+- **Stop-hook auto-sync detects body drift (RA-16).** Auto-sync now byte-compares
+  `AGENTS.md` against the exact content sync would write instead of trusting the embedded
+  marker hash, so a hand-edited body with an intact marker is repaired.
 - **Repo config consolidated; malformed JSON fails loudly (RA-15).** `src/repo_config.js`
   is now the single per-repo config module: `readForgeConfig`/`writeForgeConfig` operate
   on the unified `.forge/forge.config.json` (unknown keys round-trip through writes),
