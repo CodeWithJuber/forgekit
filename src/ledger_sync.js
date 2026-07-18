@@ -38,7 +38,7 @@ const STATE_FILE = "state.json";
  * @property {string} [dir]
  * @property {string} [remote]
  * @property {string} [ref]
- * @property {*} [pulled] import counts {claims, records}
+ * @property {*} [pulled] import counts {claims, records, quarantined}
  * @property {*} [pushed] dir mode: {claims, records}; ref mode: boolean
  * @property {boolean} [upToDate]
  * @property {number} [retries]
@@ -169,7 +169,7 @@ function pullRef(localDir, root, ref, run, notes) {
     return importState(localDir, remoteState);
   } catch {
     notes.push("remote ledger state unreadable — treated as empty");
-    return { claims: 0, records: 0 };
+    return { claims: 0, records: 0, quarantined: 0 };
   }
 }
 
@@ -216,7 +216,7 @@ export function syncRef(
   // fetch actually found the ref on this remote, and only trust the idempotence
   // short-circuit when it did (else a new/pruned remote is silently never pushed to).
   let remoteHasRef = false;
-  let pulled = { claims: 0, records: 0 };
+  let pulled = { claims: 0, records: 0, quarantined: 0 };
   try {
     run(["fetch", remote, `+${ref}:${ref}`], { cwd: root });
     remoteHasRef = true;
@@ -325,6 +325,7 @@ export function syncRef(
       pulled = {
         claims: pulled.claims + more.claims,
         records: pulled.records + more.records,
+        quarantined: (pulled.quarantined ?? 0) + (more.quarantined ?? 0),
       };
     }
   }

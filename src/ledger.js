@@ -201,10 +201,19 @@ export function outcomeRecord({ oracle, result, ref, author = "", t = 0, resolve
   };
 }
 
-/** An evidence record val() will count: known oracle, valid result, a ref, a hash. */
+/** An evidence record val() will count: known oracle, valid result, a well-formed ref,
+ *  a hash. Ref checking is the PURE half of validateRef only (untyped/legacy accepted —
+ *  read-path parity with what append accepts; typed-but-empty like `git:` rejected);
+ *  git resolution stays on the append/import/verify paths, never on a read. */
 export function validOutcome(e) {
   return Boolean(
-    e && ORACLES[e.oracle] && (e.result === "confirm" || e.result === "contradict") && e.ref && e.h,
+    e &&
+      ORACLES[e.oracle] &&
+      (e.result === "confirm" || e.result === "contradict") &&
+      typeof e.ref === "string" &&
+      e.ref &&
+      validateRef(e.ref).ok &&
+      e.h,
   );
 }
 

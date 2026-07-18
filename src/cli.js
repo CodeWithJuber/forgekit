@@ -567,6 +567,10 @@ async function run(argv) {
       const r = ls.mergeDirs(dir, src);
       if (json) return console.log(JSON.stringify(r, null, 2));
       console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
+      if (r.quarantined)
+        console.log(
+          `  quarantined: ${r.quarantined} invalid record(s) (forged hash or unresolvable ref — see quarantine/ in the ledger dir)`,
+        );
       return;
     }
     if (sub === "blame") {

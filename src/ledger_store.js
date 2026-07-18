@@ -80,25 +80,46 @@ const readJson = (path) => {
 };
 
 /** Parse an append-only log: one canonical-JSON record per line, deduped by content
- *  hash, corrupt lines skipped. The single reader every log goes through. */
-function readLog(dir, log, id) {
+ *  hash, corrupt lines skipped. The single reader every log goes through — and the
+ *  single choke point where every line must PROVE its content hash (re-sealing the
+ *  h-less rest must reproduce `h`) before it can reach any view, dedupe set, or val().
+ *  Evidence lines must additionally be valid outcomes. A forged/hand-edited line is
+ *  simply invisible at read time; verify() is where it gets NAMED. The internal
+ *  `verifyHashes:false` escape hatch exists ONLY so imports can read a source raw and
+ *  QUARANTINE bad records instead of silently dropping them. */
+function readLog(dir, log, id, { verifyHashes = true } = {}) {
   const path = logPath(dir, log, id);
   if (!existsSync(path)) return [];
   const records = [];
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
     if (!line.trim()) continue;
+    let rec = null;
     try {
-      records.push(JSON.parse(line));
+      rec = JSON.parse(line);
     } catch {}
+    if (!rec?.h) continue;
+    if (verifyHashes) {
+      const { h, ...rest } = rec;
+      if (sealRecord(rest).h !== h) continue; // forged/corrupt — cannot buy confidence
+      if (log === "evidence" && !validOutcome(rec)) continue;
+    }
+    records.push(rec);
   }
   // sortRecords, not file order: after a git union merge the two replicas' logs hold
   // the same set in different line orders — views must not depend on that.
   return sortRecords(records);
 }
 
-/** Append one sealed record to a log iff its hash isn't already present. */
+/** Append one sealed record to a log iff its hash isn't already present. The seal is
+ *  RECHECKED here — a record whose `h` does not match its own content never lands. */
 function appendRecord(dir, log, id, record) {
   if (!record?.h) return { ok: false, reason: "record missing content hash" };
+  const { h, ...rest } = record;
+  if (sealRecord(rest).h !== h)
+    return {
+      ok: false,
+      reason: "record content hash mismatch (forged/corrupt)",
+    };
   if (!existsSync(claimPath(dir, id)))
     return { ok: false, reason: `no such claim in ledger: ${id}` };
   if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
@@ -223,13 +244,17 @@ export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
   };
 }
 
-/** Load the full ledger state {claims, evidence, provenance, tombstones}. */
-export function loadState(dir) {
+/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
+ *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
+ *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost.
+ *  @param {string} dir
+ *  @param {{verifyHashes?: boolean}} [opts] */
+export function loadState(dir, { verifyHashes = true } = {}) {
   const state = emptyState();
   for (const { id, claim } of walkClaimFiles(dir)) {
     if (!claim) continue;
     state.claims[id] = claim;
-    for (const log of LOGS) state[log][id] = readLog(dir, log, id);
+    for (const log of LOGS) state[log][id] = readLog(dir, log, id, { verifyHashes });
   }
   return state;
 }
@@ -262,7 +287,10 @@ export function getClaimByPrefix(dir, prefix) {
  *  this one. Idempotent and order-independent by the CRDT property, so merging a
  *  teammate's checkout, a backup, or a branch worktree is always safe. */
 export function mergeDirs(dstDir, srcDir) {
-  return importState(dstDir, loadState(srcDir));
+  // The SOURCE is read raw (hashes unverified) on purpose: importState re-validates
+  // every record against THIS ledger, so forged/invalid lines end up quarantined with
+  // a named reason instead of being silently dropped at read time.
+  return importState(dstDir, loadState(srcDir, { verifyHashes: false }));
 }
 
 /**
@@ -295,24 +323,45 @@ export function blame(dir, prefix, nowDay = 0) {
   };
 }
 
+/** Quarantine one rejected import record — an append-only audit line ({reason, rec, t},
+ *  sealed like every other log record) under quarantine/<claimId>.log, deduped by the
+ *  OFFENDING record's own hash so re-merges stay idempotent. Returns 1 when newly
+ *  quarantined, 0 on a dupe. The timestamp is the record's own day (records never
+ *  read the clock here — same rule as mintClaim/outcomeRecord). */
+function quarantineRecord(dir, id, rec, reason) {
+  if (readLog(dir, "quarantine", id).some((q) => q.rec?.h === rec?.h)) return 0;
+  mkdirSync(join(dir, "quarantine"), { recursive: true });
+  appendFileSync(
+    logPath(dir, "quarantine", id),
+    `${canonicalize(sealRecord({ reason, rec, t: rec?.t ?? 0 }))}\n`,
+  );
+  return 1;
+}
+
 /** Semilattice import: merge another ledger state into this directory (the mergeDirs
- *  core). Idempotent; safe to re-run. */
+ *  core). Idempotent; safe to re-run. Imported records get NO validation bypass:
+ *  evidence goes through the full appendEvidence gate (validOutcome + ref resolution
+ *  against THIS repo) and every record must prove its content hash in appendRecord —
+ *  rejects land in quarantine/ for audit and are counted in `quarantined`. */
 export function importState(dir, other) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;
   let records = 0;
+  let quarantined = 0;
   for (const c of Object.values(merged.claims)) {
     const r = putClaim(dir, c);
     if (r.ok && !r.existed) claims++;
     for (const log of LOGS) {
       for (const rec of merged[log][c.id] ?? []) {
-        const a = appendRecord(dir, log, c.id, rec);
+        const a =
+          log === "evidence" ? appendEvidence(dir, c.id, rec) : appendRecord(dir, log, c.id, rec);
         if (a.ok && !a.deduped) records++;
+        else if (!a.ok) quarantined += quarantineRecord(dir, c.id, rec, a.reason ?? "rejected");
       }
     }
   }
   reindex(dir);
-  return { claims, records };
+  return { claims, records, quarantined };
 }
 
 /** Regenerate LEDGER.md — the human index (like recall's MEMORY.md). */
