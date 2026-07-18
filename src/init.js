@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
+import { validateProfile, writeForgeConfig } from "./repo_config.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
 
@@ -211,36 +212,26 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   };
 }
 
-/** Valid policy profiles (P1-02). `standard` is the full engineering pack (default). */
-export const PROFILES = [
-  "minimal",
-  "standard",
-  "web-app",
-  "backend-service",
-  "library",
-  "regulated",
-];
+// Policy profiles (P1-02, RA-14) live in repo_config.js — the single config module —
+// and are re-exported here so `import { PROFILES } from "./init.js"` keeps working.
+export { LEGACY_PROFILES, PROFILES, validateProfile } from "./repo_config.js";
 
 /** Persist a chosen profile to `.forge/forge.config.json` so `sync` applies it. Merges into
- *  any existing config rather than clobbering it. Returns the resolved profile or null. */
+ *  any existing config rather than clobbering it (unknown keys round-trip); a corrupt
+ *  config file makes the write refuse loudly instead of discarding the bytes (RA-15).
+ *  Legacy profile names are accepted, stored as their mapped profile, and surfaced via
+ *  `deprecated` so the CLI can warn (RA-14). Returns the resolved profile or null. */
 function writeProfile(targetRoot, profile) {
   if (!profile) return null;
-  if (!PROFILES.includes(profile)) return { error: `unknown profile: ${profile}` };
-  const dir = join(targetRoot, ".forge");
-  const path = join(dir, "forge.config.json");
-  /** @type {Record<string, any>} */
-  let cfg = {};
-  if (existsSync(path)) {
-    try {
-      cfg = JSON.parse(readFileSync(path, "utf8")) || {};
-    } catch {
-      cfg = {};
-    }
-  }
-  cfg.profile = profile;
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
-  return { profile };
+  const v = validateProfile(profile);
+  // `=== false` (not `!v.ok`): tsc only narrows the discriminated union this way here.
+  if (v.ok === false) return { error: v.error };
+  const res = writeForgeConfig(targetRoot, (cfg) => {
+    cfg.profile = v.profile;
+    return cfg;
+  });
+  if (res.ok === false) return { error: res.reason };
+  return v.deprecated ? { profile: v.profile, deprecated: v.deprecated } : { profile: v.profile };
 }
 
 /**

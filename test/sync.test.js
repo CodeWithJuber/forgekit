@@ -99,6 +99,42 @@ test("minimal profile emits only the core-safety section (P1-02)", () => {
   assert.doesNotMatch(md, /## AI interfaces & design quality/, "full pack sections dropped");
 });
 
+test("a stored legacy profile name behaves as standard — the full pack (RA-14)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), JSON.stringify({ profile: "web-app" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Workflow/, "full (standard) pack emitted");
+  assert.match(md, /## AI interfaces & design quality/, "no section dropped");
+});
+
+test("corrupt forge.config.json: sync fail-opens to default rules but surfaces a warning (RA-15)", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/forge.config.json"), "{ not json");
+  const res = sync({ targetRoot: root });
+  assert.match(
+    readFileSync(join(root, "AGENTS.md"), "utf8"),
+    /## Workflow/,
+    "default rules still emitted (fail-open)",
+  );
+  assert.ok(
+    res.warnings.some((w) => w.includes("not valid JSON")),
+    `warnings must mention the corrupt config: ${JSON.stringify(res.warnings)}`,
+  );
+});
+
+test("legacy .forge/config.json keys are migration-read into sync's config", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  // Only the LEGACY file exists — profile stored there must still reach loadRules.
+  writeFileSync(join(root, ".forge/config.json"), JSON.stringify({ profile: "minimal" }));
+  sync({ targetRoot: root });
+  const md = readFileSync(join(root, "AGENTS.md"), "utf8");
+  assert.match(md, /## Core safety/, "minimal profile honored from the legacy file");
+});
+
 test("config disableSections drops a named section; config.rules appends (P1-03)", () => {
   const root = fixture();
   mkdirSync(join(root, ".forge"), { recursive: true });

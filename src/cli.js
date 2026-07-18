@@ -137,6 +137,11 @@ async function run(argv) {
     );
     if (profileResult?.profile) {
       console.log(`  profile:  ${profileResult.profile} → .forge/forge.config.json`);
+      if (profileResult.deprecated) {
+        console.error(
+          `  warning:  profile "${profileResult.deprecated}" is deprecated — treated as "${profileResult.profile}"`,
+        );
+      }
     }
     if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
       const verb = settings.action === "created" ? "created" : "merged";

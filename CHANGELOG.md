@@ -6,6 +6,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Only real profiles (RA-14).** `forge init --profile` now accepts `minimal` and
+  `standard` only — the former `web-app`/`backend-service`/`library`/`regulated` names
+  were always aliases of the full pack (sync only ever branched on `minimal`) and are now
+  deprecated aliases of `standard`: accepted with a deprecation warning, stored as
+  `standard`, and a legacy name already stored in an existing config still syncs as
+  standard (with a one-time warning). New exported `validateProfile()` maps legacy names
+  before any side effect.
+- **Honest wording (RA-22, RA-23, RA-24).** package.json's description now says what
+  ships — shared memory, impact analysis, and guardrail hooks emitted as native config —
+  instead of "the cognitive substrate every frozen model is missing". README's loop intro
+  now states that the automatic pre-action check is Claude Code hooks (advisory by
+  default, enforcement opt-in via `FORGE_ENFORCE=1`) while other tools receive
+  instructions and MCP tools to invoke; the comparison table now claims what the ledger
+  does today — evidence must name a known oracle and a typed, format-checked reference at
+  append time — rather than implying stored evidence is re-verified on load.
+
+### Fixed
+
+- **Repo config consolidated; malformed JSON fails loudly (RA-15).** `src/repo_config.js`
+  is now the single per-repo config module: `readForgeConfig`/`writeForgeConfig` operate
+  on the unified `.forge/forge.config.json` (unknown keys round-trip through writes),
+  migration-read the legacy `.forge/config.json` (`primaryTool`/`tools`; the unified file
+  wins on key conflicts, the legacy file is left in place), and never silently discard
+  corrupt JSON — reads warn once per process on stderr and report the corrupt path, and
+  writers (`forge init --profile`, `forge tools <name>`) refuse to overwrite an
+  unparseable config instead of replacing it with defaults. `forge sync` still fail-opens
+  to default rules on a corrupt config but surfaces a warning in its report.
+
 ## [0.22.0] - 2026-07-17
 
 ### Fixed (audit remediation)

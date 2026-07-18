@@ -16,6 +16,7 @@ import gemini from "./emit/gemini.js";
 import { emitMcp } from "./emit/mcp.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
+import { LEGACY_PROFILES, readForgeConfig } from "./repo_config.js";
 
 const MODULES = [codex, cursor, copilot, windsurf, zed, claude, gemini, aider, continueTool];
 
@@ -48,29 +49,40 @@ const MINIMAL_SECTION = {
   ],
 };
 
-/** Read the optional per-repo config (`.forge/forge.config.json`). Invalid JSON is ignored
- *  (fail-open) so a typo can't break `forge sync`. */
+/** Read the optional per-repo config — the unified `.forge/forge.config.json`, with
+ *  legacy `.forge/config.json` keys folded in (repo_config.js is the single config
+ *  module, RA-15). Rule loading stays fail-open so a typo can't break `forge sync`,
+ *  but corrupt JSON is no longer silent: readForgeConfig warns once on stderr and
+ *  marks the result (`corrupt`/`path`) so sync() can surface a warning row. */
 export function loadConfig(targetRoot) {
-  const p = join(targetRoot, ".forge/forge.config.json");
-  if (!existsSync(p)) return {};
-  try {
-    const cfg = JSON.parse(readFileSync(p, "utf8"));
-    return cfg && typeof cfg === "object" ? cfg : {};
-  } catch {
-    return {};
-  }
+  return readForgeConfig(targetRoot);
 }
+
+// Warn once per process when a stored legacy profile name is read (RA-14) — loadRules
+// runs on every sync/drift check and the hooks would otherwise repeat the warning.
+let warnedLegacyProfile = false;
 
 /**
  * Resolve the rule set for a repo with explicit, deterministic override semantics (P1-03):
- *   1. profile — `minimal` replaces the pack with the core-safety section; otherwise the
- *      full source pack.
+ *   1. profile — `minimal` replaces the pack with the core-safety section; anything else
+ *      (including the deprecated legacy names web-app/backend-service/library/regulated,
+ *      which warn once per process) behaves as `standard`, the full source pack (RA-14).
  *   2. disableSections — drop sections by id or title.
  *   3. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
  */
 function loadRules(targetRoot) {
   const cfg = loadConfig(targetRoot);
   const base = JSON.parse(readFileSync(join(BRAND.root, "source/rules.json"), "utf8"));
+  if (
+    typeof cfg.profile === "string" &&
+    Object.hasOwn(LEGACY_PROFILES, cfg.profile) &&
+    !warnedLegacyProfile
+  ) {
+    warnedLegacyProfile = true;
+    process.stderr.write(
+      `${BRAND.cli}: profile "${cfg.profile}" is deprecated — treated as "standard"\n`,
+    );
+  }
   if (cfg.profile === "minimal") {
     base.sections = [MINIMAL_SECTION];
   } else if (Array.isArray(cfg.disableSections) && cfg.disableSections.length) {
@@ -159,6 +171,13 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   }
 
   const warnings = [];
+  // Corrupt repo config: rules were built from defaults (fail-open), but say so in the
+  // report instead of only on stderr — a typo'd config must not vanish silently (RA-15).
+  const cfg = loadConfig(targetRoot);
+  if (cfg.corrupt)
+    warnings.push(
+      `${cfg.path} is not valid JSON — config ignored, default rules used (fix or delete it)`,
+    );
   if (backedUp)
     warnings.push(
       "existing AGENTS.md was not Forge-managed — backed up to AGENTS.md.forge-bak; move any custom rules into source/rules.json or a per-repo .forge/rules.json",
