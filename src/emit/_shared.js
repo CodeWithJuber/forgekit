@@ -37,5 +37,11 @@ export function writeIfChanged(absPath, content) {
   return "written";
 }
 
+// The exact on-disk bytes of a managed file. BOTH the writer (writeManaged) and any
+// drift check (autoSyncIfDrifted) must build the expectation through this one helper —
+// comparing anything less than these full bytes (e.g. only the embedded marker hash)
+// lets a hand-edited body with an intact marker pass as "in sync" (RA-16).
+export const managedContent = (header, body) => `${header}\n${body}\n`;
+
 export const writeManaged = (absPath, header, body) =>
-  writeIfChanged(absPath, `${header}\n${body}\n`);
+  writeIfChanged(absPath, managedContent(header, body));

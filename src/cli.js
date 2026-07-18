@@ -468,7 +468,9 @@ async function run(argv) {
     return;
   }
   if (cmd === "integrations") {
-    const { listIntegrations, planIntegration, addIntegration } = await import("./integrations.js");
+    const { listIntegrations, planIntegration, addIntegration, removeIntegration } = await import(
+      "./integrations.js"
+    );
     const sub = argv[1];
     if (sub === "add") {
       const name = argv[2];
@@ -485,15 +487,48 @@ async function run(argv) {
         console.log(`    network: ${plan.network}`);
         console.log(`    purpose: ${plan.why}`);
         console.log(`    writes:  .mcp.json, .cursor/mcp.json, .gemini/…, .codex/…, .continue/…`);
+        console.log(`    records: .forge/forge.config.json (mcp.integrations — the managed set)`);
         console.log(
           `\n  Not installed. Re-run with --yes to apply:  ${BRAND.cli} integrations add ${name} --yes`,
         );
+        console.log(
+          `  A same-name server you configured yourself is never overwritten unless you also pass --adopt.`,
+        );
         return;
       }
-      const res = addIntegration(name, { targetRoot: process.cwd() });
-      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      const res = addIntegration(name, {
+        targetRoot: process.cwd(),
+        adopt: argv.includes("--adopt"),
+      });
       heading(`${BRAND.brand} integrations — add ${name}\n`);
+      if (res.ok === false) {
+        console.error(`  ${res.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
       console.log(`  added ${name} → ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+      for (const r of res.rows.filter((x) => x.action === "skipped"))
+        console.log(`  ! ${r.target}: ${r.note}`);
+      return;
+    }
+    if (sub === "remove") {
+      const name = argv[2];
+      const res = removeIntegration(name, { targetRoot: process.cwd() });
+      heading(`${BRAND.brand} integrations — remove ${name}\n`);
+      if (res.ok === false) {
+        console.error(`  ${res.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!res.removed) {
+        console.log(`  ${name} is not installed — nothing to remove`);
+        return;
+      }
+      const wrote = res.rows.filter((x) => x.action === "written").map((x) => x.target);
+      console.log(`  removed ${name} → ${wrote.length ? wrote.join(", ") : "(nothing on disk)"}`);
+      for (const r of res.rows.filter((x) => x.action === "skipped"))
+        console.log(`  ! ${r.target}: ${r.note}`);
       return;
     }
     // Default: list what's available.
@@ -501,7 +536,8 @@ async function run(argv) {
     for (const it of listIntegrations()) {
       console.log(`  ${it.name.padEnd(12)} ${it.why}  (${it.pkg})`);
     }
-    console.log(`\n  Add one with:  ${BRAND.cli} integrations add <name>`);
+    console.log(`\n  Add one with:     ${BRAND.cli} integrations add <name>`);
+    console.log(`  Remove one with:  ${BRAND.cli} integrations remove <name>`);
     return;
   }
   if (cmd === "recall") {

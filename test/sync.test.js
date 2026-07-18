@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { assemble, sync } from "../src/sync.js";
+import { assemble, autoSyncIfDrifted, sync } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-sync-"));
 
@@ -150,4 +150,21 @@ test("config disableSections drops a named section; config.rules appends (P1-03)
   assert.doesNotMatch(md, /## AI interfaces & design quality/, "disabled section dropped");
   assert.match(md, /## ProjectY/, "config.rules appended");
   assert.match(md, /## Workflow/, "other sections preserved");
+});
+
+test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as drift", () => {
+  const root = fixture();
+  sync({ targetRoot: root });
+  const p = join(root, "AGENTS.md");
+  const lines = readFileSync(p, "utf8").split("\n");
+  // Keep line 0 (the GENERATED header with the forge:sync:<hash> marker), tamper the body.
+  writeFileSync(
+    p,
+    [lines[0], "# AGENTS.md — quietly rewritten by hand", ...lines.slice(2)].join("\n"),
+  );
+  const r = autoSyncIfDrifted(root);
+  assert.equal(r.synced, true, "marker-only agreement must not pass as in-sync");
+  const restored = readFileSync(p, "utf8");
+  assert.doesNotMatch(restored, /quietly rewritten by hand/, "body restored from canonical");
+  assert.equal(autoSyncIfDrifted(root).synced, false, "after repair: full bytes match again");
 });

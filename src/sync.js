@@ -16,6 +16,7 @@ import gemini from "./emit/gemini.js";
 import { emitMcp } from "./emit/mcp.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
+import { managedMcpState } from "./integrations.js";
 import { LEGACY_PROFILES, readForgeConfig } from "./repo_config.js";
 
 const MODULES = [codex, cursor, copilot, windsurf, zed, claude, gemini, aider, continueTool];
@@ -154,12 +155,18 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     }
   }
 
-  // MCP servers — emit the canonical set into each tool's MCP config (real formats).
+  // MCP servers — emit the FULL managed set (registry ∪ recorded integrations) into each
+  // tool's MCP config (real formats). Sharing managedMcpState with `integrations add`
+  // means sync can never drop a server that add installed, and vice versa (RA-03). A
+  // corrupt repo config falls back to registry-only with a warning — never treated as
+  // "no integrations installed, overwrite everything".
+  const warnings = [];
   const mcpFile = join(BRAND.root, "source", "mcp.json");
   if (existsSync(mcpFile)) {
     try {
-      const servers = JSON.parse(readFileSync(mcpFile, "utf8"));
-      for (const row of emitMcp({ targetRoot, servers })) report.push(row);
+      const { servers, owned, warning } = managedMcpState(targetRoot);
+      if (warning) warnings.push(warning);
+      for (const row of emitMcp({ targetRoot, servers, owned })) report.push(row);
     } catch (err) {
       report.push({
         tool: "MCP",
@@ -169,8 +176,6 @@ export function sync({ targetRoot = process.cwd() } = {}) {
       });
     }
   }
-
-  const warnings = [];
   // Corrupt repo config: rules were built from defaults (fail-open), but say so in the
   // report instead of only on stderr — a typo'd config must not vanish silently (RA-15).
   const cfg = loadConfig(targetRoot);
@@ -208,8 +213,13 @@ export function autoSyncIfDrifted(targetRoot = process.cwd()) {
   const existing = shared.readIfExists(join(targetRoot, "AGENTS.md"));
   if (existing === null || !shared.isManaged(existing))
     return { synced: false, reason: "no managed AGENTS.md here" };
-  if (shared.extractHash(existing) === shared.hashContent(buildCanonical(targetRoot)))
-    return { synced: false, reason: "in sync" };
+  // Full-byte comparison against the exact content sync would write (RA-16): the embedded
+  // marker hash alone proves nothing — a hand-edited body with an intact marker must
+  // still count as drift. managedContent is the same helper writeManaged writes through,
+  // so the two paths cannot diverge again.
+  const body = buildCanonical(targetRoot);
+  const expected = shared.managedContent(shared.mdHeader(shared.hashContent(body)), body);
+  if (existing === expected) return { synced: false, reason: "in sync" };
   sync({ targetRoot });
   return { synced: true, reason: "drifted — resynced" };
 }

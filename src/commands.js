@@ -111,7 +111,7 @@ export const COMMANDS = {
   brand: "print the active brand token map",
   docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
   integrations:
-    "opt-in third-party MCP servers (e.g. context7) — shows package/network, writes only with --yes",
+    "opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it",
 };
 
 // Groups order the --help surface from the stable reliability loop down to experiments.
