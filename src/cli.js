@@ -124,22 +124,23 @@ async function run(argv) {
     // --settings-only: wire hooks + permissions into ~/.claude/settings.json ONLY (the
     // idempotent, marker-guarded merge install.sh calls) — no repo emit, no AGENTS.md.
     if (argv.includes("--settings-only")) {
+      // ME-22: heading + disclosure precede the merge — onSettingsNotice fires inside init
+      // BEFORE mergeSettings touches the file, never after.
+      heading(`${BRAND.brand} init — settings merge only\n`);
       const { settings } = init({
         settingsOnly: true,
         noSettings,
         settingsPath,
+        onSettingsNotice: consentLine,
       });
-      heading(`${BRAND.brand} init — settings merge only\n`);
       if (
         (settings?.action === "merged" || settings?.action === "created") &&
         "added" in settings
       ) {
-        consentLine(settings.path);
         const verb = settings.action === "created" ? "created" : "merged";
         const what = settings.added.length ? settings.added.join(", ") : "defaults";
         console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       } else if (settings?.action === "unchanged" && "path" in settings) {
-        consentLine(settings.path);
         console.log(`  settings: already up to date (${settings.path})`);
       } else if (settings?.action === "skipped") {
         console.log("  settings: skipped (--no-settings)");
@@ -153,6 +154,10 @@ async function run(argv) {
     }
     const profileIdx = argv.indexOf("--profile");
     const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
+    // ME-22: emit the GLOBAL-settings disclosure BEFORE the merge mutates the file. init
+    // forwards `onSettingsNotice` to mergeSettings, which fires it right before touching
+    // ~/.claude/settings.json — so the notice always precedes the mutation it describes.
+    heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     const {
       report,
       bytes,
@@ -165,6 +170,7 @@ async function run(argv) {
         noSettings,
         profile,
         settingsPath,
+        onSettingsNotice: consentLine,
       })
     );
     if (profileResult?.error) {
@@ -173,7 +179,6 @@ async function run(argv) {
       return;
     }
     const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
-    heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
     console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
@@ -198,14 +203,12 @@ async function run(argv) {
       }
     }
     if ((settings?.action === "merged" || settings?.action === "created") && "added" in settings) {
-      consentLine(settings.path);
       const verb = settings.action === "created" ? "created" : "merged";
       const what = settings.added.length ? settings.added.join(", ") : "defaults";
       console.log(`  settings: ${verb} ${what} into ${settings.path}`);
       if ("backup" in settings && settings.backup)
         console.log(`            backup: ${settings.backup}`);
     } else if (settings?.action === "unchanged" && "path" in settings) {
-      consentLine(settings.path);
       console.log(`  settings: already up to date (${settings.path})`);
     } else if (settings?.action === "skipped") {
       console.log("  settings: skipped (--no-settings)");
