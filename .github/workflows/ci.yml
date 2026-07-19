@@ -46,7 +46,15 @@ jobs:
       - run: npm ci
       - name: Unit suite (Git Bash)
         shell: bash
-        run: node --test test/*.test.js
+        run: |
+          set +e
+          node --test test/*.test.js 2>&1 | tee /tmp/win-test.log
+          ec=${PIPESTATUS[0]}
+          echo "===== FAILING TESTS (name + file) ====="
+          grep -nE '^not ok ' /tmp/win-test.log | head -80
+          echo "===== FAILURE FILES ====="
+          grep -E "^# Subtest|^not ok " /tmp/win-test.log | grep -B1 '^not ok ' | grep 'file:' | sort -u | head -80
+          exit "$ec"
 
   quality-gate:
     name: Quality gate
