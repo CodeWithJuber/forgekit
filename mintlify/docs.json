@@ -139,6 +139,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["cn/changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -194,6 +204,16 @@
                   "ar/guides/team-memory",
                   "ar/guides/radar-deps"
                 ]
+              }
+            ]
+          },
+          {
+            "tab": "سجل التغييرات",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "سجل التغييرات",
+                "pages": ["ar/changelog/overview"]
               }
             ]
           }
@@ -253,6 +273,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "चेंजलॉग",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "चेंजलॉग",
+                "pages": ["hi/changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -310,6 +340,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["zh-CN/changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -365,6 +405,16 @@
                   "zh-Hans/guides/team-memory",
                   "zh-Hans/guides/radar-deps"
                 ]
+              }
+            ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["zh-Hans/changelog/overview"]
               }
             ]
           }
