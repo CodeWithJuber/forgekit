@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { collect, render } from "../scripts/build-pages.mjs";
-import { BRAND } from "../src/brand.js";
+import { BRAND, spaceScaleCss, typeScaleCss } from "../src/brand.js";
 
 const repo = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const landing = repo("landing/index.html");
@@ -40,6 +40,30 @@ test("landing + status derive the SAME palette from brand.json (one source, dark
         `status missing ${scheme} token ${hex} (brand.json.colors.${scheme})`,
       );
     }
+  }
+});
+
+test("landing + status derive the SAME fluid type scale + spacing scale (one formula)", async () => {
+  // Same discipline as the color-parity test above, extended to typography and
+  // spacing: src/brand.js computes every --fs-N / --sp-N token from a formula
+  // (fluid clamp() interpolation for type, base-unit multiples for spacing), and
+  // both public pages must declare the exact same generated values — no page may
+  // hand-pick its own font-size or margin/padding/gap magic numbers.
+  // Whitespace is normalized before comparing: the status page emits compact CSS
+  // ("--fs-0:16px") while the hand-authored landing page spaces its :root block
+  // for readability ("--fs-0: 16px;") — same token, same value, different formatting.
+  const norm = (s) => s.replace(/\s+/g, "");
+  const status = norm(render(await collect({ live: false })));
+  const landingNorm = norm(landing);
+  for (const decl of typeScaleCss().split(";")) {
+    const d = norm(decl);
+    assert.ok(landingNorm.includes(d), `landing missing type token ${decl}`);
+    assert.ok(status.includes(d), `status missing type token ${decl}`);
+  }
+  for (const decl of spaceScaleCss().split(";")) {
+    const d = norm(decl);
+    assert.ok(landingNorm.includes(d), `landing missing space token ${decl}`);
+    assert.ok(status.includes(d), `status missing space token ${decl}`);
   }
 });
 

@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Landing + status pages: token-driven fluid type scale and spacing scale.**
+  `src/brand.js` now computes a fluid `clamp()` type scale (`--fs-n2`…`--fs-7`) and a
+  4px-base spacing scale (`--sp-1`…`--sp-24`) from a formula, the same way it already
+  derived the color palette from `brand.json`. `landing/index.html` and the generated
+  status page (`scripts/build-pages.mjs`) now consume these tokens for every
+  font-size/margin/padding/gap instead of hand-picked pixel values; `test/pages.test.js`
+  enforces that both surfaces stay in lockstep with the formula. `forge uicheck design`
+  now reports the landing page's spacing values 100% on-grid (previously 96% on an
+  inconsistent 2px base).
+
 ## [0.23.1] - 2026-07-19
 
 ### Fixed

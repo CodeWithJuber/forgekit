@@ -103,6 +103,36 @@
           ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
         --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+        /* Fluid type scale — one formula (src/brand.js: typeScaleCss), not per-element
+           magic numbers. Every font-size below is one of these ten steps.
+           test/pages.test.js checks this block is exactly what the formula emits. */
+        --fs-n2: clamp(12.5px, 0.79rem - 0.02vw, 12.64px);
+        --fs-n1: clamp(14.22px, 0.87rem + 0.09vw, 15px);
+        --fs-0: clamp(16px, 0.94rem + 0.23vw, 18px);
+        --fs-1: clamp(18px, 1.02rem + 0.41vw, 21.6px);
+        --fs-2: clamp(20.25px, 1.1rem + 0.64vw, 25.92px);
+        --fs-3: clamp(22.78px, 1.19rem + 0.95vw, 31.1px);
+        --fs-4: clamp(25.63px, 1.27rem + 1.33vw, 37.32px);
+        --fs-5: clamp(28.83px, 1.35rem + 1.81vw, 44.79px);
+        --fs-6: clamp(32.44px, 1.42rem + 2.42vw, 53.75px);
+        --fs-7: clamp(36.49px, 1.49rem + 3.18vw, 64.5px);
+        /* Spacing scale — one base unit (4px) × an integer step (src/brand.js:
+           spaceScaleCss). Every margin/padding/gap below is one of these steps. */
+        --sp-1: 4px;
+        --sp-2: 8px;
+        --sp-3: 12px;
+        --sp-4: 16px;
+        --sp-5: 20px;
+        --sp-6: 24px;
+        --sp-7: 28px;
+        --sp-8: 32px;
+        --sp-9: 36px;
+        --sp-10: 40px;
+        --sp-12: 48px;
+        --sp-14: 56px;
+        --sp-16: 64px;
+        --sp-20: 80px;
+        --sp-24: 96px;
       }
       @media (prefers-color-scheme: light) {
         :root {
@@ -148,7 +178,7 @@
       body {
         margin: 0;
         color: var(--text);
-        font: 16px/1.65 var(--sans);
+        font: var(--fs-0) / 1.65 var(--sans);
         background:
           radial-gradient(
             960px 460px at 85% -10%,
@@ -178,16 +208,16 @@
       }
       .skip {
         position: absolute;
-        left: 16px;
+        left: var(--sp-4);
         top: -80px;
         background: var(--text);
         color: var(--bg);
-        padding: 10px 14px;
+        padding: var(--sp-3) var(--sp-4);
         border-radius: var(--radius-sm);
         z-index: 30;
       }
       .skip:focus {
-        top: 16px;
+        top: var(--sp-4);
       }
 
       /* ---- Nav (N1b canonical) ---------------------------------------- */
@@ -206,14 +236,14 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 24px;
+        gap: var(--sp-6);
       }
       .brand {
         display: inline-flex;
-        gap: 10px;
+        gap: var(--sp-3);
         align-items: center;
         text-decoration: none;
-        font: 750 16px var(--mono);
+        font: 750 var(--fs-0) var(--mono);
         letter-spacing: -0.02em;
       }
       .logo {
@@ -234,8 +264,8 @@
       .nav-links {
         display: flex;
         align-items: center;
-        gap: 22px;
-        font-size: 14px;
+        gap: var(--sp-6);
+        font-size: var(--fs-n1);
       }
       .nav-links a {
         color: var(--muted);
@@ -249,7 +279,7 @@
         color: var(--text);
         border: 1px solid var(--line-strong);
         border-radius: 999px;
-        padding: 8px 15px;
+        padding: var(--sp-2) var(--sp-4);
         transition:
           border-color 0.16s var(--ease-out),
           background 0.16s var(--ease-out);
@@ -269,15 +299,15 @@
 
       /* ---- Hero (Stat-Led) -------------------------------------------- */
       .hero {
-        padding: 84px 0 40px;
+        padding: var(--sp-24) 0 var(--sp-10);
       }
       .eyebrow {
         display: inline-flex;
-        gap: 10px;
+        gap: var(--sp-3);
         align-items: center;
-        margin: 0 0 20px;
+        margin: 0 0 var(--sp-5);
         color: var(--brand-2);
-        font: 700 12px var(--mono);
+        font: 700 var(--fs-n2) var(--mono);
         letter-spacing: 0.14em;
         text-transform: uppercase;
       }
@@ -292,7 +322,7 @@
       h1 {
         margin: 0;
         max-width: 15ch;
-        font-size: clamp(40px, 6vw, 66px);
+        font-size: var(--fs-7);
         line-height: 1.02;
         letter-spacing: -0.03em;
         font-weight: 700;
@@ -303,27 +333,27 @@
         color: var(--brand);
       }
       .lede {
-        margin: 24px 0 0;
+        margin: var(--sp-6) 0 0;
         max-width: 62ch;
         color: var(--muted);
-        font-size: clamp(18px, 2vw, 21px);
+        font-size: var(--fs-1);
         text-wrap: pretty;
       }
       .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 14px;
-        margin-top: 32px;
+        gap: var(--sp-3);
+        margin-top: var(--sp-8);
       }
       .btn {
         display: inline-flex;
         min-height: 48px;
         align-items: center;
         justify-content: center;
-        gap: 10px;
+        gap: var(--sp-2);
         border-radius: 999px;
         border: 1px solid var(--line-strong);
-        padding: 12px 22px;
+        padding: var(--sp-3) var(--sp-5);
         text-decoration: none;
         font-weight: 750;
         white-space: nowrap;
@@ -349,18 +379,18 @@
         color: var(--brand-2);
       }
       .command {
-        margin-top: 20px;
+        margin-top: var(--sp-5);
         display: flex;
         max-width: 100%;
         align-items: center;
-        gap: 12px;
+        gap: var(--sp-3);
         border: 1px solid var(--line);
         border-radius: var(--radius-sm);
-        padding: 12px 14px;
+        padding: var(--sp-3) var(--sp-4);
         background: var(--panel);
         box-shadow: var(--shadow);
         overflow-x: auto;
-        font: 700 13px var(--mono);
+        font: 700 var(--fs-n1) var(--mono);
       }
       .command .prompt {
         color: var(--brand);
@@ -376,9 +406,9 @@
         background: var(--panel-2);
         color: var(--muted);
         border-radius: var(--radius-sm);
-        padding: 6px 12px;
+        padding: var(--sp-2) var(--sp-3);
         cursor: pointer;
-        font: 700 12px var(--mono);
+        font: 700 var(--fs-n2) var(--mono);
         transition:
           color 0.16s var(--ease-out),
           border-color 0.16s var(--ease-out);
@@ -390,7 +420,7 @@
 
       /* ---- Hero diagram (the real, shipped SVG) ----------------------- */
       .diagram {
-        margin: 56px 0 0;
+        margin: var(--sp-14) 0 0;
       }
       .diagram figure {
         margin: 0;
@@ -421,8 +451,8 @@
       }
       .diagram figcaption {
         color: var(--faint);
-        font: 500 13px var(--mono);
-        margin-top: 14px;
+        font: 500 var(--fs-n1) var(--mono);
+        margin-top: var(--sp-4);
         text-align: center;
       }
 
@@ -431,14 +461,14 @@
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0;
-        margin: 56px 0 0;
+        margin: var(--sp-14) 0 0;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--panel);
       }
       .stat {
-        padding: 26px 24px;
+        padding: var(--sp-7) var(--sp-6);
         border-right: 1px solid var(--line);
       }
       .stat:last-child {
@@ -446,21 +476,21 @@
       }
       .stat b {
         display: block;
-        font: 850 clamp(26px, 4vw, 38px) var(--mono);
+        font: 850 var(--fs-5) var(--mono);
         letter-spacing: -0.04em;
         color: var(--brand-2);
       }
       .stat span {
         display: block;
-        margin-top: 6px;
+        margin-top: var(--sp-2);
         color: var(--muted);
-        font-size: 14px;
+        font-size: var(--fs-n1);
       }
       .stat small {
         display: block;
-        margin-top: 8px;
+        margin-top: var(--sp-2);
         color: var(--faint);
-        font: 400 11px var(--mono);
+        font: 400 var(--fs-n2) var(--mono);
       }
       @media (max-width: 860px) {
         .stats {
@@ -489,20 +519,20 @@
 
       /* ---- Sections --------------------------------------------------- */
       section {
-        padding: 84px 0;
+        padding: var(--sp-24) 0;
         border-top: 1px solid var(--line);
       }
       .kicker {
-        margin: 0 0 12px;
+        margin: 0 0 var(--sp-3);
         color: var(--brand);
-        font: 800 12px var(--mono);
+        font: 800 var(--fs-n2) var(--mono);
         letter-spacing: 0.14em;
         text-transform: uppercase;
       }
       h2 {
         margin: 0;
         max-width: 20ch;
-        font-size: clamp(30px, 5vw, 50px);
+        font-size: var(--fs-6);
         line-height: 1.05;
         letter-spacing: -0.04em;
         overflow-wrap: anywhere;
@@ -510,8 +540,8 @@
       }
       .sub {
         color: var(--muted);
-        margin: 16px 0 0;
-        font-size: 18px;
+        margin: var(--sp-4) 0 0;
+        font-size: var(--fs-1);
         max-width: 60ch;
         text-wrap: pretty;
       }
@@ -519,17 +549,17 @@
       /* Capability list — icon + copy rows divided by hairlines, NOT a grid of
          identical bordered icon-tiles (breaks the card-in-card / icon-grid tell). */
       .caps {
-        margin: 48px 0 0;
+        margin: var(--sp-12) 0 0;
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0 56px;
+        gap: 0 var(--sp-14);
       }
       .cap {
         display: grid;
         grid-template-columns: 40px 1fr;
-        gap: 18px;
+        gap: var(--sp-4);
         align-items: start;
-        padding: 26px 0;
+        padding: var(--sp-7) 0;
         border-top: 1px solid var(--line);
       }
       .cap-ico {
@@ -542,14 +572,14 @@
         height: 100%;
       }
       .cap h3 {
-        margin: 2px 0 8px;
-        font-size: 19px;
+        margin: var(--sp-1) 0 var(--sp-2);
+        font-size: var(--fs-2);
         letter-spacing: -0.01em;
       }
       .cap p {
         margin: 0;
         color: var(--muted);
-        font-size: 15px;
+        font-size: var(--fs-n1);
       }
       @media (max-width: 760px) {
         .caps {
@@ -562,21 +592,21 @@
       .split {
         display: grid;
         grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
-        gap: 40px;
+        gap: var(--sp-10);
         align-items: start;
       }
       .steps {
         display: grid;
-        gap: 12px;
-        margin-top: 32px;
+        gap: var(--sp-3);
+        margin-top: var(--sp-8);
         counter-reset: step;
       }
       .step {
         display: grid;
         grid-template-columns: 34px 1fr;
-        gap: 16px;
+        gap: var(--sp-4);
         align-items: start;
-        padding: 18px 0;
+        padding: var(--sp-4) 0;
         border-top: 1px solid var(--line);
       }
       .step-num {
@@ -589,21 +619,21 @@
         background: var(--panel-2);
         border: 1px solid var(--line);
         color: var(--brand-2);
-        font: 800 14px var(--mono);
+        font: 800 var(--fs-n1) var(--mono);
       }
       .step-num::before {
         content: counter(step);
       }
       .step h3 {
-        margin: 4px 0 4px;
-        font-size: 17px;
+        margin: var(--sp-1) 0 var(--sp-1);
+        font-size: var(--fs-2);
       }
       .step p {
         margin: 0;
         color: var(--muted);
       }
       figure.listing {
-        margin: 32px 0 0;
+        margin: var(--sp-8) 0 0;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: var(--panel-2);
@@ -611,17 +641,17 @@
         overflow: hidden;
       }
       figure.listing figcaption {
-        padding: 12px 20px;
+        padding: var(--sp-3) var(--sp-5);
         border-bottom: 1px solid var(--line);
         color: var(--faint);
-        font: 600 12px var(--mono);
+        font: 600 var(--fs-n2) var(--mono);
         letter-spacing: 0.04em;
       }
       pre {
         margin: 0;
-        padding: 20px;
+        padding: var(--sp-5);
         overflow-x: auto;
-        font: 13px/1.7 var(--mono);
+        font: var(--fs-n1) / 1.7 var(--mono);
         color: var(--text);
       }
       .c-dim {
@@ -638,23 +668,23 @@
       .honesty {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 40px;
-        margin-top: 44px;
+        gap: var(--sp-10);
+        margin-top: var(--sp-12);
       }
       .honest {
         display: grid;
         grid-template-columns: 40px 1fr;
-        gap: 18px;
+        gap: var(--sp-4);
         align-items: start;
-        padding-top: 26px;
+        padding-top: var(--sp-7);
         border-top: 2px solid var(--brand);
       }
       .honest .cap-ico {
         color: var(--brand);
       }
       .honest h3 {
-        margin: 2px 0 8px;
-        font-size: 19px;
+        margin: var(--sp-1) 0 var(--sp-2);
+        font-size: var(--fs-2);
       }
       .honest p {
         margin: 0;
@@ -663,41 +693,41 @@
       @media (max-width: 640px) {
         .honesty {
           grid-template-columns: 1fr;
-          gap: 8px;
+          gap: var(--sp-2);
         }
       }
 
       /* Data sources */
       .sources {
         display: grid;
-        gap: 10px;
+        gap: var(--sp-3);
         padding: 0;
-        margin: 32px 0 0;
+        margin: var(--sp-8) 0 0;
         list-style: none;
       }
       .sources li {
         overflow-wrap: anywhere;
         border-left: 3px solid var(--brand);
-        padding: 8px 0 8px 14px;
+        padding: var(--sp-2) 0 var(--sp-2) var(--sp-4);
         color: var(--muted);
-        font: 500 14px var(--mono);
+        font: 500 var(--fs-n1) var(--mono);
       }
 
       footer {
         border-top: 1px solid var(--line);
-        padding: 34px 0;
+        padding: var(--sp-9) 0;
         color: var(--muted);
       }
       .foot {
         display: flex;
         justify-content: space-between;
-        gap: 18px;
+        gap: var(--sp-5);
         flex-wrap: wrap;
       }
       .foot a {
         color: var(--muted);
         text-decoration: none;
-        margin-left: 16px;
+        margin-left: var(--sp-4);
         white-space: nowrap;
       }
       .foot a:first-child {
@@ -714,14 +744,14 @@
       }
       @media (max-width: 560px) {
         .hero {
-          padding-top: 52px;
+          padding-top: var(--sp-14);
         }
         section {
-          padding: 60px 0;
+          padding: var(--sp-16) 0;
         }
         .foot a {
           margin-left: 0;
-          margin-right: 14px;
+          margin-right: var(--sp-4);
         }
       }
     </style>
