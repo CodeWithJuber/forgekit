@@ -25,6 +25,11 @@ import {
 } from "../src/init.js";
 import { GITATTRIBUTES_RULE } from "../src/ledger_store.js";
 
+/** The effective shell command a hook/statusLine entry runs, across BOTH forms: exec form
+ *  (`command`+`args`, ME-23) joins the args onto the command; a legacy shell string is returned
+ *  as-is. Tests assert on this so they are form-agnostic. */
+const effectiveCmd = (h) => (Array.isArray(h.args) ? [h.command, ...h.args].join(" ") : h.command);
+
 test("init emits the shared config for a fresh repo in one call", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));
   init({ targetRoot: root });
@@ -71,7 +76,7 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
   mergeSettings({ settingsPath });
   const result = JSON.parse(readFileSync(settingsPath, "utf8"));
   const promptHooks = result.hooks.UserPromptSubmit.flatMap((e) =>
-    (e.hooks || []).map((h) => h.command),
+    (e.hooks || []).map(effectiveCmd),
   );
   const cortexPromptCount = promptHooks.filter((c) => c.includes("cortex.sh prompt")).length;
   assert.equal(
@@ -79,7 +84,7 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
     1,
     "cortex.sh prompt must not duplicate across plugin + settings paths",
   );
-  const stopHooks = result.hooks.Stop.flatMap((e) => (e.hooks || []).map((h) => h.command));
+  const stopHooks = result.hooks.Stop.flatMap((e) => (e.hooks || []).map(effectiveCmd));
   const leanCount = stopHooks.filter((c) => c.includes("lean-guard.sh")).length;
   assert.equal(leanCount, 1, "lean-guard.sh must not duplicate");
 });
@@ -187,7 +192,7 @@ test("mergeSettings backs up an existing valid file and resolves guard paths abs
   assert.ok(result.backup && existsSync(result.backup), "a timestamped backup was written");
   const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
   const cmds = (merged.hooks?.UserPromptSubmit || []).flatMap((e) =>
-    (e.hooks || []).map((h) => h.command),
+    (e.hooks || []).map(effectiveCmd),
   );
   assert.ok(
     cmds.some((c) => c.includes("/global/guards/") && !c.includes("~/.forge/")),
@@ -284,48 +289,104 @@ test("catalog indexes tools (with a why), crew, and guards", () => {
 });
 
 // ---------------------------------------------------------------------------
-// RA-12 — quoted hook paths
+// ME-23 — exec-form hooks (command + args, no shell quoting) + legacy dedup
 // ---------------------------------------------------------------------------
 
 test("shellQuote single-quotes paths (spaces safe) and escapes embedded quotes", () => {
+  // Retained for the defensive legacy shell-string path; exec form no longer needs it.
   assert.equal(shellQuote("/a b/guards/x.sh"), "'/a b/guards/x.sh'");
   assert.equal(shellQuote("/o'brien/x.sh"), "'/o'\\''brien/x.sh'");
 });
 
-test("guardKey normalizes quoting: quoted, unquoted, tilde, and plugin-root spellings all match", () => {
+test("guardKey derives ONE identity from legacy shell-string AND exec-form spellings (ME-23)", () => {
   const base = join(BRAND.root, "global");
-  const key = guardKey(`bash ~/.forge/guards/cortex.sh prompt`);
-  assert.equal(key, "cortex.sh prompt");
+  const key = "cortex.sh prompt";
+  // Legacy shell-string spellings (quoted, unquoted, tilde, plugin-root).
+  assert.equal(guardKey(`bash ~/.forge/guards/cortex.sh prompt`), key);
   assert.equal(guardKey(`bash '${base}/guards/cortex.sh' prompt`), key);
   assert.equal(guardKey(`bash ${base}/guards/cortex.sh prompt`), key);
   assert.equal(guardKey(`bash '/a b/with space/guards/cortex.sh' prompt`), key);
   assert.equal(guardKey('"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt'), key);
+  // Exec-form objects with the same basename+args reduce to the SAME key.
+  assert.equal(
+    guardKey({
+      command: "bash",
+      args: ["~/.forge/guards/cortex.sh", "prompt"],
+    }),
+    key,
+  );
+  assert.equal(guardKey({ command: "bash", args: [`${base}/guards/cortex.sh`, "prompt"] }), key);
+  assert.equal(
+    guardKey({
+      command: "bash",
+      args: ["/a b/with space/guards/cortex.sh", "prompt"],
+    }),
+    key,
+  );
+  assert.equal(
+    guardKey({
+      command: "bash",
+      args: ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "prompt"],
+    }),
+    key,
+  );
+  // A hook object carrying only a legacy `.command` string is accepted too.
+  assert.equal(guardKey({ command: `bash ${base}/guards/cortex.sh prompt` }), key);
   // Args are part of identity: `cortex.sh prompt` and `cortex.sh stop` differ.
-  assert.notEqual(guardKey("bash ~/.forge/guards/cortex.sh stop"), key);
+  assert.notEqual(guardKey({ command: "bash", args: ["~/.forge/guards/cortex.sh", "stop"] }), key);
 });
 
-test("mergeSettings resolves hook paths QUOTED so an install path with spaces survives", () => {
-  const tmp = mkdtempSync(join(tmpdir(), "forge-quoted-"));
+test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQUOTED (ME-23)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-execform-"));
   const settingsPath = join(tmp, "settings.json");
   mergeSettings({ settingsPath });
   const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
   const base = join(BRAND.root, "global");
-  const cmds = Object.values(merged.hooks)
+  const hooks = Object.values(merged.hooks)
     .flat()
-    .flatMap((e) => (e.hooks || []).map((h) => h.command));
-  assert.ok(cmds.length > 0, "hooks merged");
-  for (const c of cmds) {
-    assert.match(c, /'[^']*\.sh'/, `hook path is single-quoted: ${c}`);
-    assert.ok(c.includes(`'${base}/`), `resolved to the quoted install base: ${c}`);
+    .flatMap((e) => e.hooks || []);
+  assert.ok(hooks.length > 0, "hooks merged");
+  for (const h of hooks) {
+    assert.equal(h.command, "bash", "command is the bare interpreter, no path baked in");
+    assert.ok(Array.isArray(h.args) && h.args.length > 0, "path lives in args[]");
+    const path = h.args[0];
+    // Resolved to the real install base, NOT the unmaterialized ~/.forge, and — the whole point
+    // of exec form — carrying NO surrounding quote characters (spaces would just work).
+    assert.ok(path.startsWith(`${base}/`), `args path resolved to the install base: ${path}`);
+    assert.ok(!path.includes("~/.forge/"), "no unresolved ~/.forge in args path");
+    assert.doesNotMatch(path, /['"]/, `exec-form args path is unquoted: ${path}`);
   }
-  assert.match(merged.statusLine.command, /'[^']*\.sh'/, "statusline path quoted too");
+  // The statusLine migrated to exec form too.
+  assert.equal(merged.statusLine.command, "bash");
+  assert.equal(merged.statusLine.args[0], join(base, "statusline.sh"));
+  assert.doesNotMatch(merged.statusLine.args[0], /['"]/, "statusline args path unquoted");
 });
 
-test("old UNQUOTED installed hook entries dedupe against the new quoted template and are healed", () => {
-  const tmp = mkdtempSync(join(tmpdir(), "forge-requote-"));
+test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no quoting (ME-23)", () => {
+  // The exec-form guarantee: the args element is the LITERAL path even with a space — nothing
+  // to escape because the hook is spawned directly with no shell. We assert the shape a merge
+  // produces (args[0] === the exact join()ed path) so a space in BRAND.root could never break it.
+  const tmp = mkdtempSync(join(tmpdir(), "forge-space-"));
+  const settingsPath = join(tmp, "settings.json");
+  mergeSettings({ settingsPath });
+  const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const base = join(BRAND.root, "global");
+  const cortexPrompt = merged.hooks.UserPromptSubmit.flatMap((e) => e.hooks || []).find(
+    (h) => guardKey(h) === "cortex.sh prompt",
+  );
+  assert.ok(cortexPrompt, "cortex prompt hook present");
+  assert.deepEqual(
+    cortexPrompt.args,
+    [join(base, "guards", "cortex.sh"), "prompt"],
+    "args are the literal resolved path element + trailing arg, verbatim and unquoted",
+  );
+});
+
+test("an OLD shell-string install dedupes against the exec-form template and is upgraded (ME-23)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-legacy-dedup-"));
   const settingsPath = join(tmp, "settings.json");
   const base = join(BRAND.root, "global");
-  // What a pre-RA-12 install wrote: resolved absolute path, no quotes.
+  // What a pre-ME-23 install wrote: one resolved shell-string command (RA-12 quoted form).
   writeFileSync(
     settingsPath,
     JSON.stringify({
@@ -335,7 +396,7 @@ test("old UNQUOTED installed hook entries dedupe against the new quoted template
             hooks: [
               {
                 type: "command",
-                command: `bash ${base}/guards/cortex.sh prompt`,
+                command: `bash ${shellQuote(`${base}/guards/cortex.sh`)} prompt`,
               },
             ],
           },
@@ -345,15 +406,17 @@ test("old UNQUOTED installed hook entries dedupe against the new quoted template
   );
   mergeSettings({ settingsPath });
   const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
-  const promptCmds = merged.hooks.UserPromptSubmit.flatMap((e) =>
-    (e.hooks || []).map((h) => h.command),
-  ).filter((c) => c.includes("cortex.sh") && c.endsWith("prompt"));
-  assert.equal(promptCmds.length, 1, "no duplicate on re-merge with the quoted template");
-  assert.equal(
-    promptCmds[0],
-    `bash ${shellQuote(`${base}/guards/cortex.sh`)} prompt`,
-    "the old unquoted entry is upgraded to the quoted spelling",
+  const promptHooks = merged.hooks.UserPromptSubmit.flatMap((e) => e.hooks || []).filter(
+    (h) => guardKey(h) === "cortex.sh prompt",
   );
+  assert.equal(
+    promptHooks.length,
+    1,
+    "no duplicate — the legacy hook deduped against the template",
+  );
+  // ...and it was upgraded IN PLACE to exec form (command + resolved, unquoted args).
+  assert.equal(promptHooks[0].command, "bash");
+  assert.deepEqual(promptHooks[0].args, [`${base}/guards/cortex.sh`, "prompt"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -523,7 +586,7 @@ test("HI-05 ownership round-trip: user-owned entries that collide with the templ
   assert.equal(afterMerge._forgeOwned.added.schema, false, "Forge did not set $schema");
   // Forge DID add its own cortex.sh prompt hook even though the user has a same-name one.
   const promptCmds = afterMerge.hooks.UserPromptSubmit.flatMap((e) =>
-    (e.hooks || []).map((h) => h.command),
+    (e.hooks || []).map(effectiveCmd),
   ).filter((c) => c.includes("cortex.sh") && c.endsWith("prompt"));
   assert.equal(promptCmds.length, 2, "user's and Forge's cortex hooks coexist (different paths)");
 
@@ -568,7 +631,7 @@ test("HI-05 re-merge is idempotent: the manifest and entries are stable, no dupl
   const afterSecond = JSON.parse(readFileSync(settingsPath, "utf8"));
   assert.deepEqual(afterSecond._forgeOwned, first._forgeOwned, "manifest is byte-stable");
   const promptCmds = afterSecond.hooks.UserPromptSubmit.flatMap((e) =>
-    (e.hooks || []).map((h) => h.command),
+    (e.hooks || []).map(effectiveCmd),
   );
   assert.equal(
     promptCmds.filter((c) => c.includes("cortex.sh") && c.endsWith("prompt")).length,

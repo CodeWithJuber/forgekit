@@ -67,39 +67,52 @@ const FORGE_OWNED_KEY = "_forgeOwned";
 // ownership/removal purposes (HI-05).
 const FORGE_GLOBAL = join(BRAND.root, "global");
 
-/** True iff `command` is a Forge-managed hook/statusline command — i.e. it resolves to a
- *  path under the installed assets root (`~/.forge/…`, the resolved `<root>/global/…`, quoted
- *  or not) or the plugin root (`${CLAUDE_PLUGIN_ROOT}/global/…`). A user's same-basename hook
- *  at a different absolute path is NOT Forge-owned, so it is never blocked on merge or removed
- *  on uninstall. Path-aware on purpose: `guardKey` (basename+args) is for dedup only. */
-function isForgeCommand(command) {
-  const c = normalizeCommand(command);
+/** True iff `hook` is a Forge-managed hook/statusline entry — i.e. it resolves to a path
+ *  under the installed assets root (`~/.forge/…`, the resolved `<root>/global/…`, quoted or
+ *  not) or the plugin root (`${CLAUDE_PLUGIN_ROOT}/global/…`). Works on BOTH forms: a legacy
+ *  shell-string `command`, and an exec-form entry whose path lives in `args[]`. A user's
+ *  same-basename hook at a different absolute path is NOT Forge-owned, so it is never blocked
+ *  on merge or removed on uninstall. Path-aware on purpose: `guardKey` (basename+args) is for
+ *  dedup only. */
+function isForgeCommand(hook) {
+  const c = canonicalCommand(hook);
   return c.includes(`${FORGE_GLOBAL}/`) || c.includes("${CLAUDE_PLUGIN_ROOT}/global/");
 }
 
-/** Single-quote a path for safe embedding in a shell command (RA-12): an install
- *  prefix containing spaces (or any shell metacharacter) must not split into words.
- *  Embedded single quotes use the standard `'\''` escape. */
+/** Single-quote a path for safe embedding in a shell command: an install prefix containing
+ *  spaces (or any shell metacharacter) must not split into words. Embedded single quotes use
+ *  the standard `'\''` escape. ME-23 moved hooks to exec form (`command`+`args`, spawned with
+ *  NO shell), which removes the need to quote the guard path at all — this helper survives only
+ *  for the defensive legacy shell-string path in `resolveManagedPaths` and for tests that model
+ *  a pre-ME-23 install. */
 export function shellQuote(path) {
   return `'${String(path).replaceAll("'", `'\\''`)}'`;
 }
 
-/** Rewrite the template's `~/.forge/…` hook + statusline commands to the ACTUAL installed
+/** Rewrite the template's `~/.forge/…` hook + statusline entries to the ACTUAL installed
  *  package location. The npm global-install path never creates `~/.forge`, so a literal
  *  `~/.forge/guards/*.sh` reference points at nothing (P0-02). `~/.forge` is the `global/`
- *  dir (that's what install.sh symlinks), so `~/.forge/X` resolves to `<BRAND.root>/global/X` —
- *  single-quoted, so an install path with spaces still runs (RA-12). Trailing args stay
- *  outside the quotes: `bash '<base>/guards/cortex.sh' prompt`. */
+ *  dir (that's what install.sh symlinks), so `~/.forge/X` resolves to `<BRAND.root>/global/X`.
+ *  In exec form (ME-23) the path is its OWN `args[]` element and is rewritten UNQUOTED — the
+ *  hook is spawned directly with no shell, so an install path containing spaces just works
+ *  with no quoting. A legacy shell-string `command` (should no longer appear in the template,
+ *  but handled defensively) keeps the single-quoting a real shell would still need. */
 function resolveManagedPaths(template) {
   const base = join(BRAND.root, "global");
-  const fix = (cmd) =>
+  const fixStr = (cmd) =>
     typeof cmd === "string"
       ? cmd.replace(/~\/\.forge\/(\S+)/g, (_, rest) => shellQuote(join(base, rest)))
       : cmd;
-  if (template.statusLine?.command) template.statusLine.command = fix(template.statusLine.command);
+  const fixArg = (a) =>
+    typeof a === "string" ? a.replace(/^~\/\.forge\/(.+)$/, (_, rest) => join(base, rest)) : a;
+  const fixEntry = (h) => {
+    if (h && Array.isArray(h.args)) h.args = h.args.map(fixArg);
+    else if (h && typeof h.command === "string") h.command = fixStr(h.command);
+  };
+  if (template.statusLine) fixEntry(template.statusLine);
   for (const entries of Object.values(template.hooks || {})) {
     for (const entry of entries) {
-      for (const h of entry.hooks || []) h.command = fix(h.command);
+      for (const h of entry.hooks || []) fixEntry(h);
     }
   }
   return template;
@@ -115,6 +128,21 @@ function normalizeCommand(command) {
     .replaceAll("'\\''", "'")
     .replace(/["']/g, "")
     .replaceAll("~/.forge/", `${join(BRAND.root, "global")}/`);
+}
+
+/** Reduce ANY hook/statusLine entry to one comparable command string, quote-normalized and
+ *  with the legacy `~/.forge/` prefix resolved, so the SAME guard compares equal across forms:
+ *   - legacy shell-string:  `{command:"bash /x/guards/cortex.sh prompt"}`
+ *   - exec form (ME-23):    `{command:"bash", args:["/x/guards/cortex.sh","prompt"]}`
+ *  In exec form the `args[]` are joined onto `command` before normalizing. A bare string is
+ *  accepted too. Used for ownership/removal matching (identity of the WHOLE command, not just
+ *  the basename — that is `guardKey`'s job). */
+function canonicalCommand(hook) {
+  if (hook && typeof hook === "object") {
+    if (Array.isArray(hook.args)) return normalizeCommand([hook.command, ...hook.args].join(" "));
+    return normalizeCommand(hook.command);
+  }
+  return normalizeCommand(hook);
 }
 
 function loadTemplate() {
@@ -156,58 +184,87 @@ function unionStrings(a = [], b = []) {
   return [...set];
 }
 
-/** Extract guard identity (basename + trailing args) from a hook command for dedup.
- *  Quote-normalized (RA-12), so all of `bash ~/.forge/guards/cortex.sh prompt`,
- *  `bash '/install path/global/guards/cortex.sh' prompt`, and
- *  `"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt` → `cortex.sh prompt` —
- *  old unquoted installed entries and new quoted template entries must dedupe, or
- *  every existing install would grow duplicate hooks on re-merge. Exported for tests. */
-export function guardKey(command) {
-  const cmd = normalizeCommand(command);
+/** Extract guard identity (`basename.sh` + trailing args) from a hook for dedup/ownership.
+ *  THE CRUX of ME-23: it must derive the SAME key from BOTH forms of the same guard —
+ *   - legacy shell-string:  `bash /x/guards/cortex.sh prompt`                        → `cortex.sh prompt`
+ *   - exec form:            `{command:"bash", args:["/x/guards/cortex.sh","prompt"]}` → `cortex.sh prompt`
+ *  so a user carrying the OLD shell-string install and a re-merge with the NEW exec-form
+ *  template dedupe to ONE entry instead of growing a duplicate. For the legacy string it is
+ *  quote-normalized (RA-12), collapsing quoted / unquoted / `~/.forge` / plugin-root spellings.
+ *  For exec form it takes the basename of the `args[]` element that holds the `.sh` path and
+ *  appends the remaining args. Accepts a whole hook object (preferred) or a bare command string
+ *  (back-compat). Exported for tests + doctor. */
+export function guardKey(hook) {
+  // Exec form: the script path is an `args[]` element; the elements after it are its arguments.
+  if (hook && typeof hook === "object" && Array.isArray(hook.args)) {
+    const args = hook.args.map((a) => String(a));
+    const i = args.findIndex((a) => a.includes(".sh"));
+    if (i >= 0) {
+      const base = args[i].split(/[/\\]/).pop();
+      const rest = args
+        .slice(i + 1)
+        .join(" ")
+        .trim();
+      return rest ? `${base} ${rest}` : base;
+    }
+    return canonicalCommand(hook); // no script arg — fall back to the whole invocation
+  }
+  // Legacy shell-string, or an object carrying only `.command`.
+  const cmd = normalizeCommand(hook && typeof hook === "object" ? hook.command : hook);
   const m = cmd.match(/([^/\\]+\.sh)\s*(.*)/);
   return m ? `${m[1]} ${m[2]}`.trim() : cmd;
 }
 
 /** Merge Forge hook entries into existing hook arrays, matching by guard identity to avoid
- *  duplicates. An existing entry that is the SAME resolved command as the template's — just
- *  spelled without quotes (a pre-RA-12 install) — is upgraded in place to the quoted form.
- *  A template hook counts as "already installed" only when an existing FORGE-owned entry (some
- *  path spelling of it) shares its guard key: a user's same-basename hook at a DIFFERENT path
- *  must NOT block Forge's own install (HI-05). Returns the merged tree plus the guard identities
- *  actually added this merge (`added: [{event, key, command}]`) so the ownership manifest can
- *  reverse exactly them later. */
+ *  duplicates. An existing entry that is the SAME resolved command as the template's — spelled
+ *  as a legacy shell string (a pre-ME-23 install) or differently quoted — is upgraded in place
+ *  to the exec form (`command`+`args`). A template hook counts as "already installed" only when
+ *  an existing FORGE-owned entry (some path/form spelling of it) shares its guard key: a user's
+ *  same-basename hook at a DIFFERENT path must NOT block Forge's own install (HI-05). Returns the
+ *  merged tree plus the guard identities actually added this merge (`added: [{event, key,
+ *  command, args?}]`) so the ownership manifest can reverse exactly them later. */
 function mergeHooks(existing = {}, template = {}) {
   const merged = { ...existing };
-  /** @type {{event:string, key:string, command:string}[]} */
+  /** @type {{event:string, key:string, command:string, args?:string[]}[]} */
   const added = [];
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
-    // guardKey → template command, to heal old unquoted spellings of the same command.
+    // guardKey → template hook, to heal legacy shell-string spellings of the same guard.
     const templateByKey = new Map();
     for (const entry of entries) {
-      for (const h of entry.hooks || []) {
-        if (h.command) templateByKey.set(guardKey(h.command), h.command);
-      }
+      for (const h of entry.hooks || []) templateByKey.set(guardKey(h), h);
     }
+    // Upgrade an existing FORGE-owned entry that is the SAME resolved command as the template's
+    // — a legacy shell string (pre-ME-23) or a differently-quoted spelling — in place to the exec
+    // form. A user's same-basename hook at a DIFFERENT path has a different canonical command, so
+    // it is never touched.
     for (const entry of existingEntries) {
       for (const h of entry.hooks || []) {
-        if (!h.command) continue;
-        const tpl = templateByKey.get(guardKey(h.command));
-        if (tpl && tpl !== h.command && normalizeCommand(h.command) === normalizeCommand(tpl)) {
-          h.command = tpl; // same command, pre-quoting spelling → upgrade to the quoted form
+        if (h.command == null && !Array.isArray(h.args)) continue;
+        const tpl = templateByKey.get(guardKey(h));
+        if (tpl && canonicalCommand(h) === canonicalCommand(tpl)) {
+          h.command = tpl.command;
+          if (Array.isArray(tpl.args)) h.args = [...tpl.args];
+          else delete h.args;
         }
       }
     }
     const presentForgeKeys = new Set(
       existingEntries
-        .flatMap((e) => (e.hooks || []).map((h) => h.command))
-        .filter((c) => typeof c === "string" && isForgeCommand(c))
-        .map(guardKey),
+        .flatMap((e) => e.hooks || [])
+        .filter((h) => isForgeCommand(h))
+        .map((h) => guardKey(h)),
     );
     const newEntries = [];
     for (const entry of entries) {
-      const hooks = (entry.hooks || []).filter((h) => !presentForgeKeys.has(guardKey(h.command)));
-      for (const h of hooks) added.push({ event, key: guardKey(h.command), command: h.command });
+      const hooks = (entry.hooks || []).filter((h) => !presentForgeKeys.has(guardKey(h)));
+      for (const h of hooks)
+        added.push({
+          event,
+          key: guardKey(h),
+          command: h.command,
+          args: Array.isArray(h.args) ? [...h.args] : undefined,
+        });
       if (hooks.length) {
         newEntries.push({ ...entry, hooks });
       }
@@ -227,7 +284,7 @@ function mergeHooks(existing = {}, template = {}) {
 function legacyOwnedScan(settings, template) {
   const owned = {
     permissions: { allow: [], ask: [], deny: [] },
-    /** @type {{event:string, key:string, command:string}[]} */
+    /** @type {{event:string, key:string, command:string, args?:string[]}[]} */
     hooks: [],
     statusLine: false,
     schema: false,
@@ -243,29 +300,30 @@ function legacyOwnedScan(settings, template) {
   }
   const templateKeys = new Set();
   for (const entries of Object.values(template.hooks || {}))
-    for (const entry of entries)
-      for (const h of entry.hooks || []) if (h.command) templateKeys.add(guardKey(h.command));
+    for (const entry of entries) for (const h of entry.hooks || []) templateKeys.add(guardKey(h));
   if (settings.hooks && typeof settings.hooks === "object") {
     for (const [event, entries] of Object.entries(settings.hooks)) {
       if (!Array.isArray(entries)) continue;
       for (const entry of entries)
         for (const h of entry?.hooks || [])
           if (
-            typeof h?.command === "string" &&
-            isForgeCommand(h.command) &&
-            templateKeys.has(guardKey(h.command))
+            h &&
+            (typeof h.command === "string" || Array.isArray(h.args)) &&
+            isForgeCommand(h) &&
+            templateKeys.has(guardKey(h))
           )
             owned.hooks.push({
               event,
-              key: guardKey(h.command),
+              key: guardKey(h),
               command: h.command,
+              args: Array.isArray(h.args) ? [...h.args] : undefined,
             });
     }
   }
   if (
     settings.statusLine?.command &&
     template.statusLine?.command &&
-    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command)
+    canonicalCommand(settings.statusLine) === canonicalCommand(template.statusLine)
   )
     owned.statusLine = true;
   if (settings.$schema && settings.$schema === template.$schema) owned.schema = true;
@@ -327,9 +385,10 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
     const beforeHooks = JSON.stringify(existing.hooks || {});
     const { merged, added } = mergeHooks(existing.hooks, template.hooks);
     existing.hooks = merged;
+    // Dedup by event+key: in exec form `command` is always "bash", so a hook's identity is its
+    // guard key (basename+args), not the command string.
     for (const a of added)
-      if (!ownedHooks.some((o) => o.event === a.event && o.command === a.command))
-        ownedHooks.push(a);
+      if (!ownedHooks.some((o) => o.event === a.event && o.key === a.key)) ownedHooks.push(a);
     if (JSON.stringify(existing.hooks) !== beforeHooks) report.added.push("hooks");
     else report.unchanged.push("hooks");
   }
@@ -469,11 +528,11 @@ export function removeForgeSettings({ settingsPath } = {}) {
     ask: new Set(owned.permissions?.ask || []),
     deny: new Set(owned.permissions?.deny || []),
   };
-  /** @type {Map<string, Set<string>>} event → normalized commands Forge owns */
+  /** @type {Map<string, Set<string>>} event → canonical commands Forge owns (either form) */
   const ownedHookCmds = new Map();
   for (const h of owned.hooks || []) {
     if (!ownedHookCmds.has(h.event)) ownedHookCmds.set(h.event, new Set());
-    ownedHookCmds.get(h.event).add(normalizeCommand(h.command));
+    ownedHookCmds.get(h.event).add(canonicalCommand(h));
   }
   // Drop the statusLine/$schema only if Forge set it AND it is still the template's value —
   // if the user replaced it after install, it is theirs now (leave it).
@@ -481,11 +540,12 @@ export function removeForgeSettings({ settingsPath } = {}) {
     Boolean(owned.statusLine) &&
     Boolean(settings.statusLine?.command) &&
     Boolean(template.statusLine?.command) &&
-    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command);
+    canonicalCommand(settings.statusLine) === canonicalCommand(template.statusLine);
   const dropSchema =
     Boolean(owned.schema) && Boolean(settings.$schema) && settings.$schema === template.$schema;
 
-  // Hooks: drop only the exact commands Forge added (matched quote-normalized within the event).
+  // Hooks: drop only the exact commands Forge added (matched canonically within the event, so a
+  // manifest entry recorded in either form removes the installed hook in either form).
   if (settings.hooks && typeof settings.hooks === "object") {
     for (const [event, entries] of Object.entries(settings.hooks)) {
       if (!Array.isArray(entries)) continue;
@@ -498,9 +558,7 @@ export function removeForgeSettings({ settingsPath } = {}) {
           kept.push(entry);
           continue;
         }
-        const hooks = entry.hooks.filter(
-          (h) => !(typeof h?.command === "string" && ownedCmds.has(normalizeCommand(h.command))),
-        );
+        const hooks = entry.hooks.filter((h) => !(h && ownedCmds.has(canonicalCommand(h))));
         if (hooks.length !== entry.hooks.length) changed = true;
         if (hooks.length) kept.push({ ...entry, hooks });
       }

@@ -46,18 +46,20 @@ const readJsonSafe = (p) => {
 };
 
 // The REQUIRED Forge hook guard identities, derived from the settings template — the SAME
-// keys `mergeSettings` installs. `guardKey` normalizes every command (quoting + the legacy
-// `~/.forge/` prefix) down to `basename.sh args`, so the template's `~/.forge/guards/cortex.sh
-// prompt` and an INSTALLED, path-resolved `bash '/x/global/guards/cortex.sh' prompt` both
-// reduce to `cortex.sh prompt` — the raw template compares cleanly against a resolved install
-// without re-running resolveManagedPaths. A failed template load returns [] (fail-open).
+// keys `mergeSettings` installs. `guardKey` reduces every hook — exec form (`command`+`args`,
+// ME-23) or legacy shell string — down to `basename.sh args`, so the template's exec-form
+// `{command:"bash", args:["~/.forge/guards/cortex.sh","prompt"]}` and an INSTALLED, path-resolved
+// hook (exec form OR a pre-ME-23 `bash '/x/global/guards/cortex.sh' prompt`) both reduce to
+// `cortex.sh prompt` — the raw template compares cleanly against a resolved install without
+// re-running resolveManagedPaths. A failed template load returns [] (fail-open).
 function templateGuardKeys() {
   try {
     const tpl = readJson(join(BRAND.root, "global", "settings.template.json"));
     const keys = new Set();
     for (const entries of Object.values(tpl.hooks || {})) {
       for (const entry of Array.isArray(entries) ? entries : []) {
-        for (const h of entry?.hooks || []) if (h?.command) keys.add(guardKey(h.command));
+        for (const h of entry?.hooks || [])
+          if (h?.command || Array.isArray(h?.args)) keys.add(guardKey(h));
       }
     }
     return [...keys];
@@ -73,7 +75,7 @@ function installedGuardKeys(hooks) {
     for (const entries of Object.values(hooks)) {
       for (const entry of Array.isArray(entries) ? entries : []) {
         for (const h of entry?.hooks || [])
-          if (typeof h?.command === "string") keys.add(guardKey(h.command));
+          if (typeof h?.command === "string" || Array.isArray(h?.args)) keys.add(guardKey(h));
       }
     }
   }
@@ -261,13 +263,26 @@ function checkLayers(out) {
   }
 }
 
-function commandScriptFromPluginRoot(command) {
-  const marker = '"$' + '{CLAUDE_PLUGIN_ROOT}"/';
-  const i = command.indexOf(marker);
-  if (i === -1) return null;
-  const rest = command.slice(i + marker.length);
-  const script = rest.split(/\s+/)[0]?.replace(/^['"]|['"]$/g, "");
-  return script || null;
+// The guard script a plugin hook references, relative to CLAUDE_PLUGIN_ROOT. Reads BOTH forms:
+// an exec-form hook (path in an `args[]` element, ME-23) and a legacy shell-string `command`.
+// Quotes are stripped first so `"${CLAUDE_PLUGIN_ROOT}"/…` and the unquoted `${CLAUDE_PLUGIN_ROOT}/…`
+// both resolve.
+function commandScriptFromPluginRoot(hook) {
+  // Concatenated so biome's noTemplateCurlyInString doesn't flag this literal search string.
+  const marker = "$" + "{CLAUDE_PLUGIN_ROOT}/";
+  const candidates = [];
+  if (hook && Array.isArray(hook.args)) for (const a of hook.args) candidates.push(String(a));
+  const cmd = typeof hook === "string" ? hook : hook?.command;
+  if (typeof cmd === "string") candidates.push(cmd);
+  for (const raw of candidates) {
+    const c = raw.replace(/["']/g, "");
+    const i = c.indexOf(marker);
+    if (i === -1) continue;
+    const rest = c.slice(i + marker.length);
+    const script = rest.split(/\s+/)[0];
+    if (script) return script;
+  }
+  return null;
 }
 
 // Plugin/hook compatibility: Forge should be additive and self-contained. Claude Code
@@ -286,12 +301,11 @@ function checkPluginCompatibility(out) {
       const commands = Object.values(hooks)
         .flatMap((entries) => (Array.isArray(entries) ? entries : []))
         .flatMap((entry) => (Array.isArray(entry.hooks) ? entry.hooks : []))
-        .map((h) => h.command)
         .filter(Boolean);
       const missing = [];
       const notExec = [];
-      for (const command of commands) {
-        const rel = commandScriptFromPluginRoot(command);
+      for (const hook of commands) {
+        const rel = commandScriptFromPluginRoot(hook);
         if (!rel) continue;
         const abs = join(BRAND.root, rel);
         if (!existsSync(abs)) {
