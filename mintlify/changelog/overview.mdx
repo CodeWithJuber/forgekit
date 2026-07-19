@@ -1,0 +1,31 @@
+---
+title: "Changelog"
+description: "Product updates for the Forge CLI."
+---
+
+<Update label="July 19, 2026">
+
+## New features
+
+**Policy profile flag for `forge init`.** You can now pick a ruleset at scaffold time with `forge init --profile <name>`. The supported values are `minimal` (leaner ruleset for small repos or contributor forks) and `standard` (the default full pack — shared memory rules, impact analysis, and the complete guardrail hook set). Invalid values abort before any files are written or settings are merged, so a typo can't leave a half-configured repo behind. See [`forge init` flags](/cli/core#init-flags).
+
+**Reversible global settings merge.** Two new flags give you finer control over the global `~/.claude/settings.json` merge that `forge init` performs:
+
+- `--no-settings` — scaffold the repo only; leave the global settings file untouched.
+- `--remove-settings` — undo a previous merge. Forge-shaped hooks, permissions, statusline, and the `_forge` marker are removed, your own entries are preserved, and a timestamped backup is written first. `install.sh --uninstall` calls this for you.
+
+There's also `--settings-only` for the reverse case: wire up global hooks without touching the current repo. Details in [`forge init` flags](/cli/core#init-flags).
+
+**`FORGE_GUARD_STRICT` for hard-blocking secret redaction.** Set `FORGE_GUARD_STRICT=1` to promote the secret redactor's `DEGRADED` warning into a blocking exit. By default a redaction failure prints to stderr and lets output through; strict mode refuses to emit anything the redactor couldn't fully scrub. Recommended for CI and shared machines where an unredacted line is worse than a failed command. See the [environment variables reference](/cli/overview#environment-variables).
+
+## Updates
+
+**Policy profile set collapsed to two.** The profile list is now just `minimal` and `standard`. The legacy names `web-app`, `backend-service`, `library`, and `regulated` are deprecated aliases of `standard` — they still work, `forge init` warns once, and existing configs sync as `standard`. New repos should use `standard` directly. Full context in [Policy profiles](/cli/core#policy-profiles).
+
+**Environment variables now documented in one place.** The CLI overview has a new [Environment variables](/cli/overview#environment-variables) table covering `FORGE_ENFORCE`, `FORGE_GUARD_STRICT`, `FORGE_NO_UPDATE_CHECK`, `FORGE_NO_HINT`, `FORGE_VERBOSE`, and `FORGE_EMBED` in one place.
+
+## Bug fixes
+
+**`forge init` fails loudly on a broken settings merge.** If the global settings merge is refused or errors, `forge init` now exits with code 1 and writes the reason to stderr instead of reporting success. Previously a partial or skipped merge could look like a clean run.
+
+</Update>
