@@ -119,6 +119,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Disclose the global settings merge before it happens (ME-22).** `forge init` now prints the
   global `~/.claude/settings.json` merge disclosure before the merge mutates the file, not after.
 
+- **Hooks install in exec form (ME-23).** Hooks and the statusline now use Claude Code's exec
+  form (`"command": "bash", "args": [...]`) instead of a shell string, so a guard path containing
+  spaces works with no quoting — removing the shell-quoting hazard the earlier RA-12 fix worked
+  around. Upgrades are seamless: an existing install written in the old shell-string form (or the
+  `${CLAUDE_PLUGIN_ROOT}` plugin spelling) is deduped by guard identity and healed in place to
+  exec form on the next merge, and ownership tracking / uninstall are form-agnostic — so a
+  re-install never duplicates a hook and uninstall still reverses exactly Forge's own additions.
+
 - **Honest positioning (ME-24).** README no longer claims "one brain for every AI coding
   agent", "enforced guardrails", or that every task passes a deterministic gate: automatic
   hooks are Claude Code-specific (advisory by default, enforcement opt-in via
