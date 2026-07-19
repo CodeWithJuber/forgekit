@@ -1,5 +1,5 @@
 ---
-title: "简介"
+title: "Forge：面向 AI 编码代理的认知基底"
 description: "Forge 是每个无状态模型都缺失的认知基底 —— 记忆、预见和护栏 —— 以原生配置的形式交付到每一个 AI 编码代理。"
 ---
 
@@ -90,6 +90,11 @@ MCP 工具，但真实场景下的锤炼较少。
 Forge 为**九个工具**输出配置，加上给 Roo Code 和 VS Code 的一个 MCP 服务器：
 Claude Code、Codex、Cursor、Gemini、Aider、Copilot、Windsurf/Devin、Zed 和 Continue。
 每个工具从它自己的原生文件里读同一份规则。
+
+默认接通的 MCP 服务器只有 Forge 自己的那一个（`src/cortex_mcp.js`）—— 负责基底
+检查和记忆读取。像 `context7` 这样的第三方 MCP 服务器是**按需接入**（opt-in）的，
+在你执行 [`forge integrations add <name> --yes`](/cli/config#forge-integrations) 之前，
+它们绝不会落到磁盘上。
 
 ## 诚实的边界
 

@@ -1,6 +1,6 @@
 ---
 title: "Config commands"
-description: "Providers, cost, dashboards, brand, atlas, and stack: config, cost, dash, brand, atlas, stack — plus the v0.19+ report and tools commands."
+description: "Providers, cost, dashboards, brand, atlas, stack, and opt-in MCP integrations: config, cost, dash, brand, atlas, stack, report, tools, integrations."
 ---
 
 The Config group covers providers, observability, the code graph, and stack detection.
@@ -89,3 +89,75 @@ generated config and `.forge/` artifacts are ignored correctly for your setup.
 ```bash
 forge tools
 ```
+
+## `forge integrations`
+
+Opt-in third-party MCP servers (for example `context7`), managed non-destructively across
+every tool Forge emits config for — Claude Code, Codex, Cursor, Gemini, Continue, and the
+rest.
+
+Third-party MCP servers are **not** installed by default. Nothing lands on disk until you
+run `forge integrations add <name> --yes`.
+
+```bash
+forge integrations                        # list opt-in servers with package + purpose
+forge integrations add <name>             # dry-run: prints package, network, files it would touch
+forge integrations add <name> --yes       # apply — write MCP config for every tool
+forge integrations add <name> --yes --adopt   # also claim a same-name entry you already configured
+forge integrations remove <name>          # reverse the add — deletes only forge-owned entries
+```
+
+### What `add` writes
+
+`add --yes` writes the server into every tool's native MCP config from one canonical
+spec:
+
+- `.mcp.json` (Claude Code)
+- `.cursor/mcp.json` (Cursor)
+- `.gemini/settings.json` (Gemini)
+- `.codex/config.toml` — as a `# forge:managed:<name>` block, refreshed by byte-compare
+- `.continue/mcpServers/<name>.yaml` — one forge-marked YAML per managed server
+- and the rest of the tools Forge emits config for
+
+The installed set is recorded in `.forge/forge.config.json` under `mcp.integrations`, so
+every subsequent `forge sync` re-emits the same servers. The stop-hook auto-sync
+byte-compares the whole config file, so a hand-edit to that file is detected and
+repaired.
+
+### `--adopt` semantics
+
+If a server with the same name already exists in one of the tool config files and Forge
+did not put it there, `add` **does not overwrite it**. Instead it reports the file with an
+`--adopt` hint. Re-run with `--adopt` to claim ownership — Forge records the entry under
+`mcp.adopted` in `.forge/forge.config.json` and will manage it from then on.
+
+Use `--adopt` when you configured a server by hand earlier and now want Forge to keep it
+in sync across every tool.
+
+### `remove`
+
+`forge integrations remove <name>` reverses an add. It deletes only forge-owned entries,
+blocks, and files — a same-name server the user configured (and never `--adopt`ed) is
+left alone. Running `remove` twice is a no-op.
+
+```bash
+forge integrations remove context7
+```
+
+### `.forge/forge.config.json`
+
+Per-repo Forge state — the unified config that also holds `primaryTool`, `tools`, and
+`profile` — records opt-in integrations under two keys:
+
+```json
+{
+  "mcp": {
+    "integrations": ["context7"],
+    "adopted": []
+  }
+}
+```
+
+Unknown keys round-trip through writes. A malformed file is not silently discarded:
+reads warn once per process on stderr, and writers refuse to overwrite an unparseable
+config instead of replacing it with defaults.

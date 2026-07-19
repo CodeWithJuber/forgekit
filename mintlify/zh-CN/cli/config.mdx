@@ -1,6 +1,6 @@
 ---
 title: "Config 命令"
-description: "提供商、成本、看板、品牌、atlas 和技术栈:config、cost、dash、brand、atlas、stack —— 外加 v0.19+ 的 report 与 tools 命令。"
+description: "提供商、成本、看板、品牌、atlas、技术栈与可选 MCP 集成:config、cost、dash、brand、atlas、stack、report、tools、integrations。"
 ---
 
 Config 组涵盖提供商、可观测性、代码图和技术栈检测。
@@ -84,3 +84,59 @@ forge report
 ```bash
 forge tools
 ```
+
+## `forge integrations`
+
+选择性接入的第三方 MCP 服务器(例如 `context7`),在 Forge 生成配置的每一个工具中被非破坏性地统一管理 —— Claude Code、Codex、Cursor、Gemini、Continue 等。
+
+第三方 MCP 服务器**默认不安装**。在你运行 `forge integrations add <name> --yes` 之前,不会有任何东西落到磁盘上。
+
+```bash
+forge integrations                        # list opt-in servers with package + purpose
+forge integrations add <name>             # dry-run: prints package, network, files it would touch
+forge integrations add <name> --yes       # apply — write MCP config for every tool
+forge integrations add <name> --yes --adopt   # also claim a same-name entry you already configured
+forge integrations remove <name>          # reverse the add — deletes only forge-owned entries
+```
+
+### `add` 会写入什么
+
+`add --yes` 会从同一份规范化的 spec 里把该服务器写入每个工具原生的 MCP 配置:
+
+- `.mcp.json`(Claude Code)
+- `.cursor/mcp.json`(Cursor)
+- `.gemini/settings.json`(Gemini)
+- `.codex/config.toml` —— 作为一个 `# forge:managed:<name>` 块,通过逐字节比较刷新
+- `.continue/mcpServers/<name>.yaml` —— 每个被管理的服务器一个 forge 标记过的 YAML
+- 以及 Forge 生成配置的其他工具
+
+已安装的集合会记录在 `.forge/forge.config.json` 的 `mcp.integrations` 下,因此后续每次 `forge sync` 都会重新生成同样的服务器。stop-hook 的自动同步会对整个配置文件做逐字节比较,所以对该文件的手工编辑会被检测出来并修复。
+
+### `--adopt` 的语义
+
+如果某个工具的配置文件里已经存在同名服务器、而不是 Forge 放进去的,`add` **不会覆盖它**。它会报告该文件,并附上 `--adopt` 提示。加上 `--adopt` 重新运行以认领所有权 —— Forge 会把该条目记录在 `.forge/forge.config.json` 的 `mcp.adopted` 下,并从此接管它。
+
+当你之前手工配置过某个服务器,现在想让 Forge 在每个工具间保持它同步时,就使用 `--adopt`。
+
+### `remove`
+
+`forge integrations remove <name>` 是对 add 的反向操作。它只删除 forge 拥有的条目、块和文件 —— 用户自己配置过、且从未 `--adopt` 过的同名服务器不会被动。运行两次 `remove` 是无操作的。
+
+```bash
+forge integrations remove context7
+```
+
+### `.forge/forge.config.json`
+
+单仓库的 Forge 状态 —— 同时也保存 `primaryTool`、`tools` 和 `profile` 的统一配置 —— 在两个键下记录选择性接入的集成:
+
+```json
+{
+  "mcp": {
+    "integrations": ["context7"],
+    "adopted": []
+  }
+}
+```
+
+未知的键会在写入时被原样保留。格式错误的文件不会被静默丢弃:读取时每个进程会在 stderr 上警告一次,写入方会拒绝覆盖一份无法解析的配置,而不是把它替换成默认值。

@@ -1,6 +1,6 @@
 ---
-title: "Introduction"
-description: "Forge is the cognitive substrate every stateless model is missing — memory, foresight, and guardrails — delivered as native config to every AI coding agent."
+title: "Forge: the cognitive substrate for AI coding agents"
+description: "Forge is the cognitive substrate stateless models are missing — memory, foresight, and guardrails — as native config for every AI coding agent."
 ---
 
 **One brain for every AI coding agent.** A large language model is stateless: one
@@ -91,6 +91,10 @@ state between calls; Forge is the state.
 Forge emits config for **nine tools**, plus an MCP server for Roo Code and VS Code:
 Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, and Continue.
 Each reads the same rules from its own native file.
+
+The only MCP server wired by default is Forge's own (`src/cortex_mcp.js`) — the substrate
+checks and memory reads. Third-party MCP servers such as `context7` are **opt-in** and
+never land on disk until you run [`forge integrations add <name> --yes`](/cli/config#forge-integrations).
 
 ## Honest limits
 
