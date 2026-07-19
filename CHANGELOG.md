@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`forge imagine --dry-run` per-file attribution on macOS.** `dryRun()` matched node
+  `--test`'s realpath'd `location:` diagnostics against a raw `mkdtemp` worktree path; on
+  platforms where `tmpdir()` is itself a symlink (macOS: `/var`→`/private/var`,
+  `/tmp`→`/private/tmp`) the two never matched, so the pass/fail-per-file breakdown was
+  silently dropped. The worktree root is now canonicalized with `realpathSync` before
+  comparison (a no-op on Linux). The CI smoke matrix now runs the full unit suite on
+  `macos-latest`, which surfaced this.
+
 ## [0.23.0] - 2026-07-19
 
 ### Security
