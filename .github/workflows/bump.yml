@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history + tags so "auto" can read commits since the last tag
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 22
           cache: npm
