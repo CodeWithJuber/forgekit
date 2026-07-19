@@ -39,6 +39,28 @@ export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
 // ---------------------------------------------------------------------------
 
 const FORGE_SETTINGS_MARKER = "forge-managed";
+// Sibling of the `_forge` marker: the ownership manifest (HI-05). It records the EXACT
+// entries this (and any earlier) install ADDED — permission strings genuinely absent
+// before, hook guard-identities Forge inserted, and whether Forge set the statusLine /
+// $schema — so uninstall reverses only Forge's own additions and never a user-owned entry
+// that happened to match the template. Absent on pre-HI-05 installs → template-match fallback.
+const FORGE_OWNED_KEY = "_forgeOwned";
+
+// The installed-assets root every Forge hook/statusline command resolves under. Used to
+// tell a Forge-owned command (some spelling of a path under here, or the plugin root) apart
+// from a user's OWN hook that merely shares a basename+args — those must never collide for
+// ownership/removal purposes (HI-05).
+const FORGE_GLOBAL = join(BRAND.root, "global");
+
+/** True iff `command` is a Forge-managed hook/statusline command — i.e. it resolves to a
+ *  path under the installed assets root (`~/.forge/…`, the resolved `<root>/global/…`, quoted
+ *  or not) or the plugin root (`${CLAUDE_PLUGIN_ROOT}/global/…`). A user's same-basename hook
+ *  at a different absolute path is NOT Forge-owned, so it is never blocked on merge or removed
+ *  on uninstall. Path-aware on purpose: `guardKey` (basename+args) is for dedup only. */
+function isForgeCommand(command) {
+  const c = normalizeCommand(command);
+  return c.includes(`${FORGE_GLOBAL}/`) || c.includes("${CLAUDE_PLUGIN_ROOT}/global/");
+}
 
 /** Single-quote a path for safe embedding in a shell command (RA-12): an install
  *  prefix containing spaces (or any shell metacharacter) must not split into words.
@@ -128,9 +150,16 @@ export function guardKey(command) {
 
 /** Merge Forge hook entries into existing hook arrays, matching by guard identity to avoid
  *  duplicates. An existing entry that is the SAME resolved command as the template's — just
- *  spelled without quotes (a pre-RA-12 install) — is upgraded in place to the quoted form. */
+ *  spelled without quotes (a pre-RA-12 install) — is upgraded in place to the quoted form.
+ *  A template hook counts as "already installed" only when an existing FORGE-owned entry (some
+ *  path spelling of it) shares its guard key: a user's same-basename hook at a DIFFERENT path
+ *  must NOT block Forge's own install (HI-05). Returns the merged tree plus the guard identities
+ *  actually added this merge (`added: [{event, key, command}]`) so the ownership manifest can
+ *  reverse exactly them later. */
 function mergeHooks(existing = {}, template = {}) {
   const merged = { ...existing };
+  /** @type {{event:string, key:string, command:string}[]} */
+  const added = [];
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
     // guardKey → template command, to heal old unquoted spellings of the same command.
@@ -149,22 +178,78 @@ function mergeHooks(existing = {}, template = {}) {
         }
       }
     }
-    const existingKeys = new Set(
+    const presentForgeKeys = new Set(
       existingEntries
         .flatMap((e) => (e.hooks || []).map((h) => h.command))
-        .filter(Boolean)
+        .filter((c) => typeof c === "string" && isForgeCommand(c))
         .map(guardKey),
     );
     const newEntries = [];
     for (const entry of entries) {
-      const hooks = (entry.hooks || []).filter((h) => !existingKeys.has(guardKey(h.command)));
+      const hooks = (entry.hooks || []).filter((h) => !presentForgeKeys.has(guardKey(h.command)));
+      for (const h of hooks) added.push({ event, key: guardKey(h.command), command: h.command });
       if (hooks.length) {
         newEntries.push({ ...entry, hooks });
       }
     }
     merged[event] = [...existingEntries, ...newEntries];
   }
-  return merged;
+  return { merged, added };
+}
+
+/** Best-effort reconstruction of Forge's footprint from a settings file that predates the
+ *  ownership manifest but still carries the `_forge` marker (i.e. Forge installed into it with
+ *  older code). Used to SEED the manifest on the first re-merge with new code, so a later
+ *  uninstall still removes exactly what old Forge added rather than leaving orphaned hooks.
+ *  Template-match based, hardened with `isForgeCommand` for hooks so a user's different-path
+ *  hook is never adopted. Conservative: only entries that both match the template AND (for
+ *  hooks) resolve to a Forge path are claimed. */
+function legacyOwnedScan(settings, template) {
+  const owned = {
+    permissions: { allow: [], ask: [], deny: [] },
+    /** @type {{event:string, key:string, command:string}[]} */
+    hooks: [],
+    statusLine: false,
+    schema: false,
+  };
+  if (settings.permissions && template.permissions) {
+    for (const level of ["allow", "ask", "deny"]) {
+      const tpl = template.permissions[level];
+      const cur = settings.permissions[level];
+      if (!Array.isArray(tpl) || !Array.isArray(cur)) continue;
+      const tplSet = new Set(tpl);
+      for (const s of cur) if (tplSet.has(s)) owned.permissions[level].push(s);
+    }
+  }
+  const templateKeys = new Set();
+  for (const entries of Object.values(template.hooks || {}))
+    for (const entry of entries)
+      for (const h of entry.hooks || []) if (h.command) templateKeys.add(guardKey(h.command));
+  if (settings.hooks && typeof settings.hooks === "object") {
+    for (const [event, entries] of Object.entries(settings.hooks)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries)
+        for (const h of entry?.hooks || [])
+          if (
+            typeof h?.command === "string" &&
+            isForgeCommand(h.command) &&
+            templateKeys.has(guardKey(h.command))
+          )
+            owned.hooks.push({
+              event,
+              key: guardKey(h.command),
+              command: h.command,
+            });
+    }
+  }
+  if (
+    settings.statusLine?.command &&
+    template.statusLine?.command &&
+    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command)
+  )
+    owned.statusLine = true;
+  if (settings.$schema && settings.$schema === template.$schema) owned.schema = true;
+  return owned;
 }
 
 /**
@@ -191,11 +276,36 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
   const before = JSON.stringify(existing);
   const report = { added: [], unchanged: [], path: target };
 
+  // Ownership manifest (HI-05): accumulate across re-merges so a re-install never forgets what
+  // an earlier install added. Seed from the prior manifest if present; else, if the legacy
+  // `_forge` marker is present (old install, no manifest), reconstruct old Forge's footprint by
+  // template-match so a later uninstall still reverses it precisely.
+  const prior =
+    existing[FORGE_OWNED_KEY] &&
+    typeof existing[FORGE_OWNED_KEY] === "object" &&
+    existing[FORGE_OWNED_KEY].added
+      ? existing[FORGE_OWNED_KEY].added
+      : existing._forge === FORGE_SETTINGS_MARKER
+        ? legacyOwnedScan(existing, template)
+        : null;
+  const ownedPerms = {
+    allow: [...(prior?.permissions?.allow || [])],
+    ask: [...(prior?.permissions?.ask || [])],
+    deny: [...(prior?.permissions?.deny || [])],
+  };
+  const ownedHooks = [...(prior?.hooks || [])];
+  let ownedStatusLine = Boolean(prior?.statusLine);
+  let ownedSchema = Boolean(prior?.schema);
+
   // Hooks
   if (template.hooks) {
-    const before = JSON.stringify(existing.hooks || {});
-    existing.hooks = mergeHooks(existing.hooks, template.hooks);
-    if (JSON.stringify(existing.hooks) !== before) report.added.push("hooks");
+    const beforeHooks = JSON.stringify(existing.hooks || {});
+    const { merged, added } = mergeHooks(existing.hooks, template.hooks);
+    existing.hooks = merged;
+    for (const a of added)
+      if (!ownedHooks.some((o) => o.event === a.event && o.command === a.command))
+        ownedHooks.push(a);
+    if (JSON.stringify(existing.hooks) !== beforeHooks) report.added.push("hooks");
     else report.unchanged.push("hooks");
   }
 
@@ -204,29 +314,51 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
     const ep = existing.permissions || {};
     for (const level of ["allow", "ask", "deny"]) {
       if (template.permissions[level]) {
-        const before = (ep[level] || []).length;
-        ep[level] = unionStrings(ep[level], template.permissions[level]);
-        if (ep[level].length > before) report.added.push(`permissions.${level}`);
-        else report.unchanged.push(`permissions.${level}`);
+        const cur = ep[level] || [];
+        const curSet = new Set(cur);
+        const newlyAdded = template.permissions[level].filter((s) => !curSet.has(s));
+        ep[level] = unionStrings(cur, template.permissions[level]);
+        if (newlyAdded.length) {
+          report.added.push(`permissions.${level}`);
+          for (const s of newlyAdded) if (!ownedPerms[level].includes(s)) ownedPerms[level].push(s);
+        } else report.unchanged.push(`permissions.${level}`);
       }
     }
     if (!ep.defaultMode) ep.defaultMode = template.permissions.defaultMode || "default";
     existing.permissions = ep;
   }
 
-  // Statusline — set only if not already configured
+  // Statusline — set only if not already configured (a user's own statusLine is left alone
+  // AND not claimed, so uninstall never removes it).
   if (template.statusLine && !existing.statusLine) {
     existing.statusLine = template.statusLine;
     report.added.push("statusLine");
+    ownedStatusLine = true;
   } else if (template.statusLine) {
     report.unchanged.push("statusLine");
   }
 
-  // Schema
-  if (template.$schema && !existing.$schema) existing.$schema = template.$schema;
+  // Schema — set only when absent; record whether WE set it.
+  if (template.$schema && !existing.$schema) {
+    existing.$schema = template.$schema;
+    ownedSchema = true;
+  }
 
-  // Mark as forge-managed (metadata, won't affect Claude Code)
+  // Mark as forge-managed (metadata, won't affect Claude Code) + persist the ownership manifest.
   existing._forge = FORGE_SETTINGS_MARKER;
+  existing[FORGE_OWNED_KEY] = {
+    version: BRAND.version,
+    added: {
+      permissions: {
+        allow: ownedPerms.allow,
+        ask: ownedPerms.ask,
+        deny: ownedPerms.deny,
+      },
+      hooks: ownedHooks,
+      statusLine: ownedStatusLine,
+      schema: ownedSchema,
+    },
+  };
 
   // Nothing to do — don't rewrite (or back up) an already-current file.
   if (status !== "missing" && JSON.stringify(existing) === before) {
@@ -263,15 +395,17 @@ export function mergeSettings({ settingsPath, noSettings } = {}) {
 export { LEGACY_PROFILES, PROFILES, validateProfile } from "./repo_config.js";
 
 /**
- * Remove every Forge-managed entry that `mergeSettings` added from the user's
- * ~/.claude/settings.json, using the settings template as the authoritative shape
- * (RA-17): hook entries whose guardKey matches a template guard (quote-normalized),
- * permission strings appearing verbatim in the template's allow/ask/deny (removed only
- * from the same list they are in), the statusLine iff its command matches the template's
- * resolved command (quote-normalized), the `$schema` iff it is the template's, and the
- * `_forge` marker. Everything user-owned is preserved unchanged; empty containers left
- * behind are pruned. Timestamped backup + atomic tmp-file+rename write, same as
- * `mergeSettings`. Corrupt file → refuses; missing file → noop.
+ * Remove every entry Forge added from the user's ~/.claude/settings.json (RA-17, HI-05).
+ * Authoritative source is the `_forgeOwned` ownership manifest written by `mergeSettings`:
+ * only the permission strings, hook commands, statusLine, and `$schema` Forge genuinely
+ * ADDED are reversed — a user's own `Bash(git status:*)`, identical statusLine/`$schema`,
+ * or same-basename hook at a DIFFERENT path is preserved byte-for-byte because it was never
+ * recorded as Forge-added. When the manifest is absent (a pre-HI-05 install, marked only by
+ * `_forge`) it falls back to a conservative template match: permission strings verbatim, hook
+ * commands whose guardKey matches a template guard AND resolve to a Forge path (so a user's
+ * different-path hook stays), statusLine/`$schema` only if they equal the template's. Empty
+ * containers are pruned; the `_forge` marker + `_forgeOwned` manifest are removed. Timestamped
+ * backup + atomic tmp-file+rename write. Corrupt file → refuses; missing file → noop.
  * @param {{settingsPath?: string}} [opts]
  * @returns {{action:"removed", path:string, removed:string[], backup:string}
  *   | {action:"noop", path:string, reason:string}
@@ -295,16 +429,43 @@ export function removeForgeSettings({ settingsPath } = {}) {
   /** @type {string[]} */
   const removed = [];
 
-  // Hooks: drop every hook whose guard identity is one the template installs.
-  const templateKeys = new Set();
-  for (const entries of Object.values(template.hooks || {})) {
-    for (const entry of entries) {
-      for (const h of entry.hooks || []) if (h.command) templateKeys.add(guardKey(h.command));
-    }
+  // What to reverse. With an ownership manifest (HI-05) it is EXACTLY what Forge added; without
+  // one (a pre-HI-05 install) fall back to the template shape, hardened so a user's different-path
+  // hook is never removed and preferring to leave an entry when unsure.
+  const manifest =
+    settings[FORGE_OWNED_KEY] &&
+    typeof settings[FORGE_OWNED_KEY] === "object" &&
+    settings[FORGE_OWNED_KEY].added
+      ? settings[FORGE_OWNED_KEY].added
+      : null;
+  const owned = manifest || legacyOwnedScan(settings, template);
+  const ownedPerms = {
+    allow: new Set(owned.permissions?.allow || []),
+    ask: new Set(owned.permissions?.ask || []),
+    deny: new Set(owned.permissions?.deny || []),
+  };
+  /** @type {Map<string, Set<string>>} event → normalized commands Forge owns */
+  const ownedHookCmds = new Map();
+  for (const h of owned.hooks || []) {
+    if (!ownedHookCmds.has(h.event)) ownedHookCmds.set(h.event, new Set());
+    ownedHookCmds.get(h.event).add(normalizeCommand(h.command));
   }
+  // Drop the statusLine/$schema only if Forge set it AND it is still the template's value —
+  // if the user replaced it after install, it is theirs now (leave it).
+  const dropStatusLine =
+    Boolean(owned.statusLine) &&
+    Boolean(settings.statusLine?.command) &&
+    Boolean(template.statusLine?.command) &&
+    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command);
+  const dropSchema =
+    Boolean(owned.schema) && Boolean(settings.$schema) && settings.$schema === template.$schema;
+
+  // Hooks: drop only the exact commands Forge added (matched quote-normalized within the event).
   if (settings.hooks && typeof settings.hooks === "object") {
     for (const [event, entries] of Object.entries(settings.hooks)) {
       if (!Array.isArray(entries)) continue;
+      const ownedCmds = ownedHookCmds.get(event);
+      if (!ownedCmds || !ownedCmds.size) continue;
       let changed = false;
       const kept = [];
       for (const entry of entries) {
@@ -313,7 +474,7 @@ export function removeForgeSettings({ settingsPath } = {}) {
           continue;
         }
         const hooks = entry.hooks.filter(
-          (h) => !(typeof h?.command === "string" && templateKeys.has(guardKey(h.command))),
+          (h) => !(typeof h?.command === "string" && ownedCmds.has(normalizeCommand(h.command))),
         );
         if (hooks.length !== entry.hooks.length) changed = true;
         if (hooks.length) kept.push({ ...entry, hooks });
@@ -327,14 +488,13 @@ export function removeForgeSettings({ settingsPath } = {}) {
     if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
   }
 
-  // Permissions: remove template strings verbatim, only from the SAME list they sit in.
-  if (settings.permissions && template.permissions) {
+  // Permissions: remove only the exact strings Forge added, from the SAME list they sit in.
+  if (settings.permissions) {
     for (const level of ["allow", "ask", "deny"]) {
-      const tpl = template.permissions[level];
+      const drop = ownedPerms[level];
       const cur = settings.permissions[level];
-      if (!Array.isArray(tpl) || !Array.isArray(cur)) continue;
-      const tplSet = new Set(tpl);
-      const kept = cur.filter((s) => !tplSet.has(s));
+      if (!drop.size || !Array.isArray(cur)) continue;
+      const kept = cur.filter((s) => !drop.has(s));
       if (kept.length !== cur.length) {
         removed.push(`permissions.${level}`);
         if (kept.length) settings.permissions[level] = kept;
@@ -346,7 +506,7 @@ export function removeForgeSettings({ settingsPath } = {}) {
     if (
       settings.permissions &&
       Object.keys(settings.permissions).length === 1 &&
-      settings.permissions.defaultMode === (template.permissions.defaultMode || "default")
+      settings.permissions.defaultMode === (template.permissions?.defaultMode || "default")
     ) {
       delete settings.permissions;
     } else if (settings.permissions && Object.keys(settings.permissions).length === 0) {
@@ -354,19 +514,13 @@ export function removeForgeSettings({ settingsPath } = {}) {
     }
   }
 
-  // Statusline: only if it IS the template's (quote-normalized) — a user's own stays.
-  if (
-    settings.statusLine?.command &&
-    template.statusLine?.command &&
-    normalizeCommand(settings.statusLine.command) === normalizeCommand(template.statusLine.command)
-  ) {
+  if (dropStatusLine) {
     delete settings.statusLine;
     removed.push("statusLine");
   }
+  if (dropSchema) delete settings.$schema;
 
-  // Schema: mergeSettings sets it only when absent — remove only the template's own value.
-  if (settings.$schema && settings.$schema === template.$schema) delete settings.$schema;
-
+  if (FORGE_OWNED_KEY in settings) delete settings[FORGE_OWNED_KEY];
   if ("_forge" in settings) {
     delete settings._forge;
     removed.push("_forge");
@@ -432,6 +586,11 @@ export function init({
   // `=== false` (not `!valid.ok`): tsc only narrows the discriminated union this way here.
   if (valid.ok === false) return { profile: { error: valid.error }, aborted: true };
   const profileResult = writeProfile(targetRoot, profile);
+  // HI-09: the profile name is valid, but persistence can still FAIL at write time when
+  // `.forge/forge.config.json` is corrupt (writeForgeConfig refuses). Abort BEFORE any further
+  // side effect — no sync/AGENTS.md, no .gitattributes append, no settings merge — exactly like
+  // the invalid-name path, so a corrupt config never leaves a half-initialized repo.
+  if (profileResult?.error) return { profile: profileResult, aborted: true };
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
   const settings = mergeSettings({ noSettings, settingsPath });

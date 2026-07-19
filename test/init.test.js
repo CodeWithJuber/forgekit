@@ -396,3 +396,120 @@ test("removeForgeSettings refuses a corrupt file and noops on a missing or unman
   assert.equal(noop.action, "noop", "nothing forge-managed → noop");
   assert.deepEqual(JSON.parse(readFileSync(clean, "utf8")), { model: "opus" });
 });
+
+// ---------------------------------------------------------------------------
+// HI-05 — ownership manifest: uninstall reverses ONLY what Forge added
+// ---------------------------------------------------------------------------
+
+const SETTINGS_SCHEMA = "https://json.schemastore.org/claude-code-settings.json";
+
+test("HI-05 ownership round-trip: user-owned entries that collide with the template survive uninstall byte-identical", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-own-"));
+  const settingsPath = join(tmp, "settings.json");
+  const base = join(BRAND.root, "global");
+  // A statusLine byte-identical to the template's resolved command, a $schema identical to the
+  // template's, an allow string the template also ships, and a cortex.sh hook at a DIFFERENT
+  // absolute path than Forge's (same basename+args). None of these were added by Forge.
+  const userStatusLine = {
+    type: "command",
+    command: `bash ${shellQuote(join(base, "statusline.sh"))}`,
+  };
+  const userCortex = {
+    type: "command",
+    command: "bash /home/user/custom/cortex.sh prompt",
+  };
+  const original = {
+    $schema: SETTINGS_SCHEMA,
+    permissions: { allow: ["Bash(git status:*)"], defaultMode: "default" },
+    statusLine: userStatusLine,
+    hooks: { UserPromptSubmit: [{ hooks: [userCortex] }] },
+  };
+  writeFileSync(settingsPath, JSON.stringify(original, null, 2));
+
+  const merged = mergeSettings({ settingsPath });
+  assert.equal(merged.action, "merged");
+  // Delta manifest: an already-present permission is NOT recorded as Forge-added.
+  const afterMerge = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.ok(afterMerge._forgeOwned, "ownership manifest written");
+  assert.ok(
+    !afterMerge._forgeOwned.added.permissions.allow.includes("Bash(git status:*)"),
+    "a permission the user already had is never claimed by Forge",
+  );
+  assert.equal(afterMerge._forgeOwned.added.statusLine, false, "Forge did not set the statusLine");
+  assert.equal(afterMerge._forgeOwned.added.schema, false, "Forge did not set $schema");
+  // Forge DID add its own cortex.sh prompt hook even though the user has a same-name one.
+  const promptCmds = afterMerge.hooks.UserPromptSubmit.flatMap((e) =>
+    (e.hooks || []).map((h) => h.command),
+  ).filter((c) => c.includes("cortex.sh") && c.endsWith("prompt"));
+  assert.equal(promptCmds.length, 2, "user's and Forge's cortex hooks coexist (different paths)");
+
+  const r = removeForgeSettings({ settingsPath });
+  assert.equal(r.action, "removed");
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.deepEqual(after, original, "every user-owned entry is restored byte-identical");
+  // And Forge's own additions are gone.
+  assert.ok(!after.permissions.allow.includes("Bash(git diff:*)"), "Forge's permission removed");
+});
+
+test("HI-05 delta manifest: a permission the user already had survives uninstall", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-delta-"));
+  const settingsPath = join(tmp, "settings.json");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      permissions: { allow: ["Bash(git status:*)", "Bash(ls:*)"] },
+    }),
+  );
+  mergeSettings({ settingsPath });
+  const manifest = JSON.parse(readFileSync(settingsPath, "utf8"))._forgeOwned.added;
+  assert.ok(!manifest.permissions.allow.includes("Bash(git status:*)"), "pre-owned not recorded");
+  assert.ok(!manifest.permissions.allow.includes("Bash(ls:*)"), "pre-owned not recorded");
+  assert.ok(manifest.permissions.allow.includes("Bash(git diff:*)"), "genuinely-added recorded");
+  removeForgeSettings({ settingsPath });
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.deepEqual(
+    after.permissions.allow.sort(),
+    ["Bash(git status:*)", "Bash(ls:*)"].sort(),
+    "the user's own permissions survive; only Forge's additions are removed",
+  );
+});
+
+test("HI-05 re-merge is idempotent: the manifest and entries are stable, no duplicates", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-idem-"));
+  const settingsPath = join(tmp, "settings.json");
+  mergeSettings({ settingsPath });
+  const first = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const second = mergeSettings({ settingsPath });
+  assert.equal(second.action, "unchanged", "re-merge is a no-op");
+  const afterSecond = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.deepEqual(afterSecond._forgeOwned, first._forgeOwned, "manifest is byte-stable");
+  const promptCmds = afterSecond.hooks.UserPromptSubmit.flatMap((e) =>
+    (e.hooks || []).map((h) => h.command),
+  );
+  assert.equal(
+    promptCmds.filter((c) => c.includes("cortex.sh") && c.endsWith("prompt")).length,
+    1,
+    "no duplicate hook entries on re-merge",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// HI-09 — profile persistence failure aborts init before any side effect
+// ---------------------------------------------------------------------------
+
+test("HI-09 init aborts on a corrupt forge.config.json — zero side effects (no emit/gitattributes/settings)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-hi09-"));
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const cfg = join(root, ".forge/forge.config.json");
+  const original = "{ corrupt";
+  writeFileSync(cfg, original);
+  const settingsPath = join(root, "home-settings.json");
+  const r = init({ targetRoot: root, profile: "minimal", settingsPath });
+  assert.equal(r.aborted, true, "init reports the abort");
+  assert.match(r.profile.error, /not valid JSON/);
+  assert.equal(readFileSync(cfg, "utf8"), original, "corrupt config bytes preserved");
+  assert.ok(!existsSync(join(root, "AGENTS.md")), "no AGENTS.md emitted");
+  assert.ok(!existsSync(join(root, "CLAUDE.md")), "no CLAUDE.md emitted");
+  assert.ok(!existsSync(join(root, ".gitattributes")), "no .gitattributes appended");
+  assert.ok(!existsSync(settingsPath), "settings never touched");
+});

@@ -288,6 +288,28 @@ test("verifyDeep: clean diff passes, persists provenance.deep + one verify metri
   }
 });
 
+test("verifyDeep: a NOT_CONFIGURED core is NOT recorded as an outcome 'pass' (ME-01)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
+  try {
+    const r = verifyDeep({
+      targetRoot: dir,
+      llm: false,
+      verifyImpl: () => fakeCore({ tests: { ran: false, status: "NOT_CONFIGURED" } }),
+    });
+    assert.equal(r.status, "NOT_CONFIGURED");
+    assert.equal(r.ok, false, "an unverified core is never ok");
+    const metrics = readFileSync(join(dir, ".forge", "metrics.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    assert.notEqual(metrics[0].outcome, "pass", "unverified must not count as a pass");
+    assert.equal(metrics[0].outcome, "not_configured");
+    assert.equal(metrics[0].status, "NOT_CONFIGURED");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("verifyDeep: a failing test suite blocks solo; findings + block land in provenance", () => {
   const dir = mkdtempSync(join(tmpdir(), "forge-consensus-"));
   try {

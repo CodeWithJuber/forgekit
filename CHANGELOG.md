@@ -22,6 +22,52 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comments no longer claim strict mode "blocks": PostToolUse fires after the tool ran, so
   exit 2 is surfaced stderr feedback, not enforcement — blocking belongs to the
   PreToolUse guard. A wrapper-level regression test drives the real `secret-redact.sh`.
+- **Guard blocks shell writes to protected paths (HI-06).** The PreToolUse guard now blocks
+  writes/mutations to protected paths (`.env`, keys, `secrets/`, `.ssh/`) via redirections and
+  truncations (`> .env`, `: > .env`), `tee`, `sed -i`, `cp`/`mv`/`install`, and `dd of=`, not
+  just reads. Interpreter-driven writes (`python -c`, `node -e`) remain out of scope and are
+  documented as such — this is defence in depth, not a sandbox.
+- **Hardened git secret-reader detection (HI-07).** Reader detection now sees through wrappers
+  and global options (`env`/`command`/`VAR=val` prefixes, `/usr/bin/git`, `-C`/`--no-pager`/`-c`/
+  `--git-dir`/`--work-tree`) and covers `git blame`/`show-index`/`bundle`.
+- **Broader hook tool coverage (HI-08).** The protect-paths PreToolUse matcher now includes
+  `NotebookEdit`, and the secret-redact PostToolUse matcher includes `WebFetch`, `NotebookEdit`,
+  and MCP tools (`mcp__.*`); the settings template and plugin manifest stay in sync.
+
+### Fixed
+
+- **`forge verify` runs every detected suite (HI-01).** A polyglot repo where a passing Node
+  suite hid a failing or unexecuted pytest suite no longer reports PASS — every detected
+  executable suite runs, and a non-executable or missing one makes the overall result
+  INCOMPLETE. Per-suite `executed`/`notExecuted` detail is recorded.
+- **Verification is bound to the final code state (HI-02).** Provenance records a `codeState`
+  fingerprint (git HEAD + a hash of working/staged/untracked changes); the completion gate only
+  counts a `forge verify` PASS as evidence when that fingerprint still matches at Stop, so code
+  edited _after_ verification no longer passes on a stale stamp.
+- **Completion gate detects edits to pre-dirty files (HI-03).** The session baseline stores a
+  content fingerprint per already-dirty file, so further edits to it during the session are seen
+  instead of hidden by its start-of-session dirty state.
+- **A changed test file is no longer proof (HI-04).** A deleted or empty test file no longer
+  satisfies the code-change evidence requirement; the test leg needs a substantive (existing,
+  non-empty) test file or a code-state-bound verify PASS.
+- **Honest spawn and metrics classification (ME-01, ME-02).** Spawn failures (missing binary,
+  permission/exec-format errors, signal kills, timeout) are reported INCOMPLETE rather than a
+  false test FAIL — only a real non-zero exit counts as FAIL; deep-verify metrics no longer
+  count NOT_CONFIGURED/INCOMPLETE runs as a pass. Provenance records `gitAvailable` so a failure
+  to detect changed files is never reported as a clean tree (ME-04).
+- **Ownership-safe settings uninstall (HI-05).** The settings merge records an `_forgeOwned`
+  manifest of exactly what it added (permissions genuinely absent before, hook guard-identities,
+  statusLine, `$schema`); `forge init --remove-settings` reverses only those, never a user-owned
+  entry that predates Forge. Ownership is path-aware, so a user's custom hook that merely shares
+  a basename with a Forge hook is never claimed or removed; a legacy scan seeds the manifest for
+  pre-manifest installs.
+- **Init aborts on profile-persistence failure (HI-09).** When `forge init --profile` can't
+  persist because `.forge/forge.config.json` is corrupt, init now aborts before sync,
+  `.gitattributes`, and the settings merge — zero side effects — instead of continuing and
+  reporting the error afterward.
+- **Safer installer transactions (HI-10).** `install.sh` backs up a user-owned symlink at a
+  destination instead of silently replacing it, and stops (`Uninstall INCOMPLETE`, non-zero)
+  rather than removing assets that settings hooks still reference when settings cleanup fails.
 
 ### Changed
 

@@ -113,3 +113,23 @@ test("install.sh propagates a failed settings merge as an INCOMPLETE install, an
     "merge exit status is no longer discarded by an || fallback on the pipeline",
   );
 });
+
+test("install.sh (HI-10): link() backs up foreign symlinks and uninstall stops when settings cleanup fails", () => {
+  const syntax = spawnSync("bash", ["-n", INSTALL_SH], { encoding: "utf8" });
+  assert.equal(syntax.status, 0, `bash -n failed: ${syntax.stderr}`);
+  const sh = readFileSync(INSTALL_SH, "utf8");
+  // link(): an existing symlink NOT pointing into the repo is backed up before replacement.
+  assert.match(sh, /backed up existing symlink/, "a foreign user symlink is backed up, not lost");
+  assert.match(sh, /readlink "\$dest"/, "link() inspects the existing symlink target");
+  // uninstall: a failed settings cleanup stops instead of removing assets the hooks point at.
+  assert.match(
+    sh,
+    /Uninstall INCOMPLETE — settings still reference Forge hooks/,
+    "uninstall refuses to strip assets while settings still reference them",
+  );
+  // The INCOMPLETE branch exits non-zero and precedes asset removal.
+  const incompleteIdx = sh.indexOf("Uninstall INCOMPLETE");
+  const unlinkIdx = sh.indexOf("unlink_ours", incompleteIdx);
+  assert.ok(incompleteIdx > 0 && unlinkIdx > incompleteIdx, "the stop precedes asset removal");
+  assert.match(sh.slice(incompleteIdx, unlinkIdx), /exit 1/, "the incomplete path exits non-zero");
+});

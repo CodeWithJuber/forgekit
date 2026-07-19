@@ -100,31 +100,64 @@ test("gate table: code + test evidence + docs (or state) → allow code-with-evi
   assert.equal(handoff.row, "code-with-evidence");
 });
 
-test("gate table: a fresh passing verify run is test evidence; stale or FAIL is not", () => {
+test("gate table: a fresh code-state-matching verify PASS is test evidence; stale/FAIL/moved-code is not", () => {
   const base = { changed: ["src/x.js", "README.md"] };
   const fresh = gateDecision({
     ...base,
-    verifyEvidence: { fresh: true, status: "PASS" },
+    verifyEvidence: { fresh: true, status: "PASS", codeStateMatches: true },
   });
   assert.equal(fresh.allow, true);
   assert.equal(fresh.row, "code-with-evidence");
   assert.equal(
-    gateDecision({ ...base, verifyEvidence: { fresh: false, status: "PASS" } }).row,
+    gateDecision({
+      ...base,
+      verifyEvidence: { fresh: false, status: "PASS", codeStateMatches: true },
+    }).row,
     "code-without-test-evidence",
     "a stale provenance stamp proves nothing about THIS session's change",
   );
   assert.equal(
-    gateDecision({ ...base, verifyEvidence: { fresh: true, status: "FAIL" } }).row,
+    gateDecision({
+      ...base,
+      verifyEvidence: { fresh: true, status: "FAIL", codeStateMatches: true },
+    }).row,
     "code-without-test-evidence",
     "a fresh FAIL is not evidence of completion",
   );
   assert.equal(
     gateDecision({
+      ...base,
+      verifyEvidence: { fresh: true, status: "PASS", codeStateMatches: false },
+    }).row,
+    "code-without-test-evidence",
+    "HI-02: a PASS whose code state moved since verification is stale and does not count",
+  );
+  assert.equal(
+    gateDecision({
       changed: ["src/x.js"],
-      verifyEvidence: { fresh: true, status: "PASS" },
+      verifyEvidence: { fresh: true, status: "PASS", codeStateMatches: true },
     }).row,
     "code-without-docs",
     "verify evidence covers the test leg only — docs are still owed",
+  );
+});
+
+test("gate table: HI-04 — a changed test file is not proof unless substantive", () => {
+  const changed = ["src/x.js", "test/x.test.js", "README.md"];
+  assert.equal(
+    gateDecision({ changed, substantiveTests: [] }).row,
+    "code-without-test-evidence",
+    "a deleted/emptied test file does not satisfy the code-change test leg",
+  );
+  assert.equal(
+    gateDecision({ changed, substantiveTests: ["test/x.test.js"] }).allow,
+    true,
+    "a real added/modified test file still counts as the weaker evidence leg",
+  );
+  assert.equal(
+    gateDecision({ changed }).allow,
+    true,
+    "back-compat: no FS filter supplied → raw classification still decides",
   );
 });
 

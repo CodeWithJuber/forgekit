@@ -349,9 +349,16 @@ export function verifyDeep({
   } catch {}
   recordMetric(targetRoot, {
     stage: "verify",
-    // `outcome` keeps its historical block|pass vocabulary; the four-state verdict
-    // rides along additively as `status`.
-    outcome: verdict.block ? "block" : "pass",
+    // `outcome` is derived from the FINAL four-state status, not `verdict.block` alone
+    // (ME-01): an unverified run (NOT_CONFIGURED / INCOMPLETE) must never be counted as a
+    // "pass". PASS→pass, FAIL/block→block, and the unverified states carry their own
+    // lower-cased label. The four-state verdict still rides along additively as `status`.
+    outcome:
+      status === "PASS"
+        ? "pass"
+        : status === "FAIL" || verdict.block
+          ? "block"
+          : status.toLowerCase(),
     status,
     mode: "deep",
     lenses: deep.lenses.filter((l) => l.ran).length,

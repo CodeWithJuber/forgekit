@@ -131,6 +131,87 @@ test("protect-paths does not false-positive on benign git commands (RA-05)", () 
   }
 });
 
+test("protect-paths blocks shell WRITES to a protected path (HI-06)", () => {
+  for (const command of [
+    "echo X > .env",
+    "printf X >> .env",
+    "tee .env",
+    "tee -a .env",
+    "sed -i s/a/b/ .env",
+    "cp payload .env",
+    "mv payload .env",
+    "install payload .env",
+    "dd if=x of=.env",
+    ": > .env",
+    "> .env",
+    'echo X > ".env"',
+    "cp key.pem /x/id_rsa",
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 2, `must block: ${command}`);
+    assert.match(
+      r.err,
+      /writing to a protected secret path|in-place/,
+      `deny reason for: ${command}`,
+    );
+  }
+});
+
+test("protect-paths does not false-positive on benign shell writes (HI-06)", () => {
+  for (const command of [
+    "echo hi > out.txt",
+    "printf hi >> notes.md",
+    "tee build.log",
+    "cp src/a.js src/b.js",
+    "sed -i s/a/b/ src/x.js",
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 0, `must not block: ${command}`);
+  }
+});
+
+test("protect-paths blocks git readers behind wrappers / global options (HI-07)", () => {
+  for (const command of [
+    "git -C . diff -- .env",
+    "git --no-pager diff -- .env",
+    "/usr/bin/git diff -- .env",
+    "command git diff -- .env",
+    "env git diff -- .env",
+    "VAR=x git diff -- .env",
+    "git blame -- .env",
+    "git show-index .env",
+    "git -c core.pager=cat show HEAD:.env",
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 2, `must block: ${command}`);
+    assert.match(r.err, /protected secret path/, `deny reason for: ${command}`);
+  }
+});
+
+test("protect-paths does not false-positive on benign git after HI-07 hardening", () => {
+  for (const command of [
+    "git diff -- src/x.js",
+    "git --no-pager log --oneline",
+    "digit --version",
+    'git commit -m "block cat .env and git show HEAD:.env reads"',
+  ]) {
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+    assert.equal(r.code, 0, `must not block: ${command}`);
+  }
+});
+
 test("secret-redact redacts a token without jq (Node path)", () => {
   const r = runGuard("secret-redact.sh", {
     tool_name: "Bash",

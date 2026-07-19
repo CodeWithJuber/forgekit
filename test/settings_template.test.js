@@ -58,3 +58,68 @@ test("the former inert curl-pipe deny rules are absent", () => {
   assert.ok(!deny.includes("Bash(curl:* | sh)"), "inert curl|sh rule must stay removed");
   assert.ok(!deny.includes("Bash(curl:* | bash)"), "inert curl|bash rule must stay removed");
 });
+
+// ---------------------------------------------------------------------------
+// HI-08 — hook matchers cover current write/output-capable tools, and the two
+// manifests (settings.template.json + hooks/hooks.json) stay consistent.
+// ---------------------------------------------------------------------------
+
+const pluginHooks = JSON.parse(
+  readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"),
+);
+
+/** Matcher of the first hook group under `event` whose command mentions `guard`. */
+function matcherFor(manifest, event, guard) {
+  const groups = manifest.hooks?.[event] ?? [];
+  for (const group of groups) {
+    if ((group.hooks ?? []).some((h) => (h.command ?? "").includes(guard))) {
+      return group.matcher ?? "";
+    }
+  }
+  return null;
+}
+
+test("PreToolUse protect-paths matcher covers NotebookEdit (HI-08)", () => {
+  for (const [name, manifest] of [
+    ["settings.template.json", template],
+    ["hooks.json", pluginHooks],
+  ]) {
+    const matcher = matcherFor(manifest, "PreToolUse", "protect-paths.sh");
+    assert.ok(matcher, `${name}: protect-paths PreToolUse group present`);
+    for (const tool of ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"]) {
+      assert.ok(
+        matcher.split("|").includes(tool),
+        `${name}: protect-paths matcher must include ${tool} (got: ${matcher})`,
+      );
+    }
+  }
+});
+
+test("PostToolUse secret-redact matcher covers WebFetch, MCP, NotebookEdit (HI-08)", () => {
+  for (const [name, manifest] of [
+    ["settings.template.json", template],
+    ["hooks.json", pluginHooks],
+  ]) {
+    const matcher = matcherFor(manifest, "PostToolUse", "secret-redact.sh");
+    assert.ok(matcher, `${name}: secret-redact PostToolUse group present`);
+    for (const tool of ["Bash", "Read", "Grep", "WebFetch", "NotebookEdit", "mcp__.*"]) {
+      assert.ok(
+        matcher.split("|").includes(tool),
+        `${name}: secret-redact matcher must include ${tool} (got: ${matcher})`,
+      );
+    }
+  }
+});
+
+test("protect-paths + secret-redact matchers agree across both manifests (HI-08)", () => {
+  for (const [event, guard] of [
+    ["PreToolUse", "protect-paths.sh"],
+    ["PostToolUse", "secret-redact.sh"],
+  ]) {
+    assert.equal(
+      matcherFor(template, event, guard),
+      matcherFor(pluginHooks, event, guard),
+      `${guard} matcher must match between settings.template.json and hooks.json`,
+    );
+  }
+});
