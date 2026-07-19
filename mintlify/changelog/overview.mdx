@@ -1,0 +1,30 @@
+---
+title: "Changelog"
+description: "What's new in Forge."
+---
+
+<Update label="July 19, 2026">
+
+## Updates
+
+**`forge verify --deep` now reports a four-state result.** The multi-lens
+consensus run no longer collapses to a binary pass/fail. You'll see one of
+`PASS`, `FAIL`, `INCOMPLETE`, or `NOT_CONFIGURED`, so a stalled lens or an
+unconfigured repo can't quietly read as green. Only `PASS` counts as verified,
+and `PASS` now also requires the underlying `forge verify` tests status to be
+`PASS` — a green deep run can never outrun a red base run.
+
+See [Quality commands](/cli/quality) and
+[Verification gates](/concepts/verification-gates).
+
+**Completion gate requires test evidence for code changes.** For any session
+that touched source code, the Stop-path completion gate no longer accepts a
+`forge handoff` snapshot on its own. You'll need either a test file in the
+session's diff or a fresh passing `forge verify` against the current changes.
+Doc-only, config-only, and other non-code sessions are unaffected.
+
+When the gate blocks, the repair checklist now leads with `forge verify` so
+the evidence gets recorded before the handoff snapshot. See
+[Cross-session memory](/concepts/cross-session-memory).
+
+</Update>
