@@ -47,10 +47,16 @@ on the agent.
   allows (fail-open). `FORGE_STOPGATE=0` disables it.
 </Note>
 
+For sessions that changed code, the gate also requires **test evidence** — either a test
+file in the session's diff or a fresh passing `forge verify` against the current
+changes. A `forge handoff` snapshot alone no longer clears the code-change branch of the
+gate.
+
 The repair checklist points at the tools that finish the work:
 
 ```bash
-forge docs sync                      # sweep the diff for stale doc mentions
+forge verify                             # record the test evidence for code changes
+forge docs sync                          # sweep the diff for stale doc mentions
 forge handoff "<done>" --next "<next>"   # write the bounded session snapshot
 forge decide "<decision> — <reason>"     # record a choice so no session re-decides it
 ```
