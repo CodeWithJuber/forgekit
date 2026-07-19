@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { detectStack } from "./stack.js";
+import { contentHash } from "./util.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -42,6 +43,17 @@ function git(args, cwd) {
 // `ran`/`passed` are kept for back-compat (consensus.js reads them). Bounded by a timeout
 // (FORGE_VERIFY_TIMEOUT_MS, default 10 min) so a hanging test can't hang the gate.
 /**
+ * One executed (or attempted) suite's per-suite detail (HI-01/ME-02).
+ * @typedef {object} SuiteResult
+ * @property {string} label            human-readable runner command
+ * @property {"PASS"|"FAIL"|"INCOMPLETE"} status
+ * @property {number|null} [exitCode]  process exit code (0 pass, non-zero fail, null if it never ran)
+ * @property {string} [code]           spawn error code (ENOENT/EACCES/ENOEXEC/…) when it did not execute
+ * @property {string} [signal]         terminating signal, if any
+ * @property {boolean} [timedOut]      true when the suite was killed for exceeding the timeout
+ * @property {string} [output]         tail of the suite's own output (failures)
+ */
+/**
  * @typedef {object} VerifyTests
  * @property {boolean} ran
  * @property {boolean} [passed]
@@ -49,6 +61,8 @@ function git(args, cwd) {
  * @property {string} [runner]
  * @property {boolean} [timedOut]
  * @property {string[]} [detected]
+ * @property {SuiteResult[]} [executed]   every suite forge actually spawned, with its per-suite verdict
+ * @property {string[]} [notExecuted]     labels of detected suites forge has no built-in executor for
  * @property {string} [output]
  */
 // Bins forge is willing to execute directly. Everything else stays report-only.
@@ -65,14 +79,32 @@ function parseRunnerStrings(cmds) {
     return { label: cmd };
   });
 }
+/** Is this descriptor one forge can execute directly (whitelisted bin, and a
+ *  package.json present for the package-manager runners)? Pure. */
+function isExecutable(r, cwd) {
+  return !!(
+    r?.bin &&
+    EXECUTORS.has(r.bin) &&
+    (r.bin === "pytest" || existsSync(join(cwd, "package.json")))
+  );
+}
+
 /**
+ * Run EVERY detected executable suite (HI-01) — a polyglot repo where a passing
+ * Node suite hides a failing pytest suite must NOT report PASS. Aggregate to an
+ * honest four-state verdict:
+ *   - all executed suites PASS and nothing was skipped → PASS
+ *   - any executed suite FAILs (real non-zero exit)     → FAIL
+ *   - a detected suite is non-executable, or a spawn never completed (ENOENT /
+ *     EACCES / ENOEXEC / signal / timeout, ME-02)        → INCOMPLETE
+ *   - no runners at all                                  → NOT_CONFIGURED
+ * Only a real non-zero EXIT CODE from a suite that actually ran is a FAIL; a suite
+ * that never executed is INCOMPLETE, never a false FAIL.
  * @param {string} cwd
  * @returns {VerifyTests}
  */
 function runTests(cwd) {
   const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || 600000;
-  const run = (cmd, args) =>
-    execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: "pipe", timeout });
   // Detect the repo's real test runners (no test script → none → NOT_CONFIGURED, not a
   // forced npm-test failure).
   let stack = null;
@@ -82,57 +114,151 @@ function runTests(cwd) {
   const detected = stack?.testCommands ?? [];
   if (!detected.length) return { ran: false, status: "NOT_CONFIGURED" };
   const runners = stack?.testRunners?.length ? stack.testRunners : parseRunnerStrings(detected);
-  // First whitelisted descriptor wins. A package-manager runner is only real when a
-  // package.json exists (the guard the old npm-only path had).
-  const candidate = runners.find(
-    (r) =>
-      r?.bin &&
-      EXECUTORS.has(r.bin) &&
-      (r.bin === "pytest" || existsSync(join(cwd, "package.json"))),
-  );
-  if (!candidate) {
-    // Runners were detected but forge has no built-in executor for any of them —
-    // expected, didn't complete. Never guess a different runner.
-    const labels = runners.map((r) => r?.label).filter(Boolean);
-    return {
-      ran: false,
-      status: "INCOMPLETE",
-      detected,
-      output: `detected "${labels.join('", "')}" — no built-in executor; run it yourself and re-verify`,
-    };
-  }
-  try {
-    run(candidate.bin, candidate.args ?? []);
-    return { ran: true, passed: true, status: "PASS", runner: candidate.label };
-  } catch (e) {
-    if (e.code === "ENOENT") {
-      // The detected runner's binary isn't installed here — nothing ran, and silently
-      // substituting another package manager would verify the wrong thing.
-      return {
-        ran: false,
-        status: "INCOMPLETE",
-        detected,
-        output: `detected "${candidate.label}", executor unavailable (${candidate.bin} not on PATH)`,
-      };
+
+  /** @type {SuiteResult[]} */
+  const executed = [];
+  /** @type {string[]} */
+  const notExecuted = [];
+  for (const r of runners) {
+    const label = r?.label ?? String(r?.bin ?? "unknown");
+    if (!isExecutable(r, cwd)) {
+      // No built-in executor (go/cargo/mvn/gradle/dotnet/rspec/phpunit/npx-runners) —
+      // report-only. Its absence means a PASS can't be claimed for the whole repo.
+      notExecuted.push(label);
+      continue;
     }
-    if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
-      return {
-        ran: true,
-        passed: false,
-        timedOut: true,
-        status: "INCOMPLETE",
-        runner: candidate.label,
-        output: `test run (${candidate.label}) exceeded ${timeout}ms`,
-      };
+    try {
+      execFileSync(r.bin, r.args ?? [], {
+        cwd,
+        encoding: "utf8",
+        stdio: "pipe",
+        timeout,
+      });
+      executed.push({ label, status: "PASS", exitCode: 0 });
+    } catch (e) {
+      if (e.code === "ENOENT") {
+        // The detected runner's binary isn't installed here — nothing ran, and silently
+        // substituting another package manager would verify the wrong thing.
+        executed.push({
+          label,
+          status: "INCOMPLETE",
+          exitCode: null,
+          code: "ENOENT",
+          output: `executor unavailable (${r.bin} not on PATH)`,
+        });
+      } else if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
+        // Killed for running too long — it started but never reached a verdict.
+        executed.push({
+          label,
+          status: "INCOMPLETE",
+          exitCode: null,
+          timedOut: true,
+          signal: e.signal,
+          output: `exceeded ${timeout}ms`,
+        });
+      } else if (typeof e.status === "number") {
+        // A real, completed run that exited non-zero — the ONLY true FAIL.
+        executed.push({
+          label,
+          status: "FAIL",
+          exitCode: e.status,
+          output: String(e.stdout || e.message || "").slice(-600),
+        });
+      } else {
+        // EACCES / ENOEXEC / other spawn failure / signal termination: the suite did NOT
+        // execute, so this is INCOMPLETE, never FAIL (ME-02).
+        executed.push({
+          label,
+          status: "INCOMPLETE",
+          exitCode: null,
+          code: e.code,
+          signal: e.signal,
+          output: `did not execute (${e.code || e.signal || "spawn error"})`,
+        });
+      }
     }
-    return {
-      ran: true,
-      passed: false,
-      status: "FAIL",
-      runner: candidate.label,
-      output: String(e.stdout || e.message || "").slice(-600),
-    };
   }
+
+  // Aggregate. A PASS must mean every detected required suite ran and passed.
+  const anyFail = executed.some((s) => s.status === "FAIL");
+  const anyIncomplete = executed.some((s) => s.status === "INCOMPLETE");
+  const ranToVerdict = executed.some((s) => s.status === "PASS" || s.status === "FAIL");
+  const timedOut = executed.some((s) => s.timedOut);
+  /** @type {"PASS"|"FAIL"|"INCOMPLETE"} */
+  let status;
+  if (anyFail) status = "FAIL";
+  else if (anyIncomplete || notExecuted.length) status = "INCOMPLETE";
+  else status = "PASS"; // executed non-empty (NOT_CONFIGURED short-circuits above), all PASS
+
+  // Honest human-readable summary, aggregated across suites.
+  const parts = [];
+  if (notExecuted.length)
+    parts.push(
+      `detected "${notExecuted.join('", "')}" — no built-in executor; run it yourself and re-verify`,
+    );
+  for (const s of executed) {
+    if (s.status === "INCOMPLETE") parts.push(`"${s.label}" ${s.output ?? "did not execute"}`);
+    else if (s.status === "FAIL") parts.push(`"${s.label}" FAILED: ${s.output ?? ""}`);
+  }
+  const runnerLabels = executed.map((s) => s.label);
+  const runner = runnerLabels.join(", ") || runners.map((r) => r?.label).filter(Boolean)[0];
+  return {
+    ran: ranToVerdict,
+    passed: status === "PASS",
+    status,
+    runner,
+    ...(timedOut ? { timedOut: true } : {}),
+    detected,
+    executed,
+    notExecuted,
+    ...(parts.length ? { output: parts.join("; ") } : {}),
+  };
+}
+
+/**
+ * Fingerprint the working tree's code state so a downstream gate can detect that
+ * code changed AFTER verification (HI-02/ME-04). Pure/deterministic given a tree
+ * state and reusable by the gate workstream (`import { computeCodeState }`).
+ * Combines `git diff HEAD` + staged diff + the contents of untracked, non-ignored
+ * files (sorted for stability) and hashes with the repo's sha256 `contentHash`.
+ * @param {string} [cwd]
+ * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean}}
+ */
+export function computeCodeState(cwd = process.cwd()) {
+  const capture = (args) => {
+    try {
+      return execFileSync("git", args, {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      return null;
+    }
+  };
+  // Is this a git work tree at all (and is git even on PATH)? A non-git dir / missing
+  // git → we can't fingerprint, so record gitAvailable:false rather than a false "clean".
+  const inside = capture(["rev-parse", "--is-inside-work-tree"]);
+  if (inside == null || inside.trim() !== "true")
+    return { head: null, dirtyHash: null, gitAvailable: false };
+  const headOut = capture(["rev-parse", "HEAD"]);
+  const head = headOut ? headOut.trim() : null; // null on a repo with no commits yet
+  const diff = capture(["diff", "HEAD"]); // null when there is no HEAD (pre-first-commit)
+  const cached = capture(["diff", "--cached"]);
+  const othersOut = capture(["ls-files", "--others", "--exclude-standard"]);
+  // Every diff command hard-errored → changed-file detection failed; don't claim clean.
+  if (diff == null && cached == null && othersOut == null)
+    return { head, dirtyHash: null, gitAvailable: false };
+  const others = (othersOut ?? "").split("\n").filter(Boolean).sort();
+  let combined = `${diff ?? ""}\n cached \n${cached ?? ""}`;
+  for (const f of others) {
+    let body = "";
+    try {
+      body = readFileSync(join(cwd, f), "utf8");
+    } catch {}
+    combined += `\n ${f} \n${body}`;
+  }
+  return { head, dirtyHash: contentHash(combined), gitAvailable: true };
 }
 
 /**
@@ -219,6 +345,9 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     tests,
     symbolsChecked: symbols.length,
     unknownSymbols: unknown,
+    // Fingerprint of the exact code state this verdict was computed over (HI-02/ME-04),
+    // so the completion gate can detect code that changed AFTER verification.
+    codeState: computeCodeState(targetRoot),
   };
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
   writeFileSync(join(targetRoot, ".forge", "provenance.json"), JSON.stringify(provenance, null, 2));

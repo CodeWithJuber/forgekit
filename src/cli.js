@@ -1116,6 +1116,12 @@ async function run(argv) {
           !t.runner && t.detected?.length ? ` (detected: ${t.detected.join(", ")})` : ""
         }`,
       );
+      if (t.executed?.length)
+        console.log(
+          `  suites ran:       ${t.executed.map((s) => `${s.label}=${s.status}`).join(", ")}`,
+        );
+      if (t.notExecuted?.length)
+        console.log(`  suites skipped:   ${t.notExecuted.join(", ")} (no built-in executor)`);
       const detail = t.output || (t.detected ?? []).join(", ");
       const verdictLine =
         r.status === "PASS"
@@ -1150,6 +1156,14 @@ async function run(argv) {
             ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
             : "— NOT CONFIGURED (no test runner detected)";
     console.log(`  tests:            ${testsLine}`);
+    // Per-suite honesty (HI-01): a polyglot repo runs every executable suite; name which
+    // ones ran with what verdict, and which were detected but never executed.
+    if (t.executed?.length)
+      console.log(
+        `  suites ran:       ${t.executed.map((s) => `${s.label}=${s.status}`).join(", ")}`,
+      );
+    if (t.notExecuted?.length)
+      console.log(`  suites skipped:   ${t.notExecuted.join(", ")} (no built-in executor)`);
     console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
     if (r.unknown.length)
       console.log(
