@@ -1,0 +1,46 @@
+# Evidence-tier install smoke: a REAL clean install + uninstall exercised on a throwaway
+# HOME, across a multi-OS matrix, so the "it installs fine" claim is proven by machine on
+# every push/PR — not just asserted. scripts/smoke-install.sh drives `bash install.sh` into
+# an isolated temp HOME (never the runner's real ~/.claude), checks the exec-form hooks
+# (ME-23) land with the _forge marker, proves `forge init --settings-only` is idempotent and
+# fails on corrupt JSON (RA-04), reverses cleanly on uninstall, and — the load-bearing bit —
+# installs under a path CONTAINING A SPACE and runs an installed guard from it to guard the
+# RA-12 / ME-23 quoting regression. The full test suite also runs here so >=20 behavior is
+# verified on macOS too, not only Ubuntu.
+#
+# TODO(windows-git-bash): the guards are bash scripts and install.sh uses POSIX `ln -s`, so a
+# Windows run needs Git Bash AND symlink-capable checkout (Developer Mode / core.symlinks).
+# That is fiddly enough to defer — add `windows-latest` here behind `shell: bash` with the
+# symlink assertions softened once someone can validate it on a real Windows runner.
+name: Smoke
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Install smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The clean-install / uninstall / spaces-in-path smoke, on a throwaway HOME.
+      - name: Install/uninstall smoke (isolated HOME)
+        shell: bash
+        run: bash scripts/smoke-install.sh
+      # Prove the suite also passes on this OS (macOS uses an older bash + BSD userland).
+      - name: Test suite
+        run: npm test
