@@ -68,11 +68,14 @@ const pluginHooks = JSON.parse(
   readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"),
 );
 
+/** The effective command a hook runs — exec form (`command`+`args`, ME-23) or legacy string. */
+const hookText = (h) => [h.command ?? "", ...(h.args ?? [])].join(" ");
+
 /** Matcher of the first hook group under `event` whose command mentions `guard`. */
 function matcherFor(manifest, event, guard) {
   const groups = manifest.hooks?.[event] ?? [];
   for (const group of groups) {
-    if ((group.hooks ?? []).some((h) => (h.command ?? "").includes(guard))) {
+    if ((group.hooks ?? []).some((h) => hookText(h).includes(guard))) {
       return group.matcher ?? "";
     }
   }

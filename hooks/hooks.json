@@ -6,11 +6,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/recall-load.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/recall-load.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh session-start"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "session-start"
+            ]
           }
         ]
       }
@@ -20,11 +25,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh prompt"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "prompt"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh preflight"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "preflight"
+            ]
           }
         ]
       }
@@ -35,15 +45,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/protect-paths.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/protect-paths.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cost-budget.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cost-budget.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/doom-loop.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/doom-loop.sh"]
           }
         ]
       },
@@ -52,7 +65,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh pre-edit"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "pre-edit"
+            ]
           }
         ]
       }
@@ -63,11 +80,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/format-on-edit.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/format-on-edit.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh capture"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "capture"]
           }
         ]
       },
@@ -76,11 +95,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/secret-redact.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/secret-redact.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh capture"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "capture"]
           }
         ]
       }
@@ -90,19 +111,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/completion-gate.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/completion-gate.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/lean-guard.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/lean-guard.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/session-learner.sh"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/session-learner.sh"]
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/global/guards/cortex.sh stop"
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "stop"]
           }
         ]
       }

@@ -214,7 +214,10 @@ test("both hook manifests register the completion gate under Stop (lockstep)", (
   const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
   const plugin = JSON.parse(readFileSync(join(repo, "hooks", "hooks.json"), "utf8"));
   const template = JSON.parse(readFileSync(join(repo, "global", "settings.template.json"), "utf8"));
-  const flat = (m) => (m.hooks.Stop || []).flatMap((e) => e.hooks.map((h) => h.command)).join("\n");
+  const flat = (m) =>
+    (m.hooks.Stop || [])
+      .flatMap((e) => e.hooks.map((h) => [h.command, ...(h.args ?? [])].join(" ")))
+      .join("\n");
   assert.match(flat(plugin), /completion-gate\.sh/, "plugin manifest wires the gate");
   assert.match(flat(template), /completion-gate\.sh/, "init template wires the gate");
 });
