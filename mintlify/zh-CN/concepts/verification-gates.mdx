@@ -80,7 +80,7 @@ forge harden               # gitleaks pre-commit + sandbox settings
 
 ## 完成门 —— 需要测试证据
 
-Stop 路径上的完成门(见 [跨会话记忆](/concepts/cross-session-memory))不再接受一份 agent handoff 作为代码变更已完成的证明。任何触碰了源码的会话,该门都要求**真实的测试证据**:
+Stop 路径上的完成门(见 [跨会话记忆](/zh-CN/concepts/cross-session-memory))不再接受一份 agent handoff 作为代码变更已完成的证明。任何触碰了源码的会话,该门都要求**真实的测试证据**:
 
 - 会话 diff 中改动了一份测试文件,**或**
 - 针对当前变更有一次新鲜且通过的 `forge verify` 记录。
