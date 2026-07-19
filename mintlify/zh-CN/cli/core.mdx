@@ -1,6 +1,6 @@
 ---
 title: "Core 命令"
-description: "引导并维护一个仓库:init、sync、doctor、catalog、docs 和 update。"
+description: "用 init、sync、doctor、catalog、docs 和 update 引导并维护一个 Forge 仓库 —— 还包括 profile、settings 与可逆卸载相关参数。"
 ---
 
 Core 组用于引导一个仓库并保持其健康。
@@ -14,6 +14,34 @@ forge init
 ```
 
 生成 `AGENTS.md`、`CLAUDE.md`、`.gemini/settings.json`、`.aider.conf.yml` 以及其他文件(加上给 Roo Code 与 VS Code 的 MCP 服务器配置),以及账本需要的 `.gitattributes` union-merge 规则。
+
+`forge init` 还会把 Forge 的 hooks 和 permissions 合并进**全局**的 `~/.claude/settings.json`,因此它会在写入前先声明该合并动作。合并过程是幂等的、有标记守护,并且不会覆盖用户自己的条目。
+
+### Init 参数
+
+| 参数                  | 作用                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--profile <name>`    | 为该仓库选择策略 profile。接受 `minimal` 或 `standard`(默认)。无效值会在任何脚手架、`.forge/` 写入或合并之前中止。                                       |
+| `--no-settings`       | 完全跳过对全局 `~/.claude/settings.json` 的合并 —— 只写仓库级配置。                                                                                        |
+| `--remove-settings`   | 回滚一次以往的 settings 合并。Forge 形态的 hooks、permissions、statusline 以及 `_forge` 标记会被移除;会先写一份带时间戳的备份,并保留你自己的条目。也会被 `install.sh --uninstall` 调用。 |
+| `--settings-only`     | 只合并全局 settings —— 不动仓库。被 `install.sh` 用来接线 hooks 与 permissions。                                                                           |
+
+如果 settings 合并被拒绝或出错,`forge init` 会以 exit 1 失败,并把原因写到 stderr,而不是报告成功。
+
+### 策略 profiles
+
+`--profile` 选择 `forge sync` 编译进每个工具原生配置的规则集。只支持两种 profile:
+
+- **`standard`**(默认)—— 完整包:共享内存规则、影响分析,以及完整的护栏 hook 集。
+- **`minimal`** —— 面向小仓库或贡献者分叉的更精简规则集。
+
+历史名称 `web-app`、`backend-service`、`library` 和 `regulated` 是 `standard` 的已弃用别名。它们仍然可用:`forge init` 会警告一次、存为 `standard`,而现存持有历史名称的配置也会按 standard sync。新仓库应直接使用 `standard`。任何其他值都是无效的,并会在 Forge 触碰该仓库之前中止。
+
+```bash
+forge init --profile minimal            # leaner ruleset
+forge init --no-settings                # per-repo only, skip the global merge
+forge init --remove-settings            # reverse a past global merge
+```
 
 ## `forge sync`
 
@@ -66,4 +94,4 @@ forge update --check      # report whether a newer version is available
 forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
 ```
 
-每条路径都失败开放 —— 离线、没有上游或 detached HEAD 会返回"unknown",从不作为错误。`FORGE_NO_UPDATE_CHECK=1` 可静默 doctor 的提示。
+每条路径都失败开放 —— 离线、没有上游或 detached HEAD 会返回 "unknown",从不作为错误。`FORGE_NO_UPDATE_CHECK=1` 可静默 doctor 的提示。

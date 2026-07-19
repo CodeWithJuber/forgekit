@@ -1,6 +1,6 @@
 ---
 title: "Core commands"
-description: "Bootstrap and maintain a repo: init, sync, doctor, catalog, docs, and update."
+description: "Bootstrap and maintain a Forge repo with init, sync, doctor, catalog, docs, and update — plus profile, settings, and reversible-uninstall flags."
 ---
 
 The Core group bootstraps a repo and keeps it healthy.
@@ -43,9 +43,9 @@ config. Only two profiles are supported:
 - **`minimal`** — a leaner ruleset for small repos or contributor forks.
 
 The legacy names `web-app`, `backend-service`, `library`, and `regulated` are deprecated
-aliases of `standard`. They still work — `forge init` warns once, stores `standard`, and
-existing configs holding a legacy name still sync as standard — but new repos should use
-`standard` directly. Any other value is invalid and aborts before Forge touches the repo.
+aliases of `standard`. They still work: `forge init` warns once, stores `standard`, and
+existing configs holding a legacy name sync as standard. New repos should use `standard`
+directly. Any other value is invalid and aborts before Forge touches the repo.
 
 ```bash
 forge init --profile minimal            # leaner ruleset

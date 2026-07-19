@@ -1,6 +1,6 @@
 ---
 title: "Core 命令"
-description: "引导并维护一个仓库：init、sync、doctor、catalog、docs 和 update。"
+description: "用 init、sync、doctor、catalog、docs、update 引导并维护 Forge 仓库 —— 加上 profile、settings 与可逆卸载相关标志。"
 ---
 
 Core 分组用于引导一个仓库并保持它的健康。
@@ -16,6 +16,41 @@ forge init
 输出 `AGENTS.md`、`CLAUDE.md`、`.gemini/settings.json`、`.aider.conf.yml` 等文件
 （外加给 Roo Code 和 VS Code 的 MCP 服务器配置），以及账本所需的
 `.gitattributes` union-merge 规则。
+
+`forge init` 还会把 Forge 的 hooks 和 permissions 合并进**全局**的
+`~/.claude/settings.json`，所以它会在写入前先声明这次合并。这次合并是幂等的、
+带标记守护的，永远不会覆盖用户自己的条目。
+
+### Init 标志
+
+| 标志                  | 作用                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--profile <name>`    | 为本仓库挑选策略 profile。可取 `minimal` 或 `standard`（默认）。无效值会在任何脚手架、`.forge/` 写入或合并动作之前直接中止。                               |
+| `--no-settings`       | 完全跳过对全局 `~/.claude/settings.json` 的合并 —— 只写仓库级配置。                                                                                        |
+| `--remove-settings`   | 撤销以往的一次 settings 合并。Forge 形状的 hooks、permissions、statusline 和 `_forge` 标记会被移除；会先写入一份带时间戳的备份，你自己的条目保持不动。也会被 `install.sh --uninstall` 调用。 |
+| `--settings-only`     | 只合并全局 settings —— 不动仓库。被 `install.sh` 用来接线 hooks 和 permissions。                                                                           |
+
+如果 settings 合并被拒绝或出错，`forge init` 会以 exit 1 失败并把原因写到 stderr，
+而不是谎报成功。
+
+### 策略 profile
+
+`--profile` 用来选那套规则集，`forge sync` 会把它编译成每个工具的原生配置。
+只支持两种 profile：
+
+- **`standard`**（默认）—— 完整包：共享记忆规则、影响分析，以及完整的护栏 hook 集。
+- **`minimal`** —— 更精简的规则集，给小仓库或贡献者 fork 用。
+
+旧名字 `web-app`、`backend-service`、`library` 和 `regulated` 都是 `standard` 的
+弃用别名。它们仍然能用：`forge init` 会警告一次、把 `standard` 存下来，已有的、
+仍然拿旧名字的配置会按 standard 同步。新仓库应直接用 `standard`。其它任何值都是
+无效的，会在 Forge 动仓库之前中止。
+
+```bash
+forge init --profile minimal            # leaner ruleset
+forge init --no-settings                # per-repo only, skip the global merge
+forge init --remove-settings            # reverse a past global merge
+```
 
 ## `forge sync`
 
