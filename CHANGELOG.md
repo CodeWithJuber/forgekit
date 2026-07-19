@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **PostToolUse redaction now honors the structured-output contract (CR-01).** Built-in
+  tools (Bash, Read, Grep, …) return structured objects, and Claude Code ignores an
+  `updatedToolOutput` whose shape doesn't match the original — the previous redactor
+  stringified objects, so its replacement was silently discarded and the unredacted
+  output stayed visible. Redaction is now recursive and type-preserving: strings are
+  redacted in place, arrays/objects keep their exact keys and structure, non-string
+  leaves pass through untouched, and an unchanged response emits no rewrite. Tests now
+  cover Bash-shaped, Grep-shaped, and nested structured responses.
+- **Strict mode is honest and actually propagates (CR-02).** The shell wrapper no longer
+  swallows the redactor's exit status with an unconditional `exit 0` — a strict-mode
+  (`FORGE_GUARD_STRICT=1`) degradation now reaches Claude as exit 2. Documentation and
+  comments no longer claim strict mode "blocks": PostToolUse fires after the tool ran, so
+  exit 2 is surfaced stderr feedback, not enforcement — blocking belongs to the
+  PreToolUse guard. A wrapper-level regression test drives the real `secret-redact.sh`.
+
+### Changed
+
+- **Honest positioning (ME-24).** README no longer claims "one brain for every AI coding
+  agent", "enforced guardrails", or that every task passes a deterministic gate: automatic
+  hooks are Claude Code-specific (advisory by default, enforcement opt-in via
+  `FORGE_ENFORCE=1`), other tools receive shared instructions and MCP tools, and
+  guardrails are described as defence in depth, not a security sandbox.
+
 ## [0.22.1] - 2026-07-18
 
 ### Changed
