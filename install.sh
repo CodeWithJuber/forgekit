@@ -35,11 +35,19 @@ say() { printf '  %s\n' "$*"; }
 # Run argv directly (no eval — S-02). In dry-run, print the argv instead of executing.
 act() { if [ "$DRY" = 1 ]; then say "[dry-run] $*"; else "$@"; fi; }
 
-# link SRC DEST — back up an existing real file/dir, then symlink.
+# link SRC DEST — back up an existing real file/dir OR a foreign symlink, then symlink.
+# A symlink already pointing into this repo (Forge's own) is refreshed silently; any other
+# existing symlink is a USER symlink and is backed up before being replaced, so `ln -sfn`
+# never silently destroys it (HI-10).
 link() {
   local src="$1" dest="$2"
   [ -e "$src" ] || { say "skip (missing in bundle): $src"; return; }
-  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+  if [ -L "$dest" ]; then
+    case "$(readlink "$dest")" in
+      "$REPO"/*) : ;;  # our own symlink — safe to refresh in place
+      *) act mv "$dest" "$dest.forge-bak-$STAMP"; say "backed up existing symlink $dest" ;;
+    esac
+  elif [ -e "$dest" ]; then
     act mv "$dest" "$dest.forge-bak-$STAMP"; say "backed up existing $dest"
   fi
   act mkdir -p "$(dirname "$dest")"
@@ -136,7 +144,14 @@ uninstall_forge() {
       printf '%s\n' "$REMOVE_OUT" | sed 's/^/  /'
     else
       [ -n "$REMOVE_OUT" ] && printf '%s\n' "$REMOVE_OUT" | sed 's/^/  /'
-      say "note: automatic settings cleanup failed — remove the Forge hook/permission/statusline entries from $CLAUDE_DIR/settings.json by hand, or fix the file and run: forge init --remove-settings"
+      # Removing the asset symlinks now would leave GLOBAL settings hooks firing scripts that
+      # no longer exist — the dangerous case (HI-10). Stop with the assets intact instead of
+      # printing a false "Done."
+      cat >&2 <<EOF
+
+  Uninstall INCOMPLETE — settings still reference Forge hooks; fix $CLAUDE_DIR/settings.json then re-run \`install.sh --uninstall\` (asset symlinks left in place)
+EOF
+      exit 1
     fi
   else
     say "note: node not found — remove the Forge hook/permission/statusline entries from $CLAUDE_DIR/settings.json by hand, or run \`forge init --remove-settings\` once node is available"
