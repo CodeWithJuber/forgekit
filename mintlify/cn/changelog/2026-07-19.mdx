@@ -1,0 +1,34 @@
+---
+title: "2026 年 7 月 19 日当周"
+description: "本周 Forge 的产品更新:可选启用的 MCP 集成、v0.20 上手体验打磨、新的验证与知识命令、供应商扩展,以及由审计驱动的错误修复。"
+---
+
+## 新功能
+
+- **可选的 MCP 集成。** 通过单条命令,在 Forge 配置的所有 AI 工具中管理第三方 MCP 服务器(如 `context7`)。在运行 `forge integrations add <name> --yes` 之前,不会有任何内容写入磁盘。包含用于接管你已手动配置的服务器的 `--adopt`,以及非破坏性的 `remove`。参见 [`forge integrations`](/cn/cli/config#forge-integrations)。
+- **知识路由器(`forge know`)。** 通过一条命令在你的 ledger、atlas 和 substrate 之间路由问题。参见 [记忆命令](/cn/cli/memory)。
+- **深度验证(`forge verify --deep`)。** 采用共识式验证与更严格的完成门槛。参见 [质量命令](/cn/cli/quality)。
+- **预提交门(`forge precommit`)。** 在提交落地前运行验证检查清单。参见 [质量命令](/cn/cli/quality)。
+- **雷达(`forge radar`)。** 显示依赖风险与漂移。参见 [雷达指南](/cn/guides/radar-deps)。
+- **Ledger 同步 + déjà。** 通过 `forge deja` 在多台机器之间保持 ledger 一致,并检测重复的工作。参见 [记忆命令](/cn/cli/memory)。
+- **Dash v2 与 `forge report`。** 焕新的本地面板,以及可分享的 ledger、指标和影响范围的静态 HTML 报告。参见 [配置命令](/cn/cli/config#forge-report)。
+- **`forge tools` + 自动 gitignore。** 选择你的主要 AI 编码工具后,Forge 会连线相应的 `.gitignore` 条目,以便正确忽略生成的配置和 `.forge/` 工件。参见 [配置命令](/cn/cli/config#forge-tools)。
+- **`forge uicheck interact`。** 全新的由 Playwright 驱动的交互循环,用于 UI 验证。参见 [质量命令](/cn/cli/quality)。
+- **OpenAI + Gemini 供应商。** 自动检测以及与 OpenAI 兼容的调用路径 —— 使用 `forge config add` 进行设置。参见 [配置命令](/cn/cli/config#forge-config)。
+- **自定义网关模型映射。** 将 tier 名称重新映射到自定义网关的真实模型 ID,以便路由可与任何 OpenAI 兼容端点协同工作。参见 [模型路由](/cn/concepts/model-routing)。
+
+## 更新
+
+- **基于结果校准的路由。** 模型路由现在使用基于真实结果(而非默认值)校准的可度量晋升门。参见 [模型路由](/cn/concepts/model-routing)。
+- **v0.20 上手体验优化。** 每条命令的帮助输出、用于自动修复常见配置问题的 `forge doctor --fix`、首次运行时的零配置连线,以及更清晰的 dash 输出。参见 [零配置上手指南](/cn/guides/zero-config-onboarding)。
+- **统一的设计系统。** 在每一个公开的 Forge 表面(CLI、dash 和 report)之间保持一致的外观与交互模式。
+- **`context7` 现在为可选。** Forge 自己的 MCP 服务器仍是默认唯一连线的;`context7` 和其他第三方服务器可通过 `forge integrations` 按需安装。参见 [简介](/cn/introduction)。
+- **Init 标志、配置文件与 `FORGE_GUARD_STRICT`。** 新增文档说明的 init 标志、配置文件选择和严格守护模式。参见 [配置命令](/cn/cli/config) 参考。
+- **淘汰旧版存储。** 通过 `FORGE_LEDGER_ONLY`,较早的重复存储将被移除,转而使用单一 ledger。
+
+## 修复
+
+- **弥合信任缺口。** 对 v0.22.0 版本的深度重新审计关闭了 24 个跨层信任问题,涵盖记忆、验证和路由。
+- **审计修复。** 来自一次内部审计的 P0 正确性与安全修复,以及 P1 产品加固。
+- **正确性缺陷修复。** 涵盖 `deja` 下限逻辑、worktree 加固、ledger 同步、cortex 指标、verify 基线、radar 使用和预提交解析的 7 项修复。
+- **Settings 模板清理。** 从默认 settings 模板中移除失效的 curl-pipe 拒绝规则。

@@ -1,0 +1,34 @@
+---
+title: "2026 年 7 月 19 日当周"
+description: "本周 Forge 的产品更新:可选启用的 MCP 集成、v0.20 上手体验打磨、新的验证与知识命令、供应商扩展,以及由审计驱动的错误修复。"
+---
+
+## 新特性
+
+- **可选启用的 MCP 集成。** 通过单条命令管理 Forge 所配置的每个 AI 工具中的第三方 MCP 服务器(如 `context7`)。在你运行 `forge integrations add <name> --yes` 之前,不会有任何内容落盘。支持 `--adopt` 用于接管你已手工配置的服务器,以及无破坏性的 `remove`。参见 [`forge integrations`](/zh-Hans/cli/config#forge-integrations)。
+- **知识路由(`forge know`)。** 通过一条命令在你的 ledger、atlas 和 substrate 之间路由提问。参见[记忆命令](/zh-Hans/cli/memory)。
+- **深度验证(`forge verify --deep`)。** 共识式验证,附带更严格的完成门槛。参见[质量命令](/zh-Hans/cli/quality)。
+- **预提交门槛(`forge precommit`)。** 在提交落地前运行验证清单。参见[质量命令](/zh-Hans/cli/quality)。
+- **雷达(`forge radar`)。** 显式呈现依赖风险与偏移。参见[雷达指南](/zh-Hans/guides/radar-deps)。
+- **Ledger 同步 + déjà。** 使 ledger 在多台机器间保持一致,并通过 `forge deja` 检测重复工作。参见[记忆命令](/zh-Hans/cli/memory)。
+- **Dash v2 与 `forge report`。** 焕新的本地仪表盘,以及可分享的静态 HTML 报告,涵盖 ledger、指标与影响范围。参见 [配置命令](/zh-Hans/cli/config#forge-report)。
+- **`forge tools` + 自动 gitignore。** 选择你的主 AI 编码工具后,Forge 会写入匹配的 `.gitignore` 条目,以便正确忽略生成的配置和 `.forge/` 产物。参见[配置命令](/zh-Hans/cli/config#forge-tools)。
+- **`forge uicheck interact`。** 由 Playwright 驱动的全新交互循环,用于 UI 验证。参见[质量命令](/zh-Hans/cli/quality)。
+- **OpenAI 与 Gemini 供应商。** 自动检测以及 OpenAI 兼容的调用路径 —— 使用 `forge config add` 进行配置。参见[配置命令](/zh-Hans/cli/config#forge-config)。
+- **自定义网关的模型映射。** 将层级名称重映射到自定义网关的真实模型 ID,使路由能够适配任何 OpenAI 兼容的端点。参见[模型路由](/zh-Hans/concepts/model-routing)。
+
+## 更新
+
+- **基于结果校准的路由。** 模型路由现在使用基于真实结果校准的实测晋级门槛,而不再依赖默认值。参见[模型路由](/zh-Hans/concepts/model-routing)。
+- **v0.20 上手体验优化。** 每条命令的帮助输出、用于自动修复常见安装问题的 `forge doctor --fix`、首次运行时的零配置串联,以及更清晰的 dash 输出。参见[零配置上手指南](/zh-Hans/guides/zero-config-onboarding)。
+- **统一设计系统。** 在 Forge 每一个对外的界面 —— CLI、dash 与 report —— 上都呈现一致的外观与交互模式。
+- **`context7` 现改为可选启用。** Forge 自家的 MCP 服务器仍是唯一默认串联的服务器;`context7` 及其他第三方服务器改为按需通过 `forge integrations` 安装。参见[简介](/zh-Hans/introduction)。
+- **init 参数、profile 与 `FORGE_GUARD_STRICT`。** 新记录了 init 参数、profile 选择,以及严格守卫模式。参见[配置命令](/zh-Hans/cli/config)参考。
+- **淘汰旧存储。** 通过 `FORGE_LEDGER_ONLY`,移除较早的重复存储,统一使用唯一的 ledger。
+
+## 修复
+
+- **弥合信任缺口。** 对 v0.22.0 版本的深度复审关闭了 24 个跨层信任问题,覆盖记忆、验证与路由。
+- **审计修复。** 来自一轮内部审计的 P0 正确性与安全修复,以及 P1 产品加固。
+- **正确性 Bug。** 在 `deja` 下限逻辑、worktree 加固、ledger 同步、cortex 指标、verify 基线、radar 用法与 pre-commit 解析等方面完成了七项修复。
+- **Settings 模板清理。** 从默认 settings 模板中移除了无实际作用的 curl-pipe 拒绝规则。
