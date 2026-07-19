@@ -5,7 +5,7 @@
 // approximate (dynamic/DI edges missed) — a real call-graph MCP is the upgrade seam.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { IGNORE_DIRS, SRC_EXT } from "./util.js";
+import { IGNORE_DIRS, SRC_EXT, toPosix } from "./util.js";
 
 const IMPORT_RES = [
   /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g, // import x from "y"
@@ -21,7 +21,7 @@ function walk(dir, root, out) {
     if (IGNORE_DIRS.has(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walk(p, root, out);
-    else if (SRC_EXT.test(entry.name)) out.push(relative(root, p));
+    else if (SRC_EXT.test(entry.name)) out.push(toPosix(relative(root, p)));
   }
 }
 
@@ -34,7 +34,7 @@ function resolveSpec(fromRel, spec, root, fileSet) {
     ...["index.js", "index.ts"].map((idx) => join(raw, idx)),
   ];
   for (const c of cands) {
-    const rel = relative(root, c);
+    const rel = toPosix(relative(root, c));
     if (fileSet.has(rel)) return rel;
   }
   return null;
@@ -97,7 +97,7 @@ export function components(graph) {
 export function decompose(root, touched) {
   // Normalize to repo-relative (the graph's key form) so `./src/a.js` or an absolute path
   // still matches — otherwise a coupled file is missed and reported as an independent solo.
-  const norm = touched.map((t) => relative(root, resolve(root, t)));
+  const norm = touched.map((t) => toPosix(relative(root, resolve(root, t))));
   const normSet = new Set(norm);
   const comps = components(importGraph(root));
   const compOf = new Map();

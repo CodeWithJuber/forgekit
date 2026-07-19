@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
 import { isTestFile, predictFailingTests } from "./substrate.js";
-import { hasBin } from "./util.js";
+import { hasBin, toPosix } from "./util.js";
 
 /**
  * Weighted greedy set cover over the covers(test, source) relation: candidates are
@@ -110,9 +110,16 @@ const locFile = (line) => {
 export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
   if (!Array.isArray(tests) || tests.length === 0)
     return { ok: false, reason: "no tests selected — nothing to dry-run" };
-  if (!hasBin("git")) return { ok: false, reason: "git not found — the sandbox is a git worktree" };
+  if (!hasBin("git"))
+    return {
+      ok: false,
+      reason: "git not found — the sandbox is a git worktree",
+    };
   try {
-    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: root,
+      stdio: "ignore",
+    });
   } catch {
     return { ok: false, reason: `not a git repository: ${root}` };
   }
@@ -202,7 +209,10 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     let attributable = true;
     for (const block of (run.stdout ?? "").split(/^not ok /m).slice(1)) {
       const file = block.split("\n").map(locFile).find(Boolean);
-      const t = file && tests.find((c) => file === join(wtReal, String(c)));
+      // Compare in POSIX form: the TAP `location:` uses native `\` on Windows while the
+      // requested test paths and join() results mix separators — normalizing both sides
+      // makes attribution portable (no-op on Linux, where both are already `/`).
+      const t = file && tests.find((c) => toPosix(file) === toPosix(join(wtReal, String(c))));
       if (t) perFile[String(t)] = "fail";
       else attributable = false;
     }
@@ -224,10 +234,16 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     // `git worktree list` forever. remove --force, prune the bookkeeping, then
     // belt-and-braces rm of the parent; the verdict below verifies, never assumes.
     try {
-      execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["worktree", "remove", "--force", wt], {
+        cwd: root,
+        stdio: "ignore",
+      });
     } catch {}
     try {
-      execFileSync("git", ["worktree", "prune"], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["worktree", "prune"], {
+        cwd: root,
+        stdio: "ignore",
+      });
     } catch {}
     try {
       rmSync(parent, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test } from "node:test";
 import { claimsData, dashData, historyData, radarData, serve, timelineData } from "../src/dash.js";
 import { mintClaim, outcomeRecord } from "../src/ledger.js";
@@ -50,7 +50,7 @@ test("dashData: one payload with ledger, metrics, and atlas sections in shape", 
   const { root, contested, retracted } = fixture();
   const d = dashData(root, { nowDay: NOW });
 
-  assert.equal(d.repo, root.split("/").pop());
+  assert.equal(d.repo, basename(root));
   assert.equal(d.nowDay, NOW);
   assert.equal(d.ledger.stats.total, 3);
   assert.equal(d.ledger.stats.tombstoned, 1);

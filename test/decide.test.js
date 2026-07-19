@@ -65,13 +65,17 @@ test("a corrupted decisions file is tolerated — numbering restarts from parsea
 test("concurrent appends never duplicate ids or headers (mkdir lock)", async () => {
   const root = mkdtempSync(join(tmpdir(), "forge-decide-"));
   const { spawn } = await import("node:child_process");
+  // A file:// URL (not a raw path): a Windows cwd is `C:\…`, which is neither a valid import
+  // specifier nor a safe JS string literal (backslash escapes). Derive the module URL from
+  // import.meta.url so the child imports it identically on both OSes.
+  const decideUrl = new URL("../src/decide.js", import.meta.url).href;
   const one = (i) =>
     new Promise((resolve) => {
       const p = spawn(
         "node",
         [
           "-e",
-          `import("${process.cwd()}/src/decide.js").then(m => m.appendDecision(process.argv[1], "parallel decision ${"n"}${i} — race test"))`,
+          `import(${JSON.stringify(decideUrl)}).then(m => m.appendDecision(process.argv[1], "parallel decision ${"n"}${i} — race test"))`,
           root,
         ],
         { stdio: "ignore" },
