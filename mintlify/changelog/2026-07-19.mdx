@@ -1,0 +1,34 @@
+---
+title: "Week of July 19, 2026"
+description: "Opt-in MCP integrations, v0.20 onboarding polish, new verification and knowledge commands, provider expansion, and audit-driven fixes."
+---
+
+## New features
+
+- **Opt-in MCP integrations.** Manage third-party MCP servers (like `context7`) across every AI tool Forge configures from a single command. Nothing lands on disk until you run `forge integrations add <name> --yes`. Includes `--adopt` for claiming servers you already configured by hand, and non-destructive `remove`. See [`forge integrations`](/cli/config#forge-integrations).
+- **Knowledge router (`forge know`).** Route questions across your ledger, atlas, and substrate from one command. See [Memory commands](/cli/memory).
+- **Deep verification (`forge verify --deep`).** Consensus-style verification with a stricter completion gate. See [Quality commands](/cli/quality).
+- **Pre-commit gate (`forge precommit`).** Run the verification checklist before a commit lands. See [Quality commands](/cli/quality).
+- **Radar (`forge radar`).** Surface dependency risk and drift. See the [Radar guide](/guides/radar-deps).
+- **Ledger sync + déjà.** Keep the ledger consistent across machines and detect duplicate work with `forge deja`. See [Memory commands](/cli/memory).
+- **Dash v2 and `forge report`.** Refreshed local dashboard plus a shareable static HTML report of ledger, metrics, and blast radius. See [Config commands](/cli/config#forge-report).
+- **`forge tools` + auto-gitignore.** Pick your primary AI coding tool and Forge wires the matching `.gitignore` entries so generated config and `.forge/` artifacts are ignored correctly. See [Config commands](/cli/config#forge-tools).
+- **`forge uicheck interact`.** New Playwright-driven interaction loop for UI verification. See [Quality commands](/cli/quality).
+- **OpenAI + Gemini providers.** Auto-detection and an OpenAI-compatible call path — set them up with `forge config add`. See [Config commands](/cli/config#forge-config).
+- **Custom gateway model mapping.** Remap tier names onto a custom gateway's real model IDs so routing works with any OpenAI-compatible endpoint. See [Model routing](/concepts/model-routing).
+
+## Updates
+
+- **Outcome-calibrated routing.** Model routing now uses a measured-promotion gate calibrated against real outcomes rather than defaults. See [Model routing](/concepts/model-routing).
+- **v0.20 onboarding polish.** Per-command help output, `forge doctor --fix` to auto-repair common setup issues, zero-config wiring on first run, and clearer dash output. See the [Zero-config onboarding guide](/guides/zero-config-onboarding).
+- **Unified design system.** One consistent look and interaction pattern across every public Forge surface — CLI, dash, and report.
+- **`context7` is now opt-in.** Forge's own MCP server remains the only one wired by default; `context7` and other third-party servers are installed on demand via `forge integrations`. See the [Introduction](/introduction).
+- **Init flags, profiles, and `FORGE_GUARD_STRICT`.** Newly documented init flags, profile selection, and strict-guard mode. See the [Config commands](/cli/config) reference.
+- **Legacy stores retired.** With `FORGE_LEDGER_ONLY`, older duplicate stores are removed in favor of the single ledger.
+
+## Fixes
+
+- **Trust gaps closed.** A deep re-audit of the v0.22.0 release closed 24 cross-layer trust issues covering memory, verification, and routing.
+- **Audit remediation.** P0 correctness and security fixes plus P1 product hardening from an internal audit pass.
+- **Correctness bugs.** Seven fixes across `deja` floor logic, worktree hardening, ledger sync, cortex metrics, verify base, radar usage, and pre-commit parsing.
+- **Settings template cleanup.** Removed inert curl-pipe deny rules from the default settings template.
