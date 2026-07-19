@@ -52,8 +52,10 @@ jobs:
           ec=${PIPESTATUS[0]}
           echo "===== FAILING TESTS (name + file) ====="
           grep -nE '^not ok ' /tmp/win-test.log | head -80
-          echo "===== FAILURE FILES ====="
-          grep -E "^# Subtest|^not ok " /tmp/win-test.log | grep -B1 '^not ok ' | grep 'file:' | sort -u | head -80
+          echo "===== FAILURE DIAGNOSTICS (TAP YAML blocks) ====="
+          # Print each failing test's `not ok` line through its YAML `...` terminator so the
+          # assertion detail (expected/actual/location) is visible in the CI log.
+          awk '/^not ok /{p=1} p{print} p&&/^  \.\.\.[[:space:]]*$/{p=0}' /tmp/win-test.log | head -200
           exit "$ec"
 
   quality-gate:

@@ -234,8 +234,12 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     result = body();
   } finally {
     // ALWAYS discard the sandbox — a leaked worktree pins refs and litters
-    // `git worktree list` forever. remove --force, prune the bookkeeping, then
-    // belt-and-braces rm of the parent; the verdict below verifies, never assumes.
+    // `git worktree list` forever. Order matters on Windows: `git worktree remove`
+    // can fail there when a just-exited `node --test` worker still holds a handle, so
+    // we then rm the directory ourselves and prune LAST — pruning only reconciles
+    // git's bookkeeping against the on-disk state, so it must run AFTER the directory
+    // is gone or it re-registers the still-present worktree and `git worktree list`
+    // reports a phantom entry. The verdict below verifies removal, never assumes it.
     try {
       execFileSync("git", ["worktree", "remove", "--force", wt], {
         cwd: root,
@@ -243,13 +247,13 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
       });
     } catch {}
     try {
+      rmSync(parent, { recursive: true, force: true });
+    } catch {}
+    try {
       execFileSync("git", ["worktree", "prune"], {
         cwd: root,
         stdio: "ignore",
       });
-    } catch {}
-    try {
-      rmSync(parent, { recursive: true, force: true });
     } catch {}
   }
   result.worktree = existsSync(wt) ? "leaked" : "removed";
