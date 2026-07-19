@@ -80,7 +80,7 @@ forge harden               # gitleaks pre-commit + 沙箱设置
 
 ## 完成关卡 —— 需要测试证据
 
-Stop 路径上的完成关卡(见 [跨会话记忆](/concepts/cross-session-memory))不再把代理的 handoff 当作代码变更已完成的证据。对于任何触及源码的会话,该关卡要求**真实的测试证据**:
+Stop 路径上的完成关卡(见 [跨会话记忆](/zh-Hans/concepts/cross-session-memory))不再把代理的 handoff 当作代码变更已完成的证据。对于任何触及源码的会话,该关卡要求**真实的测试证据**:
 
 - 在会话 diff 中改动了一个测试文件,**或者**
 - 针对当前改动重新跑了一次通过的 `forge verify`。
