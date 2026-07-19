@@ -1,6 +1,6 @@
 ---
 title: "CLI 概览"
-description: "每一个 forge 命令,按 Core、Memory、Substrate、Quality 和 Config 分组——命令面本身是数据,通过严格的漂移检查与文档相互对账。"
+description: "每一个 forge 命令,按 Core、Memory、Substrate、Quality 和 Config 分组,并列出控制强制策略与输出的环境变量。"
 ---
 
 `forge` 命令面被定义为数据(`src/commands.js`),并由 `forge docs check` 与文档对账,因此一个命令无法在不被文档察觉的情况下上线或消失。命令分为五组。
@@ -34,6 +34,17 @@ description: "每一个 forge 命令,按 Core、Memory、Substrate、Quality 和
   `--verbose` / `FORGE_VERBOSE` 后面;命令会先输出结果。
 - **管道友好的输出。** 被管道时输出纯文本;在 TTY 上会加上品牌配色和置信度进度条。`NO_COLOR` 关掉颜色,`FORCE_COLOR=1` 强制打开。
 - **`--json`** 在基座和大多数分析命令中可用,便于脚本使用。
+
+## 环境变量
+
+| 变量                      | 作用                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FORGE_ENFORCE=1`         | 把基座最强的建议性信号变成硬阻断。                                                                                                                                                         |
+| `FORGE_GUARD_STRICT=1`    | 把 secret 脱敏器的 `DEGRADED` 警告升级为阻断性退出。默认情况下,脱敏失败会向 stderr 打印 `secret redaction DEGRADED` 并放行输出;严格模式会拒绝输出任何脱敏器无法完全清洗的内容。适合在 CI 或共享机器上使用,那里一行未脱敏的内容比一次失败的命令更糟。 |
+| `FORGE_NO_UPDATE_CHECK=1` | 让 `forge doctor` 中 “落后上游若干 commit” 的提示保持静默。                                                                                                                                |
+| `FORGE_NO_HINT=1`         | 关闭那条一次性、提示你运行 `forge init` 的初始化提示。                                                                                                                                     |
+| `FORGE_VERBOSE=1`         | 显示默认被隐藏的每命令横幅(`Forge <cmd> — …`)。                                                                                                                                          |
+| `FORGE_EMBED=1`           | 为 memory recall 启用 embedding 分层(MinHash 仍是零依赖的默认)。                                                                                                                         |
 
 <Note>
   运行 `forge --help` 查看始终最新的命令列表,或 `forge catalog` 查看每个工具、crew 与护栏的 Start-Here 索引及一句话说明。
