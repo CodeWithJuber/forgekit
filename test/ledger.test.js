@@ -13,13 +13,16 @@ import {
   mintClaim,
   outcomeRecord,
   rec,
+  refStrength,
   retrieve,
   score,
   sealRecord,
   shingles,
   sketch,
+  UNRESOLVED_VAL_CAP,
   val,
 } from "../src/ledger.js";
+import { SERVE_FLOOR } from "../src/reuse.js";
 import { fakeAnthropic } from "./_fixtures.js";
 
 // --- canonicalization & content addressing -----------------------------------------
@@ -121,6 +124,85 @@ test("outcomeRecord: typed git ref is resolved; unresolvable is rejected, untype
   assert.equal(outcomeRecord({ oracle: "test.run", result: "confirm", ref: "git:" }).ok, false);
   // an untyped/legacy ref is accepted unchanged (back-compat)
   assert.ok(outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:1" }).ok);
+});
+
+test("validateRef: ci: must be a locator, human: must be a ratification (ME-05 format grammars)", () => {
+  const ok = (ref) => outcomeRecord({ oracle: "ci.run", result: "confirm", ref }).ok;
+  // A CI locator: URL, owner/repo@run, or a bare run id — but not prose.
+  assert.ok(ok("ci:https://ci.example.com/run/7"), "URL accepted");
+  assert.ok(ok("ci:acme/app@1234"), "owner/repo@run accepted");
+  assert.ok(ok("ci:42"), "bare run id accepted (back-compat)");
+  assert.equal(ok("ci:not-a-url"), false, "made-up CI string refused on format");
+  // human: is an explicit ratification (author@ref), never the model's own say-so.
+  const okH = (ref) => outcomeRecord({ oracle: "human.accept", result: "confirm", ref }).ok;
+  assert.ok(okH("human:alice@decision-42"), "explicit human ratification accepted");
+  assert.equal(okH("human:the-model-said-yes"), false, "self-assertion refused on format");
+});
+
+test("refStrength: resolved (git/ci/human/legacy) vs format-only (file/test)", () => {
+  assert.equal(refStrength("run:1"), "resolved", "untyped/legacy keeps historical trust");
+  assert.equal(refStrength("git:cafebabe"), "resolved");
+  assert.equal(refStrength("ci:42"), "resolved");
+  assert.equal(refStrength("human:alice@d1"), "resolved");
+  assert.equal(refStrength("test:made-up-run"), "format", "a run id is a pointer, not a proof");
+  assert.equal(refStrength("file:/some/path"), "format");
+});
+
+test("val: format-only evidence (test:/file:) cannot lift confidence into the serving band", () => {
+  // A single confirm on an UNTYPED (resolved-trust) ref clears the serving floor as before.
+  const resolved = mkClaim([
+    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:legit" }).outcome,
+  ]);
+  assert.ok(val(resolved, 0) >= SERVE_FLOOR, "resolved evidence still earns trust (no regression)");
+
+  // But test:/file: refs — however many — are capped below the serving/trusted band.
+  const madeUp = mkClaim(
+    Array.from(
+      { length: 6 },
+      (_, i) =>
+        outcomeRecord({
+          oracle: "test.run",
+          result: "confirm",
+          ref: `test:made-up-run-${i}`,
+        }).outcome,
+    ),
+  );
+  assert.ok(val(madeUp, 0) < SERVE_FLOOR, "test:made-up-run never reaches the serving floor");
+  assert.ok(val(madeUp, 0) <= UNRESOLVED_VAL_CAP + 1e-9, "capped at UNRESOLVED_VAL_CAP");
+
+  const fileGhost = mkClaim([
+    outcomeRecord({
+      oracle: "test.run",
+      result: "confirm",
+      ref: "file:/does/not/exist",
+    }).outcome,
+  ]);
+  assert.ok(val(fileGhost, 0) < SERVE_FLOOR, "file:/does/not/exist cannot lift into serving band");
+});
+
+test("val: a resolvable git-ref confirmation raises confidence as before (no regression)", () => {
+  const git = mkClaim([
+    outcomeRecord({
+      oracle: "test.run",
+      result: "confirm",
+      ref: "git:cafebabe",
+    }).outcome,
+  ]);
+  assert.ok(val(git, 0) >= SERVE_FLOOR, "git evidence lifts confidence past the serving floor");
+  // A single resolved confirm lifts the whole claim even if a format-only one rides along.
+  const mixed = mkClaim([
+    outcomeRecord({
+      oracle: "test.run",
+      result: "confirm",
+      ref: "git:cafebabe",
+    }).outcome,
+    outcomeRecord({
+      oracle: "test.run",
+      result: "confirm",
+      ref: "test:made-up",
+    }).outcome,
+  ]);
+  assert.ok(val(mixed, 0) >= SERVE_FLOOR, "one resolved confirm removes the format-only cap");
 });
 
 // --- confidence: the decayed Beta posterior -----------------------------------------

@@ -30,6 +30,7 @@ import {
   tombstone,
   verify,
 } from "../src/ledger_store.js";
+import { fakeAnthropic, fakeGithubPat } from "./_fixtures.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-ledger-"));
 const fact = (name, text, t = 0) =>
@@ -342,6 +343,109 @@ test("blame: full accountability view — mints, evidence, retractions, per-auth
   assert.ok(b.val > 0.5);
   assert.ok(b.trust.alice >= 0.5 && b.trust.alice <= 1);
   assert.equal(blame(dir, "zz", 3), null);
+});
+
+// ---------------------------------------------------------------------------
+// ME-06 — secret-shaped evidence metadata (ref/author), tombstone reasons, and
+// provenance are refused BEFORE append; nothing secret ever reaches disk.
+// ---------------------------------------------------------------------------
+
+test("secret metadata is refused before append — evidence ref/author, tombstone reason, provenance", () => {
+  const dir = tmp();
+  const c = fact("target", "no secrets in metadata");
+  putClaim(dir, c);
+
+  // (a) a secret in an evidence ref is refused (outcomeRecord won't even build it)
+  const secretRef = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: `test:${fakeAnthropic()}`,
+  });
+  assert.equal(secretRef.ok, false, "outcomeRecord refuses a secret-shaped ref");
+  assert.match(secretRef.reason, /secret/);
+
+  // (b) a secret in an evidence AUTHOR is refused at the append gate
+  const secretAuthor = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: "run:1",
+    author: fakeAnthropic(),
+  });
+  assert.equal(secretAuthor.ok, false, "outcomeRecord refuses a secret-shaped author");
+
+  // Even a hand-built outcome (bypassing outcomeRecord) is refused by appendRecord.
+  const forgedAuthor = sealRecord({
+    author: fakeAnthropic(),
+    oracle: "test.run",
+    ref: "run:1",
+    result: "confirm",
+    t: 0,
+    w: 0.8,
+  });
+  const r = appendEvidence(dir, c.id, forgedAuthor);
+  assert.equal(r.ok, false, "appendEvidence refuses secret-bearing evidence at the boundary");
+
+  // (c) a secret in a tombstone reason is refused
+  const tomb = tombstone(dir, c.id, {
+    reason: fakeGithubPat(),
+    author: "alice",
+    t: 1,
+  });
+  assert.equal(tomb.ok, false, "tombstone with a secret reason is refused");
+
+  // The on-disk logs contain NO secret material.
+  const evPath = join(dir, "evidence", `${c.id}.log`);
+  const tsPath = join(dir, "tombstones", `${c.id}.log`);
+  assert.ok(!existsSync(evPath), "no evidence log was written for the refused records");
+  assert.ok(!existsSync(tsPath), "no tombstone log was written for the refused reason");
+  // And a full verify() finds no secret-like content anywhere.
+  assert.ok(!verify(dir).issues.some((i) => /secret/.test(i)), "verify sees no secret on disk");
+});
+
+// ---------------------------------------------------------------------------
+// ME-07 — quarantine dedups by a TRUSTED hash (not the rejected record's own `h`),
+// captures malformed no-`h` lines, and never stores raw secret material.
+// ---------------------------------------------------------------------------
+
+test("mergeDirs: two forged records sharing a fake `h` BOTH quarantine; a no-`h` line is captured; secrets redacted", () => {
+  const dst = tmp();
+  const src = tmp();
+  const c = fact("collide", "trusted quarantine identity");
+  putClaim(dst, c);
+  putClaim(src, c);
+
+  // Source evidence log, written raw: two DISTINCT forged records that share one
+  // attacker-chosen `h`, a malformed line with no `h` at all, and a line whose author
+  // carries a secret (must be redacted, never persisted raw).
+  mkdirSync(join(src, "evidence"), { recursive: true });
+  writeFileSync(
+    join(src, "evidence", `${c.id}.log`),
+    `${[
+      '{"author":"attacker-a","h":"deadbeef","oracle":"test.run","ref":"ref-a","result":"confirm","t":0,"w":0.8}',
+      '{"author":"attacker-b","h":"deadbeef","oracle":"test.run","ref":"ref-b","result":"confirm","t":0,"w":0.8}',
+      "this line is not json and has no hash",
+      `{"author":"${fakeAnthropic()}","h":"deadbeef","oracle":"test.run","ref":"ref-c","result":"confirm","t":0,"w":0.8}`,
+    ].join("\n")}\n`,
+  );
+
+  const r = mergeDirs(dst, src);
+  assert.equal(r.quarantined, 4, "both same-`h` forgeries, the no-`h` line, and the secret line");
+
+  const qPath = join(dst, "quarantine", `${c.id}.log`);
+  const qLog = readFileSync(qPath, "utf8");
+  // Both distinct forgeries survive (their refs are different — trusted identity, not `h`).
+  assert.match(qLog, /ref-a/, "first forged record quarantined");
+  assert.match(qLog, /ref-b/, "second forged record quarantined (NOT collapsed by shared `h`)");
+  // The malformed no-`h` line is captured, not silently dropped.
+  assert.match(qLog, /this line is not json/, "malformed no-`h` line captured in quarantine");
+  // The secret is redacted: the raw credential never reaches disk.
+  assert.ok(!qLog.includes(fakeAnthropic()), "raw secret is NOT stored in quarantine");
+  assert.match(qLog, /REDACTED/, "the secret-bearing record is stored redacted");
+
+  // Re-merge is idempotent under the trusted identity: nothing new, no duplicate lines.
+  const again = mergeDirs(dst, src);
+  assert.equal(again.quarantined, 0, "re-merge quarantines nothing new");
+  assert.equal(readFileSync(qPath, "utf8"), qLog, "no duplicate quarantine lines");
 });
 
 // ---------------------------------------------------------------------------

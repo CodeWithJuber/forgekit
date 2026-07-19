@@ -143,9 +143,21 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
 // Typed evidence refs are `<type>:<value>`. Only these types are recognized; anything
 // else (or a ref with no `type:` prefix) is treated as an untyped/legacy ref and accepted
 // unchanged for back-compat. `git:` is the one type forge can cheaply AND soundly resolve —
-// the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is supplied;
-// the rest are format-checked (a non-empty value) since resolving them is not cheap/sound.
+// the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is supplied.
+// The rest now carry real FORMAT grammars (ME-05): `ci:` must be a CI locator, `human:`
+// must be an explicit ratification, `file:` must resolve to an existing path when a repo
+// root is available. A `test:` run id remains format-only — it is unverifiable — which is
+// why it can never lift confidence into the trusted band (see refStrength/val).
 export const REF_TYPES = new Set(["git", "file", "test", "ci", "human"]);
+
+// A `ci:` ref must be a real CI locator: an http(s) URL, an `owner/repo@run` reference,
+// or a bare numeric run id. Prose like "not-a-url" is refused so a made-up string can
+// never masquerade as evidence.
+const CI_REF_RE = /^(https?:\/\/\S+|[\w.-]+\/[\w.-]+@\S+|\d+)$/;
+// A `human:` ref is an EXPLICIT ratification: a named person `@` the thing they ratified
+// (e.g. `alice@decision-42`). "the-model-said-yes" is not a human ratifying anything —
+// the model's own assertion is refused.
+const HUMAN_REF_RE = /^[^@\s]+@\S+$/;
 
 /** Parse a typed ref into {type, value}, or null for an untyped/legacy ref. */
 export function parseRef(ref) {
@@ -155,14 +167,20 @@ export function parseRef(ref) {
 }
 
 /**
- * Validate an evidence ref. Untyped/legacy → accepted. Typed-but-empty → rejected.
- * `git:` → resolved through the injected `resolveGit(sha)` predicate (execFileSync lives in
- * the impure store, keeping this module pure); a git ref that does not resolve is rejected.
+ * Validate an evidence ref (record-integrity FORMAT + optional resolution). Untyped/legacy
+ * → accepted. Typed-but-empty → rejected. Typed refs are format-checked purely (`ci:` is a
+ * CI locator, `human:` is a ratification) and, for the two I/O-resolvable types, resolved
+ * through injected predicates (execFileSync/existsSync live in the impure store, keeping
+ * this module pure): `git:` via `resolveGit(sha)`, `file:` via `resolveFile(path)`. A typed
+ * ref whose resolver is supplied but returns false is rejected.
+ *
+ * NOTE: passing FORMAT is not the same as the evidence being TRUE — see refStrength/val for
+ * how merely-format-valid evidence is weighted below the serving threshold.
  * @param {string} ref
- * @param {{resolveGit?: (sha:string)=>boolean}} [opts]
+ * @param {{resolveGit?: (sha:string)=>boolean, resolveFile?: (path:string)=>boolean}} [opts]
  * @returns {{ok: boolean, reason?: string}}
  */
-export function validateRef(ref, { resolveGit } = {}) {
+export function validateRef(ref, { resolveGit, resolveFile } = {}) {
   const parsed = parseRef(ref);
   if (!parsed) return { ok: true }; // untyped/legacy — kept for back-compat
   if (!parsed.value) return { ok: false, reason: `evidence ref "${ref}" is typed but empty` };
@@ -171,19 +189,71 @@ export function validateRef(ref, { resolveGit } = {}) {
       ok: false,
       reason: `evidence ref "${ref}" is unresolvable (no such git object)`,
     };
+  if (parsed.type === "ci" && !CI_REF_RE.test(parsed.value))
+    return {
+      ok: false,
+      reason: `evidence ref "${ref}" is not a CI locator (URL, owner/repo@run, or run id)`,
+    };
+  if (parsed.type === "human" && !HUMAN_REF_RE.test(parsed.value))
+    return {
+      ok: false,
+      reason: `evidence ref "${ref}" is not an explicit human ratification (author@ref)`,
+    };
+  if (parsed.type === "file" && typeof resolveFile === "function" && !resolveFile(parsed.value))
+    return {
+      ok: false,
+      reason: `evidence ref "${ref}" is unresolvable (no such file)`,
+    };
   return { ok: true };
 }
+
+// The trust model (ME-05): record-integrity validity (validateRef/validOutcome) is NOT the
+// same as evidence being RESOLVED. Only resolved evidence may lift confidence into the
+// trusted/serving band. Two tiers, both re-derived PURELY from the ref so a forged log line
+// can never buy a strength it isn't entitled to (same discipline as the ORACLES weights):
+//  - RESOLVED: untyped/legacy (historical trust), `git:` (resolved at the append gate —
+//    the one soundly-resolvable type), `ci:` (only well-formed CI locators pass validateRef),
+//    and `human:` (only explicit ratifications pass). These count at full weight.
+//  - FORMAT-ONLY: `file:` and `test:`. A path existing or a run id being well-formed is
+//    record integrity, NOT proof the claim is true, and pure val() cannot re-check existence.
+//    These count at a REDUCED weight and, on their own, are capped below the serving floor.
+const RESOLVED_REF_TYPES = new Set(["git", "ci", "human"]);
+
+/** Resolution strength of a ref for confidence weighting: "resolved" or "format".
+ *  Pure and total — never throws, never does I/O. */
+export function refStrength(ref) {
+  const parsed = parseRef(ref);
+  if (!parsed) return "resolved"; // untyped/legacy — historical full trust
+  return RESOLVED_REF_TYPES.has(parsed.type) ? "resolved" : "format";
+}
+
+/** Weight multiplier applied to merely-format-valid (unresolved) evidence in val(). */
+export const UNRESOLVED_WEIGHT = 0.5;
+/** A claim whose confirming evidence is ALL format-only may never be lifted to/above the
+ *  serving band. This cap sits below both the reuse SERVE_FLOOR (0.6) and the trusted band
+ *  (1 − DORMANT_VAL = 0.65): such a claim stays retrievable but is never "trusted". */
+export const UNRESOLVED_VAL_CAP = 0.55;
 
 /**
  * Build an evidence outcome. Evidence without a verifiable ref (commit SHA, test-run
  * id, episode id, CI URL) is rejected — "the model said so" is not evidence. A typed ref
- * (`git:`/`file:`/`test:`/`ci:`/`human:`) is validated; a `git:` ref is resolved when a
- * `resolveGit` predicate is supplied. The oracle's table weight is recorded for audit,
- * but val() re-reads the table.
- * @param {{oracle:string, result:"confirm"|"contradict", ref:string, author?:string, t?:number, resolveGit?:(sha:string)=>boolean}} f
+ * (`git:`/`file:`/`test:`/`ci:`/`human:`) is validated; `git:`/`file:` are resolved when a
+ * `resolveGit`/`resolveFile` predicate is supplied. A secret-shaped ref or author is refused
+ * here too (ME-06) — the same detector putClaim runs over claim content — so credentials
+ * never enter the evidence log. The oracle's table weight is recorded for audit, but val()
+ * re-reads the table.
+ * @param {{oracle:string, result:"confirm"|"contradict", ref:string, author?:string, t?:number, resolveGit?:(sha:string)=>boolean, resolveFile?:(path:string)=>boolean}} f
  * @returns {{ok:true, outcome:any}|{ok:false, reason:string}}
  */
-export function outcomeRecord({ oracle, result, ref, author = "", t = 0, resolveGit }) {
+export function outcomeRecord({
+  oracle,
+  result,
+  ref,
+  author = "",
+  t = 0,
+  resolveGit,
+  resolveFile,
+}) {
   const o = ORACLES[oracle];
   if (!o) return { ok: false, reason: `unknown oracle: ${oracle}` };
   if (result !== "confirm" && result !== "contradict")
@@ -193,8 +263,13 @@ export function outcomeRecord({ oracle, result, ref, author = "", t = 0, resolve
     };
   if (!ref || typeof ref !== "string")
     return { ok: false, reason: "evidence requires a verifiable ref" };
-  const v = validateRef(ref, { resolveGit });
+  const v = validateRef(ref, { resolveGit, resolveFile });
   if (!v.ok) return { ok: false, reason: v.reason ?? "invalid evidence ref" };
+  if (hasSecret(ref) || hasSecret(author))
+    return {
+      ok: false,
+      reason: "refused: evidence ref/author looks like a secret/credential",
+    };
   return {
     ok: true,
     outcome: sealRecord({ author, oracle, ref, result, t, w: o.w }),
@@ -231,6 +306,12 @@ const decayed = (outcome, nowDay, halfLife) =>
  * trusted. Optional `trust` (author → u, see authorTrust) scales each record by its
  * appender's earned reliability. Pure function of (evidence set, trust map) ⇒
  * identical after any merge order.
+ *
+ * Resolution strength (ME-05): merely-format-valid evidence (`file:`/`test:` — a pointer,
+ * not a demonstration) counts at UNRESOLVED_WEIGHT, and a claim with NO resolved
+ * confirmation is capped at UNRESOLVED_VAL_CAP so `test:made-up-run` (and friends) can
+ * never lift confidence into the trusted/serving band. The cap only lowers — contradictions
+ * still sink val toward 0 as before.
  * @param {any} claim
  * @param {number} [nowDay]
  * @param {{halfLife?: number, trust?: Record<string, number>}} [opts]
@@ -238,13 +319,20 @@ const decayed = (outcome, nowDay, halfLife) =>
 export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS, trust } = {}) {
   let confirms = 0;
   let all = 0;
+  let resolvedConfirm = false;
   for (const e of claim.evidence ?? []) {
     if (!validOutcome(e)) continue;
-    const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1);
+    const resolved = refStrength(e.ref) === "resolved";
+    const strength = resolved ? 1 : UNRESOLVED_WEIGHT;
+    const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1) * strength;
     all += d;
-    if (e.result === "confirm") confirms += d;
+    if (e.result === "confirm") {
+      confirms += d;
+      if (resolved) resolvedConfirm = true;
+    }
   }
-  return (1 + confirms) / (2 + all);
+  const v = (1 + confirms) / (2 + all);
+  return resolvedConfirm ? v : Math.min(v, UNRESOLVED_VAL_CAP);
 }
 
 /**
