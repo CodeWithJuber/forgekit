@@ -1,6 +1,6 @@
 ---
 title: "Config कमांड्स"
-description: "प्रोवाइडर्स, लागत, डैशबोर्ड्स, ब्रांड, atlas, और स्टैक: config, cost, dash, brand, atlas, stack — साथ ही v0.19+ report और tools कमांड्स।"
+description: "प्रोवाइडर्स, लागत, डैशबोर्ड्स, ब्रांड, atlas, स्टैक और ऑप्ट-इन MCP इंटीग्रेशन्स: config, cost, dash, brand, atlas, stack, report, tools, integrations।"
 ---
 
 Config समूह प्रोवाइडर्स, ऑब्ज़र्वेबिलिटी, कोड ग्राफ़, और स्टैक डिटेक्शन को कवर करता है।
@@ -89,3 +89,75 @@ forge report
 ```bash
 forge tools
 ```
+
+## `forge integrations`
+
+ऑप्ट-इन थर्ड-पार्टी MCP सर्वर (उदाहरण के लिए `context7`), हर उस टूल में गैर-विनाशकारी
+ढंग से प्रबंधित जिसके लिए Forge कॉन्फ़िग निकालता है — Claude Code, Codex, Cursor,
+Gemini, Continue, और बाकी सभी।
+
+थर्ड-पार्टी MCP सर्वर डिफ़ॉल्ट रूप से इंस्टॉल **नहीं** होते। जब तक आप
+`forge integrations add <name> --yes` नहीं चलाते तब तक डिस्क पर कुछ नहीं उतरता।
+
+```bash
+forge integrations                        # list opt-in servers with package + purpose
+forge integrations add <name>             # dry-run: prints package, network, files it would touch
+forge integrations add <name> --yes       # apply — write MCP config for every tool
+forge integrations add <name> --yes --adopt   # also claim a same-name entry you already configured
+forge integrations remove <name>          # reverse the add — deletes only forge-owned entries
+```
+
+### `add` क्या लिखता है
+
+`add --yes` एक कैननिकल स्पेक से हर टूल की नेटिव MCP कॉन्फ़िग में सर्वर लिखता है:
+
+- `.mcp.json` (Claude Code)
+- `.cursor/mcp.json` (Cursor)
+- `.gemini/settings.json` (Gemini)
+- `.codex/config.toml` — एक `# forge:managed:<name>` ब्लॉक के रूप में, बाइट-तुलना द्वारा रीफ़्रेश
+- `.continue/mcpServers/<name>.yaml` — प्रति प्रबंधित सर्वर एक forge-चिह्नित YAML
+- और बाकी वे टूल्स जिनके लिए Forge कॉन्फ़िग निकालता है
+
+इंस्टॉल किया गया सेट `.forge/forge.config.json` में `mcp.integrations` के तहत दर्ज होता है,
+ताकि हर आगामी `forge sync` वही सर्वर पुनः निकाले। स्टॉप-हुक ऑटो-सिंक पूरी कॉन्फ़िग फ़ाइल की
+बाइट-तुलना करता है, इसलिए उस फ़ाइल में हाथ से किया गया एडिट पहचाना जाता है और सुधार दिया जाता है।
+
+### `--adopt` सिमैंटिक्स
+
+अगर किसी टूल की कॉन्फ़िग फ़ाइल में उसी नाम का सर्वर पहले से मौजूद है और उसे Forge ने
+वहाँ नहीं रखा, तो `add` उसे **ओवरराइट नहीं करता**। इसके बजाय वह फ़ाइल को `--adopt` संकेत
+के साथ रिपोर्ट करता है। स्वामित्व लेने के लिए `--adopt` के साथ पुनः चलाएँ — Forge उस
+प्रविष्टि को `.forge/forge.config.json` में `mcp.adopted` के तहत दर्ज करता है और उसके बाद
+से उसे प्रबंधित करता है।
+
+`--adopt` का उपयोग तब करें जब आपने पहले हाथ से किसी सर्वर को कॉन्फ़िगर किया था और अब
+चाहते हैं कि Forge उसे हर टूल में सिंक रखे।
+
+### `remove`
+
+`forge integrations remove <name>` एक add को उलट देता है। यह केवल forge-स्वामित्व वाली
+प्रविष्टियाँ, ब्लॉक और फ़ाइलें हटाता है — उपयोगकर्ता द्वारा कॉन्फ़िगर किया गया (और कभी
+`--adopt` न किया गया) उसी नाम का सर्वर अछूता छोड़ दिया जाता है। `remove` दो बार चलाना
+नो-ऑप है।
+
+```bash
+forge integrations remove context7
+```
+
+### `.forge/forge.config.json`
+
+प्रति-रेपो Forge स्टेट — वही यूनिफ़ाइड कॉन्फ़िग जो `primaryTool`, `tools`, और `profile`
+भी रखती है — ऑप्ट-इन इंटीग्रेशन को दो कुंजियों के तहत दर्ज करती है:
+
+```json
+{
+  "mcp": {
+    "integrations": ["context7"],
+    "adopted": []
+  }
+}
+```
+
+अज्ञात कुंजियाँ राइट्स के दौरान राउंड-ट्रिप करती हैं। खराब फ़ॉर्मैट वाली फ़ाइल चुपचाप
+नहीं छोड़ी जाती: रीड्स प्रति प्रक्रिया एक बार stderr पर चेतावनी देते हैं, और राइटर्स
+किसी अपार्सेबल कॉन्फ़िग को डिफ़ॉल्ट्स से बदलने के बजाय उस पर लिखने से इनकार कर देते हैं।
