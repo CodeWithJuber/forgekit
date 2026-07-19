@@ -199,9 +199,9 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   const mcpFile = join(BRAND.root, "source", "mcp.json");
   if (existsSync(mcpFile)) {
     try {
-      const { servers, owned, warning } = managedMcpState(targetRoot);
+      const { servers, owns, warning } = managedMcpState(targetRoot);
       if (warning) warnings.push(warning);
-      for (const row of emitMcp({ targetRoot, servers, owned })) report.push(row);
+      for (const row of emitMcp({ targetRoot, servers, owns })) report.push(row);
     } catch (err) {
       report.push({
         tool: "MCP",

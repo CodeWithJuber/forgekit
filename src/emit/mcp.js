@@ -1,10 +1,19 @@
 // Emit the managed MCP server set into each tool's MCP config, in that tool's REAL
-// format (all verified 2026-07). Non-destructive by construction (RA-03, RA-21):
-// every write is scoped to an entry/block/file forge OWNS — a name in the persistent
-// managed∪adopted record (see integrations.js) or a region carrying a forge marker.
-// Anything else is user-owned and is reported, never rewritten. JSON tools differ only
-// by their top-level key; Codex is TOML (forge-marked blocks) and Continue gets one
-// forge-marked YAML file per managed server. (Windsurf is global-only — nothing to emit.)
+// format (all verified 2026-07). Non-destructive by construction (RA-03, RA-21, ME-08):
+// every write is scoped to an entry/block/file forge OWNS — a PER-TARGET adoption record
+// (see integrations.js) or a region carrying a forge marker. Anything else is user-owned
+// and is reported, never rewritten. JSON tools differ only by their top-level key; Codex
+// is TOML (forge-marked blocks) and Continue gets one forge-marked YAML file per managed
+// server. (Windsurf is global-only — nothing to emit.)
+//
+// Ownership is decided PER TARGET (ME-08): the caller supplies `owns(target, name)`, so a
+// same-name entry adopted for one tool's config never authorises overwriting another
+// tool's same-name entry. Registry names are NOT implicitly owned (ME-09): a divergent
+// on-disk entry that forge did not write is preserved and reported, exactly like any other
+// same-name collision — forge only refreshes what it can prove it wrote (byte-identical to
+// its own spec, a forge marker, or an explicit adoption record). Every managed NAME is
+// validated against a strict grammar and Continue filenames are checked for injectivity
+// BEFORE any write (ME-11), and command strings are serialised safely into YAML/TOML.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { BRAND } from "../brand.js";
@@ -22,18 +31,63 @@ const JSON_TARGETS = [
 const CONTINUE_DIR = join(".continue", "mcpServers");
 const LEGACY_CONTINUE_FILE = "forge-mcp.yaml"; // pre-RA-03 combined file
 const CODEX_FILE = join(".codex", "config.toml");
+/** The Codex config's canonical relative target string (matches JSON_TARGETS `file`s). */
+export const CODEX_TARGET = ".codex/config.toml";
+
+/** Every relative config path forge may own an entry in — the domain of `owns(target,…)`
+ *  and of the per-target adoption record. Continue files are owned by marker, not record. */
+export const MCP_TARGET_FILES = [...JSON_TARGETS.map((t) => t.file), CODEX_TARGET];
 
 const adoptHint = (name) => `adopt with: ${BRAND.cli} integrations add ${name} --adopt`;
 
-/** Per-server Continue file name. Servers already namespaced `forge-*` keep their name. */
+// ---------------------------------------------------------------------------
+// Name/definition validation (ME-11). Runs before any write.
+// ---------------------------------------------------------------------------
+
+/** Strict server-name grammar. Rejects path traversal (`../x`), whitespace/newlines,
+ *  TOML/YAML-special punctuation (`.`, `]`, `:`, `#`, …) and uppercase — so a validated
+ *  name is a safe TOML bare key, a safe YAML key, and a safe filename component. */
+const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** Throw unless `name` satisfies the strict grammar. */
+export function validateServerName(name) {
+  if (typeof name !== "string" || !NAME_RE.test(name))
+    throw new Error(
+      `invalid MCP server name: ${JSON.stringify(name)} — must match ${String(NAME_RE)}`,
+    );
+}
+
+/** Validate the whole managed set before emitting: every name must satisfy the grammar,
+ *  and no two names may collide on the same Continue filename (`foo` vs `forge-foo`). */
+function validateServers(servers) {
+  const byFile = new Map();
+  for (const name of Object.keys(servers)) {
+    validateServerName(name);
+    const file = continueFileFor(name);
+    if (byFile.has(file))
+      throw new Error(
+        `MCP server names ${JSON.stringify(byFile.get(file))} and ${JSON.stringify(name)} ` +
+          `collide on Continue file ${file} — rename one`,
+      );
+    byFile.set(file, name);
+  }
+}
+
+/** Serialise an arbitrary string as a YAML flow scalar. A JSON double-quoted string is a
+ *  valid YAML double-quoted scalar, so this safely quotes commands containing `:`, `#`,
+ *  leading indicators, newlines, etc. */
+const yamlScalar = (s) => JSON.stringify(String(s));
+
+/** Per-server Continue file name. Servers already namespaced `forge-*` keep their name.
+ *  Injectivity across a managed set is enforced by validateServers (`foo`/`forge-foo`). */
 export const continueFileFor = (name) =>
   name.startsWith("forge-") ? `${name}.yaml` : `forge-${name}.yaml`;
 
 // ---------------------------------------------------------------------------
-// JSON targets — entry-level ownership (RA-21).
+// JSON targets — entry-level ownership (RA-21, ME-08).
 // ---------------------------------------------------------------------------
 
-function mergeJson(path, key, servers, owned) {
+function mergeJson(path, key, servers, owns) {
   let obj = {};
   if (existsSync(path)) {
     try {
@@ -54,7 +108,7 @@ function mergeJson(path, key, servers, owned) {
       bucket[name] = def;
       changed += 1;
     } else if (JSON.stringify(cur) !== JSON.stringify(def)) {
-      if (owned.has(name)) {
+      if (owns(name)) {
         bucket[name] = def;
         changed += 1;
       } else {
@@ -70,8 +124,12 @@ function mergeJson(path, key, servers, owned) {
       ? { action: "skipped", note: skipNote }
       : { action: "unchanged", note: "present" };
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
+  } catch (err) {
+    return { action: "error", note: `write failed: ${err.message}` };
+  }
   const note = `${changed} server(s) written/updated${skipNote ? `; ${skipNote}` : ""}`;
   return { action: "written", note };
 }
@@ -142,7 +200,7 @@ function unmarkedRegion(text, name) {
   return { start: idx, end };
 }
 
-function emitCodexToml(path, servers, owned) {
+function emitCodexToml(path, servers, owns) {
   let text = existsSync(path) ? readFileSync(path, "utf8") : "";
   let changed = 0;
   const notes = [];
@@ -164,10 +222,10 @@ function emitCodexToml(path, servers, owned) {
     const unmarked = unmarkedRegion(text, name);
     if (unmarked) {
       const cur = text.slice(unmarked.start, unmarked.end);
-      // Migration/ownership for a pre-existing plain block: claim it only when the name
-      // is in the owned record OR the block byte-matches a past forge emission. Anything
-      // else is the user's TOML — leave it byte-identical.
-      if (owned.has(name) || cur.trimEnd() === legacyCodexBlock(name, def).trimEnd()) {
+      // Migration/ownership for a pre-existing plain block: claim it only when this target
+      // adopted the name OR the block byte-matches a past forge emission. Anything else is
+      // the user's TOML — leave it byte-identical.
+      if (owns(name) || cur.trimEnd() === legacyCodexBlock(name, def).trimEnd()) {
         text = text.slice(0, unmarked.start) + block + text.slice(unmarked.end);
         changed += 1;
         notes.push(`${name}: adopted unmarked block (forge markers added)`);
@@ -186,8 +244,12 @@ function emitCodexToml(path, servers, owned) {
       note: notes.join("; ") || "present",
     };
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, text);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  } catch (err) {
+    return { action: "error", note: `write failed: ${err.message}` };
+  }
   return {
     action: "written",
     note: [`${changed} managed block(s)`, ...notes].join("; "),
@@ -216,7 +278,7 @@ function continueBody(name, def) {
     "mcpServers:",
     `  - name: ${name}`,
     "    type: stdio",
-    `    command: ${def.command}`,
+    `    command: ${yamlScalar(def.command)}`,
     "    args:",
   ];
   for (const a of def.args || []) lines.push(`      - ${JSON.stringify(a)}`);
@@ -229,8 +291,12 @@ function emitContinueServer(dir, name, def) {
   if (existing !== null && !isManaged(existing))
     return { action: "skipped", note: "existing unmanaged file" };
   const body = continueBody(name, def);
-  const action = writeManaged(path, yamlHeader(hashContent(body)), body);
-  return { action, note: "per-server YAML" };
+  try {
+    const action = writeManaged(path, yamlHeader(hashContent(body)), body);
+    return { action, note: "per-server YAML" };
+  } catch (err) {
+    return { action: "error", note: `write failed: ${err.message}` };
+  }
 }
 
 /** Migrate away the pre-RA-03 combined forge-mcp.yaml once per-server files exist.
@@ -258,16 +324,20 @@ function migrateLegacyContinue(dir) {
 // ---------------------------------------------------------------------------
 
 /**
- * Emit `servers` (the full managed set) into every target. `owned` is the set of names
- * forge may OVERWRITE when a same-name entry already exists and drifted — the persistent
- * managed∪adopted record plus the built-in registry names. Absent entries are always
- * written; entries outside `owned` are preserved and reported.
+ * Emit `servers` (the full managed set) into every target. `owns(target, name)` decides,
+ * PER TARGET, whether forge may OVERWRITE an already-present same-name entry that drifted
+ * (ME-08): the default owns nothing implicitly, so absent entries are always written but a
+ * pre-existing divergent entry is preserved and reported unless that exact target adopted
+ * the name. Every name is validated and Continue filenames checked for collisions before
+ * any write (ME-11); a per-target write failure surfaces as an `error` row (never a throw)
+ * so callers can keep disk and the managed-set record consistent (ME-10).
  * @param {{targetRoot:string, servers:Record<string,{command:string,args?:string[]}>,
- *   owned?:Set<string>}} opts
+ *   owns?:(target:string, name:string)=>boolean}} opts
  */
-export function emitMcp({ targetRoot, servers, owned = new Set(Object.keys(servers)) }) {
+export function emitMcp({ targetRoot, servers, owns = () => true }) {
+  validateServers(servers);
   const rows = JSON_TARGETS.map((t) => {
-    const r = mergeJson(join(targetRoot, t.file), t.key, servers, owned);
+    const r = mergeJson(join(targetRoot, t.file), t.key, servers, (name) => owns(t.file, name));
     return {
       tool: `${t.tool} MCP`,
       target: t.file,
@@ -275,10 +345,12 @@ export function emitMcp({ targetRoot, servers, owned = new Set(Object.keys(serve
       note: r.note,
     };
   });
-  const codex = emitCodexToml(join(targetRoot, CODEX_FILE), servers, owned);
+  const codex = emitCodexToml(join(targetRoot, CODEX_FILE), servers, (name) =>
+    owns(CODEX_TARGET, name),
+  );
   rows.push({
     tool: "Codex MCP",
-    target: ".codex/config.toml",
+    target: CODEX_TARGET,
     action: codex.action,
     note: codex.note,
   });
@@ -306,16 +378,17 @@ export function emitMcp({ targetRoot, servers, owned = new Set(Object.keys(serve
 
 /**
  * Reverse one server's emission. JSON entries are deleted only when `removeJsonEntry`
- * says forge owns them (adopted, or byte-identical to forge's own spec); the Codex block
- * only when forge-marked; the Continue file only when forge-managed. Idempotent.
+ * says forge owns them for THAT target (adopted, or byte-identical to forge's own spec);
+ * the Codex block only when forge-marked; the Continue file only when forge-managed. A
+ * per-target cleanup failure surfaces as an `error` row (never a throw) so the caller can
+ * keep the managed-set record until a later remove/sync finishes the job (ME-10). Idempotent.
  * @param {{targetRoot:string, name:string,
- *   removeJsonEntry:(current:any)=>boolean}} opts
+ *   removeJsonEntry:(target:string, current:any)=>boolean}} opts
  */
 export function removeMcp({ targetRoot, name, removeJsonEntry }) {
   const rows = [];
   for (const t of JSON_TARGETS) {
     const path = join(targetRoot, t.file);
-    let r;
     let current;
     if (existsSync(path)) {
       try {
@@ -324,13 +397,18 @@ export function removeMcp({ targetRoot, name, removeJsonEntry }) {
         current = undefined;
       }
     }
-    if (current !== undefined && !removeJsonEntry(current)) {
-      r = {
-        action: "skipped",
-        note: `${name} left in place: user-owned entry`,
-      };
-    } else {
-      r = removeFromJson(path, t.key, name);
+    let r;
+    try {
+      if (current !== undefined && !removeJsonEntry(t.file, current)) {
+        r = {
+          action: "skipped",
+          note: `${name} left in place: user-owned entry`,
+        };
+      } else {
+        r = removeFromJson(path, t.key, name);
+      }
+    } catch (err) {
+      r = { action: "error", note: `remove failed: ${err.message}` };
     }
     rows.push({
       tool: `${t.tool} MCP`,
@@ -339,21 +417,31 @@ export function removeMcp({ targetRoot, name, removeJsonEntry }) {
       note: r.note,
     });
   }
-  const codex = removeCodexBlock(join(targetRoot, CODEX_FILE), name);
+  let codex;
+  try {
+    codex = removeCodexBlock(join(targetRoot, CODEX_FILE), name);
+  } catch (err) {
+    codex = { action: "error", note: `remove failed: ${err.message}` };
+  }
   rows.push({
     tool: "Codex MCP",
-    target: ".codex/config.toml",
+    target: CODEX_TARGET,
     action: codex.action,
     note: codex.note,
   });
   const contPath = join(targetRoot, CONTINUE_DIR, continueFileFor(name));
-  const existing = readIfExists(contPath);
   let cont;
-  if (existing === null) cont = { action: "unchanged", note: "absent" };
-  else if (!isManaged(existing)) cont = { action: "skipped", note: "unmanaged file left in place" };
-  else {
-    rmSync(contPath, { force: true });
-    cont = { action: "written", note: "per-server file removed" };
+  try {
+    const existing = readIfExists(contPath);
+    if (existing === null) cont = { action: "unchanged", note: "absent" };
+    else if (!isManaged(existing))
+      cont = { action: "skipped", note: "unmanaged file left in place" };
+    else {
+      rmSync(contPath, { force: true });
+      cont = { action: "written", note: "per-server file removed" };
+    }
+  } catch (err) {
+    cont = { action: "error", note: `remove failed: ${err.message}` };
   }
   rows.push({
     tool: "Continue MCP",
@@ -364,16 +452,21 @@ export function removeMcp({ targetRoot, name, removeJsonEntry }) {
   return rows;
 }
 
-/** True when any JSON target or the Codex TOML already holds a same-name entry that
- *  differs from forge's spec — i.e. an entry forge did NOT just create and must not
- *  claim without --adopt. Drives add-time auto-ownership in integrations.js. */
-export function hasForeignEntry(targetRoot, name, def) {
+/**
+ * The set of relative target paths that already hold a DIVERGENT same-name entry for
+ * `name` — an entry forge did NOT just create and must not claim without adoption. Drives
+ * per-target add-time auto-ownership in integrations.js (ME-08/ME-09): targets NOT in this
+ * set are absent-or-forge-written and are auto-owned; targets in it need explicit --adopt.
+ * @returns {Set<string>}
+ */
+export function foreignTargets(targetRoot, name, def) {
+  const out = new Set();
   for (const t of JSON_TARGETS) {
     const path = join(targetRoot, t.file);
     if (!existsSync(path)) continue;
     try {
       const cur = JSON.parse(readFileSync(path, "utf8"))?.[t.key]?.[name];
-      if (cur !== undefined && JSON.stringify(cur) !== JSON.stringify(def)) return true;
+      if (cur !== undefined && JSON.stringify(cur) !== JSON.stringify(def)) out.add(t.file);
     } catch {
       // invalid JSON: mergeJson will skip the file entirely — not a claimable entry
     }
@@ -383,7 +476,7 @@ export function hasForeignEntry(targetRoot, name, def) {
   const unmarked = unmarkedRegion(text, name);
   if (unmarked) {
     const cur = text.slice(unmarked.start, unmarked.end);
-    if (cur.trimEnd() !== legacyCodexBlock(name, def).trimEnd()) return true;
+    if (cur.trimEnd() !== legacyCodexBlock(name, def).trimEnd()) out.add(CODEX_TARGET);
   }
-  return false;
+  return out;
 }
