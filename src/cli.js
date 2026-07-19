@@ -178,6 +178,17 @@ async function run(argv) {
     console.log(
       `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
     );
+    // ME-19: sync is non-transactional — if a target failed mid-emit, say so instead of
+    // implying every tool is ready, and fail the command.
+    const failedTargets = report.filter((r) => r.action === "error");
+    if (failedTargets.length) {
+      console.error(
+        `  status:   PARTIAL — ${failedTargets.length} target(s) failed: ${failedTargets
+          .map((r) => r.tool)
+          .join(", ")} (re-run \`${BRAND.cli} sync\` after fixing)`,
+      );
+      process.exitCode = 1;
+    }
     if (profileResult?.profile) {
       console.log(`  profile:  ${profileResult.profile} → .forge/forge.config.json`);
       if (profileResult.deprecated) {
@@ -377,7 +388,9 @@ async function run(argv) {
   }
   if (cmd === "sync") {
     const { sync } = await import("./sync.js");
-    const { report, warnings, bytes } = sync({ targetRoot: process.cwd() });
+    const { report, warnings, bytes, partial, status } = sync({
+      targetRoot: process.cwd(),
+    });
     heading(`${BRAND.brand} sync — one source → every tool\n`);
     for (const r of report) {
       console.log(
@@ -386,7 +399,15 @@ async function run(argv) {
     }
     for (const w of warnings) console.warn(`  ! ${w}`);
     const written = report.filter((r) => r.action === "written").length;
-    console.log(`\n${written} file(s) written · canonical ${bytes} B`);
+    console.log(`\n${written} file(s) written · canonical ${bytes} B · status: ${status}`);
+    // ME-19: a mid-way target failure must NOT exit 0 as if every tool were configured.
+    if (partial) {
+      const failed = report.filter((r) => r.action === "error");
+      console.error(
+        `  ! PARTIAL sync — ${failed.length} target(s) failed: ${failed.map((r) => r.tool).join(", ")}`,
+      );
+      process.exitCode = 1;
+    }
     return;
   }
   if (cmd === "doctor") {

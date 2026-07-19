@@ -255,6 +255,130 @@ const DETECTORS = [
   detectDotnet,
 ];
 
+// ---------------------------------------------------------------------------
+// Monorepo / workspace detection (ME-03). The DETECTORS above read manifests only at
+// the repo ROOT, so npm/pnpm/yarn workspaces and Turborepo/lerna/Maven/Gradle
+// subprojects (and nested Python packages) are invisible — a single root test command
+// may or may not cover them, and forge never verified that. This surfaces the declared
+// workspace globs (`workspaces`) and the nested package roots actually on disk
+// (`packageRoots`) so the caller/verifier can see there is more than one suite. It is
+// deliberately BOUNDED — a shallow, budgeted BFS, never a deep walk of a huge tree.
+// ---------------------------------------------------------------------------
+
+// Manifests that mark a directory as its own package/suite root.
+const WORKSPACE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "setup.py",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "Gemfile",
+  "composer.json",
+];
+// Never descend into these — vendored deps, VCS metadata, build output, caches.
+const WALK_SKIP = new Set([
+  "node_modules",
+  ".git",
+  ".hg",
+  ".svn",
+  ".forge",
+  "dist",
+  "build",
+  "out",
+  "target",
+  "vendor",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".next",
+  ".nuxt",
+  ".turbo",
+  ".cache",
+  "coverage",
+]);
+const MONO_MAX_DEPTH = 3; // deepest nested dir considered (e.g. apps/web, packages/*/pkg)
+const MONO_SCAN_BUDGET = 200; // hard ceiling on dirs stat-ed — bounds cost on large trees
+const MONO_MAX_ROOTS = 50; // most nested package roots surfaced
+
+// Zero-dep: pull the `packages:` list from a pnpm-workspace.yaml. Ignores negations (`!…`).
+function parsePnpmPackages(text) {
+  const out = [];
+  let inBlock = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, "");
+    if (/^packages:\s*$/.test(line)) {
+      inBlock = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    const m = /^\s*-\s*(.+?)\s*$/.exec(line);
+    if (m) {
+      const v = m[1].trim().replace(/^["']|["']$/g, "");
+      if (v && !v.startsWith("!")) out.push(v);
+    } else if (/^\S/.test(line)) {
+      inBlock = false; // a new top-level key ends the list
+    }
+  }
+  return out;
+}
+
+// Declared workspace globs from every root config that declares them. Never throws.
+function workspaceGlobs(root) {
+  const globs = new Set();
+  const pkg = readJson(root, "package.json");
+  if (pkg) {
+    const ws = pkg.workspaces;
+    const arr = Array.isArray(ws) ? ws : Array.isArray(ws?.packages) ? ws.packages : [];
+    for (const g of arr) if (typeof g === "string") globs.add(g);
+  }
+  const lerna = readJson(root, "lerna.json");
+  if (lerna && Array.isArray(lerna.packages))
+    for (const g of lerna.packages) if (typeof g === "string") globs.add(g);
+  const pnpm = read(root, "pnpm-workspace.yaml");
+  if (pnpm) for (const g of parsePnpmPackages(pnpm)) globs.add(g);
+  return [...globs].sort();
+}
+
+// Bounded BFS for nested package roots below `root`. Returns POSIX-relative dir paths,
+// deduped and sorted. Never descends past MONO_MAX_DEPTH, never stats more than
+// MONO_SCAN_BUDGET dirs, never returns more than MONO_MAX_ROOTS — so a giant repo is
+// sampled, never fully walked. Fail-safe: an unreadable dir is skipped.
+function nestedPackageRoots(root) {
+  const found = [];
+  let budget = MONO_SCAN_BUDGET;
+  /** @type {{dir:string, rel:string, depth:number}[]} */
+  const queue = [];
+  const enqueueChildren = (absDir, relDir, depth) => {
+    if (depth > MONO_MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".") || WALK_SKIP.has(e.name)) continue;
+      queue.push({
+        dir: join(absDir, e.name),
+        rel: relDir ? `${relDir}/${e.name}` : e.name,
+        depth,
+      });
+    }
+  };
+  enqueueChildren(root, "", 1);
+  while (queue.length && budget > 0 && found.length < MONO_MAX_ROOTS) {
+    const { dir, rel, depth } = queue.shift();
+    budget--;
+    if (WORKSPACE_MANIFESTS.some((m) => existsSync(join(dir, m)))) found.push(rel);
+    enqueueChildren(dir, rel, depth + 1);
+  }
+  return [...new Set(found)].sort();
+}
+
 /**
  * One detected test runner. `label` is the human-readable command string (always
  * mirrored into `testCommands` for back-compat). `bin`/`args` are the structured,
@@ -271,10 +395,14 @@ const DETECTORS = [
  * Detect the repo's real stack by reading its manifests. Pure aside from fs reads;
  * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays;
  * `testRunners` is deduped by label and sorted by label.
+ * Additive monorepo fields (ME-03): `workspaces` are the declared workspace globs and
+ * `packageRoots` the nested package/suite roots found on disk (bounded, capped) — either
+ * being non-empty signals the root suite does NOT necessarily cover the whole repo. Both
+ * are `[]` for a plain single-root repo, so the pre-existing shape is unchanged.
  * @param {string} [root]
  * @returns {{languages:string[], frameworks:string[], packageManagers:string[],
  *   testCommands:string[], testRunners:TestRunner[], tools:string[], notes:string[],
- *   evidence:string[]}}
+ *   evidence:string[], workspaces:string[], packageRoots:string[]}}
  */
 export function detectStack(root = process.cwd()) {
   const sets = {
@@ -318,5 +446,7 @@ export function detectStack(root = process.cwd()) {
     tools: sort(sets.tools),
     notes: sort(sets.notes),
     evidence: sort(sets.evidence),
+    workspaces: workspaceGlobs(root),
+    packageRoots: nestedPackageRoots(root),
   };
 }
