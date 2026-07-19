@@ -92,6 +92,10 @@ Forge emits config for **nine tools**, plus an MCP server for Roo Code and VS Co
 Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, and Continue.
 Each reads the same rules from its own native file.
 
+The only MCP server wired by default is Forge's own (`src/cortex_mcp.js`) — the substrate
+checks and memory reads. Third-party MCP servers such as `context7` are **opt-in** and
+never land on disk until you run [`forge integrations add <name> --yes`](/cli/config#forge-integrations).
+
 ## Honest limits
 
 Forge states its own ceiling everywhere.
