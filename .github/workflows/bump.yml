@@ -90,6 +90,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Orphan-tag guard: a partial prior run (bump committed + tagged, then the push or a
+          # later step died) can leave vX.Y.Z already present locally or on origin. `git tag`
+          # would then die with a bare "fatal: tag 'vX.Y.Z' already exists", wedging EVERY
+          # future auto-release with a cryptic error. Detect it first and fail with an operator
+          # runbook instead. We do NOT auto-delete the tag — clobbering a release tag in CI is
+          # too dangerous; a human must remove the orphan deliberately.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null 2>&1 \
+            || git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release wedged: tag v$VERSION already exists (orphaned partial run). An operator must delete it: git push origin :refs/tags/v$VERSION, then re-run."
+            exit 1
+          fi
           git add -A
           git commit -m "chore(release): v$VERSION"
           git tag -a "v$VERSION" -m "v$VERSION"
