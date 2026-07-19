@@ -37,7 +37,9 @@ function readDoc(root, rel) {
   return existsSync(p) ? readFileSync(p, "utf8") : "";
 }
 
-function srcFiles(root) {
+// Exported so docs_impact.js reuses the SAME src-file inventory (recursive, .js only)
+// the env-var extractor scans — one definition of "what counts as a source file".
+export function srcFiles(root) {
   const dir = join(root, "src");
   if (!existsSync(dir)) return [];
   // recursive: src/emit/*.js reads are part of the same env contract.

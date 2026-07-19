@@ -410,6 +410,46 @@ touched in the same diff still answers for **removed** symbols (updated-for-one-
 isn't updated-for-the-rename); and `.forge/state.md` is never scanned — handoff writes
 the changed-file list into it by design, so the gate's mtime check covers it instead.
 
+### `forge docs impact` — change X, which docs mention X?
+
+`docs sync` sweeps a diff for raw identifiers; `docs impact` is the general, reusable
+version of the same idea, built as a **documentation-reference graph** rather than a
+per-file rule. It works in three data-driven stages:
+
+1. **Entity extraction.** A pluggable extractor registry derives the _typed_ set of
+   things the project documents — command names, CLI flags, `FORGE_*` env vars, MCP tool
+   names, exported symbols, brand tokens, the version, and `package.json` fields — from
+   their canonical sources (the same `COMMANDS`/`TOOLS` registries and `envVarsRead`
+   scanner `docs check` already uses). Adding a new entity type is one record in the
+   registry, not a new special case.
+2. **Reference index.** A word-boundary- and code-fence-aware scan of every doc surface
+   (all tracked `*.md`, `CITATION.cff`, the plugin manifests, the landing page,
+   `package.json`) builds an inverted index: entity → every `file:line` that names it.
+   English-word-shaped entities (bare symbols like `build`) only count inside backticks
+   or fenced blocks, so prose doesn't false-positive.
+3. **Impact query.** From a git diff of the canonical sources it computes which entities
+   _changed_ (a command renamed, a flag added, an env var removed, an export touched, the
+   version bumped) and returns every doc location that references them, ranked by
+   confidence.
+
+```console
+$ forge docs impact --since main
+docs impact — diff vs main: 2 changed entities, 1 doc file(s) potentially stale
+  env `APP_CACHE_MODE` (REMOVED) — 2 reference(s):
+      README.md:88  (code, 0.95)  [Environment]  Set `APP_CACHE_MODE` to tune the cache.
+  version `0.23.0` (REMOVED) — 1 reference(s):
+      README.md:3   (prose, 0.75)  install @scope/pkg@0.23.0
+  → review each surface: update it, or confirm the mention is still correct.
+```
+
+Advisory by default (matching the fail-open ethos) — `--strict` exits non-zero when any
+doc surface is impacted, for CI. `--since <ref>` sets the diff base (default: the session
+baseline, then `HEAD`), `--staged` reads the index, `--min-confidence <n>` drops low-signal
+hits, `--json` for tooling. `docs check` also prints a one-line advisory pointing here when
+the working tree touched a documented entity. **Honest limits:** a token index catches a
+doc that _names_ a changed entity; it cannot see a paraphrase that never uses the name, a
+screenshot or diagram, or a design/wording choice with no textual anchor.
+
 ### `forge verify` — did it actually work?
 
 The independent check: runs the real test suite and flags edited symbols that aren't in
@@ -997,6 +1037,7 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 | `forge doctor`                   | Health check: layers, install, drift, cortex. `forge doctor --fix` auto-repairs the safely fixable findings (missing settings hooks/permissions, ledger union-merge rule, stale `AGENTS.md`, non-executable guards) by reusing the same idempotent functions `forge init`/`forge sync` use, then re-checks.                                                                                                                                                                                                                                                                                             |
 | `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG reconciled against the code (CI-gated on the forge repo itself).                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `forge docs impact`              | Documentation-reference graph: extract typed entities (commands/flags/env/MCP/symbols/version), index every doc surface, and report which docs reference the entities THIS diff changed — ranked by confidence (see the full section above).                                                                                                                                                                                                                                                                                                                                                            |
 | `forge catalog`                  | Start-Here index of every tool / crew / guard.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `forge integrations`             | Opt-in third-party MCP servers (e.g. `context7`, no longer installed by default). `integrations add <name>` prints the package, its network behaviour, and the files it touches, then writes only with `--yes`; the install is recorded in `.forge/forge.config.json` (`mcp.integrations`), so every later sync keeps emitting it. A same-name server you configured yourself is never overwritten unless you pass `--adopt` (recorded under `mcp.adopted`). `integrations remove <name>` reverses the add — it deletes only forge-owned entries/blocks/files and is a no-op when nothing is installed. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
