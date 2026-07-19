@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
-import { doctor } from "../src/doctor.js";
+import { doctor, repairFailure } from "../src/doctor.js";
+import { mergeSettings } from "../src/init.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-"));
 
@@ -175,4 +184,125 @@ test("doctor --fix records a returned {action:'error'} repair as ok:false (RA-20
   assert.ok(rep, "a settings repair was attempted");
   assert.equal(rep.ok, false, "a returned error object is not success");
   assert.match(rep.error, /not valid JSON/, "the returned reason is surfaced");
+});
+
+// ME-15: a `_forge` marker plus one unrelated hook is FALSE-GREEN — settings is only ACTIVE
+// when the ACTUAL required Forge guard identities from the template are wired.
+test("doctor: settings with _forge marker but WITHOUT the required forge hooks is not ACTIVE (ME-15)", () => {
+  const root = fixture();
+  const settingsPath = join(fixture(), "settings.json");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      _forge: "forge-managed",
+      hooks: {
+        Stop: [{ hooks: [{ command: "bash /somewhere/unrelated.sh" }] }],
+      },
+      permissions: { allow: ["Read"] },
+    }),
+  );
+  const s = doctor({ targetRoot: root, settingsPath }).results.find((r) => r.label === "settings");
+  assert.ok(s, "settings check ran");
+  assert.equal(s.status, "warn", "marker + one unrelated hook must not read as healthy");
+  assert.match(s.note, /hooks missing|not forge-managed/);
+});
+
+test("doctor: settings with the real merged forge wiring is ACTIVE (ME-15)", () => {
+  const root = fixture();
+  const settingsPath = join(fixture(), "settings.json");
+  // mergeSettings installs the full template hook set + permissions — the genuine wiring.
+  mergeSettings({ settingsPath });
+  const s = doctor({ targetRoot: root, settingsPath }).results.find((r) => r.label === "settings");
+  assert.equal(s.status, "ok", "a fully-wired settings file is ACTIVE");
+  assert.match(s.note, /guard\(s\) \+ permissions wired/);
+});
+
+// ME-16: `~/.forge` must be a symlink/dir whose required guard assets resolve — a plain file
+// or a dangling symlink is not a working install.
+test("doctor: ~/.forge as a plain file is not ACTIVE (ME-16)", () => {
+  const root = fixture();
+  const forgeHome = join(fixture(), ".forge");
+  writeFileSync(forgeHome, "not a real install");
+  const r = doctor({ targetRoot: root, forgeHome }).results.find((x) => x.label === "~/.forge");
+  assert.equal(r.status, "fail", "a stray file shadowing the install is a failure");
+  assert.match(r.note, /not a symlink or directory/);
+});
+
+test("doctor: a dangling ~/.forge symlink is not ACTIVE (ME-16)", () => {
+  const root = fixture();
+  const dir = fixture();
+  const forgeHome = join(dir, ".forge");
+  symlinkSync(join(dir, "does-not-exist"), forgeHome); // dangling
+  const r = doctor({ targetRoot: root, forgeHome }).results.find((x) => x.label === "~/.forge");
+  assert.equal(r.status, "fail");
+  assert.match(r.note, /dangling symlink/);
+});
+
+test("doctor: a correct ~/.forge install with resolvable guard assets is ACTIVE (ME-16)", () => {
+  const root = fixture();
+  const forgeHome = join(fixture(), ".forge");
+  // install.sh symlinks ~/.forge -> <repo>/global; point at the real assets so they resolve.
+  symlinkSync(join(BRAND.root, "global"), forgeHome);
+  const r = doctor({ targetRoot: root, forgeHome }).results.find((x) => x.label === "~/.forge");
+  assert.equal(r.status, "ok", "required guard assets resolve → ACTIVE");
+  assert.match(r.note, /guard assets resolve/);
+});
+
+// ME-17: the redaction subsystem is ACTIVE only when a real self-test through secret-redact.mjs
+// masks a fake secret; a missing redactor degrades it instead of reading green off `node`.
+test("doctor: a working redactor self-test reports ACTIVE (ME-17)", () => {
+  const r = doctor({ targetRoot: fixture() });
+  const row = r.results.find((x) => x.label === "secret-redact");
+  assert.ok(row, "redaction self-test ran");
+  assert.equal(row.status, "ok");
+  assert.match(row.note, /self-test passed/);
+  assert.equal(r.health["secret-redaction"], "ACTIVE");
+});
+
+test("doctor: a broken redactor (guards dir missing the mjs) is DEGRADED, not ACTIVE (ME-17)", () => {
+  const emptyGuards = fixture(); // no secret-redact.mjs here
+  const r = doctor({ targetRoot: fixture(), guardsDir: emptyGuards });
+  const row = r.results.find((x) => x.label === "secret-redact");
+  assert.equal(row.status, "warn");
+  assert.match(row.note, /redactor script missing/);
+  assert.equal(r.health["secret-redaction"], "DEGRADED");
+});
+
+// ME-18: a repair that "succeeds" overall while a nested report row is action:"error" must be
+// recorded as a failure with the reason surfaced.
+test("doctor: a repair whose report has a nested action:'error' row is a failure (ME-18)", () => {
+  // sync-shaped report: overall object is fine, but one emitter row errored.
+  const partialSync = {
+    hash: "abc",
+    bytes: 100,
+    report: [
+      {
+        tool: "shared source",
+        target: "AGENTS.md",
+        action: "wrote",
+        note: "100 B",
+      },
+      {
+        tool: "cursor",
+        target: "-",
+        action: "error",
+        note: "ENOSPC: no space left on device",
+      },
+    ],
+    warnings: [],
+  };
+  const reason = repairFailure(partialSync);
+  assert.ok(reason, "a nested errored row makes the repair a failure");
+  assert.match(reason, /sub-step\(s\) failed/);
+  assert.match(reason, /cursor/);
+  assert.match(reason, /ENOSPC/);
+
+  // A fully-clean report is not a failure.
+  const cleanSync = {
+    report: [{ tool: "cursor", target: ".cursorrules", action: "wrote", note: "ok" }],
+  };
+  assert.equal(repairFailure(cleanSync), null, "a clean report is not a failure");
+
+  // The {ok:false} (writeForgeConfig) contract is also caught.
+  assert.match(repairFailure({ ok: false, reason: "corrupt config" }), /corrupt config/);
 });

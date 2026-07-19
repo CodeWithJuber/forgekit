@@ -68,8 +68,56 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Safer installer transactions (HI-10).** `install.sh` backs up a user-owned symlink at a
   destination instead of silently replacing it, and stops (`Uninstall INCOMPLETE`, non-zero)
   rather than removing assets that settings hooks still reference when settings cleanup fails.
+- **Verification surfaces monorepo suites (ME-03).** `detectStack()` now reports `workspaces`
+  (declared workspace globs) and `packageRoots` (nested package roots found via a bounded,
+  capped scan), so a root test command can no longer silently claim to cover a whole
+  npm/pnpm/Turborepo/Maven/Gradle/Python monorepo.
+- **Evidence resolution strength gates confidence (ME-05).** `ci:`/`human:`/`file:` refs are
+  format- and existence-checked, and unresolved pointers like `test:<id>` or a non-existent
+  `file:` path can no longer lift a claim's confidence into the trusted/serving band; a
+  resolvable git-ref confirmation still counts exactly as before.
+- **Secret-bearing ledger metadata is refused (ME-06).** Secret-shaped evidence refs, authors,
+  tombstone reasons, and provenance metadata are refused before they can be written to the
+  ledger — the same detector already applied to claim content — and quarantined records are
+  stored redacted.
+- **Trusted quarantine identity (ME-07).** Quarantine keys rejected records by a trusted content
+  hash instead of the record's own (attacker-controllable) hash, so distinct forgeries sharing a
+  fake hash are both retained and malformed lines with no hash are captured instead of dropped.
+- **Per-target MCP ownership and atomic add/remove (ME-08, ME-10).** Adoption is tracked per
+  `{server, target}`, so adopting a same-name server for one tool never authorizes overwriting
+  another tool's entry (legacy `adopted: [name]` still honored and migrated); `integrations add`
+  records nothing on a partial emit and `remove` keeps the entry (reporting an incomplete
+  transaction) if any target cleanup fails, so config and disk never drift silently.
+- **Divergent registry-name MCP entries preserved (ME-09).** A user's own MCP server sharing a
+  built-in name (e.g. `forge-cortex`) is no longer overwritten without explicit `--adopt`.
+- **Validated MCP names and safe serialization (ME-11).** Managed server names must match
+  `^[a-z0-9][a-z0-9_-]{0,63}$`, `foo`/`forge-foo` Continue-file collisions are rejected before
+  any write, and command strings are quoted safely into YAML and TOML.
+- **Non-object JSON is treated as corrupt (ME-12).** Repo config and global settings now reject
+  valid-but-non-object JSON (`null`, `[]`, `"x"`, `42`) as corrupt instead of silently
+  overwriting it, preserving the original bytes.
+- **Crash-safe config writes (ME-13).** `forge.config.json` writes take a timestamped backup and
+  go through a temp file + atomic rename.
+- **Complete tool list (ME-14).** `roo` is now a selectable primary tool, and
+  aider/continue/windsurf/roo are auto-detected from their on-disk markers, reconciling
+  `forge tools` with the MCP emit targets.
+- **Functional doctor health probes (ME-15, ME-16, ME-17, ME-18).** `forge doctor` validates the
+  actual Forge hook wiring against the template (not just the `_forge` marker), verifies
+  `~/.forge` is a symlink/dir whose required guard assets resolve (catching plain-file shadows
+  and dangling links), runs a real redactor self-test instead of trusting Node's presence, and
+  records a partial `--fix` sync (nested `action:"error"` rows) as a failed repair.
+- **Explicit PARTIAL sync status (ME-19).** `forge sync` returns and reports an aggregate status;
+  if any target fails mid-run the result is `PARTIAL` and `sync`/`init` say so and exit non-zero
+  instead of implying every tool is configured.
+- **Fail-safe legacy rules (ME-20).** A corrupt legacy `.forge/rules.json` no longer aborts
+  `forge sync` — it warns once, falls back to default rules, and leaves the file's bytes intact.
+- **Exact gitattributes rule detection (ME-21).** The ledger union-merge rule is detected by its
+  exact active line, so a comment mentioning `.forge/ledger/` no longer suppresses the real rule.
 
 ### Changed
+
+- **Disclose the global settings merge before it happens (ME-22).** `forge init` now prints the
+  global `~/.claude/settings.json` merge disclosure before the merge mutates the file, not after.
 
 - **Honest positioning (ME-24).** README no longer claims "one brain for every AI coding
   agent", "enforced guardrails", or that every task passes a deterministic gate: automatic

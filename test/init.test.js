@@ -13,6 +13,7 @@ import { test } from "node:test";
 import { BRAND } from "../src/brand.js";
 import {
   catalog,
+  ensureLedgerGitattributes,
   guardKey,
   init,
   LEGACY_PROFILES,
@@ -22,6 +23,7 @@ import {
   shellQuote,
   validateProfile,
 } from "../src/init.js";
+import { GITATTRIBUTES_RULE } from "../src/ledger_store.js";
 
 test("init emits the shared config for a fresh repo in one call", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));
@@ -91,6 +93,88 @@ test("mergeSettings refuses to overwrite a present-but-unparseable settings file
   const result = mergeSettings({ settingsPath });
   assert.equal(result.action, "error", "corrupt file must not be silently overwritten");
   assert.equal(readFileSync(settingsPath, "utf8"), original, "original bytes preserved");
+});
+
+// ME-12: a settings file that is valid JSON but NOT an object ([] / "x" / 42 / null) is
+// corrupt, not empty settings — it must be refused and its bytes preserved, exactly like
+// unparseable JSON. Otherwise the merge would silently replace the user's real file.
+for (const body of ["[]", '"x"', "42", "null"]) {
+  test(`ME-12: non-object settings JSON (${body}) is treated as corrupt, bytes preserved`, () => {
+    const tmp = mkdtempSync(join(tmpdir(), "forge-settings-nonobj-"));
+    const settingsPath = join(tmp, ".claude", "settings.json");
+    mkdirSync(dirname(settingsPath), { recursive: true });
+    writeFileSync(settingsPath, body);
+    const result = mergeSettings({ settingsPath });
+    assert.equal(result.action, "error", "non-object settings must not be overwritten");
+    assert.equal(readFileSync(settingsPath, "utf8"), body, "original bytes preserved");
+  });
+}
+
+// ME-21: presence of the ledger merge rule is decided by parsing the EXACT active
+// attribute line, not a substring — a comment that merely mentions the path must not
+// suppress the real rule.
+test("ME-21: a .gitattributes with only a COMMENT mentioning the ledger still gets the real rule", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ga-comment-"));
+  writeFileSync(join(root, ".gitattributes"), "# note: .forge/ledger/ logs use union merge\n");
+  const r = ensureLedgerGitattributes(root);
+  assert.equal(r.written, true, "the real rule was added despite the comment");
+  const text = readFileSync(join(root, ".gitattributes"), "utf8");
+  assert.match(text, /\.forge\/ledger\/\*\/\*\.log merge=union/, "active rule present");
+});
+
+test("ME-21: an existing REAL rule is not duplicated", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ga-real-"));
+  writeFileSync(join(root, ".gitattributes"), `${GITATTRIBUTES_RULE}\n`);
+  const r = ensureLedgerGitattributes(root);
+  assert.equal(r.written, false, "already-present rule is a no-op");
+  const text = readFileSync(join(root, ".gitattributes"), "utf8");
+  const occurrences = text.split(".forge/ledger/*/*.log merge=union").length - 1;
+  assert.equal(occurrences, 1, "rule appears exactly once");
+});
+
+test("ME-21: a real rule alongside an unrelated comment still counts as present", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ga-mixed-"));
+  writeFileSync(
+    join(root, ".gitattributes"),
+    "# ledger config below\n.forge/ledger/*/*.log merge=union\n",
+  );
+  assert.equal(
+    ensureLedgerGitattributes(root).written,
+    false,
+    "present rule detected, not re-added",
+  );
+});
+
+// ME-22: the GLOBAL-settings disclosure must be emitted BEFORE the merge mutates the file,
+// never after. mergeSettings fires onNotice with the target path prior to any write.
+test("ME-22: mergeSettings fires the disclosure BEFORE it mutates the global file", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-me22-"));
+  const settingsPath = join(tmp, ".claude", "settings.json");
+  let noticedPath = null;
+  let fileExistedAtNotice = null;
+  const r = mergeSettings({
+    settingsPath,
+    onNotice: (p) => {
+      noticedPath = p;
+      fileExistedAtNotice = existsSync(settingsPath);
+    },
+  });
+  assert.equal(noticedPath, settingsPath, "notice carries the resolved target path");
+  assert.equal(fileExistedAtNotice, false, "notice fired before the file was created");
+  assert.ok(existsSync(settingsPath), "the merge then created the file");
+  assert.ok(r.action === "created" || r.action === "merged");
+});
+
+test("ME-22: no disclosure fires when the merge is skipped (--no-settings)", () => {
+  let fired = false;
+  const r = mergeSettings({
+    noSettings: true,
+    onNotice: () => {
+      fired = true;
+    },
+  });
+  assert.equal(r.action, "skipped");
+  assert.equal(fired, false, "nothing to disclose when nothing is merged");
 });
 
 test("mergeSettings backs up an existing valid file and resolves guard paths absolutely", () => {

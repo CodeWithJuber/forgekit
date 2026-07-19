@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -261,4 +268,109 @@ test("clearRepoConfig on a fresh repo reports nothing to clear", () => {
 test("KNOWN_TOOLS covers the documented set", () => {
   for (const t of ["claude", "cursor", "gemini", "codex", "zed", "vscode"])
     assert.ok(KNOWN_TOOLS.includes(t));
+});
+
+// ME-12: valid-but-non-object top-level JSON (null / [] / "x" / 42) must be treated as
+// CORRUPT, not coerced to {} — otherwise a later write silently replaces valid bytes.
+for (const body of ["null", "[]", '"oops"', "42"]) {
+  test(`ME-12: non-object forge.config.json (${body}) is corrupt, not silently discarded`, () => {
+    const root = tmp();
+    mkdirSync(join(root, ".forge"), { recursive: true });
+    const file = join(root, ".forge/forge.config.json");
+    writeFileSync(file, body);
+
+    // read: reported corrupt, never thrown, never coerced to usable data
+    const cfg = readForgeConfig(root);
+    assert.equal(cfg.corrupt, true, "corruption reported");
+    assert.equal(cfg.path, file);
+    assert.deepEqual(readRepoConfig(root), {}, "no bogus primary tool surfaces");
+
+    // write: refused, bytes preserved for the human to fix
+    const res = writeForgeConfig(root, (c) => {
+      c.profile = "minimal";
+    });
+    assert.equal(res.ok, false, "write refuses");
+    assert.equal(readFileSync(file, "utf8"), body, "original bytes preserved");
+  });
+}
+
+// ME-13: writes go through a temp file + atomic rename, and an existing valid config is
+// backed up (timestamped) before it is overwritten — a crash can never truncate the config.
+test("ME-13: writeForgeConfig backs up the existing config and writes atomically", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const file = join(root, ".forge/forge.config.json");
+  const original = `${JSON.stringify({ profile: "minimal", keep: "me" }, null, 2)}\n`;
+  writeFileSync(file, original);
+
+  const res = writeForgeConfig(root, (c) => {
+    c.primaryTool = "claude";
+  });
+  assert.equal(res.ok, true);
+
+  // new content is intact and complete (no truncation), unknown keys round-tripped
+  const written = JSON.parse(readFileSync(file, "utf8"));
+  assert.deepEqual(written, {
+    profile: "minimal",
+    keep: "me",
+    primaryTool: "claude",
+  });
+
+  // a timestamped backup of the ORIGINAL bytes appears next to the config
+  const backups = readdirSync(join(root, ".forge")).filter((f) =>
+    f.startsWith("forge.config.json.forge-bak-"),
+  );
+  assert.equal(backups.length, 1, "one backup written");
+  assert.equal(
+    readFileSync(join(root, ".forge", backups[0]), "utf8"),
+    original,
+    "backup holds the pre-overwrite bytes",
+  );
+  // no temp file is left behind after the rename
+  assert.ok(
+    !readdirSync(join(root, ".forge")).some((f) => f.includes(".forge-tmp-")),
+    "temp file renamed away",
+  );
+});
+
+test("ME-13: first write (no existing config) needs no backup", () => {
+  const root = tmp();
+  const res = writeForgeConfig(root, (c) => {
+    c.primaryTool = "claude";
+  });
+  assert.equal(res.ok, true);
+  const backups = readdirSync(join(root, ".forge")).filter((f) => f.includes(".forge-bak-"));
+  assert.deepEqual(backups, [], "no backup for a fresh config");
+});
+
+// ME-14: KNOWN_TOOLS and primary-tool auto-detection are reconciled with the emit targets —
+// Roo is selectable and every tool with an on-disk marker is detected.
+test("ME-14: KNOWN_TOOLS includes roo/aider/continue/windsurf and detection recognizes them", () => {
+  for (const t of ["aider", "continue", "windsurf", "roo"])
+    assert.ok(KNOWN_TOOLS.includes(t), `${t} is selectable via \`forge tools\``);
+
+  // Each tool's marker auto-detects that tool.
+  const aiderRoot = tmp();
+  writeFileSync(join(aiderRoot, ".aider.conf.yml"), "read: AGENTS.md\n");
+  assert.equal(detectPrimaryTool(aiderRoot), "aider");
+
+  const contRoot = tmp();
+  mkdirSync(join(contRoot, ".continue"));
+  assert.equal(detectPrimaryTool(contRoot), "continue");
+
+  const windRoot = tmp();
+  mkdirSync(join(windRoot, ".windsurf"));
+  assert.equal(detectPrimaryTool(windRoot), "windsurf");
+
+  const rooRoot = tmp();
+  mkdirSync(join(rooRoot, ".roo"));
+  assert.equal(detectPrimaryTool(rooRoot), "roo");
+  assert.equal(rowToolKey("Roo Code MCP"), "roo", "emit label maps to the same key");
+});
+
+test("ME-14: `forge tools roo` is accepted (roo is a known tool)", async () => {
+  const root = tmp();
+  const r = await applyPrimaryTool(root, "roo", { syncFn: () => FAKE_REPORT });
+  assert.equal(r.primaryTool, "roo");
+  assert.equal(readRepoConfig(root).primaryTool, "roo");
 });

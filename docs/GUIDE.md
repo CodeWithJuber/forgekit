@@ -570,9 +570,10 @@ tools` fixes that without changing what `sync` emits.
 
 - `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
   auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
-  `.codex/`, `.zed/`, `.vscode/`) and which targets are currently gitignored.
+  `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`)
+  and which targets are currently gitignored.
 - `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
-  `zed` · `vscode` · `aider` · `continue` · `windsurf`) as this repo's primary tool in
+  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo`) as this repo's primary tool in
   `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
   (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
   emitted artifacts. Your own `.gitignore` lines are never touched, and the shared

@@ -25,7 +25,22 @@ import { list as tasteList } from "./taste.js";
 export function ensureLedgerGitattributes(targetRoot = process.cwd()) {
   const path = join(targetRoot, ".gitattributes");
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-  if (existing.includes(".forge/ledger/")) return { written: false };
+  // ME-21: only a REAL, active attribute line counts as "already present" — not a comment
+  // or prose that merely mentions the path. A substring check would let a comment mentioning
+  // `.forge/ledger/` suppress the actual rule forever. Parse the effective rule (the sole
+  // non-comment line of GITATTRIBUTES_RULE) into <pattern> + <attrs>, then look for a
+  // non-comment line that binds the SAME pattern to (at least) the same attribute.
+  const ruleLine = GITATTRIBUTES_RULE.split("\n").find(
+    (l) => l.trim() && !l.trim().startsWith("#"),
+  );
+  const [pattern, ...attrs] = ruleLine.trim().split(/\s+/);
+  const active = existing.split("\n").some((line) => {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) return false;
+    const [pat, ...rest] = t.split(/\s+/);
+    return pat === pattern && attrs.every((a) => rest.includes(a));
+  });
+  if (active) return { written: false };
   appendFileSync(
     path,
     `${existing && !existing.endsWith("\n") ? "\n" : ""}${GITATTRIBUTES_RULE}\n`,
@@ -118,7 +133,12 @@ function readExistingSettings(path) {
     return { status: "missing", data: {} };
   }
   try {
-    return { status: "ok", data: JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    // ME-12: valid JSON that is not a top-level object (null / [] / "x" / 42) is corrupt,
+    // not empty settings — refusing to overwrite preserves the user's real bytes.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { status: "corrupt", data: null };
+    return { status: "ok", data: parsed };
   } catch {
     return { status: "corrupt", data: null };
   }
@@ -255,11 +275,16 @@ function legacyOwnedScan(settings, template) {
 /**
  * Merge Forge settings (hooks, permissions, statusline) into the user's
  * ~/.claude/settings.json. Preserves all existing entries. Idempotent.
- * @param {{settingsPath?: string, noSettings?: boolean}} [opts]
+ *
+ * ME-22: `onNotice(target)`, when given, is invoked with the resolved settings path BEFORE
+ * any read/mutation of that GLOBAL file — so the CLI's consent/disclosure line always
+ * precedes the merge it describes, never trails it. Not called when the merge is skipped.
+ * @param {{settingsPath?: string, noSettings?: boolean, onNotice?: (target: string) => void}} [opts]
  */
-export function mergeSettings({ settingsPath, noSettings } = {}) {
+export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
   if (noSettings) return { action: "skipped", reason: "--no-settings" };
   const target = settingsPath || join(homedir(), ".claude", "settings.json");
+  if (typeof onNotice === "function") onNotice(target);
   const template = loadTemplate();
   const { status, data } = readExistingSettings(target);
   // Present-but-unparseable: refuse rather than overwrite the user's real (if broken) file.
@@ -565,7 +590,9 @@ function writeProfile(targetRoot, profile) {
  * `settingsOnly` runs the idempotent, marker-guarded `mergeSettings` ONLY — no repo
  * emit, no AGENTS.md, no gitattributes. That is the surface `install.sh` calls to wire
  * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
- * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string}} [opts]
+ * `onSettingsNotice(target)` is forwarded to `mergeSettings` so the GLOBAL-settings
+ * disclosure is emitted BEFORE the merge mutates ~/.claude/settings.json (ME-22).
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void}} [opts]
  */
 export function init({
   targetRoot = process.cwd(),
@@ -573,10 +600,15 @@ export function init({
   profile,
   settingsOnly = false,
   settingsPath,
+  onSettingsNotice,
 } = {}) {
   if (settingsOnly) {
     return {
-      settings: mergeSettings({ noSettings, settingsPath }),
+      settings: mergeSettings({
+        noSettings,
+        settingsPath,
+        onNotice: onSettingsNotice,
+      }),
       settingsOnly: true,
     };
   }
@@ -593,7 +625,11 @@ export function init({
   if (profileResult?.error) return { profile: profileResult, aborted: true };
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
-  const settings = mergeSettings({ noSettings, settingsPath });
+  const settings = mergeSettings({
+    noSettings,
+    settingsPath,
+    onNotice: onSettingsNotice,
+  });
   const detected = autoDetectProvider();
   return { ...r, settings, detected, profile: profileResult };
 }

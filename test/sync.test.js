@@ -152,6 +152,63 @@ test("config disableSections drops a named section; config.rules appends (P1-03)
   assert.match(md, /## Workflow/, "other sections preserved");
 });
 
+test("ME-20: invalid .forge/rules.json is fail-safe — sync does not throw, falls back, bytes preserved", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const rulesPath = join(root, ".forge/rules.json");
+  const bad = '{ "sections": [ this is not json ';
+  writeFileSync(rulesPath, bad);
+  let res;
+  assert.doesNotThrow(() => {
+    res = sync({ targetRoot: root });
+  }, "corrupt legacy rules.json must never abort sync");
+  // Default rules still generated (fail-open).
+  assert.match(
+    readFileSync(join(root, "AGENTS.md"), "utf8"),
+    /## Workflow/,
+    "default rules emitted despite the corrupt override",
+  );
+  // Surfaced as a warning, not swallowed.
+  assert.ok(
+    res.warnings.some((w) => w.includes("rules.json") && w.includes("not valid JSON")),
+    `warnings must mention the corrupt rules.json: ${JSON.stringify(res.warnings)}`,
+  );
+  // Never overwritten — the user's bytes are left intact to fix.
+  assert.equal(readFileSync(rulesPath, "utf8"), bad, "corrupt rules.json bytes preserved");
+});
+
+test("ME-20: valid .forge/rules.json with a non-array sections field is ignored, not thrown", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge/rules.json"), JSON.stringify({ sections: "oops" }));
+  assert.doesNotThrow(() => sync({ targetRoot: root }));
+  assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /## Workflow/);
+});
+
+test("ME-19: a failing target write yields PARTIAL status, not unconditional success", () => {
+  const root = fixture();
+  // Make one emit target (CLAUDE.md) un-writable by planting a DIRECTORY at its path — the
+  // claude emitter's read/write then throws, sync catches it as an action:"error" row.
+  mkdirSync(join(root, "CLAUDE.md"), { recursive: true });
+  let res;
+  assert.doesNotThrow(() => {
+    res = sync({ targetRoot: root });
+  }, "one failing target must not abort the whole sync");
+  const errors = res.report.filter((r) => r.action === "error");
+  assert.ok(errors.length >= 1, "the failed target is recorded as an error row");
+  assert.equal(res.partial, true, "any error row makes the aggregate PARTIAL");
+  assert.equal(res.status, "PARTIAL");
+  // Other targets still succeeded — AGENTS.md was written before the failure.
+  assert.ok(existsSync(join(root, "AGENTS.md")), "earlier targets are still emitted");
+});
+
+test("ME-19: an all-clean sync reports status OK / partial:false", () => {
+  const root = fixture();
+  const res = sync({ targetRoot: root });
+  assert.equal(res.partial, false);
+  assert.equal(res.status, "OK");
+});
+
 test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as drift", () => {
   const root = fixture();
   sync({ targetRoot: root });

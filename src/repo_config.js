@@ -10,7 +10,15 @@
 // writes REFUSE (`{ok:false, reason}`) rather than replace bytes a human may still want
 // to fix. When no config exists the primary tool is auto-detected from which agent
 // folders/files are present (mirrors autoDetectProvider in providers.js).
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { ensureGitignoreBlock } from "./gitignore.js";
@@ -27,9 +35,14 @@ const DETECT = [
   { tool: "codex", marker: ".codex" },
   { tool: "zed", marker: ".zed" },
   { tool: "vscode", marker: ".vscode" },
+  { tool: "aider", marker: ".aider.conf.yml" },
+  { tool: "continue", marker: ".continue" },
+  { tool: "windsurf", marker: ".windsurf" },
+  { tool: "roo", marker: ".roo" },
 ];
 
-/** Tool names accepted by `forge tools <name>`. */
+/** Tool names accepted by `forge tools <name>`. Kept in lockstep with the emit targets
+ *  (rowToolKey / TOOL_KEYS) — every tool Forge can emit for is selectable as primary. */
 export const KNOWN_TOOLS = [
   "claude",
   "cursor",
@@ -40,6 +53,7 @@ export const KNOWN_TOOLS = [
   "aider",
   "continue",
   "windsurf",
+  "roo",
 ];
 
 // Map a sync-report row's tool label to a canonical tool key. The shared source
@@ -64,6 +78,10 @@ const legacyConfigPath = (root) => join(root, LEGACY_CONFIG_REL);
 // One loud warning per process (not per read) — the cortex hooks re-read config on every
 // event, and repeating the same corruption warning on each hook fire would be spam.
 let warnedCorruptConfig = false;
+
+/** Filesystem-safe timestamp for backup filenames. */
+const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
+
 function warnCorrupt(path) {
   if (warnedCorruptConfig) return;
   warnedCorruptConfig = true;
@@ -81,8 +99,12 @@ function readConfigFile(path) {
   if (!existsSync(path)) return { status: "missing", data: {} };
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
-    const ok = parsed && typeof parsed === "object" && !Array.isArray(parsed);
-    return { status: "ok", data: ok ? parsed : {} };
+    // ME-12: valid JSON that is NOT a top-level object (null / [] / "x" / 42) is treated
+    // as corrupt, exactly like unparseable bytes — never coerced to `{}`, or a later write
+    // would silently replace bytes a human may still want (violating the config invariant).
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { status: "corrupt", data: {} };
+    return { status: "ok", data: parsed };
   } catch {
     return { status: "corrupt", data: {} };
   }
@@ -139,7 +161,14 @@ export function writeForgeConfig(root, mutator) {
   const draft = { ...legacy.data, ...unified.data };
   const next = mutator(draft) ?? draft;
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+  // ME-13: back up an existing valid config before overwriting, then write via a temp file
+  // + atomic rename (same pattern as mergeSettings) so a crash mid-write can never truncate
+  // the unified config. First write (no existing file) needs no backup.
+  if (unified.status === "ok" && existsSync(path))
+    copyFileSync(path, `${path}.forge-bak-${stamp()}`);
+  const tmp = `${path}.forge-tmp-${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
+  renameSync(tmp, path);
   return { ok: true, path, config: next };
 }
 

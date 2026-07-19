@@ -53,6 +53,21 @@ test("init --settings-only announces the GLOBAL merge (informed consent) and exi
   assert.match(second.stdout, /already up to date/);
 });
 
+test("ME-22: full init prints the GLOBAL disclosure BEFORE the merge result line", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-cli-me22-"));
+  const settingsPath = join(tmp, "home-settings.json");
+  const r = runCli(["init"], { cwd: tmp, settingsPath });
+  assert.equal(r.status, 0, r.stderr);
+  const disclosureAt = r.stdout.indexOf("GLOBAL — affects all repos");
+  const mergeResultAt = r.stdout.search(/settings: (merged|created) /);
+  assert.ok(disclosureAt >= 0, "disclosure printed");
+  assert.ok(mergeResultAt >= 0, "merge result printed");
+  assert.ok(
+    disclosureAt < mergeResultAt,
+    "the disclosure must precede the merge it describes (ME-22)",
+  );
+});
+
 test("init --remove-settings reverses a merge (exit 0) and fails loudly on a corrupt file", () => {
   const tmp = mkdtempSync(join(tmpdir(), "forge-cli-remove-"));
   const settingsPath = join(tmp, "settings.json");

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { emitMcp } from "../src/emit/mcp.js";
 import { addIntegration, removeIntegration } from "../src/integrations.js";
 import { sync } from "../src/sync.js";
 
@@ -71,8 +72,10 @@ test("integrations add context7 writes it (opt-in) after not being present by de
   assert.ok(after.mcpServers["forge-cortex"], "existing forge server preserved");
 });
 
-test("managed-entry update: a drifted forge server is refreshed, user servers untouched", () => {
+test("ME-09: a divergent user entry with a registry name is preserved + reported, not overwritten", () => {
   const root = fixture();
+  // A JSON entry named like the registry server but diverging from forge's spec is the
+  // USER's — registry names carry no implicit ownership, so it must survive byte-identical.
   writeFileSync(
     join(root, ".mcp.json"),
     JSON.stringify({
@@ -82,14 +85,20 @@ test("managed-entry update: a drifted forge server is refreshed, user servers un
       },
     }),
   );
-  sync({ targetRoot: root });
+  const r = sync({ targetRoot: root });
   const j = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
   assert.deepEqual(
     j.mcpServers["forge-cortex"].args,
-    ["cortex-mcp"],
-    "stale forge entry refreshed",
+    ["OLD-STALE-ARG"],
+    "divergent registry-name entry preserved (not clobbered without adoption)",
   );
   assert.ok(j.mcpServers.mine, "user server preserved");
+  const row = r.report.find((x) => x.target === ".mcp.json");
+  assert.match(row.note, /user-owned/);
+  assert.match(row.note, /--adopt/);
+  // Absent targets still receive the registry server untouched.
+  const cursor = JSON.parse(readFileSync(join(root, ".cursor", "mcp.json"), "utf8"));
+  assert.ok(cursor.mcpServers["forge-cortex"], "registry server written where absent");
 });
 
 test("sync emits Continue rules (Continue does not read AGENTS.md)", () => {
@@ -157,7 +166,10 @@ test("RA-03: sync → integrations add → sync keeps BOTH servers in every targ
   assertServersEverywhere(root, ["forge-cortex", "context7"], "after second sync");
   const cfg = JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8"));
   assert.deepEqual(cfg.mcp.integrations, ["context7"], "install recorded in the managed set");
-  assert.ok(cfg.mcp.adopted.includes("context7"), "fresh create is forge-owned (auto-adopted)");
+  assert.ok(
+    cfg.mcp.adopted.some((a) => a.server === "context7" && a.target === ".mcp.json"),
+    "fresh create is forge-owned per target (auto-adopted)",
+  );
 });
 
 test("Codex: a stale forge-marked block is refreshed on the next emit", () => {
@@ -287,7 +299,9 @@ test("integrations remove never deletes a user-owned same-name entry", () => {
   const root = fixture();
   writeFileSync(
     join(root, ".mcp.json"),
-    JSON.stringify({ mcpServers: { context7: { command: "my-custom-context7" } } }),
+    JSON.stringify({
+      mcpServers: { context7: { command: "my-custom-context7" } },
+    }),
   );
   addIntegration("context7", { targetRoot: root }); // not adopted — user entry preserved
   const res = removeIntegration("context7", { targetRoot: root });
@@ -316,4 +330,147 @@ test("corrupt forge.config.json: sync emits registry-only + warns; add refuses; 
     "{ not json",
     "corrupt config bytes never overwritten",
   );
+});
+
+// ---------------------------------------------------------------------------
+// ME-08..ME-11 — per-target ownership, atomic add/remove, name/definition validation.
+// ---------------------------------------------------------------------------
+
+const writeForgeConfigFile = (root, mcp) => {
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "forge.config.json"), `${JSON.stringify({ mcp }, null, 2)}\n`);
+};
+
+test("ME-08: per-target adoption does not leak to other targets; legacy bare name honored", () => {
+  const root = fixture();
+  // A divergent same-name context7 in TWO targets.
+  writeFileSync(
+    join(root, ".mcp.json"),
+    JSON.stringify({ mcpServers: { context7: { command: "custom-a" } } }),
+  );
+  mkdirSync(join(root, ".cursor"), { recursive: true });
+  writeFileSync(
+    join(root, ".cursor", "mcp.json"),
+    JSON.stringify({ mcpServers: { context7: { command: "custom-b" } } }),
+  );
+  // Adopt context7 for .mcp.json ONLY (per-target record).
+  writeForgeConfigFile(root, {
+    integrations: ["context7"],
+    adopted: [{ server: "context7", target: ".mcp.json" }],
+  });
+  sync({ targetRoot: root });
+  const a = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+  const b = JSON.parse(readFileSync(join(root, ".cursor", "mcp.json"), "utf8"));
+  assert.equal(a.mcpServers.context7.command, "npx", "adopted target refreshed to catalog spec");
+  assert.equal(b.mcpServers.context7.command, "custom-b", "non-adopted target NOT overwritten");
+
+  // Legacy bare name is honored as a wildcard: both targets refresh.
+  writeForgeConfigFile(root, { integrations: ["context7"], adopted: ["context7"] });
+  writeFileSync(
+    join(root, ".cursor", "mcp.json"),
+    JSON.stringify({ mcpServers: { context7: { command: "custom-b" } } }),
+  );
+  sync({ targetRoot: root });
+  const b2 = JSON.parse(readFileSync(join(root, ".cursor", "mcp.json"), "utf8"));
+  assert.equal(b2.mcpServers.context7.command, "npx", "legacy bare adopted name honored for all");
+});
+
+test("ME-08: add over a divergent entry in one target does not adopt it in others", () => {
+  const root = fixture();
+  // context7 diverges only in .mcp.json; absent elsewhere.
+  writeFileSync(
+    join(root, ".mcp.json"),
+    JSON.stringify({ mcpServers: { context7: { command: "mine" } } }),
+  );
+  const res = addIntegration("context7", { targetRoot: root });
+  assert.ok(res.ok);
+  assert.equal(res.adopted, false, "pre-existing divergent entry not auto-adopted");
+  const cfg = JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8"));
+  const owns = (t) => cfg.mcp.adopted.some((a) => a.server === "context7" && a.target === t);
+  assert.equal(owns(".mcp.json"), false, "divergent target NOT adopted");
+  assert.equal(owns(".cursor/mcp.json"), true, "fresh target auto-adopted");
+  // The divergent entry survives byte-identical.
+  const a = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+  assert.equal(a.mcpServers.context7.command, "mine", "user entry preserved");
+});
+
+test("ME-10 add: a failing target does not record a fully-installed integration", () => {
+  const root = fixture();
+  // Make .cursor a FILE so mkdirSync(.cursor) throws when emitting .cursor/mcp.json.
+  writeFileSync(join(root, ".cursor"), "not a directory");
+  const res = addIntegration("context7", { targetRoot: root });
+  assert.equal(res.ok, false, "partial emit is not a success");
+  assert.ok(res.incomplete, "reported as incomplete");
+  assert.ok(
+    res.rows.some((r) => r.action === "error"),
+    "a target reported an error",
+  );
+  // The install was NOT recorded — a later add can finish.
+  const cfgPath = join(root, ".forge", "forge.config.json");
+  if (existsSync(cfgPath)) {
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    assert.ok(
+      !(cfg.mcp?.integrations || []).includes("context7"),
+      "context7 not recorded as installed after partial emit",
+    );
+  }
+});
+
+test("ME-10 remove: a failing target cleanup keeps the integration recorded (recoverable)", () => {
+  const root = fixture();
+  sync({ targetRoot: root });
+  addIntegration("context7", { targetRoot: root });
+  // Sabotage the Continue per-server file: replace it with a directory so cleanup throws.
+  const contFile = join(root, ".continue", "mcpServers", "forge-context7.yaml");
+  rmSync(contFile, { force: true });
+  mkdirSync(contFile, { recursive: true });
+  const res = removeIntegration("context7", { targetRoot: root });
+  assert.equal(res.removed, false, "not reported as fully removed");
+  assert.ok(
+    res.rows.some((r) => r.action === "error"),
+    "a target cleanup errored",
+  );
+  const cfg = JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8"));
+  assert.ok(
+    cfg.mcp.integrations.includes("context7"),
+    "integration kept in the managed set so a later remove can finish",
+  );
+});
+
+test("ME-11: invalid server names are rejected before any write", () => {
+  const root = fixture();
+  for (const bad of ["../x", "foo bar", "foo\nbar", "foo.bar", "foo]bar", "Foo", "-foo"]) {
+    assert.throws(
+      () => emitMcp({ targetRoot: root, servers: { [bad]: { command: "x" } } }),
+      /invalid MCP server name/,
+      `rejected: ${JSON.stringify(bad)}`,
+    );
+  }
+  // Nothing was written for the rejected set.
+  assert.ok(!existsSync(join(root, ".mcp.json")), "no file written on validation failure");
+});
+
+test("ME-11: foo vs forge-foo Continue filename collision is rejected", () => {
+  const root = fixture();
+  assert.throws(
+    () =>
+      emitMcp({
+        targetRoot: root,
+        servers: { foo: { command: "x" }, "forge-foo": { command: "y" } },
+      }),
+    /collide on Continue file/,
+  );
+});
+
+test("ME-11: a YAML-special command is serialized safely (quoted)", () => {
+  const root = fixture();
+  emitMcp({
+    targetRoot: root,
+    servers: { srv: { command: "cmd: --flag #danger", args: ["a: b"] } },
+  });
+  const yaml = readFileSync(join(root, ".continue", "mcpServers", "forge-srv.yaml"), "utf8");
+  assert.match(yaml, /command: "cmd: --flag #danger"/, "command quoted as a YAML scalar");
+  // And the same command lands safely (JSON-quoted) in the Codex TOML.
+  const toml = readFileSync(join(root, ".codex", "config.toml"), "utf8");
+  assert.match(toml, /command = "cmd: --flag #danger"/, "command quoted as a TOML string");
 });
