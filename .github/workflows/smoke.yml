@@ -42,13 +42,9 @@ jobs:
       - name: Install/uninstall smoke (isolated HOME)
         shell: bash
         run: bash scripts/smoke-install.sh
-      # Re-run the unit suite here only on Linux — ci.yml already runs it on the Node 20/22
-      # Linux matrix, so this is just belt-and-suspenders on the same platform.
-      # TODO(macos-suite): the first macOS run surfaced ONE environment-specific unit-test
-      # failure (the install smoke itself is green on macOS; only a temp-path/case-sensitivity
-      # assumption in a unit test trips on APFS + /tmp→/private/tmp). Pin and fix that test,
-      # then drop this `if` to get full macOS unit coverage. The install evidence — P2's
-      # actual deliverable — already runs on macos above.
+      # Re-run the unit suite here across the matrix. ci.yml already runs it on the Node
+      # 20/22 Linux matrix; running it on macOS too proves the >=20 behavior on APFS +
+      # /tmp→/private/tmp, where tmpdir() is a symlink (dryRun now canonicalizes worktree
+      # paths so per-file attribution string-matches node --test's realpath'd locations).
       - name: Test suite
-        if: matrix.os == 'ubuntu-latest'
         run: npm test

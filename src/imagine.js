@@ -8,7 +8,7 @@
 // TAP summary, and always discards the sandbox. Selection stays useful on its own as
 // "run these, in this order"; dryRun turns the prediction into measured evidence.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
@@ -134,6 +134,12 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
       const msg = /** @type {{stderr?: Buffer}} */ (e).stderr?.toString().trim() || String(e);
       return { ok: false, reason: `git worktree add failed: ${msg}` };
     }
+    // node --test reports each failure's `location:` as a canonical (realpath'd) path.
+    // On platforms where tmpdir() itself is a symlink (macOS: /var → /private/var), the
+    // raw `wt` path won't string-match those locations, so per-file attribution below
+    // must compare against the canonicalized worktree root. On Linux (no symlink) this
+    // is a no-op.
+    const wtReal = realpathSync(wt);
     // Runner policy: always `node --test <files...>` — a custom package test script
     // (jest, vitest, …) is a WHOLE-SUITE command that can't be scoped per-file safely,
     // which would defeat minimal selection. We still run node --test and say so, so a
@@ -196,7 +202,7 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     let attributable = true;
     for (const block of (run.stdout ?? "").split(/^not ok /m).slice(1)) {
       const file = block.split("\n").map(locFile).find(Boolean);
-      const t = file && tests.find((c) => file === join(wt, String(c)));
+      const t = file && tests.find((c) => file === join(wtReal, String(c)));
       if (t) perFile[String(t)] = "fail";
       else attributable = false;
     }
