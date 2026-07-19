@@ -22,9 +22,10 @@ import { BRAND } from "./brand.js";
 import { readSession, sessionPath } from "./cortex_hook.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
-import { readBaseline, readDirtySnapshot } from "./session.js";
+import { fingerprintFile, readBaseline, readDirtySnapshot } from "./session.js";
 import { isTestFile } from "./substrate.js";
 import { IGNORE_DIRS } from "./util.js";
+import { computeCodeState } from "./verify.js";
 
 // gitRaw keeps the exact bytes — porcelain's first column is a SPACE for unstaged
 // entries, and a trim() would eat it and shift the path slice by one.
@@ -111,12 +112,19 @@ const IGNORED_PREFIX = (p) => IGNORE_DIRS.has(String(p).split("/")[0]);
  * by the block-once marker.
  * @param {string} root
  * @param {string|null} [baseHead]
- * @param {{sinceMs?: number, preDirty?: Set<string>}} [opts]
+ * @param {{sinceMs?: number, preDirty?: Map<string, string|null>}} [opts]
  */
 export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
   const out = new Set(committedSince(root, baseHead, sinceMs));
   for (const p of statusEntriesZ(root)) {
-    if (preDirty?.has(p)) continue; // already dirty before the session began
+    // A path that was already dirty at session start is hidden ONLY while its content is
+    // unchanged since then: its baseline fingerprint must be known AND still match. An
+    // unknown baseline (legacy snapshot) or a moved fingerprint means the agent edited a
+    // pre-dirty file THIS session — let it flow through the normal classification (HI-03).
+    if (preDirty?.has(p)) {
+      const baseFp = preDirty.get(p);
+      if (baseFp != null && fingerprintFile(root, p) === baseFp) continue;
+    }
     out.add(p);
   }
   return [...out].filter((p) => !IGNORED_PREFIX(p)).sort();
@@ -131,7 +139,12 @@ export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
  * a config-only change keeps that lighter bar.
  * @param {{stopHookActive?: boolean, isRepo?: boolean, markerExists?: boolean,
  *   killSwitch?: boolean, changed?: string[], stateTouched?: boolean,
- *   verifyEvidence?: {fresh: boolean, status: string} | null}} [input]
+ *   verifyEvidence?: {fresh: boolean, status: string, codeStateMatches?: boolean} | null,
+ *   substantiveTests?: string[] | null}} [input]
+ *   verifyEvidence.codeStateMatches — the stamp's stored code-state fingerprint still
+ *     equals the code as it stands now (HI-02); a fresh PASS only counts when this is true.
+ *   substantiveTests — the FS-filtered subset of changed test files that still exist and
+ *     are non-empty (HI-04); null (pure-table callers) falls back to raw classification.
  */
 export function gateDecision({
   stopHookActive = false,
@@ -141,6 +154,7 @@ export function gateDecision({
   changed = [],
   stateTouched = false,
   verifyEvidence = null,
+  substantiveTests = null,
 } = {}) {
   if (stopHookActive) return { allow: true, row: "stop-hook-active" };
   if (!isRepo) return { allow: true, row: "not-a-repo" };
@@ -150,9 +164,19 @@ export function gateDecision({
   for (const f of changed) classes[classifyPath(f)].push(f);
   const external = changed.length - classes.internal.length;
   if (!external && !stateTouched) return { allow: true, row: "no-changes", classes };
-  const testEvidence =
-    classes.test.length > 0 ||
-    (verifyEvidence?.fresh === true && verifyEvidence?.status === "PASS");
+  // Test evidence has two legs. STRONG (HI-02): a fresh `verify` PASS whose stored code
+  // state still matches the tree NOW — proof the tests ran against the FINAL code, not a
+  // since-mutated one. WEAKER (HI-04): a substantive test file moved with the change
+  // (added/modified and non-empty — a deleted or emptied test is an obligation signal,
+  // never proof). `substantiveTests` is the caller's FS-filtered set; absent it (pure
+  // callers) we trust the raw classification.
+  const strongVerify =
+    verifyEvidence?.fresh === true &&
+    verifyEvidence?.status === "PASS" &&
+    verifyEvidence?.codeStateMatches === true;
+  const hasTestFile =
+    substantiveTests == null ? classes.test.length > 0 : substantiveTests.length > 0;
+  const testEvidence = strongVerify || hasTestFile;
   const docEvidence = classes.docs.length > 0 || stateTouched;
   if (classes.code.length) {
     if (!testEvidence) return { allow: false, row: "code-without-test-evidence", classes };
@@ -224,9 +248,9 @@ export function repairReason(
   let headline;
   const steps = [];
   if (row === "code-without-test-evidence") {
-    headline = `END-TO-END COMPLETENESS: code changed this session with NO test evidence — no test file moved with it and no fresh passing \`${BRAND.cli} verify\` run backs the change.`;
+    headline = `END-TO-END COMPLETENESS: code changed this session with NO test evidence — no substantive test file (added or modified, non-empty; a deleted or empty test does not count) moved with it, and no fresh passing \`${BRAND.cli} verify\` run bound to the CURRENT code state backs the change (a verify that ran BEFORE your last edit is stale — re-run it after the final change).`;
     steps.push(
-      `\`${BRAND.cli} verify\` — run the project's own tests against this change (or add/adjust a test that exercises the new behaviour).`,
+      `\`${BRAND.cli} verify\` — run the project's own tests against this change AFTER your final edit (a verify from before the last change no longer matches the code), or add/adjust a real test that exercises the new behaviour.`,
       docsSyncStep,
       handoffStep(),
       decideStep,
@@ -309,14 +333,49 @@ export function stopGate(root, sid, hook = {}) {
     try {
       const provPath = join(root, ".forge", "provenance.json");
       const mtime = statSync(provPath).mtimeMs;
-      const status = JSON.parse(readFileSync(provPath, "utf8"))?.tests?.status;
-      if (typeof status === "string")
+      const prov = JSON.parse(readFileSync(provPath, "utf8"));
+      const status = prov?.tests?.status;
+      if (typeof status === "string") {
+        // HI-02: the PASS only counts if the code has NOT moved since verification — the
+        // stamp's stored codeState.dirtyHash must still equal the code state recomputed
+        // NOW. Any doubt (git unavailable, null hash on either side, or a throw) → the
+        // stamp is NON-authoritative and does not count (fail toward a test-file change).
+        let codeStateMatches = false;
+        try {
+          const stored = prov?.codeState;
+          const now = computeCodeState(root);
+          codeStateMatches =
+            !!stored &&
+            stored.gitAvailable === true &&
+            now.gitAvailable === true &&
+            typeof stored.dirtyHash === "string" &&
+            typeof now.dirtyHash === "string" &&
+            stored.dirtyHash === now.dirtyHash;
+        } catch {}
         verifyEvidence = {
           fresh: startedAt != null && mtime > startedAt,
           status,
+          codeStateMatches,
         };
+      }
     } catch {}
-    const decision = gateDecision({ changed, stateTouched, verifyEvidence });
+    // HI-04: a changed test file is an OBLIGATION signal, not proof. Only test files that
+    // still EXIST and are NON-EMPTY (added or modified, not deleted/emptied) may count
+    // toward the weaker evidence leg; the strong leg is the code-state-bound verify PASS.
+    const substantiveTests = changed.filter((p) => {
+      if (classifyPath(p) !== "test") return false;
+      try {
+        return statSync(join(root, p)).size > 0;
+      } catch {
+        return false;
+      }
+    });
+    const decision = gateDecision({
+      changed,
+      stateTouched,
+      verifyEvidence,
+      substantiveTests,
+    });
     if (decision.allow) return decision;
     // Marker FIRST: if it can't be persisted, the block-once promise can't be kept —
     // on a read-only checkout that would mean an unsatisfiable block every turn, so

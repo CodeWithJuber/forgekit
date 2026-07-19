@@ -4,6 +4,7 @@
 // completion gate diffs against it; the rehydration block tells a fresh session what
 // recently happened instead of letting it assume.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -52,17 +53,35 @@ function statusPathsZ(root) {
   }
 }
 
+/** A content fingerprint (sha256 hex of the bytes) of a working-tree file, or null when
+ *  it can't be read (missing/deleted/binary-unreadable). The session baseline stores this
+ *  per pre-dirty path so the gate can tell an untouched pre-existing edit (fingerprint
+ *  still matches → keep hiding it) from one the agent edited FURTHER this session
+ *  (fingerprint moved → it's a real session change, HI-03). */
+export function fingerprintFile(root, rel) {
+  try {
+    return createHash("sha256")
+      .update(readFileSync(join(root, rel)))
+      .digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 /** Record HEAD as this session's baseline — once. An existing file wins (a --resume
  *  re-fires SessionStart and must NOT move the anchor mid-session). Also snapshots the
  *  files ALREADY dirty at session start (even on an unborn HEAD), so the completion
- *  gate never attributes pre-existing dirt to this session. */
+ *  gate never attributes pre-existing dirt to this session. Each pre-dirty path is stored
+ *  WITH a content fingerprint (`<sha256>\t<path>`) so a further edit to an already-dirty
+ *  file is still seen as a session change (HI-03). */
 export function recordBaseline(root, sid) {
   const head = git(root, ["rev-parse", "HEAD"]);
   const dirtyPath = sessionPath(root, sid, "dirty");
   try {
     if (git(root, ["rev-parse", "--is-inside-work-tree"]) === "true" && !existsSync(dirtyPath)) {
       mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-      writeFileSync(dirtyPath, `${statusPathsZ(root).join("\n")}\n`);
+      const lines = statusPathsZ(root).map((p) => `${fingerprintFile(root, p) ?? ""}\t${p}`);
+      writeFileSync(dirtyPath, `${lines.join("\n")}\n`);
     }
   } catch {}
   if (!head) return { recorded: false, head: null }; // unborn HEAD → dirty snapshot only
@@ -77,13 +96,27 @@ export function recordBaseline(root, sid) {
   }
 }
 
-/** The set of paths that were already dirty when the session started (empty when the
- *  snapshot is missing — degraded mode, gate errs toward its other guards). */
+/** A Map<path, fingerprint|null> of the files already dirty when the session started.
+ *  `null` fingerprint = unknown (an OLD snapshot that stored paths only, or a file
+ *  unreadable at snapshot time) → the gate must NOT silently hide it (degrades to
+ *  "potentially changed"). `.has(path)` keeps working for callers that only need
+ *  membership. Null when the snapshot is missing (degraded mode). */
 export function readDirtySnapshot(root, sid) {
   try {
     const p = sessionPath(root, sid, "dirty");
     if (!existsSync(p)) return null;
-    return new Set(readFileSync(p, "utf8").split("\n").filter(Boolean));
+    const map = new Map();
+    for (const line of readFileSync(p, "utf8").split("\n")) {
+      if (!line) continue;
+      const tab = line.indexOf("\t");
+      // New format `<sha256>\t<path>`: split on the FIRST tab (a path may contain tabs).
+      if (tab > 0 && /^[0-9a-f]{64}$/.test(line.slice(0, tab)))
+        map.set(line.slice(tab + 1), line.slice(0, tab));
+      else if (tab === 0)
+        map.set(line.slice(1), null); // empty fingerprint written → unknown
+      else map.set(line, null); // legacy path-only line → unknown fingerprint
+    }
+    return map;
   } catch {
     return null;
   }

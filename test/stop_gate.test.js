@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -12,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { computeCodeState } from "../src/verify.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 const GUARD = join(
@@ -50,10 +52,15 @@ const stopGate = (root, sid, extra = {}, env = {}) =>
 // A `verify` provenance stamp (the exact shape verify.js writes) with an explicit
 // mtime offset relative to now, so fresh-vs-stale is deterministic regardless of
 // filesystem timestamp granularity. Positive offsetMs = future = after session start.
-function writeProvenance(root, status, { offsetMs = 5000 } = {}) {
+// `codeState` is captured from the tree AS IT STANDS NOW (HI-02) — the caller writes
+// this AFTER its edits, so it matches what the gate recomputes at Stop unless the code
+// is changed again afterward. Pass codeState:false to omit it (a pre-HI-02 stamp).
+function writeProvenance(root, status, { offsetMs = 5000, codeState = true } = {}) {
   mkdirSync(join(root, ".forge"), { recursive: true });
   const p = join(root, ".forge", "provenance.json");
-  writeFileSync(p, JSON.stringify({ tests: { status } }));
+  const stamp = { tests: { status } };
+  if (codeState) stamp.codeState = computeCodeState(root);
+  writeFileSync(p, JSON.stringify(stamp));
   const t = new Date(Date.now() + offsetMs);
   utimesSync(p, t, t);
 }
@@ -224,6 +231,73 @@ test("pre-session dirt is never pinned on the session (review: false-block class
   assert.equal(JSON.parse(blocked.stdout).decision, "block");
   assert.match(JSON.parse(blocked.stdout).reason, /b\.js/);
   assert.doesNotMatch(JSON.parse(blocked.stdout).reason, /a\.js/, "pre-existing dirt not cited");
+});
+
+test("HI-03: a pre-dirty file edited AGAIN during the session is seen as a change", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "a.js"), "export const one = 100;\n"); // dirty BEFORE the session
+  start(root, "hi3");
+  // The agent further edits the already-dirty file — a path-only baseline would hide this.
+  writeFileSync(join(root, "a.js"), "export const one = 200;\n");
+  const r = stopGate(root, "hi3");
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.decision, "block", "a further edit to a pre-dirty file is not hidden");
+  assert.match(out.reason, /a\.js/, "the re-edited pre-dirty file is cited");
+});
+
+test("HI-02: a verify PASS goes stale once code changes after it (dirtyHash mismatch → block)", () => {
+  const { root } = gitFixture();
+  start(root, "hi2a");
+  writeFileSync(join(root, "a.js"), "export const one = 21;\n");
+  writeFileSync(join(root, ".forge", "state.md"), "# state\n"); // docs leg present
+  writeProvenance(root, "PASS"); // codeState captured with a.js = 21
+  // ...then the agent edits code AGAIN — the stamp no longer describes the FINAL tree.
+  writeFileSync(join(root, "a.js"), "export const one = 22;\n");
+  const r = stopGate(root, "hi2a");
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.decision, "block", "stale verify evidence (code moved after it) does not count");
+  assert.match(out.reason, /test evidence/i);
+});
+
+test("HI-02: a verify PASS bound to the FINAL code state + handoff → allow", () => {
+  const { root } = gitFixture();
+  start(root, "hi2b");
+  writeFileSync(join(root, "a.js"), "export const one = 23;\n");
+  writeFileSync(join(root, ".forge", "state.md"), "# state\n"); // docs leg
+  writeProvenance(root, "PASS"); // codeState matches the tree; nothing changes afterward
+  const r = stopGate(root, "hi2b");
+  assert.equal(r.stdout.trim(), "", "a fresh verify matching the final code state passes");
+});
+
+test("HI-04: a deleted test file is not positive evidence for a code change", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "a.test.js"), "import './a.js';\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "add test");
+  start(root, "hi4a");
+  writeFileSync(join(root, "a.js"), "export const one = 41;\n"); // code change
+  writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n"); // docs leg
+  rmSync(join(root, "a.test.js")); // the only "test" signal is a DELETION
+  const r = stopGate(root, "hi4a");
+  assert.equal(
+    JSON.parse(r.stdout).decision,
+    "block",
+    "a deleted test proves nothing about the code change",
+  );
+});
+
+test("HI-04: an empty new test file is not positive evidence", () => {
+  const { root } = gitFixture();
+  start(root, "hi4b");
+  writeFileSync(join(root, "a.js"), "export const one = 42;\n");
+  writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n");
+  writeFileSync(join(root, "a.test.js"), ""); // empty file — an obligation signal, not proof
+  const r = stopGate(root, "hi4b");
+  assert.equal(
+    JSON.parse(r.stdout).decision,
+    "block",
+    "an empty test file does not satisfy the test leg",
+  );
 });
 
 test("a branch switch's old commits are not attributed to the session", () => {

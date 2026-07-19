@@ -4,11 +4,11 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { detectStack } from "./stack.js";
-import { contentHash } from "./util.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -27,6 +27,43 @@ function git(args, cwd) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge verify git: ${err?.message ?? err}\n`);
     return "";
+  }
+}
+
+/**
+ * A content fingerprint of the FULL working-tree change relative to HEAD — the unstaged
+ * diff, the staged diff, and every untracked (non-ignored) file's bytes, sorted, sha256'd.
+ * Two checkouts with the same `dirtyHash` have byte-identical pending changes, so a
+ * `verify` stamp can be BOUND to the exact code state it validated (HI-02): at Stop the
+ * gate recomputes this and only trusts the PASS when the hash still matches. Never throws;
+ * `gitAvailable:false` / `dirtyHash:null` is the honest "cannot bind" signal (the gate then
+ * refuses to count the stamp). Pure w.r.t. the tree — reads git + files, writes nothing.
+ * @param {string} [cwd]
+ * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean}}
+ */
+export function computeCodeState(cwd = process.cwd()) {
+  try {
+    if (git(["rev-parse", "--is-inside-work-tree"], cwd).trim() !== "true")
+      return { head: null, dirtyHash: null, gitAvailable: false };
+    const head = git(["rev-parse", "HEAD"], cwd).trim() || null;
+    // Exclude forge's OWN state dir: writing provenance.json / session files must never
+    // perturb the fingerprint the stamp is bound to (self-reference), and it's ignored in
+    // real repos anyway — this keeps the hash stable even if a user forgot to gitignore it.
+    const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"], cwd)
+      .split("\0")
+      .filter((f) => f && !f.startsWith(".forge/"))
+      .sort();
+    const h = createHash("sha256");
+    h.update(git(["diff", "HEAD"], cwd));
+    h.update(git(["diff", "--cached"], cwd));
+    for (const f of untracked) {
+      try {
+        h.update(readFileSync(join(cwd, f)));
+      } catch {}
+    }
+    return { head, dirtyHash: h.digest("hex"), gitAvailable: true };
+  } catch {
+    return { head: null, dirtyHash: null, gitAvailable: false };
   }
 }
 
@@ -216,52 +253,6 @@ function runTests(cwd) {
 }
 
 /**
- * Fingerprint the working tree's code state so a downstream gate can detect that
- * code changed AFTER verification (HI-02/ME-04). Pure/deterministic given a tree
- * state and reusable by the gate workstream (`import { computeCodeState }`).
- * Combines `git diff HEAD` + staged diff + the contents of untracked, non-ignored
- * files (sorted for stability) and hashes with the repo's sha256 `contentHash`.
- * @param {string} [cwd]
- * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean}}
- */
-export function computeCodeState(cwd = process.cwd()) {
-  const capture = (args) => {
-    try {
-      return execFileSync("git", args, {
-        cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-    } catch {
-      return null;
-    }
-  };
-  // Is this a git work tree at all (and is git even on PATH)? A non-git dir / missing
-  // git → we can't fingerprint, so record gitAvailable:false rather than a false "clean".
-  const inside = capture(["rev-parse", "--is-inside-work-tree"]);
-  if (inside == null || inside.trim() !== "true")
-    return { head: null, dirtyHash: null, gitAvailable: false };
-  const headOut = capture(["rev-parse", "HEAD"]);
-  const head = headOut ? headOut.trim() : null; // null on a repo with no commits yet
-  const diff = capture(["diff", "HEAD"]); // null when there is no HEAD (pre-first-commit)
-  const cached = capture(["diff", "--cached"]);
-  const othersOut = capture(["ls-files", "--others", "--exclude-standard"]);
-  // Every diff command hard-errored → changed-file detection failed; don't claim clean.
-  if (diff == null && cached == null && othersOut == null)
-    return { head, dirtyHash: null, gitAvailable: false };
-  const others = (othersOut ?? "").split("\n").filter(Boolean).sort();
-  let combined = `${diff ?? ""}\n cached \n${cached ?? ""}`;
-  for (const f of others) {
-    let body = "";
-    try {
-      body = readFileSync(join(cwd, f), "utf8");
-    } catch {}
-    combined += `\n ${f} \n${body}`;
-  }
-  return { head, dirtyHash: contentHash(combined), gitAvailable: true };
-}
-
-/**
  * M6 — checkpoint cadence as an optimal-stopping threshold rule (spec §6:
  * docs/plans/substrate-v2/06-faculties-and-mechanisms.md). Insert a checkpoint once
  * the expected loss of continuing-while-wrong exceeds the check's price:
@@ -343,11 +334,11 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     changedFiles,
     untracked,
     tests,
+    // Bind the stamp to the exact code it was produced against (HI-02/ME-04): the Stop gate
+    // recomputes this and only counts the PASS as test-evidence when the hash still matches.
+    codeState: computeCodeState(targetRoot),
     symbolsChecked: symbols.length,
     unknownSymbols: unknown,
-    // Fingerprint of the exact code state this verdict was computed over (HI-02/ME-04),
-    // so the completion gate can detect code that changed AFTER verification.
-    codeState: computeCodeState(targetRoot),
   };
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
   writeFileSync(join(targetRoot, ".forge", "provenance.json"), JSON.stringify(provenance, null, 2));
