@@ -1,0 +1,31 @@
+---
+title: "Forge CLI चेंजलॉग"
+description: "Forge CLI के लिए साप्ताहिक उत्पाद अपडेट — उपयोगकर्ताओं तक पहुँचाए गए नए कमांड, फ़्लैग, एन्वायरनमेंट वेरिएबल्स, नीति परिवर्तन, और बग फ़िक्स।"
+---
+
+<Update label="July 19, 2026">
+
+## नई सुविधाएँ
+
+**`forge init` के लिए पॉलिसी प्रोफ़ाइल फ़्लैग।** अब आप स्कैफ़ोल्ड समय पर `forge init --profile <name>` के साथ एक ruleset चुन सकते हैं। समर्थित मान `minimal` (छोटे रेपो या कॉन्ट्रिब्यूटर फ़ोर्क्स के लिए हल्का ruleset) और `standard` (डिफ़ॉल्ट पूर्ण पैक — साझा मेमोरी नियम, इम्पैक्ट विश्लेषण, और पूरा guardrail hook सेट) हैं। अमान्य मान किसी भी फ़ाइल के लिखे जाने या settings मर्ज होने से पहले ही रोक देते हैं, इसलिए एक टाइपो आधे-कॉन्फ़िगर्ड रेपो को पीछे नहीं छोड़ सकता। देखें [`forge init` flags](/hi/cli/core#init-flags).
+
+**प्रत्यावर्तनीय ग्लोबल settings मर्ज।** दो नए फ़्लैग आपको उस ग्लोबल `~/.claude/settings.json` मर्ज पर बेहतर नियंत्रण देते हैं जिसे `forge init` करता है:
+
+- `--no-settings` — केवल रेपो स्कैफ़ोल्ड करें; ग्लोबल settings फ़ाइल को अछूता छोड़ दें।
+- `--remove-settings` — पिछले मर्ज को पूर्ववत करें। Forge-आकार के hooks, permissions, statusline, और `_forge` मार्कर हटा दिए जाते हैं, आपकी अपनी प्रविष्टियाँ संरक्षित रहती हैं, और पहले एक टाइमस्टैम्प्ड बैकअप लिखा जाता है। `install.sh --uninstall` आपके लिए यह कॉल करता है।
+
+विपरीत स्थिति के लिए `--settings-only` भी है: वर्तमान रेपो को छुए बिना ग्लोबल hooks वायर करें। विवरण [`forge init` flags](/hi/cli/core#init-flags) में।
+
+**हार्ड-ब्लॉकिंग secret redaction के लिए `FORGE_GUARD_STRICT`।** secret redactor की `DEGRADED` चेतावनी को एक ब्लॉकिंग exit में बदलने के लिए `FORGE_GUARD_STRICT=1` सेट करें। डिफ़ॉल्ट रूप से एक redaction विफलता stderr पर प्रिंट होती है और आउटपुट को पास होने देती है; strict मोड कुछ भी उत्सर्जित करने से मना कर देता है जिसे redactor पूरी तरह स्क्रब नहीं कर सका। CI और साझा मशीनों के लिए अनुशंसित जहाँ एक बिना-redacted पंक्ति एक विफल कमांड से बुरी हो। देखें [environment variables reference](/hi/cli/overview#environment-variables).
+
+## अपडेट
+
+**पॉलिसी प्रोफ़ाइल सेट सिमटकर दो पर।** प्रोफ़ाइल सूची अब केवल `minimal` और `standard` है। पुराने नाम `web-app`, `backend-service`, `library`, और `regulated` अब `standard` के डेप्रिकेटेड उपनाम हैं — वे अब भी काम करते हैं, `forge init` एक बार चेतावनी देता है, और मौजूदा configs `standard` के रूप में सिंक होते हैं। नए रेपो को सीधे `standard` का उपयोग करना चाहिए। पूरा संदर्भ [पॉलिसी प्रोफ़ाइल्स](/hi/cli/core#policy-profiles) में।
+
+**एन्वायरनमेंट वेरिएबल्स अब एक जगह प्रलेखित।** CLI अवलोकन में एक नई [एन्वायरनमेंट वेरिएबल्स](/hi/cli/overview#environment-variables) तालिका है जो `FORGE_ENFORCE`, `FORGE_GUARD_STRICT`, `FORGE_NO_UPDATE_CHECK`, `FORGE_NO_HINT`, `FORGE_VERBOSE`, और `FORGE_EMBED` को एक जगह कवर करती है।
+
+## बग फ़िक्स
+
+**टूटे settings मर्ज पर `forge init` ज़ोर से विफल होता है।** यदि ग्लोबल settings मर्ज अस्वीकृत होता है या त्रुटि देता है, तो `forge init` अब सफलता की रिपोर्ट करने के बजाय exit कोड 1 के साथ बाहर निकलता है और stderr पर कारण लिखता है। पहले एक आंशिक या छोड़ा गया मर्ज एक साफ़ रन जैसा दिख सकता था।
+
+</Update>

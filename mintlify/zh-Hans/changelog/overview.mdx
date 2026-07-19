@@ -1,0 +1,31 @@
+---
+title: "Forge CLI 更新日志"
+description: "Forge CLI 的每周产品更新——新命令、参数、环境变量、策略变更以及交付给用户的问题修复。"
+---
+
+<Update label="July 19, 2026">
+
+## 新功能
+
+**`forge init` 新增策略档位参数。** 现在可以在脚手架阶段就选定规则集,用法为 `forge init --profile <name>`。支持的取值有 `minimal`(为小型仓库或贡献者 fork 准备的精简规则集)和 `standard`(默认的完整套装——共享记忆规则、影响面分析,以及成套的护栏钩子)。无效取值会在任何文件被写入或任何设置被合并之前直接中止,这样一次拼写错误也不至于给仓库留下半配置的残局。参见 [`forge init` 参数](/zh-Hans/cli/core#init-flags)。
+
+**可回退的全局设置合并。** 两个新参数让你更精细地控制 `forge init` 对全局 `~/.claude/settings.json` 所做的合并:
+
+- `--no-settings`——只做仓库脚手架;完全不触碰全局设置文件。
+- `--remove-settings`——撤销之前的一次合并。带有 Forge 形状的钩子、权限、statusline 以及 `_forge` 标记会被移除,你自己写入的条目会被保留,并且会先写入一份带时间戳的备份。`install.sh --uninstall` 会替你调用它。
+
+反向场景则可以用 `--settings-only`:接线全局钩子,但不动当前仓库。细节见 [`forge init` 参数](/zh-Hans/cli/core#init-flags)。
+
+**`FORGE_GUARD_STRICT` 让 secret 脱敏走硬阻断。** 设置 `FORGE_GUARD_STRICT=1` 可以把 secret 脱敏器的 `DEGRADED` 警告升级为阻断式退出。默认情况下,脱敏失败只会向 stderr 打印一条信息并放行输出;严格模式则会拒绝输出任何脱敏器无法完全清洗的内容。推荐在 CI 与共享机器上开启——那里一行未脱敏的内容,比一次失败的命令要糟糕得多。参见[环境变量参考](/zh-Hans/cli/overview#environment-variables)。
+
+## 变更
+
+**策略档位收敛为两档。** 档位列表现在只剩 `minimal` 与 `standard`。原有的 `web-app`、`backend-service`、`library` 和 `regulated` 已废弃,作为 `standard` 的别名保留——它们仍然可用,`forge init` 会警告一次,现有配置会同步为 `standard`。新仓库请直接使用 `standard`。完整背景见[策略档位](/zh-Hans/cli/core#policy-profiles)。
+
+**环境变量集中到一处。** CLI 概览新增了一张[环境变量](/zh-Hans/cli/overview#environment-variables)表,把 `FORGE_ENFORCE`、`FORGE_GUARD_STRICT`、`FORGE_NO_UPDATE_CHECK`、`FORGE_NO_HINT`、`FORGE_VERBOSE` 与 `FORGE_EMBED` 集中在一个位置说明。
+
+## 问题修复
+
+**`forge init` 在设置合并出错时明确失败。** 若全局设置合并被拒绝或发生错误,`forge init` 现在会以退出码 1 结束,并把原因写入 stderr,而不再报告成功。此前一次部分完成或被跳过的合并,可能看起来像一次干净的运行。
+
+</Update>
