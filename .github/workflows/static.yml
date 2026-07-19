@@ -44,7 +44,7 @@ jobs:
           # apple-touch-icon, 1200x630 og card). Served from the Pages root.
           cp docs/assets/og.png docs/assets/favicon.svg docs/assets/apple-touch-icon.png _site/
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
