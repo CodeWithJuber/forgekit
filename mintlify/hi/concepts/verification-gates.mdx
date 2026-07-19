@@ -29,6 +29,20 @@ forge verify --deep       # multi-lens consensus — several independent checks 
   verification lenses से गुज़रना पड़ता है, केवल एक से नहीं।
 </Note>
 
+`forge verify --deep` एक binary pass/fail के बजाय एक चार-अवस्था वाला `status` रिपोर्ट करता है:
+
+- `PASS` — हर lens सहमत हुआ **और** core `forge verify` tests status भी `PASS` है। केवल
+  यही state verified मानी जाती है।
+- `FAIL` — कम-से-कम एक lens ने वास्तविक failure रिपोर्ट किया।
+- `INCOMPLETE` — कोई lens पूरा नहीं हो सका (timeout, crash, missing dependency)। कुछ भी
+  disprove नहीं हुआ, पर कुछ prove भी नहीं हुआ।
+- `NOT_CONFIGURED` — इस repo के लिए कोई lenses wired नहीं हैं, इसलिए `--deep` के पास
+  check करने को कुछ नहीं था।
+
+`PASS`-implies-base-`PASS` नियम जानबूझकर है: एक हरा deep consensus कभी भी एक लाल base run
+से आगे नहीं निकल सकता, इसलिए base test lens पर `INCOMPLETE` या `NOT_CONFIGURED` deep
+result को उसी के अनुरूप downgrade कर देता है।
+
 ## Hallucinated-symbol flag — `forge atlas has`
 
 `forge atlas has <symbol>` hallucination check है: यदि मॉडल किसी ऐसे symbol को call
@@ -85,6 +99,28 @@ forge harden               # gitleaks pre-commit + sandbox settings
   `forge precommit` (v0.19+) एक commit-level gate है — यह commit time पर verification
   floor चलाता है ताकि आंशिक या unverified काम land होने से पहले पकड़ा जाए।
 </Note>
+
+## Completion gate — test evidence अनिवार्य
+
+Stop-path completion gate (देखें
+[क्रॉस-सेशन मेमोरी](/concepts/cross-session-memory)) अब एजेंट के handoff को इस बात के
+प्रमाण के रूप में स्वीकार नहीं करता कि code changes पूरे हो चुके हैं। किसी भी ऐसे सेशन के लिए
+जिसने source code को छुआ है, gate **वास्तविक test evidence** माँगता है:
+
+- सेशन के diff में बदली गई एक test file, **या**
+- मौजूदा बदलावों के विरुद्ध रिकॉर्ड किया गया एक ताज़ा passing `forge verify`।
+
+अकेला `forge handoff` snapshot gate को संतुष्ट नहीं करता — यह intent रिकॉर्ड करता है,
+verification नहीं। यदि दोनों में से कोई भी प्रमाण मौजूद नहीं है, तो gate एक बार एक repair
+checklist के साथ ब्लॉक करता है:
+
+```bash
+forge verify                              # produce the test evidence
+forge handoff "<done>" --next "<next>"    # then snapshot the session
+```
+
+Doc-only, config-only, और अन्य non-code सेशन प्रभावित नहीं होते — test-evidence अनिवार्यता
+केवल तभी लागू होती है जब सेशन का diff वास्तव में code बदलता है।
 
 ## UI checks — `forge uicheck`
 

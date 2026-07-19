@@ -22,6 +22,15 @@ forge verify --deep       # 多视角共识——多个独立检查必须一致
   `--deep`(v0.19+)升级为多视角共识:变更必须通过多个独立的验证视角,而不只是一个。
 </Note>
 
+`forge verify --deep` 报告的是四态 `status`,不是二元的通过/失败:
+
+- `PASS` —— 每个视角都一致通过,**并且**核心 `forge verify` 的测试状态也是 `PASS`。只有这个状态才算“已验证”。
+- `FAIL` —— 至少有一个视角报告了真实的失败。
+- `INCOMPLETE` —— 某个视角未能完成(超时、崩溃、缺依赖)。既没有被证伪,也没有被证明。
+- `NOT_CONFIGURED` —— 本仓库没有接入任何视角,`--deep` 无从检查。
+
+`PASS` 蕴含基础 `PASS` 的规则是有意为之:一次绿色的 deep 共识永远不能跑在红色的基础运行前面,因此基础测试视角上的 `INCOMPLETE` 或 `NOT_CONFIGURED` 会把 deep 的结果降级到相应状态。
+
 ## 幻觉符号标记 —— `forge atlas has`
 
 `forge atlas has <symbol>` 是幻觉检查:如果模型调用了不在代码图里的符号,该关卡会把它标出来。
@@ -68,6 +77,22 @@ forge harden               # gitleaks pre-commit + 沙箱设置
 <Note>
   `forge precommit`(v0.19+)是一道 commit 级别的关卡——它在 commit 时运行验证下限,让部分或未验证的工作在落地前被拦下。
 </Note>
+
+## 完成关卡 —— 需要测试证据
+
+Stop 路径上的完成关卡(见 [跨会话记忆](/concepts/cross-session-memory))不再把代理的 handoff 当作代码变更已完成的证据。对于任何触及源码的会话,该关卡要求**真实的测试证据**:
+
+- 在会话 diff 中改动了一个测试文件,**或者**
+- 针对当前改动重新跑了一次通过的 `forge verify`。
+
+单凭一次 `forge handoff` 快照无法满足该关卡——它记录的是意图,不是验证。如果两种证据都没有,关卡会以修复清单**拦下一次**:
+
+```bash
+forge verify                              # 生成测试证据
+forge handoff "<done>" --next "<next>"    # 然后再对会话拍快照
+```
+
+只涉及文档、只涉及配置以及其他非代码会话不受影响——测试证据要求只在会话 diff 真正改动了代码时才会触发。
 
 ## UI 检查 —— `forge uicheck`
 

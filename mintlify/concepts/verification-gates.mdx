@@ -29,6 +29,20 @@ forge verify --deep       # multi-lens consensus — several independent checks 
   independent verification lenses, not just one.
 </Note>
 
+`forge verify --deep` reports a four-state `status`, not a binary pass/fail:
+
+- `PASS` — every lens agreed **and** the core `forge verify` tests status is also
+  `PASS`. Only this state counts as verified.
+- `FAIL` — at least one lens reported a real failure.
+- `INCOMPLETE` — a lens could not finish (timeout, crash, missing dependency). Nothing
+  was disproven, but nothing was proven either.
+- `NOT_CONFIGURED` — no lenses are wired up for this repo, so `--deep` had nothing to
+  check.
+
+The `PASS`-implies-base-`PASS` rule is deliberate: a green deep consensus can never
+outrun a red base run, so `INCOMPLETE` or `NOT_CONFIGURED` on the base test lens
+downgrades the deep result to match.
+
 ## The hallucinated-symbol flag — `forge atlas has`
 
 `forge atlas has <symbol>` is the hallucination check: if the model calls a symbol that
@@ -83,6 +97,28 @@ forge harden               # gitleaks pre-commit + sandbox settings
   `forge precommit` (v0.19+) is a commit-level gate — it runs the verification floor at
   commit time so partial or unverified work is caught before it lands.
 </Note>
+
+## Completion gate — test evidence required
+
+The Stop-path completion gate (see
+[Cross-session memory](/concepts/cross-session-memory)) no longer accepts an agent
+handoff as proof that code changes are done. For any session that touched source code,
+the gate requires **real test evidence**:
+
+- a test file changed in the session's diff, **or**
+- a fresh passing `forge verify` recorded against the current changes.
+
+A `forge handoff` snapshot on its own does not satisfy the gate — it records intent, not
+verification. If neither piece of evidence is present, the gate blocks once with a
+repair checklist:
+
+```bash
+forge verify                              # produce the test evidence
+forge handoff "<done>" --next "<next>"    # then snapshot the session
+```
+
+Doc-only, config-only, and other non-code sessions are unaffected — the test-evidence
+requirement fires only when the session's diff actually changes code.
 
 ## UI checks — `forge uicheck`
 

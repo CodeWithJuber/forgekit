@@ -15,6 +15,19 @@ forge verify
 forge verify --deep       # multi-lens consensus (v0.19+)
 ```
 
+`forge verify --deep` reports a four-state `status` instead of a plain pass/fail:
+
+| Status           | Meaning                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `PASS`           | Every lens agreed **and** the core `forge verify` tests status is also `PASS`.       |
+| `FAIL`           | At least one lens reported a real failure.                                           |
+| `INCOMPLETE`     | A lens could not finish (timeout, crash, missing dependency) — treat as not proven.  |
+| `NOT_CONFIGURED` | No lenses are wired up for this repo — nothing was actually checked.                 |
+
+Only `PASS` counts as verified. `--deep` deliberately refuses to promote a consensus to
+`PASS` when the underlying `forge verify` tests status is anything other than `PASS`, so
+a green deep run always implies a green base run.
+
 ## `forge scan`
 
 Skill-gate — vet a skill or MCP server for injection / RCE / exfil before install.

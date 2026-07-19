@@ -15,6 +15,19 @@ forge verify
 forge verify --deep       # multi-lens consensus (v0.19+)
 ```
 
+`forge verify --deep` 汇报的是一个四态的 `status`，而不是简单的 pass/fail：
+
+| 状态             | 含义                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `PASS`           | 每一个视角都一致通过，**并且**核心 `forge verify` 的测试状态也是 `PASS`。             |
+| `FAIL`           | 至少有一个视角报出了真实的失败。                                                      |
+| `INCOMPLETE`     | 某个视角没能跑完（超时、崩溃、依赖缺失）—— 视为未被证明。                             |
+| `NOT_CONFIGURED` | 这个仓库没有接通任何视角 —— 实际上什么都没检查。                                      |
+
+只有 `PASS` 才算已验证。`--deep` 有意拒绝在底层 `forge verify` 的测试状态不是 `PASS`
+时把共识提升为 `PASS`，所以一次绿色的 deep 运行永远意味着一次绿色的
+base 运行。
+
 ## `forge scan`
 
 技能门 —— 在安装前审核一个 skill 或 MCP 服务器是否有注入 / RCE / 数据外泄风险。
