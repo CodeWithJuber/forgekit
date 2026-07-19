@@ -29,6 +29,19 @@ forge verify --deep       # multi-lens consensus — several independent checks 
   独立的验证视角，而不只是一个。
 </Note>
 
+`forge verify --deep` 汇报的是一个四态的 `status`，不是二元的 pass/fail：
+
+- `PASS` —— 每一个视角都一致通过，**并且**核心 `forge verify` 的测试状态也是
+  `PASS`。只有这个状态才算已验证。
+- `FAIL` —— 至少有一个视角报出了真实的失败。
+- `INCOMPLETE` —— 某个视角没能跑完（超时、崩溃、依赖缺失）。什么都没被证伪，
+  但也什么都没被证明。
+- `NOT_CONFIGURED` —— 这个仓库没有接通任何视角，所以 `--deep` 无东西可查。
+
+`PASS` 蕴含 base 也是 `PASS` 这条规则是有意为之：一次绿色的 deep 共识永远
+不能跑赢一次红色的 base 运行，所以 base 测试视角上的 `INCOMPLETE` 或
+`NOT_CONFIGURED` 会把 deep 的结果同步降级。
+
 ## 幻觉符号标记 —— `forge atlas has`
 
 `forge atlas has <symbol>` 是幻觉检查：如果模型调用了一个不在代码图里的
@@ -83,6 +96,26 @@ forge harden               # gitleaks pre-commit + sandbox settings
   `forge precommit`（v0.19+）是一个提交级门 —— 它在提交时跑一遍验证底线，
   让部分完成或未验证的工作在落地之前就被拦住。
 </Note>
+
+## 完成门 —— 必须有测试证据
+
+Stop 路径上的完成门（见
+[跨会话记忆](/concepts/cross-session-memory)）不再接受一份代理 handoff 作为
+代码变更已完成的证明。对任何动了源码的会话，这个门都要求**真实的测试证据**：
+
+- 会话 diff 里改动过一个测试文件，**或者**
+- 针对当前变更有一次新鲜通过的 `forge verify` 记录在案。
+
+单独一份 `forge handoff` 快照并不能满足这个门 —— 它记录的是意图，而不是
+验证。如果两种证据都没有，这个门会**阻塞一次**，并附上一份修复清单：
+
+```bash
+forge verify                              # produce the test evidence
+forge handoff "<done>" --next "<next>"    # then snapshot the session
+```
+
+只改文档、只改配置以及其他非代码的会话不受影响 —— 只有当会话的 diff 真的
+动了代码时，测试证据的要求才会触发。
 
 ## UI 检查 —— `forge uicheck`
 

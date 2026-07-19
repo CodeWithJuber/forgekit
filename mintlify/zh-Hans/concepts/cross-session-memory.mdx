@@ -37,10 +37,13 @@ Stop 路径上唯一有权作答的 guard 是 `completion-gate.sh`
   如果代码动了、却没有跟进文档或状态产物,该关卡会**拦下一次**,并以修复清单作为原因。其他情况一律放行,所有内部错误也放行(fail-open)。`FORGE_STOPGATE=0` 可关闭它。
 </Note>
 
+对于改动了代码的会话,该关卡还要求提供**测试证据**——要么在会话 diff 中包含一个测试文件,要么针对当前改动重新跑一次通过的 `forge verify`。仅有一次 `forge handoff` 快照,已经不足以清掉关卡中“代码变更”这一分支。
+
 修复清单指向能把工作收尾的工具:
 
 ```bash
-forge docs sync                      # 扫过 diff,找出过期的文档提法
+forge verify                             # 为代码变更记录测试证据
+forge docs sync                          # 扫过 diff,找出过期的文档提法
 forge handoff "<done>" --next "<next>"   # 写下有边界的会话快照
 forge decide "<decision> — <reason>"     # 记录一次选择,让下一次会话不再重新决定
 ```

@@ -36,10 +36,13 @@ Stop 路径上唯一被允许回答的 guard 是 `completion-gate.sh` (`src/gate
   如果代码动了但没有对应的文档或状态产物跟进,该门会**阻断一次**,阻断原因就是修复清单。其他情况一律放行,内部错误也一律放行(失败开放)。`FORGE_STOPGATE=0` 可禁用它。
 </Note>
 
+对于改动了代码的会话,该门还要求**测试证据** —— 要么会话 diff 中有一份测试文件,要么针对当前变更有一次新鲜且通过的 `forge verify`。仅凭一份 `forge handoff` 快照,已不再能通过代码变更那一支门。
+
 修复清单指向能收尾这项工作的工具:
 
 ```bash
-forge docs sync                      # sweep the diff for stale doc mentions
+forge verify                             # record the test evidence for code changes
+forge docs sync                          # sweep the diff for stale doc mentions
 forge handoff "<done>" --next "<next>"   # write the bounded session snapshot
 forge decide "<decision> — <reason>"     # record a choice so no session re-decides it
 ```

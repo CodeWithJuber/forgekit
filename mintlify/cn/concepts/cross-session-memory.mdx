@@ -45,10 +45,15 @@ Stop 路径上唯一有资格作出回应的 guard 是 `completion-gate.sh`
   也都放行（fail-open）。`FORGE_STOPGATE=0` 可以关掉它。
 </Note>
 
+对于动了代码的会话，这个门还要求提供**测试证据** —— 要么会话 diff 里有一个
+测试文件，要么针对当前变更有一次新鲜通过的 `forge verify`。仅凭一份
+`forge handoff` 快照，已经不足以清掉这个门的代码变更这一支。
+
 修复清单指向那些能收尾工作的工具：
 
 ```bash
-forge docs sync                      # sweep the diff for stale doc mentions
+forge verify                             # record the test evidence for code changes
+forge docs sync                          # sweep the diff for stale doc mentions
 forge handoff "<done>" --next "<next>"   # write the bounded session snapshot
 forge decide "<decision> — <reason>"     # record a choice so no session re-decides it
 ```

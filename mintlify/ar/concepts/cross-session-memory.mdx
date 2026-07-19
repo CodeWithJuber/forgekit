@@ -46,10 +46,15 @@ description: "تثبيت الجلسة، وبوّابة الإكمال، ولقط
   `FORGE_STOPGATE=0` يوقفه.
 </Note>
 
+بالنسبة للجلسات التي غيّرت الشيفرة، تشترط البوّابة أيضًا **دليلًا اختباريًا** — إما ملف
+اختبار في فرق الجلسة، أو تشغيلًا طازجًا ناجحًا لـ `forge verify` مقابل التغييرات
+الحالية. لم تعُد لقطة `forge handoff` وحدها كافية لتجاوز فرع تغيير الشيفرة من البوّابة.
+
 قائمة الإصلاح تُشير إلى الأدوات التي تُنهي العمل:
 
 ```bash
-forge docs sync                      # sweep the diff for stale doc mentions
+forge verify                             # record the test evidence for code changes
+forge docs sync                          # sweep the diff for stale doc mentions
 forge handoff "<done>" --next "<next>"   # write the bounded session snapshot
 forge decide "<decision> — <reason>"     # record a choice so no session re-decides it
 ```
