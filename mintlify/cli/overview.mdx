@@ -39,6 +39,17 @@ noticing. Commands are organized into five groups.
   and confidence meters. `NO_COLOR` turns color off, `FORCE_COLOR=1` forces it on.
 - **`--json`** is available on the substrate and most analysis commands for scripting.
 
+## Environment variables
+
+| Variable                  | Effect                                                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORGE_ENFORCE=1`         | Turn the substrate's strongest advisory signals into a hard block.                                                                                                                        |
+| `FORGE_GUARD_STRICT=1`    | Escalate the secret redactor's `DEGRADED` warning into a blocking exit. By default a redaction failure prints `secret redaction DEGRADED` to stderr and lets output through; strict mode refuses to emit anything the redactor couldn't fully scrub. Use it in CI or on shared boxes where an unredacted line is worse than a failed command. |
+| `FORGE_NO_UPDATE_CHECK=1` | Silence the "commits behind upstream" notice in `forge doctor`.                                                                                                                           |
+| `FORGE_NO_HINT=1`         | Mute the one-time init tip that prompts you to run `forge init`.                                                                                                                          |
+| `FORGE_VERBOSE=1`         | Show the per-command banner (`Forge <cmd> — …`) that is hidden by default.                                                                                                                |
+| `FORGE_EMBED=1`           | Opt in to the embedding tier for memory recall (MinHash stays the zero-dependency default).                                                                                               |
+
 <Note>
   Run `forge --help` for the always-current list, or `forge catalog` for the Start-Here
   index of every tool, crew, and guard with a one-line why.

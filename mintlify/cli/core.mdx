@@ -17,6 +17,42 @@ Emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and 
 (plus MCP server config for Roo Code and VS Code), and the `.gitattributes` union-merge
 rule the ledger needs.
 
+`forge init` also merges Forge's hooks and permissions into the **global**
+`~/.claude/settings.json`, so it announces the merge before writing. The merge is
+idempotent, marker-guarded, and never clobbers user entries.
+
+### Init flags
+
+| Flag                  | What it does                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--profile <name>`    | Pick the policy profile for this repo. Accepts `minimal` or `standard` (default). An invalid value aborts before any scaffold, `.forge/` write, or merge.  |
+| `--no-settings`       | Skip the global `~/.claude/settings.json` merge entirely — only the per-repo config is written.                                                            |
+| `--remove-settings`   | Reverse a past settings merge. Forge-shaped hooks, permissions, statusline, and the `_forge` marker are removed; a timestamped backup is written first, and your own entries are preserved. Also invoked by `install.sh --uninstall`. |
+| `--settings-only`     | Only merge the global settings — don't touch the repo. Used by `install.sh` to wire hooks and permissions.                                                 |
+
+If the settings merge is refused or errors, `forge init` fails with exit 1 and writes the
+reason to stderr rather than reporting success.
+
+### Policy profiles
+
+`--profile` selects the ruleset that `forge sync` compiles into each tool's native
+config. Only two profiles are supported:
+
+- **`standard`** (default) — the full pack: shared memory rules, impact analysis, and the
+  complete guardrail hook set.
+- **`minimal`** — a leaner ruleset for small repos or contributor forks.
+
+The legacy names `web-app`, `backend-service`, `library`, and `regulated` are deprecated
+aliases of `standard`. They still work — `forge init` warns once, stores `standard`, and
+existing configs holding a legacy name still sync as standard — but new repos should use
+`standard` directly. Any other value is invalid and aborts before Forge touches the repo.
+
+```bash
+forge init --profile minimal            # leaner ruleset
+forge init --no-settings                # per-repo only, skip the global merge
+forge init --remove-settings            # reverse a past global merge
+```
+
 ## `forge sync`
 
 Recompile the canonical source into each tool's native config files.
