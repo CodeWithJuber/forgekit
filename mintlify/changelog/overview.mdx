@@ -27,4 +27,31 @@ When the gate blocks, the repair checklist now leads with `forge verify` so
 the evidence gets recorded before the handoff snapshot. See
 [Cross-session memory](/concepts/cross-session-memory).
 
+**Clearer positioning for hooks and guardrails.** Forge's automatic hooks are
+Claude Code-specific, and — like every other advisory signal — they're
+off-by-default until you opt in with `FORGE_ENFORCE=1`. The guardrails are
+defence in depth, not a security sandbox. Nothing about the runtime changed;
+the docs and CLI copy just match what the tool actually does. See
+[CLI overview](/cli/overview) and the
+[Pre-action gate](/concepts/pre-action-gate).
+
+## Fixes
+
+**Secret redactor now preserves structured tool output.** Built-in tools like
+Bash, Read, and Grep return structured objects, and the previous redactor
+stringified those responses — which meant Claude Code silently discarded the
+rewrite and the unredacted output stayed visible. The redactor now walks the
+response recursively: strings are scrubbed in place, arrays and objects keep
+their keys and shape, and non-string leaves pass through untouched. Plain-string
+responses redact byte-identically to before, and a response with nothing to
+redact emits no rewrite at all.
+
+**`FORGE_GUARD_STRICT=1` exit status is no longer swallowed.** The redactor's
+shell wrapper used to force a clean exit, hiding the strict-mode failure code
+from Claude Code so the `DEGRADED` signal never surfaced. The child's exit
+status is now propagated end-to-end, so strict mode's stderr feedback actually
+reaches you. Note that this hook runs after the tool has already executed —
+strict mode makes redactor degradation loud, but blocking a call before it runs
+is the job of the [Pre-action gate](/concepts/pre-action-gate).
+
 </Update>
