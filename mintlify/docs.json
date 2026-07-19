@@ -72,6 +72,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "Changelog",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "Changelog",
+                "pages": ["changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -127,6 +137,16 @@
                   "cn/guides/team-memory",
                   "cn/guides/radar-deps"
                 ]
+              }
+            ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["cn/changelog/overview"]
               }
             ]
           }
@@ -186,6 +206,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "سجل التغييرات",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "سجل التغييرات",
+                "pages": ["ar/changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -241,6 +271,16 @@
                   "hi/guides/team-memory",
                   "hi/guides/radar-deps"
                 ]
+              }
+            ]
+          },
+          {
+            "tab": "चेंजलॉग",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "चेंजलॉग",
+                "pages": ["hi/changelog/overview"]
               }
             ]
           }
@@ -300,6 +340,16 @@
                 ]
               }
             ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["zh-CN/changelog/overview"]
+              }
+            ]
           }
         ]
       },
@@ -355,6 +405,16 @@
                   "zh-Hans/guides/team-memory",
                   "zh-Hans/guides/radar-deps"
                 ]
+              }
+            ]
+          },
+          {
+            "tab": "更新日志",
+            "icon": "newspaper",
+            "groups": [
+              {
+                "group": "更新日志",
+                "pages": ["zh-Hans/changelog/overview"]
               }
             ]
           }
