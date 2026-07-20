@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`problem-solver` skill** (`global/tools/problem-solver/`) — a universal,
+  framework-driven problem-solving cycle (Clarify → Classify → Diagnose → Generate →
+  Decide → Act & Sustain) bundled through the plugin's `skills` directory. Ships a
+  frameworks reference (5 Whys, Fishbone, First Principles, TRIZ, Cynefin, DMAIC/PDCA/8D/
+  A3, Design Thinking, Nine Windows, weighted decision matrix, pre-mortem), a disciplines
+  reference, and a fill-in canvas.
+
 ### Fixed
 
 - **Broke a static ESM import cycle in the memory layer.** `lessons_store.js`,
