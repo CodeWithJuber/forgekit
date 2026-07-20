@@ -24,6 +24,7 @@ import {
   validateProfile,
 } from "../src/init.js";
 import { GITATTRIBUTES_RULE } from "../src/ledger_store.js";
+import { toPosix } from "../src/util.js";
 
 /** The effective shell command a hook/statusLine entry runs, across BOTH forms: exec form
  *  (`command`+`args`, ME-23) joins the args onto the command; a legacy shell string is returned
@@ -299,7 +300,7 @@ test("shellQuote single-quotes paths (spaces safe) and escapes embedded quotes",
 });
 
 test("guardKey derives ONE identity from legacy shell-string AND exec-form spellings (ME-23)", () => {
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   const key = "cortex.sh prompt";
   // Legacy shell-string spellings (quoted, unquoted, tilde, plugin-root).
   assert.equal(guardKey(`bash ~/.forge/guards/cortex.sh prompt`), key);
@@ -341,7 +342,7 @@ test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQU
   const settingsPath = join(tmp, "settings.json");
   mergeSettings({ settingsPath });
   const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   const hooks = Object.values(merged.hooks)
     .flat()
     .flatMap((e) => e.hooks || []);
@@ -358,7 +359,7 @@ test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQU
   }
   // The statusLine migrated to exec form too.
   assert.equal(merged.statusLine.command, "bash");
-  assert.equal(merged.statusLine.args[0], join(base, "statusline.sh"));
+  assert.equal(merged.statusLine.args[0], `${base}/statusline.sh`);
   assert.doesNotMatch(merged.statusLine.args[0], /['"]/, "statusline args path unquoted");
 });
 
@@ -370,14 +371,14 @@ test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no 
   const settingsPath = join(tmp, "settings.json");
   mergeSettings({ settingsPath });
   const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   const cortexPrompt = merged.hooks.UserPromptSubmit.flatMap((e) => e.hooks || []).find(
     (h) => guardKey(h) === "cortex.sh prompt",
   );
   assert.ok(cortexPrompt, "cortex prompt hook present");
   assert.deepEqual(
     cortexPrompt.args,
-    [join(base, "guards", "cortex.sh"), "prompt"],
+    [`${base}/guards/cortex.sh`, "prompt"],
     "args are the literal resolved path element + trailing arg, verbatim and unquoted",
   );
 });
@@ -385,7 +386,7 @@ test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no 
 test("an OLD shell-string install dedupes against the exec-form template and is upgraded (ME-23)", () => {
   const tmp = mkdtempSync(join(tmpdir(), "forge-legacy-dedup-"));
   const settingsPath = join(tmp, "settings.json");
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   // What a pre-ME-23 install wrote: one resolved shell-string command (RA-12 quoted form).
   writeFileSync(
     settingsPath,
@@ -499,7 +500,7 @@ test("removeForgeSettings strips a merge into an EMPTY file completely (fresh-in
 test("removeForgeSettings removes an OLD unquoted install's entries too (quote-normalized match)", () => {
   const tmp = mkdtempSync(join(tmpdir(), "forge-remove-old-"));
   const settingsPath = join(tmp, "settings.json");
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   writeFileSync(
     settingsPath,
     JSON.stringify({
@@ -553,13 +554,13 @@ const SETTINGS_SCHEMA = "https://json.schemastore.org/claude-code-settings.json"
 test("HI-05 ownership round-trip: user-owned entries that collide with the template survive uninstall byte-identical", () => {
   const tmp = mkdtempSync(join(tmpdir(), "forge-own-"));
   const settingsPath = join(tmp, "settings.json");
-  const base = join(BRAND.root, "global");
+  const base = toPosix(join(BRAND.root, "global")); // hook paths are POSIX (see init.js)
   // A statusLine byte-identical to the template's resolved command, a $schema identical to the
   // template's, an allow string the template also ships, and a cortex.sh hook at a DIFFERENT
   // absolute path than Forge's (same basename+args). None of these were added by Forge.
   const userStatusLine = {
     type: "command",
-    command: `bash ${shellQuote(join(base, "statusline.sh"))}`,
+    command: `bash ${shellQuote(`${base}/statusline.sh`)}`,
   };
   const userCortex = {
     type: "command",

@@ -11,8 +11,8 @@
 // recursive and type-preserving: strings are redacted in place, arrays/objects keep their
 // exact keys and structure, and every non-string leaf (numbers, booleans, null) passes
 // through untouched. A string response stays a string; an object response stays an object.
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Recursively redact every string leaf while preserving the value's exact structure. */
 function redactValue(value, redactSecrets) {
@@ -44,8 +44,11 @@ async function main() {
   if (val == null) return;
 
   const here = dirname(fileURLToPath(import.meta.url));
+  // A file:// URL, not a bare path: on Windows join() yields `C:\…\secrets.js`, which is not
+  // a valid dynamic-import specifier (backslashes / drive-letter) and throws — degrading the
+  // redactor to a no-op. pathToFileURL makes the import portable (no-op difference on POSIX).
   const { redactSecrets } = await import(
-    join(here, "..", "..", "src", "secrets.js")
+    pathToFileURL(join(here, "..", "..", "src", "secrets.js")).href
   );
   const red = redactValue(val, redactSecrets);
   // Emit a rewrite only when something actually changed. Compare canonically so an

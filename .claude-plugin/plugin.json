@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "forgekit",
   "displayName": "Forge",
-  "version": "0.23.1",
+  "version": "0.23.2",
   "description": "One config, every AI coding tool — cognitive substrate, tools, crew, guards, atlas, lean, recall from one source.",
   "author": { "name": "CodeWithJuber" },
   "license": "MIT",

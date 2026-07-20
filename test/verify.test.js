@@ -199,7 +199,15 @@ test("verify: an untracked source file appears in provenance (changedFiles + unt
 // second, unexecuted/failing one.
 // ---------------------------------------------------------------------------
 
-test("verify: polyglot — passing Node suite + non-executable go suite ⇒ INCOMPLETE, not PASS", () => {
+// win32 gate: the fake runners are `#!/bin/sh` scripts made runnable via the exec bit and a
+// `:`-delimited PATH — a Unix construct. Windows resolves `npm`/`pytest` through PATHEXT to
+// `.cmd`/`.exe`, so an extensionless shell script can never stand in for them. verify.js itself
+// is portable (shell-free execFileSync); only this fake-executable injection is Unix-only.
+test("verify: polyglot — passing Node suite + non-executable go suite ⇒ INCOMPLETE, not PASS", {
+  skip:
+    process.platform === "win32" &&
+    "fake #!/bin/sh runners can't be invoked as npm/pytest on Windows",
+}, () => {
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
@@ -225,7 +233,12 @@ test("verify: polyglot — passing Node suite + non-executable go suite ⇒ INCO
   );
 });
 
-test("verify: two executable suites both pass ⇒ PASS (every suite ran)", () => {
+// win32 gate: same Unix fake-runner mechanism as above (see comment).
+test("verify: two executable suites both pass ⇒ PASS (every suite ran)", {
+  skip:
+    process.platform === "win32" &&
+    "fake #!/bin/sh runners can't be invoked as npm/pytest on Windows",
+}, () => {
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
@@ -243,7 +256,12 @@ test("verify: two executable suites both pass ⇒ PASS (every suite ran)", () =>
   assert.deepEqual(r.tests.notExecuted, []);
 });
 
-test("verify: one of two executable suites fails ⇒ FAIL (failure is not hidden)", () => {
+// win32 gate: same Unix fake-runner mechanism as above (see comment).
+test("verify: one of two executable suites fails ⇒ FAIL (failure is not hidden)", {
+  skip:
+    process.platform === "win32" &&
+    "fake #!/bin/sh runners can't be invoked as npm/pytest on Windows",
+}, () => {
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
