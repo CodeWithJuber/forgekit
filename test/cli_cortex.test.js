@@ -7,6 +7,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { recordMistake } from "../src/cortex.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const runCli = (args, cwd) => spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
 

@@ -19,7 +19,7 @@ import {
   processSession,
   readSession,
 } from "./cortex_hook.js";
-import { load } from "./lessons_store.js";
+import { mergedLessons } from "./ledger_read.js";
 import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
 import { epochDay } from "./util.js";
 
@@ -31,7 +31,7 @@ async function enrichCreated(root, results) {
   if (!created.length) return;
   const { distill } = await import("./cortex_distill.js");
   for (const r of created) {
-    const lesson = load(root).find((l) => l.id === r.id);
+    const lesson = mergedLessons(root, epochDay()).find((l) => l.id === r.id);
     if (!lesson) continue;
     const better = distill({
       context: lesson.trigger,

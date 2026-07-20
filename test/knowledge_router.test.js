@@ -15,6 +15,10 @@ import {
 } from "../src/knowledge_router.js";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
 test("routeFact: every home recognized from unseen phrasings (per-family routing)", () => {

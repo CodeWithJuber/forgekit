@@ -6,6 +6,7 @@
 // silently truncated the way Claude's native 200-line MEMORY.md is (#39811).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { shadowFact } from "./ledger_bridge.js";
 import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
 import { listStored, add as recallAdd } from "./recall.js";
 
@@ -15,10 +16,20 @@ export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".for
 // see `forge remember`), so that is where merged teammate facts arrive.
 const brainLedger = (store) => join(dirname(store), "ledger");
 
-/** Store one fact (secret-refused by recall) and rebuild the inlined index. */
+/** Store one fact (secret-refused by recall) and rebuild the inlined index. The fact is
+ *  ALSO shadowed into the repo ledger, so it persists as a claim — required under
+ *  FORGE_LEDGER_ONLY (no file is written, so the ledger is the only home) and harmless
+ *  otherwise (shadowFact is idempotent/content-addressed). Best-effort: a bridge failure
+ *  must never break a remember that already stored the fact. Shadow BEFORE buildIndex so
+ *  the index picks the ledger fact up under ledger-only. */
 export function remember(store, name, body) {
   const res = recallAdd(store, name, body);
-  if (res.ok) buildIndex(store);
+  if (res.ok) {
+    try {
+      shadowFact(brainLedger(store), name, body);
+    } catch {}
+    buildIndex(store);
+  }
   return res;
 }
 
