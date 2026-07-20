@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 test("handle: initialize advertises the forge-cortex server", async () => {
   const r = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
   assert.equal(r.result.serverInfo.name, "forge-cortex");

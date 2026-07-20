@@ -9,6 +9,10 @@ import { processSession } from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
 import { fakeAnthropic } from "./_fixtures.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 test("buildPrompt names the location and asks for strict JSON", () => {
   const p = buildPrompt({
     context: { symbols: ["computeTax"] },

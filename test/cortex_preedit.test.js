@@ -7,6 +7,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 const preEdit = (root, file) =>
   spawnSync("node", [ENTRY, "pre-edit"], {

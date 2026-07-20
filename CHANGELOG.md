@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The PCM ledger is now the DEFAULT memory store — the legacy-store migration is
+  finished (M2).** `FORGE_LEDGER_ONLY` defaults on: `.forge/lessons/*.md` and recall/brain
+  fact files are no longer written, and every read (cortex injection/summary, routing,
+  `recall`/`brain`, the pre-edit advisory, doctor) materializes from the ledger. The ledger
+  has been the convergent dual-write store since P1, so existing memory is already there;
+  `forge ledger import` back-fills any pre-ledger history. `FORGE_LEDGER_ONLY=0` is a
+  one-release escape hatch that restores the legacy file store. The legacy-store test
+  suites are pinned to the escape hatch; a new end-to-end test exercises the full
+  create→confirm→promote learning loop under the default.
+
+### Fixed
+
+- **Closed the ledger-only read/write gaps the default flip exposed (M2).** `brain.remember`
+  (and the `forge_remember` MCP tool) now shadow the fact into the ledger, so a fact is no
+  longer lost when no file is written; `cortex_features.featuresForEdit` and the distill
+  loop's lesson lookup now read the merged ledger view instead of the legacy file store.
+
 ## [0.26.2] - 2026-07-20
 
 ### Fixed
