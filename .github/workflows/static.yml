@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 22
       - name: Build site
@@ -44,9 +44,9 @@ jobs:
           # apple-touch-icon, 1200x630 og card). Served from the Pages root.
           cp docs/assets/og.png docs/assets/favicon.svg docs/assets/apple-touch-icon.png _site/
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: "_site"
       - name: Deploy to GitHub Pages
