@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
@@ -2438,7 +2439,12 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = await applyPrimaryTool(root, name);
+      // Inject the sync runner from here (the orchestration layer) so repo_config —
+      // a config-leaf module — no longer reaches back into the sync compiler.
+      const { sync } = await import("./sync.js");
+      const r = await applyPrimaryTool(root, name, {
+        syncFn: (r2) => sync({ targetRoot: r2 }),
+      });
       if (json) return console.log(JSON.stringify(r, null, 2));
       heading(`${BRAND.brand} tools — primary set\n`);
       console.log(`  primary tool   ${paint(r.primaryTool, "ok")}`);
@@ -2477,12 +2483,29 @@ async function run(argv) {
     process.exitCode = 1;
     return;
   }
-  // ponytail: remaining subcommands land in their build phases; the stub keeps the
-  // command surface honest and testable now.
-  console.log(`${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`);
+  // A command is registered in COMMANDS but has no handler wired yet. Exit non-zero
+  // so scripts (and CI) treat "recognized but unimplemented" as a failure, not success.
+  console.error(`${BRAND.cli} ${cmd}: not wired yet — coming in a later build phase.`);
+  process.exitCode = 1;
 }
 
-run(process.argv.slice(2)).catch((err) => {
-  console.error(err.message);
-  process.exitCode = 1;
-});
+// Auto-run only as the CLI entry (npm/global bin, install.sh symlink, `node src/cli.js`).
+// realpathSync resolves the bin symlink so the global `forge` still runs; importing the
+// package root must NOT execute the CLI (package.json marks this file's side effect).
+const entryPath = (() => {
+  const invoked = process.argv[1];
+  if (!invoked) return "";
+  try {
+    return realpathSync(invoked);
+  } catch {
+    return invoked;
+  }
+})();
+if (entryPath && entryPath === realpathSync(fileURLToPath(import.meta.url))) {
+  run(process.argv.slice(2)).catch((err) => {
+    console.error(err.message);
+    process.exitCode = 1;
+  });
+}
+
+export { run };

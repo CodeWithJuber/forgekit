@@ -33,7 +33,7 @@ import {
   validOutcome,
 } from "./ledger.js";
 import { redactSecrets } from "./secrets.js";
-import { contentHash } from "./util.js";
+import { contentHash, readJsonSafe } from "./util.js";
 
 /** The canonical repo ledger. (recall's global store keeps its own sibling ledger.) */
 export const repoLedger = (root = process.cwd()) => join(root, ".forge", "ledger");
@@ -55,7 +55,9 @@ const repoRootOf = (dir) => dirname(dirname(dir));
 // (and non-git repos) never spawn git.
 const gitResolver = (root) => (sha) => {
   try {
-    execFileSync("git", ["cat-file", "-e", sha], {
+    // `--` guards against a ref that begins with "-" being read as a flag (defense in
+    // depth; execFileSync already avoids the shell, and refs here are validated).
+    execFileSync("git", ["cat-file", "-e", "--", sha], {
       cwd: root,
       stdio: "ignore",
     });
@@ -83,14 +85,6 @@ const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
 /** Claim file bytes: pure content only. Identical for the same id on every replica. */
 const claimBytes = (claim) =>
   `${canonicalize({ body: claim.body, kind: claim.kind, scope: claim.scope ?? {}, v: claim.v ?? 1 })}\n`;
-
-const readJson = (path) => {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return null; // one corrupt file must never take down the whole ledger
-  }
-};
 
 /** Parse an append-only log: one canonical-JSON record per line, deduped by content
  *  hash, corrupt lines skipped. The single reader every log goes through — and the
@@ -161,7 +155,7 @@ function* walkClaimFiles(dir) {
       .sort()) {
       const path = join(claimsRoot, shard, f);
       const id = f.replace(/\.json$/, "");
-      const parsed = readJson(path);
+      const parsed = readJsonSafe(path);
       // Verify the address: a tampered/corrupt claim is surfaced as claim:null.
       const valid = parsed && claimId(parsed.kind, parsed.body, parsed.scope) === id;
       yield {
@@ -195,7 +189,7 @@ export function putClaim(dir, claim) {
     };
   const path = claimPath(dir, claim.id);
   const already = existsSync(path);
-  const healthy = already && readJson(path) !== null && readFileSync(path, "utf8") === text;
+  const healthy = already && readJsonSafe(path) !== null && readFileSync(path, "utf8") === text;
   if (!healthy) {
     mkdirSync(join(dir, "claims", claim.id.slice(0, 2)), { recursive: true });
     writeFileSync(path, text);
@@ -299,7 +293,7 @@ export function getClaimByPrefix(dir, prefix) {
     .sort()[0];
   if (!f) return null;
   const id = f.replace(/\.json$/, "");
-  const claim = readJson(join(shardDir, f));
+  const claim = readJsonSafe(join(shardDir, f));
   if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
   const state = emptyState();
   state.claims[id] = { ...claim, id };

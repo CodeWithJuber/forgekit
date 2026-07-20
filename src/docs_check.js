@@ -4,13 +4,13 @@
 // a feature can no longer ship without its docs and the gap silently accumulate — the
 // exact failure that let a whole command family go undocumented. Self-check: it runs
 // against the forge package root (BRAND.root), not the host repo.
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { TOOLS } from "./mcp_tools.js";
 import { allPricePairs } from "./model_tiers.js";
+import { git } from "./util.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
 const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
@@ -158,18 +158,6 @@ function checkMcpTools(docs, issues) {
     }
   }
 }
-
-const git = (root, args) => {
-  try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-};
 
 /** Every tracked Markdown file, so diagram checks cover the WHOLE doc set — not just the
  *  four prose docs. Falls back to a recursive walk when git is unavailable (tmp fixtures). */

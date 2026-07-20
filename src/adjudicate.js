@@ -15,7 +15,7 @@ import { gatewayModelId } from "./gateway_model_map.js";
 import { buildHttpRunner as httpRunner } from "./llm.js";
 import { MODELS } from "./model_tiers.js";
 import { envModelOverride } from "./providers.js";
-import { hasSecret } from "./recall.js";
+import { hasSecret } from "./secrets.js";
 
 /**
  * Is the LLM proposer layer active for this call? Explicit opt-in wins; env is the default.

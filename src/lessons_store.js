@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { hasSecret } from "./recall.js";
+import { hasSecret } from "./secrets.js";
 import { ledgerOnly } from "./util.js";
 
 export const lessonsDir = (root = process.cwd()) => join(root, ".forge", "lessons");

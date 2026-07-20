@@ -106,6 +106,19 @@ git push origin master "$V"
 - `scripts/bump.mjs` refuses to rotate the CHANGELOG onto a version that already has a
   section. When `auto` finds nothing shippable it exits `3` (a graceful skip the
   auto-release workflow keys off), not a hard error — so a no-op merge never fails CI.
+- **Closed-loop verification**: `release.yml`'s final step asserts the tag produced BOTH
+  a GitHub Release and (when `NPM_TOKEN` is set) an npm version, and **fails the job** if
+  either is missing. The publish and release-create steps are idempotent, so recovering a
+  wedged release is just re-running the workflow on the tag.
+
+## Orphan tags (v0.22.2, v0.23.2, v0.24.0)
+
+These three tags were cut before the closed-loop guard above existed and have **no
+GitHub Release and no npm version** — the release workflow wedged after the tag landed
+and nothing alerted. They are recorded here for transparency. To resolve one, either
+re-run `release.yml` on the tag (the idempotent steps will backfill the missing Release
+and, if `NPM_TOKEN` is set, the npm version) or delete the tag and note it here. This is
+a repo-admin action, intentionally not automated.
 
 ## Related workflow secrets
 

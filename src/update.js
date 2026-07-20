@@ -7,6 +7,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { git } from "./util.js";
 
 // The real npm name (scope included) for the `npm i -g` instruction — read, never guessed.
 function npmName(root) {
@@ -14,18 +15,6 @@ function npmName(root) {
     return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name || BRAND.pkg;
   } catch {
     return BRAND.pkg;
-  }
-}
-
-function git(root, args) {
-  try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
   }
 }
 

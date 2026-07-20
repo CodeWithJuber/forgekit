@@ -311,11 +311,11 @@ export function nonPrimaryTargets(report, primary) {
 
 /**
  * Set `name` as the repo's primary tool and gitignore every other tool's emitted
- * artifacts. Runs a real sync to learn the emit targets (injectable via `syncFn` for
- * tests), so the gitignore block always reflects what Forge actually emits.
+ * artifacts. The caller injects `syncFn` (the sync runner) so this config-leaf module
+ * never imports the sync compiler; the gitignore block reflects what Forge actually emits.
  * @param {string} root
  * @param {string} name canonical primary-tool key (must be in KNOWN_TOOLS)
- * @param {{syncFn?:(root:string)=>Promise<{report:any[]}>|{report:any[]}}} [opts]
+ * @param {{syncFn?:(root:string)=>Promise<{report:any[]}>|{report:any[]}}} [opts] syncFn is required at runtime
  * @returns {Promise<{primaryTool:string, configPath:string, targets:string[],
  *   gitignore:string, gitignorePath:string}>}
  */
@@ -323,8 +323,11 @@ export async function applyPrimaryTool(root, name, { syncFn } = {}) {
   if (!KNOWN_TOOLS.includes(name))
     throw new Error(`unknown tool: ${name} (known: ${KNOWN_TOOLS.join(", ")})`);
   const cfgFile = setPrimaryTool(root, name);
-  const runSync = syncFn || (async (r) => (await import("./sync.js")).sync({ targetRoot: r }));
-  const { report } = await runSync(root);
+  // syncFn is injected by the caller (cli.js / tests). Required so this config-leaf
+  // module never imports the sync compiler — keeping the layering acyclic.
+  if (typeof syncFn !== "function")
+    throw new Error("applyPrimaryTool requires an injected syncFn(root) -> { report }");
+  const { report } = await syncFn(root);
   const targets = nonPrimaryTargets(report, name);
   const gi = ensureGitignoreBlock(root, targets);
   return {

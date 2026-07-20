@@ -299,6 +299,43 @@ the series and a sustained alarm rides the gate's block reason. Proceeding under
 assumptions appends a record the advisory names and the next handoff surfaces — a guess
 can never silently become a fact.
 
+**Commit-boundary gate (`src/commit_gate.js`, `forge precommit`).** The commit rung of
+the gate lattice (turn ⊂ commit ⊂ PR): the Stop hook gates the turn and CI's `docs check`
+gates the PR, so this runs the SAME registry-derived completeness classifier
+(`classifyPath` from `gate.js`) plus `hasSecret` over staged added lines at the commit
+boundary — code staged without its doc/state artifact, or a staged secret, is caught
+while the fix is still one `git add` away. Each rung is an independent catch layer, so
+the silent-miss probability falls multiplicatively.
+
+**Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
+asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
+and aggregates them with the same noisy-OR risk score `lessons.js` uses, behind a
+cross-family gate so correlated structural signals can't block alone. Deep `ok` is a
+conjunction: the core verifier must PASS **and** the lens consensus must not block; an
+unconfigured core can never yield `ok:true`. The score is a calibrated heuristic, not a
+proof.
+
+**Knowledge routing (`src/knowledge_router.js`).** The third routing leg beside `route.js`
+(model tiers) and `intent.js` (intent classes), using the same exemplar k-NN math: a fact
+is routed to its storage home (decisions vs. the ledger vs. …) tuned by adding example
+rows, never regexes. It is TOTAL by construction — a fact resembling nothing falls back to
+the ledger (whose decay semantics make an unsure placement safe), never "nowhere".
+
+**Anti-repetition memory (`src/deja.js`).** Closes the "why do I keep re-solving solved
+tasks" gap: a clean first-try success used to leave no durable trace (cortex only mints on
+correction). At Stop it mints one `summary` claim (a deterministic, secret-redacted gist),
+attaching a `test.run` confirm when the session's tests passed; `dejaLookup` then ranks
+prior summary/lesson/diagnosis claims for a new task with the same `retrieve()` (rel × rec
+× val) the ledger query uses. No new protocol — it reuses the shipped PCM machinery.
+
+**The documentation-impact graph (`src/docs_impact.js`, `forge docs impact`).** Where
+`docs check` reconciles fixed registries and `docs sync` scans a diff for identifiers,
+this answers "I changed X — which documented surfaces mention X and are now potentially
+stale?" via a data-driven `EXTRACTORS` registry (commands, flags, env vars, MCP tools,
+exported symbols, brand tokens, version, package.json fields) reused from `docs_check.js`,
+an inverted entity → `file:line` index over every doc surface, and a diff-scoped impact
+query ranked by confidence. Advisory by default; `--strict` exits non-zero for CI.
+
 **Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
 has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
 library math with tests until a real consumer exists.
