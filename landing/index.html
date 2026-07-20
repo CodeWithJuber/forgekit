@@ -133,6 +133,15 @@
         --sp-16: 64px;
         --sp-20: 80px;
         --sp-24: 96px;
+        /* Page-scoped structural tokens — like --radius / --ease-out above, these
+           are landing-local (NOT part of the brand.json color-parity set). Shadows
+           and tints are derived from the theme tokens so they flip with the scheme. */
+        --radius-lg: 26px;
+        --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+        --tint: color-mix(in srgb, var(--brand) 12%, transparent);
+        --tint-soft: color-mix(in srgb, var(--brand) 7%, transparent);
+        --hairline: color-mix(in srgb, var(--line-strong) 55%, transparent);
+        --bezel: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent);
       }
       @media (prefers-color-scheme: light) {
         :root {
@@ -166,11 +175,14 @@
         scroll-behavior: smooth;
         background: var(--bg);
       }
+      /* Motion is opt-out: every transition/animation collapses to ~0 so a
+         reduced-motion visitor sees the final, fully-legible layout instantly. */
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
         *::after {
           animation-duration: 0.001ms !important;
+          animation-delay: 0ms !important;
           scroll-behavior: auto !important;
           transition-duration: 0.001ms !important;
         }
@@ -179,13 +191,21 @@
         margin: 0;
         color: var(--text);
         font: var(--fs-0) / 1.65 var(--sans);
+        /* Two ember washes — a warm forge-glow top-right, a fainter counter-light
+           bottom-left — both derived from the accent tokens so they flip per theme. */
         background:
           radial-gradient(
-            960px 460px at 85% -10%,
-            rgba(242, 100, 48, 0.16),
-            transparent 70%
+            1120px 560px at 90% -12%,
+            color-mix(in srgb, var(--brand) 15%, transparent),
+            transparent 66%
+          ),
+          radial-gradient(
+            820px 520px at -6% 6%,
+            color-mix(in srgb, var(--brand-2) 8%, transparent),
+            transparent 60%
           ),
           var(--bg);
+        background-attachment: fixed;
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
       }
@@ -199,8 +219,12 @@
         outline-offset: 3px;
         border-radius: var(--radius-sm);
       }
+      ::selection {
+        background: var(--brand);
+        color: var(--bg);
+      }
       .wrap {
-        width: min(var(--max), calc(100% - 40px));
+        width: min(var(--max), calc(100% - 48px));
         margin: 0 auto;
       }
       .mono {
@@ -226,13 +250,14 @@
         top: 0;
         z-index: 20;
         border-bottom: 1px solid var(--line);
-        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        background: color-mix(in srgb, var(--bg) 78%, transparent);
         /* Gate: compositor-friendly blur — kept ≤8px so the sticky nav doesn't
            trigger a heavy repaint on every scroll frame. */
         backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
       }
       .nav-inner {
-        min-height: 68px;
+        min-height: 66px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -243,19 +268,22 @@
         gap: var(--sp-3);
         align-items: center;
         text-decoration: none;
-        font: 750 var(--fs-0) var(--mono);
-        letter-spacing: -0.02em;
+        font: 700 var(--fs-0) var(--mono);
+        letter-spacing: -0.03em;
       }
       .logo {
-        width: 32px;
-        height: 32px;
-        border-radius: var(--radius-sm);
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        background: linear-gradient(150deg, var(--brand), var(--brand-2));
         color: var(--bg);
         font-weight: 800;
-        box-shadow: 0 12px 34px rgba(242, 100, 48, 0.26);
+        font-size: var(--fs-n1);
+        box-shadow:
+          0 6px 18px color-mix(in srgb, var(--brand) 40%, transparent),
+          var(--bezel);
       }
       .brand em {
         color: var(--brand);
@@ -265,7 +293,8 @@
         display: flex;
         align-items: center;
         gap: var(--sp-6);
-        font-size: var(--fs-n1);
+        font: 500 var(--fs-n1) var(--mono);
+        letter-spacing: -0.01em;
       }
       .nav-links a {
         color: var(--muted);
@@ -281,34 +310,40 @@
         border-radius: 999px;
         padding: var(--sp-2) var(--sp-4);
         transition:
-          border-color 0.16s var(--ease-out),
-          background 0.16s var(--ease-out);
+          border-color 0.18s var(--ease-out),
+          background 0.18s var(--ease-out),
+          transform 0.18s var(--ease-spring);
       }
       .nav-links .pill:hover {
         border-color: var(--brand);
-        background: color-mix(in srgb, var(--brand) 12%, transparent);
+        background: var(--tint);
+        transform: translateY(-1px);
       }
       @media (max-width: 760px) {
         .nav-links a:not(.pill) {
           display: none;
         }
         .wrap {
-          width: min(var(--max), calc(100% - 28px));
+          width: min(var(--max), calc(100% - 32px));
         }
       }
 
       /* ---- Hero (Stat-Led) -------------------------------------------- */
       .hero {
-        padding: var(--sp-24) 0 var(--sp-10);
+        padding: var(--sp-24) 0 var(--sp-12);
       }
       .eyebrow {
         display: inline-flex;
         gap: var(--sp-3);
         align-items: center;
-        margin: 0 0 var(--sp-5);
+        margin: 0 0 var(--sp-6);
+        padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-3);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--panel) 60%, transparent);
         color: var(--brand-2);
-        font: 700 var(--fs-n2) var(--mono);
-        letter-spacing: 0.14em;
+        font: 600 var(--fs-n2) var(--mono);
+        letter-spacing: 0.12em;
         text-transform: uppercase;
       }
       /* Honest status dot — a plain marker, not a faux-live pulse. No glow ring,
@@ -318,14 +353,16 @@
         height: 7px;
         border-radius: 999px;
         background: var(--ok);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
       }
       h1 {
         margin: 0;
-        max-width: 15ch;
-        font-size: var(--fs-7);
-        line-height: 1.02;
-        letter-spacing: -0.03em;
-        font-weight: 700;
+        max-width: 17ch;
+        /* The display voice is monospace — the product compiles config, so its
+           headline is set in the same family as the code it emits. Tight tracking
+           and leading keep the mono forms from reading as a terminal dump. */
+        font: 700 var(--fs-7) / 1.02 var(--mono);
+        letter-spacing: -0.045em;
         overflow-wrap: anywhere;
         min-width: 0;
       }
@@ -333,10 +370,11 @@
         color: var(--brand);
       }
       .lede {
-        margin: var(--sp-6) 0 0;
-        max-width: 62ch;
+        margin: var(--sp-7) 0 0;
+        max-width: 60ch;
         color: var(--muted);
         font-size: var(--fs-1);
+        line-height: 1.6;
         text-wrap: pretty;
       }
       .actions {
@@ -353,18 +391,23 @@
         gap: var(--sp-2);
         border-radius: 999px;
         border: 1px solid var(--line-strong);
-        padding: var(--sp-3) var(--sp-5);
+        padding: var(--sp-3) var(--sp-6);
         text-decoration: none;
-        font-weight: 750;
+        font: 650 var(--fs-n1) var(--mono);
+        letter-spacing: -0.01em;
         white-space: nowrap;
         transition:
-          background 0.16s var(--ease-out),
-          border-color 0.16s var(--ease-out),
-          color 0.16s var(--ease-out),
-          transform 0.12s var(--ease-out);
+          background 0.18s var(--ease-out),
+          border-color 0.18s var(--ease-out),
+          color 0.18s var(--ease-out),
+          box-shadow 0.18s var(--ease-out),
+          transform 0.16s var(--ease-spring);
+      }
+      .btn:hover {
+        transform: translateY(-2px);
       }
       .btn:active {
-        transform: translateY(1px);
+        transform: translateY(0);
       }
       .btn-primary {
         background: var(--text);
@@ -372,63 +415,110 @@
         border-color: transparent;
       }
       .btn-primary:hover {
-        background: var(--brand-2);
+        background: var(--brand);
+        color: var(--bg);
+        box-shadow: 0 12px 30px
+          color-mix(in srgb, var(--brand) 34%, transparent);
+      }
+      .btn-secondary {
+        background: color-mix(in srgb, var(--panel) 55%, transparent);
       }
       .btn-secondary:hover {
         border-color: var(--brand);
         color: var(--brand-2);
+        background: var(--tint-soft);
       }
+      /* The install affordance — the page's one crafted "instrument". A framed
+         prompt with an ember caret, sized in the mono display voice. */
       .command {
-        margin-top: var(--sp-5);
+        margin-top: var(--sp-6);
         display: flex;
-        max-width: 100%;
+        max-width: 640px;
         align-items: center;
         gap: var(--sp-3);
-        border: 1px solid var(--line);
+        border: 1px solid var(--line-strong);
         border-radius: var(--radius-sm);
-        padding: var(--sp-3) var(--sp-4);
+        padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
         background: var(--panel);
-        box-shadow: var(--shadow);
+        box-shadow: var(--shadow), var(--bezel);
         overflow-x: auto;
-        font: 700 var(--fs-n1) var(--mono);
+        font: 600 var(--fs-n1) var(--mono);
+        transition: border-color 0.18s var(--ease-out);
+      }
+      .command:hover {
+        border-color: color-mix(in srgb, var(--brand) 55%, var(--line-strong));
       }
       .command .prompt {
         color: var(--brand);
         flex: none;
+        font-weight: 700;
       }
       .command code {
         flex: 1;
         white-space: nowrap;
+        color: var(--text);
       }
       .command button {
         flex: none;
         border: 1px solid var(--line-strong);
         background: var(--panel-2);
         color: var(--muted);
-        border-radius: var(--radius-sm);
-        padding: var(--sp-2) var(--sp-3);
+        border-radius: 8px;
+        padding: var(--sp-2) var(--sp-4);
         cursor: pointer;
-        font: 700 var(--fs-n2) var(--mono);
+        font: 650 var(--fs-n2) var(--mono);
+        letter-spacing: 0.02em;
         transition:
           color 0.16s var(--ease-out),
-          border-color 0.16s var(--ease-out);
+          border-color 0.16s var(--ease-out),
+          background 0.16s var(--ease-out);
       }
       .command button:hover {
         color: var(--text);
         border-color: var(--brand);
+        background: var(--tint);
       }
 
       /* ---- Hero diagram (the real, shipped SVG) ----------------------- */
       .diagram {
-        margin: var(--sp-14) 0 0;
+        margin: var(--sp-16) 0 0;
       }
       .diagram figure {
+        position: relative;
         margin: 0;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--panel);
-        box-shadow: var(--shadow);
+        box-shadow: var(--shadow), var(--bezel);
+      }
+      /* Schematic corner ticks — the signature detail. Two opposed L-brackets read
+         as an instrument bezel / blueprint crop, quietly reinforcing "engineered,
+         measured infrastructure" without adding chrome. */
+      .diagram figure::before,
+      .diagram figure::after {
+        content: "";
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border: 1.5px solid var(--brand);
+        opacity: 0.55;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .diagram figure::before {
+        top: 12px;
+        left: 12px;
+        border-right: 0;
+        border-bottom: 0;
+        border-top-left-radius: 4px;
+      }
+      .diagram figure::after {
+        bottom: 12px;
+        right: 12px;
+        border-left: 0;
+        border-top: 0;
+        border-bottom-right-radius: 4px;
       }
       /* The real shipped hero art, inlined so it resolves in local preview AND on
          the deployed site root (the deploy copies only index.html, not docs/assets).
@@ -452,8 +542,11 @@
       .diagram figcaption {
         color: var(--faint);
         font: 500 var(--fs-n1) var(--mono);
-        margin-top: var(--sp-4);
+        line-height: 1.6;
+        margin-top: var(--sp-5);
         text-align: center;
+        max-width: 68ch;
+        margin-inline: auto;
       }
 
       /* ---- Stat band -------------------------------------------------- */
@@ -461,28 +554,41 @@
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0;
-        margin: var(--sp-14) 0 0;
+        margin: var(--sp-16) 0 0;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--panel);
+        box-shadow: var(--bezel);
       }
       .stat {
-        padding: var(--sp-7) var(--sp-6);
+        position: relative;
+        padding: var(--sp-8) var(--sp-6) var(--sp-7);
         border-right: 1px solid var(--line);
+      }
+      /* Each readout wears a short ember gauge-tick above the figure. */
+      .stat::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: var(--sp-6);
+        width: 26px;
+        height: 2px;
+        background: var(--brand);
       }
       .stat:last-child {
         border-right: 0;
       }
       .stat b {
         display: block;
-        font: 850 var(--fs-5) var(--mono);
+        font: 700 var(--fs-5) var(--mono);
         letter-spacing: -0.04em;
-        color: var(--brand-2);
+        font-variant-numeric: tabular-nums;
+        color: var(--text);
       }
       .stat span {
         display: block;
-        margin-top: var(--sp-2);
+        margin-top: var(--sp-3);
         color: var(--muted);
         font-size: var(--fs-n1);
       }
@@ -522,27 +628,38 @@
         padding: var(--sp-24) 0;
         border-top: 1px solid var(--line);
       }
+      /* Section reference tag — a schematic label, not decoration: an ember index
+         mark keys the eye to each stage of the story. */
       .kicker {
-        margin: 0 0 var(--sp-3);
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-3);
+        margin: 0 0 var(--sp-5);
         color: var(--brand);
-        font: 800 var(--fs-n2) var(--mono);
-        letter-spacing: 0.14em;
+        font: 700 var(--fs-n2) var(--mono);
+        letter-spacing: 0.2em;
         text-transform: uppercase;
+      }
+      .kicker::before {
+        content: "";
+        width: 22px;
+        height: 2px;
+        background: var(--brand);
       }
       h2 {
         margin: 0;
-        max-width: 20ch;
-        font-size: var(--fs-6);
-        line-height: 1.05;
-        letter-spacing: -0.04em;
+        max-width: 22ch;
+        font: 700 var(--fs-5) / 1.08 var(--mono);
+        letter-spacing: -0.035em;
         overflow-wrap: anywhere;
         min-width: 0;
       }
       .sub {
         color: var(--muted);
-        margin: var(--sp-4) 0 0;
+        margin: var(--sp-5) 0 0;
         font-size: var(--fs-1);
-        max-width: 60ch;
+        line-height: 1.6;
+        max-width: 62ch;
         text-wrap: pretty;
       }
 
@@ -552,34 +669,62 @@
         margin: var(--sp-12) 0 0;
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0 var(--sp-14);
+        gap: 0 var(--sp-16);
       }
       .cap {
+        position: relative;
         display: grid;
-        grid-template-columns: 40px 1fr;
+        grid-template-columns: 42px 1fr;
         gap: var(--sp-4);
         align-items: start;
         padding: var(--sp-7) 0;
         border-top: 1px solid var(--line);
       }
+      /* Hairline lights up on hover — a low-key affordance that keeps the eye moving. */
+      .cap::before {
+        content: "";
+        position: absolute;
+        top: -1px;
+        left: 0;
+        width: 0;
+        height: 2px;
+        background: var(--brand);
+        transition: width 0.32s var(--ease-out);
+      }
+      .cap:hover::before {
+        width: 42px;
+      }
       .cap-ico {
-        width: 40px;
-        height: 40px;
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--tint-soft);
         color: var(--brand-2);
+        transition:
+          border-color 0.2s var(--ease-out),
+          background 0.2s var(--ease-out);
+      }
+      .cap:hover .cap-ico {
+        border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+        background: var(--tint);
       }
       .cap-ico svg {
-        width: 100%;
-        height: 100%;
+        width: 22px;
+        height: 22px;
       }
       .cap h3 {
         margin: var(--sp-1) 0 var(--sp-2);
-        font-size: var(--fs-2);
+        font: 600 var(--fs-2) var(--sans);
         letter-spacing: -0.01em;
       }
       .cap p {
         margin: 0;
         color: var(--muted);
         font-size: var(--fs-n1);
+        line-height: 1.6;
       }
       @media (max-width: 760px) {
         .caps {
@@ -591,8 +736,8 @@
          terminal window: no traffic-light dots, no mock title bar). */
       .split {
         display: grid;
-        grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
-        gap: var(--sp-10);
+        grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+        gap: var(--sp-12);
         align-items: start;
       }
       .steps {
@@ -603,55 +748,71 @@
       }
       .step {
         display: grid;
-        grid-template-columns: 34px 1fr;
-        gap: var(--sp-4);
+        grid-template-columns: 36px 1fr;
+        gap: var(--sp-5);
         align-items: start;
-        padding: var(--sp-4) 0;
+        padding: var(--sp-5) 0;
         border-top: 1px solid var(--line);
       }
+      /* A real, ordered sequence — so the numeric markers carry information. */
       .step-num {
         counter-increment: step;
-        width: 34px;
-        height: 34px;
-        border-radius: var(--radius-sm);
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
         display: grid;
         place-items: center;
-        background: var(--panel-2);
-        border: 1px solid var(--line);
+        background: var(--tint);
+        border: 1px solid color-mix(in srgb, var(--brand) 32%, var(--line));
         color: var(--brand-2);
-        font: 800 var(--fs-n1) var(--mono);
+        font: 700 var(--fs-n1) var(--mono);
+        font-variant-numeric: tabular-nums;
       }
       .step-num::before {
-        content: counter(step);
+        content: counter(step, decimal-leading-zero);
       }
       .step h3 {
-        margin: var(--sp-1) 0 var(--sp-1);
-        font-size: var(--fs-2);
+        margin: var(--sp-1) 0 var(--sp-2);
+        font: 600 var(--fs-2) var(--sans);
+        letter-spacing: -0.01em;
       }
       .step p {
         margin: 0;
         color: var(--muted);
+        line-height: 1.6;
       }
       figure.listing {
-        margin: var(--sp-8) 0 0;
+        margin: 0;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: var(--panel-2);
-        box-shadow: var(--shadow);
+        box-shadow: var(--shadow), var(--bezel);
         overflow: hidden;
       }
       figure.listing figcaption {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-3);
         padding: var(--sp-3) var(--sp-5);
         border-bottom: 1px solid var(--line);
         color: var(--faint);
         font: 600 var(--fs-n2) var(--mono);
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      figure.listing figcaption::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--brand);
+        flex: none;
       }
       pre {
         margin: 0;
-        padding: var(--sp-5);
+        padding: var(--sp-6) var(--sp-5);
         overflow-x: auto;
-        font: var(--fs-n1) / 1.7 var(--mono);
+        font: var(--fs-n1) / 1.75 var(--mono);
         color: var(--text);
       }
       .c-dim {
@@ -673,7 +834,7 @@
       }
       .honest {
         display: grid;
-        grid-template-columns: 40px 1fr;
+        grid-template-columns: 42px 1fr;
         gap: var(--sp-4);
         align-items: start;
         padding-top: var(--sp-7);
@@ -681,19 +842,22 @@
       }
       .honest .cap-ico {
         color: var(--brand);
+        border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
       }
       .honest h3 {
         margin: var(--sp-1) 0 var(--sp-2);
-        font-size: var(--fs-2);
+        font: 600 var(--fs-2) var(--sans);
+        letter-spacing: -0.01em;
       }
       .honest p {
         margin: 0;
         color: var(--muted);
+        line-height: 1.6;
       }
       @media (max-width: 640px) {
         .honesty {
           grid-template-columns: 1fr;
-          gap: var(--sp-2);
+          gap: var(--sp-6);
         }
       }
 
@@ -715,7 +879,7 @@
 
       footer {
         border-top: 1px solid var(--line);
-        padding: var(--sp-9) 0;
+        padding: var(--sp-10) 0;
         color: var(--muted);
       }
       .foot {
@@ -724,17 +888,23 @@
         gap: var(--sp-5);
         flex-wrap: wrap;
       }
+      .foot .mono {
+        font-size: var(--fs-n1);
+        color: var(--faint);
+      }
       .foot a {
         color: var(--muted);
         text-decoration: none;
-        margin-left: var(--sp-4);
+        margin-left: var(--sp-5);
         white-space: nowrap;
+        font: 500 var(--fs-n1) var(--mono);
+        transition: color 0.16s var(--ease-out);
       }
       .foot a:first-child {
         margin-left: 0;
       }
       .foot a:hover {
-        color: var(--text);
+        color: var(--brand-2);
       }
 
       @media (max-width: 900px) {
@@ -744,14 +914,56 @@
       }
       @media (max-width: 560px) {
         .hero {
-          padding-top: var(--sp-14);
+          padding-top: var(--sp-16);
         }
         section {
           padding: var(--sp-16) 0;
         }
         .foot a {
           margin-left: 0;
-          margin-right: var(--sp-4);
+          margin-right: var(--sp-5);
+        }
+      }
+
+      /* Orchestrated hero entrance — one calm, staggered rise on load. Gated behind
+         no-preference so reduced-motion visitors never see a hidden/animated state. */
+      @media (prefers-reduced-motion: no-preference) {
+        .hero > .wrap > .eyebrow,
+        .hero > .wrap > h1,
+        .hero > .wrap > .lede,
+        .hero > .wrap > .actions,
+        .hero > .wrap > .command,
+        .hero > .wrap > .diagram,
+        .hero > .wrap > .stats {
+          animation: rise 0.72s var(--ease-out) both;
+        }
+        .hero > .wrap > h1 {
+          animation-delay: 0.06s;
+        }
+        .hero > .wrap > .lede {
+          animation-delay: 0.14s;
+        }
+        .hero > .wrap > .actions {
+          animation-delay: 0.2s;
+        }
+        .hero > .wrap > .command {
+          animation-delay: 0.26s;
+        }
+        .hero > .wrap > .diagram {
+          animation-delay: 0.34s;
+        }
+        .hero > .wrap > .stats {
+          animation-delay: 0.4s;
+        }
+        @keyframes rise {
+          from {
+            opacity: 0;
+            transform: translateY(14px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
       }
     </style>
