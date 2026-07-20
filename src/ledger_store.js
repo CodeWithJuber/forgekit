@@ -55,7 +55,9 @@ const repoRootOf = (dir) => dirname(dirname(dir));
 // (and non-git repos) never spawn git.
 const gitResolver = (root) => (sha) => {
   try {
-    execFileSync("git", ["cat-file", "-e", sha], {
+    // `--` guards against a ref that begins with "-" being read as a flag (defense in
+    // depth; execFileSync already avoids the shell, and refs here are validated).
+    execFileSync("git", ["cat-file", "-e", "--", sha], {
       cwd: root,
       stdio: "ignore",
     });

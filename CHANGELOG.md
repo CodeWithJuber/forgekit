@@ -48,6 +48,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Removed the dead `plugin` entry from `package.json` `files`, the vestigial
   `.gitlab-ci.yml`, and the dangling `@AGENTS.md` import in `CLAUDE.md`; fixed the
   off-palette Codex plugin `brandColor`.
+- **Broke a layering cycle in `repo_config.js`.** `applyPrimaryTool` no longer reaches
+  back into the sync compiler via a dynamic `import("./sync.js")`; the sync runner is now
+  injected by the caller (`cli.js`), keeping the config leaf acyclic.
+- `ledger_store.js`'s `git cat-file -e` ref resolver now passes `--` before the ref
+  (defense in depth against a ref that begins with `-`).
+- **Refreshed `ARCHITECTURE.md`** for the v0.20–v0.24 modules that were missing from the
+  reference: `commit_gate` (`forge precommit`), `consensus` (`forge verify --deep`),
+  `knowledge_router`, `deja`, and `docs_impact` (`forge docs impact`).
 
 ## [0.25.0] - 2026-07-20
 

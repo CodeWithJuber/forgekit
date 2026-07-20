@@ -2439,7 +2439,12 @@ async function run(argv) {
         process.exitCode = 1;
         return;
       }
-      const r = await applyPrimaryTool(root, name);
+      // Inject the sync runner from here (the orchestration layer) so repo_config —
+      // a config-leaf module — no longer reaches back into the sync compiler.
+      const { sync } = await import("./sync.js");
+      const r = await applyPrimaryTool(root, name, {
+        syncFn: (r2) => sync({ targetRoot: r2 }),
+      });
       if (json) return console.log(JSON.stringify(r, null, 2));
       heading(`${BRAND.brand} tools — primary set\n`);
       console.log(`  primary tool   ${paint(r.primaryTool, "ok")}`);
