@@ -9,10 +9,11 @@
 # performs the identical scan (`gitleaks detect` walks every commit) with no network license
 # dependency, so the gate stays deterministic and blocking.
 #
-# Why this passes on our own redaction tests: test/_fixtures.js assembles secret-LOOKING
-# strings at RUNTIME via .join() precisely so no secret-format literal exists in any blob
-# for a scanner to match. Verified clean with gitleaks 8.16 across the whole history and
-# working tree before this workflow was added — no .gitleaks.toml allowlist is needed.
+# Why this passes on our own redaction tests: most secret-LOOKING fixtures are assembled at
+# RUNTIME (test/_fixtures.js .join()) so no secret-format literal exists in a blob to match.
+# The few committed synthetic fixtures that a scanner can't tell from the real thing — the
+# PEM/private-key literals in test/secrets.test.js — are allowlisted by path in .gitleaks.toml
+# (which also carries the bibliography-key exceptions). Every other path is fully scanned.
 name: Security
 
 on:
