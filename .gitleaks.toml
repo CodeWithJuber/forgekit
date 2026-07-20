@@ -8,10 +8,14 @@ useDefault = true
 # The literal field name "key" next to a quoted alphanumeric value trips the default
 # generic-api-key rule even though there is no secret here — just citation metadata.
 [allowlist]
-description = "Bibliography citation-key fields, not secrets"
+description = "Bibliography citation-key fields and synthetic redaction-test fixtures, not secrets"
 paths = [
   '''^research/formal-synthesis/graded_reference_set\.json$''',
   '''^research/formal-synthesis/merged_references\.json$''',
+  # test/secrets.test.js is the redaction test suite: it holds synthetic PEM private-key and
+  # high-entropy-token fixtures on purpose and asserts forge redacts them. Those literals are
+  # committed, so a full-history scan always matches them — they are NOT real credentials.
+  '''^test/secrets\.test\.js$''',
 ]
 # Obvious placeholder credentials used as test fixtures to exercise the secret
 # redactor/scanner — sequential-hex tokens that are unmistakably fake, not real secrets.
