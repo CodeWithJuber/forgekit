@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.26.2] - 2026-07-20
+
 ### Fixed
 
 - **`reconcileFacts` no longer risks wiping memory under `FORGE_LEDGER_ONLY` (M2).** The
@@ -1482,7 +1484,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.2...HEAD
+[0.26.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.1...v0.26.2
 [0.26.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.24.0...v0.25.0
