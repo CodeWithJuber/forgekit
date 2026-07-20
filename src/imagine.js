@@ -196,33 +196,42 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     }
     // perFile is best-effort: node ≥20 TAP flattens per-TEST (no per-file points), but
     // every failure block carries a `location: '<abs path>:l:c'` diagnostic — map those
-    // back to the requested files; anything never implicated passed. Omitted when a
-    // failure can't be attributed (partial attribution would misassign blame).
+    // back to the requested files; anything never implicated passed.
     /** @type {Record<string, "pass"|"fail">} */
     const perFile = Object.fromEntries(tests.map((t) => [String(t), "pass"]));
-    let attributable = true;
+    // Precompute POSIX + basename forms of each requested test so the match survives every
+    // OS's location format: TAP's `location:` uses `\` on Windows and canonicalizes its root
+    // differently per-OS (macOS /var→/private/var; Windows drive-letter case / 8.3 short
+    // names), so an absolute-path compare is fragile. Match by POSIX suffix, then basename.
+    const wanted = tests.map((c) => {
+      const posix = toPosix(String(c));
+      return { orig: String(c), posix, base: posix.split("/").pop() };
+    });
+    let failMarks = 0;
+    // Split on CRLF *or* LF: Windows `node --test` emits `\r\n`, and a stray `\r` left on the
+    // `location:` line used to break the parse and drop the whole map to undefined.
     for (const block of (run.stdout ?? "").split(/^not ok /m).slice(1)) {
-      const file = block.split("\n").map(locFile).find(Boolean);
-      // Match by RELATIVE SUFFIX, not the absolute path. TAP's `location:` root and our
-      // `realpathSync(wt)` can canonicalize differently per-OS (macOS /var→/private/var;
-      // Windows drive-letter case / 8.3 short names / `\`), so comparing absolute paths is
-      // fragile. Every requested test path (`test/foo.test.js`) is a suffix of node's
-      // reported absolute location — normalize both to POSIX and check the suffix. Robust on
-      // Linux, macOS, and Windows; the leading `/` guards against a spurious partial match.
-      const f = file && toPosix(file);
-      const t =
-        f &&
-        tests.find((c) => {
-          const rel = toPosix(String(c));
-          return f === rel || f.endsWith(`/${rel}`);
-        });
-      if (t) perFile[String(t)] = "fail";
-      else attributable = false;
+      const file = block.split(/\r?\n/).map(locFile).find(Boolean);
+      if (!file) continue; // a location-less block (summary/parent) implicates no file — skip
+      const f = toPosix(file);
+      const hit = wanted.find(
+        (w) => f === w.posix || f.endsWith(`/${w.posix}`) || f.endsWith(`/${w.base}`),
+      );
+      if (hit) {
+        perFile[hit.orig] = "fail";
+        failMarks++;
+      }
     }
+    // We ran `node --test` on EXACTLY these files, so every real failure lives in one of
+    // them; a block that matches none is TAP noise, safely skipped above. Trust the map when
+    // it accounts for the run's failures, and abstain only if the suite reported failures we
+    // could pin to no file at all — there, partial blame would mislead more than no blame.
+    const failed = Number(mFail[1]);
+    const attributable = failed === 0 || failMarks > 0;
     return {
       ok: true,
       passed: Number(mPass[1]),
-      failed: Number(mFail[1]),
+      failed,
       ...(attributable ? { perFile } : {}),
       durationMs,
       runner,
