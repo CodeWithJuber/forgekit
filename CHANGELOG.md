@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Split the `run()` god-function in `src/cli.js` into a dispatch table (H3).** The former
+  ~2,420-line `run()` (a flat 44-branch `if (cmd === …)` chain) is now a ~44-line dispatcher
+  that looks the command up in a `HANDLERS` map; each command is an independently navigable,
+  independently mergeable module-scope `async` handler. Behavior is byte-identical — the same
+  argv in, the same stdout/stderr/exit-code out (the full spawn-based suite is unchanged and
+  green) — the pre-dispatch middleware (`--help` interception, first-run hint, `cortex-mcp`),
+  the unknown-command fallback, `process.exitCode` error model, and the main-module import
+  guard are all preserved.
+
 ## [0.26.0] - 2026-07-20
 
 ### Added
