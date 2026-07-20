@@ -29,6 +29,35 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # Windows-git-bash coverage: the guards are bash and the suite does a lot of path work,
+  # so run the unit suite on windows-latest under Git Bash. Invoke `node --test` directly
+  # (not `npm test`) so Git Bash expands the test glob — npm's Windows script-shell is cmd,
+  # which would pass the literal `test/*.test.js`. Genuinely-Unix-only tests (bash guard
+  # hooks) self-skip via `process.platform === 'win32'` guards in the tests themselves.
+  test-windows:
+    name: Test (Windows / Git Bash)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit suite (Git Bash)
+        shell: bash
+        run: |
+          set +e
+          node --test test/*.test.js 2>&1 | tee /tmp/win-test.log
+          ec=${PIPESTATUS[0]}
+          echo "===== FAILING TESTS (name + file) ====="
+          grep -nE '^not ok ' /tmp/win-test.log | head -80
+          echo "===== FAILURE DIAGNOSTICS (TAP YAML blocks) ====="
+          # Print each failing test's `not ok` line through its YAML `...` terminator so the
+          # assertion detail (expected/actual/location) is visible in the CI log.
+          awk '/^not ok /{p=1} p{print} p&&/^  \.\.\.[[:space:]]*$/{p=0}' /tmp/win-test.log | head -200
+          exit "$ec"
+
   quality-gate:
     name: Quality gate
     uses: ./.github/workflows/reusable-quality-gate.yml
