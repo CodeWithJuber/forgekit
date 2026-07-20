@@ -2,6 +2,13 @@
 # Deliberately blocking — a real credential in the tree or history should fail the build,
 # not warn. (Rotate first, then rewrite/land; a red X is the cheap part of a leak.)
 #
+# We run the gitleaks BINARY directly rather than gitleaks/gitleaks-action@v3: that action's
+# breaking update requires a paid GITLEAKS_LICENSE for org-associated accounts and hard-fails
+# the job when its license-validation server is unreachable ("License key validation will be
+# enforced"), turning a green gate red for reasons unrelated to the code. The pinned binary
+# performs the identical scan (`gitleaks detect` walks every commit) with no network license
+# dependency, so the gate stays deterministic and blocking.
+#
 # Why this passes on our own redaction tests: test/_fixtures.js assembles secret-LOOKING
 # strings at RUNTIME via .join() precisely so no secret-format literal exists in any blob
 # for a scanner to match. Verified clean with gitleaks 8.16 across the whole history and
@@ -24,7 +31,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks scans commit history, not just the checkout
-      - uses: gitleaks/gitleaks-action@v3
+      - name: Secret scan (gitleaks binary — no license, scans full history)
         env:
-          GITHUB_TOKEN: ${{ github.token }} # PR comments / job summary
-          # GITLEAKS_LICENSE is only required for ORG-owned repos; this repo is user-owned.
+          GITLEAKS_VERSION: "8.21.2"
+        run: |
+          set -euo pipefail
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          # `detect` walks the whole git log (fetch-depth:0 above); non-zero exit on any find.
+          /tmp/gitleaks detect --source . --no-banner --redact --exit-code 1
