@@ -20,15 +20,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Closed the ledger-only read/write gaps the default flip exposed (M2).** `brain.remember`
+  (and the `forge_remember` MCP tool) now shadow the fact into the ledger, so a fact is no
+  longer lost when no file is written; `cortex_features.featuresForEdit` and the distill
+  loop's lesson lookup now read the merged ledger view instead of the legacy file store.
+
+## [0.26.2] - 2026-07-20
+
+### Fixed
+
 - **`reconcileFacts` no longer risks wiping memory under `FORGE_LEDGER_ONLY` (M2).** The
   reconcile heuristic tombstones any author-owned fact claim with no backing file; under
   ledger-only there are no fact files, so it would have tombstoned every fact. It is now a
   guarded no-op when ledger-only is active (the ledger IS the store then — there is nothing
   to reconcile against). Covered by a new no-data-loss regression test.
-- **Closed the ledger-only read/write gaps the default flip exposed (M2).** `brain.remember`
-  (and the `forge_remember` MCP tool) now shadow the fact into the ledger, so a fact is no
-  longer lost when no file is written; `cortex_features.featuresForEdit` and the distill
-  loop's lesson lookup now read the merged ledger view instead of the legacy file store.
 
 ## [0.26.1] - 2026-07-20
 
@@ -1498,7 +1503,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.2...HEAD
+[0.26.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.1...v0.26.2
 [0.26.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.24.0...v0.25.0

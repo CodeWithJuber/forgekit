@@ -1,6 +1,6 @@
 {
   "name": "@codewithjuber/forgekit",
-  "version": "0.26.1",
+  "version": "0.26.2",
   "description": "Shared memory, impact analysis, and guardrail hooks for AI coding agents — authored once, emitted as native config for Claude Code, Codex, Cursor, Gemini, Aider, and more.",
   "type": "module",
   "bin": {
