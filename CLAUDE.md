@@ -1,13 +1,13 @@
-@AGENTS.md
-
 # forgekit — contributor instructions
 
 ## Stack
+
 - Node.js >=20, pure ESM (`"type": "module"`), zero runtime dependencies.
 - Linter/formatter: Biome 2.5.2 (dev dependency).
 - Types: TypeScript via JSDoc annotations — no `.ts` files, checked by `tsc`.
 
 ## Commands
+
 - Install: `npm ci`
 - Test: `npm test` (node:test, 600+ tests)
 - Lint + format: `npx biome check` (or `npm run check`)
@@ -15,6 +15,7 @@
 - Build pages: `npm run pages:build`
 
 ## Rules
+
 - **Zero runtime dependencies** — CI enforces this. Everything uses Node.js built-ins.
 - ESM only — use `import`, never `require`.
 - Match existing patterns: dynamic `await import()` for optional modules, brand

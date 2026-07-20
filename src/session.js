@@ -17,18 +17,7 @@ import {
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { sessionPath } from "./cortex_hook.js";
-
-function git(root, args) {
-  try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-}
+import { git } from "./util.js";
 
 // Raw NUL-separated porcelain — the ONLY quote-proof status format (paths with
 // spaces/unicode/quotes arrive verbatim, no C-quoting to undo).

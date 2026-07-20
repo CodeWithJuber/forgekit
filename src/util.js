@@ -4,6 +4,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 export const slug = (s) =>
   String(s)
@@ -42,6 +43,34 @@ export function hasBin(bin) {
 
 export function contentHash(text) {
   return createHash("sha256").update(text).digest("hex");
+}
+
+/** Run a read-only git command in `root`; return trimmed stdout, or "" on ANY failure
+ *  (stderr silenced). Consolidated from four byte-identical copies (session/handoff/
+ *  update/docs_check). Deliberately-divergent variants stay local: verify.js uses a
+ *  different arg order and logs stderr under FORGE_DEBUG; docs_sync/docs_impact keep
+ *  raw (un-trimmed) output on purpose. */
+export function git(root, args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Parse a JSON file, returning null on a missing/corrupt file instead of throwing —
+ *  one bad file must never take down the caller. (Distinct from a strict parse that
+ *  should surface a bad config; those callers keep their own throwing readJson.) */
+export function readJsonSafe(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 let cachedAuthor;

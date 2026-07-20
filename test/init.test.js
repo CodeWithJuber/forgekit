@@ -33,7 +33,12 @@ const effectiveCmd = (h) => (Array.isArray(h.args) ? [h.command, ...h.args].join
 
 test("init emits the shared config for a fresh repo in one call", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));
-  init({ targetRoot: root });
+  // Hermeticity: pin settingsPath under the temp root so the hook-guard merge never
+  // touches the developer's real ~/.claude/settings.json (mergeSettings defaults there).
+  init({
+    targetRoot: root,
+    settingsPath: join(root, ".claude", "settings.json"),
+  });
   assert.ok(existsSync(join(root, "AGENTS.md")), "AGENTS.md");
   assert.ok(existsSync(join(root, "CLAUDE.md")), "CLAUDE.md");
   assert.ok(existsSync(join(root, ".aider.conf.yml")), ".aider.conf.yml");

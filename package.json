@@ -25,7 +25,9 @@
   },
   "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
   "funding": "https://github.com/sponsors/CodeWithJuber",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/cli.js"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -35,7 +37,6 @@
     "source",
     "global",
     "templates",
-    "plugin",
     "hooks",
     ".claude-plugin",
     ".codex-plugin",

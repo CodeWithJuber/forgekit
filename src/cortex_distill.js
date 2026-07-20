@@ -4,7 +4,7 @@
 // shells out to the `claude` CLI via the shared adjudicate runner (same primitive every other
 // faculty uses); the runner is injectable so the pure prompt/parse logic is testable without it.
 import { buildRunner } from "./adjudicate.js";
-import { hasSecret } from "./recall.js";
+import { hasSecret } from "./secrets.js";
 
 /**
  * Pure: build the distillation prompt from an episode.

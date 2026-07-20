@@ -2,7 +2,10 @@
   "name": "forgekit",
   "version": "0.25.0",
   "description": "One config, every AI coding tool — cognitive substrate, MCP tools, guards, atlas, recall, and routing from one source.",
-  "author": { "name": "CodeWithJuber", "url": "https://github.com/CodeWithJuber" },
+  "author": {
+    "name": "CodeWithJuber",
+    "url": "https://github.com/CodeWithJuber"
+  },
   "homepage": "https://github.com/CodeWithJuber/forgekit#readme",
   "repository": "https://github.com/CodeWithJuber/forgekit",
   "license": "MIT",
@@ -24,6 +27,6 @@
       "Predict impact for this symbol.",
       "Route this task to the right model tier."
     ],
-    "brandColor": "#137A72"
+    "brandColor": "#f26430"
   }
 }

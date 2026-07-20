@@ -13,6 +13,13 @@ on:
     tags: ["v*"]
   workflow_dispatch: # dispatched by bump.yml with --ref vX.Y.Z; must target a tag
 
+# A tag can arrive twice for the same version — the push (tags: v*) AND bump.yml's
+# explicit `gh workflow run release.yml --ref vX.Y.Z` dispatch. Serialize per-ref so
+# the two never race a double publish; the loser queues (never cancels a mid-publish).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -56,9 +63,19 @@ jobs:
           fi
       - name: Publish to npm (with provenance)
         if: env.HAS_NPM_TOKEN == 'true'
-        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Idempotent: skip when the version is already on the registry, so re-running a
+        # wedged release (or the serialized second tag event) never dies on "cannot
+        # publish over the previously published version".
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+            echo "::notice::$PKG@$VER is already on npm — skipping publish (idempotent re-run)."
+          else
+            npm publish --provenance --access public
+          fi
       - name: Skip npm publish (NPM_TOKEN not set)
         if: env.HAS_NPM_TOKEN != 'true'
         run: |
@@ -69,4 +86,49 @@ jobs:
           TAG: ${{ github.ref_name }}
         # --generate-notes builds notes from merged PRs/commits since the previous tag,
         # so it works with lightweight OR annotated tags (unlike --notes-from-tag).
-        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+        # Idempotent: skip if the Release already exists (re-run recovery).
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::GitHub Release $TAG already exists — skipping creation."
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi
+      - name: Verify the release loop closed (fail loudly on a wedge)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        # H1 closed-loop check: a tag must produce BOTH a GitHub Release and (when
+        # publishing is enabled) an npm version. Historically release.yml could wedge
+        # after the tag landed and nothing alerted — orphan tags v0.22.2/v0.23.2/v0.24.0.
+        # This step turns that silent wedge into a red, notified job failure; re-running
+        # the workflow (steps above are idempotent) then completes whatever is missing.
+        run: |
+          fail=0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG: present."
+          else
+            echo "::error::No GitHub Release exists for $TAG after the release job."
+            fail=1
+          fi
+          if [ "$HAS_NPM_TOKEN" = "true" ]; then
+            PKG=$(node -p "require('./package.json').name")
+            VER=$(node -p "require('./package.json').version")
+            ok=0
+            for _ in 1 2 3 4 5 6; do
+              if npm view "$PKG@$VER" version >/dev/null 2>&1; then ok=1; break; fi
+              sleep 10 # let the registry reflect a just-published version
+            done
+            if [ "$ok" = "1" ]; then
+              echo "npm $PKG@$VER: present."
+            else
+              echo "::error::npm does not serve $PKG@$VER after publish (registry wedge?)."
+              fail=1
+            fi
+          else
+            echo "::warning::NPM_TOKEN not set — verified the GitHub Release only, not npm."
+          fi
+          if [ "$fail" != "0" ]; then
+            echo "::error::Release loop did NOT close for $TAG — do not treat it as shipped. Re-run this workflow to complete the missing artifact."
+            exit 1
+          fi
+          echo "Release loop verified for $TAG."

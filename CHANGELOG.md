@@ -6,6 +6,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broke a static ESM import cycle in the memory layer.** `lessons_store.js`,
+  `cortex_distill.js`, and `adjudicate.js` now import `hasSecret` directly from its
+  source of truth (`secrets.js`) instead of a re-export in `recall.js`, eliminating the
+  `recall → ledger_read → lessons_store → recall` cycle (a top-level-eval TDZ hazard).
+- **Importing the package as a library no longer executes the CLI.** The package root
+  (`exports["."] → src/cli.js`) now guards its top-level `run()` behind a main-module
+  check (symlink-resolving, so the global `forge` bin still runs), and exports `run`.
+  `package.json` `sideEffects` now names the CLI entry accurately instead of `false`.
+- **Hermetic tests.** `test/init.test.js` no longer merges hook guards into the
+  developer's real `~/.claude/settings.json`; it pins `settingsPath` under a temp dir.
+- **The unimplemented-command stub now exits non-zero**, so scripts and CI no longer
+  read a "not wired yet" command as success.
+- Replaced literal NUL bytes with `\0` escapes in the `reuse.js`/`diagnose.js`
+  content-hash separators (byte-identical runtime output; the source is now clean text).
+
+### Changed
+
+- **The release pipeline is now closed-loop.** `release.yml` gains a per-ref
+  `concurrency` group, makes npm publish and GitHub Release creation idempotent (so a
+  wedged release can simply be re-run), and adds a final verification step that FAILS the
+  job when a tag did not produce both a GitHub Release and (when publishing is enabled) an
+  npm version — the silent wedge that orphaned tags v0.22.2/v0.23.2/v0.24.0 now surfaces
+  as a red, notified failure. See `docs/RELEASING.md` for the orphan-tag note.
+- **Consolidated duplicated helpers into `src/util.js`.** One read-only, trimmed `git()`
+  replaces four byte-identical copies (session/handoff/update/docs_check); a shared
+  `readJsonSafe()` replaces the ledger store's local copy. Deliberately-divergent git
+  helpers (verify.js's arg order + `FORGE_DEBUG` logging; the un-trimmed docs-sync
+  variants) are documented rather than force-merged.
+- Removed the dead `plugin` entry from `package.json` `files`, the vestigial
+  `.gitlab-ci.yml`, and the dangling `@AGENTS.md` import in `CLAUDE.md`; fixed the
+  off-palette Codex plugin `brandColor`.
+
 ## [0.25.0] - 2026-07-20
 
 ### Changed

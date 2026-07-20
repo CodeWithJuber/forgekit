@@ -4,17 +4,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-// The merged read helper (P2 read flip). Import cycle note: ledger_read → lessons_store
-// → recall is function-level only (no module-eval use on either side), so ESM resolves
-// it safely — same pattern as lessons_store's own SECRET_RE import from here.
+// The merged read helper (P2 read flip).
 import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
-// Secret-refusal now lives in secrets.js (format grammars + entropy gate) so no
-// store — and no shell guard — can disagree; re-exported here because recall is where
-// callers historically imported it from (lessons_store, guards, tests). See secrets.js
-// for the precision rationale (never refuse a bare English mention like "password").
-import { hasSecret, SECRET_RE } from "./secrets.js";
-
-export { hasSecret, SECRET_RE };
+// Secret-refusal lives in secrets.js (format grammars + entropy gate) so no store —
+// and no shell guard — can disagree. Callers import hasSecret directly from secrets.js
+// (it is the one source of truth); recall no longer re-exports it, which previously
+// created a needless ledger_read → lessons_store → recall import cycle.
+import { hasSecret } from "./secrets.js";
 
 export function defaultStore() {
   // Mutable personal memory. FORGE_HOME override wins (tests + recall-load.sh rely on it);
