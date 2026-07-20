@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`reconcileFacts` no longer risks wiping memory under `FORGE_LEDGER_ONLY` (M2).** The
+  reconcile heuristic tombstones any author-owned fact claim with no backing file; under
+  ledger-only there are no fact files, so it would have tombstoned every fact. It is now a
+  guarded no-op when ledger-only is active (the ledger IS the store then — there is nothing
+  to reconcile against). Covered by a new no-data-loss regression test.
+
 ## [0.26.1] - 2026-07-20
 
 ### Changed

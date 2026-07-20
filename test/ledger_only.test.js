@@ -7,8 +7,8 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { recordLessonEvent, shadowFact } from "../src/ledger_bridge.js";
-import { ledgerLessons, mergedLessons } from "../src/ledger_read.js";
+import { reconcileFacts, recordLessonEvent, shadowFact } from "../src/ledger_bridge.js";
+import { ledgerFacts, ledgerLessons, mergedLessons } from "../src/ledger_read.js";
 import { newLesson } from "../src/lessons.js";
 import { lessonsDir, save } from "../src/lessons_store.js";
 import { add, list, readFact } from "../src/recall.js";
@@ -36,7 +36,12 @@ const makeLesson = (id) =>
   newLesson(
     {
       id,
-      trigger: { symbols: ["verifyToken"], files: [], keywords: [], action: "edit" },
+      trigger: {
+        symbols: ["verifyToken"],
+        files: [],
+        keywords: [],
+        action: "edit",
+      },
       scope: "symbol",
       whatWentWrong: "forgot to check expiry",
       correctedBehavior: "assert exp before trusting the token",
@@ -88,5 +93,22 @@ test("ledger-only: recall.add writes no fact file; readFact + list resolve from 
     assert.ok(f, "fact resolves from the ledger");
     assert.equal(f.text, "https://api.example.com");
     assert.ok(list(store).includes(res.slug), "merged list includes the ledger fact");
+  });
+});
+
+test("ledger-only: reconcileFacts is a no-op and never tombstones ledger facts (no data loss)", () => {
+  withEnv({ FORGE_LEDGER_ONLY: "1", FORGE_AUTHOR: "Tester <t@example.com>" }, () => {
+    const store = tmpRoot();
+    const ledgerDir = join(store, "ledger");
+    // Two facts live only in the ledger (no fact files exist under ledger-only).
+    shadowFact(ledgerDir, "API base", "https://api.example.com", 0);
+    shadowFact(ledgerDir, "DB host", "db.example.com", 0);
+    assert.equal(ledgerFacts(ledgerDir).length, 2, "two live facts before reconcile");
+    // Under the file-store model this would tombstone BOTH (no backing file); under
+    // ledger-only it must leave them untouched.
+    const r = reconcileFacts(store, ledgerDir, 1);
+    assert.equal(r.ok, true);
+    assert.equal(r.removed, 0, "reconcile removes nothing under ledger-only");
+    assert.equal(ledgerFacts(ledgerDir).length, 2, "both facts survive — no memory wiped");
   });
 });

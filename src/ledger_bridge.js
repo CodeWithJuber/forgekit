@@ -23,7 +23,7 @@ import { load as loadLessons } from "./lessons_store.js";
 // merged `list` (P2 read flip) includes ledger-only teammate facts, which have no file
 // and would read here as "deleted from the store".
 import { listStored as listFacts, readFact } from "./recall.js";
-import { epochDay, gitAuthor } from "./util.js";
+import { epochDay, gitAuthor, ledgerOnly } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
 const bestEffort = (fn) => {
@@ -97,7 +97,11 @@ export function recordLessonEvent(root, lesson, ev = {}) {
         author: gitAuthor(),
         t: ev.t ?? 0,
       });
-      if (!o.ok) return { ok: false, reason: "reason" in o ? o.reason : "invalid outcome" };
+      if (!o.ok)
+        return {
+          ok: false,
+          reason: "reason" in o ? o.reason : "invalid outcome",
+        };
       const a = appendEvidence(dir, minted.claim.id, o.outcome);
       if (!a.ok) return a;
     }
@@ -169,6 +173,10 @@ export function shadowFact(ledgerDir, name, text, t = epochDay()) {
  */
 export function reconcileFacts(store, ledgerDir, t = epochDay()) {
   return bestEffort(() => {
+    // Ledger-only: there are no fact FILES to reconcile against — the ledger IS the
+    // store, so "no backing file ⇒ tombstone" is inverted and would wipe every fact.
+    // Reconciliation only makes sense while the file store is canonical (default off).
+    if (ledgerOnly()) return { ok: true, removed: 0 };
     const current = new Set();
     for (const slug of listFacts(store)) {
       const f = readFact(store, slug);
@@ -186,7 +194,11 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
       // silently delete team knowledge on every consolidate.
       const mine = (c.provenance?.author ?? "") === gitAuthor();
       if (c.kind === "fact" && !c.tombstone && mine && !current.has(c.id)) {
-        tombstone(ledgerDir, c.id, { author: gitAuthor(), reason: "removed-from-store", t });
+        tombstone(ledgerDir, c.id, {
+          author: gitAuthor(),
+          reason: "removed-from-store",
+          t,
+        });
         removed++;
       }
     }
