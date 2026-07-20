@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **The `forge dash` write routes are now guarded against CSRF and DNS-rebinding.** The two
+  human-driven writes (`POST /api/ratify`, `POST /api/retract`) on the unauthenticated
+  localhost dashboard now refuse (`403`) any request whose `Host` header isn't the loopback
+  interface (a domain rebound to 127.0.0.1) or whose browser `Origin` isn't the loopback
+  origin (a cross-site POST). Native clients that send no `Origin` still work; a deliberate
+  non-loopback `--host` bind opts out. Covered by new regression tests.
+
 ## [0.27.0] - 2026-07-20
 
 ### Changed
