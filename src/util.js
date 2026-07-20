@@ -13,6 +13,13 @@ export const slug = (s) =>
 
 export const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
+// Normalize a path to POSIX separators. Node's path.relative()/join() emit `\` on Windows,
+// but the graph/atlas/scope layers use repo-relative paths as MAP KEYS, NODE IDS, and values
+// compared against `/`-joined strings (in code and tests). Backslash keys silently miss those
+// lookups on Windows. Canonicalizing to `/` makes every comparison portable; it's a no-op on
+// POSIX (no `\` in the path) and safe on Windows (fs/join accept `/`).
+export const toPosix = (p) => String(p).replaceAll("\\", "/");
+
 export const MS_PER_DAY = 86400000;
 export const epochDay = () => Math.floor(Date.now() / MS_PER_DAY);
 
@@ -46,7 +53,9 @@ export function gitAuthor() {
   if (cachedAuthor !== undefined) return cachedAuthor;
   try {
     const get = (k) =>
-      execFileSync("git", ["config", "--get", k], { stdio: ["ignore", "pipe", "ignore"] })
+      execFileSync("git", ["config", "--get", k], {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
         .toString()
         .trim();
     const name = get("user.name");

@@ -18,6 +18,7 @@ import { autoDetectProvider } from "./providers.js";
 import { validateProfile, writeForgeConfig } from "./repo_config.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
+import { toPosix } from "./util.js";
 
 /** Without the union merge driver, two teammates appending to the same ledger log get
  *  a git conflict — the exact thing the ledger's design promises can't happen
@@ -65,7 +66,11 @@ const FORGE_OWNED_KEY = "_forgeOwned";
 // tell a Forge-owned command (some spelling of a path under here, or the plugin root) apart
 // from a user's OWN hook that merely shares a basename+args — those must never collide for
 // ownership/removal purposes (HI-05).
-const FORGE_GLOBAL = join(BRAND.root, "global");
+// POSIX form on purpose: hook paths written into settings.json are consumed by `bash`
+// (Git Bash on Windows), where backslashes are escape characters — a native `C:\…` path
+// would corrupt the command. Every resolved path below is forward-slash, and ownership
+// matching normalizes to the same form, so comparisons hold on every OS.
+const FORGE_GLOBAL = toPosix(join(BRAND.root, "global"));
 
 /** True iff `hook` is a Forge-managed hook/statusline entry — i.e. it resolves to a path
  *  under the installed assets root (`~/.forge/…`, the resolved `<root>/global/…`, quoted or
@@ -98,13 +103,17 @@ export function shellQuote(path) {
  *  with no quoting. A legacy shell-string `command` (should no longer appear in the template,
  *  but handled defensively) keeps the single-quoting a real shell would still need. */
 function resolveManagedPaths(template) {
-  const base = join(BRAND.root, "global");
+  // POSIX base: settings.json hook paths must be forward-slash (bash on Windows treats
+  // `\` as an escape). toPosix is a no-op on Linux/macOS.
+  const base = toPosix(join(BRAND.root, "global"));
   const fixStr = (cmd) =>
     typeof cmd === "string"
-      ? cmd.replace(/~\/\.forge\/(\S+)/g, (_, rest) => shellQuote(join(base, rest)))
+      ? cmd.replace(/~\/\.forge\/(\S+)/g, (_, rest) => shellQuote(toPosix(join(base, rest))))
       : cmd;
   const fixArg = (a) =>
-    typeof a === "string" ? a.replace(/^~\/\.forge\/(.+)$/, (_, rest) => join(base, rest)) : a;
+    typeof a === "string"
+      ? a.replace(/^~\/\.forge\/(.+)$/, (_, rest) => toPosix(join(base, rest)))
+      : a;
   const fixEntry = (h) => {
     if (h && Array.isArray(h.args)) h.args = h.args.map(fixArg);
     else if (h && typeof h.command === "string") h.command = fixStr(h.command);
@@ -124,10 +133,15 @@ function resolveManagedPaths(template) {
  *  Also normalizes the legacy `~/.forge/` prefix to the resolved install base so
  *  entries merged by very old installs still match. */
 function normalizeCommand(command) {
-  return String(command ?? "")
-    .replaceAll("'\\''", "'")
-    .replace(/["']/g, "")
-    .replaceAll("~/.forge/", `${join(BRAND.root, "global")}/`);
+  return (
+    String(command ?? "")
+      .replaceAll("'\\''", "'")
+      .replace(/["']/g, "")
+      .replaceAll("~/.forge/", `${toPosix(join(BRAND.root, "global"))}/`)
+      // Normalize path separators AFTER quote-stripping (so escape backslashes are already
+      // gone): a legacy install written with native `\` paths matches the posix template.
+      .replaceAll("\\", "/")
+  );
 }
 
 /** Reduce ANY hook/statusLine entry to one comparable command string, quote-normalized and

@@ -18,6 +18,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now reports the landing page's spacing values 100% on-grid (previously 96% on an
   inconsistent 2px base).
 
+## [0.23.2] - 2026-07-20
+
+### Fixed
+
+- **Windows path portability (Git Bash CI).** Several subsystems compared or emitted paths
+  with the OS-native separator or as raw filesystem paths, which broke on Windows where
+  `path.relative`/`join` yield `\` and drive letters look like URL schemes:
+  - `atlas` and `scope` now normalize every repo-relative path to POSIX (`/`) before using
+    it as a graph node id, cache key, or comparison target, so impact/decompose/graph
+    results match on Windows (a no-op on Linux/macOS). A shared `toPosix` helper lives in
+    `src/util.js`.
+  - `uicheck` visual target resolution no longer mistakes a Windows drive-letter path
+    (`C:\…`) for an unsupported URL scheme, so local files render and the playwright-absent
+    path still degrades to a clean skip.
+  - `init` writes hook/statusline commands into `settings.json` in POSIX form. `bash`
+    (Git Bash) treats `\` as an escape, so a native Windows path would corrupt the command;
+    ownership/dedup matching normalizes separators too, keeping merges idempotent.
+  - The `secret-redact` guard imports `src/secrets.js` via a `file://` URL instead of a raw
+    path, so the Node redactor no longer degrades to a silent no-op on Windows.
+  - `imagine`'s sandboxed dry-run attributes per-file pass/fail by comparing paths in POSIX
+    form, and `build-pages` tolerates CRLF when parsing the changelog for the status page.
+
 ## [0.23.1] - 2026-07-19
 
 ### Fixed
@@ -1364,7 +1386,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.23.2...HEAD
+[0.23.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.22.0...v0.22.1

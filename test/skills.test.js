@@ -8,10 +8,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
 
 function frontmatter(md) {
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
+  // \r?\n throughout: a Windows checkout (autocrlf) delivers `---\r\n…`, which a bare `\n`
+  // anchor won't match — the parser would return null and every frontmatter assertion fail.
+  const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return null;
   const fm = {};
-  for (const line of m[1].split("\n")) {
+  for (const line of m[1].split(/\r?\n/)) {
     const kv = line.match(/^(\w+):\s*(.*)$/);
     if (kv) fm[kv[1]] = kv[2];
   }

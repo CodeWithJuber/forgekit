@@ -8,13 +8,13 @@
 // TAP summary, and always discards the sandbox. Selection stays useful on its own as
 // "run these, in this order"; dryRun turns the prediction into measured evidence.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
 import { isTestFile, predictFailingTests } from "./substrate.js";
-import { hasBin } from "./util.js";
+import { hasBin, toPosix } from "./util.js";
 
 /**
  * Weighted greedy set cover over the covers(test, source) relation: candidates are
@@ -110,9 +110,16 @@ const locFile = (line) => {
 export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
   if (!Array.isArray(tests) || tests.length === 0)
     return { ok: false, reason: "no tests selected — nothing to dry-run" };
-  if (!hasBin("git")) return { ok: false, reason: "git not found — the sandbox is a git worktree" };
+  if (!hasBin("git"))
+    return {
+      ok: false,
+      reason: "git not found — the sandbox is a git worktree",
+    };
   try {
-    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: root,
+      stdio: "ignore",
+    });
   } catch {
     return { ok: false, reason: `not a git repository: ${root}` };
   }
@@ -134,12 +141,6 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
       const msg = /** @type {{stderr?: Buffer}} */ (e).stderr?.toString().trim() || String(e);
       return { ok: false, reason: `git worktree add failed: ${msg}` };
     }
-    // node --test reports each failure's `location:` as a canonical (realpath'd) path.
-    // On platforms where tmpdir() itself is a symlink (macOS: /var → /private/var), the
-    // raw `wt` path won't string-match those locations, so per-file attribution below
-    // must compare against the canonicalized worktree root. On Linux (no symlink) this
-    // is a no-op.
-    const wtReal = realpathSync(wt);
     // Runner policy: always `node --test <files...>` — a custom package test script
     // (jest, vitest, …) is a WHOLE-SUITE command that can't be scoped per-file safely,
     // which would defeat minimal selection. We still run node --test and say so, so a
@@ -195,21 +196,42 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     }
     // perFile is best-effort: node ≥20 TAP flattens per-TEST (no per-file points), but
     // every failure block carries a `location: '<abs path>:l:c'` diagnostic — map those
-    // back to the requested files; anything never implicated passed. Omitted when a
-    // failure can't be attributed (partial attribution would misassign blame).
+    // back to the requested files; anything never implicated passed.
     /** @type {Record<string, "pass"|"fail">} */
     const perFile = Object.fromEntries(tests.map((t) => [String(t), "pass"]));
-    let attributable = true;
+    // Precompute POSIX + basename forms of each requested test so the match survives every
+    // OS's location format: TAP's `location:` uses `\` on Windows and canonicalizes its root
+    // differently per-OS (macOS /var→/private/var; Windows drive-letter case / 8.3 short
+    // names), so an absolute-path compare is fragile. Match by POSIX suffix, then basename.
+    const wanted = tests.map((c) => {
+      const posix = toPosix(String(c));
+      return { orig: String(c), posix, base: posix.split("/").pop() };
+    });
+    let failMarks = 0;
+    // Split on CRLF *or* LF: Windows `node --test` emits `\r\n`, and a stray `\r` left on the
+    // `location:` line used to break the parse and drop the whole map to undefined.
     for (const block of (run.stdout ?? "").split(/^not ok /m).slice(1)) {
-      const file = block.split("\n").map(locFile).find(Boolean);
-      const t = file && tests.find((c) => file === join(wtReal, String(c)));
-      if (t) perFile[String(t)] = "fail";
-      else attributable = false;
+      const file = block.split(/\r?\n/).map(locFile).find(Boolean);
+      if (!file) continue; // a location-less block (summary/parent) implicates no file — skip
+      const f = toPosix(file);
+      const hit = wanted.find(
+        (w) => f === w.posix || f.endsWith(`/${w.posix}`) || f.endsWith(`/${w.base}`),
+      );
+      if (hit) {
+        perFile[hit.orig] = "fail";
+        failMarks++;
+      }
     }
+    // We ran `node --test` on EXACTLY these files, so every real failure lives in one of
+    // them; a block that matches none is TAP noise, safely skipped above. Trust the map when
+    // it accounts for the run's failures, and abstain only if the suite reported failures we
+    // could pin to no file at all — there, partial blame would mislead more than no blame.
+    const failed = Number(mFail[1]);
+    const attributable = failed === 0 || failMarks > 0;
     return {
       ok: true,
       passed: Number(mPass[1]),
-      failed: Number(mFail[1]),
+      failed,
       ...(attributable ? { perFile } : {}),
       durationMs,
       runner,
@@ -221,16 +243,26 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     result = body();
   } finally {
     // ALWAYS discard the sandbox — a leaked worktree pins refs and litters
-    // `git worktree list` forever. remove --force, prune the bookkeeping, then
-    // belt-and-braces rm of the parent; the verdict below verifies, never assumes.
+    // `git worktree list` forever. Order matters on Windows: `git worktree remove`
+    // can fail there when a just-exited `node --test` worker still holds a handle, so
+    // we then rm the directory ourselves and prune LAST — pruning only reconciles
+    // git's bookkeeping against the on-disk state, so it must run AFTER the directory
+    // is gone or it re-registers the still-present worktree and `git worktree list`
+    // reports a phantom entry. The verdict below verifies removal, never assumes it.
     try {
-      execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: root, stdio: "ignore" });
-    } catch {}
-    try {
-      execFileSync("git", ["worktree", "prune"], { cwd: root, stdio: "ignore" });
+      execFileSync("git", ["worktree", "remove", "--force", wt], {
+        cwd: root,
+        stdio: "ignore",
+      });
     } catch {}
     try {
       rmSync(parent, { recursive: true, force: true });
+    } catch {}
+    try {
+      execFileSync("git", ["worktree", "prune"], {
+        cwd: root,
+        stdio: "ignore",
+      });
     } catch {}
   }
   result.worktree = existsSync(wt) ? "leaked" : "removed";

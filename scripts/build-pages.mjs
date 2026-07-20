@@ -57,7 +57,10 @@ function latestChanges() {
   // continuation lines so the status page shows the whole item, not a truncated fragment.
   const items = [];
   let cur = null;
-  for (const line of section.split("\n")) {
+  // Split on \r?\n: a Windows checkout (autocrlf) leaves a trailing \r that a `.`-based
+  // `/^- (.*)$/` won't cross (JS `.` and `$` treat \r as a line terminator), which silently
+  // emptied the changes list. Tolerating CRLF here keeps the parse identical on both OSes.
+  for (const line of section.split(/\r?\n/)) {
     const m = /^- (.*)$/.exec(line);
     if (m) {
       if (cur !== null) items.push(cur);

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { CALL_RE } from "./extract.js";
-import { contentHash, IGNORE_DIRS } from "./util.js";
+import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 
 const JS_RULES = [
   {
@@ -297,7 +297,9 @@ function extractConfig(rel, text) {
 function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
-  const rel = relative(root, path);
+  // POSIX-normalize: node/config/module ids and `file` fields are compared to `/`-joined
+  // paths everywhere (impact(), docs, tests). Windows `\` would break every such lookup.
+  const rel = toPosix(relative(root, path));
   let text = preRead;
   if (text == null) {
     try {
@@ -494,7 +496,7 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
   const rawEdges = [];
   const fileHashes = {};
   for (const f of files) {
-    const rel = relative(root, f);
+    const rel = toPosix(relative(root, f));
     let text;
     try {
       text = readFileSync(f, "utf8");
@@ -552,7 +554,7 @@ export function isStale(root, atlas) {
     const current = [];
     walk(root, current, 20000);
     if (current.length !== indexed.size) return true; // a file was added or removed
-    for (const p of current) if (!indexed.has(relative(root, p))) return true;
+    for (const p of current) if (!indexed.has(toPosix(relative(root, p)))) return true;
   }
   return false;
 }
