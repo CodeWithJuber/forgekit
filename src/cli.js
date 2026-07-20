@@ -472,6 +472,22 @@ async function run(argv) {
       if (r.error || (argv.includes("--strict") && r.stale.length)) process.exitCode = 1;
       return;
     }
+    // `impact` — reusable documentation-impact graph: which documented surfaces
+    // reference the entities THIS diff changed (advisory; --strict exits 1).
+    if (sub === "impact") {
+      const { docsImpact, renderDocsImpact } = await import("./docs_impact.js");
+      const { newestBaseline } = await import("./docs_sync.js");
+      const staged = argv.includes("--staged");
+      const sinceIdx = argv.indexOf("--since");
+      const base = sinceIdx >= 0 ? argv[sinceIdx + 1] : newestBaseline(process.cwd()) || undefined;
+      const mcIdx = argv.indexOf("--min-confidence");
+      const minConfidence = mcIdx >= 0 ? Number(argv[mcIdx + 1]) : 0;
+      const r = docsImpact(process.cwd(), { base, staged, minConfidence });
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else console.log(renderDocsImpact(r));
+      if (argv.includes("--strict") && r.impacted.length) process.exitCode = 1;
+      return;
+    }
     // `check` — self-check of the forge package's own docs against its code (commands
     // table, env reads, MCP registry, CHANGELOG).
     const { docsCheck } = await import("./docs_check.js");
@@ -489,6 +505,16 @@ async function run(argv) {
       console.log(`\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`);
       process.exitCode = 1;
     }
+    // Advisory: if the working tree changed a documented entity, point at the impacted
+    // prose. Never fails the check (fail-open); best-effort, so a git-less tree is silent.
+    try {
+      const { docsImpact } = await import("./docs_impact.js");
+      const imp = docsImpact(process.cwd());
+      if (imp.impacted.length)
+        console.log(
+          `\n  ! ${imp.summary.impactedFiles} doc file(s) may be stale from this diff — run \`${BRAND.cli} docs impact\` to review`,
+        );
+    } catch {}
     return;
   }
   if (cmd === "integrations") {

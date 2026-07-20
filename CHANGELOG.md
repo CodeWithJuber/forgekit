@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge docs impact` — a reusable documentation-impact graph.** Where `docs check`
+  reconciles a fixed list of registries and `docs sync` scans a diff for raw identifiers,
+  `docs impact` answers the general question the project kept forgetting: _"I changed X —
+  which documented surfaces mention X and are now potentially stale?"_ It works in three
+  data-driven stages: (1) a pluggable extractor registry derives the **typed** entities
+  the project documents (command names, CLI flags, `FORGE_*` env vars, MCP tool names,
+  exported symbols, brand tokens, the version, `package.json` fields) from their canonical
+  sources — reusing `docs_check`'s `envVarsRead`/`srcFiles` and the `COMMANDS`/`TOOLS`
+  registries; (2) a word-boundary- and code-fence-aware scan of every doc surface (all
+  tracked `*.md`, `CITATION.cff`, the plugin manifests, the landing page, `package.json`)
+  builds an inverted index entity → `file:line`; (3) an impact query maps the entities a
+  git diff changed to every doc location that references them, ranked by confidence.
+  Advisory by default (`--strict` exits non-zero for CI); `--since <ref>`, `--staged`,
+  `--min-confidence <n>`, and `--json` flags; `docs check` prints a one-line advisory
+  pointing here when the working tree touched a documented entity. New `src/docs_impact.js`.
+
 ## [0.23.2] - 2026-07-20
 
 ### Fixed

@@ -109,7 +109,35 @@ export const COMMANDS = {
   dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
   report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",
-  docs: "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep)",
+  docs: {
+    summary:
+      "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed)",
+    usage: "forge docs [check | sync | impact] [--since <ref> | --staged] [--strict] [--json]",
+    flags: [
+      {
+        flag: "--since <ref>",
+        desc: "impact: diff against this git ref (default: session baseline, then HEAD)",
+      },
+      {
+        flag: "--staged",
+        desc: "impact/sync: diff the staged index instead of the working tree",
+      },
+      {
+        flag: "--min-confidence <n>",
+        desc: "impact: drop reference hits below this confidence (0..1)",
+      },
+      {
+        flag: "--strict",
+        desc: "exit non-zero when stale/impacted docs are found (for CI; advisory otherwise)",
+      },
+    ],
+    examples: [
+      "forge docs check",
+      "forge docs sync",
+      "forge docs impact",
+      "forge docs impact --since main",
+    ],
+  },
   integrations:
     "opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it",
 };
