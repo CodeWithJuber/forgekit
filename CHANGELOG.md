@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Mintlify docs site is now English-only.** The five hand-maintained translated
+  locale trees (`ar`, `hi`, `cn`, `zh-CN`, `zh-Hans`) were removed — keeping parallel prose
+  in sync by hand was the main source of documentation drift. `mintlify/docs.json` now
+  declares a single `en` language. To bring translations back, enable Mintlify's built-in
+  AI auto-localization instead of hand-maintaining parallel `.mdx` trees; the setup steps
+  are documented in `mintlify/README.md`. The English-scoped `checkMintlify` drift guard is
+  unaffected.
+
 ## [0.27.2] - 2026-07-21
 
 ### Changed
