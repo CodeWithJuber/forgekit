@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <!-- Khatam-F mark: 1px ink khatam star (two overlapped squares, 45deg) framing a
+       Fraunces-500 "F" in ink; 2px vermilion square node at the star's top vertex. -->
   <g stroke="#171512" stroke-width="1.5" stroke-linejoin="miter">
     <rect x="12.91" y="12.91" width="38.18" height="38.18"/>
     <path d="M59 32 L32 5 L5 32 L32 59 Z"/>
