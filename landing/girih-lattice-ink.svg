@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <g id="s">
+      <rect x="-14.14" y="-14.14" width="28.28" height="28.28"/>
+      <path d="M20 0 L0 -20 L-20 0 L0 20 Z"/>
+    </g>
+  </defs>
+  <g stroke="#F5F2EA" stroke-width="1" stroke-linejoin="miter">
+    <use href="#s" x="0" y="0"/>
+    <use href="#s" x="96" y="0"/>
+    <use href="#s" x="0" y="96"/>
+    <use href="#s" x="96" y="96"/>
+    <use href="#s" x="48" y="48"/>
+    <path d="M14.14 14.14 L33.86 33.86 M81.86 14.14 L62.14 33.86 M81.86 81.86 L62.14 62.14 M14.14 81.86 L33.86 62.14"/>
+    <path d="M20 0 L76 0 M20 96 L76 96 M0 20 L0 76 M96 20 L96 76"/>
+    <path d="M48 0 L48 28 M48 68 L48 96 M0 48 L28 48 M68 48 L96 48"/>
+  </g>
+</svg>
