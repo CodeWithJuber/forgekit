@@ -980,6 +980,10 @@ cache), Trends (per-stage metrics history as inline-SVG sparklines), Memory brow
 (ranked recall search over the ledger with confidence + freshness bars), and Session
 timeline (durable mint/tombstone events across sessions). The page live-refreshes every 5s,
 paused while the tab is hidden. Every claim row shows its `forge ledger blame` command.
+The only two writes are the human-driven `POST /api/ratify` and `POST /api/retract`; both
+are guarded against CSRF and DNS-rebinding — a request whose `Host` isn't the loopback
+interface, or whose browser `Origin` isn't the loopback origin, is refused with `403` (a
+non-loopback `--host` bind is the documented opt-out).
 
 ```console
 $ forge dash

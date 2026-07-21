@@ -463,6 +463,34 @@ async function handleWrite(root, pathname, req, res) {
 
 const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract"]);
 
+// CSRF + DNS-rebinding guard for the two write routes. The dashboard is a localhost
+// convenience server with no auth, so an unguarded POST is reachable by (a) any web page
+// the user visits (a cross-site form/fetch — the browser attaches an Origin), and (b) a
+// DNS-rebinding attack (an attacker domain rebinds to 127.0.0.1 — the request then carries
+// the ATTACKER's Host, not the loopback one). We refuse a write unless the Host names the
+// loopback interface AND any browser Origin is that same loopback origin; native clients
+// (curl, the CLI) send no Origin and pass. Skipped entirely for an explicit non-loopback
+// bind — passing a public host is the documented "on your own head" opt-out.
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+const normHost = (h) =>
+  String(h ?? "")
+    .replace(/:\d+$/, "")
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
+function writeAllowed(req, boundHost) {
+  if (!LOOPBACK_HOSTS.has(boundHost)) return true; // non-loopback bind: explicit opt-out
+  if (!LOOPBACK_HOSTS.has(normHost(req.headers.host))) return false; // DNS-rebinding
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      if (!LOOPBACK_HOSTS.has(new URL(origin).hostname.toLowerCase())) return false; // CSRF
+    } catch {
+      return false; // a malformed Origin is never trusted
+    }
+  }
+  return true;
+}
+
 /**
  * The dashboard server: GET / → the page, GET /api/data → dashData, GET
  * /api/history → metrics trends, GET /api/claims?q=&kind= → memory browser, GET
@@ -479,6 +507,12 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (req.method === "POST" && WRITE_ROUTES.has(url.pathname)) {
+      if (!writeAllowed(req, host)) {
+        sendJson(res, 403, {
+          error: "write refused: cross-origin or non-loopback request (CSRF/DNS-rebinding guard)",
+        });
+        return;
+      }
       handleWrite(root, url.pathname, req, res).catch(() =>
         sendJson(res, 400, { error: "bad request body" }),
       );

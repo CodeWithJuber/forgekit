@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { test } from "node:test";
@@ -251,6 +252,35 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
     assert.equal((await post("/api/retract", { id: "x" })).status, 400, "1-char prefix refused");
     assert.equal((await post("/api/ratify", { id: "zz" })).status, 404, "unknown prefix");
     assert.equal((await post("/api/retract", { id: "zz", reason: "r" })).status, 404);
+
+    // CSRF/DNS-rebinding guard: a cross-site browser Origin, or a foreign Host header
+    // (a domain rebound to 127.0.0.1), is refused with 403 before any write is attempted.
+    const evilOrigin = await fetch(`${base}/api/ratify`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://evil.example",
+      },
+      body: JSON.stringify({ id: trusted.id.slice(0, 8) }),
+    });
+    assert.equal(evilOrigin.status, 403, "cross-origin POST refused");
+    // fetch forbids overriding Host, so use the low-level client to forge it (a domain
+    // rebound to 127.0.0.1 carries its own Host, which the guard must reject).
+    const evilHostStatus = await new Promise((resolve) => {
+      const r = request(
+        {
+          host: "127.0.0.1",
+          port: addr.port,
+          path: "/api/ratify",
+          method: "POST",
+          headers: { "content-type": "application/json", host: "evil.example" },
+        },
+        (res) => resolve(res.statusCode),
+      );
+      r.on("error", () => resolve(-1));
+      r.end(JSON.stringify({ id: trusted.id.slice(0, 8) }));
+    });
+    assert.equal(evilHostStatus, 403, "foreign Host (DNS-rebinding) refused");
   } finally {
     delete process.env.FORGE_AUTHOR;
     server.close();
