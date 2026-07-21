@@ -54,3 +54,24 @@ handles deploys. The only CI added is an advisory broken-link check
   file paths relative to this folder, without the `.mdx` extension.
 - Keep content grounded in the real repo docs — Forge has a "no mock data / metrics must
   be real" ethos. Do not add invented features or benchmark numbers.
+
+## Localization
+
+The site is **English-only**. It previously carried five hand-maintained translations
+(`ar`, `hi`, `cn`, `zh-CN`, `zh-Hans`); those trees were removed because keeping parallel
+prose in sync by hand was the main source of documentation drift — every English fix had
+to be re-applied five times, and any miss left the site lagging the code.
+
+If translations are wanted again, add them the automated way instead of hand-maintaining
+parallel `.mdx` trees:
+
+- **Mintlify auto-localization** — write English once, list the locale codes under
+  `navigation.languages` in `docs.json`, and enable AI translation for the deployment in
+  the Mintlify dashboard. Mintlify generates and refreshes the translated pages; there are
+  no per-locale files to maintain in this repo.
+- **Code→docs Workflow** — configure a Mintlify
+  [Workflow](https://www.mintlify.com/docs/automations) (dashboard → Automations) so the
+  site updates from the source repo automatically, rather than drifting until
+  `forge docs check` catches it. The repo-side guard (`checkMintlify` in
+  `src/docs_check.js`) stays as a backstop and is scoped to the English pages, so it keeps
+  working regardless of how many display languages are enabled.
