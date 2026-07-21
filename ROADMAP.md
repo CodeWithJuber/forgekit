@@ -60,12 +60,14 @@ confidence only from independent oracles, and merges across teammates conflict-f
 
 ## Next
 
-- **Legacy store retirement** — the read-path flip has shipped: every read surface
-  (cortex injection/status, the substrate advisory, routing, `recall list`, brain's
-  AGENTS.md index) is now a merged view (legacy ∪ ledger) via `src/ledger_read.js`,
-  so teammate knowledge from `forge ledger merge` reaches injection. The legacy
-  formats (`lessons/*.md`, recall/brain fact files) are still written as the canonical
-  local state; the remaining step is retiring them so the ledger is the only store.
+- **Legacy store retirement** — mostly shipped. The read-path flip (every read surface —
+  cortex injection/status, the substrate advisory, routing, `recall list`, brain's
+  AGENTS.md index — is a merged view (legacy ∪ ledger) via `src/ledger_read.js`) landed
+  first, and the **write default has now flipped too**: `FORGE_LEDGER_ONLY` defaults on, so
+  the legacy formats (`lessons/*.md`, recall/brain fact files) are no longer written and the
+  ledger is the sole store. `FORGE_LEDGER_ONLY=0` is a one-release escape hatch that restores
+  the file store. The only remaining step is deleting the now-dormant legacy write/read code
+  once that escape hatch is removed in a later release.
 - **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
   Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
   guided, low-configuration auto-detect contract.

@@ -1,6 +1,6 @@
 ---
 title: "Quality 命令"
-description: "验证与安全：verify、scan、spec、taste、uicheck 和 harden —— 外加 v0.19+ 的 precommit 和 radar 门。"
+description: "验证与安全：verify、scan、spec、taste、uicheck 和 harden。"
 ---
 
 Quality 分组是验证和安全面。它们如何组合，见
@@ -12,7 +12,7 @@ Quality 分组是验证和安全面。它们如何组合，见
 
 ```bash
 forge verify
-forge verify --deep       # multi-lens consensus (v0.19+)
+forge verify --deep       # multi-lens consensus
 ```
 
 `forge verify --deep` 汇报的是一个四态的 `status`，而不是简单的 pass/fail：
@@ -76,7 +76,7 @@ forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
 forge harden
 ```
 
-## `forge precommit` <sub>v0.19+</sub>
+## `forge precommit`
 
 提交级门 —— 在提交时跑一遍验证底线，让部分完成或未验证的
 工作在落地之前就被拦住。
@@ -85,7 +85,7 @@ forge harden
 forge precommit
 ```
 
-## `forge radar` <sub>v0.19+</sub>
+## `forge radar`
 
 依赖新鲜度环 —— 按项目依赖的新鲜程度分组，让陈旧或漂移中的依赖
 在咬人之前先浮出水面。

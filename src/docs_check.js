@@ -501,6 +501,55 @@ function checkCrosswalk(root, issues) {
 }
 
 /**
+ * Mintlify site (`mintlify/`) reconcile — the site is hand-maintained MDX OUTSIDE the
+ * reconciled Markdown docs, so it drifted unchecked (env vars, command surface). This
+ * closes the loop for the ENGLISH/default locale: (a) every real command must be
+ * documented on the site as `forge <name>`, and (b) every env var the site NAMES must be
+ * one the code actually reads (no phantom vars). It is deliberately NOT a full env-parity
+ * check — the site is a curated quickstart; the exhaustive env surface is GUIDE's job
+ * (checkEnvVars already reconciles it). No-ops when `mintlify/` is absent; translated
+ * locales aren't scanned (identifiers are literal, so English coverage is the real guard).
+ */
+function checkMintlify(root, issues) {
+  const base = join(root, "mintlify");
+  if (!existsSync(base)) return;
+  const dirs = ["", "cli", "concepts", "guides", "changelog"];
+  let text = "";
+  for (const d of dirs) {
+    const dir = d ? join(base, d) : base;
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".mdx") && !f.endsWith(".md")) continue;
+      try {
+        text += `${readFileSync(join(dir, f), "utf8")}\n`;
+      } catch {}
+    }
+  }
+  if (!text) return;
+  for (const name of Object.keys(COMMANDS)) {
+    if (HIDDEN_COMMANDS.includes(name)) continue;
+    if (!new RegExp(`\\b${BRAND.cli} ${name}\\b`).test(text)) {
+      issues.push({
+        check: "mintlify",
+        severity: "error",
+        detail: `\`${BRAND.cli} ${name}\` is implemented but the Mintlify site (mintlify/) never documents it`,
+      });
+    }
+  }
+  const read = envVarsRead(root);
+  const named = new Set();
+  for (const m of text.matchAll(ENV_PREFIX_RE)) named.add(m[1]);
+  for (const v of named) {
+    if (INTERNAL_ENV.has(v) || read.has(v)) continue;
+    issues.push({
+      check: "mintlify",
+      severity: "error",
+      detail: `the Mintlify site names ${v} but nothing in src reads it (phantom var)`,
+    });
+  }
+}
+
+/**
  * Run every reconciler against the forge package tree.
  * @param {{root?: string}} [opts]
  * @returns {{ok: boolean, issues: {check:string, severity:string, detail:string}[], checked: string[]}}
@@ -518,6 +567,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
   checkLinks(root, issues);
   checkRoadmap(root, issues);
   checkCrosswalk(root, issues);
+  checkMintlify(root, issues);
   return {
     ok: !issues.some((i) => i.severity === "error"),
     issues,
@@ -532,6 +582,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
       "links",
       "roadmap",
       "crosswalk",
+      "mintlify",
     ],
   };
 }

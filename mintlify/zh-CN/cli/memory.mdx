@@ -54,7 +54,7 @@ forge ledger query "<text>"        # retrieve by relevance
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
-forge ledger import                # bridge legacy stores into the ledger
+forge ledger import                # back-fill pre-ledger history into the ledger
 ```
 
 加 `--personal` 使用每用户级别的账本。
@@ -86,7 +86,7 @@ forge decide "<decision> — <reason>"
 forge decide                 # read the log before re-deciding
 ```
 
-## `forge know` <sub>v0.19+</sub>
+## `forge know`
 
 把一条事实路由到它正确的存储归宿 —— 决定一段知识属于 `recall`、`remember`/`brain`、一个决策还是一条 cortex 经验,并把它落在那里。
 
@@ -94,7 +94,7 @@ forge decide                 # read the log before re-deciding
 forge know "<fact>"
 ```
 
-## `forge deja` <sub>v0.19+</sub>
+## `forge deja`
 
 类似过往工作查找 —— 从账本中找出与你即将做的事类似的既有工作,让你复用证据而不是重新生成。
 

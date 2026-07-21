@@ -31,10 +31,13 @@ forge cost --stages        # measured per-stage cost factors
 
 ## `forge dash`
 
-Local dashboard over the ledger, metrics, and blast radius.
+Local dashboard over the ledger, metrics, and blast radius. Read-mostly: the only writes
+are the two human-driven actions `POST /api/ratify` and `POST /api/retract`, which are
+guarded against CSRF and DNS-rebinding — a request must come from the loopback `Host` (and,
+for a browser, a loopback `Origin`) or it is refused with `403`.
 
 ```bash
-forge dash                 # localhost-only, read-only (default port 4242)
+forge dash                 # localhost-only (default port 4242)
 ```
 
 ## `forge brand`
@@ -72,7 +75,7 @@ Reads `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`,
 frameworks, package managers, and the repo's **actual** test commands — which feed the
 substrate's verification checklist.
 
-## `forge report` <sub>v0.19+</sub>
+## `forge report`
 
 Generate a static HTML report of the repo's Forge state — the ledger, metrics, and blast
 radius rendered to a self-contained file you can share or archive.
@@ -81,7 +84,7 @@ radius rendered to a self-contained file you can share or archive.
 forge report
 ```
 
-## `forge tools` <sub>v0.19+</sub>
+## `forge tools`
 
 Select this repo's primary AI coding tool and wire the matching `.gitignore` entries, so
 generated config and `.forge/` artifacts are ignored correctly for your setup.

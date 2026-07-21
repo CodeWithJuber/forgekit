@@ -91,7 +91,7 @@ forge docs sync      # diff-driven stale-docs sweep
 ```bash
 forge update              # apply the update (git checkout or npm/copy install)
 forge update --check      # report whether a newer version is available
-forge update --to <version>   # pin or downgrade to a specific version (v0.19+)
+forge update --to <version>   # pin or downgrade to a specific version
 ```
 
 每条路径都失败开放 —— 离线、没有上游或 detached HEAD 会返回 "unknown",从不作为错误。`FORGE_NO_UPDATE_CHECK=1` 可静默 doctor 的提示。

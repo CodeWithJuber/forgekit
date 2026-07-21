@@ -56,7 +56,7 @@ forge ledger query "<text>"        # retrieve by relevance
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
-forge ledger import                # bridge legacy stores into the ledger
+forge ledger import                # back-fill pre-ledger history into the ledger
 ```
 
 أضف `--personal` للحصول على سجل خاص بالمستخدم.
@@ -88,7 +88,7 @@ forge decide "<decision> — <reason>"
 forge decide                 # read the log before re-deciding
 ```
 
-## `forge know` <sub>v0.19+</sub>
+## `forge know`
 
 توجيه حقيقة إلى موطن تخزينها الصحيح — يقرر ما إذا كانت المعرفة تنتمي إلى
 `recall`، أو `remember`/`brain`، أو قرار، أو درس cortex، ويودعها هناك.
@@ -97,7 +97,7 @@ forge decide                 # read the log before re-deciding
 forge know "<fact>"
 ```
 
-## `forge deja` <sub>v0.19+</sub>
+## `forge deja`
 
 بحث عن أعمال سابقة مماثلة — يُظهر الأعمال السابقة في السجل التي تشبه ما توشك على
 عمله، لتعيد استخدام الإثبات بدلًا من التوليد من جديد.

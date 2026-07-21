@@ -96,7 +96,7 @@ forge docs sync      # diff 驱动的过期文档清扫
 ```bash
 forge update              # 应用更新(git checkout 或 npm/copy 安装)
 forge update --check      # 报告是否有更新可用
-forge update --to <version>   # 锁定或回退到特定版本(v0.19+)
+forge update --to <version>   # 锁定或回退到特定版本
 ```
 
 所有路径都是 fail-open——离线、无上游或 detached HEAD 都会返回 “unknown”,绝不会报错。`FORGE_NO_UPDATE_CHECK=1` 可以让 doctor 的提示保持静默。

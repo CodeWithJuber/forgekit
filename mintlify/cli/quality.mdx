@@ -1,6 +1,6 @@
 ---
 title: "Quality commands"
-description: "Reference for Forge's verification and safety CLI: verify, scan, spec, taste, uicheck, harden, and the v0.19+ precommit and radar gates."
+description: "Reference for Forge's verification and safety CLI: verify, scan, spec, taste, uicheck, harden, and the precommit and radar gates."
 ---
 
 The Quality group is the verification and safety surface. See
@@ -12,7 +12,7 @@ Independent verification gate — tests + hallucinated-symbol + provenance.
 
 ```bash
 forge verify
-forge verify --deep       # multi-lens consensus (v0.19+)
+forge verify --deep       # multi-lens consensus
 ```
 
 `forge verify --deep` reports a four-state `status` instead of a plain pass/fail:
@@ -76,7 +76,7 @@ Wire security controls — gitleaks pre-commit + sandbox settings.
 forge harden
 ```
 
-## `forge precommit` <sub>v0.19+</sub>
+## `forge precommit`
 
 Commit-level gate — runs the verification floor at commit time so partial or unverified
 work is caught before it lands.
@@ -85,7 +85,7 @@ work is caught before it lands.
 forge precommit
 ```
 
-## `forge radar` <sub>v0.19+</sub>
+## `forge radar`
 
 Dependency-currency rings — groups the project's dependencies by how current they are, so
 stale or drifting dependencies surface before they bite.

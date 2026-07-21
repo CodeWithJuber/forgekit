@@ -56,7 +56,7 @@ forge ledger query "<text>"        # retrieve by relevance
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
-forge ledger import                # bridge legacy stores into the ledger
+forge ledger import                # back-fill pre-ledger history into the ledger
 ```
 
 Add `--personal` for the per-user ledger.
@@ -88,7 +88,7 @@ forge decide "<decision> — <reason>"
 forge decide                 # read the log before re-deciding
 ```
 
-## `forge know` <sub>v0.19+</sub>
+## `forge know`
 
 Route a fact to its correct storage home — decides whether a piece of knowledge belongs
 in `recall`, `remember`/`brain`, a decision, or a cortex lesson, and files it there.
@@ -97,7 +97,7 @@ in `recall`, `remember`/`brain`, a decision, or a cortex lesson, and files it th
 forge know "<fact>"
 ```
 
-## `forge deja` <sub>v0.19+</sub>
+## `forge deja`
 
 Similar-past-work lookup — surfaces prior work in the ledger that resembles what you're
 about to do, so you reuse the proof instead of regenerating.

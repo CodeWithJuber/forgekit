@@ -242,7 +242,11 @@ every intra-repo Markdown anchor (`#x` and `path.md#x`) against the target's rea
 version; and `checkCrosswalk` resolves every `.js`/`.sh` binding the research paper's
 crosswalk (`research/formal-synthesis/crosswalk.json`) claims for this repo against the
 files that actually exist in `src/`, `global/guards/`, and `hooks/` (kit-only names opt
-out with a `kit:` prefix), so the paper's stated bindings can no longer trail the code. The two public pages
+out with a `kit:` prefix), so the paper's stated bindings can no longer trail the code; and
+`checkMintlify` extends the reconcile to the hand-maintained Mintlify site (`mintlify/`,
+previously unchecked and prone to drift) — every command must be documented on the English
+site as `forge <name>`, and any env var the site names must be one the code reads (no
+phantom vars). The two public pages
 (`landing/index.html` + the `build-pages.mjs` status page) derive from ONE color source —
 `brand.json.colors` (full dark + light palettes), emitted as CSS by `src/brand.js`
 (`rootTokensCss()`). `test/pages.test.js` enforces full-palette parity: every hex in
@@ -362,6 +366,11 @@ self-correction` (rules) · project-layer template.
 - **`forge sync`** (the cross-tool emitter) · **`forge doctor`** (health check) ·
   **`forge init`** (one-command bootstrap) · **`cost-budget` guard** ·
   **Start-Here catalog** · **`recall`** unified memory subsystem.
+
+**Bundled skills (model-invoked, shipped in `global/tools/`):** beyond the reuse skills
+above, `problem-solver` (a framework-driven Clarify → Classify → Diagnose → Generate →
+Decide → Act cycle) and `catchup` (session re-orientation, pairs with `forge decide`) ship
+as native skills through the plugin's `skills` directory.
 
 ## `atlas` — the code graph
 
