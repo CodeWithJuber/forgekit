@@ -19,7 +19,7 @@ forge verify --deep       # 多视角共识——多个独立检查必须一致
 ```
 
 <Note>
-  `--deep`(v0.19+)升级为多视角共识:变更必须通过多个独立的验证视角,而不只是一个。
+  `--deep`升级为多视角共识:变更必须通过多个独立的验证视角,而不只是一个。
 </Note>
 
 `forge verify --deep` 报告的是四态 `status`,不是二元的通过/失败:
@@ -75,7 +75,7 @@ forge harden               # gitleaks pre-commit + 沙箱设置
 ## commit 级别关卡 —— `forge precommit`
 
 <Note>
-  `forge precommit`(v0.19+)是一道 commit 级别的关卡——它在 commit 时运行验证下限,让部分或未验证的工作在落地前被拦下。
+  `forge precommit`是一道 commit 级别的关卡——它在 commit 时运行验证下限,让部分或未验证的工作在落地前被拦下。
 </Note>
 
 ## 完成关卡 —— 需要测试证据

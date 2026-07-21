@@ -1,6 +1,6 @@
 ---
 title: "أوامر Quality"
-description: "التحقق والسلامة: verify وscan وspec وtaste وuicheck وharden — إضافةً إلى بوّابتَي precommit وradar في الإصدار v0.19+."
+description: "التحقق والسلامة: verify وscan وspec وtaste وuicheck وharden — إضافةً إلى بوّابتَي precommit وradar."
 ---
 
 مجموعة Quality هي سطح التحقق والسلامة. راجع
@@ -12,7 +12,7 @@ description: "التحقق والسلامة: verify وscan وspec وtaste وuich
 
 ```bash
 forge verify
-forge verify --deep       # multi-lens consensus (v0.19+)
+forge verify --deep       # multi-lens consensus
 ```
 
 يُبلِّغ `forge verify --deep` عن `status` رباعي الحالات بدلًا من نجاح/إخفاق ثنائي:
@@ -76,7 +76,7 @@ forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
 forge harden
 ```
 
-## `forge precommit` <sub>v0.19+</sub>
+## `forge precommit`
 
 بوّابة على مستوى الالتزام — تُشغّل الحد الأدنى للتحقق عند وقت الالتزام، فيُلتقط
 العمل الجزئي أو غير المُتحقَّق منه قبل أن يستقر.
@@ -85,7 +85,7 @@ forge harden
 forge precommit
 ```
 
-## `forge radar` <sub>v0.19+</sub>
+## `forge radar`
 
 حلقات حداثة التبعيات — تُجمِّع تبعيات المشروع بحسب مدى حداثتها، ليظهر ما هو بائت أو
 منحرف قبل أن يعضّ.

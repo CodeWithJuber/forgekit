@@ -56,7 +56,7 @@ forge ledger query "<text>"        # retrieve by relevance
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
-forge ledger import                # bridge legacy stores into the ledger
+forge ledger import                # back-fill pre-ledger history into the ledger
 ```
 
 प्रति-यूज़र लेजर के लिए `--personal` जोड़ें।
@@ -88,7 +88,7 @@ forge decide "<decision> — <reason>"
 forge decide                 # read the log before re-deciding
 ```
 
-## `forge know` <sub>v0.19+</sub>
+## `forge know`
 
 किसी तथ्य को उसके सही स्टोरेज गंतव्य पर रूट करें — यह तय करता है कि ज्ञान का एक टुकड़ा
 `recall`, `remember`/`brain`, एक निर्णय, या एक cortex सबक में रहना चाहिए, और उसे वहाँ दर्ज करता है।
@@ -97,7 +97,7 @@ forge decide                 # read the log before re-deciding
 forge know "<fact>"
 ```
 
-## `forge deja` <sub>v0.19+</sub>
+## `forge deja`
 
 समान-पिछले-कार्य की खोज — लेजर में पूर्व कार्य को सतह पर लाता है जो उससे मेल खाता है
 जो आप करने वाले हैं, ताकि आप पुनर्जनन के बजाय प्रमाण का पुनरुपयोग करें।

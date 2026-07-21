@@ -40,14 +40,15 @@ description: "所有 forge 命令按 Core、Memory、Substrate、Quality、Confi
 | `FORGE_NO_HINT=1`         | 静默一次性提示你运行 `forge init` 的初始化提示。                                                                                                                                          |
 | `FORGE_VERBOSE=1`         | 显示默认隐藏的每命令横幅 (`Forge <cmd> — …`)。                                                                                                                                            |
 | `FORGE_EMBED=1`           | 为记忆召回开启 embedding 层(MinHash 仍是零依赖默认)。                                                                                                                                   |
+| `FORGE_LEDGER_ONLY=0`     | 应急开关。仅 ledger 现为默认——记忆只存放在 `.forge/ledger` 中，旧的 `lessons/*.md` 与 fact 文件不再写入。设为 `0` 可恢复旧的文件存储。 |
 
 <Note>
   运行 `forge --help` 获取始终最新的列表,或运行 `forge catalog` 查看每个工具、crew 和护栏并附一行原因说明的 Start-Here 索引。
 </Note>
 
-## v0.19+ 新增
+## 更新的命令与标志
 
-一批命令与参数正在 v0.19 系列陆续落地。它们记录在各自的组页面并在文中标注:
+这些命令与参数均已可用。它们记录在各自的组页面并在文中标注:
 
 | 命令 / 参数            | 组       | 作用                                            |
 | ---------------------- | -------- | ----------------------------------------------- |

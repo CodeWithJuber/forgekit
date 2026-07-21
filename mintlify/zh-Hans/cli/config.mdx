@@ -33,7 +33,7 @@ forge cost --stages        # 实测的每阶段成本系数
 对 ledger、指标与爆炸半径的本地仪表盘。
 
 ```bash
-forge dash                 # 仅本机、只读(默认端口 4242)
+forge dash                 # 仅本机(默认端口 4242)
 ```
 
 ## `forge brand`
@@ -69,7 +69,7 @@ forge stack
 读取 `package.json`、`pyproject.toml`、`go.mod`、`Cargo.toml`、`Gemfile`、
 `composer.json`、`pom.xml` / `build.gradle` 和 `*.csproj`,并报告语言、框架、包管理器,以及仓库**实际**的测试命令——这些会喂进基座的验证清单。
 
-## `forge report` <sub>v0.19+</sub>
+## `forge report`
 
 生成本仓库 Forge 状态的静态 HTML 报告——把 ledger、指标和爆炸半径渲染成一个自包含文件,可分享或归档。
 
@@ -77,7 +77,7 @@ forge stack
 forge report
 ```
 
-## `forge tools` <sub>v0.19+</sub>
+## `forge tools`
 
 选择本仓库的主用 AI 编码工具,并接线相应的 `.gitignore` 条目,让生成的配置与 `.forge/` 产物按你的设置被正确忽略。
 
