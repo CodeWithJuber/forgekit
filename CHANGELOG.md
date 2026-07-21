@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-07-21
+
 ### Security
 
 - **The `forge dash` write routes are now guarded against CSRF and DNS-rebinding.** The two
@@ -1514,7 +1516,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.2...v0.27.0
 [0.26.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.1...v0.26.2
 [0.26.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.0...v0.26.1
