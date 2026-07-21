@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Synced the docs with the code and added a Mintlify drift guard.** `docs check` now has
+  a `checkMintlify` reconciler that reconciles the hand-maintained Mintlify site
+  (`mintlify/`) against the code the same way it already does README/GUIDE — every command
+  must be documented on the English site as `forge <name>`, and any env var the site names
+  must be one the code reads (no phantom vars). The site had drifted (it was outside the
+  reconciler) and is now brought current: the `FORGE_LEDGER_ONLY` default flip, the
+  `problem-solver` skill, the `forge dash` write guard, the `Labs (experimental)` command
+  group, and version-neutral wording (was "new in v0.19"). Top-level docs updated too —
+  `ROADMAP.md` (legacy-store retirement now shipped), a stale `forge cortex` sample in
+  `docs/GUIDE.md`, and the `ARCHITECTURE.md` tool map (adds `problem-solver`/`catchup`).
+  `mintlify/docs.json` locale code `zh` aligned with its `zh-CN/` directory.
+
 ## [0.27.1] - 2026-07-21
 
 ### Security

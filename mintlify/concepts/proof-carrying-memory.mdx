@@ -19,7 +19,10 @@ decays out instead of ossifying.
 
 All memory subsystems converge on one store. `recall`, `remember`/`brain`, `cortex`
 lessons, `reuse` artifacts, and doom-loop `diagnose` results all write content-addressed
-claims into `.forge/ledger/`.
+claims into `.forge/ledger/`. The ledger is now the **default and only** store: the legacy
+`lessons/*.md` and recall/brain fact files are no longer written, and every read
+materializes from the ledger. (`FORGE_LEDGER_ONLY=0` restores the legacy file store as a
+one-release escape hatch.)
 
 ```mermaid
 flowchart LR
@@ -86,7 +89,7 @@ forge ledger query "<text>"        # retrieve claims by relevance
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free
-forge ledger import                # bridge legacy stores into the ledger
+forge ledger import                # back-fill pre-ledger history into the ledger
 ```
 
 Add `--personal` for the per-user ledger.

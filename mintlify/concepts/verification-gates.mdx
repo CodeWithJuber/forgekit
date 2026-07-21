@@ -25,7 +25,7 @@ forge verify --deep       # multi-lens consensus — several independent checks 
 ```
 
 <Note>
-  `--deep` (v0.19+) escalates to a multi-lens consensus: the change must clear several
+  `--deep` escalates to a multi-lens consensus: the change must clear several
   independent verification lenses, not just one.
 </Note>
 
@@ -94,7 +94,7 @@ forge harden               # gitleaks pre-commit + sandbox settings
 ## Commit-level gate — `forge precommit`
 
 <Note>
-  `forge precommit` (v0.19+) is a commit-level gate — it runs the verification floor at
+  `forge precommit` is a commit-level gate — it runs the verification floor at
   commit time so partial or unverified work is caught before it lands.
 </Note>
 

@@ -5,26 +5,31 @@ description: "Every forge command grouped by Core, Memory, Substrate, Quality, a
 
 The `forge` command surface is defined as data (`src/commands.js`) and reconciled against
 the docs by `forge docs check`, so a command can't ship or disappear without the docs
-noticing. Commands are organized into five groups.
+noticing. Commands are organized into six groups (the last is experimental).
 
 <CardGroup cols={2}>
   <Card title="Core" icon="gear" href="/cli/core">
-    Bootstrap and maintain: `init`, `sync`, `doctor`, `catalog`, `docs`, `update`.
+    Bootstrap and maintain: `init`, `sync`, `doctor`, `tools`, `catalog`, `docs`,
+    `update`, `config`.
   </Card>
   <Card title="Memory" icon="brain" href="/cli/memory">
     Cross-session and team memory: `cortex`, `recall`, `remember`, `brain`, `ledger`,
-    `reuse`, `handoff`, `decide`.
+    `handoff`, `decide`, `know`.
   </Card>
   <Card title="Substrate" icon="diagram-project" href="/cli/substrate">
-    The pre-action gate and its stages: `substrate`, `preflight`, `route`, `impact`,
-    `scope`, `context`, `anchor`, `diagnose`, `imagine`, `lean`.
+    The pre-action gate and its stages: `substrate`, `preflight`, `impact`, `scope`,
+    `context`, `route`, `verify`, `precommit`.
   </Card>
   <Card title="Quality" icon="shield-check" href="/cli/quality">
-    Verification and safety: `verify`, `scan`, `spec`, `taste`, `uicheck`, `harden`.
+    Verification and safety: `scan`, `spec`, `harden`, `radar`.
   </Card>
   <Card title="Config" icon="sliders" href="/cli/config">
-    Providers, cost, dashboards, brand, atlas, stack: `config`, `cost`, `dash`, `brand`,
-    `atlas`, `stack`.
+    Providers, cost, brand, atlas, stack: `brand`, `atlas`, `stack`, `integrations`,
+    `cost`.
+  </Card>
+  <Card title="Labs (experimental)" icon="flask">
+    Experimental — may change or move: `taste`, `uicheck`, `imagine`, `lean`, `anchor`,
+    `diagnose`, `dash`, `report`, `deja`, `reuse`. Documented in the reference pages above.
   </Card>
 </CardGroup>
 
@@ -49,16 +54,18 @@ noticing. Commands are organized into five groups.
 | `FORGE_NO_HINT=1`         | Mute the one-time init tip that prompts you to run `forge init`.                                                                                                                          |
 | `FORGE_VERBOSE=1`         | Show the per-command banner (`Forge <cmd> — …`) that is hidden by default.                                                                                                                |
 | `FORGE_EMBED=1`           | Opt in to the embedding tier for memory recall (MinHash stays the zero-dependency default).                                                                                               |
+| `FORGE_LEDGER_ONLY=0`     | Escape hatch. Ledger-only is the DEFAULT — memory (lessons + recall/brain facts) lives only in the content-addressed `.forge/ledger`, and the legacy `lessons/*.md` + fact files are no longer written. Set `0` to restore the legacy file store while external tooling migrates. |
 
 <Note>
   Run `forge --help` for the always-current list, or `forge catalog` for the Start-Here
-  index of every tool, crew, and guard with a one-line why.
+  index of every tool, crew, and guard with a one-line why. Forge also ships **model-invoked
+  skills** (in `global/tools/`, surfaced through the plugin) — for example `problem-solver`,
+  a structured Clarify → Classify → Diagnose → Generate → Decide → Act problem-solving cycle.
 </Note>
 
-## New in v0.19+
+## Newer commands and flags
 
-Several commands and flags are landing in the v0.19 line. They are documented in their
-group pages and flagged inline:
+These commands and flags are available and documented in their group pages:
 
 | Command / flag         | Group    | What it does                                    |
 | ---------------------- | -------- | ----------------------------------------------- |
