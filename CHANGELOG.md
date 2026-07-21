@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.27.3] - 2026-07-21
+
 ### Changed
 
 - **The Mintlify docs site is now English-only.** The five hand-maintained translated
@@ -1542,7 +1544,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.2...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.3...HEAD
+[0.27.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.2...v0.27.3
 [0.27.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.1...v0.27.2
 [0.27.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.26.2...v0.27.0
