@@ -1,0 +1,1 @@
+import*as r from"react";import{u as a}from"./v-radix-ui-react-use-layout-effect-DjFuaxPB.js";var s=r[" useId ".trim().toString()]||(()=>{}),i=0;function n(e){const[t,o]=r.useState(s());return a(()=>{o(u=>u??String(i++))},[e]),t?`radix-${t}`:""}export{n as u};
