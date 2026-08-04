@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.27.4] - 2026-08-04
+
 ### Fixed
 
 - **CI is green again.** Every pipeline had been red since the landing page became a built
@@ -1559,7 +1561,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.4...HEAD
+[0.27.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.3...v0.27.4
 [0.27.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.2...v0.27.3
 [0.27.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.1...v0.27.2
 [0.27.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.0...v0.27.1
