@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI is green again.** Every pipeline had been red since the landing page became a built
+  SPA: `test/pages.test.js` still enforced the hand-authored static contract against
+  `landing/index.html`, failing six assertions and taking the test matrix, the quality
+  gate, and both install-smoke jobs down with it. The landing shell now carries inline
+  critical CSS with the `brand.json` colors and system font stack — so it paints branded
+  before the jsDelivr chunks arrive instead of flashing white — plus the missing
+  `apple-touch-icon` and a `theme-color` that matches the palette. The type/space scale
+  assertion is now scoped to the generated status page, and the landing metric and version
+  assertions verify what is stated rather than requiring it; color and font-stack parity
+  stay enforced across both surfaces. A new test pins integrity of the jsDelivr asset
+  references, which nothing had been checking — `static.yml` never deploys
+  `landing/assets/`, so a stale pin 404s the whole site on a green build.
+
 ## [0.27.3] - 2026-07-21
 
 ### Changed
