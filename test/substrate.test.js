@@ -110,8 +110,10 @@ test("substrateCheck (llm off by default): provenance is deterministic across fa
 
 test("substrateCheck (llm on, explicit): opt-in flag threads through and stays fail-safe", () => {
   const root = repo();
-  // No `run` injection reaches the real CLI here, but the substrate must not throw and must
-  // still return a coherent contract regardless of whether the CLI exists.
+  // substrateCheck has no `run` seam — the faculties build their own runner, so with a real
+  // `claude` on PATH this DID shell out for real (85s of live model calls). test/_setup.js
+  // sets FORGE_LLM_HTTP=1, forcing the keyless HTTP branch that throws synchronously. Either
+  // way the substrate must not throw and must still return a coherent contract.
   const r = substrateCheck(root, "Update computeTax in math.js", { llm: true });
   assert.equal(r.llm.enabled, true);
   assert.ok(r.route.model.id, "still returns a routed model");

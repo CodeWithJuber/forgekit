@@ -52,14 +52,14 @@
     "scripts"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test --import ./test/_setup.js test/*.test.js",
     "bench": "node bench/bench.mjs",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
-    "coverage": "node --test --experimental-test-coverage test/*.test.js",
+    "coverage": "node --test --experimental-test-coverage --import ./test/_setup.js test/*.test.js",
     "bump": "node scripts/bump.mjs",
     "forge": "node src/cli.js",
     "pages:build": "node scripts/build-pages.mjs",

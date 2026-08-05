@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          node --test test/*.test.js 2>&1 | tee /tmp/win-test.log
+          node --test --import ./test/_setup.js test/*.test.js 2>&1 | tee /tmp/win-test.log
           ec=${PIPESTATUS[0]}
           echo "===== FAILING TESTS (name + file) ====="
           grep -nE '^not ok ' /tmp/win-test.log | head -80

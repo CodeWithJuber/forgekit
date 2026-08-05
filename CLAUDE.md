@@ -3,14 +3,14 @@
 ## Stack
 
 - Node.js >=20, pure ESM (`"type": "module"`), zero runtime dependencies.
-- Linter/formatter: Biome 2.5.2 (dev dependency).
+- Linter/formatter: Biome 2.5.5 (dev dependency).
 - Types: TypeScript via JSDoc annotations — no `.ts` files, checked by `tsc`.
 
 ## Commands
 
 - Install: `npm ci`
-- Test: `npm test` (node:test, 600+ tests)
-- Lint + format: `npx biome check` (or `npm run check`)
+- Test: `npm test` (node:test, 1000+ tests)
+- Lint + format: `npm run check` (the npx package is `@biomejs/biome`, not `biome`)
 - Typecheck: `npm run typecheck`
 - Build pages: `npm run pages:build`
 
