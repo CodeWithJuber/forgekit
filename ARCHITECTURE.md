@@ -111,7 +111,11 @@ flowchart TD
 
 **blast radius** — the set of files an edit is predicted to impact, read from the code
 graph. `forge impact` computes it; the pipeline surfaces it before the model touches
-anything.
+anything. The analysis is **hazard-aware**: SCC-aware propagation (a change to any file
+in a circular-dependency cluster impacts all co-members, via Tarjan from `forge rank`)
+and a data-driven threshold derived from PageRank centrality and ledger incident history
+(`effectiveThreshold = base / (1 + hazard)`). `--basic` reverts to the fixed-threshold
+mode.
 
 The verdict is **advisory by default** — it reports, it does not block. Set
 `FORGE_ENFORCE=1` to turn the strongest signals into a hard block:
@@ -340,6 +344,30 @@ exported symbols, brand tokens, version, package.json fields) reused from `docs_
 an inverted entity → `file:line` index over every doc surface, and a diff-scoped impact
 query ranked by confidence. Advisory by default; `--strict` exits non-zero for CI.
 
+**Load-bearing code detector (`src/rank.js`, `forge rank`).** Fuses three classical graph
+readings of the atlas — weighted PageRank centrality (deterministic power iteration over
+sorted node ids), iterative Tarjan SCC (circular-dependency clusters), iterative
+Hopcroft–Tarjan articulation points (chokepoint files) — with the team's own incident
+history from the evidence ledger (`val()`-weighted lesson and session-summary claims that
+name each file). The join `hazard = centralityNorm × (1 + history)` means structurally
+central code that has hurt before outranks equally central code that hasn't. Exposed as the
+`rank_code` MCP tool and the `forge rank` CLI command.
+
+**Parallel-session conflict radar (`src/collide.js`, `forge collide`).** Reads recent
+foreign-session summaries from the team-merged ledger and computes per-file collision risk
+via the same noisy-OR model lessons use: `risk = 1 − ∏(1 − recᵢ × strengthᵢ)` over
+sessions that touched overlapping files or their 1-hop import neighbors. No server, no
+presence protocol — teammate summaries arrive via `forge ledger sync` / `git pull`. Exposed
+as the `collide_check` MCP tool.
+
+**Machine-owned doc surfaces (`src/docs_render.js`, `forge docs render`).** The
+auto-maintenance layer that keeps tables and diagrams in sync with the code registries.
+Four marker-managed blocks (commands table in README, groups and MCP-tools tables in GUIDE,
+repo-map diagram in ARCHITECTURE) are regenerated from `COMMANDS`/`GROUPS`/`TOOLS`; six
+"N MCP tools" count phrases are auto-corrected; and every mermaid block across all `.md`
+and `.mdx` files receives the branded `%%{init` theme. Registry-derived blocks are CI-gated
+errors when stale; tree-derived output is advisory.
+
 **Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
 has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
 library math with tests until a real consumer exists.
@@ -459,6 +487,9 @@ forgekit/
     dash.js               # localhost-only read-only dashboard over the ledger, metrics, and blast radius (node:http, one HTML page)
     metrics.js            # stage-tagged .forge/metrics.jsonl — the measured events every cost figure is computed from
     cost_report.js        # per-stage cost factors as pure arithmetic over metrics.jsonl; composes ONLY measured stages
+    rank.js               # load-bearing code: weighted PageRank centrality × ledger incident history, Tarjan SCC (circular deps), Hopcroft–Tarjan articulation points (chokepoints)
+    collide.js            # parallel-session conflict radar: noisy-OR risk over recent foreign sessions that touched overlapping files or their import neighbors
+    docs_render.js        # machine-owned doc surfaces: registry-derived tables (commands, groups, MCP tools) + tree-derived repo map, auto-normalized mermaid themes
   source/
     rules.json            # THE canonical rules source (git · testing · security · style)
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)

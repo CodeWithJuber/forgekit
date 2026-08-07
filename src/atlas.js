@@ -651,6 +651,18 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
 }
 
 /**
+ * Build a file → SCC-id index from the output of rank.cycles(). Files in the
+ * same SCC share an id; files not in any cycle are absent from the map.
+ * @param {string[][]} sccs each entry is a sorted list of files in one SCC
+ * @returns {Map<string, number>}
+ */
+export function buildSccIndex(sccs) {
+  const index = new Map();
+  for (let i = 0; i < sccs.length; i++) for (const file of sccs[i]) index.set(file, i);
+  return index;
+}
+
+/**
  * @param {object} atlas
  * @param {string} target
  * @param {object} [opts]
@@ -660,11 +672,13 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
  * @param {boolean} [opts.llm]
  * @param {(p:string)=>string} [opts.run]
  * @param {(file:string, target:string)=>boolean} [opts.verify]
+ * @param {Map<string, number>} [opts.sccIndex] file-to-SCC-id (from buildSccIndex)
+ * @param {Map<string, number>} [opts.hazards] file-to-hazard-score (from rankReport)
  */
 export function impact(
   atlas,
   target,
-  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
+  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify, sccIndex, hazards } = {},
 ) {
   const starts = targetIds(atlas, target);
   const startSet = new Set(starts);
@@ -691,12 +705,18 @@ export function impact(
       if (startSet.has(edge.source)) continue;
       const nextConfidence =
         current.confidence * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
-      if (nextConfidence < threshold) continue;
+      const srcNode = nodeById.get(edge.source);
+      const srcFile = srcNode?.file;
+      const effectiveThreshold =
+        hazards && srcFile && hazards.has(srcFile)
+          ? threshold / (1 + hazards.get(srcFile))
+          : threshold;
+      if (nextConfidence < effectiveThreshold) continue;
       const prev = visited.get(edge.source);
       if (prev && prev.confidence >= nextConfidence) continue;
       const item = {
         id: edge.source,
-        node: nodeById.get(edge.source) || {
+        node: srcNode || {
           id: edge.source,
           name: edge.source,
           kind: "unknown",
@@ -714,6 +734,32 @@ export function impact(
         path: item.path,
         edgeKinds: item.edgeKinds,
       });
+      if (sccIndex && srcFile != null && sccIndex.has(srcFile)) {
+        const sccId = sccIndex.get(srcFile);
+        for (const node of atlas.nodes || []) {
+          if (node.file === srcFile || !sccIndex.has(node.file)) continue;
+          if (sccIndex.get(node.file) !== sccId) continue;
+          if (startSet.has(node.id)) continue;
+          const prevScc = visited.get(node.id);
+          if (prevScc && prevScc.confidence >= nextConfidence) continue;
+          const sccItem = {
+            id: node.id,
+            node,
+            confidence: Number(nextConfidence.toFixed(4)),
+            hopDistance: current.hop + 1,
+            path: [...current.path, edge.source, node.id],
+            edgeKinds: [...current.edgeKinds, edge.kind, "scc"],
+          };
+          visited.set(node.id, sccItem);
+          queue.push({
+            id: node.id,
+            confidence: nextConfidence,
+            hop: current.hop + 1,
+            path: sccItem.path,
+            edgeKinds: sccItem.edgeKinds,
+          });
+        }
+      }
     }
   }
   const impacted = [...visited.values()].sort((a, b) => b.confidence - a.confidence);

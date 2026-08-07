@@ -93,7 +93,23 @@ export const COMMANDS = {
   preflight: "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
-  impact: "predict blast radius for a symbol or file from the atlas graph",
+  impact: {
+    summary:
+      "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
+    usage: "forge impact <symbol|file> [--json] [--basic]",
+    flags: [
+      { flag: "--json", desc: "machine-readable report" },
+      {
+        flag: "--basic",
+        desc: "skip hazard-aware enhancements (fixed threshold, no SCC expansion)",
+      },
+    ],
+    examples: [
+      "forge impact src/atlas.js",
+      "forge impact computeTax --json",
+      "forge impact src/val.js --basic",
+    ],
+  },
   collide: {
     summary:
       "parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing",

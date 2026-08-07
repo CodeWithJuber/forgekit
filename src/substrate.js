@@ -10,6 +10,7 @@ import { goalDrift } from "./anchor.js";
 import {
   isStale as atlasIsStale,
   build as buildAtlas,
+  buildSccIndex,
   impact as impactGraph,
   load as loadAtlas,
 } from "./atlas.js";
@@ -19,6 +20,7 @@ import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
 import { mergedLessons } from "./ledger_read.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
+import { rankReport } from "./rank.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
@@ -134,6 +136,27 @@ function makeImpactVerify(root) {
 }
 
 /**
+ * Load rank data (SCC index + per-file hazard scores) for enhanced impact analysis.
+ * Fail-open: if rank.js is unavailable or the data can't be computed, returns nulls
+ * and impact() falls back to basic mode transparently.
+ * @param {string} root
+ * @returns {{sccIndex: Map<string, number>|undefined, hazards: Map<string, number>|undefined}}
+ */
+export function loadRankData(root) {
+  try {
+    const report = rankReport(root);
+    if (!report.built) return { sccIndex: undefined, hazards: undefined };
+    const sccIndex = report.cycles?.length ? buildSccIndex(report.cycles) : undefined;
+    const hazards = report.topFiles?.length
+      ? new Map(report.topFiles.map((f) => [f.file, f.hazard]))
+      : undefined;
+    return { sccIndex, hazards };
+  } catch {
+    return { sccIndex: undefined, hazards: undefined };
+  }
+}
+
+/**
  * @param {string} root
  * @param {string} target
  * @param {object} [opts]
@@ -141,18 +164,24 @@ function makeImpactVerify(root) {
  * @param {boolean} [opts.llm]
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
+ * @param {boolean} [opts.basic] skip hazard-aware enhancements
  */
-export function predictImpact(root, target, { threshold = 0.1, llm, model, timeoutMs } = {}) {
-  // Rebuild when the cached atlas is stale (or missing) — a stale graph misses brand-new
-  // files/edges and would under-report impact. The incremental build only re-parses what changed.
+export function predictImpact(
+  root,
+  target,
+  { threshold = 0.1, llm, model, timeoutMs, basic } = {},
+) {
   const cached = loadAtlas(root);
   const atlas = cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
   const useLLM = llmEnabled({ llm });
+  const rankData = basic ? {} : loadRankData(root);
   return impactGraph(atlas, target, {
     threshold,
     llm: useLLM,
     run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
     verify: makeImpactVerify(root),
+    sccIndex: rankData.sccIndex,
+    hazards: rankData.hazards,
   });
 }
 
