@@ -64,7 +64,7 @@ test("updateCounts rewrites any stale N-MCP-tools phrase to the registry count",
   );
 });
 
-test("normalizeMermaid unifies init lines, skips ignored examples and init-less blocks", () => {
+test("normalizeMermaid unifies init lines, injects missing ones, skips ignored examples", () => {
   const old =
     "%%{init: {'theme':'base','themeVariables':{'lineColor':'#f26430','tertiaryColor':'#171310'}}}%%";
   const themed = `\`\`\`mermaid\n${old}\nflowchart LR\n  a --> b\n\`\`\``;
@@ -75,7 +75,9 @@ test("normalizeMermaid unifies init lines, skips ignored examples and init-less 
   const ignored = `<!-- docs-check-ignore -->\n\`\`\`mermaid\n${old}\nflowchart LR\n  a --> b\n\`\`\``;
   assert.equal(normalizeMermaid(ignored), ignored, "opted-out example blocks stay untouched");
   const bare = "```mermaid\nflowchart LR\n  a --> b\n```";
-  assert.equal(normalizeMermaid(bare), bare, "no init line → left for the diagram check to flag");
+  const normalized = normalizeMermaid(bare);
+  assert.ok(normalized.includes(mermaidInit()), "bare blocks get the branded init line injected");
+  assert.ok(normalized.includes("flowchart LR"), "original content preserved after injection");
 });
 
 test("renderRepoMap draws directories and import edges from the real tree", () => {

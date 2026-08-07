@@ -184,12 +184,17 @@ function checkMcpTools(docs, issues) {
 /** Every tracked Markdown file, so diagram checks cover the WHOLE doc set — not just the
  *  four prose docs. Falls back to a recursive walk when git is unavailable (tmp fixtures). */
 function markdownFiles(root) {
-  const tracked = git(root, ["ls-files", "*.md"]);
+  const tracked = git(root, ["ls-files", "*.md", "*.mdx"]);
   if (tracked) return tracked.split("\n").filter(Boolean);
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .map(String)
-    .filter((f) => f.endsWith(".md") && !f.includes("node_modules") && !f.startsWith(".git/"));
+    .filter(
+      (f) =>
+        (f.endsWith(".md") || f.endsWith(".mdx")) &&
+        !f.includes("node_modules") &&
+        !f.startsWith(".git/"),
+    );
 }
 
 // The branded Mermaid theme every diagram shares (see README's `%%{init …}%%`). Without it

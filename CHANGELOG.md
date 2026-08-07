@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **docs: refresh post-v0.30.0 staleness.** ARCHITECTURE.md repo layout and component
+  descriptions updated for `rank.js`, `collide.js`, `docs_render.js`; mintlify Labs card
+  now lists `rank` and `collide`; mermaid theme normalization extended to `.mdx` files
+  (6 mintlify diagrams were rendering in default blue/grey instead of the branded palette).
+
 ## [0.30.0] - 2026-08-07
 
 ### Added

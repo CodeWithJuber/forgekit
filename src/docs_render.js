@@ -150,11 +150,12 @@ const INIT_LINE_RE = /%%\{init[\s\S]*?\}%%/;
 
 /** Normalize every mermaid block's `%%{init` line to the one shared brand theme.
  *  Blocks opted out with `docs-check-ignore` (deliberate bad examples) are untouched;
- *  blocks with no init line are left for docs_check to flag. */
+ *  blocks missing an init line get one prepended. */
 export function normalizeMermaid(text) {
   return text.replace(MERMAID_BLOCK_RE, (block, body, offset) => {
     if (/docs-check-ignore/.test(text.slice(Math.max(0, offset - 80), offset))) return block;
-    if (!INIT_LINE_RE.test(body)) return block;
+    if (!INIT_LINE_RE.test(body))
+      return block.replace("```mermaid\n", `\`\`\`mermaid\n${mermaidInit()}\n`);
     return block.replace(INIT_LINE_RE, mermaidInit());
   });
 }
@@ -200,7 +201,7 @@ const COUNT_FILES = [
 
 /** Every git-tracked markdown file (mermaid theme normalization scope). */
 function trackedMarkdown(root) {
-  const out = git(root, ["ls-files", "*.md"]);
+  const out = git(root, ["ls-files", "*.md", "*.mdx"]);
   return out ? out.split("\n").filter(Boolean) : [];
 }
 
