@@ -884,7 +884,11 @@ HANDLERS.ledger = async (argv) => {
   const parseDay = (s) => {
     if (/^\d{1,6}$/.test(s ?? "")) return Number(s); // bare epoch-day
     const t = Date.parse(`${s}T00:00:00Z`);
-    return Number.isNaN(t) ? null : Math.floor(t / 86_400_000);
+    if (Number.isNaN(t)) return null;
+    // Round-trip check: Date.parse silently rolls impossible dates over (2026-02-31
+    // → March 3rd), which would answer a temporal query for a day nobody asked about.
+    if (new Date(t).toISOString().slice(0, 10) !== s) return null;
+    return Math.floor(t / 86_400_000);
   };
   if (sub === "at") {
     const day = parseDay(args[2]);
@@ -925,6 +929,13 @@ HANDLERS.ledger = async (argv) => {
       console.error(
         `usage: ${BRAND.cli} ledger diff <since: YYYY-MM-DD | epoch-day> [<until>] [--json]`,
       );
+      process.exitCode = 1;
+      return;
+    }
+    if (a > b) {
+      // beliefDiff's contract is dayA ≤ dayB; a reversed window would print silently
+      // inverted appeared/retired classes, so refuse loudly instead.
+      console.error(`  <since> (day ${a}) is after <until> (day ${b}) — swap the arguments`);
       process.exitCode = 1;
       return;
     }

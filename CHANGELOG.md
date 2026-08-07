@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The rank hazard join now matches production claims.** Hook-minted lessons and
+  session summaries store raw tool-input paths (absolute), while the atlas speaks
+  repo-relative POSIX — so `forge rank`'s history overlay never matched a real claim
+  and hazard silently degenerated to bare centrality (found by adversarial review,
+  reproduced against the live mint pipeline). `history()` now relativizes claim paths
+  against the repo root; a test pins the production path shape.
+- **`beliefDiff` tombstone edge cases.** A claim minted _and_ retracted inside the
+  diff window was reported as "appeared" with a live confidence — a retracted claim
+  presented as a current belief; it now lands in `retired` (`from:null, to:null`).
+  Claims already tombstoned before the window no longer surface as strengthened or
+  weakened through pure decay — dead beliefs don't move.
+- **`forge rank` determinism and hardening.** All orderings now use locale-independent
+  codepoint comparison (`localeCompare` consults ICU tables that differ across
+  machines, contradicting the module's own cross-machine guarantee); `centrality()`
+  counts a duplicated atlas node id once, as PageRank already did; a corrupt
+  `.forge/atlas.json` degrades to the `built:false` hint instead of crashing the CLI
+  and hanging the `rank_code` MCP call; a negative `--top` clamps instead of slicing
+  in from the end of the list.
+- **Temporal CLI guards.** `forge ledger diff` refuses a `<since>` after `<until>`
+  (previously printed silently inverted classes), and `ledger at`/`diff` reject
+  impossible calendar dates (`2026-02-31`) instead of letting `Date.parse` roll them
+  into a day nobody asked about.
+
 ## [0.29.0] - 2026-08-07
 
 ### Added

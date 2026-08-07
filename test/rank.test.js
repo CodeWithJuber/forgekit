@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -177,4 +177,60 @@ test("rankReport ranks a historied file above an equally-central clean one (the 
       r.topFiles.findIndex((f) => f.file === "right.js"),
     "hazard ordering surfaces the historied file first",
   );
+});
+
+test("history relativizes absolute hook-minted claim paths against root (the production shape)", () => {
+  // Production claims carry ABSOLUTE paths: cortex_hook stores tool_input.file_path
+  // verbatim into lesson trigger.files and deja summary body.files. The join must
+  // strip the repo root or it never matches the repo-relative atlas paths.
+  const root = "/home/u/repo";
+  const lesson = mintClaim({
+    kind: "lesson",
+    body: {
+      correctedBehavior: "guard the flow",
+      trigger: { action: "edit", files: ["/home/u/repo/src/app.js"], keywords: [], symbols: [] },
+      whatWentWrong: "app.js regressed",
+    },
+    scope: { level: "repo" },
+    provenance: { author: "amina" },
+    t: 10,
+  }).claim;
+  const summary = mintClaim({
+    kind: "summary",
+    body: { files: ["/home/u/repo/src/app.js"], text: "session touched app" },
+    scope: { level: "repo" },
+    provenance: { author: "amina" },
+    t: 10,
+  }).claim;
+  const h = history([lesson, summary], ["src/app.js"], 10, root);
+  assert.equal(h.get("src/app.js").hits, 2, "both claim kinds match after relativization");
+  assert.ok(h.get("src/app.js").weight > 0, "the hazard join is alive for production claims");
+  const without = history([lesson, summary], ["src/app.js"], 10);
+  assert.equal(without.get("src/app.js").hits, 0, "without root the absolute paths cannot match");
+});
+
+test("centrality counts a duplicated atlas node id once, like pagerank does", () => {
+  const atlas = hubAtlas();
+  atlas.nodes.push({ ...atlas.nodes[3] }); // exact duplicate of the hub node
+  const dup = centrality(atlas);
+  const clean = centrality(hubAtlas());
+  assert.equal(
+    dup.files.find((f) => f.file === "util.js").score,
+    clean.files.find((f) => f.file === "util.js").score,
+    "a duplicate node id must not double the file's score",
+  );
+});
+
+test("rankReport degrades on a corrupt atlas.json and clamps a negative --top", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-rank-"));
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "atlas.json"), "{not json");
+  assert.deepEqual(rankReport(root), { built: false }, "corrupt atlas degrades like a missing one");
+  const root2 = mkdtempSync(join(tmpdir(), "forge-rank-"));
+  writeFileSync(join(root2, "a.js"), "export const a = 1;\n");
+  writeFileSync(join(root2, "b.js"), 'import "./a.js";\n');
+  build({ root: root2 });
+  const r = rankReport(root2, { top: -5 });
+  assert.ok(r.built);
+  assert.equal(r.topFiles.length, 1, "negative top clamps to 1 instead of slicing the whole graph");
 });
