@@ -19,11 +19,7 @@ const run = (args, cwd) =>
 test("ledger diff with <since> after <until> refuses loudly instead of inverting classes", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-cliledger-"));
   const r = run(["ledger", "diff", "2026-08-01", "2026-05-02"], root);
-  assert.equal(
-    r.status,
-    1,
-    "a reversed window must FAIL, not print inverted results",
-  );
+  assert.equal(r.status, 1, "a reversed window must FAIL, not print inverted results");
   assert.match(r.stderr, /is after/, "the reason names the swapped arguments");
 });
 
