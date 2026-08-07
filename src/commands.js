@@ -124,8 +124,9 @@ export const COMMANDS = {
   brand: "print the active brand token map",
   docs: {
     summary:
-      "docs↔code drift — check (registry reconcile) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed)",
-    usage: "forge docs [check | sync | impact] [--since <ref> | --staged] [--strict] [--json]",
+      "docs↔code drift — check (registry reconcile) / render (regenerate machine-owned tables + diagrams) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed)",
+    usage:
+      "forge docs [check | render | sync | impact] [--check] [--since <ref> | --staged] [--strict] [--json]",
     flags: [
       {
         flag: "--since <ref>",
@@ -143,9 +144,14 @@ export const COMMANDS = {
         flag: "--strict",
         desc: "exit non-zero when stale/impacted docs are found (for CI; advisory otherwise)",
       },
+      {
+        flag: "--check",
+        desc: "render: report stale generated blocks without writing (exit 1 on strict drift)",
+      },
     ],
     examples: [
       "forge docs check",
+      "forge docs render",
       "forge docs sync",
       "forge docs impact",
       "forge docs impact --since main",

@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
+import { renderDocs } from "./docs_render.js";
 import { TOOLS } from "./mcp_tools.js";
 import { allPricePairs } from "./model_tiers.js";
 import { git } from "./util.js";
@@ -71,6 +72,27 @@ export function envVarsRead(root = BRAND.root) {
     }
   }
   return vars;
+}
+
+/** Generated doc surfaces vs the registries: a stale machine-owned block is not a
+ *  judgement call — `forge docs render` IS the fix, so the error says exactly that.
+ *  Registry-derived blocks (tables, counts) are errors; tree-derived output (repo map,
+ *  mermaid theme) is a warning so moving a file never fails an unrelated PR. */
+function checkRendered(root, issues) {
+  let r;
+  try {
+    r = renderDocs(root, { write: false });
+  } catch {
+    return; // never let the renderer take the whole check down
+  }
+  for (const f of r.files) {
+    if (!f.changed) continue;
+    issues.push({
+      check: "render",
+      severity: f.strict ? "error" : "warn",
+      detail: `${f.file}: generated ${f.why.join(" + ")} out of date — run \`${BRAND.cli} docs render\``,
+    });
+  }
 }
 
 /** Commands table vs README/GUIDE: every command documented, nothing phantom. */
@@ -558,6 +580,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
   const docs = Object.fromEntries(DOC_FILES.map((f) => [f, readDoc(root, f)]));
   const issues = [];
   checkCommands(docs, issues);
+  checkRendered(root, issues);
   checkEnvVars(root, docs, issues);
   checkMcpTools(docs, issues);
   checkChangelog(root, issues);
@@ -573,6 +596,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
     issues,
     checked: [
       "commands",
+      "render",
       "env-vars",
       "mcp-tools",
       "changelog",

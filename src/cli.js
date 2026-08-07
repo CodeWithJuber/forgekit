@@ -513,6 +513,28 @@ HANDLERS.docs = async (argv) => {
     if (argv.includes("--strict") && r.impacted.length) process.exitCode = 1;
     return;
   }
+  // `render` — regenerate the machine-owned doc surfaces (command tables, MCP tool
+  // table, count phrases, mermaid theme, repo map) from the registries. The write-side
+  // twin of `check`: check tells you docs drifted, render is the one-command repair.
+  if (sub === "render") {
+    const { renderDocs } = await import("./docs_render.js");
+    const check = argv.includes("--check");
+    const r = renderDocs(undefined, { write: !check });
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      if (check && !r.ok) process.exitCode = 1;
+      return;
+    }
+    for (const f of r.files)
+      console.log(
+        `  ${check ? "stale" : "rendered"}: ${f.file}  ${paint(`(${f.why.join(", ")})`, "dim")}`,
+      );
+    for (const m of r.missing)
+      console.error(`  ${paint(`missing markers for block ${m.name} in ${m.file}`, "err")}`);
+    if (!r.files.length && !r.missing.length) console.log("  all generated doc surfaces current");
+    if (check && !r.ok) process.exitCode = 1;
+    return;
+  }
   // `check` — self-check of the forge package's own docs against its code (commands
   // table, env reads, MCP registry, CHANGELOG).
   const { docsCheck } = await import("./docs_check.js");
