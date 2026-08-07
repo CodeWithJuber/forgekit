@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`impact()` dequeues in O(1).** The label-correcting blast-radius search in
+  `src/atlas.js` drained its frontier with `queue.shift()` — O(n) per dequeue on V8
+  arrays, quadratic on large frontiers — and rescanned the start set with a linear
+  `includes` inside the inner loop. The queue now drains through an index pointer and
+  the start set is a `Set`; processing order, and therefore every reported confidence,
+  is unchanged. A new test pins the max-product diamond semantics any future rewrite
+  must preserve.
+- **Lesson glob compilation is memoized.** `matchScore` runs per (lesson × file) on
+  every PreToolUse hook and recompiled the same trigger-glob RegExp each time; compiled
+  globs are now cached in a module-level map bounded by the distinct globs in the
+  lesson set.
+
 ## [0.27.4] - 2026-08-04
 
 ### Fixed

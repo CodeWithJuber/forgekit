@@ -243,3 +243,28 @@ test("C function DEFINITIONS index but prototype declarations do not (same-line 
   assert.ok(names.includes("add"), "definition indexed");
   assert.ok(!names.includes("dup"), "a bare prototype (ends in ;) is not a definition");
 });
+
+test("impact takes the max-product path through a diamond, not the first-found one", () => {
+  // Two routes from dependent D back to target S: a direct `contains` edge
+  // (0.45 × 0.85 decay = 0.3825) and a two-hop `calls` chain through M
+  // ((0.95 × 0.85)² = 0.6521). Label correction must keep the stronger long
+  // path — this pins the semantics any future queue/heap rewrite must preserve.
+  const atlas = {
+    nodes: [
+      { id: "s.js::S", name: "S", kind: "function", file: "s.js" },
+      { id: "m.js::M", name: "M", kind: "function", file: "m.js" },
+      { id: "d.js::D", name: "D", kind: "function", file: "d.js" },
+    ],
+    edges: [
+      { source: "d.js::D", target: "s.js::S", kind: "contains" },
+      { source: "m.js::M", target: "s.js::S", kind: "calls" },
+      { source: "d.js::D", target: "m.js::M", kind: "calls" },
+    ],
+    symbols: [],
+  };
+  const r = impact(atlas, "S");
+  const d = r.impacted.find((x) => x.id === "d.js::D");
+  assert.ok(d, "D is in the blast radius");
+  assert.equal(d.confidence, 0.6521, "max-product confidence wins over first-found");
+  assert.equal(d.hopDistance, 2, "the winning path is the two-hop calls chain");
+});
