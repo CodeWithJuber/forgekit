@@ -109,7 +109,9 @@ export function onGoalScore(goalTokens, fileTokens) {
 // advisory coarse check; widen to a managed-file manifest if that ever matters.
 const NOISE = /(^|\/)\.forge\/|(^|\/)\.[^/]+\/|^\.[^/]+$|(^|\/)(AGENTS|CLAUDE)\.md$/i;
 
-function gitFiles(root) {
+/** The working diff (changed vs HEAD + untracked), forge-noise filtered — exported so
+ *  collide.js reads "what am I touching" the exact same way the drift check does. */
+export function gitFiles(root) {
   const run = (args) => {
     try {
       return execFileSync("git", args, {

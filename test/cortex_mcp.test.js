@@ -42,6 +42,7 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
     "forge_ledger_ratify",
     "forge_ledger_retract",
     "rank_code",
+    "collide_check",
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }

@@ -676,6 +676,22 @@ export function beliefDiff(
   for (const c of after) {
     const prev = before.get(c.id);
     const text = claimText(c).slice(0, 120);
+    // The tombstone test must run before the appeared test: a claim minted AND
+    // retracted inside the window came and went — reporting it as "appeared" with a
+    // live val would present a retracted claim as believed-at-dayB (review-verified).
+    if (c.tombstone && !prev?.tombstone) {
+      retired.push({
+        id: c.id,
+        kind: c.kind,
+        text,
+        from: prev ? round4(val(prev, dayA, { halfLife })) : null,
+        to: null,
+      });
+      continue;
+    }
+    // Already dead at dayA: a retired belief does not "strengthen" or "weaken" by
+    // pure decay — it is out of the belief set on both days, so no row at all.
+    if (prev?.tombstone && c.tombstone) continue;
     if (!prev) {
       appeared.push({
         id: c.id,
@@ -683,16 +699,6 @@ export function beliefDiff(
         text,
         from: null,
         to: round4(val(c, dayB, { halfLife })),
-      });
-      continue;
-    }
-    if (!prev.tombstone && c.tombstone) {
-      retired.push({
-        id: c.id,
-        kind: c.kind,
-        text,
-        from: round4(val(prev, dayA, { halfLife })),
-        to: null,
       });
       continue;
     }

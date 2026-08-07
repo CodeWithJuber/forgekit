@@ -20,6 +20,11 @@ import { globToRe } from "./lessons.js";
 import { directedImportGraph } from "./scope.js";
 import { epochDay, toPosix } from "./util.js";
 
+/** Locale-independent codepoint comparison — localeCompare consults ICU collation
+ *  tables that differ across machines/locales, which would break the "same ranking on
+ *  two machines" guarantee this module makes. */
+const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Node kinds that are containers/artifacts, not symbols — excluded from the symbol view. */
 const NON_SYMBOL_KINDS = new Set(["module", "doc", "config", "unknown"]);
 
@@ -42,7 +47,7 @@ export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9 } = {
   const out = ids.map(() => []);
   const outWeight = new Float64Array(n);
   const sortedEdges = [...(atlas.edges ?? [])].sort(
-    (a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target),
+    (a, b) => byCode(a.source, b.source) || byCode(a.target, b.target),
   );
   for (const e of sortedEdges) {
     if (e.unresolved) continue;
@@ -90,15 +95,19 @@ export function centrality(atlas, opts) {
   const scores = pagerank(atlas, opts);
   const byFile = new Map();
   const symbols = [];
-  for (const node of [...(atlas.nodes ?? [])].sort((a, b) => a.id.localeCompare(b.id))) {
+  const seen = new Set(); // pagerank dedups ids — the per-file sum must too, or a
+  // duplicate node id would count its score twice
+  for (const node of [...(atlas.nodes ?? [])].sort((a, b) => byCode(a.id, b.id))) {
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
     const s = scores.get(node.id) ?? 0;
     if (node.file) byFile.set(node.file, (byFile.get(node.file) ?? 0) + s);
     if (!NON_SYMBOL_KINDS.has(node.kind) && node.name && node.file)
       symbols.push({ id: node.id, name: node.name, file: node.file, score: s });
   }
   const files = [...byFile.entries()].map(([file, score]) => ({ file, score }));
-  files.sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
-  symbols.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  files.sort((a, b) => b.score - a.score || byCode(a.file, b.file));
+  symbols.sort((a, b) => b.score - a.score || byCode(a.id, b.id));
   return { files, symbols };
 }
 
@@ -167,7 +176,7 @@ export function cycles(graph) {
       }
     }
   }
-  comps.sort((a, b) => b.length - a.length || a[0].localeCompare(b[0]));
+  comps.sort((a, b) => b.length - a.length || byCode(a[0], b[0]));
   return comps;
 }
 
@@ -220,7 +229,7 @@ export function chokepoints(graph) {
     if (rootChildren > 1) splits.set(root, rootChildren - 1);
   }
   const out = [...splits.entries()].map(([file, s]) => ({ file, splits: s }));
-  out.sort((a, b) => b.splits - a.splits || a.file.localeCompare(b.file));
+  out.sort((a, b) => b.splits - a.splits || byCode(a.file, b.file));
   return out;
 }
 
@@ -230,21 +239,33 @@ export function chokepoints(graph) {
  * summary claims (deja session records) that list it. val() is the ledger's
  * time-decayed Beta posterior, so stale incidents fade on the same clock everything
  * else in the substrate uses. Pure; fail-open — no claims → all zeros.
+ *
+ * Path normalization is load-bearing, not cosmetic: hook-minted claims store the raw
+ * tool-input paths (ABSOLUTE — cortex_hook stores file_path verbatim), while atlas
+ * files are repo-relative POSIX. Without stripping the root prefix here, no
+ * production claim ever matches and the whole join is silently inert (review-verified
+ * against the live mint pipeline).
  * @param {any[]} claims live ledger claims (loadClaims output)
- * @param {string[]} files repo-relative file paths
+ * @param {string[]} files repo-relative POSIX file paths
  * @param {number} nowDay epoch day for val()
+ * @param {string} [root] repo root — absolute claim paths under it are relativized
  * @returns {Map<string, {weight:number, hits:number}>} file → history
  */
-export function history(claims, files, nowDay) {
+export function history(claims, files, nowDay, root = "") {
+  const prefix = root ? `${toPosix(String(root)).replace(/\/+$/, "")}/` : "";
+  const norm = (p) => {
+    const posix = toPosix(String(p));
+    return prefix && posix.startsWith(prefix) ? posix.slice(prefix.length) : posix;
+  };
   const out = new Map(files.map((f) => [f, { weight: 0, hits: 0 }]));
   for (const claim of claims ?? []) {
     let touched = [];
     if (claim.kind === "lesson") {
-      const globs = claim.body?.trigger?.files ?? [];
+      const globs = (claim.body?.trigger?.files ?? []).map(norm);
       if (globs.length)
         touched = files.filter((f) => globs.some((g) => globToRe(String(g)).test(f)));
     } else if (claim.kind === "summary") {
-      const set = new Set((claim.body?.files ?? []).map((f) => toPosix(String(f))));
+      const set = new Set((claim.body?.files ?? []).map(norm));
       touched = files.filter((f) => set.has(f));
     }
     if (!touched.length) continue;
@@ -269,7 +290,13 @@ const round6 = (x) => Number(x.toFixed(6));
  *   cycles?:string[][], chokepoints?:{file:string,splits:number}[]}}
  */
 export function rankReport(root, { top = 15 } = {}) {
-  const atlas = load(root);
+  top = Math.max(1, Math.floor(Number(top)) || 15); // a negative slice() would return the whole graph
+  let atlas = null;
+  try {
+    atlas = load(root); // corrupt atlas.json must degrade like a missing one, not crash
+  } catch {
+    atlas = null;
+  }
   if (!atlas) return { built: false };
   // One walk serves both graph readings: cycles need the directed edges, articulation
   // points the undirected view derived from them.
@@ -292,6 +319,7 @@ export function rankReport(root, { top = 15 } = {}) {
     claims,
     files.map((f) => f.file),
     epochDay(),
+    root,
   );
   const maxScore = files[0]?.score || 1;
   const ranked = files.map(({ file, score }) => {
@@ -304,7 +332,7 @@ export function rankReport(root, { top = 15 } = {}) {
       hazard: round6((score / maxScore) * (1 + h.weight)),
     };
   });
-  ranked.sort((a, b) => b.hazard - a.hazard || a.file.localeCompare(b.file));
+  ranked.sort((a, b) => b.hazard - a.hazard || byCode(a.file, b.file));
   return {
     built: true,
     nodes: (atlas.nodes ?? []).length,

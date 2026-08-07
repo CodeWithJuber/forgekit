@@ -188,7 +188,7 @@ git pull && forge ledger merge <path-to-their-ledger>
 
 On Claude Code the substrate then runs on **every prompt automatically** via a
 `UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets a
-native config rule plus **20 MCP tools** it can call itself — pre-action checks
+native config rule plus **21 MCP tools** it can call itself — pre-action checks
 (`substrate_check`, `predict_impact`, `assumption_gate`, `route_task`, `scope_files`),
 memory reads and writes, and ops/health — the full list with schemas is in
 [`docs/GUIDE.md`](docs/GUIDE.md#mcp-tools).
@@ -257,6 +257,7 @@ that never clobbers your existing settings (skip it with `install.sh --no-settin
 |                         | `forge deja`         | anti-repetition — have you done this task before? ranks prior solved/verified sessions                                                                                                                                      |
 |                         | `forge reuse`        | proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats                                                                                                                                                |
 |                         | `forge rank`         | load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files                                                                                                             |
+|                         | `forge collide`      | parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing                                                                                                           |
 <!-- forge:render:commands-table:end -->
 
 **→ Every command with a worked example and real output:

@@ -94,6 +94,19 @@ export const COMMANDS = {
   config: "provider setup — show / switch / add providers, set default model",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
+  collide: {
+    summary:
+      "parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing",
+    usage: "forge collide [<file>…] [--json]",
+    flags: [
+      {
+        flag: "[<file>…]",
+        desc: "check these files instead of the working diff",
+      },
+      { flag: "--json", desc: "machine-readable report" },
+    ],
+    examples: ["forge collide", "forge collide src/auth.js --json"],
+  },
   rank: {
     summary:
       "load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files",
@@ -192,6 +205,7 @@ export const GROUPS = {
     "deja",
     "reuse",
     "rank",
+    "collide",
   ],
 };
 

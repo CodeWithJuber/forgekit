@@ -685,3 +685,37 @@ test("stateRoot distinguishes states that liveClaims-level summaries could confl
   assert.notEqual(stateRoot(plain).root, stateRoot(tombed).root);
   assert.notEqual(stateRoot(state([])).root, stateRoot(plain).root, "empty ≠ one-claim");
 });
+
+test("beliefDiff routes a claim minted AND tombstoned inside the window to retired, not appeared", () => {
+  const c = mintClaim({
+    kind: "fact",
+    body: { name: "flash", text: "came and went" },
+    t: 15,
+  }).claim;
+  const s = state(
+    [c],
+    {},
+    { [c.id]: [tomb("wrong", 20, "alice")] },
+    { [c.id]: [prov("alice", 15)] },
+  );
+  const d = beliefDiff(s, 10, 30);
+  assert.deepEqual(d.appeared, [], "a retracted claim is never presented as a live belief");
+  assert.equal(d.retired.length, 1, "the retraction inside the window is reported");
+  assert.equal(d.retired[0].from, null, "it did not exist at dayA");
+  assert.equal(d.retired[0].to, null, "and is not believed at dayB");
+});
+
+test("beliefDiff ignores claims already tombstoned before the window — dead beliefs do not move", () => {
+  const c = mintClaim({ kind: "fact", body: { name: "old", text: "long dead" }, t: 1 }).claim;
+  const s = state(
+    [c],
+    { [c.id]: [ev("confirm", 2)] },
+    { [c.id]: [tomb("obsolete", 5, "alice")] },
+    { [c.id]: [prov("alice", 1)] },
+  );
+  const d = beliefDiff(s, 10, 90);
+  assert.deepEqual(d.appeared, []);
+  assert.deepEqual(d.retired, [], "the retirement predates the window");
+  assert.deepEqual(d.strengthened, []);
+  assert.deepEqual(d.weakened, [], "pure decay on a dead claim is not a belief change");
+});

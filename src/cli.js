@@ -884,7 +884,11 @@ HANDLERS.ledger = async (argv) => {
   const parseDay = (s) => {
     if (/^\d{1,6}$/.test(s ?? "")) return Number(s); // bare epoch-day
     const t = Date.parse(`${s}T00:00:00Z`);
-    return Number.isNaN(t) ? null : Math.floor(t / 86_400_000);
+    if (Number.isNaN(t)) return null;
+    // Round-trip check: Date.parse silently rolls impossible dates over (2026-02-31
+    // → March 3rd), which would answer a temporal query for a day nobody asked about.
+    if (new Date(t).toISOString().slice(0, 10) !== s) return null;
+    return Math.floor(t / 86_400_000);
   };
   if (sub === "at") {
     const day = parseDay(args[2]);
@@ -925,6 +929,13 @@ HANDLERS.ledger = async (argv) => {
       console.error(
         `usage: ${BRAND.cli} ledger diff <since: YYYY-MM-DD | epoch-day> [<until>] [--json]`,
       );
+      process.exitCode = 1;
+      return;
+    }
+    if (a > b) {
+      // beliefDiff's contract is dayA ≤ dayB; a reversed window would print silently
+      // inverted appeared/retired classes, so refuse loudly instead.
+      console.error(`  <since> (day ${a}) is after <until> (day ${b}) — swap the arguments`);
       process.exitCode = 1;
       return;
     }
@@ -1213,6 +1224,30 @@ HANDLERS.atlas = async (argv) => {
     console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
     process.exitCode = 1;
   }
+  return;
+};
+HANDLERS.collide = async (argv) => {
+  const { collideReport } = await import("./collide.js");
+  const json = argv.includes("--json");
+  const files = argv.slice(1).filter((a) => !a.startsWith("--"));
+  const r = collideReport(process.cwd(), { files });
+  if (json) return console.log(JSON.stringify(r, null, 2));
+  heading(`${BRAND.brand} collide — parallel-session conflict radar\n`);
+  if (!r.mine.length) return console.log("  working tree clean — nothing to collide with");
+  console.log(paint(`  checking ${r.mine.length} file(s) in play`, "dim"));
+  if (!r.sessions.length)
+    return console.log("  no recent foreign session touched these files or their import neighbors");
+  console.log(`  collision risk ${bar(r.risk, 8)} ${r.risk.toFixed(2)}\n`);
+  for (const s of r.sessions.slice(0, 8)) {
+    console.log(
+      `  ${paint(s.author || "(unknown)", "accent")}  day ${s.day}  ${paint(`rec ${s.rec.toFixed(2)}`, "dim")}`,
+    );
+    for (const f of s.direct) console.log(`    ${paint("direct ", "warn")} ${f}`);
+    for (const f of s.coupled) console.log(`    ${paint("coupled", "dim")} ${f}`);
+  }
+  console.log(
+    paint("\n  advisory — coordinate or pull their ledger before editing the shared files", "dim"),
+  );
   return;
 };
 HANDLERS.rank = async (argv) => {
