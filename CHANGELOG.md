@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge docs render` — the docs that can write themselves, do.** `docs check` could
+  only detect drift; every fix was still a human hand-editing tables across five files.
+  The derivable doc surfaces are now generated from the same registries the check reads,
+  into marker-managed blocks (the `reports/benchmarks.md` pattern): the README command
+  table and the GUIDE group map from `COMMANDS`/`GROUPS`, the MCP tool table from the
+  `TOOLS` registry, every literal "N MCP tools" count phrase across all six files it
+  lives in, one shared mermaid theme derived from `brand.json` (change the brand,
+  re-render, every diagram in every tracked markdown file re-themes), and a repo map in
+  `ARCHITECTURE.md` drawn from the live import graph. `docs check` gains a `render`
+  reconciler: a stale registry-derived block is an error whose message is the fix
+  (`forge docs render`); tree-derived output (repo map, diagram theme) warns without
+  failing unrelated PRs.
+
 ## [0.28.0] - 2026-08-07
 
 ### Added

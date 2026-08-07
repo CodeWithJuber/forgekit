@@ -90,12 +90,16 @@ Docs ↔ code drift.
 
 ```bash
 forge docs check     # registry reconcile — commands, env vars, MCP tools, CHANGELOG
+forge docs render    # regenerate machine-owned tables, counts, and diagrams from the registries
 forge docs sync      # diff-driven stale-docs sweep
 ```
 
 <Note>
   `docs check` fails CI when commands, env vars, MCP tools, or the CHANGELOG drift from
-  the code. `docs sync` sweeps the diff and reports UPDATED / STALE / VERIFIED-UNAFFECTED.
+  the code — and when a generated block is stale, the error names the fix: `forge docs
+  render` regenerates the command tables, MCP tool table, count phrases, shared mermaid
+  theme, and the repo map from the code registries. `docs sync` sweeps the diff and
+  reports UPDATED / STALE / VERIFIED-UNAFFECTED.
 </Note>
 
 ## `forge update`
