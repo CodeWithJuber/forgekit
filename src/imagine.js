@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
-import { isTestFile, predictFailingTests, loadRankData } from "./substrate.js";
+import { isTestFile, loadRankData, predictFailingTests } from "./substrate.js";
 import { hasBin, toPosix } from "./util.js";
 
 /**
