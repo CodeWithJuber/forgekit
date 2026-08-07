@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { canonicalize, mintClaim } from "../src/ledger.js";
+import { canonicalize, mintClaim, stateRoot } from "../src/ledger.js";
 import { loadClaims, loadState, putClaim } from "../src/ledger_store.js";
 import { defaultRun, ledgerSync, stateBytes, syncDir, syncTarget } from "../src/ledger_sync.js";
 
@@ -106,6 +106,25 @@ test("syncDir: bidirectional union → both dirs byte-identical", () => {
   assert.deepEqual(idsA, ["x", "y"]);
   assert.deepEqual(idsB, ["x", "y"]);
   assert.equal(canonicalize(loadState(a)), canonicalize(loadState(b)), "byte-identical state");
+});
+
+test("syncDir: equal state roots short-circuit; a new record re-arms the real merge", () => {
+  const a = tmp();
+  const b = tmp();
+  mint(a, "x", "shared fact");
+  mint(b, "x", "shared fact"); // same content → same id → same state root
+  const first = syncDir(a, b);
+  assert.equal(first.upToDate, true, "identical replicas skip the merge entirely");
+  assert.deepEqual(first.pulled, { claims: 0, records: 0, quarantined: 0 });
+  mint(b, "y", "known only to B");
+  const second = syncDir(a, b);
+  assert.ok(!second.upToDate, "a diverged replica takes the real merge path");
+  assert.equal(second.pulled.claims, 1, "the new claim crosses over");
+  assert.equal(
+    stateRoot(loadState(a)).root,
+    stateRoot(loadState(b)).root,
+    "after the merge both replicas share one state root again",
+  );
 });
 
 test("syncDir: missing target degrades honestly (no throw)", () => {

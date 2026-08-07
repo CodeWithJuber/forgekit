@@ -588,7 +588,10 @@ function targetIds(atlas, target) {
   return matches.map((n) => n.id);
 }
 
-const EDGE_WEIGHT = {
+// Exported for rank.js — PageRank centrality weights edges with the same priors the
+// blast-radius search uses, so "load-bearing" and "impacted" can never disagree on
+// what an edge kind is worth.
+export const EDGE_WEIGHT = {
   calls: 0.95,
   imports: 0.85,
   inherits: 0.92,
@@ -664,6 +667,7 @@ export function impact(
   { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
 ) {
   const starts = targetIds(atlas, target);
+  const startSet = new Set(starts);
   const { nodeById, incoming } = adjacency(atlas);
   const visited = new Map();
   const queue = starts.map((id) => ({
@@ -673,11 +677,18 @@ export function impact(
     path: [id],
     edgeKinds: [],
   }));
-  while (queue.length) {
-    const current = queue.shift();
+  // Label-correcting search: a node re-enters the queue whenever a better path is
+  // found, so the loop converges to the max-product confidence. The queue is drained
+  // with an index pointer (queue.shift() is O(n) on V8 arrays — quadratic on large
+  // frontiers). A heap-based best-first variant is the upgrade seam if graphs ever
+  // outgrow this; it would change processing order, so it must re-prove the diamond
+  // max-product test before landing.
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
     if (!current || current.hop >= maxHops) continue;
     for (const edge of incoming.get(current.id) || []) {
-      if (starts.includes(edge.source)) continue;
+      if (startSet.has(edge.source)) continue;
       const nextConfidence =
         current.confidence * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
       if (nextConfidence < threshold) continue;

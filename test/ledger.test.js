@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   authorTrust,
+  beliefDiff,
   canonicalize,
   claimId,
   claimText,
@@ -19,6 +20,9 @@ import {
   sealRecord,
   shingles,
   sketch,
+  sortRecords,
+  stateAt,
+  stateRoot,
   UNRESOLVED_VAL_CAP,
   val,
 } from "../src/ledger.js";
@@ -550,4 +554,134 @@ test("val with trust: a distrusted author's evidence moves confidence less", () 
   const weighted = val(claim, 0, { trust: { carol: 0.5 } });
   assert.ok(weighted < flat, "trust scales the evidence weight down");
   assert.ok(weighted > 0.5, "but a confirmation still counts for something");
+});
+
+// --- temporal views + Merkle state root ----------------------------------------------
+
+test("stateAt hides a claim minted later and evidence appended later; val returns to the prior", () => {
+  const early = mintClaim({ kind: "fact", body: { name: "e", text: "early" }, t: 5 }).claim;
+  const late = mintClaim({ kind: "fact", body: { name: "l", text: "late" }, t: 50 }).claim;
+  const s = state(
+    [early, late],
+    { [early.id]: [ev("confirm", 6), ev("confirm", 40)] },
+    {},
+    { [early.id]: [prov("alice", 5)], [late.id]: [prov("bob", 50)] },
+  );
+  const then = liveClaims(stateAt(s, 10));
+  assert.deepEqual(
+    then.map((c) => c.id),
+    [early.id],
+    "the day-50 claim did not exist on day 10",
+  );
+  assert.equal(then[0].evidence.length, 1, "day-40 evidence is not visible on day 10");
+  const now = liveClaims(stateAt(s, 60));
+  assert.equal(now.length, 2, "both claims exist by day 60");
+  assert.ok(
+    val(then[0], 10) !==
+      val(
+        now.find((c) => c.id === early.id),
+        60,
+      ),
+    "belief strength is recomputed with that day's evidence and clock",
+  );
+});
+
+test("stateAt commutes with mergeStates — a lattice morphism, so replicas agree on history", () => {
+  const c1 = mintClaim({ kind: "fact", body: { name: "m1", text: "one" }, t: 1 }).claim;
+  const c2 = mintClaim({ kind: "fact", body: { name: "m2", text: "two" }, t: 2 }).claim;
+  const sA = state([c1], { [c1.id]: [ev("confirm", 3)] }, {}, { [c1.id]: [prov("alice", 1)] });
+  const sB = state(
+    [c1, c2],
+    { [c1.id]: [ev("contradict", 30)] },
+    { [c2.id]: [tomb("dup", 40, "bob")] },
+    { [c1.id]: [prov("bob", 1)], [c2.id]: [prov("bob", 2)] },
+  );
+  const canon = (s) => canonicalize(liveClaims(s));
+  for (const day of [0, 1, 5, 30, 40, 99])
+    assert.equal(
+      canon(stateAt(mergeStates(sA, sB), day)),
+      canon(mergeStates(stateAt(sA, day), stateAt(sB, day))),
+      `morphism holds at day ${day}`,
+    );
+  assert.equal(
+    canon(stateAt(sA, 7)),
+    canon(stateAt(stateAt(sA, 7), 7)),
+    "stateAt is idempotent at the same day",
+  );
+});
+
+test("beliefDiff classifies appeared / retired / strengthened / weakened and respects epsilon", () => {
+  const grew = mintClaim({ kind: "fact", body: { name: "g", text: "grew" }, t: 1 }).claim;
+  const sank = mintClaim({ kind: "fact", body: { name: "s", text: "sank" }, t: 1 }).claim;
+  const born = mintClaim({ kind: "fact", body: { name: "b", text: "born" }, t: 20 }).claim;
+  const gone = mintClaim({ kind: "fact", body: { name: "x", text: "gone" }, t: 1 }).claim;
+  const still = mintClaim({ kind: "fact", body: { name: "q", text: "still" }, t: 1 }).claim;
+  const s = state(
+    [grew, sank, born, gone, still],
+    {
+      [grew.id]: [ev("confirm", 12), ev("confirm", 13), ev("confirm", 14)],
+      [sank.id]: [ev("confirm", 2), ev("contradict", 12), ev("contradict", 13)],
+    },
+    { [gone.id]: [tomb("obsolete", 15, "alice")] },
+    {
+      [grew.id]: [prov("a", 1)],
+      [sank.id]: [prov("a", 1)],
+      [born.id]: [prov("a", 20)],
+      [gone.id]: [prov("a", 1)],
+      [still.id]: [prov("a", 1)],
+    },
+  );
+  const d = beliefDiff(s, 10, 30);
+  assert.deepEqual(
+    d.appeared.map((r) => r.id),
+    [born.id],
+    "minted inside the window",
+  );
+  assert.deepEqual(
+    d.retired.map((r) => r.id),
+    [gone.id],
+    "tombstoned inside the window",
+  );
+  assert.deepEqual(
+    d.strengthened.map((r) => r.id),
+    [grew.id],
+    "confirms raised val",
+  );
+  assert.deepEqual(
+    d.weakened.map((r) => r.id),
+    [sank.id],
+    "contradictions sank val",
+  );
+  assert.ok(!d.strengthened.some((r) => r.id === still.id), "no-news claim stays out");
+  const strict = beliefDiff(s, 10, 30, { epsilon: 0.99 });
+  assert.equal(
+    strict.strengthened.length + strict.weakened.length,
+    0,
+    "a large epsilon silences movement rows",
+  );
+});
+
+test("stateRoot: replicas merged in any order share one root; one new record moves exactly one shard", () => {
+  const c1 = mintClaim({ kind: "fact", body: { name: "r1", text: "one" }, t: 1 }).claim;
+  const c2 = mintClaim({ kind: "fact", body: { name: "r2", text: "two" }, t: 2 }).claim;
+  const sA = state([c1], { [c1.id]: [ev("confirm", 3)] }, {}, { [c1.id]: [prov("alice", 1)] });
+  const sB = state([c1, c2], {}, {}, { [c2.id]: [prov("bob", 2)] });
+  const ab = stateRoot(mergeStates(sA, sB));
+  const ba = stateRoot(mergeStates(sB, sA));
+  assert.equal(ab.root, ba.root, "merge order cannot leak into the root");
+  assert.equal(ab.claims, 2);
+  const grown = mergeStates(sA, sB);
+  grown.evidence[c2.id] = sortRecords([ev("confirm", 9)]);
+  const after = stateRoot(grown);
+  assert.notEqual(after.root, ab.root, "new evidence changes the root");
+  const changed = Object.keys(after.shards).filter((p) => after.shards[p] !== ab.shards[p]);
+  assert.deepEqual(changed, [c2.id.slice(0, 2)], "divergence is localized to the touched shard");
+});
+
+test("stateRoot distinguishes states that liveClaims-level summaries could conflate", () => {
+  const c = mintClaim({ kind: "fact", body: { name: "t", text: "tomb" }, t: 1 }).claim;
+  const plain = state([c], {}, {}, { [c.id]: [prov("a", 1)] });
+  const tombed = state([c], {}, { [c.id]: [tomb("done", 2, "a")] }, { [c.id]: [prov("a", 1)] });
+  assert.notEqual(stateRoot(plain).root, stateRoot(tombed).root);
+  assert.notEqual(stateRoot(state([])).root, stateRoot(plain).root, "empty ≠ one-claim");
 });

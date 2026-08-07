@@ -38,7 +38,7 @@ confidence only from independent oracles, and merges across teammates conflict-f
   exposing the complexity tiers as model aliases; point `ANTHROPIC_BASE_URL` at the
   proxy and every model call routes through it.
 - **MCP server** — the cortex MCP server (`src/cortex_mcp.js`) exposes read-path
-  tools for ledger, brain, atlas, recall, cost, substrate, and dashboard (19 MCP tools
+  tools for ledger, brain, atlas, recall, cost, substrate, and dashboard (20 MCP tools
   as of 0.8.x, including the write tools added in 0.8.0).
 - **Cost dashboard** — `forge dash` serves a local HTML dashboard showing model spend,
   event timeline, and ledger health from `.forge/` data.

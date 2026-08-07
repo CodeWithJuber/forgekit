@@ -59,7 +59,9 @@ async function callTool(name, args = {}) {
     return JSON.stringify(assessTask(String(args.task ?? "")), null, 2);
   if (name === "predict_impact")
     return JSON.stringify(
-      predictImpact(root, String(args.target ?? ""), { threshold: Number(args.threshold ?? 0.1) }),
+      predictImpact(root, String(args.target ?? ""), {
+        threshold: Number(args.threshold ?? 0.1),
+      }),
       null,
       2,
     );
@@ -152,6 +154,10 @@ async function callTool(name, args = {}) {
     const store = brainStore(root);
     remember(store, String(args.name ?? ""), String(args.body ?? ""));
     return `Remembered "${args.name}" in ${store}.`;
+  }
+  if (name === "rank_code") {
+    const { rankReport } = await import("./rank.js");
+    return JSON.stringify(rankReport(root, { top: Number(args.top ?? 15) || 15 }), null, 2);
   }
   if (name === "forge_ledger_ratify") {
     const { ratify, repoLedger, getClaimByPrefix } = await import("./ledger_store.js");

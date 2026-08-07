@@ -25,15 +25,15 @@ recipes, and how to extend each piece. If you just want to get going, the
 
 Every command is real and wired. Grouped by what it does:
 
-| Group                        | Commands                                                                                                                                                                   |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge tools` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`           |
-| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                      |
-| **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                            |
-| **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
-| **Verification & safety**    | `forge verify` · `forge precommit` · `forge radar` · `forge scan` · `forge spec`                                                                                           |
-| **UI / design**              | `forge taste` · `forge uicheck`                                                                                                                                            |
-| **Dashboard**                | `forge dash`                                                                                                                                                               |
+| Group                        | Commands                                                                                                                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config / cross-tool sync** | `forge init` · `forge sync` · `forge tools` · `forge doctor` · `forge update` · `forge docs` · `forge config` · `forge harden` · `forge catalog` · `forge brand`                          |
+| **Memory & ledger (PCM)**    | `forge ledger` · `forge recall` · `forge remember` · `forge brain` · `forge cortex` · `forge reuse` · `forge handoff` · `forge decide` · `forge know`                                     |
+| **Code graph & retrieval**   | `forge atlas` · `forge stack` · `forge context`                                                                                                                                           |
+| **Substrate / pre-action**   | `forge substrate` · `forge preflight` · `forge route` · `forge impact` · `forge rank` · `forge scope` · `forge imagine` · `forge anchor` · `forge diagnose` · `forge lean` · `forge cost` |
+| **Verification & safety**    | `forge verify` · `forge precommit` · `forge radar` · `forge scan` · `forge spec`                                                                                                          |
+| **UI / design**              | `forge taste` · `forge uicheck`                                                                                                                                                           |
+| **Dashboard**                | `forge dash`                                                                                                                                                                              |
 
 Storage in one line: the code graph is `.forge/atlas.json` (plain JSON, not SQLite); the
 ledger is content-addressed claims under `.forge/ledger/` (git-committable, union-merge).
@@ -280,6 +280,38 @@ Forge impact — blast radius
     - src/auth.js
     - src/login.js
     - src/session.js
+```
+
+### `forge rank` — what here is dangerous to touch?
+
+The standing companion to `forge impact`: impact answers "what breaks if I change X",
+rank answers "which X-es should I worry about at all". Weighted PageRank over the atlas
+graph scores structural centrality (using the same edge weights the blast-radius search
+trusts), Tarjan SCC finds circular-import clusters, articulation points find chokepoint
+files whose removal would split the import graph — and the ledger join is the part
+nobody else has: each file's past-incident history (val()-weighted lesson and session
+claims that name it) multiplies into `hazard = centrality × (1 + history)`, so central
+code that has already bitten the team outranks equally central code that hasn't. Run
+`forge atlas build` first. Also exposed to every MCP-capable agent as `rank_code`.
+
+```console
+$ forge rank --top 3
+  graph: 9285 nodes, 27083 edges
+
+  files (hazard = centrality × 1+history):
+  ████████ 1.000  src/cli.js
+  ███████░ 0.840  src/ledger.js
+  ██████░░ 0.718  src/ledger_store.js
+
+  symbols (centrality):
+  0.004878  epochDay  src/util.js
+  0.004005  sync  src/sync.js
+  0.003897  loadClaims  src/ledger_store.js
+
+  circular imports: none
+
+  chokepoints (removal splits the import graph):
+    src/sync.js  splits off 10 subtree(s)
 ```
 
 ### `forge scope <file…>` — can this be split into sessions?
@@ -720,6 +752,23 @@ Forge ledger blame — lesson 3f2a91c04d7e
     0.93  juber
 ```
 
+The store is append-only and every record carries its day, so **time-travel is
+recomputed, never guessed**: `forge ledger at <date>` rebuilds the beliefs of any past
+day — which claims existed, with `val` scored by _that_ day's evidence and clock — and
+`forge ledger diff <since> [<until>]` reports what changed between two days: claims
+that appeared, were retired, strengthened, or weakened. `forge ledger root` prints one
+Merkle root over the whole verified state (per-shard hashes localize any divergence);
+two replicas share a root exactly when they share a state, which is also the fast path
+`ledger sync --dir` uses to skip merges that have nothing to do.
+
+```console
+$ forge ledger diff 2026-07-01
+  appeared 2 · retired 1 · strengthened 1 · weakened 0
+  new   fact      b19b2961  ·  → 0.55  demo shared
+  gone  lesson    3f2a91c0  0.82 → ·   stale port rule
+  up    fact      88ac02d1  0.50 → 0.63  build needs node 20
+```
+
 The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
 tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
 record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
@@ -1152,7 +1201,7 @@ one extra turn, exactly when that turn was owed.
 > `forge substrate "<task>" --json` (or the MCP tool `substrate_check`). If
 > `okToProceed` is false, ask the questions first; read `impact.impactedFiles` before editing.
 
-…and exposes the substrate as **19 MCP tools** any MCP-capable agent can call directly
+…and exposes the substrate as **20 MCP tools** any MCP-capable agent can call directly
 (the stdio server is launched with `forge cortex-mcp`, wired automatically via the
 emitted `.mcp.json`):
 
@@ -1173,6 +1222,7 @@ emitted `.mcp.json`):
 | `forge_remember`                         | **write**: add a durable project fact                  |
 | `forge_ledger_ratify`                    | **write**: human-ratify a claim into a decision        |
 | `forge_ledger_retract`                   | **write**: tombstone a claim                           |
+| `rank_code`                              | load-bearing files/symbols, cycles, chokepoints        |
 | `forge_diagnose`                         | doom-loop failure check                                |
 | `forge_doctor`                           | health check                                           |
 | `forge_provider_status`                  | provider detection + gateway reachability              |
