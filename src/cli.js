@@ -1226,6 +1226,30 @@ HANDLERS.atlas = async (argv) => {
   }
   return;
 };
+HANDLERS.collide = async (argv) => {
+  const { collideReport } = await import("./collide.js");
+  const json = argv.includes("--json");
+  const files = argv.slice(1).filter((a) => !a.startsWith("--"));
+  const r = collideReport(process.cwd(), { files });
+  if (json) return console.log(JSON.stringify(r, null, 2));
+  heading(`${BRAND.brand} collide — parallel-session conflict radar\n`);
+  if (!r.mine.length) return console.log("  working tree clean — nothing to collide with");
+  console.log(paint(`  checking ${r.mine.length} file(s) in play`, "dim"));
+  if (!r.sessions.length)
+    return console.log("  no recent foreign session touched these files or their import neighbors");
+  console.log(`  collision risk ${bar(r.risk, 8)} ${r.risk.toFixed(2)}\n`);
+  for (const s of r.sessions.slice(0, 8)) {
+    console.log(
+      `  ${paint(s.author || "(unknown)", "accent")}  day ${s.day}  ${paint(`rec ${s.rec.toFixed(2)}`, "dim")}`,
+    );
+    for (const f of s.direct) console.log(`    ${paint("direct ", "warn")} ${f}`);
+    for (const f of s.coupled) console.log(`    ${paint("coupled", "dim")} ${f}`);
+  }
+  console.log(
+    paint("\n  advisory — coordinate or pull their ledger before editing the shared files", "dim"),
+  );
+  return;
+};
 HANDLERS.rank = async (argv) => {
   const { rankReport } = await import("./rank.js");
   const json = argv.includes("--json");

@@ -193,6 +193,21 @@ export const TOOLS = [
     },
   },
   {
+    name: "collide_check",
+    description:
+      "Parallel-session conflict radar — which recent teammate/agent sessions touched the files (or their import neighbors) you are about to edit, from the team-merged Forge ledger. Advisory: coordinate before editing high-risk files.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description: "files in play (default: the working diff)",
+        },
+      },
+    },
+  },
+  {
     name: "rank_code",
     description:
       "Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph.",

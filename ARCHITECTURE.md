@@ -70,7 +70,7 @@ The four layers, brand-named and emitted cross-tool:
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
   compaction; a guard does not. Every enforceable invariant belongs here.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 20 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
+  exposing 21 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
   ledger ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
 
@@ -521,8 +521,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>99 files"]
-  src["src<br/>93 files"]
+  test["test<br/>100 files"]
+  src["src<br/>94 files"]
   landing["landing<br/>60 files"]
   research["research<br/>35 files"]
   bench["bench<br/>2 files"]
@@ -530,7 +530,7 @@ flowchart LR
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 191 --> src
+  test -- 195 --> src
   bench -- 7 --> src
   examples -- 4 --> src
   test -- 2 --> scripts

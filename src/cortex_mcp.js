@@ -155,6 +155,11 @@ async function callTool(name, args = {}) {
     remember(store, String(args.name ?? ""), String(args.body ?? ""));
     return `Remembered "${args.name}" in ${store}.`;
   }
+  if (name === "collide_check") {
+    const { collideReport } = await import("./collide.js");
+    const files = Array.isArray(args.files) ? args.files.map(String) : [];
+    return JSON.stringify(collideReport(root, { files }), null, 2);
+  }
   if (name === "rank_code") {
     const { rankReport } = await import("./rank.js");
     return JSON.stringify(rankReport(root, { top: Number(args.top ?? 15) || 15 }), null, 2);

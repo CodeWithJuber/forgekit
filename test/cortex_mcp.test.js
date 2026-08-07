@@ -42,6 +42,7 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
     "forge_ledger_ratify",
     "forge_ledger_retract",
     "rank_code",
+    "collide_check",
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }
@@ -142,7 +143,10 @@ test("forge_remember writes a fact to .forge/brain/ via stdio", () => {
     .map((l) => JSON.parse(l));
   const call = responses.find((x) => x.id === 2);
   assert.match(call.result.content[0].text, /Remembered/);
-  const written = readFileSync(join(root, ".forge", "brain", "facts", "test-fact.md"), "utf8");
+  const written = readFileSync(
+    join(root, ".forge", "brain", "facts", "test-fact.md"),
+    "utf8",
+  );
   assert.match(written, /testing MCP write/);
 });
 

@@ -43,6 +43,17 @@ Predict the blast radius for a symbol or file from the atlas graph.
 forge impact <symbol-or-file>
 ```
 
+## `forge collide`
+
+Parallel-session conflict radar: which recent teammate/agent sessions touched the
+files (or their import neighbors) you are editing, read from the team-merged ledger —
+`risk = 1 − ∏(1 − rec × strength)` over recent foreign sessions. Also exposed as the
+`collide_check` MCP tool.
+
+```bash
+forge collide [<file>…] [--json]
+```
+
 ## `forge rank`
 
 Load-bearing code: weighted PageRank centrality over the atlas graph joined with
