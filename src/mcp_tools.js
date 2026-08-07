@@ -68,8 +68,14 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        target: { type: "string", description: "symbol name, qualified name, or file" },
-        threshold: { type: "number", description: "confidence threshold, default 0.1" },
+        target: {
+          type: "string",
+          description: "symbol name, qualified name, or file",
+        },
+        threshold: {
+          type: "number",
+          description: "confidence threshold, default 0.1",
+        },
       },
       required: ["target"],
     },
@@ -124,7 +130,10 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "what you are about to do or looking for" },
+        query: {
+          type: "string",
+          description: "what you are about to do or looking for",
+        },
       },
       required: ["query"],
     },
@@ -162,7 +171,10 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "short slug for the fact (used as filename)" },
+        name: {
+          type: "string",
+          description: "short slug for the fact (used as filename)",
+        },
         body: { type: "string", description: "the fact content (markdown)" },
       },
       required: ["name", "body"],
@@ -181,6 +193,20 @@ export const TOOLS = [
     },
   },
   {
+    name: "rank_code",
+    description:
+      "Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        top: {
+          type: "number",
+          description: "how many files/symbols to return (default 15)",
+        },
+      },
+    },
+  },
+  {
     name: "forge_ledger_retract",
     description:
       "Tombstone a ledger claim with a reason — mark it as no longer valid so it stops influencing routing and memory.",
@@ -188,7 +214,10 @@ export const TOOLS = [
       type: "object",
       properties: {
         id: { type: "string", description: "claim ID or unique prefix" },
-        reason: { type: "string", description: "why the claim is being retracted" },
+        reason: {
+          type: "string",
+          description: "why the claim is being retracted",
+        },
       },
       required: ["id", "reason"],
     },

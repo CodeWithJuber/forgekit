@@ -1115,6 +1115,44 @@ HANDLERS.atlas = async (argv) => {
   }
   return;
 };
+HANDLERS.rank = async (argv) => {
+  const { rankReport } = await import("./rank.js");
+  const json = argv.includes("--json");
+  const ti = argv.indexOf("--top");
+  const top = ti >= 0 ? Math.max(1, Number(argv[ti + 1]) || 15) : 15;
+  const r = rankReport(process.cwd(), { top });
+  if (!r.built) {
+    console.error(`  no index — run \`${BRAND.cli} atlas build\` first`);
+    process.exitCode = 1;
+    return;
+  }
+  if (json) return console.log(JSON.stringify(r, null, 2));
+  heading(`${BRAND.brand} rank — load-bearing code\n`);
+  console.log(paint(`  graph: ${r.nodes} nodes, ${r.edges} edges`, "dim"));
+  console.log(paint("\n  files (hazard = centrality × 1+history):", "accent"));
+  const maxHazard = r.topFiles[0]?.hazard || 1;
+  for (const f of r.topFiles)
+    console.log(
+      `  ${bar(f.hazard / maxHazard, 8)} ${f.hazard.toFixed(3)}  ${f.file}${
+        f.incidents ? paint(`  (${f.incidents} past incident(s))`, "warn") : ""
+      }`,
+    );
+  console.log(paint("\n  symbols (centrality):", "accent"));
+  for (const s of r.topSymbols)
+    console.log(`  ${s.score.toFixed(6)}  ${s.name}  ${paint(s.file, "dim")}`);
+  if (r.cycles.length) {
+    console.log(paint(`\n  circular imports: ${r.cycles.length} cluster(s)`, "warn"));
+    for (const c of r.cycles.slice(0, 5)) console.log(`    [${c.length}] ${c.join(" ⇄ ")}`);
+  } else {
+    console.log(paint("\n  circular imports: none", "dim"));
+  }
+  if (r.chokepoints.length) {
+    console.log(paint("\n  chokepoints (removal splits the import graph):", "accent"));
+    for (const c of r.chokepoints.slice(0, 10))
+      console.log(`    ${c.file}  ${paint(`splits off ${c.splits} subtree(s)`, "dim")}`);
+  }
+  return;
+};
 HANDLERS.scan = async (argv) => {
   const { scan } = await import("./skillgate.js");
   const target = argv[1];

@@ -588,7 +588,10 @@ function targetIds(atlas, target) {
   return matches.map((n) => n.id);
 }
 
-const EDGE_WEIGHT = {
+// Exported for rank.js — PageRank centrality weights edges with the same priors the
+// blast-radius search uses, so "load-bearing" and "impacted" can never disagree on
+// what an edge kind is worth.
+export const EDGE_WEIGHT = {
   calls: 0.95,
   imports: 0.85,
   inherits: 0.92,

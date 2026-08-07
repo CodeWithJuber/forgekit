@@ -70,9 +70,9 @@ The four layers, brand-named and emitted cross-tool:
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
   compaction; a guard does not. Every enforceable invariant belongs here.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 19 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
-  `assumption_gate` / …), memory reads AND writes (`forge_remember`, ledger
-  ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
+  exposing 20 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
+  `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
+  ledger ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
 
 Cross-cutting concerns thread through all four: **atlas** (the code graph), **lean**
 (minimalism — shipped as _both_ a tool and a Stop-guard, so it applies whether or not

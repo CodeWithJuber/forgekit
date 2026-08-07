@@ -94,6 +94,19 @@ export const COMMANDS = {
   config: "provider setup — show / switch / add providers, set default model",
   route: "recommend the cheapest capable model for a task (+ gateway config)",
   impact: "predict blast radius for a symbol or file from the atlas graph",
+  rank: {
+    summary:
+      "load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files",
+    usage: "forge rank [--top <n>] [--json]",
+    flags: [
+      {
+        flag: "--top <n>",
+        desc: "how many files/symbols to list (default 15)",
+      },
+      { flag: "--json", desc: "machine-readable full report" },
+    ],
+    examples: ["forge rank", "forge rank --top 5 --json"],
+  },
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
@@ -172,6 +185,7 @@ export const GROUPS = {
     "report",
     "deja",
     "reuse",
+    "rank",
   ],
 };
 

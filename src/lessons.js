@@ -133,7 +133,7 @@ export function contradict(lesson, nowDay) {
  *  Memoized: matchScore runs per (lesson × file) on every PreToolUse hook, and the
  *  cache is bounded in practice by the distinct trigger globs in the lesson set. */
 const GLOB_RE_CACHE = new Map();
-const globToRe = (glob) => {
+export const globToRe = (glob) => {
   let re = GLOB_RE_CACHE.get(glob);
   if (!re) {
     const body = glob

@@ -42,6 +42,20 @@ function resolveSpec(fromRel, spec, root, fileSet) {
 
 /** Build an UNDIRECTED file→file import graph (coupling is symmetric for decomposition). */
 export function importGraph(root) {
+  const { nodes, edges } = directedImportGraph(root);
+  const undirected = new Map(nodes.map((f) => [f, new Set()]));
+  for (const [f, targets] of edges) {
+    for (const t of targets) {
+      undirected.get(f).add(t);
+      undirected.get(t)?.add(f);
+    }
+  }
+  return { nodes, edges: undirected };
+}
+
+/** The DIRECTED form (importer → imported) — what cycle detection needs; the
+ *  undirected view above is derived from it. Same walk, same resolver. */
+export function directedImportGraph(root) {
   const files = [];
   walk(root, root, files);
   const fileSet = new Set(files);
@@ -56,10 +70,7 @@ export function importGraph(root) {
     for (const re of IMPORT_RES) {
       for (const m of text.matchAll(re)) {
         const target = resolveSpec(f, m[1], root, fileSet);
-        if (target && target !== f) {
-          edges.get(f).add(target);
-          edges.get(target)?.add(f);
-        }
+        if (target && target !== f) edges.get(f).add(target);
       }
     }
   }

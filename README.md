@@ -188,7 +188,7 @@ git pull && forge ledger merge <path-to-their-ledger>
 
 On Claude Code the substrate then runs on **every prompt automatically** via a
 `UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets a
-native config rule plus **19 MCP tools** it can call itself — pre-action checks
+native config rule plus **20 MCP tools** it can call itself — pre-action checks
 (`substrate_check`, `predict_impact`, `assumption_gate`, `route_task`, `scope_files`),
 memory reads and writes, and ops/health — the full list with schemas is in
 [`docs/GUIDE.md`](docs/GUIDE.md#mcp-tools).
@@ -237,6 +237,7 @@ that never clobbers your existing settings (skip it with `install.sh --no-settin
 |                            | `forge preflight`    | assumption / info-gap check                                                                                                                                                            |
 |                            | `forge route`        | cheapest capable model tier (`route gateway` emits LiteLLM config)                                                                                                                     |
 |                            | `forge impact`       | predict blast radius for a symbol or file                                                                                                                                              |
+|                            | `forge rank`         | load-bearing code — PageRank centrality × past-incident history, circular imports, chokepoint files                                                                                    |
 |                            | `forge scope`        | cluster + surface coupled files                                                                                                                                                        |
 |                            | `forge imagine`      | consequence sim + minimal dry-run suite (`--run` executes it sandboxed)                                                                                                                |
 |                            | `forge context`      | budgeted context assembly + completeness gate                                                                                                                                          |

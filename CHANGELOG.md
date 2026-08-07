@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge rank` — load-bearing code, measured.** Weighted PageRank centrality over the
+  atlas graph (same edge priors as the blast-radius search), Tarjan SCC circular-import
+  clusters over the directed import graph, and Hopcroft–Tarjan articulation points
+  (chokepoint files whose removal splits the repo) — joined with each file's
+  past-incident history from the evidence ledger: `hazard = centrality × (1 + history)`,
+  where history is the val()-weighted sum of lesson and session claims naming the file.
+  Structurally central code that has already bitten the team outranks equally central
+  code that hasn't. Deterministic end to end (sorted-order power iteration, no
+  `Math.random`), fail-open without a ledger, and exposed to every MCP-capable agent as
+  the `rank_code` tool (20 MCP tools total).
+
 ### Changed
 
 - **`impact()` dequeues in O(1).** The label-correcting blast-radius search in

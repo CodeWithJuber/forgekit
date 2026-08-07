@@ -43,6 +43,17 @@ Predict the blast radius for a symbol or file from the atlas graph.
 forge impact <symbol-or-file>
 ```
 
+## `forge rank`
+
+Load-bearing code: weighted PageRank centrality over the atlas graph joined with
+past-incident history from the evidence ledger (`hazard = centrality × 1+history`),
+plus circular-import clusters (Tarjan SCC) and chokepoint files (articulation points).
+Also exposed as the `rank_code` MCP tool.
+
+```bash
+forge rank [--top <n>] [--json]
+```
+
 ## `forge scope`
 
 Decompose files into independent clusters — plus coupled files you didn't name.
