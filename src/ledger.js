@@ -617,3 +617,146 @@ export function liveClaims(state) {
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1));
 }
+
+// ---------------------------------------------------------------------------
+// Temporal views + Merkle state root. The store is append-only and every record
+// carries its day, so any past day's beliefs are RECOMPUTABLE, never guessed —
+// and a whole state can be summarized in one permutation-invariant hash.
+// ---------------------------------------------------------------------------
+
+/**
+ * The state as it stood at end of `day`: claims whose mint day ≤ day — the earliest
+ * provenance-log record, falling back to the claim's inline mint record, then 0
+ * (mint-day-unknown must not hide a claim) — with every log filtered to records with
+ * t ≤ day. Pure; inputs are not mutated. A lattice morphism:
+ * stateAt(merge(a,b), d) ≡ merge(stateAt(a,d), stateAt(b,d)) — property-tested next
+ * to the semilattice suite.
+ * @param {{claims:any, evidence:any, provenance:any, tombstones:any}} state
+ * @param {number} day epoch day (inclusive cutoff)
+ */
+export function stateAt(state, day) {
+  const cut = (recs = []) => sortRecords(recs).filter((r) => (r.t ?? 0) <= day);
+  const out = emptyState();
+  for (const [id, c] of Object.entries(state.claims ?? {})) {
+    const provAll = sortRecords(state.provenance?.[id] ?? []);
+    const mintDay = provAll.length ? (provAll[0].t ?? 0) : (c.provenance?.t ?? 0);
+    if (mintDay > day) continue; // minted after `day` — didn't exist yet
+    out.claims[id] = c;
+    out.provenance[id] = provAll.filter((r) => (r.t ?? 0) <= day);
+    out.evidence[id] = cut(state.evidence?.[id] ?? []);
+    out.tombstones[id] = cut(state.tombstones?.[id] ?? []);
+  }
+  return out;
+}
+
+/**
+ * What changed between two days — with val() evaluated AT each day's own clock, so
+ * this answers "what did we believe then", not "what does today think of then".
+ *   appeared:     minted in (dayA, dayB]
+ *   retired:      first tombstone lands in (dayA, dayB]
+ *   strengthened: |Δval| ≥ epsilon upward     weakened: downward
+ * @param {{claims:any, evidence:any, provenance:any, tombstones:any}} state
+ * @param {number} dayA earlier day
+ * @param {number} dayB later day
+ * @param {{epsilon?:number, halfLife?:number}} [opts]
+ * @returns {{appeared:any[], retired:any[], strengthened:any[], weakened:any[]}}
+ *   rows are {id, kind, text, from, to} sorted by |Δval| desc then id asc
+ */
+export function beliefDiff(
+  state,
+  dayA,
+  dayB,
+  { epsilon = 0.05, halfLife = DEFAULT_HALF_LIFE_DAYS } = {},
+) {
+  const before = new Map(liveClaims(stateAt(state, dayA)).map((c) => [c.id, c]));
+  const after = liveClaims(stateAt(state, dayB));
+  const appeared = [];
+  const retired = [];
+  const moved = [];
+  for (const c of after) {
+    const prev = before.get(c.id);
+    const text = claimText(c).slice(0, 120);
+    if (!prev) {
+      appeared.push({
+        id: c.id,
+        kind: c.kind,
+        text,
+        from: null,
+        to: round4(val(c, dayB, { halfLife })),
+      });
+      continue;
+    }
+    if (!prev.tombstone && c.tombstone) {
+      retired.push({
+        id: c.id,
+        kind: c.kind,
+        text,
+        from: round4(val(prev, dayA, { halfLife })),
+        to: null,
+      });
+      continue;
+    }
+    const from = val(prev, dayA, { halfLife });
+    const to = val(c, dayB, { halfLife });
+    if (Math.abs(to - from) >= epsilon)
+      moved.push({
+        id: c.id,
+        kind: c.kind,
+        text,
+        from: round4(from),
+        to: round4(to),
+      });
+  }
+  const byDelta = (a, b) =>
+    Math.abs((b.to ?? 0) - (b.from ?? 0)) - Math.abs((a.to ?? 0) - (a.from ?? 0)) ||
+    (a.id < b.id ? -1 : 1);
+  appeared.sort(byDelta);
+  retired.sort((a, b) => (b.from ?? 0) - (a.from ?? 0) || (a.id < b.id ? -1 : 1));
+  return {
+    appeared,
+    retired,
+    strengthened: moved.filter((m) => m.to > m.from).sort(byDelta),
+    weakened: moved.filter((m) => m.to < m.from).sort(byDelta),
+  };
+}
+
+const round4 = (x) => Number(x.toFixed(4));
+
+/**
+ * Merkle root over a ledger state. Leaf per claim id = hash of the claim's canonical
+ * content plus its three logs in sortRecords order; shard hash per 2-hex-char id
+ * prefix (the store's on-disk sharding) over its sorted "id:leaf" lines; root over
+ * the sorted "prefix:shardHash" lines. Permutation- and merge-order-invariant by
+ * construction: two replicas share a root ⇔ their verified states are identical, and
+ * when they differ the differing shard hashes localize where.
+ * @param {{claims:any, evidence:any, provenance:any, tombstones:any}} state
+ * @returns {{root:string, shards:Record<string,string>, claims:number}}
+ */
+export function stateRoot(state) {
+  const leaves = new Map(); // prefix → "id:leafHash" lines
+  const ids = Object.keys(state.claims ?? {}).sort();
+  for (const id of ids) {
+    const leaf = contentHash(
+      canonicalize({
+        claim: state.claims[id],
+        evidence: sortRecords(state.evidence?.[id] ?? []),
+        provenance: sortRecords(state.provenance?.[id] ?? []),
+        tombstones: sortRecords(state.tombstones?.[id] ?? []),
+      }),
+    );
+    const prefix = id.slice(0, 2);
+    if (!leaves.has(prefix)) leaves.set(prefix, []);
+    leaves.get(prefix).push(`${id}:${leaf}`);
+  }
+  /** @type {Record<string, string>} */
+  const shards = {};
+  for (const prefix of [...leaves.keys()].sort())
+    shards[prefix] = contentHash(leaves.get(prefix).join("\n"));
+  const root = contentHash(
+    Object.keys(shards)
+      .sort()
+      .map((p) => `${p}:${shards[p]}`)
+      .join("\n"),
+  );
+  return { root, shards, claims: ids.length };
+}

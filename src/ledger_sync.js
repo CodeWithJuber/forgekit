@@ -19,7 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { BRAND } from "./brand.js";
-import { canonicalize } from "./ledger.js";
+import { canonicalize, stateRoot } from "./ledger.js";
 import { importState, loadState, mergeDirs } from "./ledger_store.js";
 import { gitAuthor } from "./util.js";
 
@@ -151,6 +151,21 @@ export function syncDir(localDir, otherDir) {
       mode: "dir",
       dir: otherDir,
       reason: `no sync directory at ${otherDir}`,
+    };
+  // Merkle fast path: two replicas sharing a state root are already the same
+  // VERIFIED state, so the (much costlier) per-record union merge has nothing to do.
+  // Honest limitation: garbage lines that readLog rejects are invisible to the root,
+  // so equal-modulo-garbage dirs skip the merge without quarantining that garbage —
+  // `ledger merge` still does. (The ref transport's tree-SHA equality already IS this
+  // check; only the dir transport lacked one.)
+  if (stateRoot(loadState(localDir)).root === stateRoot(loadState(otherDir)).root)
+    return {
+      ok: true,
+      mode: "dir",
+      dir: otherDir,
+      upToDate: true,
+      pulled: { claims: 0, records: 0, quarantined: 0 },
+      pushed: { claims: 0, records: 0, quarantined: 0 },
     };
   const pulled = mergeDirs(localDir, otherDir);
   const pushed = mergeDirs(otherDir, localDir);

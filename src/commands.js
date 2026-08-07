@@ -87,7 +87,7 @@ export const COMMANDS = {
   cortex: "self-correcting project memory — status / why <symbol>",
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
   ledger:
-    "evidence-referenced memory — stats / verify / show / blame / query / ratify / retract / merge / sync / import",
+    "evidence-referenced memory — stats / verify / show / blame / query / at / diff / root / ratify / retract / merge / sync / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",

@@ -19,6 +19,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Math.random`), fail-open without a ledger, and exposed to every MCP-capable agent as
   the `rank_code` tool (20 MCP tools total).
 
+- **Time-travel for team memory.** The ledger is append-only and every record carries
+  its day, so past beliefs are recomputable — now they are queryable: `forge ledger at
+<date>` rebuilds any past day's state with `val` scored by that day's evidence and
+  clock, and `forge ledger diff <since> [<until>]` classifies what changed between two
+  days (appeared / retired / strengthened / weakened, with an epsilon floor). Pure
+  functions in the ledger core (`stateAt` is a lattice morphism — it commutes with the
+  CRDT merge, property-tested), no new storage, no clock reads.
+- **Merkle state root.** `stateRoot()` hashes the whole verified ledger state into one
+  permutation-invariant root (leaf per claim over its logs in canonical order, shard
+  hashes over the store's 2-hex-char prefixes — so divergence is localized, not just
+  detected). Surfaced as `forge ledger root` and used by `ledger sync --dir` as an
+  O(state-read) already-in-sync fast path — the ref transport's tree-SHA equality
+  already was this check; now the dir transport has one too.
+
 ### Changed
 
 - **`impact()` dequeues in O(1).** The label-correcting blast-radius search in

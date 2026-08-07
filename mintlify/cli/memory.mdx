@@ -53,6 +53,9 @@ forge ledger verify                # re-check claims are in normal form
 forge ledger show <id>             # a claim and its evidence
 forge ledger blame <id-prefix>     # who minted it, every oracle outcome, per-author trust
 forge ledger query "<text>"        # retrieve by relevance
+forge ledger at <date>             # beliefs as of any past day — recomputed, never guessed
+forge ledger diff <since> [<until>]  # appeared / retired / strengthened / weakened
+forge ledger root                  # Merkle root over the verified state (sync fast path)
 forge ledger ratify <id>           # human accept
 forge ledger retract <id>          # tombstone a claim
 forge ledger merge <path>          # fold a teammate's ledger in, conflict-free

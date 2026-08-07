@@ -857,6 +857,79 @@ HANDLERS.ledger = async (argv) => {
       );
     return;
   }
+  // `at` / `diff` / `root` — the temporal surface. The store is append-only and every
+  // record carries its day, so a past day's beliefs are recomputed, never guessed.
+  const parseDay = (s) => {
+    if (/^\d{1,6}$/.test(s ?? "")) return Number(s); // bare epoch-day
+    const t = Date.parse(`${s}T00:00:00Z`);
+    return Number.isNaN(t) ? null : Math.floor(t / 86_400_000);
+  };
+  if (sub === "at") {
+    const day = parseDay(args[2]);
+    if (day === null) {
+      console.error(`usage: ${BRAND.cli} ledger at <YYYY-MM-DD | epoch-day> [--json]`);
+      process.exitCode = 1;
+      return;
+    }
+    const lg = await import("./ledger.js");
+    const live = lg.liveClaims(lg.stateAt(ls.loadState(dir), day));
+    const rows = live
+      .map((c) => ({
+        id: c.id,
+        kind: c.kind,
+        val: Number(lg.val(c, day).toFixed(4)),
+        tombstoned: Boolean(c.tombstone),
+        text: lg.claimText(c).slice(0, 90),
+      }))
+      .sort((a, b) => b.val - a.val || (a.id < b.id ? -1 : 1));
+    if (json) return console.log(JSON.stringify({ day, claims: rows.length, rows }, null, 2));
+    heading(`${BRAND.brand} ledger — beliefs as of day ${day}\n`);
+    const byKind = {};
+    for (const r of rows) byKind[r.kind] = (byKind[r.kind] ?? 0) + 1;
+    console.log(
+      `  claims: ${rows.length}  (${rows.filter((r) => r.tombstoned).length} tombstoned)`,
+    );
+    for (const [kind, n] of Object.entries(byKind)) console.log(`    ${kind}: ${n}`);
+    for (const r of rows.slice(0, 10))
+      console.log(
+        `  ${bar(r.val, 8)} ${r.val.toFixed(3)}  ${paint(r.kind.padEnd(9), "accent")} ${paint(r.id.slice(0, 8), "dim")}  ${r.text}`,
+      );
+    return;
+  }
+  if (sub === "diff") {
+    const a = parseDay(args[2]);
+    const b = args[3] ? parseDay(args[3]) : nowDay;
+    if (a === null || b === null) {
+      console.error(
+        `usage: ${BRAND.cli} ledger diff <since: YYYY-MM-DD | epoch-day> [<until>] [--json]`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const lg = await import("./ledger.js");
+    const d = lg.beliefDiff(ls.loadState(dir), a, b);
+    if (json) return console.log(JSON.stringify({ since: a, until: b, ...d }, null, 2));
+    heading(`${BRAND.brand} ledger — what changed, day ${a} → ${b}\n`);
+    console.log(
+      `  appeared ${d.appeared.length} · retired ${d.retired.length} · ${paint(`strengthened ${d.strengthened.length}`, "ok")} · ${paint(`weakened ${d.weakened.length}`, "warn")}`,
+    );
+    const row = (label, r) =>
+      console.log(
+        `  ${label}  ${paint(r.kind.padEnd(9), "accent")} ${paint(r.id.slice(0, 8), "dim")}  ${r.from === null ? "· " : r.from.toFixed(2)} → ${r.to === null ? "·" : r.to.toFixed(2)}  ${r.text.slice(0, 70)}`,
+      );
+    for (const r of d.appeared.slice(0, 5)) row(paint("new ", "ok"), r);
+    for (const r of d.retired.slice(0, 5)) row(paint("gone", "err"), r);
+    for (const r of d.strengthened.slice(0, 5)) row(paint("up  ", "ok"), r);
+    for (const r of d.weakened.slice(0, 5)) row(paint("down", "warn"), r);
+    return;
+  }
+  if (sub === "root") {
+    const lg = await import("./ledger.js");
+    const r = lg.stateRoot(ls.loadState(dir));
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    console.log(r.root); // bare hex on stdout — scriptable ("are we in sync?" is one diff)
+    return;
+  }
   if (sub === "sync") {
     const { ledgerSync, defaultRef } = await import("./ledger_sync.js");
     const di = args.indexOf("--dir");
@@ -882,7 +955,12 @@ HANDLERS.ledger = async (argv) => {
         table([
           [paint("target", "dim"), r.dir],
           [paint("pulled", "dim"), `${r.pulled.claims} claim(s), ${r.pulled.records} record(s)`],
-          [paint("pushed", "dim"), `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`],
+          [
+            paint("pushed", "dim"),
+            r.upToDate
+              ? paint("up to date — state roots match, nothing to merge", "dim")
+              : `${r.pushed.claims} claim(s), ${r.pushed.records} record(s)`,
+          ],
         ]),
       );
     } else {
@@ -929,7 +1007,7 @@ HANDLERS.ledger = async (argv) => {
     return;
   }
   console.error(
-    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
+    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | at <date> | diff <since> [<until>] | root | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
   );
   process.exitCode = 1;
   return;

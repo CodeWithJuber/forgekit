@@ -752,6 +752,23 @@ Forge ledger blame — lesson 3f2a91c04d7e
     0.93  juber
 ```
 
+The store is append-only and every record carries its day, so **time-travel is
+recomputed, never guessed**: `forge ledger at <date>` rebuilds the beliefs of any past
+day — which claims existed, with `val` scored by _that_ day's evidence and clock — and
+`forge ledger diff <since> [<until>]` reports what changed between two days: claims
+that appeared, were retired, strengthened, or weakened. `forge ledger root` prints one
+Merkle root over the whole verified state (per-shard hashes localize any divergence);
+two replicas share a root exactly when they share a state, which is also the fast path
+`ledger sync --dir` uses to skip merges that have nothing to do.
+
+```console
+$ forge ledger diff 2026-07-01
+  appeared 2 · retired 1 · strengthened 1 · weakened 0
+  new   fact      b19b2961  ·  → 0.55  demo shared
+  gone  lesson    3f2a91c0  0.82 → ·   stale port rule
+  up    fact      88ac02d1  0.50 → 0.63  build needs node 20
+```
+
 The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
 tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
 record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
