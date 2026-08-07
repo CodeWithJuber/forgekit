@@ -270,11 +270,15 @@ and pin explicit IDs if a family scored wrong.
 
 ### `forge impact <symbol|file>` — what will this edit break?
 
-Reverse-dependency blast radius from the atlas graph. Run `forge atlas build` first.
+Hazard-aware blast radius from the atlas graph, fused with team memory:
+SCC-aware propagation (a change to any file in a circular-dependency cluster
+impacts all co-members) and a data-driven threshold from PageRank centrality
+and ledger incident history. `--basic` reverts to the fixed-threshold mode.
+Run `forge atlas build` first.
 
 ```console
 $ forge impact verifyToken
-Forge impact — blast radius
+Forge impact — blast radius (hazard-aware)
 
   target: verifyToken  ✓ found
   impacted files: 3

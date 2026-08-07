@@ -1686,21 +1686,22 @@ HANDLERS.preflight = async (argv) => {
 HANDLERS.impact = async (argv) => {
   const { predictImpact } = await import("./substrate.js");
   const json = argv.includes("--json");
+  const basic = argv.includes("--basic");
   const target = argv
     .slice(1)
-    .filter((a) => a !== "--json")
+    .filter((a) => a !== "--json" && a !== "--basic")
     .join(" ");
   if (!target) {
-    console.error("usage: forge impact <symbol|file> [--json]");
+    console.error("usage: forge impact <symbol|file> [--json] [--basic]");
     process.exitCode = 1;
     return;
   }
-  const r = predictImpact(process.cwd(), target);
+  const r = predictImpact(process.cwd(), target, { basic });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
   }
-  heading(`${BRAND.brand} impact — blast radius\n`);
+  heading(`${BRAND.brand} impact — blast radius${basic ? "" : " (hazard-aware)"}\n`);
   console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
   console.log(`  impacted files: ${r.impactedFiles.length}`);
   for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);

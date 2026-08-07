@@ -1,7 +1,14 @@
 // forge atlas — a portable code graph. Build once, then query definitions, membership,
 // reverse dependents, and impact radius without asking a model to rediscover the repo.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { CALL_RE } from "./extract.js";
@@ -103,7 +110,8 @@ export const RULES = {
 };
 // Kotlin script, C/C++ family, and PHP siblings share the grammar above.
 RULES[".kts"] = RULES[".kt"];
-for (const ext of [".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh"]) RULES[ext] = RULES[".c"];
+for (const ext of [".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh"])
+  RULES[ext] = RULES[".c"];
 
 // Documentation extensions — first-class in the walk, extracted by extractDoc() (a
 // doc node + `references` edges to the code it names), never by the symbol RULES.
@@ -181,13 +189,16 @@ function walk(dir, files, cap) {
     entries = readdirSync(dir);
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
-      process.stderr.write(`forge atlas: skipping ${dir}: ${err?.message ?? err}\n`);
+      process.stderr.write(
+        `forge atlas: skipping ${dir}: ${err?.message ?? err}\n`,
+      );
     return;
   }
   for (const name of entries) {
     // Dot-entries stay out of the graph — except `.github`, whose workflows are config
     // artifacts that name code paths (a CI file IS a dependent of the code it runs).
-    if (IGNORE_DIRS.has(name) || (name.startsWith(".") && name !== ".github")) continue;
+    if (IGNORE_DIRS.has(name) || (name.startsWith(".") && name !== ".github"))
+      continue;
     const path = join(dir, name);
     let st;
     try {
@@ -258,7 +269,8 @@ function extractDoc(rel, text) {
   for (const m of text.matchAll(/\]\(([^)#\s]+)\)/g)) {
     const tok = m[1].replace(/^\.\//, "");
     if (/^[a-z]+:/i.test(tok)) continue; // external URL, not a repo path
-    if (RULES[extname(tok)]) refEdge(`module:${moduleId(tok)}`, 0.8, lineOf(text, m.index));
+    if (RULES[extname(tok)])
+      refEdge(`module:${moduleId(tok)}`, 0.8, lineOf(text, m.index));
   }
   return { symbols: [], nodes: [doc], edges, hash: hash(text) };
 }
@@ -277,7 +289,9 @@ function extractConfig(rel, text) {
   };
   const edges = [];
   const seen = new Set();
-  for (const m of text.matchAll(/[A-Za-z0-9_.@-]+(?:[/\\][A-Za-z0-9_.@-]+)*/g)) {
+  for (const m of text.matchAll(
+    /[A-Za-z0-9_.@-]+(?:[/\\][A-Za-z0-9_.@-]+)*/g,
+  )) {
     const tok = m[0].replace(/^\.\//, "");
     if (!RULES[extname(tok)]) continue; // only path-like tokens ending in a code extension
     const target = `module:${moduleId(tok)}`;
@@ -309,7 +323,8 @@ function extractFile(path, root, preRead) {
     }
   }
   if (DOC_EXTS.has(ext)) return extractDoc(rel, text);
-  if (isConfigFile(rel.split(/[/\\]/).pop() || "")) return extractConfig(rel, text);
+  if (isConfigFile(rel.split(/[/\\]/).pop() || ""))
+    return extractConfig(rel, text);
 
   const mod = {
     id: `module:${moduleId(rel)}`,
@@ -358,7 +373,9 @@ function extractFile(path, root, preRead) {
   // Inheritance edges — `class X extends Y` (JS/TS) and `class X(Base, …)` (Python). Without
   // these the `inherits` edge weight was dead and a base-class change never appeared in blast
   // radius. The base is a bare name; resolveEdges links it to a real node if one exists.
-  const classNodes = new Map(nodes.filter((n) => n.kind === "class").map((n) => [n.name, n]));
+  const classNodes = new Map(
+    nodes.filter((n) => n.kind === "class").map((n) => [n.name, n]),
+  );
   const INHERIT_RES = [
     /\bclass\s+([A-Za-z_$][\w$]*)\s+extends\s+([A-Za-z_$][\w$.]*)/g, // JS/TS
     /^\s*class\s+([A-Za-z_]\w*)\s*\(([^)]*)\)/gm, // Python
@@ -478,7 +495,9 @@ const cachePath = (root) => join(root, ".forge", "atlas.cache.json");
 
 function readCache(root) {
   try {
-    return existsSync(cachePath(root)) ? JSON.parse(readFileSync(cachePath(root), "utf8")) : {};
+    return existsSync(cachePath(root))
+      ? JSON.parse(readFileSync(cachePath(root), "utf8"))
+      : {};
   } catch {
     return {};
   }
@@ -507,7 +526,9 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
     const reused = prev[rel]?.hash === h ? prev[rel].data : null;
     const data =
       reused ||
-      (({ symbols, nodes, edges }) => ({ symbols, nodes, edges }))(extractFile(f, root, text));
+      (({ symbols, nodes, edges }) => ({ symbols, nodes, edges }))(
+        extractFile(f, root, text),
+      );
     cache[rel] = { hash: h, data };
     symbols.push(...data.symbols);
     nodes.push(...data.nodes);
@@ -554,7 +575,8 @@ export function isStale(root, atlas) {
     const current = [];
     walk(root, current, 20000);
     if (current.length !== indexed.size) return true; // a file was added or removed
-    for (const p of current) if (!indexed.has(toPosix(relative(root, p)))) return true;
+    for (const p of current)
+      if (!indexed.has(toPosix(relative(root, p)))) return true;
   }
   return false;
 }
@@ -576,14 +598,21 @@ export function query(atlas, term) {
 }
 
 export function has(atlas, name) {
-  return (atlas.symbols || []).some((s) => s.name === name || s.qname === name || s.id === name);
+  return (atlas.symbols || []).some(
+    (s) => s.name === name || s.qname === name || s.id === name,
+  );
 }
 
 function targetIds(atlas, target) {
   const t = String(target);
   const nodes = atlas.nodes || [];
   const matches = nodes.filter(
-    (n) => n.id === t || n.name === t || n.qname === t || n.file === t || n.file?.endsWith(`/${t}`),
+    (n) =>
+      n.id === t ||
+      n.name === t ||
+      n.qname === t ||
+      n.file === t ||
+      n.file?.endsWith(`/${t}`),
   );
   return matches.map((n) => n.id);
 }
@@ -623,7 +652,9 @@ function adjacency(atlas) {
 // verified twice — it must resolve to a REAL node in the graph AND (via the caller's `verify`
 // predicate, a grep) actually reference the target in source. Unverifiable → dropped, never added.
 export function buildImpactPrompt(atlas, target) {
-  const files = [...new Set((atlas.nodes || []).map((n) => n.file).filter(Boolean))].slice(0, 60);
+  const files = [
+    ...new Set((atlas.nodes || []).map((n) => n.file).filter(Boolean)),
+  ].slice(0, 60);
   return `A code symbol/file is about to change. Name the OTHER files in this repo that most
 likely break or depend on it through edges a regex misses: dynamic dispatch, dependency
 injection, reflection, string-keyed registries, event handlers.
@@ -637,7 +668,10 @@ No text outside the JSON object.`;
 
 export function parseImpactProposal(obj) {
   const files = Array.isArray(obj.files)
-    ? [...new Set(obj.files.map((f) => asText(f, 240)).filter(Boolean))].slice(0, 20)
+    ? [...new Set(obj.files.map((f) => asText(f, 240)).filter(Boolean))].slice(
+        0,
+        20,
+      )
     : [];
   return { files };
 }
@@ -651,6 +685,19 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
 }
 
 /**
+ * Build a file → SCC-id index from the output of rank.cycles(). Files in the
+ * same SCC share an id; files not in any cycle are absent from the map.
+ * @param {string[][]} sccs each entry is a sorted list of files in one SCC
+ * @returns {Map<string, number>}
+ */
+export function buildSccIndex(sccs) {
+  const index = new Map();
+  for (let i = 0; i < sccs.length; i++)
+    for (const file of sccs[i]) index.set(file, i);
+  return index;
+}
+
+/**
  * @param {object} atlas
  * @param {string} target
  * @param {object} [opts]
@@ -660,11 +707,22 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
  * @param {boolean} [opts.llm]
  * @param {(p:string)=>string} [opts.run]
  * @param {(file:string, target:string)=>boolean} [opts.verify]
+ * @param {Map<string, number>} [opts.sccIndex] file-to-SCC-id (from buildSccIndex)
+ * @param {Map<string, number>} [opts.hazards] file-to-hazard-score (from rankReport)
  */
 export function impact(
   atlas,
   target,
-  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
+  {
+    threshold = 0.1,
+    maxHops = 6,
+    decay = 0.85,
+    llm,
+    run,
+    verify,
+    sccIndex,
+    hazards,
+  } = {},
 ) {
   const starts = targetIds(atlas, target);
   const startSet = new Set(starts);
@@ -690,13 +748,22 @@ export function impact(
     for (const edge of incoming.get(current.id) || []) {
       if (startSet.has(edge.source)) continue;
       const nextConfidence =
-        current.confidence * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
-      if (nextConfidence < threshold) continue;
+        current.confidence *
+        (EDGE_WEIGHT[edge.kind] || 0.5) *
+        (edge.confidence ?? 1) *
+        decay;
+      const srcNode = nodeById.get(edge.source);
+      const srcFile = srcNode?.file;
+      const effectiveThreshold =
+        hazards && srcFile && hazards.has(srcFile)
+          ? threshold / (1 + hazards.get(srcFile))
+          : threshold;
+      if (nextConfidence < effectiveThreshold) continue;
       const prev = visited.get(edge.source);
       if (prev && prev.confidence >= nextConfidence) continue;
       const item = {
         id: edge.source,
-        node: nodeById.get(edge.source) || {
+        node: srcNode || {
           id: edge.source,
           name: edge.source,
           kind: "unknown",
@@ -714,15 +781,47 @@ export function impact(
         path: item.path,
         edgeKinds: item.edgeKinds,
       });
+      if (sccIndex && srcFile != null && sccIndex.has(srcFile)) {
+        const sccId = sccIndex.get(srcFile);
+        for (const node of atlas.nodes || []) {
+          if (node.file === srcFile || !sccIndex.has(node.file)) continue;
+          if (sccIndex.get(node.file) !== sccId) continue;
+          if (startSet.has(node.id)) continue;
+          const prevScc = visited.get(node.id);
+          if (prevScc && prevScc.confidence >= nextConfidence) continue;
+          const sccItem = {
+            id: node.id,
+            node,
+            confidence: Number(nextConfidence.toFixed(4)),
+            hopDistance: current.hop + 1,
+            path: [...current.path, edge.source, node.id],
+            edgeKinds: [...current.edgeKinds, edge.kind, "scc"],
+          };
+          visited.set(node.id, sccItem);
+          queue.push({
+            id: node.id,
+            confidence: nextConfidence,
+            hop: current.hop + 1,
+            path: sccItem.path,
+            edgeKinds: sccItem.edgeKinds,
+          });
+        }
+      }
     }
   }
-  const impacted = [...visited.values()].sort((a, b) => b.confidence - a.confidence);
-  const deterministicFiles = new Set(impacted.map((x) => x.node.file).filter(Boolean));
+  const impacted = [...visited.values()].sort(
+    (a, b) => b.confidence - a.confidence,
+  );
+  const deterministicFiles = new Set(
+    impacted.map((x) => x.node.file).filter(Boolean),
+  );
 
   // Opt-in imagination pass: model proposes missed edges, but only VERIFIED ones are kept.
   const llmImpacted = [];
   if (llmEnabled({ llm }) && run) {
-    const knownFiles = new Set((atlas.nodes || []).map((n) => n.file).filter(Boolean));
+    const knownFiles = new Set(
+      (atlas.nodes || []).map((n) => n.file).filter(Boolean),
+    );
     const proposal = impactLLM(atlas, target, { run });
     for (const file of proposal?.files || []) {
       if (deterministicFiles.has(file)) continue; // already found deterministically
@@ -745,7 +844,9 @@ export function impact(
     found: starts.length > 0,
     threshold,
     impacted: all,
-    impactedFiles: [...new Set(all.map((x) => x.node.file).filter(Boolean))].sort(),
+    impactedFiles: [
+      ...new Set(all.map((x) => x.node.file).filter(Boolean)),
+    ].sort(),
     llmVerified: llmImpacted.map((x) => x.node.file),
     totalGraphNodes: (atlas.nodes || []).length,
     totalGraphEdges: (atlas.edges || []).length,

@@ -37,10 +37,12 @@ forge route gateway        # emit LiteLLM gateway config
 
 ## `forge impact`
 
-Predict the blast radius for a symbol or file from the atlas graph.
+Hazard-aware blast radius — SCC-aware propagation and data-driven threshold from
+PageRank centrality and ledger incident history. `--basic` reverts to fixed-threshold
+mode.
 
 ```bash
-forge impact <symbol-or-file>
+forge impact <symbol-or-file> [--json] [--basic]
 ```
 
 ## `forge collide`

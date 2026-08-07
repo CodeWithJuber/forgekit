@@ -10,6 +10,7 @@ import { goalDrift } from "./anchor.js";
 import {
   isStale as atlasIsStale,
   build as buildAtlas,
+  buildSccIndex,
   impact as impactGraph,
   load as loadAtlas,
 } from "./atlas.js";
@@ -18,15 +19,24 @@ import { matchingLessons } from "./cortex.js";
 import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
 import { mergedLessons } from "./ledger_read.js";
-import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
+import {
+  clarifyBlock,
+  preflightRepo,
+  referencedEntities,
+} from "./preflight.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
+import { rankReport } from "./rank.js";
 import { decompose } from "./scope.js";
 import { detectStack } from "./stack.js";
 import { epochDay } from "./util.js";
 
 function loadSubstrateSpec() {
-  const path = join(dirname(dirname(fileURLToPath(import.meta.url))), "source", "substrate.json");
+  const path = join(
+    dirname(dirname(fileURLToPath(import.meta.url))),
+    "source",
+    "substrate.json",
+  );
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch {
@@ -55,7 +65,9 @@ function verificationChecklist(root) {
 // complexity. No second keyword copy here to drift out of sync with those sources.
 function minimalityWarnings(_task, route, preflight) {
   const warnings = [];
-  const missing = new Set((preflight.assumption?.missing ?? []).map((m) => m.key));
+  const missing = new Set(
+    (preflight.assumption?.missing ?? []).map((m) => m.key),
+  );
   if (missing.has("target_scope") && preflight.entities.files.length === 0) {
     warnings.push(
       "High-risk broad change with no target files named; ask for scope before editing.",
@@ -93,7 +105,11 @@ function siblingTestCandidates(file) {
   const base = dot > 0 ? nameExt.slice(0, dot) : nameExt;
   const ext = dot > 0 ? nameExt.slice(dot) : "";
   if (ext === ".py")
-    return [`${dir}test_${base}.py`, `${dir}tests/test_${base}.py`, `tests/test_${base}.py`];
+    return [
+      `${dir}test_${base}.py`,
+      `${dir}tests/test_${base}.py`,
+      `tests/test_${base}.py`,
+    ];
   const out = [];
   for (const suf of [".test", ".spec"]) out.push(`${dir}${base}${suf}${ext}`);
   for (const d of ["__tests__/", "test/", "tests/"])
@@ -109,7 +125,8 @@ export function predictFailingTests(root, impactedFiles) {
       out.add(f);
       continue;
     }
-    for (const c of siblingTestCandidates(f)) if (existsSync(join(root, c))) out.add(c);
+    for (const c of siblingTestCandidates(f))
+      if (existsSync(join(root, c))) out.add(c);
   }
   return [...out].sort();
 }
@@ -126,11 +143,37 @@ function makeImpactVerify(root) {
     try {
       const src = readFileSync(join(root, file), "utf8");
       const name = base(target);
-      return name.length > 1 && new RegExp(`\\b${name.replace(/[^\w$]/g, "")}\\b`).test(src);
+      return (
+        name.length > 1 &&
+        new RegExp(`\\b${name.replace(/[^\w$]/g, "")}\\b`).test(src)
+      );
     } catch {
       return false;
     }
   };
+}
+
+/**
+ * Load rank data (SCC index + per-file hazard scores) for enhanced impact analysis.
+ * Fail-open: if rank.js is unavailable or the data can't be computed, returns nulls
+ * and impact() falls back to basic mode transparently.
+ * @param {string} root
+ * @returns {{sccIndex: Map<string, number>|undefined, hazards: Map<string, number>|undefined}}
+ */
+export function loadRankData(root) {
+  try {
+    const report = rankReport(root);
+    if (!report.built) return { sccIndex: undefined, hazards: undefined };
+    const sccIndex = report.cycles?.length
+      ? buildSccIndex(report.cycles)
+      : undefined;
+    const hazards = report.topFiles?.length
+      ? new Map(report.topFiles.map((f) => [f.file, f.hazard]))
+      : undefined;
+    return { sccIndex, hazards };
+  } catch {
+    return { sccIndex: undefined, hazards: undefined };
+  }
 }
 
 /**
@@ -141,18 +184,25 @@ function makeImpactVerify(root) {
  * @param {boolean} [opts.llm]
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
+ * @param {boolean} [opts.basic] skip hazard-aware enhancements
  */
-export function predictImpact(root, target, { threshold = 0.1, llm, model, timeoutMs } = {}) {
-  // Rebuild when the cached atlas is stale (or missing) — a stale graph misses brand-new
-  // files/edges and would under-report impact. The incremental build only re-parses what changed.
+export function predictImpact(
+  root,
+  target,
+  { threshold = 0.1, llm, model, timeoutMs, basic } = {},
+) {
   const cached = loadAtlas(root);
-  const atlas = cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
+  const atlas =
+    cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
   const useLLM = llmEnabled({ llm });
+  const rankData = basic ? {} : loadRankData(root);
   return impactGraph(atlas, target, {
     threshold,
     llm: useLLM,
     run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
     verify: makeImpactVerify(root),
+    sccIndex: rankData.sccIndex,
+    hazards: rankData.hazards,
   });
 }
 
@@ -195,7 +245,9 @@ export function substrateCheck(
   // Bidirectional (clear-a-false-ask / route-down, within rails) follows the JSON default unless
   // the caller overrides it. The numeric bands/floor come from the same config block.
   const bi =
-    typeof bidirectional === "boolean" ? bidirectional : (spec?.llm?.bidirectional ?? true);
+    typeof bidirectional === "boolean"
+      ? bidirectional
+      : (spec?.llm?.bidirectional ?? true);
   const llmOpts = {
     llm: useLLM,
     model,
@@ -249,7 +301,9 @@ export function substrateCheck(
   } else {
     atlasFresh = false; // no atlas and can't build
   }
-  const impactTargets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
+  const impactTargets = [
+    ...new Set([...entities.symbols, ...entities.files]),
+  ].slice(0, 8);
   const impactRun = useLLM ? buildRunner({ model, timeoutMs }) : undefined;
   const impactVerify = makeImpactVerify(root);
   const impacts = atlas
@@ -262,20 +316,26 @@ export function substrateCheck(
         }),
       )
     : [];
-  const impactedFiles = [...new Set(impacts.flatMap((r) => r.impactedFiles || []))].sort();
+  const impactedFiles = [
+    ...new Set(impacts.flatMap((r) => r.impactedFiles || [])),
+  ].sort();
   // Consequence simulation (Eq 4), class "failing tests": which tests likely break if the
   // impacted files change — the impacted files that ARE tests, plus each impacted source file's
   // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
   // Gated on atlas freshness (belt and braces with the null atlas above): predictions from a
   // stale graph are not trustworthy and must not be presented as consequence evidence.
-  const predictedTests = atlasFresh ? predictFailingTests(root, impactedFiles) : [];
+  const predictedTests = atlasFresh
+    ? predictFailingTests(root, impactedFiles)
+    : [];
   // P3 reuse stage: has this team already built (and verified) this? The explicit gate
   // meters + writes evidence (reuseQuery); the ambient hook path stays read-only
   // (reusePeek) so a per-prompt hook never appends to the ledger or metrics.
   const reuse = (() => {
     try {
       const opts = { atlas, nowDay: epochDay() };
-      const r = allowBuild ? reuseQuery(root, text, opts) : reusePeek(root, text, opts);
+      const r = allowBuild
+        ? reuseQuery(root, text, opts)
+        : reusePeek(root, text, opts);
       return {
         tier: r.tier,
         artifact: r.artifact
@@ -336,7 +396,9 @@ export function substrateCheck(
       // Truthful freshness: false when the atlas is missing/stale and couldn't be rebuilt.
       // Consumers must not present impactedFiles as trustworthy when this is false.
       atlasFresh,
-      ...(atlasFresh ? {} : { note: "impact unavailable: atlas missing or stale" }),
+      ...(atlasFresh
+        ? {}
+        : { note: "impact unavailable: atlas missing or stale" }),
     },
     scope,
     memory: {
@@ -352,7 +414,9 @@ export function substrateCheck(
     // never asked for. `lean` is diff-based, so it's quiet until there's something to measure.
     minimality: (() => {
       const pre = minimalityWarnings(text, route, preflight);
-      const lean = allowBuild ? leanRepo(root, text) : { warnings: [], footprint: null };
+      const lean = allowBuild
+        ? leanRepo(root, text)
+        : { warnings: [], footprint: null };
       return {
         warnings: [...pre, ...lean.warnings],
         footprint: lean.footprint,
@@ -403,7 +467,8 @@ export function substrateCheck(
       ],
     },
   };
-  result.llm.provenance.goalAnchor = result.goalAnchor?.provenance?.path ?? "deterministic";
+  result.llm.provenance.goalAnchor =
+    result.goalAnchor?.provenance?.path ?? "deterministic";
   return result;
 }
 
@@ -419,11 +484,14 @@ export function substrateCheck(
  * @param {number} [opts.blastThreshold]
  */
 export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
-  const on = typeof enforce === "boolean" ? enforce : process.env.FORGE_ENFORCE === "1";
+  const on =
+    typeof enforce === "boolean" ? enforce : process.env.FORGE_ENFORCE === "1";
   if (!on || !result) return { block: false };
   const tail = "\n(Set FORGE_ENFORCE=0 to make Forge advisory again.)";
   if (result.assumption?.hardUnderspecified) {
-    const qs = (result.assumption.questions || []).map((q) => `  • ${q}`).join("\n");
+    const qs = (result.assumption.questions || [])
+      .map((q) => `  • ${q}`)
+      .join("\n");
     return {
       block: true,
       reason: `Forge gate (enforcing): this task has no concrete anchor to act on — clarify before I start:\n${qs}${tail}`,
@@ -467,7 +535,8 @@ export function renderSubstrate(result) {
     "",
     `  route: ${result.route.model.name} (${result.route.tier}) · complexity ${result.route.score.toFixed(2)}`,
   );
-  if (result.route.reasons.length) lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
+  if (result.route.reasons.length)
+    lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
   if (result.reuse && result.reuse.tier !== "miss") {
     const a = result.reuse.artifact;
     lines.push(
@@ -483,18 +552,31 @@ export function renderSubstrate(result) {
     for (const q of result.context.questions ?? []) lines.push(`    ? ${q}`);
   }
   if (result.impact.atlasFresh === false) {
-    lines.push("", "  impact: unavailable — atlas missing or stale (predictions not trustworthy)");
+    lines.push(
+      "",
+      "  impact: unavailable — atlas missing or stale (predictions not trustworthy)",
+    );
   } else {
-    lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
-    for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
+    lines.push(
+      "",
+      `  impact: ${result.impact.impactedFiles.length} file(s) predicted`,
+    );
+    for (const file of result.impact.impactedFiles.slice(0, 10))
+      lines.push(`    - ${file}`);
     if (result.impact.impactedFiles.length > 10)
       lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
   }
   // Predicted tests only speak for a FRESH atlas — right after an "impact: unavailable"
   // notice, a likely-affected-tests list would contradict it with stale data (RA-07).
-  const tests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
+  const tests =
+    result.impact.atlasFresh === false
+      ? []
+      : result.impact.predictedTests || [];
   if (tests.length) {
-    lines.push("", `  likely-affected tests (${tests.length}) — run these first:`);
+    lines.push(
+      "",
+      `  likely-affected tests (${tests.length}) — run these first:`,
+    );
     for (const t of tests.slice(0, 8)) lines.push(`    - ${t}`);
   }
   if (result.minimality.warnings.length) {
@@ -506,7 +588,8 @@ export function renderSubstrate(result) {
       "",
       `  goal drift: ${result.goalAnchor.offGoal.length} changed file(s) off the stated goal:`,
     );
-    for (const f of result.goalAnchor.offGoal.slice(0, 8)) lines.push(`    - ${f}`);
+    for (const f of result.goalAnchor.offGoal.slice(0, 8))
+      lines.push(`    - ${f}`);
   }
   lines.push("", "  verify:");
   for (const c of result.verification.checklist) lines.push(`    - ${c}`);
@@ -526,7 +609,9 @@ export function substrateContext(result) {
     result.goalAnchor?.drift ||
     ["opus", "fable"].includes(result.route.key);
   if (!worthSaying) return "";
-  const lines = ["Forge substrate — pre-action advisory (advisory, never blocks):"];
+  const lines = [
+    "Forge substrate — pre-action advisory (advisory, never blocks):",
+  ];
   if (result.assumption.shouldAsk) {
     lines.push(
       `- Under-specified (${result.assumption.risk} risk). Ask before editing:`,
@@ -547,7 +632,10 @@ export function substrateContext(result) {
     );
   }
   // Same freshness rule as the renderer: never advise stale test predictions (RA-07).
-  const predTests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
+  const predTests =
+    result.impact.atlasFresh === false
+      ? []
+      : result.impact.predictedTests || [];
   if (predTests.length)
     lines.push(
       `- Likely-affected tests (${predTests.length}): ${predTests.slice(0, 6).join(", ")}${predTests.length > 6 ? " …" : ""}. Run these first.`,
@@ -558,12 +646,15 @@ export function substrateContext(result) {
       `- Goal drift: ${result.goalAnchor.offGoal.length} changed file(s) off the stated goal (${result.goalAnchor.offGoal.slice(0, 5).join(", ")}). Intended, or wandering?`,
     );
   if (result.memory.matchingLessons)
-    lines.push(`- ${result.memory.matchingLessons} past lesson(s) match this area (advisory).`);
+    lines.push(
+      `- ${result.memory.matchingLessons} past lesson(s) match this area (advisory).`,
+    );
   // I3: proceeding is fine below the ask-threshold, but never SILENTLY — the gaps are
   // named here and recorded to the session log (the handoff surfaces them later).
   if (
     !result.assumption.shouldAsk &&
-    ((result.assumption.missing?.length ?? 0) > 0 || result.assumption.questions?.length > 0)
+    ((result.assumption.missing?.length ?? 0) > 0 ||
+      result.assumption.questions?.length > 0)
   ) {
     const keys = (result.assumption.missing ?? []).map((m) => m.key);
     lines.push(

@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
-import { isTestFile, predictFailingTests } from "./substrate.js";
+import { isTestFile, predictFailingTests, loadRankData } from "./substrate.js";
 import { hasBin, toPosix } from "./util.js";
 
 /**
@@ -282,7 +282,8 @@ export function imagineTask(root, task, { atlas, threshold = 0.1 } = {}) {
   const graph = atlas || loadAtlas(root) || buildAtlas({ root });
   const entities = referencedEntities(task);
   const targets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
-  const reports = targets.map((t) => impact(graph, t, { threshold }));
+  const { sccIndex, hazards } = loadRankData(root);
+  const reports = targets.map((t) => impact(graph, t, { threshold, sccIndex, hazards }));
   const byFile = new Map();
   for (const r of reports) {
     for (const x of r.impacted) {

@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **impact: hazard-aware blast radius.** `forge impact` now fuses the code graph with
+  team memory: SCC-aware propagation (from `forge rank` Tarjan cycles — a change to any
+  file in a circular-dependency cluster impacts all co-members) and a data-driven
+  threshold derived from PageRank centrality and ledger incident history
+  (`effectiveThreshold = base / (1 + hazard)`). No new constants — every enhancement is
+  computed from infrastructure already in the codebase. `--basic` flag reverts to the
+  fixed-threshold mode for comparison.
+
 ### Fixed
 
 - **docs: refresh post-v0.30.0 staleness.** ARCHITECTURE.md repo layout and component

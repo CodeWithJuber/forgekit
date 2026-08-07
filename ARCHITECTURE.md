@@ -111,7 +111,11 @@ flowchart TD
 
 **blast radius** — the set of files an edit is predicted to impact, read from the code
 graph. `forge impact` computes it; the pipeline surfaces it before the model touches
-anything.
+anything. The analysis is **hazard-aware**: SCC-aware propagation (a change to any file
+in a circular-dependency cluster impacts all co-members, via Tarjan from `forge rank`)
+and a data-driven threshold derived from PageRank centrality and ledger incident history
+(`effectiveThreshold = base / (1 + hazard)`). `--basic` reverts to the fixed-threshold
+mode.
 
 The verdict is **advisory by default** — it reports, it does not block. Set
 `FORGE_ENFORCE=1` to turn the strongest signals into a hard block:
