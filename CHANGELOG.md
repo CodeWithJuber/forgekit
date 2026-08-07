@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-07
+
 ### Added
 
 - **`forge rank` — load-bearing code, measured.** Weighted PageRank centrality over the
@@ -1602,7 +1604,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.4...v0.28.0
 [0.27.4]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.3...v0.27.4
 [0.27.3]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.2...v0.27.3
 [0.27.2]: https://github.com/CodeWithJuber/forgekit/compare/v0.27.1...v0.27.2
