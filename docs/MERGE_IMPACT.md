@@ -95,14 +95,42 @@ A synthetic one-line public API change on the real `src/atlas.js` surface propag
 when those real relationships are supplied. Test impact is high on the verification dimension;
 doc impact is high on the docs dimension and remains zero on runtime.
 
+## Automatic evidence adapter
+
+`src/merge_impact_adapter.js` turns repository evidence into MergeField inputs instead of asking
+a caller to label everything by hand.
+
+For each diff file it extracts added/removed lines and classifies the semantic seed as formatting,
+test, docs, CI, dependency, schema, public API, config, generated output, or executable logic.
+Security-sensitive and deletion-heavy deltas add independent consequence signals rather than
+replacing the primary class. Classification returns both confidence and human-readable reasons.
+
+Formatting detection is deliberately semantic enough to survive normal formatter behavior. The
+real ForgeKit `98ce7ece` patch adds a legal trailing comma while reflowing a call, so the adapter
+normalizes whitespace and trailing commas adjacent to closing delimiters before deciding that
+the token sequence is unchanged.
+
+Atlas supplies topology, not meaning. Its dependency edges point from consumer to dependency, so
+the adapter reverses them into consequence direction. The consuming artifact determines how the
+relation is interpreted: test consumers become `verified_by`, documentation becomes
+`documented_by`, workflows become `workflow_uses`, and ordinary source dependencies preserve
+`imports`, `calls`, or `inherits`. Generated registries can add explicit `generates` relations.
+
+This separation is intentional:
+
+- the diff answers **what kind of change happened**;
+- Atlas and other evidence answer **where that consequence can travel**;
+- transfer matrices answer **how the consequence changes meaning while travelling**;
+- MergeField answers **what must be inspected, tested, regenerated, or blocked before merge**.
+
 ## What is not solved yet
 
-The calculus consumes change atoms and typed relationships. Automatic extraction of those
-signals from an arbitrary repository is the next layer. Existing Forge infrastructure already
-provides much of the raw evidence: atlas imports/calls/inheritance, docs impact references,
-sibling-test prediction, generated-doc registries, package metadata, CI workflows, rank/history,
-and git diffs.
+Automatic diff and Atlas adaptation now exists, but relation coverage is not yet universal.
+Repository-specific generators, schemas, runtime reflection, external services, deployment
+contracts, database semantics, and hidden operational dependencies may require additional evidence
+providers. Missing coverage therefore increases uncertainty instead of being interpreted as safety.
 
-The next experiment should build an adapter from those existing evidence channels into
-MergeField and compare its predicted obligations against historical merged PRs. Only measured
-precision/recall should decide whether it replaces or augments the current `forge impact` path.
+The next experiment is historical calibration across merged ForgeKit changes. We should measure
+false-safe rate first, then impacted-file precision/recall, recall@k, test-obligation recall,
+documentation-obligation recall, and risk calibration by bucket. Only measured performance should
+decide whether MergeField replaces or augments the current `forge impact` path.
