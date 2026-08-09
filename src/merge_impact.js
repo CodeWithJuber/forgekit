@@ -281,6 +281,7 @@ export function analyzeMergeImpact({
     outgoing.set(relation.from, current);
   }
 
+  /** @type {Array<{ change: { artifact: string }, signal: Record<string, number>, best: Map<string, Record<string, number>> }>} */
   const perSeed = [];
   let truncated = false;
   for (const change of changes) {
