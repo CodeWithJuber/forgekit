@@ -47,12 +47,9 @@ test("single-line public API edit fans into consumers, tests, and docs", () => {
   assert.ok(result.obligations.tests.includes("test/atlas.test.js"));
   assert.ok(result.obligations.docs.includes("docs/GUIDE.md"));
   assert.ok(
-    result.impacted.find((item) => item.id === "test/atlas.test.js").dimensions.verification >
-      0.7,
+    result.impacted.find((item) => item.id === "test/atlas.test.js").dimensions.verification > 0.7,
   );
-  assert.ok(
-    result.impacted.find((item) => item.id === "docs/GUIDE.md").dimensions.docs > 0.6,
-  );
+  assert.ok(result.impacted.find((item) => item.id === "docs/GUIDE.md").dimensions.docs > 0.6);
 });
 
 test("ForgeKit d0f11aa docs renderer change predicts generated MDX surfaces and its test", () => {
