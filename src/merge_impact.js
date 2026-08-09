@@ -13,7 +13,8 @@ const clamp01 = (value) =>
   Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value) : 0));
 const vector = (value = {}) =>
   Object.fromEntries(DIMENSIONS.map((dimension) => [dimension, clamp01(value[dimension] ?? 0)]));
-const maxDimension = (value) => Math.max(...DIMENSIONS.map((dimension) => value[dimension] ?? 0));
+const maxDimension = (value) =>
+  Math.max(...DIMENSIONS.map((dimension) => value[dimension] ?? 0));
 
 export const CHANGE_PROFILES = Object.freeze({
   formatting: vector({
