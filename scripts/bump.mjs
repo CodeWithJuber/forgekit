@@ -337,7 +337,12 @@ export function applyBump(root, currentVersion, newVersion, date) {
   const landingRel = "landing/index.html";
   const landing = readIfExists(path.join(root, landingRel));
   if (landing !== null && /forgekit v\d+\.\d+\.\d+/.test(landing)) {
-    write(landingRel, landing.replace(/forgekit v\d+\.\d+\.\d+/g, `forgekit v${newVersion}`));
+    write(
+      landingRel,
+      landing
+        .replace(/forgekit v\d+\.\d+\.\d+/g, `forgekit v${newVersion}`)
+        .replace(/("softwareVersion"\s*:\s*")\d+\.\d+\.\d+("?)/g, `$1${newVersion}$2`),
+    );
   }
 
   const roadmapRel = "ROADMAP.md";

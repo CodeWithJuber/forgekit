@@ -176,9 +176,8 @@ export async function collect({ live = process.env.BUILD_PAGES_LIVE === "1" } = 
 // ember/near-black color tokens, one accent, a system font stack. test/pages.test.js
 // enforces that color + font parity across both public surfaces, plus a non-empty changes
 // list and no phantom webfont — so the two can't silently drift into two different
-// "school-project" looks again. The fluid type/space scale is enforced on this page only:
-// the landing page is a built SPA that computes its own scale, and its shell HTML carries
-// just the critical-CSS tokens its pre-hydration paint actually uses.
+// "school-project" looks again. The fluid type/space scale is enforced on this page only;
+// the landing intentionally uses a separate editorial scale while sharing the brand source.
 export function render(d) {
   const live = d.github
     ? `<span class="chip">${esc(d.github.stars)} stars</span><span class="chip">${esc(d.github.forks)} forks</span><span class="chip">${esc(d.github.issues)} open issues</span>`

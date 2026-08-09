@@ -50,11 +50,8 @@ test("the status page derives its fluid type scale + spacing scale from the form
   // page may not hand-pick its own font-size or margin/padding/gap magic numbers.
   //
   // Scope note: this is enforced on the generated status page only. The landing page
-  // is now a built SPA (landing/assets/*, loaded from jsDelivr) that computes its own
-  // scale; its shell HTML carries only the critical-CSS color + font tokens that the
-  // pre-hydration paint actually consumes. Inlining --fs-N / --sp-N into that shell
-  // would satisfy this assertion with markup nothing reads — a green test asserting
-  // nothing. Color and font-stack parity ARE still enforced on both pages above.
+  // intentionally uses an editorial scale tuned for its product narrative. Color and
+  // font-stack parity ARE still enforced on both pages above.
   const norm = (s) => s.replace(/\s+/g, "");
   const status = norm(render(await collect({ live: false })));
   for (const decl of typeScaleCss().split(";"))
@@ -93,15 +90,13 @@ test("landing benchmark metrics are numbers reports/benchmarks.md actually measu
     for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(ms|µs|s)\b/g))
       measured.add(`${m[1]} ${m[2]}`);
   }
-  // The landing SPA renders its metrics client-side from a built chunk, so the shell
-  // HTML states none. This no longer demands that a metric be present — it demands that
-  // any metric the shell DOES state is one reports/benchmarks.md actually measured, so
-  // the check still bites the moment a hardcoded number reappears. The "numbers must be
-  // measured" guarantee itself is not lost: src/docs_check.js (check: "benchmarks")
-  // enforces README <-> reports/benchmarks.md and runs in the same CI gate.
-  const metrics = [...landing.matchAll(/<b>\s*(\d+(?:\.\d+)?)\s*ms\s*<\/b/g)];
-  for (const [, n] of metrics)
-    assert.ok(measured.has(`${n} ms`), `landing claims ${n} ms but no benchmark row measures it`);
+  const metrics = [...landing.matchAll(/data-benchmark="(\d+(?:\.\d+)?)\s*(ms|µs|s)"/g)];
+  assert.ok(metrics.length > 0, "landing exposes at least one measured benchmark");
+  for (const [, n, unit] of metrics)
+    assert.ok(
+      measured.has(`${n} ${unit}`),
+      `landing claims ${n} ${unit} but no benchmark row measures it`,
+    );
 });
 
 // Metadata + freshness enforcement — each assertion below is a defect this change
@@ -144,17 +139,13 @@ test("canonical == og:url on both pages", async () => {
 });
 
 test("landing never states a stale package version", () => {
-  // KNOWN DEBT: the landing SPA states its version inside a built chunk
-  // (landing/assets/c-*.js currently say "forgekit v0.27.0" while package.json has moved
-  // on). That string cannot be corrected from here — the SPA's source is not in this
-  // repo, only its minified output, and hand-patching a build artifact to satisfy a test
-  // would be worse than the drift. So this asserts the shell HTML states no WRONG
-  // version, rather than requiring it to state one. Committing the landing source is the
-  // real fix, after which the `shown.length > 0` requirement should come back.
   const { version } = JSON.parse(repo("package.json"));
   const shown = [...landing.matchAll(/forgekit v(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+  assert.ok(shown.length > 0, "landing states its package version");
   for (const v of shown)
     assert.equal(v, version, `landing shows v${v}, package.json is ${version}`);
+  const schemaVersion = landing.match(/"softwareVersion"\s*:\s*"(\d+\.\d+\.\d+)"/)?.[1];
+  assert.equal(schemaVersion, version, "landing structured data matches package.json");
 });
 
 test("sticky-nav blur stays compositor-light (<=8px)", () => {
@@ -162,29 +153,18 @@ test("sticky-nav blur stays compositor-light (<=8px)", () => {
     assert.ok(Number(px) <= 8, `backdrop blur ${px}px > 8px is repaint-heavy on scroll`);
 });
 
-test("every jsDelivr-pinned landing asset exists in landing/assets", () => {
-  // The landing shell loads its JS/CSS chunks from jsDelivr pinned to a commit SHA,
-  // because .github/workflows/static.yml copies only landing/index.html into _site — it
-  // never deploys landing/assets/. So a pin naming a chunk that isn't in the repo 404s
-  // the entire site with a green build and no other test noticing.
-  //
-  // This deliberately does NOT assert the SHA equals HEAD: the pin is only re-cut when a
-  // chunk actually changes, so an == HEAD check would fail on every unrelated commit.
-  // It checks the two things that are always true of a valid pin — a full-length SHA,
-  // and a file that exists to be served.
-  const pins = [
-    ...landing.matchAll(
-      /cdn\.jsdelivr\.net\/gh\/CodeWithJuber\/forgekit@([^/]+)\/landing\/assets\/([^"']+)/g,
-    ),
-  ];
-  assert.ok(pins.length > 0, "landing pins at least one asset");
-  for (const [, sha, file] of pins) {
-    assert.match(sha, /^[0-9a-f]{40}$/, `pin for ${file} must be a full 40-char commit SHA`);
-    assert.ok(
-      existsSync(fileURLToPath(new URL(`../landing/assets/${file}`, import.meta.url))),
-      `landing/index.html pins landing/assets/${file}, which does not exist`,
-    );
-  }
+test("landing runtime is source-owned and dependency-free", () => {
+  assert.doesNotMatch(
+    landing,
+    /cdn\.jsdelivr\.net|fonts\.googleapis\.com|esm\.sh/,
+    "landing must not depend on an external runtime or webfont",
+  );
+  const scripts = [...landing.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(scripts, ["./app.js"], "landing loads only its readable local runtime");
+  assert.ok(
+    existsSync(fileURLToPath(new URL("../landing/app.js", import.meta.url))),
+    "the local landing runtime exists",
+  );
 });
 
 test("the generated status page is not shipped in the npm tarball", () => {
