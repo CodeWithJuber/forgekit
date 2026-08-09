@@ -136,8 +136,8 @@ test("canonical == og:url on both pages", async () => {
     ["landing", landing],
     ["status", status],
   ]) {
-    const canon = html.match(/rel="canonical"\s+href="([^"]+)"/)?.[1];
-    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)"/)?.[1];
+    const canon = html.match(/rel="canonical"\s+href="([^"]+)")/)?.[1];
+    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)")/)?.[1];
     assert.ok(canon, `${name}: has canonical`);
     assert.equal(canon, ogUrl, `${name}: canonical must equal og:url`);
   }
@@ -185,6 +185,98 @@ test("every jsDelivr-pinned landing asset exists in landing/assets", () => {
       `landing/index.html pins landing/assets/${file}, which does not exist`,
     );
   }
+});
+
+test("pinned landing chunks form a complete closure (no dangling imports)", () => {
+  // A pin can name an entry chunk that exists while one of its static imports does not —
+  // the shell then loads, the SPA 404s a chunk, and the site dies with a green build.
+  // Walk the import graph from the pinned entry (and the pinned CSS) through
+  // landing/assets and require every referenced file to exist on disk. History-free:
+  // works in shallow CI checkouts where git ancestry is unavailable.
+  const pins = [
+    ...landing.matchAll(
+      /cdn\.jsdelivr\.net\/gh\/CodeWithJuber\/forgekit@[0-9a-f]{40}\/landing\/assets\/([^"']+)/g,
+    ),
+  ].map((m) => m[1]);
+  const entry = pins.find((f) => /^index-.*\.js$/.test(f));
+  assert.ok(entry, "landing pins exactly one entry chunk");
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const path = fileURLToPath(new URL(`../landing/assets/${file}`, import.meta.url));
+    assert.ok(existsSync(path), `landing/assets/${file} is pinned/imported but missing`);
+    if (!file.endsWith(".js")) continue;
+    const src = readFileSync(path, "utf8");
+    for (const m of src.matchAll(/(?:from|import)\s*["']\.\/([^"']+)["']/g)) queue.push(m[1]);
+    for (const m of src.matchAll(/import\(\s*["']\.\/([^"']+)["']\s*\)/g)) queue.push(m[1]);
+  }
+});
+
+test("jsDelivr pin is never older than the newest landing/assets commit", async (t) => {
+  // The pin is only re-cut when a chunk actually changes — so the newest commit touching
+  // landing/assets/ must be the pinned commit itself or one of its ancestors. If someone
+  // commits rebuilt chunks without re-cutting the pin, the deployed site silently serves
+  // the old build with a green deploy, and only this check notices. Requires history;
+  // the quality gate checks out with fetch-depth: 0, which is where this bites.
+  const { execFileSync } = await import("node:child_process");
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  const git = (args) => execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
+  if (git(["rev-parse", "--is-shallow-repository"]) === "true") {
+    t.skip("shallow checkout — pin-vs-assets ancestry needs fetch-depth: 0");
+    return;
+  }
+  const pinSha = landing.match(
+    /cdn\.jsdelivr\.net\/gh\/CodeWithJuber\/forgekit@([0-9a-f]{40})\//,
+  )?.[1];
+  assert.ok(pinSha, "landing pins at least one asset to a full commit SHA");
+  const newestAssets = git(["log", "-1", "--format=%H", "--", "landing/assets"]);
+  assert.ok(newestAssets, "landing/assets has at least one commit");
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", newestAssets, pinSha], {
+      cwd: repoRoot,
+    });
+  } catch {
+    assert.fail(
+      `landing/assets changed in ${newestAssets.slice(0, 8)} after the pin was cut at ` +
+        `${pinSha.slice(0, 8)} — re-cut the jsDelivr pin in landing/index.html to the ` +
+        `newest chunk commit (the deployed site is serving stale chunks)`,
+    );
+  }
+});
+
+test("deployed site serves the same chunks the repo pins", async (t) => {
+  if (process.env.RUN_INTEGRATION !== "1") {
+    t.skip("set RUN_INTEGRATION=1 to hit the deployed site");
+    return;
+  }
+  // The end-to-end smoke: what Pages serves must equal what the repo pins. Catches a
+  // failed/partial deploy that every in-repo check is blind to. Retried like the
+  // build-time fetch in scripts/build-pages.mjs — a transient network blip must not
+  // masquerade as a deploy failure.
+  let res;
+  let lastErr;
+  for (let i = 0; i < 3 && !res; i++) {
+    try {
+      res = await fetch("https://codewithjuber.github.io/forgekit/");
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 200 * 2 ** i));
+    }
+  }
+  assert.ok(res, `deployed site unreachable after 3 attempts: ${lastErr}`);
+  assert.ok(res.ok, `deployed site returned HTTP ${res.status}`);
+  const deployed = await res.text();
+  const repoPins = [
+    ...landing.matchAll(
+      /cdn\.jsdelivr\.net\/gh\/CodeWithJuber\/forgekit@[0-9a-f]{40}\/landing\/assets\/[^"']+/g,
+    ),
+  ];
+  assert.ok(repoPins.length > 0, "repo pins at least one asset");
+  for (const [pin] of repoPins)
+    assert.ok(deployed.includes(pin), `deployed site is missing pinned asset ${pin}`);
 });
 
 test("the generated status page is not shipped in the npm tarball", () => {
