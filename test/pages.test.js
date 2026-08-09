@@ -136,8 +136,8 @@ test("canonical == og:url on both pages", async () => {
     ["landing", landing],
     ["status", status],
   ]) {
-    const canon = html.match(/rel="canonical"\s+href="([^"]+)")/)?.[1];
-    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)")/)?.[1];
+    const canon = html.match(/rel="canonical"\s+href="([^"]+)"/)?.[1];
+    const ogUrl = html.match(/property="og:url"\s+content="([^"]+)"/)?.[1];
     assert.ok(canon, `${name}: has canonical`);
     assert.equal(canon, ogUrl, `${name}: canonical must equal og:url`);
   }
