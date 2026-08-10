@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Landing: source-owned technical instrument.** Replaced the delayed, externally pinned
+  SPA shell with an immediate-rendering, dependency-free editorial page. The new experience
+  explains memory, foresight, and guardrails through accessible interactive panels; shows
+  repository-measured evidence and beta limits; and keeps version, palette, install paths,
+  responsive behavior, and runtime ownership inside the repository’s existing quality gates.
+
 ## [0.31.0] - 2026-08-07
 
 ### Changed

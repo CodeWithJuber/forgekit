@@ -300,7 +300,10 @@ function makeFixture() {
   w(".claude-plugin/plugin.json", '{\n  "name": "fixture",\n  "version": "0.4.0"\n}\n');
   w(".codex-plugin/plugin.json", '{\n  "name": "fixture",\n  "version": "0.4.0"\n}\n');
   w("CITATION.cff", 'cff-version: 1.2.0\nversion: 0.4.0\ndate-released: "2026-07-06"\n');
-  w("landing/index.html", '<div class="mono">forgekit v0.4.0 · MIT</div>\n');
+  w(
+    "landing/index.html",
+    '<script type="application/ld+json">{"softwareVersion":"0.4.0"}</script><div class="mono">forgekit v0.4.0 · MIT</div>\n',
+  );
   w("ROADMAP.md", "# Roadmap\n\n## Now (`master`, v0.4.0)\n\nSome text.\n");
   w("CHANGELOG.md", CHANGELOG);
   return dir;
@@ -334,6 +337,7 @@ test("applyBump updates every version field in a fixture tree", () => {
     assert.match(read("CITATION.cff"), /^version: 0\.5\.0$/m);
     assert.match(read("CITATION.cff"), /^date-released: "2026-07-07"$/m);
     assert.match(read("landing/index.html"), /forgekit v0\.5\.0/);
+    assert.match(read("landing/index.html"), /"softwareVersion":"0\.5\.0"/);
     assert.match(read("ROADMAP.md"), /## Now \(`master`, v0\.5\.0\)/);
     assert.match(read("CHANGELOG.md"), /## \[0\.5\.0\] - 2026-07-07/);
   } finally {

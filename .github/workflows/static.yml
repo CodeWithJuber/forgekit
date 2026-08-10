@@ -39,6 +39,7 @@ jobs:
           BUILD_PAGES_LIVE=1 node scripts/build-pages.mjs
           mkdir -p _site/status
           cp landing/index.html _site/index.html
+          cp landing/app.js _site/app.js
           cp public/index.html _site/status/index.html
           # Brand assets referenced by absolute URL from both pages (favicon,
           # apple-touch-icon, 1200x630 og card). Served from the Pages root.

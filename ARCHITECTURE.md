@@ -554,7 +554,7 @@ from the tree it describes.
 flowchart LR
   test["test<br/>100 files"]
   src["src<br/>94 files"]
-  landing["landing<br/>60 files"]
+  landing["landing<br/>61 files"]
   research["research<br/>35 files"]
   bench["bench<br/>2 files"]
   global["global<br/>2 files"]
