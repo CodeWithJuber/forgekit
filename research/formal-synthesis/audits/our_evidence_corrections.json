@@ -1,0 +1,28 @@
+{
+  "purpose": "Corrections to THIS programme's own evidence record, found by auditing someone else's. Recorded because our v2 paper's evidence appendix now has known staleness.",
+  "verified_by": "Evidence track, primary-source retrieval (PDFs fetched as artifacts: spracklen.pdf, reeval2026.pdf)",
+  "corrections": [
+    {
+      "our_record": "C1_METR_slowdown \u2014 graded 'confirmed', 19% slower / 20% believed-faster",
+      "correction": "Still confirmed for its own scope, but INCOMPLETE: METR published a Feb 2026 follow-up (metr.org/blog/2026-02-24-uplift-update) in which METR itself declines to stand behind a current estimate, citing severe self-documented selection effects (developers refusing to work without AI even at reduced $50/hr; 30-50% withheld tasks). Our appendix cites only the 2025 result.",
+      "action": "Add the Feb 2026 scoping caveat wherever C1 appears. Do NOT cite the follow-up as evidence AI now speeds developers up \u2014 METR explicitly does not claim that.",
+      "credit": "hikmah-stack's EVIDENCE.md already carried this caveat before our audit began."
+    },
+    {
+      "our_record": "C4_GitClear_duplication \u2014 graded 'vendor-only', 8x clone growth with a caught 4x-vs-8x internal inconsistency",
+      "correction": "The vendor-only grading and the internal inconsistency both HELD on re-check. But the underlying direction is corroborated by unrelated telemetry (DORA 2025, CodeRabbit), so total exclusion is over-cautious.",
+      "action": "Keep the vendor flag; state the direction is corroborated while the precise multiple is not."
+    },
+    {
+      "our_record": "Package-hallucination statistics were absent from our evidence map entirely",
+      "correction": "Two framings of the SAME study (Spracklen et al., USENIX Security '25) exist and both are correct at different denominators: 5.2% commercial / 21.7% open-source at the code-sample level (576,000 samples), and 19.7% (440,445 of 2.23M package mentions) at the package-mention level. A 2026 single-author preprint (arXiv:2605.17062) replicating on 5 frontier models finds 4.62-6.10%.",
+      "action": "If we cite this, name the denominator explicitly and mark the 2026 preprint as unreviewed. The bare 19.7% is STALE for current frontier models though accurate for the Sept-2024 cohort tested.",
+      "note": "I previously stated the 440,445 and 4.62-6.10% figures WITHOUT having retrieved them; they were retracted and are now legitimately sourced by the Evidence track's PDF retrieval."
+    },
+    {
+      "our_record": "Our materials carry a single aggregate provenance endnote",
+      "correction": "hikmah-stack's EVIDENCE.md carries a per-document 'Verified: <date>' stamp plus a standing five-rule Evidence Maintenance Rule (link primary source; state population/date/design; state a limitation; never universalize a dated measurement; re-check before release).",
+      "action": "Adopt the per-statistic date stamp and the maintenance rule in our own evidence appendix. This is a structural practice their docs do better than ours."
+    }
+  ]
+}

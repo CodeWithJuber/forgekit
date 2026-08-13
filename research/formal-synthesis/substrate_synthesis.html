@@ -104,6 +104,7 @@ sub{font-size:.72em}
 <li><a href="#forgekit">forgekit &mdash; the deployed binding</a></li>
 <li><a href="#limits">Honest limits &mdash; what no architecture can guarantee</a></li>
 <li><a href="#conclusion">Conclusion</a></li>
+<li><a href="#convergence">Four independent arrivals &mdash; the convergence audited</a></li>
 </ol>
 <div class="small">Appendix A: graded reference set &nbsp;&middot;&nbsp; Appendix B: crosswalk table &nbsp;&middot;&nbsp; References</div>
 </div>
@@ -586,6 +587,115 @@ partial implementation of the table = definitionally incomplete (Def. Done).</pr
 <p>A language model that writes code is a fixed probabilistic map, and three independent efforts &mdash; one from cognition, one from production failures, one from a shipped codebase &mdash; converged on the same remedy: wrap it in an external, stateful architecture that supplies the faculties it structurally lacks. This paper showed they describe one object. The impact-awareness faculty <em>is</em> the change-closure fixpoint; the assumption gate <em>is</em> the amnesia equation; and both rest on a single theorem &mdash; reliability is the product of a <em>probabilistic</em> instruction layer that raises <span class="mono">p&lt;1</span> and a <em>deterministic</em> interception layer that guarantees a floor, with neither alone sufficient.</p>
 <p>That theorem is the formal content of a plain discipline: <em>the output of a probability engine is never to be trusted on its own; trust is earned by an external check.</em> The Qur'anic lens gives that discipline its oldest names &mdash; <em>l&#257; taqfu</em>, do not pursue what you do not know; <em>tabayyun</em>, verify the report before you act; <em>al-am&#257;na</em>, the weight of a trust accepted by one who may err. The mathematics says how to build the check. The tradition says why it is owed. The codebase shows it runs.</p>
 <p class="small" style="margin-top:20px;color:#888">Companion artifacts: the three-way crosswalk (JSON + markdown), the graded reference set (Appendix&nbsp;A), and two runnable prototype packages (impact-oracle, router-gate). This synthesis consolidates and does not supersede the v2 <em>Theory&nbsp;&rarr;&nbsp;Evidence&nbsp;&rarr;&nbsp;Build-Map</em> edition, which carries the empirical evidence layer and the full ecosystem map.</p>
+
+
+<h2 id="convergence">14&ensp;Four independent arrivals &mdash; the convergence audited</h2>
+
+<p>A theory that only its author believes is a hypothesis. This section reports what happened when
+three further bodies of work, developed independently and in different languages, were audited
+against the law of &sect;4 &mdash; and against each other.</p>
+
+<h3>14.1&ensp;The four layers</h3>
+
+<p>Four artifacts now state the same design law. They were not derived from one another: two
+manuscripts were written as general operating principles, a Rust kernel was built as
+production infrastructure, and the formal theory was developed as mathematics.</p>
+
+<table>
+<tr><th>Layer</th><th>Form</th><th>Its own statement of the law</th></tr>
+<tr><td><strong>Formal theory</strong></td><td>this paper</td>
+    <td>Theorem&nbsp;D: reliability = probabilistic instruction layer &times; deterministic interception layer</td></tr>
+<tr><td><strong>forgekit</strong></td><td>cross-agent config (JavaScript)</td>
+    <td>committed <span class="mono">docs/</span> store + lifecycle hooks; instructions in <span class="mono">CLAUDE.md</span>, enforcement in code</td></tr>
+<tr><td><strong>hikmah-stack</strong></td><td>Rust cognitive kernel, v3.0.0</td>
+    <td>&ldquo;The kernel is <em>not</em> a neural network&hellip; learned models are optional proposal engines behind a stable interface&rdquo;</td></tr>
+<tr><td><strong>wisdom-lens</strong></td><td>practitioner plugin + source manuscripts</td>
+    <td>&ldquo;Encode invariants in permissions and code, never in prompts alone. Anything user-reachable is preference.&rdquo;</td></tr>
+</table>
+
+<figure>
+<img src="{{artifact:art_5d076ce3-0f54-4394-9a77-f70a336ca843}}" alt="Four independent arrivals at one design law">
+<figcaption><strong>Figure 8. Four independent arrivals at one design law.</strong> Theory proves it,
+forgekit binds it across agents, hikmah-stack makes it deterministic in compiled code, wisdom-lens
+makes it teachable. Each states <span class="mono">P(silent&nbsp;miss) = (1&minus;p)&middot;&prod;<sub>j</sub>(1&minus;c<sub>j</sub>)</span> in its
+own vocabulary. Convergence from four directions is the strongest available evidence that the law was
+discovered rather than invented.</figcaption>
+</figure>
+
+<h3>14.2&ensp;The law violated inside the repository that states it</h3>
+
+<p>The most instructive finding of the audit is a counterexample, and it is
+<em>self-inflicted by the layer that states the law most explicitly</em>. In hikmah-stack the Codex
+adapter binds the completion gate to a deterministic command; the Claude adapter binds it to an
+LLM-evaluated prompt. The deterministic gate script already resolves a Claude-specific environment
+variable, so it supports that host &mdash; the adapter simply never called it. Version history
+settles intent: the release that shipped the kernel and the gate script touched sixty-seven files
+and rewired one adapter; the other was not among them.</p>
+
+<div class="callout key">
+<h4>Why this is evidence for the theorem, not against the stack</h4>
+<p>Theorem&nbsp;D predicts a specific failure shape: a configuration carrying only
+&Pi;<sub>3</sub>, where <span class="mono">c<sub>j</sub></span> is absent and the residual is the
+full <span class="mono">(1-p)</span>. That is exactly what one host of a well-engineered,
+theory-aware system was running &mdash; not through disagreement with the law, but because a
+migration upgraded one adapter and missed another. The theorem's practical content is that this
+class of gap is <em>invisible without an explicit check</em>: the repository's own validator returns
+success on the asymmetric configuration, because it verifies packaging rather than behaviour. A
+deterministic layer that is present in the tree but unbound to the lifecycle contributes nothing to
+the product.</p>
+</div>
+
+<h3>14.3&ensp;What the audit added to the theory</h3>
+
+<p>Seventeen components of the Rust kernel were mapped onto this paper's vocabulary: three are
+identities, five refinements, four extensions, and <strong>five have no counterpart here at
+all</strong>. The last group is the honest yield of the exercise, because it marks where the formal
+theory is incomplete rather than merely differently expressed.</p>
+
+<ul>
+<li><strong>Goal-directed planning.</strong> A symbolic forward planner searches action sequences
+toward a goal state. Algorithms&nbsp;A1&ndash;A7 analyse impact and carry state across boundaries on
+an <em>existing</em> artifact graph; none of them constructs a new plan. This is a separate
+capability, not a refinement of ours.</li>
+<li><strong>Prospective memory.</strong> Commitments are a first-class trace kind with deadlines, and
+a queue surfaces what is due. Our model of &ldquo;what must happen&rdquo; is task-scoped and
+present-tense: the closure <span class="mono">&Delta;*</span> is computed per task and
+<span class="mono">Done(t)</span> checked once. An obligation that outlives the task has no
+representation in our framework.</li>
+<li><strong>Privacy-classed persistence.</strong> Traces carry a privacy class and the store
+<em>refuses</em> sensitive persistence by default. Our &Pi;<sub>1</sub> is silent on what class of
+information is safe to persist &mdash; &ldquo;files that survive sessions&rdquo; does not distinguish
+a coding convention from a secret. This is a genuine gap in the theory as stated.</li>
+<li><strong>Append-only provenance</strong> &mdash; and here the two designs
+<em>diverge</em> rather than one extending the other. The kernel replays its full ledger from genesis
+for complete auditability; our A4 deliberately bounds the handoff snapshot
+(<span class="mono">|&sigma;| &le; B</span>) so loader cost stays <span class="mono">O(bounded)</span>
+forever. Both positions are defensible, and the trade &mdash; auditability against boot cost &mdash;
+is a real design axis this paper had treated as settled.</li>
+</ul>
+
+<h3>14.4&ensp;A correction to this paper's own evidence discipline</h3>
+
+<div class="callout warn">
+<h4>Where an audited artifact was more rigorous than ours</h4>
+<p>hikmah-stack's evidence document carries a per-document verification date, a five-rule maintenance
+policy (link the primary source; state population, date and design; state a limitation; never
+universalize a dated measurement; re-check before release), and a &ldquo;use carefully&rdquo; caveat
+on every statistic. It also already carried a 2026 follow-up caution on the productivity study that
+this paper's own evidence appendix (&sect;4) did not. On that statistic the audited artifact was
+ahead of us, and the practice has been adopted rather than merely noted. Two figures in the wider
+programme were found stale by the same pass: one measurement now superseded by a
+frontier-model replication, and one live-updating tracker count that is stale by construction
+whenever it is hardcoded.</p>
+</div>
+
+<p>The distillation direction also carries a lesson. Comparing the practitioner plugin against the
+manuscripts it was derived from, five of six statistics lost material provenance in compression:
+denominators, author attributions, study designs, and in one case the specific mechanism that made
+the finding actionable. The manuscripts satisfy the plugin's own stated rule &mdash; tag every claim
+as known, inferred, or guessed, and open the source &mdash; more faithfully than the plugin does.
+Compression toward usability is not free, and the cost falls precisely on the provenance that lets a
+reader check the claim.</p>
 
 <h2 id="appendix-refs">Appendix A&ensp;&mdash;&ensp;Graded reference set (new sources)</h2>
 <p>The synthesis draws in a body of cognitive-architecture and process literature beyond the substrate paper's original 32 references. Each new source was independently verified this pass &mdash; modern arXiv sources by direct metadata fetch, classical works by primary-host search or established secondary knowledge &mdash; and graded: <strong>confirmed</strong> (record retrieved, attribution matches), <strong>traceable</strong> (the work clearly exists and is correctly attributed, but rests on established secondary knowledge rather than a single retrievable record), <strong>unverifiable</strong> (could not confirm). The tally: <strong>8 confirmed, 6 traceable, 0 unverifiable.</strong></p>
