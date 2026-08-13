@@ -163,5 +163,20 @@
       "grade": "confirmed",
       "note": "The founding Agent-as-a-Judge paper that coined the term; added on the verification track's explicit recommendation to disambiguate from the 2026 survey (2601.05111)."
     }
-  ]
+  ],
+  "count_provenance": {
+    "verified_by_citations_track": 14,
+    "confirmed_by_citations_track": 8,
+    "added_on_track_recommendation": 1,
+    "added_key": "zhuge2024agentjudge",
+    "added_detail": "The founding Agent-as-a-Judge paper (Zhuge et al. 2024, arXiv:2410.10934) \u2014 flagged and web-verified by the Citations track itself when disambiguating the 2026 survey 2601.05111 \u2014 was added to the set on the track's explicit recommendation. It is graded 'confirmed'.",
+    "canonical_totals": {
+      "new_sources": 15,
+      "confirmed": 9,
+      "traceable": 6,
+      "unverifiable": 0,
+      "merged_bibliography_entries": 47
+    },
+    "note": "The Citations sub-agent's own completion report states 14 new / 8 confirmed / 46 merged (its frame, before the +1). This canonical set states 15 / 9 / 47 (after the +1). The two differ by exactly the added founding paper; both are internally correct."
+  }
 }
