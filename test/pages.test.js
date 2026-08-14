@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 import { collect, render } from "../scripts/build-pages.mjs";
 import { BRAND, spaceScaleCss, typeScaleCss } from "../src/brand.js";
 
-const repo = (rel) =>
-  readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
+const repo = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const landing = repo("landing/index.html");
 
 test("pages renderer uses repo data and accessible landmarks", async () => {
@@ -29,8 +28,7 @@ test("landing + status derive the SAME palette from brand.json (one source, dark
   // brand.json.colors is the single source of the palette. Every hex it defines — for BOTH
   // schemes — must appear verbatim on both public pages. Change a hex there and this fails
   // until every surface is updated, which is what makes brand.json the source of truth.
-  const hexes = (palette) =>
-    Object.values(palette).filter((v) => v.startsWith("#"));
+  const hexes = (palette) => Object.values(palette).filter((v) => v.startsWith("#"));
   for (const [scheme, palette] of Object.entries(BRAND.colors)) {
     for (const hex of hexes(palette)) {
       assert.ok(
@@ -59,33 +57,21 @@ test("the status page derives its fluid type scale + spacing scale from the form
   for (const decl of typeScaleCss().split(";"))
     assert.ok(status.includes(norm(decl)), `status missing type token ${decl}`);
   for (const decl of spaceScaleCss().split(";"))
-    assert.ok(
-      status.includes(norm(decl)),
-      `status missing space token ${decl}`,
-    );
+    assert.ok(status.includes(norm(decl)), `status missing space token ${decl}`);
 });
 
 test("landing declares no webfont it fails to load (no phantom Inter)", () => {
   const sans = landing.match(/--sans:\s*([^;]+);/)?.[1] ?? "";
-  assert.ok(
-    sans.includes("system-ui"),
-    "landing --sans should be a system stack",
-  );
+  assert.ok(sans.includes("system-ui"), "landing --sans should be a system stack");
   // If the CSS names a webfont family, it must actually load it (@font-face / <link>).
   if (/\bInter\b/.test(landing)) {
-    assert.match(
-      landing,
-      /@font-face|rel=["']?stylesheet/,
-      "Inter named but never loaded",
-    );
+    assert.match(landing, /@font-face|rel=["']?stylesheet/, "Inter named but never loaded");
   }
 });
 
 test("status page 'Latest changes' list is never empty", async () => {
   const status = render(await collect({ live: false }));
-  const list = status.match(
-    /Latest repo changes<\/h2>[\s\S]*?<ul class="list">([\s\S]*?)<\/ul>/,
-  );
+  const list = status.match(/Latest repo changes<\/h2>[\s\S]*?<ul class="list">([\s\S]*?)<\/ul>/);
   assert.ok(list, "the changes section renders");
   const items = [...list[1].matchAll(/<li>([\s\S]*?)<\/li>/g)];
   assert.ok(items.length > 0, "at least one change is listed");
@@ -104,13 +90,8 @@ test("landing benchmark metrics are numbers reports/benchmarks.md actually measu
     for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*(ms|µs|s)\b/g))
       measured.add(`${m[1]} ${m[2]}`);
   }
-  const metrics = [
-    ...landing.matchAll(/data-benchmark="(\d+(?:\.\d+)?)\s*(ms|µs|s)"/g),
-  ];
-  assert.ok(
-    metrics.length > 0,
-    "landing exposes at least one measured benchmark",
-  );
+  const metrics = [...landing.matchAll(/data-benchmark="(\d+(?:\.\d+)?)\s*(ms|µs|s)"/g)];
+  assert.ok(metrics.length > 0, "landing exposes at least one measured benchmark");
   for (const [, n, unit] of metrics)
     assert.ok(
       measured.has(`${n} ${unit}`),
@@ -159,28 +140,17 @@ test("canonical == og:url on both pages", async () => {
 
 test("landing never states a stale package version", () => {
   const { version } = JSON.parse(repo("package.json"));
-  const shown = [...landing.matchAll(/forgekit v(\d+\.\d+\.\d+)/g)].map(
-    (m) => m[1],
-  );
+  const shown = [...landing.matchAll(/forgekit v(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
   assert.ok(shown.length > 0, "landing states its package version");
   for (const v of shown)
     assert.equal(v, version, `landing shows v${v}, package.json is ${version}`);
-  const schemaVersion = landing.match(
-    /"softwareVersion"\s*:\s*"(\d+\.\d+\.\d+)"/,
-  )?.[1];
-  assert.equal(
-    schemaVersion,
-    version,
-    "landing structured data matches package.json",
-  );
+  const schemaVersion = landing.match(/"softwareVersion"\s*:\s*"(\d+\.\d+\.\d+)"/)?.[1];
+  assert.equal(schemaVersion, version, "landing structured data matches package.json");
 });
 
 test("sticky-nav blur stays compositor-light (<=8px)", () => {
   for (const [, px] of landing.matchAll(/backdrop-filter:\s*blur\((\d+)px\)/g))
-    assert.ok(
-      Number(px) <= 8,
-      `backdrop blur ${px}px > 8px is repaint-heavy on scroll`,
-    );
+    assert.ok(Number(px) <= 8, `backdrop blur ${px}px > 8px is repaint-heavy on scroll`);
 });
 
 test("landing runtime is source-owned and dependency-free", () => {
@@ -189,14 +159,8 @@ test("landing runtime is source-owned and dependency-free", () => {
     /cdn\.jsdelivr\.net|fonts\.googleapis\.com|esm\.sh/,
     "landing must not depend on an external runtime or webfont",
   );
-  const scripts = [...landing.matchAll(/<script[^>]+src="([^"]+)"/g)].map(
-    (m) => m[1],
-  );
-  assert.deepEqual(
-    scripts,
-    ["./app.js"],
-    "landing loads only its readable local runtime",
-  );
+  const scripts = [...landing.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(scripts, ["./app.js"], "landing loads only its readable local runtime");
   assert.ok(
     existsSync(fileURLToPath(new URL("../landing/app.js", import.meta.url))),
     "the local landing runtime exists",
