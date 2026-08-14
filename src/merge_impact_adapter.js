@@ -44,7 +44,10 @@ function changedLines(patch = "") {
 }
 
 function compact(lines) {
-  return lines.join("").replace(/\s+/g, "").replace(/,([)\]}])/g, "$1");
+  return lines
+    .join("")
+    .replace(/\s+/g, "")
+    .replace(/,([)\]}])/g, "$1");
 }
 
 function formattingOnly(added, removed) {

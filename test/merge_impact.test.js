@@ -115,21 +115,14 @@ test("independent changed roots combine with noisy-OR instead of max-only propag
       { artifact: "b.js", kind: "logic" },
     ],
   });
-  const oneProbability = one.impacted.find(
-    (item) => item.id === "consumer.js",
-  ).dimensions.runtime;
-  const twoProbability = two.impacted.find(
-    (item) => item.id === "consumer.js",
-  ).dimensions.runtime;
+  const oneProbability = one.impacted.find((item) => item.id === "consumer.js").dimensions.runtime;
+  const twoProbability = two.impacted.find((item) => item.id === "consumer.js").dimensions.runtime;
   assert.ok(twoProbability > oneProbability, `${twoProbability} <= ${oneProbability}`);
 });
 
 test("cycle cannot self-amplify a single seed", () => {
   const artifacts = [artifact("a.js"), artifact("b.js")];
-  const relations = [
-    relation("a.js", "b.js", "imports"),
-    relation("b.js", "a.js", "imports"),
-  ];
+  const relations = [relation("a.js", "b.js", "imports"), relation("b.js", "a.js", "imports")];
   const result = analyzeMergeImpact({
     artifacts,
     relations,

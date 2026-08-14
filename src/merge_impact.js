@@ -9,12 +9,10 @@ export const DIMENSIONS = Object.freeze([
 ]);
 
 const ZERO = Object.freeze(Object.fromEntries(DIMENSIONS.map((dimension) => [dimension, 0])));
-const clamp01 = (value) =>
-  Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value) : 0));
+const clamp01 = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value) : 0));
 const vector = (value = {}) =>
   Object.fromEntries(DIMENSIONS.map((dimension) => [dimension, clamp01(value[dimension] ?? 0)]));
-const maxDimension = (value) =>
-  Math.max(...DIMENSIONS.map((dimension) => value[dimension] ?? 0));
+const maxDimension = (value) => Math.max(...DIMENSIONS.map((dimension) => value[dimension] ?? 0));
 
 export const CHANGE_PROFILES = Object.freeze({
   formatting: vector({
@@ -194,10 +192,7 @@ export function signalForChange(change = {}) {
   const lines = Math.max(1, Number(change.linesChanged ?? change.lines ?? 1) || 1);
   const size = Math.min(1, Math.log2(1 + lines) / 8);
   const scaled = Object.fromEntries(
-    DIMENSIONS.map((dimension) => [
-      dimension,
-      clamp01(base[dimension] * (1 + 0.22 * size)),
-    ]),
+    DIMENSIONS.map((dimension) => [dimension, clamp01(base[dimension] * (1 + 0.22 * size))]),
   );
   for (const [dimension, value] of Object.entries(change.signal || {})) {
     if (DIMENSIONS.includes(dimension)) scaled[dimension] = clamp01(value);
@@ -325,9 +320,7 @@ export function analyzeMergeImpact({
   for (const [id, artifact] of artifactsById.entries()) {
     const combined = {};
     for (const dimension of DIMENSIONS) {
-      combined[dimension] = noisyOr(
-        perSeed.map((seed) => seed.best.get(id)?.[dimension] || 0),
-      );
+      combined[dimension] = noisyOr(perSeed.map((seed) => seed.best.get(id)?.[dimension] || 0));
     }
     const overall = artifactOverall(combined, artifact.criticality || 0);
     if (overall <= epsilon) continue;
@@ -382,14 +375,8 @@ export function analyzeMergeImpact({
     if (!hasTest) verificationGaps.push(consequential * 0.55);
   }
   const verificationGap = noisyOr(verificationGaps);
-  const risk = noisyOr([
-    0.58 * peak,
-    0.38 * breadth,
-    0.5 * uncertainty,
-    0.52 * verificationGap,
-  ]);
-  const level =
-    risk >= 0.75 ? "critical" : risk >= 0.5 ? "high" : risk >= 0.25 ? "medium" : "low";
+  const risk = noisyOr([0.58 * peak, 0.38 * breadth, 0.5 * uncertainty, 0.52 * verificationGap]);
+  const level = risk >= 0.75 ? "critical" : risk >= 0.5 ? "high" : risk >= 0.25 ? "medium" : "low";
 
   const obligations = {
     tests: impacted

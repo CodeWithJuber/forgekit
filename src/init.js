@@ -564,7 +564,7 @@ export function removeForgeSettings({ settingsPath } = {}) {
     for (const [event, entries] of Object.entries(settings.hooks)) {
       if (!Array.isArray(entries)) continue;
       const ownedCmds = ownedHookCmds.get(event);
-      if (!ownedCmds || !ownedCmds.size) continue;
+      if (!ownedCmds?.size) continue;
       let changed = false;
       const kept = [];
       for (const entry of entries) {
