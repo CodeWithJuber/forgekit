@@ -27,3 +27,14 @@ Independent verification: modern arXiv sources by direct metadata API fetch (tit
 ## The two future-dated identifiers
 
 Two source IDs are dated 2026. Both resolve to real arXiv preprints matching their claims (confirmed by direct fetch). arXiv:2604.26275 (Agentic SDLC) is a single-author, non-peer-reviewed preprint. arXiv:2601.05111 (Agent-as-a-Judge, Jan 2026 survey) is a DIFFERENT paper from the founding work that coined the term (Zhuge et al. 2024, arXiv:2410.10934, added here on the verifier's recommendation).
+
+## Count provenance (14 → 15)
+
+The Citations verification track independently verified **14** new sources (8 confirmed, 6 traceable, 0 unverifiable) and merged them with the existing 32-entry bibliography (46 total). When disambiguating the 2026 Agent-as-a-Judge survey (`2601.05111`) from the founding work, the track itself flagged and web-verified **Zhuge et al. 2024** (`arXiv:2410.10934`) and recommended citing it. That paper was added here on that recommendation and graded `confirmed`, giving the canonical totals below.
+
+| Frame | New sources | Confirmed | Traceable | Unverifiable | Merged bibliography |
+|---|---|---|---|---|---|
+| Citations track report (before +1) | 14 | 8 | 6 | 0 | 46 |
+| **Canonical (after +1: `zhuge2024agentjudge`)** | **15** | **9** | **6** | **0** | **47** |
+
+The two differ by exactly the one added founding paper; both are internally correct.
