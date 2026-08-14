@@ -961,7 +961,7 @@
         const dx = nums.length > 1 ? w / (nums.length - 1) : 0;
         const y = (v) => (h - 1 - ((v - min) / range) * (h - 2)).toFixed(1);
         const pts = nums
-          .map((v, i) => (i * dx).toFixed(1) + "," + y(v))
+          .map((v, i) => `${(i * dx).toFixed(1)},${y(v)}`)
           .join(" ");
         const lx = ((nums.length - 1) * dx).toFixed(1);
         const ly = y(nums[nums.length - 1]);
@@ -1045,7 +1045,7 @@
                 '</td><td class="mono faint">' +
                 esc(d.version || "") +
                 (d.latest && d.latest !== d.version
-                  ? " → " + esc(d.latest)
+                  ? ` → ${esc(d.latest)}`
                   : "") +
                 "</td></tr>",
             )

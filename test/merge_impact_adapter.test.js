@@ -66,9 +66,7 @@ test("atlas dependency direction is inverted into consequence direction", () => 
   assert.ok(
     evidence.relations.some(
       (item) =>
-        item.from === "src/atlas.js" &&
-        item.to === "src/substrate.js" &&
-        item.kind === "imports",
+        item.from === "src/atlas.js" && item.to === "src/substrate.js" && item.kind === "imports",
     ),
   );
   assert.ok(
@@ -82,9 +80,7 @@ test("atlas dependency direction is inverted into consequence direction", () => 
   assert.ok(
     evidence.relations.some(
       (item) =>
-        item.from === "src/atlas.js" &&
-        item.to === "README.md" &&
-        item.kind === "documented_by",
+        item.from === "src/atlas.js" && item.to === "README.md" && item.kind === "documented_by",
     ),
   );
 });

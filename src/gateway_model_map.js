@@ -92,7 +92,7 @@ export function fetchModelIds(base, { timeoutMs = 5000, fetchImpl } = {}) {
   const clean = Array.isArray(ids)
     ? [...new Set(ids.filter((x) => typeof x === "string" && x))]
     : null;
-  const result = clean && clean.length ? clean : null;
+  const result = clean?.length ? clean : null;
   _catalogCache.set(base, result);
   return result;
 }
