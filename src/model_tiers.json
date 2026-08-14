@@ -1,6 +1,6 @@
 {
   "pricingCurrency": "USD",
-  "pricingVerified": "2026-07-05",
+  "pricingVerified": "2026-07-17",
   "models": {
     "haiku": {
       "id": "claude-haiku-4-5-20251001",
@@ -16,6 +16,15 @@
       "tier": "medium",
       "inCost": 3,
       "outCost": 15,
+      "prices": [
+        {
+          "effectiveFrom": "2026-06-30",
+          "effectiveUntil": "2026-08-31",
+          "inCost": 2,
+          "outCost": 10
+        },
+        { "effectiveFrom": "2026-09-01", "inCost": 3, "outCost": 15 }
+      ],
       "use": "refactoring, feature work, tests, code review (the default)"
     },
     "opus": {

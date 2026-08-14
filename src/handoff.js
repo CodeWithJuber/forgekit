@@ -4,26 +4,14 @@
 // (never appended) snapshot injected at every session start: bounded compression, so the
 // loader's token cost stays constant over the project's life while total knowledge grows.
 
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { getGoal } from "./goal.js";
 import { hasSecret } from "./secrets.js";
+import { git } from "./util.js";
 
 export const statePath = (root) => join(root, ".forge", "state.md");
-
-function git(root, args) {
-  try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-}
 
 /** Branch, dirty files (capped), recent commits — empty-safe outside a git repo. */
 export function gatherGitFacts(root, { statusCap = 20 } = {}) {
@@ -93,12 +81,18 @@ export function writeState(root, fields = {}, { t = Date.now(), maxLines = 150 }
   const gotchas = arr(fields.gotchas);
   const criteria = arr(fields.criteria);
   if (!done.length && !next.length && !gotchas.length && !criteria.length)
-    return { ok: false, reason: "empty handoff — say what was done and what comes next" };
+    return {
+      ok: false,
+      reason: "empty handoff — say what was done and what comes next",
+    };
   const supplied = [...done, ...next, ...gotchas, ...criteria, fields.goal, fields.phase]
     .filter(Boolean)
     .join("\n");
   if (hasSecret(supplied))
-    return { ok: false, reason: "refused: handoff looks like it contains a secret/credential" };
+    return {
+      ok: false,
+      reason: "refused: handoff looks like it contains a secret/credential",
+    };
   const goal = fields.goal || getGoal(root) || `(none set — \`${BRAND.cli} anchor set "…"\`)`;
   const facts = gatherGitFacts(root);
   const assumptions = gatherAssumptions(root).map(

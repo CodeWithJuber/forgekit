@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { CALL_RE } from "./extract.js";
-import { contentHash, IGNORE_DIRS } from "./util.js";
+import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 
 const JS_RULES = [
   {
@@ -297,7 +297,9 @@ function extractConfig(rel, text) {
 function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
-  const rel = relative(root, path);
+  // POSIX-normalize: node/config/module ids and `file` fields are compared to `/`-joined
+  // paths everywhere (impact(), docs, tests). Windows `\` would break every such lookup.
+  const rel = toPosix(relative(root, path));
   let text = preRead;
   if (text == null) {
     try {
@@ -494,7 +496,7 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
   const rawEdges = [];
   const fileHashes = {};
   for (const f of files) {
-    const rel = relative(root, f);
+    const rel = toPosix(relative(root, f));
     let text;
     try {
       text = readFileSync(f, "utf8");
@@ -528,17 +530,31 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
   return atlas;
 }
 
-/** True if any tracked file's current content hash differs from the atlas (or a file vanished). */
+/**
+ * True if the atlas no longer reflects the repo: a tracked file changed or vanished,
+ * OR the current eligible-file inventory differs from the indexed one (a brand-new or
+ * removed eligible file). Inventory drift is invisible to a fileHashes-only scan — the
+ * new file isn't in the map — so it's re-walked here with build()'s OWN walk/eligibility
+ * (never a second extension list). Skipped when the graph was capped (files were dropped,
+ * so a size diff is expected, not staleness).
+ */
 export function isStale(root, atlas) {
   if (!atlas?.fileHashes) return true;
-  for (const [rel, h] of Object.entries(atlas.fileHashes)) {
+  const indexed = new Set(Object.keys(atlas.fileHashes));
+  for (const rel of indexed) {
     let text;
     try {
       text = readFileSync(join(root, rel), "utf8");
     } catch {
       return true; // a tracked file was deleted
     }
-    if (hash(text) !== h) return true;
+    if (hash(text) !== atlas.fileHashes[rel]) return true; // a tracked file changed
+  }
+  if (!atlas.capped) {
+    const current = [];
+    walk(root, current, 20000);
+    if (current.length !== indexed.size) return true; // a file was added or removed
+    for (const p of current) if (!indexed.has(toPosix(relative(root, p)))) return true;
   }
   return false;
 }
@@ -572,7 +588,10 @@ function targetIds(atlas, target) {
   return matches.map((n) => n.id);
 }
 
-const EDGE_WEIGHT = {
+// Exported for rank.js — PageRank centrality weights edges with the same priors the
+// blast-radius search uses, so "load-bearing" and "impacted" can never disagree on
+// what an edge kind is worth.
+export const EDGE_WEIGHT = {
   calls: 0.95,
   imports: 0.85,
   inherits: 0.92,
@@ -632,6 +651,18 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
 }
 
 /**
+ * Build a file → SCC-id index from the output of rank.cycles(). Files in the
+ * same SCC share an id; files not in any cycle are absent from the map.
+ * @param {string[][]} sccs each entry is a sorted list of files in one SCC
+ * @returns {Map<string, number>}
+ */
+export function buildSccIndex(sccs) {
+  const index = new Map();
+  for (let i = 0; i < sccs.length; i++) for (const file of sccs[i]) index.set(file, i);
+  return index;
+}
+
+/**
  * @param {object} atlas
  * @param {string} target
  * @param {object} [opts]
@@ -641,13 +672,16 @@ export function impactLLM(atlas, target, { run = buildRunner() } = {}) {
  * @param {boolean} [opts.llm]
  * @param {(p:string)=>string} [opts.run]
  * @param {(file:string, target:string)=>boolean} [opts.verify]
+ * @param {Map<string, number>} [opts.sccIndex] file-to-SCC-id (from buildSccIndex)
+ * @param {Map<string, number>} [opts.hazards] file-to-hazard-score (from rankReport)
  */
 export function impact(
   atlas,
   target,
-  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify } = {},
+  { threshold = 0.1, maxHops = 6, decay = 0.85, llm, run, verify, sccIndex, hazards } = {},
 ) {
   const starts = targetIds(atlas, target);
+  const startSet = new Set(starts);
   const { nodeById, incoming } = adjacency(atlas);
   const visited = new Map();
   const queue = starts.map((id) => ({
@@ -657,19 +691,32 @@ export function impact(
     path: [id],
     edgeKinds: [],
   }));
-  while (queue.length) {
-    const current = queue.shift();
+  // Label-correcting search: a node re-enters the queue whenever a better path is
+  // found, so the loop converges to the max-product confidence. The queue is drained
+  // with an index pointer (queue.shift() is O(n) on V8 arrays — quadratic on large
+  // frontiers). A heap-based best-first variant is the upgrade seam if graphs ever
+  // outgrow this; it would change processing order, so it must re-prove the diamond
+  // max-product test before landing.
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
     if (!current || current.hop >= maxHops) continue;
     for (const edge of incoming.get(current.id) || []) {
-      if (starts.includes(edge.source)) continue;
+      if (startSet.has(edge.source)) continue;
       const nextConfidence =
         current.confidence * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
-      if (nextConfidence < threshold) continue;
+      const srcNode = nodeById.get(edge.source);
+      const srcFile = srcNode?.file;
+      const effectiveThreshold =
+        hazards && srcFile && hazards.has(srcFile)
+          ? threshold / (1 + hazards.get(srcFile))
+          : threshold;
+      if (nextConfidence < effectiveThreshold) continue;
       const prev = visited.get(edge.source);
       if (prev && prev.confidence >= nextConfidence) continue;
       const item = {
         id: edge.source,
-        node: nodeById.get(edge.source) || {
+        node: srcNode || {
           id: edge.source,
           name: edge.source,
           kind: "unknown",
@@ -687,6 +734,32 @@ export function impact(
         path: item.path,
         edgeKinds: item.edgeKinds,
       });
+      if (sccIndex && srcFile != null && sccIndex.has(srcFile)) {
+        const sccId = sccIndex.get(srcFile);
+        for (const node of atlas.nodes || []) {
+          if (node.file === srcFile || !sccIndex.has(node.file)) continue;
+          if (sccIndex.get(node.file) !== sccId) continue;
+          if (startSet.has(node.id)) continue;
+          const prevScc = visited.get(node.id);
+          if (prevScc && prevScc.confidence >= nextConfidence) continue;
+          const sccItem = {
+            id: node.id,
+            node,
+            confidence: Number(nextConfidence.toFixed(4)),
+            hopDistance: current.hop + 1,
+            path: [...current.path, edge.source, node.id],
+            edgeKinds: [...current.edgeKinds, edge.kind, "scc"],
+          };
+          visited.set(node.id, sccItem);
+          queue.push({
+            id: node.id,
+            confidence: nextConfidence,
+            hop: current.hop + 1,
+            path: sccItem.path,
+            edgeKinds: sccItem.edgeKinds,
+          });
+        }
+      }
     }
   }
   const impacted = [...visited.values()].sort((a, b) => b.confidence - a.confidence);

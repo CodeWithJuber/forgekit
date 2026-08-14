@@ -187,3 +187,44 @@ test("enforceDecision (enforcing): blocks an edit into a large blast radius", as
   assert.equal(g.block, true);
   assert.match(g.reason, /large blast radius/);
 });
+
+test("stale ambient atlas is dropped: no impacts, no predicted tests, honest render (RA-07)", async () => {
+  const { renderSubstrate, substrateContext } = await import("../src/substrate.js");
+  const root = repo();
+  writeFileSync(join(root, "math.test.js"), "import './math.js'\n");
+  // Build a real atlas, then invalidate it by adding a brand-new file (inventory drift).
+  build({ root });
+  writeFileSync(join(root, "brand_new.js"), "export const later = 1;\n");
+  const r = substrateCheck(root, "Update `computeTax` in `math.js`", { allowBuild: false });
+  assert.equal(r.impact.atlasFresh, false, "staleness is reported truthfully");
+  assert.deepEqual(r.impact.impactedFiles, [], "no impact derived from a stale graph");
+  assert.deepEqual(r.impact.reports, [], "no per-target reports from a stale graph");
+  assert.deepEqual(r.impact.predictedTests, [], "no test predictions from a stale graph");
+  assert.match(r.impact.note, /unavailable/);
+  const rendered = renderSubstrate(r);
+  assert.match(rendered, /impact: unavailable/);
+  assert.doesNotMatch(
+    rendered,
+    /likely-affected tests/,
+    "no test list right after the unavailable notice",
+  );
+  const ambient = substrateContext(r);
+  assert.match(ambient, /Impact unavailable/);
+  assert.doesNotMatch(ambient, /Likely-affected tests/);
+});
+
+test("enforceDecision: a stale atlas never hard-blocks on blast radius (RA-07)", async () => {
+  const { enforceDecision } = await import("../src/substrate.js");
+  const staleBig = {
+    assumption: { hardUnderspecified: false, questions: [] },
+    impact: {
+      atlasFresh: false,
+      impactedFiles: Array.from({ length: 30 }, (_, i) => `f${i}.js`),
+    },
+  };
+  assert.equal(
+    enforceDecision(staleBig, { enforce: true, blastThreshold: 25 }).block,
+    false,
+    "stale predictions are not authority to block",
+  );
+});

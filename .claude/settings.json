@@ -1,21 +1,40 @@
 {
   "//": "forgekit dogfoods its own plugin during local dev. These hooks mirror hooks/hooks.json but resolve through ${CLAUDE_PROJECT_DIR} (this repo) instead of ${CLAUDE_PLUGIN_ROOT}, so the guards run without a marketplace install. Every guard is advisory/fail-open; the completion gate honors FORGE_STOPGATE=0.",
-  "statusLine": { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/statusline.sh" },
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/statusline.sh"
+  },
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup|resume|clear",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/recall-load.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh session-start" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/recall-load.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh session-start"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/session-start.sh"
+          }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh prompt" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh preflight" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh prompt"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh preflight"
+          }
         ]
       }
     ],
@@ -23,15 +42,27 @@
       {
         "matcher": "Edit|Write|MultiEdit|Bash",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/protect-paths.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cost-budget.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/doom-loop.sh" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/protect-paths.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cost-budget.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/doom-loop.sh"
+          }
         ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh pre-edit" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh pre-edit"
+          }
         ]
       }
     ],
@@ -39,24 +70,45 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/format-on-edit.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/format-on-edit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture"
+          }
         ]
       },
       {
         "matcher": "Bash|Read|Grep",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/secret-redact.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/secret-redact.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/completion-gate.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/lean-guard.sh" },
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh stop" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/completion-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/lean-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh stop"
+          }
         ]
       }
     ]

@@ -43,6 +43,9 @@ const CLEAR_ENV = {
   LITELLM_API_KEY: undefined,
   ANTHROPIC_BASE_URL: undefined,
   OPENROUTER_API_KEY: undefined,
+  OPENAI_API_KEY: undefined,
+  GEMINI_API_KEY: undefined,
+  GOOGLE_API_KEY: undefined,
   ANTHROPIC_API_KEY: undefined,
   ANTHROPIC_AUTH_TOKEN: undefined,
   ANTHROPIC_MODEL: undefined,
@@ -554,4 +557,78 @@ test("listDetectedProviders: gateway URL detected as litellm", () => {
       assert.equal(gw.name, "litellm-gateway");
     },
   );
+});
+
+// --- OpenAI + Gemini provider detection ---
+
+test("autoDetectProvider: OPENAI_API_KEY → openai provider (OpenAI-compatible)", () => {
+  withEnv({ ...CLEAR_ENV, OPENAI_API_KEY: "sk-openai-test" }, () => {
+    const r = autoDetectProvider();
+    assert.equal(r.name, "openai");
+    assert.equal(r.type, "openai");
+    assert.equal(r.format, "openai");
+    assert.equal(r.envKey, "OPENAI_API_KEY");
+    assert.equal(r.source, "OPENAI_API_KEY");
+    assert.equal(r.baseUrl, "https://api.openai.com/v1");
+    assert.equal(r.models.sonnet, "gpt-5-mini");
+  });
+});
+
+test("autoDetectProvider: GEMINI_API_KEY → gemini provider", () => {
+  withEnv({ ...CLEAR_ENV, GEMINI_API_KEY: "gm-test" }, () => {
+    const r = autoDetectProvider();
+    assert.equal(r.name, "gemini");
+    assert.equal(r.type, "gemini");
+    assert.equal(r.format, "openai");
+    assert.equal(r.envKey, "GEMINI_API_KEY");
+    assert.equal(r.models.opus, "gemini-2.5-pro");
+  });
+});
+
+test("autoDetectProvider: GOOGLE_API_KEY is a Gemini alias", () => {
+  withEnv({ ...CLEAR_ENV, GOOGLE_API_KEY: "goog-test" }, () => {
+    const r = autoDetectProvider();
+    assert.equal(r.name, "gemini");
+    assert.equal(r.envKey, "GOOGLE_API_KEY");
+    assert.equal(r.source, "GOOGLE_API_KEY");
+  });
+});
+
+test("autoDetectProvider: Anthropic wins over OpenAI and Gemini when both present", () => {
+  withEnv(
+    { ...CLEAR_ENV, ANTHROPIC_API_KEY: "sk-ant", OPENAI_API_KEY: "sk-oai", GEMINI_API_KEY: "gm" },
+    () => {
+      const r = autoDetectProvider();
+      assert.equal(r.name, "anthropic");
+      assert.equal(r.source, "ANTHROPIC_API_KEY");
+    },
+  );
+});
+
+test("resolveModel: OpenAI auto-detected → tiers map to gpt-* ids", () => {
+  const root = tmpRoot();
+  withEnv({ ...CLEAR_ENV, OPENAI_API_KEY: "sk-oai" }, () => {
+    assert.equal(resolveModel(root, "haiku"), "gpt-5-nano");
+    assert.equal(resolveModel(root, "sonnet"), "gpt-5-mini");
+    assert.equal(resolveModel(root, "opus"), "gpt-5");
+  });
+});
+
+test("listDetectedProviders: OpenAI and Gemini keys are listed", () => {
+  withEnv({ ...CLEAR_ENV, OPENAI_API_KEY: "sk-oai", GEMINI_API_KEY: "gm" }, () => {
+    const detected = listDetectedProviders();
+    assert.ok(detected.find((d) => d.name === "openai" && d.source === "OPENAI_API_KEY"));
+    assert.ok(detected.find((d) => d.name === "gemini" && d.source === "GEMINI_API_KEY"));
+  });
+});
+
+test("providerStatus: envScan includes OpenAI and Gemini keys", () => {
+  const root = tmpRoot();
+  withEnv(CLEAR_ENV, () => {
+    const status = providerStatus(root);
+    const keys = status.envScan.map((e) => e.key);
+    assert.ok(keys.includes("OPENAI_API_KEY"));
+    assert.ok(keys.includes("GEMINI_API_KEY"));
+    assert.ok(keys.includes("GOOGLE_API_KEY"));
+  });
 });

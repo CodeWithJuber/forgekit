@@ -6,6 +6,10 @@ import { test } from "node:test";
 import { add, consolidate, list } from "../src/recall.js";
 import { fakeGithubPat } from "./_fixtures.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const store = () => mkdtempSync(join(tmpdir(), "forge-recall-"));
 
 test("add stores a fact and updates the index", () => {

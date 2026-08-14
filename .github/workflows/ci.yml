@@ -1,6 +1,7 @@
-# CI gate for every push and PR: test matrix (Node 20/22 — matches the ">=20" engines
-# field; 18 is EOL), Biome lint+format, ShellCheck, the zero-runtime-dependency assertion,
-# the version-drift guard, and dependency review. All must pass to merge.
+# CI gate for every push and PR: the Node 20/22 test matrix (matches the ">=20" engines
+# field; 18 is EOL) plus the shared quality gate (Biome, typecheck, ShellCheck, zero-dep
+# assertion, version-drift, docs-drift, pack). The quality gate is the SAME reusable workflow
+# the version bump and release require, so none of the three can drift from the others.
 name: CI
 
 on:
@@ -21,66 +22,45 @@ jobs:
         node: [20, 22]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm test
 
-  lint:
-    name: Lint & format (Biome)
-    runs-on: ubuntu-latest
+  # Windows-git-bash coverage: the guards are bash and the suite does a lot of path work,
+  # so run the unit suite on windows-latest under Git Bash. Invoke `node --test` directly
+  # (not `npm test`) so Git Bash expands the test glob — npm's Windows script-shell is cmd,
+  # which would pass the literal `test/*.test.js`. Genuinely-Unix-only tests (bash guard
+  # hooks) self-skip via `process.platform === 'win32'` guards in the tests themselves.
+  test-windows:
+    name: Test (Windows / Git Bash)
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run check
-      - run: npm run typecheck
-      - run: npm audit --audit-level=critical
+      - name: Unit suite (Git Bash)
+        shell: bash
+        run: |
+          set +e
+          node --test test/*.test.js 2>&1 | tee /tmp/win-test.log
+          ec=${PIPESTATUS[0]}
+          echo "===== FAILING TESTS (name + file) ====="
+          grep -nE '^not ok ' /tmp/win-test.log | head -80
+          echo "===== FAILURE DIAGNOSTICS (TAP YAML blocks) ====="
+          # Print each failing test's `not ok` line through its YAML `...` terminator so the
+          # assertion detail (expected/actual/location) is visible in the CI log.
+          awk '/^not ok /{p=1} p{print} p&&/^  \.\.\.[[:space:]]*$/{p=0}' /tmp/win-test.log | head -200
+          exit "$ec"
 
-  shellcheck:
-    name: ShellCheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # Fail only on errors; the guards trip style/warning false-positives (e.g. SC2034 on
-      # vars used cross-file via the sourced _guardlib.sh).
-      - run: shellcheck --severity=error $(git ls-files '*.sh')
-
-  no-runtime-deps:
-    name: Assert zero runtime dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
-      - run: npm pack --dry-run
-
-  version-drift:
-    name: Version fields agree
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # package.json, package-lock.json, .claude-plugin/plugin.json, .codex-plugin/plugin.json,
-      # and CITATION.cff must all carry the same version (scripts/bump.mjs keeps them in sync).
-      - run: node scripts/bump.mjs check
-
-  docs-drift:
-    name: Docs match code
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # the CHANGELOG check compares src vs CHANGELOG.md commit times
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-      # Commands, env vars, MCP tools, and CHANGELOG reconciled against the code —
-      # a feature can't merge with its docs missing (src/docs_check.js).
-      - run: node src/cli.js docs check
+  quality-gate:
+    name: Quality gate
+    uses: ./.github/workflows/reusable-quality-gate.yml
 
   dependency-review:
     name: Dependency review

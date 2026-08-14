@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 32" width="168" height="32">
+  <path d="M6 5h15l-1.6 5H11v4.4h7l-1.6 5H11V27H6z" fill="#f26430"/>
+  <circle cx="23" cy="21" r="2.6" fill="#f7a072"/>
+  <text x="40" y="23" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="19" font-weight="700" fill="#f2ede7" letter-spacing="-0.4">Forge</text>
+</svg>

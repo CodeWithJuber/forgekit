@@ -92,14 +92,21 @@ function detectNode(root, add) {
   if (existsSync(join(root, "tsconfig.json")) || names.some((n) => n === "typescript"))
     add.language("TypeScript");
   for (const f of hasAnyDep(names, NODE_FRAMEWORKS)) add.framework(f);
-  for (const t of hasAnyDep(names, NODE_TEST)) add.testCmd(runnerCmd(root, t));
+  // npx-based runner detections stay label-only: forge must never EXECUTE npx (it can
+  // download arbitrary packages), so no bin/args descriptor is emitted for them.
+  for (const t of hasAnyDep(names, NODE_TEST)) add.runner({ label: runnerCmd(root, t) });
   // package manager from the lockfile present
   if (existsSync(join(root, "pnpm-lock.yaml"))) add.pm("pnpm");
   else if (existsSync(join(root, "yarn.lock"))) add.pm("yarn");
   else if (existsSync(join(root, "bun.lockb"))) add.pm("bun");
   else if (existsSync(join(root, "package-lock.json"))) add.pm("npm");
-  // an explicit test script beats guessing
-  if (pkg.scripts?.test) add.testCmd(`${pmRun(root)} test`);
+  // an explicit test script beats guessing — executable via the DETECTED package manager
+  if (pkg.scripts?.test)
+    add.runner({
+      bin: pmRun(root),
+      args: ["test"],
+      label: `${pmRun(root)} test`,
+    });
 }
 
 const pmRun = (root) =>
@@ -124,8 +131,9 @@ function detectPython(root, add) {
   else if (reqs) add.evidence("requirements.txt");
   else if (pipfile) add.evidence("Pipfile");
   for (const f of hasAny(blob, PY_FRAMEWORKS)) add.framework(f);
-  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini"))) add.testCmd("pytest -q");
-  else add.testCmd("python -m unittest");
+  if (blob.includes("pytest") || existsSync(join(root, "pytest.ini")))
+    add.runner({ bin: "pytest", args: ["-q"], label: "pytest -q" });
+  else add.runner({ label: "python -m unittest" });
   if (blob.includes("ruff")) add.tool("ruff");
   if (blob.includes("[tool.uv]") || existsSync(join(root, "uv.lock"))) add.pm("uv");
   else if (pipfile) add.pm("pipenv");
@@ -137,7 +145,7 @@ function detectGo(root, add) {
   if (mod == null) return;
   add.language("Go");
   add.evidence("go.mod");
-  add.testCmd("go test ./...");
+  add.runner({ bin: "go", args: ["test", "./..."], label: "go test ./..." });
   const m = /^module\s+(\S+)/m.exec(mod);
   if (m) add.note(`module ${m[1]}`);
   if (/gin-gonic\/gin/.test(mod)) add.framework("Gin");
@@ -151,7 +159,7 @@ function detectRust(root, add) {
   add.language("Rust");
   add.evidence("Cargo.toml");
   add.pm("cargo");
-  add.testCmd("cargo test");
+  add.runner({ bin: "cargo", args: ["test"], label: "cargo test" });
   if (/\bactix-web\b/.test(cargo)) add.framework("Actix");
   if (/\baxum\b/.test(cargo)) add.framework("Axum");
   if (/\brocket\b/.test(cargo)) add.framework("Rocket");
@@ -167,8 +175,18 @@ function detectRuby(root, add) {
   const g = (gemfile || "").toLowerCase();
   if (g.includes("rails")) add.framework("Rails");
   if (g.includes("sinatra")) add.framework("Sinatra");
-  if (g.includes("rspec")) add.testCmd("bundle exec rspec");
-  else add.testCmd("bundle exec rake test");
+  if (g.includes("rspec"))
+    add.runner({
+      bin: "bundle",
+      args: ["exec", "rspec"],
+      label: "bundle exec rspec",
+    });
+  else
+    add.runner({
+      bin: "bundle",
+      args: ["exec", "rake", "test"],
+      label: "bundle exec rake test",
+    });
 }
 
 function detectPhp(root, add) {
@@ -183,7 +201,12 @@ function detectPhp(root, add) {
   });
   if (deps.some((d) => d.startsWith("laravel/"))) add.framework("Laravel");
   if (deps.some((d) => d.startsWith("symfony/"))) add.framework("Symfony");
-  if (deps.some((d) => d.includes("phpunit"))) add.testCmd("./vendor/bin/phpunit");
+  if (deps.some((d) => d.includes("phpunit")))
+    add.runner({
+      bin: "./vendor/bin/phpunit",
+      args: [],
+      label: "./vendor/bin/phpunit",
+    });
 }
 
 function detectJvm(root, add) {
@@ -197,11 +220,11 @@ function detectJvm(root, add) {
   if (pom) {
     add.evidence("pom.xml");
     add.pm("Maven");
-    add.testCmd("mvn test");
+    add.runner({ bin: "mvn", args: ["test"], label: "mvn test" });
   } else {
     add.evidence(existsSync(join(root, "build.gradle.kts")) ? "build.gradle.kts" : "build.gradle");
     add.pm("Gradle");
-    add.testCmd("./gradlew test");
+    add.runner({ bin: "./gradlew", args: ["test"], label: "./gradlew test" });
   }
   if (blob.includes("springframework") || blob.includes("spring-boot")) add.framework("Spring");
 }
@@ -218,7 +241,7 @@ function detectDotnet(root, add) {
   add.language(proj.endsWith(".fsproj") ? "F#" : "C#");
   add.evidence(proj);
   add.pm("dotnet");
-  add.testCmd("dotnet test");
+  add.runner({ bin: "dotnet", args: ["test"], label: "dotnet test" });
 }
 
 const DETECTORS = [
@@ -232,12 +255,154 @@ const DETECTORS = [
   detectDotnet,
 ];
 
+// ---------------------------------------------------------------------------
+// Monorepo / workspace detection (ME-03). The DETECTORS above read manifests only at
+// the repo ROOT, so npm/pnpm/yarn workspaces and Turborepo/lerna/Maven/Gradle
+// subprojects (and nested Python packages) are invisible — a single root test command
+// may or may not cover them, and forge never verified that. This surfaces the declared
+// workspace globs (`workspaces`) and the nested package roots actually on disk
+// (`packageRoots`) so the caller/verifier can see there is more than one suite. It is
+// deliberately BOUNDED — a shallow, budgeted BFS, never a deep walk of a huge tree.
+// ---------------------------------------------------------------------------
+
+// Manifests that mark a directory as its own package/suite root.
+const WORKSPACE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "setup.py",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "Gemfile",
+  "composer.json",
+];
+// Never descend into these — vendored deps, VCS metadata, build output, caches.
+const WALK_SKIP = new Set([
+  "node_modules",
+  ".git",
+  ".hg",
+  ".svn",
+  ".forge",
+  "dist",
+  "build",
+  "out",
+  "target",
+  "vendor",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".next",
+  ".nuxt",
+  ".turbo",
+  ".cache",
+  "coverage",
+]);
+const MONO_MAX_DEPTH = 3; // deepest nested dir considered (e.g. apps/web, packages/*/pkg)
+const MONO_SCAN_BUDGET = 200; // hard ceiling on dirs stat-ed — bounds cost on large trees
+const MONO_MAX_ROOTS = 50; // most nested package roots surfaced
+
+// Zero-dep: pull the `packages:` list from a pnpm-workspace.yaml. Ignores negations (`!…`).
+function parsePnpmPackages(text) {
+  const out = [];
+  let inBlock = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, "");
+    if (/^packages:\s*$/.test(line)) {
+      inBlock = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    const m = /^\s*-\s*(.+?)\s*$/.exec(line);
+    if (m) {
+      const v = m[1].trim().replace(/^["']|["']$/g, "");
+      if (v && !v.startsWith("!")) out.push(v);
+    } else if (/^\S/.test(line)) {
+      inBlock = false; // a new top-level key ends the list
+    }
+  }
+  return out;
+}
+
+// Declared workspace globs from every root config that declares them. Never throws.
+function workspaceGlobs(root) {
+  const globs = new Set();
+  const pkg = readJson(root, "package.json");
+  if (pkg) {
+    const ws = pkg.workspaces;
+    const arr = Array.isArray(ws) ? ws : Array.isArray(ws?.packages) ? ws.packages : [];
+    for (const g of arr) if (typeof g === "string") globs.add(g);
+  }
+  const lerna = readJson(root, "lerna.json");
+  if (lerna && Array.isArray(lerna.packages))
+    for (const g of lerna.packages) if (typeof g === "string") globs.add(g);
+  const pnpm = read(root, "pnpm-workspace.yaml");
+  if (pnpm) for (const g of parsePnpmPackages(pnpm)) globs.add(g);
+  return [...globs].sort();
+}
+
+// Bounded BFS for nested package roots below `root`. Returns POSIX-relative dir paths,
+// deduped and sorted. Never descends past MONO_MAX_DEPTH, never stats more than
+// MONO_SCAN_BUDGET dirs, never returns more than MONO_MAX_ROOTS — so a giant repo is
+// sampled, never fully walked. Fail-safe: an unreadable dir is skipped.
+function nestedPackageRoots(root) {
+  const found = [];
+  let budget = MONO_SCAN_BUDGET;
+  /** @type {{dir:string, rel:string, depth:number}[]} */
+  const queue = [];
+  const enqueueChildren = (absDir, relDir, depth) => {
+    if (depth > MONO_MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".") || WALK_SKIP.has(e.name)) continue;
+      queue.push({
+        dir: join(absDir, e.name),
+        rel: relDir ? `${relDir}/${e.name}` : e.name,
+        depth,
+      });
+    }
+  };
+  enqueueChildren(root, "", 1);
+  while (queue.length && budget > 0 && found.length < MONO_MAX_ROOTS) {
+    const { dir, rel, depth } = queue.shift();
+    budget--;
+    if (WORKSPACE_MANIFESTS.some((m) => existsSync(join(dir, m)))) found.push(rel);
+    enqueueChildren(dir, rel, depth + 1);
+  }
+  return [...new Set(found)].sort();
+}
+
+/**
+ * One detected test runner. `label` is the human-readable command string (always
+ * mirrored into `testCommands` for back-compat). `bin`/`args` are the structured,
+ * shell-free spawn descriptor — present only when the command is safe to execute
+ * verbatim (label-only entries, e.g. `npx vitest` or `python -m unittest`, are
+ * report-only: forge never executes them).
+ * @typedef {object} TestRunner
+ * @property {string} label
+ * @property {string} [bin]
+ * @property {string[]} [args]
+ */
+
 /**
  * Detect the repo's real stack by reading its manifests. Pure aside from fs reads;
- * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays.
+ * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays;
+ * `testRunners` is deduped by label and sorted by label.
+ * Additive monorepo fields (ME-03): `workspaces` are the declared workspace globs and
+ * `packageRoots` the nested package/suite roots found on disk (bounded, capped) — either
+ * being non-empty signals the root suite does NOT necessarily cover the whole repo. Both
+ * are `[]` for a plain single-root repo, so the pre-existing shape is unchanged.
  * @param {string} [root]
  * @returns {{languages:string[], frameworks:string[], packageManagers:string[],
- *   testCommands:string[], tools:string[], notes:string[], evidence:string[]}}
+ *   testCommands:string[], testRunners:TestRunner[], tools:string[], notes:string[],
+ *   evidence:string[], workspaces:string[], packageRoots:string[]}}
  */
 export function detectStack(root = process.cwd()) {
   const sets = {
@@ -249,11 +414,19 @@ export function detectStack(root = process.cwd()) {
     notes: new Set(),
     evidence: new Set(),
   };
+  /** @type {Map<string, TestRunner>} */
+  const runners = new Map();
   const add = {
     language: (v) => v && sets.languages.add(v),
     framework: (v) => v && sets.frameworks.add(v),
     pm: (v) => v && sets.packageManagers.add(v),
     testCmd: (v) => v && sets.testCommands.add(v),
+    /** @param {TestRunner} r structured descriptor — the label also lands in testCommands */
+    runner: (r) => {
+      if (!r?.label) return;
+      sets.testCommands.add(r.label);
+      if (!runners.has(r.label)) runners.set(r.label, r);
+    },
     tool: (v) => v && sets.tools.add(v),
     note: (v) => v && sets.notes.add(v),
     evidence: (v) => v && sets.evidence.add(v),
@@ -269,8 +442,11 @@ export function detectStack(root = process.cwd()) {
     frameworks: sort(sets.frameworks),
     packageManagers: sort(sets.packageManagers),
     testCommands: sort(sets.testCommands),
+    testRunners: [...runners.values()].sort((a, b) => a.label.localeCompare(b.label)),
     tools: sort(sets.tools),
     notes: sort(sets.notes),
     evidence: sort(sets.evidence),
+    workspaces: workspaceGlobs(root),
+    packageRoots: nestedPackageRoots(root),
   };
 }

@@ -15,3 +15,37 @@ export const MODELS = data.models;
 
 /** Cheap → expensive. */
 export const TIER_ORDER = data.tierOrder;
+
+/** Today as an ISO date (YYYY-MM-DD). Isolated so callers can inject a date in tests. */
+const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Resolve a model's price for a given date. A model may carry a `prices` schedule of
+ * `{effectiveFrom, effectiveUntil?, inCost, outCost}` windows (e.g. an introductory rate);
+ * the active window for `date` wins, otherwise we fall back to the flat inCost/outCost
+ * (steady-state). This is why a single `pricingVerified` date is no longer enough (P0-12).
+ * @param {string} key model key (haiku/sonnet/opus/fable)
+ * @param {string} [date] ISO date; defaults to today
+ * @returns {{inCost:number, outCost:number}|null}
+ */
+export function priceOf(key, date = today()) {
+  const m = MODELS[key];
+  if (!m) return null;
+  for (const w of m.prices || []) {
+    if (date >= w.effectiveFrom && (!w.effectiveUntil || date <= w.effectiveUntil)) {
+      return { inCost: w.inCost, outCost: w.outCost };
+    }
+  }
+  return { inCost: m.inCost, outCost: m.outCost };
+}
+
+/** Every distinct price pair across flat + scheduled windows — used by the docs check so a
+ *  documented introductory/standard price isn't flagged as stale. */
+export function allPricePairs() {
+  const pairs = [];
+  for (const m of Object.values(MODELS)) {
+    pairs.push({ inCost: m.inCost, outCost: m.outCost });
+    for (const w of m.prices || []) pairs.push({ inCost: w.inCost, outCost: w.outCost });
+  }
+  return pairs;
+}

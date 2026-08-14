@@ -15,6 +15,10 @@ import {
 } from "../src/lessons_store.js";
 import { fakeAnthropic } from "./_fixtures.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-lessons-"));
 
 const sample = () => {

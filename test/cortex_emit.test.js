@@ -6,6 +6,10 @@ import { test } from "node:test";
 import { processSession } from "../src/cortex_hook.js";
 import { canonical } from "../src/sync.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-emit-"));
 const brokenSession = () => [
   { type: "bash", command: "npm test", exitCode: 1 },

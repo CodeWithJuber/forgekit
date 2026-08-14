@@ -6,6 +6,10 @@ import { test } from "node:test";
 import { lessonsForContext, recordContradiction, recordMistake, summary } from "../src/cortex.js";
 import { load } from "../src/lessons_store.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-cortex-"));
 const ctx = {
   symbols: ["validateToken"],

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { build, has, impact, isStale, load, query } from "../src/atlas.js";
+import { build, buildSccIndex, has, impact, isStale, load, query } from "../src/atlas.js";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "forge-atlas-"));
@@ -79,6 +79,16 @@ test("isStale detects an edit and a deletion", () => {
   assert.equal(isStale(root, atlas), false, "fresh right after build");
   writeFileSync(join(root, "a.js"), "export function computeTax(x){ return x + 1 }\n");
   assert.equal(isStale(root, atlas), true, "content change is detected");
+});
+
+test("isStale detects a brand-new eligible file (inventory drift, not just edits)", () => {
+  const root = fixture();
+  const atlas = build({ root });
+  assert.equal(isStale(root, atlas), false, "fresh right after build");
+  // A new eligible file isn't in fileHashes, so a hash-only scan can't see it — the
+  // inventory walk must flag it as stale.
+  writeFileSync(join(root, "c.js"), "export function brandNew(){ return 1 }\n");
+  assert.equal(isStale(root, atlas), true, "new eligible file makes the atlas stale");
 });
 
 test("impact (llm on): a proposed edge survives only if real + grep-verified", () => {
@@ -232,4 +242,130 @@ test("C function DEFINITIONS index but prototype declarations do not (same-line 
   const names = build({ root }).symbols.map((s) => s.name);
   assert.ok(names.includes("add"), "definition indexed");
   assert.ok(!names.includes("dup"), "a bare prototype (ends in ;) is not a definition");
+});
+
+test("impact takes the max-product path through a diamond, not the first-found one", () => {
+  // Two routes from dependent D back to target S: a direct `contains` edge
+  // (0.45 × 0.85 decay = 0.3825) and a two-hop `calls` chain through M
+  // ((0.95 × 0.85)² = 0.6521). Label correction must keep the stronger long
+  // path — this pins the semantics any future queue/heap rewrite must preserve.
+  const atlas = {
+    nodes: [
+      { id: "s.js::S", name: "S", kind: "function", file: "s.js" },
+      { id: "m.js::M", name: "M", kind: "function", file: "m.js" },
+      { id: "d.js::D", name: "D", kind: "function", file: "d.js" },
+    ],
+    edges: [
+      { source: "d.js::D", target: "s.js::S", kind: "contains" },
+      { source: "m.js::M", target: "s.js::S", kind: "calls" },
+      { source: "d.js::D", target: "m.js::M", kind: "calls" },
+    ],
+    symbols: [],
+  };
+  const r = impact(atlas, "S");
+  const d = r.impacted.find((x) => x.id === "d.js::D");
+  assert.ok(d, "D is in the blast radius");
+  assert.equal(d.confidence, 0.6521, "max-product confidence wins over first-found");
+  assert.equal(d.hopDistance, 2, "the winning path is the two-hop calls chain");
+});
+
+test("SCC-aware propagation: impacting one cycle member reaches all co-members", () => {
+  const atlas = {
+    nodes: [
+      { id: "a.js::A", name: "A", kind: "function", file: "a.js" },
+      { id: "b.js::B", name: "B", kind: "function", file: "b.js" },
+      { id: "c.js::C", name: "C", kind: "function", file: "c.js" },
+      { id: "t.js::T", name: "T", kind: "function", file: "t.js" },
+    ],
+    edges: [{ source: "a.js::A", target: "t.js::T", kind: "imports" }],
+    symbols: [],
+  };
+  const sccIndex = buildSccIndex([["a.js", "b.js", "c.js"]]);
+  const withScc = impact(atlas, "T", { sccIndex });
+  assert.ok(withScc.impactedFiles.includes("a.js"), "direct dependent found");
+  assert.ok(withScc.impactedFiles.includes("b.js"), "SCC co-member b.js reached");
+  assert.ok(withScc.impactedFiles.includes("c.js"), "SCC co-member c.js reached");
+  const without = impact(atlas, "T");
+  assert.ok(without.impactedFiles.includes("a.js"), "a.js found without SCC too");
+  assert.ok(!without.impactedFiles.includes("b.js"), "b.js NOT reached without SCC (no edge)");
+  assert.ok(!without.impactedFiles.includes("c.js"), "c.js NOT reached without SCC (no edge)");
+});
+
+test("hazard-adjusted threshold includes low-confidence files with high hazard", () => {
+  // references weight 0.7 × edge confidence 0.1 × decay 0.85 = 0.0595
+  // base threshold 0.1 → excluded; effective threshold 0.1/(1+2) = 0.033 → included
+  const atlas = {
+    nodes: [
+      { id: "t.js::T", name: "T", kind: "function", file: "t.js" },
+      { id: "h.js::H", name: "H", kind: "function", file: "h.js" },
+    ],
+    edges: [
+      {
+        source: "h.js::H",
+        target: "t.js::T",
+        kind: "references",
+        confidence: 0.1,
+      },
+    ],
+    symbols: [],
+  };
+  const hazards = new Map([["h.js", 2]]);
+  const withHazard = impact(atlas, "T", { threshold: 0.1, hazards });
+  const hItem = withHazard.impacted.find((x) => x.id === "h.js::H");
+  assert.ok(hItem, "h.js included — hazard=2 lowers effective threshold to 0.033");
+  assert.ok(hItem.confidence < 0.1, "confidence is below base threshold");
+  const without = impact(atlas, "T", { threshold: 0.1 });
+  assert.ok(!without.impacted.find((x) => x.id === "h.js::H"), "without hazards, h.js excluded");
+});
+
+test("SCC + hazard combined: cycle member with high hazard gets extra-low threshold", () => {
+  // references 0.7 × edge confidence 0.12 × decay 0.85 = 0.0714
+  // base threshold 0.1 → excluded; hazard=3 → effective 0.1/4 = 0.025 → included
+  // SCC expansion brings b.js in at the same confidence
+  const atlas = {
+    nodes: [
+      { id: "t.js::T", name: "T", kind: "function", file: "t.js" },
+      { id: "a.js::A", name: "A", kind: "function", file: "a.js" },
+      { id: "b.js::B", name: "B", kind: "function", file: "b.js" },
+    ],
+    edges: [
+      {
+        source: "a.js::A",
+        target: "t.js::T",
+        kind: "references",
+        confidence: 0.12,
+      },
+    ],
+    symbols: [],
+  };
+  const sccIndex = buildSccIndex([["a.js", "b.js"]]);
+  const hazards = new Map([
+    ["a.js", 3],
+    ["b.js", 3],
+  ]);
+  const r = impact(atlas, "T", { threshold: 0.1, sccIndex, hazards });
+  assert.ok(r.impactedFiles.includes("a.js"), "a.js included via hazard-lowered threshold");
+  assert.ok(r.impactedFiles.includes("b.js"), "b.js included via SCC expansion from a.js");
+});
+
+test("fail-open: undefined sccIndex/hazards produces identical output to basic impact", () => {
+  const atlas = {
+    nodes: [
+      { id: "s.js::S", name: "S", kind: "function", file: "s.js" },
+      { id: "d.js::D", name: "D", kind: "function", file: "d.js" },
+    ],
+    edges: [{ source: "d.js::D", target: "s.js::S", kind: "calls" }],
+    symbols: [],
+  };
+  const basic = impact(atlas, "S");
+  const enhanced = impact(atlas, "S", {
+    sccIndex: undefined,
+    hazards: undefined,
+  });
+  assert.deepEqual(basic.impactedFiles, enhanced.impactedFiles, "same files");
+  assert.deepEqual(
+    basic.impacted.map((x) => x.confidence),
+    enhanced.impacted.map((x) => x.confidence),
+    "same confidences",
+  );
 });

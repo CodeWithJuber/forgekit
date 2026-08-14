@@ -4,6 +4,7 @@
 // claim — evidence, provenance, tombstones — that git union-merges without conflicts
 // (`forge init` emits the .gitattributes rule). Everything author- or time-varying is
 // a log line; nothing on disk is ever edited in place.
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -13,7 +14,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import {
   authorTrust,
   canonicalize,
@@ -28,8 +29,11 @@ import {
   sealRecord,
   sortRecords,
   val,
+  validateRef,
   validOutcome,
 } from "./ledger.js";
+import { redactSecrets } from "./secrets.js";
+import { contentHash, readJsonSafe } from "./util.js";
 
 /** The canonical repo ledger. (recall's global store keeps its own sibling ledger.) */
 export const repoLedger = (root = process.cwd()) => join(root, ".forge", "ledger");
@@ -42,6 +46,38 @@ export const GITATTRIBUTES_RULE = [
   ".forge/ledger/*/*.log merge=union",
 ].join("\n");
 
+// A ledger lives at <root>/.forge/ledger, so the repo root is two levels up — the cwd a
+// `git:` evidence ref must resolve against.
+const repoRootOf = (dir) => dirname(dirname(dir));
+
+// `git:` ref resolver: the object must exist in THIS repo (`git cat-file -e <sha>`), a non-zero
+// exit → unresolvable. Only ever invoked by validateRef for git-typed refs, so non-git refs
+// (and non-git repos) never spawn git.
+const gitResolver = (root) => (sha) => {
+  try {
+    // `--` guards against a ref that begins with "-" being read as a flag (defense in
+    // depth; execFileSync already avoids the shell, and refs here are validated).
+    execFileSync("git", ["cat-file", "-e", "--", sha], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// `file:` ref resolver (ME-05): the referenced path must exist. Relative paths resolve
+// against the repo root; absolute paths are used as-is. Pure existence check — no read,
+// no throw — so a `file:/does/not/exist` ref is rejected before it can buy confidence.
+const fileResolver = (root) => (p) => {
+  try {
+    return existsSync(isAbsolute(p) ? p : join(root, p));
+  } catch {
+    return false;
+  }
+};
+
 const LOGS = ["evidence", "provenance", "tombstones"];
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
 const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
@@ -50,34 +86,56 @@ const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
 const claimBytes = (claim) =>
   `${canonicalize({ body: claim.body, kind: claim.kind, scope: claim.scope ?? {}, v: claim.v ?? 1 })}\n`;
 
-const readJson = (path) => {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return null; // one corrupt file must never take down the whole ledger
-  }
-};
-
 /** Parse an append-only log: one canonical-JSON record per line, deduped by content
- *  hash, corrupt lines skipped. The single reader every log goes through. */
-function readLog(dir, log, id) {
+ *  hash, corrupt lines skipped. The single reader every log goes through — and the
+ *  single choke point where every line must PROVE its content hash (re-sealing the
+ *  h-less rest must reproduce `h`) before it can reach any view, dedupe set, or val().
+ *  Evidence lines must additionally be valid outcomes. A forged/hand-edited line is
+ *  simply invisible at read time; verify() is where it gets NAMED. The internal
+ *  `verifyHashes:false` escape hatch exists ONLY so imports can read a source raw and
+ *  QUARANTINE bad records instead of silently dropping them. */
+function readLog(dir, log, id, { verifyHashes = true } = {}) {
   const path = logPath(dir, log, id);
   if (!existsSync(path)) return [];
   const records = [];
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
     if (!line.trim()) continue;
+    let rec = null;
     try {
-      records.push(JSON.parse(line));
+      rec = JSON.parse(line);
     } catch {}
+    if (!rec?.h) continue;
+    if (verifyHashes) {
+      const { h, ...rest } = rec;
+      if (sealRecord(rest).h !== h) continue; // forged/corrupt — cannot buy confidence
+      if (log === "evidence" && !validOutcome(rec)) continue;
+    }
+    records.push(rec);
   }
   // sortRecords, not file order: after a git union merge the two replicas' logs hold
   // the same set in different line orders — views must not depend on that.
   return sortRecords(records);
 }
 
-/** Append one sealed record to a log iff its hash isn't already present. */
+/** Append one sealed record to a log iff its hash isn't already present. The seal is
+ *  RECHECKED here — a record whose `h` does not match its own content never lands — and
+ *  the record is scanned for secrets (ME-06): a credential in an evidence ref/author, a
+ *  tombstone reason, or provenance metadata is refused BEFORE it can touch disk, exactly
+ *  as putClaim refuses secret-bearing claim content. This is the single append choke point
+ *  for every metadata log, so no channel can smuggle a secret onto disk (or into a merge). */
 function appendRecord(dir, log, id, record) {
   if (!record?.h) return { ok: false, reason: "record missing content hash" };
+  const { h, ...rest } = record;
+  if (sealRecord(rest).h !== h)
+    return {
+      ok: false,
+      reason: "record content hash mismatch (forged/corrupt)",
+    };
+  if (hasSecret(canonicalize(record)))
+    return {
+      ok: false,
+      reason: "refused: record metadata looks like a secret/credential",
+    };
   if (!existsSync(claimPath(dir, id)))
     return { ok: false, reason: `no such claim in ledger: ${id}` };
   if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
@@ -97,10 +155,15 @@ function* walkClaimFiles(dir) {
       .sort()) {
       const path = join(claimsRoot, shard, f);
       const id = f.replace(/\.json$/, "");
-      const parsed = readJson(path);
+      const parsed = readJsonSafe(path);
       // Verify the address: a tampered/corrupt claim is surfaced as claim:null.
       const valid = parsed && claimId(parsed.kind, parsed.body, parsed.scope) === id;
-      yield { id, path, raw: readFileSync(path, "utf8"), claim: valid ? { ...parsed, id } : null };
+      yield {
+        id,
+        path,
+        raw: readFileSync(path, "utf8"),
+        claim: valid ? { ...parsed, id } : null,
+      };
     }
   }
 }
@@ -114,13 +177,19 @@ function* walkClaimFiles(dir) {
  */
 export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
-    return { ok: false, reason: "claim id does not match canonical content hash" };
+    return {
+      ok: false,
+      reason: "claim id does not match canonical content hash",
+    };
   const text = claimBytes(claim);
   if (hasSecret(text))
-    return { ok: false, reason: "refused: claim looks like it contains a secret/credential" };
+    return {
+      ok: false,
+      reason: "refused: claim looks like it contains a secret/credential",
+    };
   const path = claimPath(dir, claim.id);
   const already = existsSync(path);
-  const healthy = already && readJson(path) !== null && readFileSync(path, "utf8") === text;
+  const healthy = already && readJsonSafe(path) !== null && readFileSync(path, "utf8") === text;
   if (!healthy) {
     mkdirSync(join(dir, "claims", claim.id.slice(0, 2)), { recursive: true });
     writeFileSync(path, text);
@@ -129,9 +198,17 @@ export function putClaim(dir, claim) {
   return { ok: true, id: claim.id, existed: already && healthy };
 }
 
-/** Append one evidence outcome (deduped by its content hash — append is idempotent). */
+/** Append one evidence outcome (deduped by its content hash — append is idempotent). A typed,
+ *  unresolvable ref (e.g. a `git:` sha absent from this repo) is REJECTED here, before it can
+ *  reach val() and buy confidence. */
 export function appendEvidence(dir, id, outcome) {
   if (!validOutcome(outcome)) return { ok: false, reason: "invalid outcome (use outcomeRecord)" };
+  const root = repoRootOf(dir);
+  const v = validateRef(outcome.ref, {
+    resolveGit: gitResolver(root),
+    resolveFile: fileResolver(root),
+  });
+  if (!v.ok) return { ok: false, reason: v.reason ?? "unresolvable evidence ref" };
   return appendRecord(dir, "evidence", id, outcome);
 }
 
@@ -166,19 +243,36 @@ export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
     provenance: { agent: "dash", author },
     t,
   });
-  if (!minted.ok) return { ok: false, reason: "reason" in minted ? minted.reason : "mint failed" };
+  if (!minted.ok)
+    return {
+      ok: false,
+      reason: "reason" in minted ? minted.reason : "mint failed",
+    };
   const put = putClaim(dir, minted.claim);
-  if (!put.ok) return { ok: false, reason: put.reason ?? "could not persist the decision claim" };
-  return { ok: true, decisionId: minted.claim.id, ratifies: target.id, existed: put.existed };
+  if (!put.ok)
+    return {
+      ok: false,
+      reason: put.reason ?? "could not persist the decision claim",
+    };
+  return {
+    ok: true,
+    decisionId: minted.claim.id,
+    ratifies: target.id,
+    existed: put.existed,
+  };
 }
 
-/** Load the full ledger state {claims, evidence, provenance, tombstones}. */
-export function loadState(dir) {
+/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
+ *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
+ *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost.
+ *  @param {string} dir
+ *  @param {{verifyHashes?: boolean}} [opts] */
+export function loadState(dir, { verifyHashes = true } = {}) {
   const state = emptyState();
   for (const { id, claim } of walkClaimFiles(dir)) {
     if (!claim) continue;
     state.claims[id] = claim;
-    for (const log of LOGS) state[log][id] = readLog(dir, log, id);
+    for (const log of LOGS) state[log][id] = readLog(dir, log, id, { verifyHashes });
   }
   return state;
 }
@@ -199,7 +293,7 @@ export function getClaimByPrefix(dir, prefix) {
     .sort()[0];
   if (!f) return null;
   const id = f.replace(/\.json$/, "");
-  const claim = readJson(join(shardDir, f));
+  const claim = readJsonSafe(join(shardDir, f));
   if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
   const state = emptyState();
   state.claims[id] = { ...claim, id };
@@ -207,11 +301,63 @@ export function getClaimByPrefix(dir, prefix) {
   return liveClaims(state)[0];
 }
 
+/** Try to import one raw source log line into `dir`; returns {ok, deduped} on success or
+ *  {reason} on rejection, so mergeDirs can quarantine what it can't import. Unlike the
+ *  state-based path, this NEVER loses a line to the read-path hash-dedup or the no-`h`
+ *  drop: every source line is either imported or quarantined by trusted identity. */
+function tryImportLine(dir, log, id, rec) {
+  if (!rec?.h)
+    return {
+      reason: "malformed: unparseable log line or missing content hash",
+    };
+  const a = log === "evidence" ? appendEvidence(dir, id, rec) : appendRecord(dir, log, id, rec);
+  return a.ok ? { ok: true, deduped: a.deduped } : { reason: a.reason ?? "rejected" };
+}
+
 /** `forge ledger merge <path>` — semilattice merge of another on-disk ledger into
  *  this one. Idempotent and order-independent by the CRDT property, so merging a
- *  teammate's checkout, a backup, or a branch worktree is always safe. */
+ *  teammate's checkout, a backup, or a branch worktree is always safe.
+ *
+ *  The SOURCE is read RAW, line by line (ME-07): every candidate record is re-validated
+ *  against THIS ledger and either appended (deduped) or quarantined under a trusted
+ *  identity. Reading raw — instead of through loadState's hash-dedup — is what lets two
+ *  forged records sharing one fake `h`, and malformed no-`h` lines, all reach quarantine
+ *  instead of being silently collapsed or dropped. */
 export function mergeDirs(dstDir, srcDir) {
-  return importState(dstDir, loadState(srcDir));
+  let claims = 0;
+  let records = 0;
+  let quarantined = 0;
+  // 1. Bring over claim files (pure content). Corrupt source claim files are named by
+  //    verify(), not merged — putClaim would reject a bad address anyway.
+  for (const { claim } of walkClaimFiles(srcDir)) {
+    if (!claim) continue;
+    const r = putClaim(dstDir, claim);
+    if (r.ok && !r.existed) claims++;
+  }
+  // 2. For every claim now in the destination, merge the source's log lines RAW.
+  const ids = [];
+  for (const { id, claim } of walkClaimFiles(dstDir)) if (claim) ids.push(id);
+  for (const id of ids) {
+    for (const log of LOGS) {
+      const path = logPath(srcDir, log, id);
+      if (!existsSync(path)) continue;
+      for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        let rec = null;
+        try {
+          rec = JSON.parse(line);
+        } catch {}
+        const res = tryImportLine(dstDir, log, id, rec);
+        if (res.ok) {
+          if (!res.deduped) records++;
+        } else {
+          quarantined += quarantineRecord(dstDir, id, rec ?? { raw: line }, res.reason);
+        }
+      }
+    }
+  }
+  reindex(dstDir);
+  return { claims, records, quarantined };
 }
 
 /**
@@ -244,24 +390,57 @@ export function blame(dir, prefix, nowDay = 0) {
   };
 }
 
+/** Quarantine one rejected import record — an append-only audit line under
+ *  quarantine/<claimId>.log. Two hardening rules (ME-07):
+ *   - The stored `rec` is REDACTED first: the quarantine log is an audit trail, never a
+ *     place to persist the very credential we just refused (ME-06). A malformed line that
+ *     never parsed is captured as {raw:"…"} so nothing is silently dropped.
+ *   - Dedup is by a TRUSTED `qhash` computed with contentHash over the (redacted) record
+ *     PLUS the rejection reason — NEVER the rejected record's own attacker-chosen `h`. Two
+ *     distinct forged records that share one fake `h` therefore get DISTINCT identities and
+ *     both survive; a malformed line with no `h` gets one too. Returns 1 when newly
+ *     quarantined, 0 on a trusted-identity dupe (re-merges stay idempotent). */
+function quarantineRecord(dir, id, rec, reason) {
+  let redacted;
+  try {
+    redacted = JSON.parse(redactSecrets(canonicalize(rec ?? null)));
+  } catch {
+    redacted = { redacted: true };
+  }
+  const qhash = contentHash(canonicalize({ reason, rec: redacted }));
+  if (readLog(dir, "quarantine", id).some((q) => q.qhash === qhash)) return 0;
+  mkdirSync(join(dir, "quarantine"), { recursive: true });
+  appendFileSync(
+    logPath(dir, "quarantine", id),
+    `${canonicalize(sealRecord({ qhash, reason, rec: redacted, t: rec?.t ?? 0 }))}\n`,
+  );
+  return 1;
+}
+
 /** Semilattice import: merge another ledger state into this directory (the mergeDirs
- *  core). Idempotent; safe to re-run. */
+ *  core). Idempotent; safe to re-run. Imported records get NO validation bypass:
+ *  evidence goes through the full appendEvidence gate (validOutcome + ref resolution
+ *  against THIS repo) and every record must prove its content hash in appendRecord —
+ *  rejects land in quarantine/ for audit and are counted in `quarantined`. */
 export function importState(dir, other) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;
   let records = 0;
+  let quarantined = 0;
   for (const c of Object.values(merged.claims)) {
     const r = putClaim(dir, c);
     if (r.ok && !r.existed) claims++;
     for (const log of LOGS) {
       for (const rec of merged[log][c.id] ?? []) {
-        const a = appendRecord(dir, log, c.id, rec);
+        const a =
+          log === "evidence" ? appendEvidence(dir, c.id, rec) : appendRecord(dir, log, c.id, rec);
         if (a.ok && !a.deduped) records++;
+        else if (!a.ok) quarantined += quarantineRecord(dir, c.id, rec, a.reason ?? "rejected");
       }
     }
   }
   reindex(dir);
-  return { claims, records };
+  return { claims, records, quarantined };
 }
 
 /** Regenerate LEDGER.md — the human index (like recall's MEMORY.md). */
@@ -289,6 +468,9 @@ export function verify(dir) {
   let claims = 0;
   let outcomes = 0;
   const ids = [];
+  const root = repoRootOf(dir);
+  const resolveGit = gitResolver(root);
+  const resolveFile = fileResolver(root);
   for (const { id, raw, claim } of walkClaimFiles(dir)) {
     if (!claim) issues.push(`claim ${id}: unparseable or id mismatch`);
     else {
@@ -320,7 +502,13 @@ export function verify(dir) {
           if (!validOutcome(o)) issues.push(`${where}: invalid outcome (oracle/result/ref)`);
           else if (o.w !== ORACLES[o.oracle].w)
             issues.push(`${where}: recorded weight ${o.w} != oracle table ${ORACLES[o.oracle].w}`);
-          else outcomes++;
+          else {
+            // Typed, unresolvable refs (e.g. a `git:` sha absent from this repo) are named
+            // so CI catches evidence that can never be re-derived.
+            const v = validateRef(o.ref, { resolveGit, resolveFile });
+            if (!v.ok) issues.push(`${where}: ${v.reason ?? "unresolvable evidence ref"}`);
+            else outcomes++;
+          }
         }
         if (hasSecret(line)) issues.push(`${where}: secret-like content`);
       }

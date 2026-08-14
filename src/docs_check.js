@@ -4,20 +4,30 @@
 // a feature can no longer ship without its docs and the gap silently accumulate — the
 // exact failure that let a whole command family go undocumented. Self-check: it runs
 // against the forge package root (BRAND.root), not the host repo.
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
+import { renderDocs } from "./docs_render.js";
 import { TOOLS } from "./mcp_tools.js";
-import { MODELS } from "./model_tiers.js";
+import { allPricePairs } from "./model_tiers.js";
+import { git } from "./util.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
 const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
 
 // Env vars read in src that are NOT user-facing contract: child-process plumbing and
 // values injected by host tools rather than set by users.
-const INTERNAL_ENV = new Set(["_FORGE_LLM_KEY", "FORGE_EMBED_KEY", "CLAUDE_PLUGIN_ROOT"]);
+const INTERNAL_ENV = new Set([
+  "_FORGE_LLM_KEY",
+  "FORGE_EMBED_KEY",
+  // Test-only override of the settings.json path `forge init` targets — plumbing for
+  // exercising merge/remove/exit-code behavior without touching the real ~/.claude.
+  "FORGE_SETTINGS_PATH",
+  "CLAUDE_PLUGIN_ROOT",
+  // Standard XDG base-dir var forge honors for its state home — not forge's own surface.
+  "XDG_STATE_HOME",
+]);
 
 // Prefixes that mark an env var as OURS to document. A doc may freely mention other
 // tools' vars (GITHUB_TOKEN, PATH) — those aren't claims about forge's own surface.
@@ -28,7 +38,9 @@ function readDoc(root, rel) {
   return existsSync(p) ? readFileSync(p, "utf8") : "";
 }
 
-function srcFiles(root) {
+// Exported so docs_impact.js reuses the SAME src-file inventory (recursive, .js only)
+// the env-var extractor scans — one definition of "what counts as a source file".
+export function srcFiles(root) {
   const dir = join(root, "src");
   if (!existsSync(dir)) return [];
   // recursive: src/emit/*.js reads are part of the same env contract.
@@ -60,6 +72,27 @@ export function envVarsRead(root = BRAND.root) {
     }
   }
   return vars;
+}
+
+/** Generated doc surfaces vs the registries: a stale machine-owned block is not a
+ *  judgement call — `forge docs render` IS the fix, so the error says exactly that.
+ *  Registry-derived blocks (tables, counts) are errors; tree-derived output (repo map,
+ *  mermaid theme) is a warning so moving a file never fails an unrelated PR. */
+function checkRendered(root, issues) {
+  let r;
+  try {
+    r = renderDocs(root, { write: false });
+  } catch {
+    return; // never let the renderer take the whole check down
+  }
+  for (const f of r.files) {
+    if (!f.changed) continue;
+    issues.push({
+      check: "render",
+      severity: f.strict ? "error" : "warn",
+      detail: `${f.file}: generated ${f.why.join(" + ")} out of date — run \`${BRAND.cli} docs render\``,
+    });
+  }
 }
 
 /** Commands table vs README/GUIDE: every command documented, nothing phantom. */
@@ -148,27 +181,20 @@ function checkMcpTools(docs, issues) {
   }
 }
 
-const git = (root, args) => {
-  try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-};
-
 /** Every tracked Markdown file, so diagram checks cover the WHOLE doc set — not just the
  *  four prose docs. Falls back to a recursive walk when git is unavailable (tmp fixtures). */
 function markdownFiles(root) {
-  const tracked = git(root, ["ls-files", "*.md"]);
+  const tracked = git(root, ["ls-files", "*.md", "*.mdx"]);
   if (tracked) return tracked.split("\n").filter(Boolean);
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .map(String)
-    .filter((f) => f.endsWith(".md") && !f.includes("node_modules") && !f.startsWith(".git/"));
+    .filter(
+      (f) =>
+        (f.endsWith(".md") || f.endsWith(".mdx")) &&
+        !f.includes("node_modules") &&
+        !f.startsWith(".git/"),
+    );
 }
 
 // The branded Mermaid theme every diagram shares (see README's `%%{init …}%%`). Without it
@@ -200,6 +226,24 @@ function checkDiagrams(root, issues) {
           severity: "error",
           detail: `${rel}: a mermaid diagram has no branded \`%%{init\` theme — it renders in Mermaid's off-brand default`,
         });
+      } else {
+        // Presence of `%%{init` isn't enough — the theme must carry the actual brand
+        // VALUES from the single color source (brand.json.colors.dark), or a diagram can
+        // declare a theme and still render in off-brand colors. Require the load-bearing
+        // identity hexes: the ember accent and the warm-black canvas.
+        const dark = BRAND.colors?.dark ?? {};
+        for (const [role, hex] of [
+          ["ember accent (lineColor)", dark.brand],
+          ["warm-black canvas (tertiaryColor)", dark.bg],
+        ]) {
+          if (hex && !block.toLowerCase().includes(hex.toLowerCase())) {
+            issues.push({
+              check: "diagrams",
+              severity: "error",
+              detail: `${rel}: a mermaid \`%%{init\` theme is missing the brand ${role} \`${hex}\` — it declares a theme but not the brand.json colors`,
+            });
+          }
+        }
       }
       if (block.includes("\\n")) {
         issues.push({
@@ -260,13 +304,15 @@ function checkChangelog(root, issues) {
  * (the actual failure mode: a figure that went stale to a value the table no longer has).
  */
 function checkModelTiers(docs, issues) {
-  const models = Object.values(MODELS);
+  // Accept any price across flat + scheduled windows so a documented intro/standard rate
+  // (effective-date pricing, P0-12) isn't mis-flagged as stale.
+  const pairs = allPricePairs();
   const PRICE_RE = /\$(\d+)\/\$(\d+)\s*per\s*M\s*tok/gi;
   for (const [file, text] of Object.entries(docs)) {
     for (const m of text.matchAll(PRICE_RE)) {
       const inC = Number(m[1]);
       const outC = Number(m[2]);
-      if (!models.some((mo) => mo.inCost === inC && mo.outCost === outC)) {
+      if (!pairs.some((p) => p.inCost === inC && p.outCost === outC)) {
         issues.push({
           check: "model-tiers",
           severity: "error",
@@ -435,6 +481,102 @@ function checkRoadmap(root, issues) {
 }
 
 /**
+ * Research crosswalk bindings: every `.js`/`.sh` file token the formal-synthesis
+ * crosswalk claims as a forgekit binding must name a file that actually exists in
+ * `src/`, `global/guards/`, or `hooks/`. This is the drift that let the paper keep
+ * citing `docs-guard.sh` / `session-context.sh` / `intent-router.sh` long after the
+ * hook system became `cortex.sh` + `cortex_hook_main.js`. Names that belong to the
+ * claude-e2e-kit binding (a different repo) opt out with a `kit:` prefix on their
+ * clause; a missing crosswalk.json (npm installs without research/) is a no-op.
+ */
+function checkCrosswalk(root, issues) {
+  const rel = join("research", "formal-synthesis", "crosswalk.json");
+  const p = join(root, rel);
+  if (!existsSync(p)) return;
+  let rows;
+  try {
+    rows = JSON.parse(readFileSync(p, "utf8")).rows ?? [];
+  } catch {
+    issues.push({
+      check: "crosswalk",
+      severity: "error",
+      detail: `${rel} is not valid JSON`,
+    });
+    return;
+  }
+  const known = new Set(srcFiles(root).map((f) => String(f).split(/[\\/]/).pop()));
+  for (const dir of [join("global", "guards"), "hooks"]) {
+    const d = join(root, dir);
+    if (!existsSync(d)) continue;
+    for (const f of readdirSync(d)) known.add(String(f));
+  }
+  for (const row of rows) {
+    // A `kit:` clause covers everything to the next `;` or `)` — those names live in
+    // the kit repo, not this one, so they are the kit's docs problem, not ours.
+    const ours = String(row.forgekit ?? "").replace(/kit:[^;)]*/g, " ");
+    for (const m of ours.matchAll(/\b([\w./-]+\.(?:js|sh))\b/g)) {
+      const name = m[1].split("/").pop() ?? m[1];
+      if (!known.has(name)) {
+        issues.push({
+          check: "crosswalk",
+          severity: "error",
+          detail: `${rel}: row "${row.concept}" binds ${m[1]}, which exists nowhere in src/, global/guards/, or hooks/ (stale binding — or prefix its clause with kit: if it names the kit, not this repo)`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Mintlify site (`mintlify/`) reconcile — the site is hand-maintained MDX OUTSIDE the
+ * reconciled Markdown docs, so it drifted unchecked (env vars, command surface). This
+ * closes the loop for the ENGLISH/default locale: (a) every real command must be
+ * documented on the site as `forge <name>`, and (b) every env var the site NAMES must be
+ * one the code actually reads (no phantom vars). It is deliberately NOT a full env-parity
+ * check — the site is a curated quickstart; the exhaustive env surface is GUIDE's job
+ * (checkEnvVars already reconciles it). No-ops when `mintlify/` is absent; translated
+ * locales aren't scanned (identifiers are literal, so English coverage is the real guard).
+ */
+function checkMintlify(root, issues) {
+  const base = join(root, "mintlify");
+  if (!existsSync(base)) return;
+  const dirs = ["", "cli", "concepts", "guides", "changelog"];
+  let text = "";
+  for (const d of dirs) {
+    const dir = d ? join(base, d) : base;
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".mdx") && !f.endsWith(".md")) continue;
+      try {
+        text += `${readFileSync(join(dir, f), "utf8")}\n`;
+      } catch {}
+    }
+  }
+  if (!text) return;
+  for (const name of Object.keys(COMMANDS)) {
+    if (HIDDEN_COMMANDS.includes(name)) continue;
+    if (!new RegExp(`\\b${BRAND.cli} ${name}\\b`).test(text)) {
+      issues.push({
+        check: "mintlify",
+        severity: "error",
+        detail: `\`${BRAND.cli} ${name}\` is implemented but the Mintlify site (mintlify/) never documents it`,
+      });
+    }
+  }
+  const read = envVarsRead(root);
+  const named = new Set();
+  for (const m of text.matchAll(ENV_PREFIX_RE)) named.add(m[1]);
+  for (const v of named) {
+    if (INTERNAL_ENV.has(v) || read.has(v)) continue;
+    issues.push({
+      check: "mintlify",
+      severity: "error",
+      detail: `the Mintlify site names ${v} but nothing in src reads it (phantom var)`,
+    });
+  }
+}
+
+/**
  * Run every reconciler against the forge package tree.
  * @param {{root?: string}} [opts]
  * @returns {{ok: boolean, issues: {check:string, severity:string, detail:string}[], checked: string[]}}
@@ -443,6 +585,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
   const docs = Object.fromEntries(DOC_FILES.map((f) => [f, readDoc(root, f)]));
   const issues = [];
   checkCommands(docs, issues);
+  checkRendered(root, issues);
   checkEnvVars(root, docs, issues);
   checkMcpTools(docs, issues);
   checkChangelog(root, issues);
@@ -451,11 +594,14 @@ export function docsCheck({ root = BRAND.root } = {}) {
   checkBenchmarks(root, docs, issues);
   checkLinks(root, issues);
   checkRoadmap(root, issues);
+  checkCrosswalk(root, issues);
+  checkMintlify(root, issues);
   return {
     ok: !issues.some((i) => i.severity === "error"),
     issues,
     checked: [
       "commands",
+      "render",
       "env-vars",
       "mcp-tools",
       "changelog",
@@ -464,6 +610,8 @@ export function docsCheck({ root = BRAND.root } = {}) {
       "benchmarks",
       "links",
       "roadmap",
+      "crosswalk",
+      "mintlify",
     ],
   };
 }

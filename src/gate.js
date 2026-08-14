@@ -1,7 +1,8 @@
 // forge gate — the completion gate: a deterministic floor under "done". Instructions and
 // lessons raise the PROBABILITY that code ships with its docs/state; this Stop hook
-// guarantees a floor: a session that changed code but moved no doc/state artifact is
-// blocked ONCE, with the exact repair procedure as the reason. P(silent miss) =
+// guarantees a floor: a session that changed code but produced no TEST EVIDENCE (a test
+// file moved, or a fresh passing `verify` provenance stamp) or moved no doc/state
+// artifact is blocked ONCE, with the exact repair procedure as the reason. P(silent miss) =
 // (1−p)·∏(1−cⱼ) — the gate is the cⱼ≈1 layer for the structural signal "code moved,
 // nothing followed". Loop-safe (stop_hook_active + once-per-session marker), fail-open
 // on every error path, kill switch FORGE_STOPGATE=0.
@@ -13,7 +14,7 @@
 // to git because .forge/ is gitignored — counts as the doc signal via its mtime against
 // the session baseline (the baseline file's mtime IS the session-start timestamp).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { cusum } from "./anchor.js";
 import { CODE_EXTS, DOC_EXTS, impact, isConfigFile, load as loadAtlas } from "./atlas.js";
@@ -21,9 +22,10 @@ import { BRAND } from "./brand.js";
 import { readSession, sessionPath } from "./cortex_hook.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
-import { readBaseline, readDirtySnapshot } from "./session.js";
+import { fingerprintFile, readBaseline, readDirtySnapshot } from "./session.js";
 import { isTestFile } from "./substrate.js";
 import { IGNORE_DIRS } from "./util.js";
+import { computeCodeState } from "./verify.js";
 
 // gitRaw keeps the exact bytes — porcelain's first column is a SPACE for unstaged
 // entries, and a trim() would eat it and shift the path slice by one.
@@ -110,20 +112,39 @@ const IGNORED_PREFIX = (p) => IGNORE_DIRS.has(String(p).split("/")[0]);
  * by the block-once marker.
  * @param {string} root
  * @param {string|null} [baseHead]
- * @param {{sinceMs?: number, preDirty?: Set<string>}} [opts]
+ * @param {{sinceMs?: number, preDirty?: Map<string, string|null>}} [opts]
  */
 export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
   const out = new Set(committedSince(root, baseHead, sinceMs));
   for (const p of statusEntriesZ(root)) {
-    if (preDirty?.has(p)) continue; // already dirty before the session began
+    // A path that was already dirty at session start is hidden ONLY while its content is
+    // unchanged since then: its baseline fingerprint must be known AND still match. An
+    // unknown baseline (legacy snapshot) or a moved fingerprint means the agent edited a
+    // pre-dirty file THIS session — let it flow through the normal classification (HI-03).
+    if (preDirty?.has(p)) {
+      const baseFp = preDirty.get(p);
+      if (baseFp != null && fingerprintFile(root, p) === baseFp) continue;
+    }
     out.add(p);
   }
   return [...out].filter((p) => !IGNORED_PREFIX(p)).sort();
 }
 
 /**
- * PURE decision table (the kit's ten rows, minus the impure guards the orchestrator
- * handles). First match wins; returns {allow, row, classes}.
+ * PURE decision table (first match wins; returns {allow, row, classes}). The teeth
+ * (RA-10): a code change owes TEST EVIDENCE — a test-class file moved with it, or a
+ * fresh passing `verify` run (provenance stamp newer than session start) — AND a
+ * doc/state artifact. A handoff/state touch alone still counts as the continuity
+ * (docs) leg, but it can no longer satisfy the gate by itself when code moved; only
+ * a config-only change keeps that lighter bar.
+ * @param {{stopHookActive?: boolean, isRepo?: boolean, markerExists?: boolean,
+ *   killSwitch?: boolean, changed?: string[], stateTouched?: boolean,
+ *   verifyEvidence?: {fresh: boolean, status: string, codeStateMatches?: boolean} | null,
+ *   substantiveTests?: string[] | null}} [input]
+ *   verifyEvidence.codeStateMatches — the stamp's stored code-state fingerprint still
+ *     equals the code as it stands now (HI-02); a fresh PASS only counts when this is true.
+ *   substantiveTests — the FS-filtered subset of changed test files that still exist and
+ *     are non-empty (HI-04); null (pure-table callers) falls back to raw classification.
  */
 export function gateDecision({
   stopHookActive = false,
@@ -132,6 +153,8 @@ export function gateDecision({
   killSwitch = false,
   changed = [],
   stateTouched = false,
+  verifyEvidence = null,
+  substantiveTests = null,
 } = {}) {
   if (stopHookActive) return { allow: true, row: "stop-hook-active" };
   if (!isRepo) return { allow: true, row: "not-a-repo" };
@@ -141,15 +164,66 @@ export function gateDecision({
   for (const f of changed) classes[classifyPath(f)].push(f);
   const external = changed.length - classes.internal.length;
   if (!external && !stateTouched) return { allow: true, row: "no-changes", classes };
-  if (classes.docs.length || stateTouched) return { allow: true, row: "docs-touched", classes };
-  if (classes.code.length) return { allow: false, row: "code-without-docs", classes };
-  return { allow: true, row: "no-code-class", classes };
+  // Test evidence has two legs. STRONG (HI-02): a fresh `verify` PASS whose stored code
+  // state still matches the tree NOW — proof the tests ran against the FINAL code, not a
+  // since-mutated one. WEAKER (HI-04): a substantive test file moved with the change
+  // (added/modified and non-empty — a deleted or emptied test is an obligation signal,
+  // never proof). `substantiveTests` is the caller's FS-filtered set; absent it (pure
+  // callers) we trust the raw classification.
+  const strongVerify =
+    verifyEvidence?.fresh === true &&
+    verifyEvidence?.status === "PASS" &&
+    verifyEvidence?.codeStateMatches === true;
+  const hasTestFile =
+    substantiveTests == null ? classes.test.length > 0 : substantiveTests.length > 0;
+  const testEvidence = strongVerify || hasTestFile;
+  const docEvidence = classes.docs.length > 0 || stateTouched;
+  if (classes.code.length) {
+    if (!testEvidence) return { allow: false, row: "code-without-test-evidence", classes };
+    if (!docEvidence) return { allow: false, row: "code-without-docs", classes };
+    return { allow: true, row: "code-with-evidence", classes };
+  }
+  // Test-only sessions (a regression test owes no prose) pass; config-only still owes
+  // at least the lighter continuity bar (docs or a state/handoff touch).
+  if (classes.test.length && !classes.config.length)
+    return { allow: true, row: "test-only", classes };
+  if (classes.config.length && !docEvidence)
+    return { allow: false, row: "config-without-docs", classes };
+  return {
+    allow: true,
+    row: docEvidence ? "docs-touched" : "no-code-class",
+    classes,
+  };
+}
+
+/** The change-type obligation matrix (P1-05): what evidence each kind of change owes, so
+ *  the gate points at the RIGHT artifact instead of treating any doc/state touch as done.
+ *  Derived from the classes already computed — a pure function so it's easy to test.
+ *  @param {{code?: string[], config?: string[], test?: string[]}} classes */
+export function obligationsFor(classes = {}) {
+  const out = [];
+  if (classes.code?.length)
+    out.push(
+      "Code changed → update the docs it affects AND add/adjust a test that exercises the new behaviour (a handoff note alone is not the obligation).",
+    );
+  if (classes.config?.length)
+    out.push("Config changed → update the config/deployment docs that describe it.");
+  return out;
 }
 
 /** The block reason IS the repair procedure — its consumer is the agent itself, and a
- *  checklist converts a failure into a same-turn fix. Stale-doc candidates come from the
- *  CACHED atlas only (a hook never builds). */
-export function repairReason(root, { codeFiles = [], driftAlarm = false } = {}) {
+ *  checklist converts a failure into a same-turn fix. Parameterized by the blocked row
+ *  so it leads with the MISSING leg (test evidence vs docs vs config docs); the old
+ *  "handoff alone satisfies the gate" claim survives only on the config-only row, where
+ *  that lighter bar is real. Stale-doc candidates come from the CACHED atlas only (a
+ *  hook never builds).
+ *  @param {string} root
+ *  @param {{codeFiles?: string[], driftAlarm?: boolean,
+ *    classes?: {code?: string[], config?: string[], test?: string[]}, row?: string}} [opts] */
+export function repairReason(
+  root,
+  { codeFiles = [], driftAlarm = false, classes = {}, row = "code-without-docs" } = {},
+) {
   let likelyDocs = [];
   try {
     const atlas = loadAtlas(root);
@@ -161,26 +235,54 @@ export function repairReason(root, { codeFiles = [], driftAlarm = false } = {}) 
       likelyDocs = [...docs].slice(0, 5);
     }
   } catch {}
-  const shown = codeFiles.slice(0, 10).join(", ");
-  const more = codeFiles.length > 10 ? ` (+${codeFiles.length - 10} more)` : "";
-  const lines = [
-    "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.",
-    `Changed code: ${shown}${more}`,
-    "Do what applies before finishing:",
-    `1. \`${BRAND.cli} docs sync\` — sweep the diff for stale doc mentions${
-      likelyDocs.length ? ` (graph suggests: ${likelyDocs.join(", ")})` : ""
-    } and update every hit.`,
-    `2. \`${BRAND.cli} handoff "<what you did>" --next "<what's next>"\` — rewrite the session snapshot the next session resumes from (this alone satisfies the gate).`,
-    `3. \`${BRAND.cli} decide "<choice — reason>"\` if a non-obvious decision was made.`,
-  ];
-  if (driftAlarm)
-    lines.push(
-      `4. Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,
+  const cited = codeFiles.length ? codeFiles : (classes.config ?? []);
+  const shown = cited.slice(0, 10).join(", ");
+  const more = cited.length > 10 ? ` (+${cited.length - 10} more)` : "";
+  const obligations = obligationsFor(classes);
+  const docsSyncStep = `\`${BRAND.cli} docs sync\` — sweep the diff for stale doc mentions${
+    likelyDocs.length ? ` (graph suggests: ${likelyDocs.join(", ")})` : ""
+  } and update every hit.`;
+  const handoffStep = (suffix = "") =>
+    `\`${BRAND.cli} handoff "<what you did>" --next "<what's next>"\` — rewrite the session snapshot the next session resumes from${suffix}.`;
+  const decideStep = `\`${BRAND.cli} decide "<choice — reason>"\` if a non-obvious decision was made.`;
+  let headline;
+  const steps = [];
+  if (row === "code-without-test-evidence") {
+    headline = `END-TO-END COMPLETENESS: code changed this session with NO test evidence — no substantive test file (added or modified, non-empty; a deleted or empty test does not count) moved with it, and no fresh passing \`${BRAND.cli} verify\` run bound to the CURRENT code state backs the change (a verify that ran BEFORE your last edit is stale — re-run it after the final change).`;
+    steps.push(
+      `\`${BRAND.cli} verify\` — run the project's own tests against this change AFTER your final edit (a verify from before the last change no longer matches the code), or add/adjust a real test that exercises the new behaviour.`,
+      docsSyncStep,
+      handoffStep(),
+      decideStep,
     );
-  lines.push(
+  } else if (row === "config-without-docs") {
+    headline =
+      "END-TO-END COMPLETENESS: config changed this session but no doc or state artifact moved with it.";
+    steps.push(
+      docsSyncStep,
+      handoffStep(" (this alone satisfies the gate for a config-only change)"),
+      decideStep,
+    );
+  } else {
+    headline =
+      "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.";
+    steps.push(docsSyncStep, handoffStep(), decideStep);
+  }
+  if (driftAlarm)
+    steps.push(
+      `Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,
+    );
+  const lines = [
+    headline,
+    ...(shown ? [`Changed ${codeFiles.length ? "code" : "config"}: ${shown}${more}`] : []),
+    ...(obligations.length
+      ? ["Obligations for this change:", ...obligations.map((o) => `- ${o}`)]
+      : []),
+    "Do what applies before finishing:",
+    ...steps.map((s, i) => `${i + 1}. ${s}`),
     `If genuinely no doc is affected, tell the user why in one line and still run \`${BRAND.cli} handoff\`.`,
     "(Blocks once per session — stopping again proceeds. Kill switch: FORGE_STOPGATE=0.)",
-  );
+  ];
   return lines.join("\n");
 }
 
@@ -223,7 +325,57 @@ export function stopGate(root, sid, hook = {}) {
       sinceMs: startedAt ?? undefined,
       preDirty: readDirtySnapshot(root, sid) ?? undefined,
     });
-    const decision = gateDecision({ changed, stateTouched });
+    // Test evidence for the RA-10 rows: a `verify` provenance stamp written THIS session
+    // (mtime after session start) whose tests verdict is PASS — the exact field verify.js
+    // writes. Parse-guarded: any trouble → null → the evidence leg simply fails, and the
+    // block-once marker still caps the cost (second stop always proceeds — cannot brick).
+    let verifyEvidence = null;
+    try {
+      const provPath = join(root, ".forge", "provenance.json");
+      const mtime = statSync(provPath).mtimeMs;
+      const prov = JSON.parse(readFileSync(provPath, "utf8"));
+      const status = prov?.tests?.status;
+      if (typeof status === "string") {
+        // HI-02: the PASS only counts if the code has NOT moved since verification — the
+        // stamp's stored codeState.dirtyHash must still equal the code state recomputed
+        // NOW. Any doubt (git unavailable, null hash on either side, or a throw) → the
+        // stamp is NON-authoritative and does not count (fail toward a test-file change).
+        let codeStateMatches = false;
+        try {
+          const stored = prov?.codeState;
+          const now = computeCodeState(root);
+          codeStateMatches =
+            !!stored &&
+            stored.gitAvailable === true &&
+            now.gitAvailable === true &&
+            typeof stored.dirtyHash === "string" &&
+            typeof now.dirtyHash === "string" &&
+            stored.dirtyHash === now.dirtyHash;
+        } catch {}
+        verifyEvidence = {
+          fresh: startedAt != null && mtime > startedAt,
+          status,
+          codeStateMatches,
+        };
+      }
+    } catch {}
+    // HI-04: a changed test file is an OBLIGATION signal, not proof. Only test files that
+    // still EXIST and are NON-EMPTY (added or modified, not deleted/emptied) may count
+    // toward the weaker evidence leg; the strong leg is the code-state-bound verify PASS.
+    const substantiveTests = changed.filter((p) => {
+      if (classifyPath(p) !== "test") return false;
+      try {
+        return statSync(join(root, p)).size > 0;
+      } catch {
+        return false;
+      }
+    });
+    const decision = gateDecision({
+      changed,
+      stateTouched,
+      verifyEvidence,
+      substantiveTests,
+    });
     if (decision.allow) return decision;
     // Marker FIRST: if it can't be persisted, the block-once promise can't be kept —
     // on a read-only checkout that would mean an unsatisfiable block every turn, so
@@ -242,8 +394,18 @@ export function stopGate(root, sid, hook = {}) {
         .filter(Number.isFinite);
       if (scores.length >= 3) driftAlarm = cusum(scores).alarm;
     } catch {}
-    const reason = repairReason(root, { codeFiles: decision.classes.code, driftAlarm });
-    return { allow: false, row: decision.row, reason, classes: decision.classes };
+    const reason = repairReason(root, {
+      codeFiles: decision.classes.code,
+      driftAlarm,
+      classes: decision.classes,
+      row: decision.row,
+    });
+    return {
+      allow: false,
+      row: decision.row,
+      reason,
+      classes: decision.classes,
+    };
   } catch {
     return { allow: true, row: "internal-error" };
   }

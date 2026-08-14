@@ -26,6 +26,10 @@ const CLEAR = {
   ANTHROPIC_BASE_URL: undefined,
   LITELLM_BASE_URL: undefined,
   ANTHROPIC_MODEL: undefined,
+  FORGE_MODEL: undefined,
+  OPENAI_API_KEY: undefined,
+  GEMINI_API_KEY: undefined,
+  GOOGLE_API_KEY: undefined,
 };
 
 test("resolveHttpProvider: ANTHROPIC_API_KEY + default URL", () => {
@@ -101,4 +105,47 @@ test("resolveHttpProvider: strips trailing slash from URL", () => {
       assert.equal(p.baseUrl, "https://gw.example.com");
     },
   );
+});
+
+test("resolveHttpProvider: OPENAI_API_KEY → OpenAI-compatible chat/completions", () => {
+  withEnv({ ...CLEAR, OPENAI_API_KEY: "sk-oai" }, () => {
+    const p = resolveHttpProvider();
+    assert.equal(p.format, "openai");
+    assert.equal(p.baseUrl, "https://api.openai.com/v1");
+    assert.equal(p.path, "/chat/completions");
+    assert.equal(p.key, "sk-oai");
+    assert.equal(p.defaultModel, "gpt-5-mini");
+  });
+});
+
+test("resolveHttpProvider: GEMINI_API_KEY → Gemini OpenAI-compatible endpoint", () => {
+  withEnv({ ...CLEAR, GEMINI_API_KEY: "gm" }, () => {
+    const p = resolveHttpProvider();
+    assert.equal(p.format, "openai");
+    assert.equal(p.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai");
+    assert.equal(p.defaultModel, "gemini-2.5-flash");
+  });
+});
+
+test("resolveHttpProvider: GOOGLE_API_KEY is a Gemini alias", () => {
+  withEnv({ ...CLEAR, GOOGLE_API_KEY: "goog" }, () => {
+    const p = resolveHttpProvider();
+    assert.equal(p.format, "openai");
+    assert.equal(p.key, "goog");
+  });
+});
+
+test("resolveHttpProvider: Anthropic key wins over OpenAI (format stays anthropic)", () => {
+  withEnv({ ...CLEAR, ANTHROPIC_API_KEY: "sk-ant", OPENAI_API_KEY: "sk-oai" }, () => {
+    const p = resolveHttpProvider();
+    assert.equal(p.format, "anthropic");
+    assert.equal(p.key, "sk-ant");
+  });
+});
+
+test("resolveHttpProvider: FORGE_MODEL override surfaces for OpenAI", () => {
+  withEnv({ ...CLEAR, OPENAI_API_KEY: "sk-oai", FORGE_MODEL: "gpt-5" }, () => {
+    const p = resolveHttpProvider();
+    assert.equal(p.model, "gpt-5");
+  });
 });

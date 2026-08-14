@@ -39,7 +39,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Never tag a tree that fails the FULL quality gate (not just tests) — P0-11.
+  gate:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):')
+    uses: ./.github/workflows/reusable-quality-gate.yml
+
   bump:
+    needs: gate
     runs-on: ubuntu-latest
     # Never react to our own release commit (belt-and-suspenders behind GitHub's recursion guard).
     if: >-
@@ -49,12 +57,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history + tags so "auto" can read commits since the last tag
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test # never tag a broken tree
       - name: Bump version fields + rotate CHANGELOG
         id: bump
         # On push, always "auto"; on manual dispatch, honor the chosen input.
@@ -83,6 +90,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Orphan-tag guard: a partial prior run (bump committed + tagged, then the push or a
+          # later step died) can leave vX.Y.Z already present locally or on origin. `git tag`
+          # would then die with a bare "fatal: tag 'vX.Y.Z' already exists", wedging EVERY
+          # future auto-release with a cryptic error. Detect it first and fail with an operator
+          # runbook instead. We do NOT auto-delete the tag — clobbering a release tag in CI is
+          # too dangerous; a human must remove the orphan deliberately.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null 2>&1 \
+            || git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release wedged: tag v$VERSION already exists (orphaned partial run). An operator must delete it: git push origin :refs/tags/v$VERSION, then re-run."
+            exit 1
+          fi
           git add -A
           git commit -m "chore(release): v$VERSION"
           git tag -a "v$VERSION" -m "v$VERSION"

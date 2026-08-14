@@ -3,3 +3,7 @@
 # by construction (docs/plans/substrate-v2/02-team-memory.md §1). `forge init` emits
 # this same rule into consumer repos.
 .forge/ledger/*/*.log merge=union
+
+# Shell scripts and the Node guard must stay LF even on Windows checkouts — bash chokes on
+# CRLF (\r), which breaks the guard/install tests under Git Bash on windows-latest.
+*.sh text eol=lf

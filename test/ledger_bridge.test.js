@@ -18,6 +18,10 @@ import { newLesson } from "../src/lessons.js";
 import { save } from "../src/lessons_store.js";
 import { readFact, add as recallAdd } from "../src/recall.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-bridge-"));
 const ctx = { symbols: ["computeTax"], files: ["src/tax.ts"], keywords: [] };
 const strongSignals = [{ signal: "S1" }, { signal: "S6" }];

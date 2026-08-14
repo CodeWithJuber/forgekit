@@ -19,6 +19,10 @@ import { newLesson } from "../src/lessons.js";
 import { load, save } from "../src/lessons_store.js";
 import { add as recallAdd, list as recallList, reindex as recallReindex } from "../src/recall.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-readflip-"));
 
 /** A lesson claim the way ledger_bridge.lessonClaim mints one (body = content only,

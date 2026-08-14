@@ -4,8 +4,8 @@
 // zero-dep grep gives a rough fan-out today; adopting a graph MCP (agent-lsp/Serena) drops
 // a precise call graph straight in without touching the predictor.
 import { execFileSync } from "node:child_process";
+import { mergedLessons } from "./ledger_read.js";
 import { confidenceOf, matchScore } from "./lessons.js";
-import { load } from "./lessons_store.js";
 
 /**
  * Pure: edit + gathered signals → the predictor feature vector (all features in [0,1]).
@@ -68,7 +68,9 @@ export function grepFanout(root, symbol) {
 
 /** Build the feature vector for a real edit from actual repo state (best-effort, degrades). */
 export function featuresForEdit(root, edit, { nowDay = 0 } = {}) {
-  const activeLessons = load(root).filter((l) => l.status === "active");
+  // Ledger-aware read: the merged view (legacy ∪ ledger) so this works under
+  // FORGE_LEDGER_ONLY (no legacy files) and also sees merged teammate lessons.
+  const activeLessons = mergedLessons(root, nowDay).filter((l) => l.status === "active");
   const callerCount = grepFanout(root, edit.symbol);
   return computeFeatures(edit, {
     activeLessons,

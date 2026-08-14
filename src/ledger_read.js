@@ -13,7 +13,7 @@
 import { DEFAULT_HALF_LIFE_DAYS, val, validOutcome } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { load } from "./lessons_store.js";
-import { slug } from "./util.js";
+import { ledgerOnly, slug } from "./util.js";
 
 /**
  * Map a ledger `lesson` claim onto the legacy lesson shape (lessons.js), so every
@@ -110,7 +110,8 @@ const preferred = (a, b) => {
  * @returns {object[]}
  */
 export function mergedLessons(root, nowDay = 0) {
-  const legacy = load(root);
+  // Legacy-store retirement: with no legacy files, the merged view is the ledger alone.
+  const legacy = ledgerOnly() ? [] : load(root);
   const local = new Set(legacy.map((l) => l.id));
   const byId = new Map();
   for (const l of ledgerLessons(root, nowDay)) {

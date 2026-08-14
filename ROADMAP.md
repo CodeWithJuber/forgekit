@@ -7,7 +7,7 @@ every tool. This is where that brain is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
-## Now (`master`, v0.12.1)
+## Now (`master`, v0.32.0)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
 routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file
@@ -33,12 +33,12 @@ confidence only from independent oracles, and merges across teammates conflict-f
 - **Zero-config provider auto-detection** — `autoDetectProvider()` probes env vars
   for LiteLLM (local + hosted gateway), OpenRouter, and Anthropic (key, auth token,
   or custom base URL); `forge init` reports what it found, no manual config needed.
-  (OpenAI and Gemini detection: see Next.)
+  (OpenAI and Gemini detection shipped later as a low-configuration auto-detect fallback — see CHANGELOG.)
 - **Hosted LiteLLM gateway** — `emitGatewayConfig()` writes a `litellm.config.yaml`
   exposing the complexity tiers as model aliases; point `ANTHROPIC_BASE_URL` at the
   proxy and every model call routes through it.
 - **MCP server** — the cortex MCP server (`src/cortex_mcp.js`) exposes read-path
-  tools for ledger, brain, atlas, recall, cost, substrate, and dashboard (19 MCP tools
+  tools for ledger, brain, atlas, recall, cost, substrate, and dashboard (21 MCP tools
   as of 0.8.x, including the write tools added in 0.8.0).
 - **Cost dashboard** — `forge dash` serves a local HTML dashboard showing model spend,
   event timeline, and ledger health from `.forge/` data.
@@ -60,21 +60,26 @@ confidence only from independent oracles, and merges across teammates conflict-f
 
 ## Next
 
+- **Legacy store retirement** — mostly shipped. The read-path flip (every read surface —
+  cortex injection/status, the substrate advisory, routing, `recall list`, brain's
+  AGENTS.md index — is a merged view (legacy ∪ ledger) via `src/ledger_read.js`) landed
+  first, and the **write default has now flipped too**: `FORGE_LEDGER_ONLY` defaults on, so
+  the legacy formats (`lessons/*.md`, recall/brain fact files) are no longer written and the
+  ledger is the sole store. `FORGE_LEDGER_ONLY=0` is a one-release escape hatch that restores
+  the file store. The only remaining step is deleting the now-dormant legacy write/read code
+  once that escape hatch is removed in a later release.
 - **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
   Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
-  zero-config contract.
-- **Legacy store retirement** — the read-path flip has shipped: every read surface
-  (cortex injection/status, the substrate advisory, routing, `recall list`, brain's
-  AGENTS.md index) is now a merged view (legacy ∪ ledger) via `src/ledger_read.js`,
-  so teammate knowledge from `forge ledger merge` reaches injection. The legacy
-  formats (`lessons/*.md`, recall/brain fact files) are still written as the canonical
-  local state; the remaining step is retiring them so the ledger is the only store.
+  guided, low-configuration auto-detect contract.
 - **Playwright loop** — still open: interaction checks and feeding verdicts back as
   oracle evidence on design claims (fingerprinting itself shipped as
   `forge uicheck visual`).
-- **Advisory → gated promotions** — outcome-calibrated routing weights, consolidation
-  promotion (ʿilm→fahm), M6 hazard estimates: advisory today, become blocking only
-  once fixtures measure them (overview §4 honesty register).
+- **Advisory → gated promotions** — the measured-promotion gate has shipped
+  (`src/promote.js`, generalizing the risk predictor's kill-criteria): a candidate only
+  replaces a baseline when it beats it on held-out data, never by assertion. First
+  application: outcome-calibrated routing (`forge route calibrate`). Remaining
+  applications of the same gate: consolidation promotion (ʿilm→fahm) and M6 hazard
+  estimates.
 
 ## Later / exploring
 

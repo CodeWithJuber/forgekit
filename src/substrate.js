@@ -7,13 +7,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildRunner, llmEnabled } from "./adjudicate.js";
 import { goalDrift } from "./anchor.js";
-import { build as buildAtlas, impact as impactGraph, load as loadAtlas } from "./atlas.js";
+import {
+  isStale as atlasIsStale,
+  build as buildAtlas,
+  buildSccIndex,
+  impact as impactGraph,
+  load as loadAtlas,
+} from "./atlas.js";
 import { assemble as assembleContext } from "./context.js";
 import { matchingLessons } from "./cortex.js";
 import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
 import { mergedLessons } from "./ledger_read.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
+import { rankReport } from "./rank.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
@@ -129,6 +136,27 @@ function makeImpactVerify(root) {
 }
 
 /**
+ * Load rank data (SCC index + per-file hazard scores) for enhanced impact analysis.
+ * Fail-open: if rank.js is unavailable or the data can't be computed, returns nulls
+ * and impact() falls back to basic mode transparently.
+ * @param {string} root
+ * @returns {{sccIndex: Map<string, number>|undefined, hazards: Map<string, number>|undefined}}
+ */
+export function loadRankData(root) {
+  try {
+    const report = rankReport(root);
+    if (!report.built) return { sccIndex: undefined, hazards: undefined };
+    const sccIndex = report.cycles?.length ? buildSccIndex(report.cycles) : undefined;
+    const hazards = report.topFiles?.length
+      ? new Map(report.topFiles.map((f) => [f.file, f.hazard]))
+      : undefined;
+    return { sccIndex, hazards };
+  } catch {
+    return { sccIndex: undefined, hazards: undefined };
+  }
+}
+
+/**
  * @param {string} root
  * @param {string} target
  * @param {object} [opts]
@@ -136,15 +164,24 @@ function makeImpactVerify(root) {
  * @param {boolean} [opts.llm]
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
+ * @param {boolean} [opts.basic] skip hazard-aware enhancements
  */
-export function predictImpact(root, target, { threshold = 0.1, llm, model, timeoutMs } = {}) {
-  const atlas = loadAtlas(root) || buildAtlas({ root });
+export function predictImpact(
+  root,
+  target,
+  { threshold = 0.1, llm, model, timeoutMs, basic } = {},
+) {
+  const cached = loadAtlas(root);
+  const atlas = cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
   const useLLM = llmEnabled({ llm });
+  const rankData = basic ? {} : loadRankData(root);
   return impactGraph(atlas, target, {
     threshold,
     llm: useLLM,
     run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
     verify: makeImpactVerify(root),
+    sccIndex: rankData.sccIndex,
+    hazards: rankData.hazards,
   });
 }
 
@@ -198,7 +235,11 @@ export function substrateCheck(
     signalFloor: spec?.llm?.signalFloor,
   };
   const entities = referencedEntities(text);
-  const preflight = preflightRepo(root, text, { askThreshold, allowBuild, ...llmOpts });
+  const preflight = preflightRepo(root, text, {
+    askThreshold,
+    allowBuild,
+    ...llmOpts,
+  });
   // P8 gate metering: one metrics line per explicit gate decision (halt = spend avoided).
   // Same write contract as reuseQuery vs reusePeek below — the ambient hook path
   // (allowBuild:false) never appends. Best-effort: measurement must never block the gate.
@@ -215,8 +256,28 @@ export function substrateCheck(
   // itself best-effort (try/catch inside), so measurement can never block routing.
   if (allowBuild) meterRoute(root, text, route);
   // allowBuild:false (ambient hooks) uses the atlas only if one is already cached — never
-  // builds or writes .forge/atlas.json from a hook. Impact is then best-effort.
-  const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
+  // builds or writes .forge/atlas.json from a hook. When the cached atlas is missing or STALE
+  // and we can't rebuild (ambient), impact is not trustworthy: flag it (atlasFresh:false) so
+  // callers surface "impact unavailable" instead of presenting 0 impacted files as fact.
+  let atlas = loadAtlas(root);
+  let atlasFresh = true;
+  if (atlas) {
+    if (atlasIsStale(root, atlas)) {
+      if (allowBuild) {
+        atlas = buildAtlas({ root });
+      } else {
+        // Stale cache, can't rebuild from a hook. A stale graph is NOT evidence — drop it
+        // entirely so impacts/impactedFiles/predictedTests all derive from nothing instead
+        // of from a snapshot of a repo that no longer exists (RA-07).
+        atlas = null;
+        atlasFresh = false;
+      }
+    }
+  } else if (allowBuild) {
+    atlas = buildAtlas({ root });
+  } else {
+    atlasFresh = false; // no atlas and can't build
+  }
   const impactTargets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
   const impactRun = useLLM ? buildRunner({ model, timeoutMs }) : undefined;
   const impactVerify = makeImpactVerify(root);
@@ -234,7 +295,9 @@ export function substrateCheck(
   // Consequence simulation (Eq 4), class "failing tests": which tests likely break if the
   // impacted files change — the impacted files that ARE tests, plus each impacted source file's
   // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
-  const predictedTests = predictFailingTests(root, impactedFiles);
+  // Gated on atlas freshness (belt and braces with the null atlas above): predictions from a
+  // stale graph are not trustworthy and must not be presented as consequence evidence.
+  const predictedTests = atlasFresh ? predictFailingTests(root, impactedFiles) : [];
   // P3 reuse stage: has this team already built (and verified) this? The explicit gate
   // meters + writes evidence (reuseQuery); the ambient hook path stays read-only
   // (reusePeek) so a per-prompt hook never appends to the ledger or metrics.
@@ -245,7 +308,11 @@ export function substrateCheck(
       return {
         tier: r.tier,
         artifact: r.artifact
-          ? { id: r.artifact.id, path: r.artifact.body.code?.path, form: r.artifact.body.form }
+          ? {
+              id: r.artifact.id,
+              path: r.artifact.body.code?.path,
+              form: r.artifact.body.form,
+            }
           : undefined,
         jaccard: r.jaccard,
       };
@@ -290,7 +357,16 @@ export function substrateCheck(
       missing: context.missing,
       questions: context.questions,
     },
-    impact: { targets: impactTargets, reports: impacts, impactedFiles, predictedTests },
+    impact: {
+      targets: impactTargets,
+      reports: impacts,
+      impactedFiles,
+      predictedTests,
+      // Truthful freshness: false when the atlas is missing/stale and couldn't be rebuilt.
+      // Consumers must not present impactedFiles as trustworthy when this is false.
+      atlasFresh,
+      ...(atlasFresh ? {} : { note: "impact unavailable: atlas missing or stale" }),
+    },
     scope,
     memory: {
       matchingLessons: lessons.length,
@@ -306,7 +382,10 @@ export function substrateCheck(
     minimality: (() => {
       const pre = minimalityWarnings(text, route, preflight);
       const lean = allowBuild ? leanRepo(root, text) : { warnings: [], footprint: null };
-      return { warnings: [...pre, ...lean.warnings], footprint: lean.footprint };
+      return {
+        warnings: [...pre, ...lean.warnings],
+        footprint: lean.footprint,
+      };
     })(),
     // M4 goal-anchoring: re-read the stated goal against files already changed this session.
     // Quiet pre-action (clean tree → no drift); speaks mid-session when work wandered off-goal.
@@ -388,12 +467,17 @@ export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
       reason: `Forge gate (enforcing): the required context can't be assembled from this repo — resolve before I edit:\n${qs}${tail}`,
     };
   }
-  const blast = result.impact?.impactedFiles?.length ?? 0;
-  if (blast >= blastThreshold) {
-    return {
-      block: true,
-      reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
-    };
+  // Blast-radius block ONLY on a fresh atlas: a stale/missing graph yields an empty (or
+  // untrustworthy) impacted set, and stale predictions must never hard-block an edit —
+  // the explicit guard documents the intent even though a stale atlas now yields blast 0.
+  if (result.impact?.atlasFresh !== false) {
+    const blast = result.impact?.impactedFiles?.length ?? 0;
+    if (blast >= blastThreshold) {
+      return {
+        block: true,
+        reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
+      };
+    }
   }
   return { block: false };
 }
@@ -427,11 +511,17 @@ export function renderSubstrate(result) {
     );
     for (const q of result.context.questions ?? []) lines.push(`    ? ${q}`);
   }
-  lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
-  for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
-  if (result.impact.impactedFiles.length > 10)
-    lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
-  const tests = result.impact.predictedTests || [];
+  if (result.impact.atlasFresh === false) {
+    lines.push("", "  impact: unavailable — atlas missing or stale (predictions not trustworthy)");
+  } else {
+    lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
+    for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
+    if (result.impact.impactedFiles.length > 10)
+      lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
+  }
+  // Predicted tests only speak for a FRESH atlas — right after an "impact: unavailable"
+  // notice, a likely-affected-tests list would contradict it with stale data (RA-07).
+  const tests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
   if (tests.length) {
     lines.push("", `  likely-affected tests (${tests.length}) — run these first:`);
     for (const t of tests.slice(0, 8)) lines.push(`    - ${t}`);
@@ -460,6 +550,7 @@ export function substrateContext(result) {
   const worthSaying =
     result.assumption.shouldAsk ||
     result.impact.impactedFiles.length > 0 ||
+    result.impact.atlasFresh === false ||
     result.minimality.warnings.length > 0 ||
     result.goalAnchor?.drift ||
     ["opus", "fable"].includes(result.route.key);
@@ -474,13 +565,18 @@ export function substrateContext(result) {
   lines.push(
     `- Suggested model: ${result.route.model.name} (${result.route.tier}); escalate only on a verifier failure.`,
   );
-  if (result.impact.impactedFiles.length) {
+  if (result.impact.atlasFresh === false) {
+    lines.push(
+      "- Impact unavailable: atlas missing or stale — predicted blast radius is not trustworthy (rebuild the atlas to get it).",
+    );
+  } else if (result.impact.impactedFiles.length) {
     const files = result.impact.impactedFiles;
     lines.push(
       `- Predicted blast radius (${files.length}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
     );
   }
-  const predTests = result.impact.predictedTests || [];
+  // Same freshness rule as the renderer: never advise stale test predictions (RA-07).
+  const predTests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];
   if (predTests.length)
     lines.push(
       `- Likely-affected tests (${predTests.length}): ${predTests.slice(0, 6).join(", ")}${predTests.length > 6 ? " …" : ""}. Run these first.`,

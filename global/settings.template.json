@@ -5,7 +5,8 @@
   "cleanupPeriodDays": 30,
   "statusLine": {
     "type": "command",
-    "command": "bash ~/.forge/statusline.sh"
+    "command": "bash",
+    "args": ["~/.forge/statusline.sh"]
   },
   "permissions": {
     "defaultMode": "default",
@@ -17,18 +18,11 @@
       "Bash(git status:*)",
       "Bash(git diff)",
       "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git show:*)",
       "Bash(git branch:*)",
       "Bash(git add:*)",
-      "Bash(git stash:*)",
       "Bash(ls:*)",
-      "Bash(cat:*)",
-      "Bash(rg:*)",
       "Bash(fd:*)",
       "Bash(tree:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
       "Bash(wc:*)",
       "Bash(npm run lint)",
       "Bash(npm run lint:*)",
@@ -36,7 +30,6 @@
       "Bash(npm run test:*)",
       "Bash(npm run build)",
       "Bash(npm run typecheck)",
-      "Bash(npm ci)",
       "Bash(pnpm lint)",
       "Bash(pnpm test:*)",
       "Bash(pnpm build)",
@@ -54,8 +47,13 @@
     "ask": [
       "Bash(git push:*)",
       "Bash(git commit:*)",
+      "Bash(git stash:*)",
       "Bash(gh pr create:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Bash(npm ci)",
+      "Bash(npm install:*)",
+      "Bash(pnpm install:*)",
+      "Bash(yarn install:*)"
     ],
     "deny": [
       "Read(./.env)",
@@ -70,8 +68,6 @@
       "Bash(rm -rf ~:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
-      "Bash(curl:* | sh)",
-      "Bash(curl:* | bash)",
       "Bash(sudo:*)"
     ]
   },
@@ -81,11 +77,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh prompt"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "prompt"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh preflight"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "preflight"]
           }
         ]
       }
@@ -96,30 +94,35 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/recall-load.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/recall-load.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh session-start"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "session-start"]
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Bash",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/protect-paths.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/protect-paths.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cost-budget.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/cost-budget.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/doom-loop.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/doom-loop.sh"]
           }
         ]
       },
@@ -128,7 +131,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh pre-edit"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "pre-edit"]
           }
         ]
       }
@@ -139,24 +143,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/format-on-edit.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/format-on-edit.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh capture"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "capture"]
           }
         ]
       },
       {
-        "matcher": "Bash|Read|Grep",
+        "matcher": "Bash|Read|Grep|WebFetch|NotebookEdit|mcp__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/secret-redact.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/secret-redact.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh capture"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "capture"]
           }
         ]
       }
@@ -166,19 +174,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/completion-gate.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/completion-gate.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/lean-guard.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/lean-guard.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/session-learner.sh"
+            "command": "bash",
+            "args": ["~/.forge/guards/session-learner.sh"]
           },
           {
             "type": "command",
-            "command": "bash ~/.forge/guards/cortex.sh stop"
+            "command": "bash",
+            "args": ["~/.forge/guards/cortex.sh", "stop"]
           }
         ]
       }

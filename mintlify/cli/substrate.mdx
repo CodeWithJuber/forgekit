@@ -1,0 +1,127 @@
+---
+title: "Substrate commands"
+description: "The pre-action gate and its individually-callable stages: substrate, preflight, route, impact, scope, context, anchor, diagnose, imagine, and lean."
+---
+
+The Substrate group is the pre-action gate. `forge substrate` composes the rest into one
+verdict; each stage is also callable on its own. See
+[The pre-action gate](/concepts/pre-action-gate) for the pipeline.
+
+## `forge substrate`
+
+One pre-action gate: assumptions, route, impact, scope, memory, verify.
+
+```bash
+forge substrate "<task>"
+forge substrate "<task>" --json
+```
+
+If it returns `okToProceed:false`, ask the returned `assumption.questions` before editing.
+
+## `forge preflight`
+
+Assumption check — what a task names that the repo doesn't define.
+
+```bash
+forge preflight "<task>"
+```
+
+## `forge route`
+
+Recommend the cheapest capable model for a task.
+
+```bash
+forge route "<task>"
+forge route gateway        # emit LiteLLM gateway config
+```
+
+## `forge impact`
+
+Hazard-aware blast radius — SCC-aware propagation and data-driven threshold from
+PageRank centrality and ledger incident history. `--basic` reverts to fixed-threshold
+mode.
+
+```bash
+forge impact <symbol-or-file> [--json] [--basic]
+```
+
+## `forge collide`
+
+Parallel-session conflict radar: which recent teammate/agent sessions touched the
+files (or their import neighbors) you are editing, read from the team-merged ledger —
+`risk = 1 − ∏(1 − rec × strength)` over recent foreign sessions. Also exposed as the
+`collide_check` MCP tool.
+
+```bash
+forge collide [<file>…] [--json]
+```
+
+## `forge rank`
+
+Load-bearing code: weighted PageRank centrality over the atlas graph joined with
+past-incident history from the evidence ledger (`hazard = centrality × 1+history`),
+plus circular-import clusters (Tarjan SCC) and chokepoint files (articulation points).
+Also exposed as the `rank_code` MCP tool.
+
+```bash
+forge rank [--top <n>] [--json]
+```
+
+## `forge scope`
+
+Decompose files into independent clusters — plus coupled files you didn't name.
+
+```bash
+forge scope <files...>
+```
+
+## `forge context`
+
+Budgeted context assembly + completeness gate — what an edit NEEDS known.
+
+```bash
+forge context "<task>"
+```
+
+Assembles a budgeted context via set-cover over the predicted edit set, applies a
+compression ladder, and reports the computed missing set.
+
+## `forge anchor`
+
+Goal-drift check — are your actual (git) changes still on the stated goal?
+
+```bash
+forge anchor set "<goal>"   # persist the goal across sessions
+forge anchor show
+forge anchor clear
+```
+
+## `forge diagnose`
+
+Doom-loop check — record a failure; the same signature 3× mints a diagnosis + escalation.
+
+```bash
+forge diagnose "<failure>"
+```
+
+## `forge imagine`
+
+Consequence simulation — predicted breaks + the minimal dry-run test suite for a task.
+
+```bash
+forge imagine "<task>"
+forge imagine "<task>" --run   # execute the minimal suite sandboxed
+```
+
+## `forge lean`
+
+Scope-minimality (M5) — measure the diff's footprint vs what the task asked for.
+
+```bash
+forge lean
+```
+
+<Note>
+  The `route`, `impact`, `scope`, `context`, `anchor`, and `lean` stages all run inside
+  `forge substrate`. Call them individually when you want just one signal.
+</Note>

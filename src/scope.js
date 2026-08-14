@@ -5,7 +5,7 @@
 // approximate (dynamic/DI edges missed) — a real call-graph MCP is the upgrade seam.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { IGNORE_DIRS, SRC_EXT } from "./util.js";
+import { IGNORE_DIRS, SRC_EXT, toPosix } from "./util.js";
 
 const IMPORT_RES = [
   /import\s+[^'"]*from\s+['"]([^'"]+)['"]/g, // import x from "y"
@@ -21,7 +21,7 @@ function walk(dir, root, out) {
     if (IGNORE_DIRS.has(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walk(p, root, out);
-    else if (SRC_EXT.test(entry.name)) out.push(relative(root, p));
+    else if (SRC_EXT.test(entry.name)) out.push(toPosix(relative(root, p)));
   }
 }
 
@@ -34,7 +34,7 @@ function resolveSpec(fromRel, spec, root, fileSet) {
     ...["index.js", "index.ts"].map((idx) => join(raw, idx)),
   ];
   for (const c of cands) {
-    const rel = relative(root, c);
+    const rel = toPosix(relative(root, c));
     if (fileSet.has(rel)) return rel;
   }
   return null;
@@ -42,6 +42,20 @@ function resolveSpec(fromRel, spec, root, fileSet) {
 
 /** Build an UNDIRECTED file→file import graph (coupling is symmetric for decomposition). */
 export function importGraph(root) {
+  const { nodes, edges } = directedImportGraph(root);
+  const undirected = new Map(nodes.map((f) => [f, new Set()]));
+  for (const [f, targets] of edges) {
+    for (const t of targets) {
+      undirected.get(f).add(t);
+      undirected.get(t)?.add(f);
+    }
+  }
+  return { nodes, edges: undirected };
+}
+
+/** The DIRECTED form (importer → imported) — what cycle detection needs; the
+ *  undirected view above is derived from it. Same walk, same resolver. */
+export function directedImportGraph(root) {
   const files = [];
   walk(root, root, files);
   const fileSet = new Set(files);
@@ -56,10 +70,7 @@ export function importGraph(root) {
     for (const re of IMPORT_RES) {
       for (const m of text.matchAll(re)) {
         const target = resolveSpec(f, m[1], root, fileSet);
-        if (target && target !== f) {
-          edges.get(f).add(target);
-          edges.get(target)?.add(f);
-        }
+        if (target && target !== f) edges.get(f).add(target);
       }
     }
   }
@@ -97,7 +108,7 @@ export function components(graph) {
 export function decompose(root, touched) {
   // Normalize to repo-relative (the graph's key form) so `./src/a.js` or an absolute path
   // still matches — otherwise a coupled file is missed and reported as an independent solo.
-  const norm = touched.map((t) => relative(root, resolve(root, t)));
+  const norm = touched.map((t) => toPosix(relative(root, resolve(root, t))));
   const normSet = new Set(norm);
   const comps = components(importGraph(root));
   const compOf = new Map();

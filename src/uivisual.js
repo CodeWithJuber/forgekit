@@ -101,8 +101,14 @@ export function resolveTarget(target, { remote = false, cwd = process.cwd() } = 
     return { ok: true, url: u.href };
   }
   if (/^file:\/\//i.test(t)) return { ok: true, url: t };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(t))
-    return { ok: false, reason: `unsupported URL scheme: ${t} (use a file path or http(s))` };
+  // A Windows drive-letter absolute path (`C:\…` / `C:/…`) is NOT a URL scheme — the
+  // single-letter-plus-separator shape distinguishes it from real schemes like ftp:.
+  const isWinDrive = /^[a-z]:[\\/]/i.test(t);
+  if (!isWinDrive && /^[a-z][a-z0-9+.-]*:/i.test(t))
+    return {
+      ok: false,
+      reason: `unsupported URL scheme: ${t} (use a file path or http(s))`,
+    };
   const p = isAbsolute(t) ? t : join(cwd, t);
   if (!existsSync(p)) return { ok: false, reason: `no such file: ${t}` };
   return { ok: true, url: pathToFileURL(p).href };
@@ -253,7 +259,11 @@ export async function renderedFingerprint(target, opts = {}) {
     browser = await playwright.chromium.launch({ headless: true });
   } catch (err) {
     // Installed module but no usable browser binary — same graceful-absence class.
-    return { ok: false, skipped: true, reason: `browser launch failed: ${err.message}` };
+    return {
+      ok: false,
+      skipped: true,
+      reason: `browser launch failed: ${err.message}`,
+    };
   }
   try {
     const outDir = join(root, ".forge", "ui");
@@ -272,7 +282,13 @@ export async function renderedFingerprint(target, opts = {}) {
       await page.close();
     }
     const fingerprint = fingerprintText(computedStylesToCss(records));
-    return { ok: true, url: t.url, fingerprint, screenshots, elements: records.length };
+    return {
+      ok: true,
+      url: t.url,
+      fingerprint,
+      screenshots,
+      elements: records.length,
+    };
   } catch (err) {
     return { ok: false, reason: `render failed: ${err.message}` };
   } finally {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -94,6 +94,94 @@ test("empty repo → empty but safe; corrupt manifest never throws", () => {
   assert.deepEqual(s.testCommands, []);
   writeFileSync(join(root, "package.json"), "{ this is not json ");
   assert.doesNotThrow(() => detectStack(root));
+});
+
+test("testRunners: structured descriptors alongside UNCHANGED testCommands strings", () => {
+  const root = tmp();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      scripts: { test: "vitest run" },
+      devDependencies: { vitest: "2" },
+    }),
+  );
+  writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+  const s = detectStack(root);
+  // strings: back-compat surface, byte-identical to before
+  assert.deepEqual(s.testCommands, ["npx vitest", "pnpm test"]);
+  // descriptors: the DETECTED package manager, structured for a shell-free spawn
+  assert.deepEqual(
+    s.testRunners.find((r) => r.label === "pnpm test"),
+    { bin: "pnpm", args: ["test"], label: "pnpm test" },
+  );
+  const npx = s.testRunners.find((r) => r.label === "npx vitest");
+  assert.ok(npx && !npx.bin, "npx detections stay label-only — forge never executes npx");
+
+  const go = tmp();
+  writeFileSync(join(go, "go.mod"), "module x\n\ngo 1.22\n");
+  const gs = detectStack(go);
+  assert.deepEqual(gs.testCommands, ["go test ./..."]);
+  assert.deepEqual(gs.testRunners, [
+    { bin: "go", args: ["test", "./..."], label: "go test ./..." },
+  ]);
+});
+
+test("ME-03: npm workspaces + nested packages → workspaces + packageRoots surfaced", () => {
+  const root = tmp();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "monorepo",
+      private: true,
+      workspaces: ["packages/*", "apps/*"],
+    }),
+  );
+  mkdirSync(join(root, "packages", "core"), { recursive: true });
+  writeFileSync(join(root, "packages", "core", "package.json"), JSON.stringify({ name: "core" }));
+  mkdirSync(join(root, "apps", "web"), { recursive: true });
+  writeFileSync(join(root, "apps", "web", "package.json"), JSON.stringify({ name: "web" }));
+  // A nested Python package under the same tree must also be surfaced.
+  mkdirSync(join(root, "services", "api"), { recursive: true });
+  writeFileSync(join(root, "services", "api", "pyproject.toml"), "[project]\nname='api'\n");
+
+  const s = detectStack(root);
+  assert.deepEqual(s.workspaces, ["apps/*", "packages/*"], JSON.stringify(s.workspaces));
+  assert.ok(s.packageRoots.includes("packages/core"), JSON.stringify(s.packageRoots));
+  assert.ok(s.packageRoots.includes("apps/web"));
+  assert.ok(
+    s.packageRoots.includes("services/api"),
+    "nested non-root suites (even outside the globs) must not be silently ignored",
+  );
+});
+
+test("ME-03: pnpm-workspace.yaml globs are parsed (zero-dep) and negations ignored", () => {
+  const root = tmp();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "pnpm-mono" }));
+  writeFileSync(
+    join(root, "pnpm-workspace.yaml"),
+    'packages:\n  - "packages/*"\n  - "!**/__tests__/**"\n',
+  );
+  mkdirSync(join(root, "packages", "lib"), { recursive: true });
+  writeFileSync(join(root, "packages", "lib", "package.json"), JSON.stringify({ name: "lib" }));
+  const s = detectStack(root);
+  assert.deepEqual(s.workspaces, ["packages/*"], "negation entry dropped");
+  assert.ok(s.packageRoots.includes("packages/lib"));
+});
+
+test("ME-03: a plain single-root repo has empty workspaces/packageRoots (shape unchanged)", () => {
+  const root = tmp();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      dependencies: { next: "16" },
+      scripts: { test: "vitest" },
+    }),
+  );
+  const s = detectStack(root);
+  assert.deepEqual(s.workspaces, [], "no workspace config → no globs");
+  assert.deepEqual(s.packageRoots, [], "no nested manifests → no extra roots");
+  // Pre-existing surface is untouched.
+  assert.ok(s.frameworks.includes("Next.js"));
 });
 
 test("CLI: forge stack --json emits the detected stack", () => {

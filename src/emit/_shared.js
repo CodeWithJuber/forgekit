@@ -26,14 +26,22 @@ export function extractHash(text) {
   return m ? m[1] : null;
 }
 
-// Write only when the content's marker differs from what's on disk.
+// Write only when the file BODY differs from what's on disk. Comparing the full expected
+// content (not just the embedded marker hash) means a hand-edited body with an intact marker
+// is detected and restored — the marker alone can't be trusted as proof of sync (P0-08).
 export function writeIfChanged(absPath, content) {
   const existing = readIfExists(absPath);
-  if (existing !== null && extractHash(existing) === extractHash(content)) return "unchanged";
+  if (existing === content) return "unchanged";
   mkdirSync(dirname(absPath), { recursive: true });
   writeFileSync(absPath, content);
   return "written";
 }
 
+// The exact on-disk bytes of a managed file. BOTH the writer (writeManaged) and any
+// drift check (autoSyncIfDrifted) must build the expectation through this one helper —
+// comparing anything less than these full bytes (e.g. only the embedded marker hash)
+// lets a hand-edited body with an intact marker pass as "in sync" (RA-16).
+export const managedContent = (header, body) => `${header}\n${body}\n`;
+
 export const writeManaged = (absPath, header, body) =>
-  writeIfChanged(absPath, `${header}\n${body}\n`);
+  writeIfChanged(absPath, managedContent(header, body));

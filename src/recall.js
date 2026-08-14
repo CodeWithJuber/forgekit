@@ -4,25 +4,28 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-// The merged read helper (P2 read flip). Import cycle note: ledger_read → lessons_store
-// → recall is function-level only (no module-eval use on either side), so ESM resolves
-// it safely — same pattern as lessons_store's own SECRET_RE import from here.
-import { mergeFactSlugs } from "./ledger_read.js";
-// Secret-refusal now lives in secrets.js (format grammars + entropy gate) so no
-// store — and no shell guard — can disagree; re-exported here because recall is where
-// callers historically imported it from (lessons_store, guards, tests). See secrets.js
-// for the precision rationale (never refuse a bare English mention like "password").
-import { hasSecret, SECRET_RE } from "./secrets.js";
-
-export { hasSecret, SECRET_RE };
+// The merged read helper (P2 read flip).
+import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
+// Secret-refusal lives in secrets.js (format grammars + entropy gate) so no store —
+// and no shell guard — can disagree. Callers import hasSecret directly from secrets.js
+// (it is the one source of truth); recall no longer re-exports it, which previously
+// created a needless ledger_read → lessons_store → recall import cycle.
+import { hasSecret } from "./secrets.js";
 
 export function defaultStore() {
-  return join(process.env.FORGE_HOME || join(homedir(), ".forge"), "recall");
+  // Mutable personal memory. FORGE_HOME override wins (tests + recall-load.sh rely on it);
+  // otherwise the XDG state dir — NEVER inside the install/source tree (P0-03). The old
+  // default (~/.forge) was symlinked by install.sh into the clone, leaking personal facts
+  // into the repo working tree.
+  if (process.env.FORGE_HOME) return join(process.env.FORGE_HOME, "recall");
+  const xdg = process.env.XDG_STATE_HOME;
+  const base = xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
+  return join(base, "recall");
 }
 
 const factsDir = (store) => join(store, "facts");
 
-import { slug as slugify } from "./util.js";
+import { ledgerOnly, slug as slugify } from "./util.js";
 
 export function add(store, name, body) {
   if (hasSecret(`${name}\n${body}`)) {
@@ -31,10 +34,15 @@ export function add(store, name, body) {
       reason: "refused: looks like a secret/credential — store a pointer, not the value",
     };
   }
-  const dir = factsDir(store);
-  mkdirSync(dir, { recursive: true });
   const slug = slugify(name) || "fact";
-  writeFileSync(join(dir, `${slug}.md`), `# ${name}\n\n${body.trim()}\n`);
+  // Legacy-store retirement: under FORGE_LEDGER_ONLY skip the fact file — the caller
+  // shadows the fact into the ledger (`forge recall add`/`remember`), and readFact/list
+  // resolve it from there. reindex still rebuilds MEMORY.md (a projection, not a store).
+  if (!ledgerOnly()) {
+    const dir = factsDir(store);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${slug}.md`), `# ${name}\n\n${body.trim()}\n`);
+  }
   reindex(store);
   return { ok: true, slug };
 }
@@ -44,10 +52,15 @@ export function add(store, name, body) {
  *  Everything that reads fact files (bridge import, consolidation) must use this. */
 export function readFact(store, slug) {
   const path = join(factsDir(store), `${slug}.md`);
-  if (!existsSync(path)) return null;
-  const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
-  const m = raw.match(/^# (.*)\n\n([\s\S]*)$/);
-  return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
+  if (existsSync(path)) {
+    const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+    const m = raw.match(/^# (.*)\n\n([\s\S]*)$/);
+    return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
+  }
+  // No file — resolve from the ledger this store shadows into. Covers a merged teammate
+  // fact and, under FORGE_LEDGER_ONLY, the fact's only home. null when neither has it.
+  const f = ledgerFacts(join(store, "ledger")).find((x) => x.slug === slug);
+  return f ? { name: f.name, text: f.text } : null;
 }
 
 /** File-backed fact slugs ONLY — the store the write path (add/consolidate) manages.

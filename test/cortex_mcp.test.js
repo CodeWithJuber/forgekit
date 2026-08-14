@@ -8,8 +8,17 @@ import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 test("handle: initialize advertises the forge-cortex server", async () => {
-  const r = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+  const r = await handle({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {},
+  });
   assert.equal(r.result.serverInfo.name, "forge-cortex");
 });
 
@@ -32,9 +41,36 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
     "forge_remember",
     "forge_ledger_ratify",
     "forge_ledger_retract",
+    "rank_code",
+    "collide_check",
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }
+});
+
+test("rank_code without an atlas answers built:false over stdio, never a throw", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-rank-"));
+  const requests = [
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "rank_code", arguments: {} },
+    }),
+  ].join("\n");
+  const r = spawnSync("node", [SERVER], {
+    input: `${requests}\n`,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_ROOT: root },
+    timeout: 10000,
+  });
+  const responses = r.stdout
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const call = responses.find((x) => x.id === 2);
+  assert.deepEqual(JSON.parse(call.result.content[0].text), { built: false });
 });
 
 test("handle: notifications get no response; unknown methods error", async () => {
@@ -120,7 +156,10 @@ test("forge_ledger_retract returns error for missing claim via stdio", () => {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "forge_ledger_retract", arguments: { id: "nonexistent", reason: "test" } },
+      params: {
+        name: "forge_ledger_retract",
+        arguments: { id: "nonexistent", reason: "test" },
+      },
     }),
   ].join("\n");
   const r = spawnSync("node", [SERVER], {

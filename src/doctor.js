@@ -1,34 +1,147 @@
 // forge doctor — turn silent misconfiguration into an actionable pass/fail list
 // (chezmoi-doctor pattern). Exits non-zero only on hard failures, not warnings.
-import { accessSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
-import { extractHash, hashContent } from "./emit/_shared.js";
+import { hashContent, mdHeader } from "./emit/_shared.js";
+import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
+import { ensureLedgerGitattributes, guardKey, mergeSettings } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { canonical } from "./sync.js";
+import { canonical, sync } from "./sync.js";
 import { updateStatus } from "./update.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
 const warn = (label, note = "") => ({ status: "warn", label, note });
 const fail = (label, note = "") => ({ status: "fail", label, note });
+// Not applicable / not built: a subsystem that simply is not there. Neither healthy nor
+// failing — it must not render as ACTIVE (RA-19) and never counts toward failed totals.
+const na = (label, note = "") => ({ status: "na", label, note });
 
 import { hasBin } from "./util.js";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const readJsonSafe = (p) => {
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+};
 
-// External tools the guards/commands depend on. jq is the important one — several guards
-// (secret-redact, protect-paths) degrade to a naive parse or a no-op without it.
+// The REQUIRED Forge hook guard identities, derived from the settings template — the SAME
+// keys `mergeSettings` installs. `guardKey` reduces every hook — exec form (`command`+`args`,
+// ME-23) or legacy shell string — down to `basename.sh args`, so the template's exec-form
+// `{command:"bash", args:["~/.forge/guards/cortex.sh","prompt"]}` and an INSTALLED, path-resolved
+// hook (exec form OR a pre-ME-23 `bash '/x/global/guards/cortex.sh' prompt`) both reduce to
+// `cortex.sh prompt` — the raw template compares cleanly against a resolved install without
+// re-running resolveManagedPaths. A failed template load returns [] (fail-open).
+function templateGuardKeys() {
+  try {
+    const tpl = readJson(join(BRAND.root, "global", "settings.template.json"));
+    const keys = new Set();
+    for (const entries of Object.values(tpl.hooks || {})) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        for (const h of entry?.hooks || [])
+          if (h?.command || Array.isArray(h?.args)) keys.add(guardKey(h));
+      }
+    }
+    return [...keys];
+  } catch {
+    return [];
+  }
+}
+
+// Every guard identity actually wired into a settings file's hook tree (quote-normalized).
+function installedGuardKeys(hooks) {
+  const keys = new Set();
+  if (hooks && typeof hooks === "object") {
+    for (const entries of Object.values(hooks)) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        for (const h of entry?.hooks || [])
+          if (typeof h?.command === "string" || Array.isArray(h?.args)) keys.add(guardKey(h));
+      }
+    }
+  }
+  return keys;
+}
+
+// The user's ~/.claude/settings.json must carry Forge's hooks + permissions or none of the
+// session-start rehydrate / advisory hooks fire — the silent-onboarding failure. A truthy
+// `_forge` marker alone is FALSE-GREEN (ME-15): a file with the marker and one unrelated hook
+// would pass. So verify the ACTUAL wiring — that every REQUIRED Forge guard identity from the
+// template is present AND permissions are installed — not just that the marker exists. Fixable
+// by re-running the same idempotent merge init uses (`mergeSettings`), marker-guarded so it
+// never clobbers hand-written entries.
+function checkSettings(out, settingsPath) {
+  const path = settingsPath || join(homedir(), ".claude", "settings.json");
+  const data = readJsonSafe(path);
+  const fix = {
+    id: "settings",
+    label: "merge forge hooks + permissions into settings.json",
+    run: () => mergeSettings({ settingsPath }),
+  };
+  if (!data) {
+    out.push({
+      ...warn("settings", "missing — run `forge doctor --fix` or `forge init`"),
+      fix,
+    });
+    return;
+  }
+  const required = templateGuardKeys();
+  const installed = installedGuardKeys(data.hooks);
+  const missing = required.filter((k) => !installed.has(k));
+  const perms = data.permissions;
+  const hasPerms = !!(perms && (perms.allow?.length || perms.deny?.length || perms.ask?.length));
+  // ACTIVE only when EVERY required guard identity is wired AND permissions are present —
+  // a stale/partial install (marker set, guards missing) reports DEGRADED, not green.
+  if (required.length && missing.length === 0 && hasPerms) {
+    out.push(
+      ok("settings", `forge-managed — ${required.length} hook guard(s) + permissions wired`),
+    );
+    return;
+  }
+  const note = missing.length
+    ? `forge hooks missing/stale (${missing.length}/${required.length} guard(s) absent) — run \`forge doctor --fix\` or \`forge init\``
+    : !hasPerms
+      ? "forge permissions missing — run `forge doctor --fix` or `forge init`"
+      : "not forge-managed — run `forge doctor --fix` or `forge init`";
+  out.push({ ...warn("settings", note), fix });
+}
+
+// External tools the guards/commands depend on. secret-redact now runs in Node (no jq),
+// so node is the security-critical dependency; jq only helps protect-paths parse more
+// precisely (it has a grep fallback either way).
 function checkTooling(out) {
+  // node powers secret redaction — its absence means tool output is NOT scanned for secrets.
+  out.push(
+    hasBin("node")
+      ? ok("node", "found — secret-redact scans tool output")
+      : fail(
+          "node",
+          "not found — secret-redact CANNOT run; tool output is NOT scanned for secrets",
+        ),
+  );
   out.push(
     hasBin("jq")
-      ? ok("jq", "found — guards parse hook JSON safely")
-      : warn("jq", "not found — secret-redact/protect-paths degrade without it; install jq"),
+      ? ok("jq", "found — protect-paths parses hook JSON precisely")
+      : warn("jq", "not found — protect-paths falls back to grep parsing (still enforced)"),
   );
   out.push(
     hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),
@@ -38,7 +151,7 @@ function checkTooling(out) {
       ? ok("claude CLI", "found — LLM proposer uses it (FORGE_LLM=1)")
       : warn(
           "claude CLI",
-          "not found — LLM proposer falls back to direct HTTP (needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)",
+          "not found — LLM proposer falls back to direct HTTP (needs ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY)",
         ),
   );
 }
@@ -56,14 +169,27 @@ function checkGuardsExecutable(out) {
       return true;
     }
   });
-  out.push(
-    notExec.length
-      ? warn(
-          "guards exec",
-          `${notExec.length} not executable (chmod +x): ${notExec.slice(0, 3).join(", ")}`,
-        )
-      : ok("guards exec", `${scripts.length} guard(s) executable`),
-  );
+  if (notExec.length) {
+    out.push({
+      ...warn(
+        "guards exec",
+        `${notExec.length} not executable (chmod +x): ${notExec.slice(0, 3).join(", ")}`,
+      ),
+      fix: {
+        id: "guards",
+        label: `chmod +x ${notExec.length} guard(s)`,
+        run: () => {
+          for (const f of notExec) {
+            const p = join(dir, f);
+            chmodSync(p, statSync(p).mode | 0o111);
+          }
+          return { chmodded: notExec.length };
+        },
+      },
+    });
+  } else {
+    out.push(ok("guards exec", `${scripts.length} guard(s) executable`));
+  }
 }
 
 // Model prices drift; a stale table quietly misinforms the cost/route commands.
@@ -84,7 +210,9 @@ function checkPricing(out) {
 function checkAtlas(out, targetRoot) {
   const atlas = loadAtlas(targetRoot);
   if (!atlas) {
-    out.push(ok("atlas", "not built — run `forge atlas build` for impact/verify"));
+    // "na", not "ok": a missing atlas means impact/verify are UNAVAILABLE, and reporting
+    // it green would surface as an ACTIVE subsystem in the health line (RA-19).
+    out.push(na("atlas", "not built — run `forge atlas build` for impact/verify"));
     return;
   }
   out.push(
@@ -94,12 +222,20 @@ function checkAtlas(out, targetRoot) {
   );
 }
 
+// Reconciled with package.json `engines` (>=20): >=20 ok, 18–19 warn (works, upgrade
+// recommended), <18 hard fail. Ends the old 18-vs-20 threshold mismatch. No auto-fix — the
+// runtime can't upgrade itself.
 function checkNode(out) {
   const major = Number(process.versions.node.split(".")[0]);
   out.push(
-    major >= 18
+    major >= 20
       ? ok("node", `v${process.versions.node}`)
-      : fail("node", `v${process.versions.node} < 18`),
+      : major >= 18
+        ? warn(
+            "node",
+            `v${process.versions.node} — Forge targets Node >=20 (package.json engines); 18–19 works but upgrade recommended`,
+          )
+        : fail("node", `v${process.versions.node} < 18`),
   );
 }
 
@@ -127,13 +263,26 @@ function checkLayers(out) {
   }
 }
 
-function commandScriptFromPluginRoot(command) {
-  const marker = '"$' + '{CLAUDE_PLUGIN_ROOT}"/';
-  const i = command.indexOf(marker);
-  if (i === -1) return null;
-  const rest = command.slice(i + marker.length);
-  const script = rest.split(/\s+/)[0]?.replace(/^['"]|['"]$/g, "");
-  return script || null;
+// The guard script a plugin hook references, relative to CLAUDE_PLUGIN_ROOT. Reads BOTH forms:
+// an exec-form hook (path in an `args[]` element, ME-23) and a legacy shell-string `command`.
+// Quotes are stripped first so `"${CLAUDE_PLUGIN_ROOT}"/…` and the unquoted `${CLAUDE_PLUGIN_ROOT}/…`
+// both resolve.
+function commandScriptFromPluginRoot(hook) {
+  // Concatenated so biome's noTemplateCurlyInString doesn't flag this literal search string.
+  const marker = "$" + "{CLAUDE_PLUGIN_ROOT}/";
+  const candidates = [];
+  if (hook && Array.isArray(hook.args)) for (const a of hook.args) candidates.push(String(a));
+  const cmd = typeof hook === "string" ? hook : hook?.command;
+  if (typeof cmd === "string") candidates.push(cmd);
+  for (const raw of candidates) {
+    const c = raw.replace(/["']/g, "");
+    const i = c.indexOf(marker);
+    if (i === -1) continue;
+    const rest = c.slice(i + marker.length);
+    const script = rest.split(/\s+/)[0];
+    if (script) return script;
+  }
+  return null;
 }
 
 // Plugin/hook compatibility: Forge should be additive and self-contained. Claude Code
@@ -152,12 +301,11 @@ function checkPluginCompatibility(out) {
       const commands = Object.values(hooks)
         .flatMap((entries) => (Array.isArray(entries) ? entries : []))
         .flatMap((entry) => (Array.isArray(entry.hooks) ? entry.hooks : []))
-        .map((h) => h.command)
         .filter(Boolean);
       const missing = [];
       const notExec = [];
-      for (const command of commands) {
-        const rel = commandScriptFromPluginRoot(command);
+      for (const hook of commands) {
+        const rel = commandScriptFromPluginRoot(hook);
         if (!rel) continue;
         const abs = join(BRAND.root, rel);
         if (!existsSync(abs)) {
@@ -211,25 +359,164 @@ function checkPluginCompatibility(out) {
   }
 }
 
-function checkInstall(out) {
-  const forgeHome = join(homedir(), ".forge");
+// The guard assets install.sh symlinks `~/.forge` at MUST resolve, or every hook that shells
+// `~/.forge/guards/*.sh` silently no-ops. Existence alone is false-green (ME-16): a plain file
+// named `~/.forge`, or a dangling symlink left by a moved/removed checkout, both "exist". So
+// verify it is a symlink (or the expected install dir) whose contents include the required
+// guard files, that they are readable and (for the `.sh` launchers) executable.
+const REQUIRED_INSTALL_ASSETS = [
+  join("guards", "protect-paths.sh"),
+  join("guards", "secret-redact.sh"),
+  join("guards", "secret-redact.mjs"),
+];
+
+function checkInstall(out, forgeHomeOverride) {
+  const forgeHome = forgeHomeOverride || join(homedir(), ".forge");
+  let lst;
+  try {
+    lst = lstatSync(forgeHome);
+  } catch {
+    // Genuinely absent — UNAVAILABLE, not a failure (an uninstalled Forge is not broken).
+    out.push(na("~/.forge", "not installed — run install.sh or the plugin"));
+    return;
+  }
+  if (lst.isSymbolicLink()) {
+    // A symlink that lstat sees but realpath can't resolve is dangling (moved/removed checkout).
+    try {
+      realpathSync(forgeHome);
+    } catch {
+      out.push(fail("~/.forge", "dangling symlink — target is gone; re-run install.sh"));
+      return;
+    }
+  } else if (!lst.isDirectory()) {
+    out.push(
+      fail(
+        "~/.forge",
+        "present but not a symlink or directory — a stray file shadows the install; re-run install.sh",
+      ),
+    );
+    return;
+  }
+  const missing = [];
+  const unreadable = [];
+  const notExec = [];
+  for (const rel of REQUIRED_INSTALL_ASSETS) {
+    const abs = join(forgeHome, rel);
+    if (!existsSync(abs)) {
+      missing.push(rel);
+      continue;
+    }
+    try {
+      accessSync(abs, constants.R_OK);
+    } catch {
+      unreadable.push(rel);
+    }
+    // The `.sh` launchers are run as `bash …` from hooks but must be executable when invoked
+    // directly; the `.mjs` is run via `node file` so only needs to be readable.
+    if (rel.endsWith(".sh")) {
+      try {
+        accessSync(abs, constants.X_OK);
+      } catch {
+        notExec.push(rel);
+      }
+    }
+  }
+  if (missing.length || unreadable.length || notExec.length) {
+    const parts = [];
+    if (missing.length) parts.push(`${missing.length} missing (${missing.join(", ")})`);
+    if (unreadable.length) parts.push(`${unreadable.length} unreadable`);
+    if (notExec.length) parts.push(`${notExec.length} not executable`);
+    out.push(fail("~/.forge", `install incomplete — ${parts.join("; ")}; re-run install.sh`));
+    return;
+  }
   out.push(
-    existsSync(forgeHome)
-      ? ok("~/.forge", "linked")
-      : warn("~/.forge", "not installed — run install.sh or the plugin"),
+    ok(
+      "~/.forge",
+      lst.isSymbolicLink() ? "linked — guard assets resolve" : "installed — guard assets resolve",
+    ),
   );
 }
 
-function checkDrift(out, targetRoot) {
-  const agents = join(targetRoot, "AGENTS.md");
-  if (!existsSync(agents)) {
-    out.push(warn("AGENTS.md", "not emitted here — run `forge sync`"));
+// Node presence does NOT prove the redactor works (ME-17): the PostToolUse secret-redact guard
+// can be missing, or produce the wrong shape, and still leave `node` reporting green. Run a
+// SAFE, side-effect-free self-test — feed a clearly-FAKE, runtime-assembled credential (never a
+// literal in source, so nothing secret-shaped is committed or trips push-protection) through the
+// REAL `secret-redact.mjs` and assert it both redacts the secret and preserves the output shape.
+// ACTIVE only when the round-trip passes; DEGRADED (warn) when node is absent, the redactor is
+// missing, or the output is wrong — never silently ACTIVE.
+function checkRedaction(out, guardsDirOverride) {
+  const guardsDir = guardsDirOverride || join(BRAND.root, "global", "guards");
+  const mjs = join(guardsDir, "secret-redact.mjs");
+  if (!existsSync(mjs)) {
+    out.push(
+      warn("secret-redact", "redactor script missing — tool output is NOT scanned for secrets"),
+    );
     return;
   }
-  const current = hashContent(canonical(targetRoot));
-  const onDisk = extractHash(readFileSync(agents, "utf8"));
+  if (!hasBin("node")) {
+    out.push(warn("secret-redact", "node not found — secret-redact CANNOT run; output unscanned"));
+    return;
+  }
+  // Assembled at runtime (same approach as test/_fixtures.js) — the canonical Anthropic key
+  // shape the redactor is proven to mask, with no secret-format literal left in this source.
+  const fake = ["sk", "ant", "api03", "AAAABBBBCCCCDDDDEEEE"].join("-");
+  const payload = JSON.stringify({ tool_response: `token ${fake} end` });
+  try {
+    const stdout = execFileSync(process.execPath, [mjs], {
+      input: payload,
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    const red = JSON.parse(stdout)?.hookSpecificOutput?.updatedToolOutput;
+    // Shape preserved (a string stays a string, surrounding text intact) AND the secret gone.
+    const passed =
+      typeof red === "string" &&
+      red.includes("[REDACTED]") &&
+      !red.includes(fake) &&
+      red.startsWith("token ") &&
+      red.endsWith(" end");
+    out.push(
+      passed
+        ? ok("secret-redact", "self-test passed — fake secret redacted, output shape preserved")
+        : warn(
+            "secret-redact",
+            "self-test FAILED — redactor ran but did not redact/reshape; tool output may leak secrets",
+          ),
+    );
+  } catch (err) {
+    out.push(
+      warn("secret-redact", `self-test could not run (${err?.message ?? err}); output unscanned`),
+    );
+  }
+}
+
+function checkDrift(out, targetRoot) {
+  const syncFix = {
+    id: "agents",
+    label: "emit/refresh AGENTS.md (forge sync)",
+    run: () => sync({ targetRoot }),
+  };
+  const agents = join(targetRoot, "AGENTS.md");
+  if (!existsSync(agents)) {
+    out.push({
+      ...warn("AGENTS.md", "not emitted here — run `forge sync`"),
+      fix: syncFix,
+    });
+    return;
+  }
+  // Compare the actual file to the full expected content, not just the embedded marker —
+  // a hand-edited body with an intact marker would otherwise report "in sync" (P0-08).
+  const body = canonical(targetRoot);
+  const expected = `${mdHeader(hashContent(body))}\n${body}\n`;
+  const actual = readFileSync(agents, "utf8");
   out.push(
-    current === onDisk ? ok("AGENTS.md", "in sync") : warn("AGENTS.md", "stale — run `forge sync`"),
+    actual === expected
+      ? ok("AGENTS.md", "in sync")
+      : {
+          ...warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
+          fix: syncFix,
+        },
   );
 }
 
@@ -281,10 +568,17 @@ function checkLedger(out, targetRoot) {
   out.push(
     hasRule
       ? ok("ledger merge", "union-merge driver present in .gitattributes")
-      : warn(
-          "ledger merge",
-          "no union-merge rule — run `forge init` or teammate merges will conflict",
-        ),
+      : {
+          ...warn(
+            "ledger merge",
+            "no union-merge rule — run `forge init` or teammate merges will conflict",
+          ),
+          fix: {
+            id: "gitattributes",
+            label: "add ledger union-merge rule to .gitattributes",
+            run: () => ensureLedgerGitattributes(targetRoot),
+          },
+        },
   );
   const v = ledgerVerify(dir);
   out.push(
@@ -307,6 +601,42 @@ function checkProvider(out, targetRoot) {
   if (override) {
     out.push(ok("model override", `${override} (all tiers resolve to this model)`));
   }
+}
+
+// Custom-gateway model mapping: stock Anthropic ids can 404 on a self-hosted gateway that
+// serves its own names. Surface the tier→gateway-model remap so the user can VERIFY it (and
+// pin explicit ids if a family scored wrong). Only speaks for a non-default gateway base URL —
+// direct api.anthropic.com sessions never probe, so this stays silent and network-free there.
+function checkGateway(out) {
+  const base = gatewayBase();
+  if (!base) return; // direct Anthropic or no gateway configured — nothing to remap
+  let m;
+  try {
+    m = gatewayModelMap({ base });
+  } catch {
+    m = null;
+  }
+  if (!m || m.reachable === false) {
+    out.push(
+      warn(
+        "gateway models",
+        `${base} — /v1/models unreachable; using stock IDs (may 404 if this gateway renames models)`,
+      ),
+    );
+    return;
+  }
+  const entries = Object.entries(m.models);
+  if (!entries.length) {
+    out.push(
+      warn(
+        "gateway models",
+        `${base} serves ${m.catalog.length} model(s) but none matched a tier family — set explicit IDs via \`${BRAND.cli} config provider add\``,
+      ),
+    );
+    return;
+  }
+  const summary = entries.map(([tier, v]) => `${tier}→${v.id}`).join(", ");
+  out.push(ok("gateway models", `${base}: ${summary}`));
 }
 
 // Docs↔code drift — a self-check of the forge package's own docs, so it only runs
@@ -338,16 +668,58 @@ function checkUpdate(out) {
   } catch {}
 }
 
-export function doctor({ targetRoot = process.cwd() } = {}) {
+// The important subsystems and the check label each derives its health from.
+const HEALTH_SUBSYSTEMS = {
+  // Functional self-test row (ME-17), not the generic node check — node presence alone never
+  // proves the redactor actually masks a secret. ACTIVE only when the round-trip passes.
+  "secret-redaction": "secret-redact",
+  guards: "guards exec",
+  atlas: "atlas",
+  "managed-config": "AGENTS.md",
+  pricing: "model pricing",
+};
+
+/**
+ * Standard subsystem-health vocabulary (P1-06): ACTIVE | DEGRADED | UNAVAILABLE | FAILED,
+ * derived from the SAME checks the report uses (no parallel source), so a degraded security
+ * or verification control is never invisible behind a green overall status.
+ * @param {Array<{status:string,label:string}>} results
+ */
+export function subsystemHealth(results) {
+  const state = (label) => {
+    const r = results.find((x) => x.label === label);
+    if (!r) return "UNAVAILABLE";
+    if (r.status === "fail") return "FAILED";
+    if (r.status === "warn") return "DEGRADED";
+    if (r.status === "na") return "UNAVAILABLE"; // not built/applicable ≠ ACTIVE (RA-19)
+    return "ACTIVE";
+  };
+  const health = {};
+  for (const [subsystem, label] of Object.entries(HEALTH_SUBSYSTEMS)) {
+    health[subsystem] = state(label);
+  }
+  return health;
+}
+
+/**
+ * @param {string} targetRoot
+ * @param {string|undefined} settingsPath
+ * @param {{forgeHome?: string, guardsDir?: string}} [probes] test seams for the install-dir
+ *   and guards-dir probes (default to the real `~/.forge` and the packaged guards).
+ */
+function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   const results = [];
   checkNode(results);
+  checkSettings(results, settingsPath);
   checkProvider(results, targetRoot);
+  checkGateway(results);
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);
   checkPluginCompatibility(results);
   checkTooling(results);
-  checkInstall(results);
+  checkRedaction(results, guardsDir);
+  checkInstall(results, forgeHome);
   checkDrift(results, targetRoot);
   checkDocs(results, targetRoot);
   checkAtlas(results, targetRoot);
@@ -356,5 +728,85 @@ export function doctor({ targetRoot = process.cwd() } = {}) {
   checkCortex(results, targetRoot);
   checkLedger(results, targetRoot);
   checkUpdate(results);
-  return { results, failed: results.filter((r) => r.status === "fail").length };
+  return results;
+}
+
+// A repair whose top-level result — or ANY nested emitter/report row — reports failure must
+// NOT be recorded as ok (ME-18, building on RA-20). `mergeSettings` fails via a returned
+// `{action:"error", reason}`; `writeForgeConfig`-style helpers via `{ok:false, reason}`; and a
+// partial `sync` succeeds overall while individual `report` rows carry `action:"error"` (a
+// per-tool emit threw). Returns a reason string when the repair failed, else null.
+export function repairFailure(detail) {
+  if (!detail || typeof detail !== "object") return null;
+  if (detail.action === "error") return detail.reason || detail.note || "repair reported an error";
+  if (detail.ok === false) return detail.reason || "repair returned ok:false";
+  const rows = [];
+  const collect = (v) => {
+    if (Array.isArray(v)) for (const x of v) collect(x);
+    else if (v && typeof v === "object") rows.push(v);
+  };
+  for (const key of ["report", "results", "rows", "emitted", "reports"]) collect(detail[key]);
+  const errored = rows.filter((r) => r && (r.action === "error" || r.ok === false));
+  if (!errored.length) return null;
+  const reasons = errored
+    .slice(0, 3)
+    .map(
+      (r) =>
+        `${r.tool || r.name || r.target || "step"}: ${r.note || r.reason || r.error || "error"}`,
+    );
+  return `${errored.length} sub-step(s) failed — ${reasons.join("; ")}`;
+}
+
+/**
+ * Health-check this repo + the user's config. With `fix:true`, each warn/fail result carrying
+ * a `{id,label,run}` descriptor has its idempotent repair run (mergeSettings / ensureLedger-
+ * gitattributes / sync / chmod — all safe, no-op if already applied), then every check re-runs
+ * so the returned `results` reflect the repaired state. Unsafe findings (provider keys, MCP,
+ * pricing, gateway) carry no descriptor and stay report-only.
+ * @param {{targetRoot?: string, fix?: boolean, settingsPath?: string, forgeHome?: string, guardsDir?: string}} [opts]
+ */
+export function doctor({
+  targetRoot = process.cwd(),
+  fix = false,
+  settingsPath,
+  forgeHome,
+  guardsDir,
+} = {}) {
+  const probes = { forgeHome, guardsDir };
+  let results = runChecks(targetRoot, settingsPath, probes);
+  const repairs = [];
+  if (fix) {
+    for (const r of results) {
+      if ((r.status === "warn" || r.status === "fail") && r.fix) {
+        try {
+          const detail = r.fix.run();
+          // A repair fails not only when it throws or returns {action:"error"} (RA-20), but also
+          // when a NESTED report row reports an error (a partial sync) — repairFailure catches
+          // both, so a partially-errored repair is never recorded as success (ME-18).
+          const failure = repairFailure(detail);
+          repairs.push({
+            id: r.fix.id,
+            label: r.fix.label,
+            ok: !failure,
+            error: failure || undefined,
+            detail: failure ? undefined : detail,
+          });
+        } catch (err) {
+          repairs.push({
+            id: r.fix.id,
+            label: r.fix.label,
+            ok: false,
+            error: err.message,
+          });
+        }
+      }
+    }
+    results = runChecks(targetRoot, settingsPath, probes);
+  }
+  return {
+    results,
+    failed: results.filter((r) => r.status === "fail").length,
+    repairs,
+    health: subsystemHealth(results),
+  };
 }

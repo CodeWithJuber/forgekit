@@ -42,7 +42,7 @@ native config. The four layers are how the brain is expressed; the compiler is h
 is delivered.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart TD
     S["source/<br/>rules.json · substrate.json · mcp.json"] -->|"forge sync<br/>content-hash + DO-NOT-EDIT headers"| N["native configs<br/>CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …"]
     S -. configures .-> L
@@ -70,9 +70,9 @@ The four layers, brand-named and emitted cross-tool:
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
   compaction; a guard does not. Every enforceable invariant belongs here.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 19 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
-  `assumption_gate` / …), memory reads AND writes (`forge_remember`, ledger
-  ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
+  exposing 21 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
+  `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
+  ledger ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
 
 Cross-cutting concerns thread through all four: **atlas** (the code graph), **lean**
 (minimalism — shipped as _both_ a tool and a Stop-guard, so it applies whether or not
@@ -87,7 +87,7 @@ checks and returns a single verdict. It composes the individually-callable stage
 `anchor`, `verify`) into one pre-action contract.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart TD
     RE["referenced entities"] --> INTAKE
     subgraph INTAKE["intake"]
@@ -111,7 +111,11 @@ flowchart TD
 
 **blast radius** — the set of files an edit is predicted to impact, read from the code
 graph. `forge impact` computes it; the pipeline surfaces it before the model touches
-anything.
+anything. The analysis is **hazard-aware**: SCC-aware propagation (a change to any file
+in a circular-dependency cluster impacts all co-members, via Tarjan from `forge rank`)
+and a data-driven threshold derived from PageRank centrality and ledger incident history
+(`effectiveThreshold = base / (1 + hazard)`). `--basic` reverts to the fixed-threshold
+mode.
 
 The verdict is **advisory by default** — it reports, it does not block. Set
 `FORGE_ENFORCE=1` to turn the strongest signals into a hard block:
@@ -136,7 +140,7 @@ claims into `.forge/ledger/`. Because a claim's bytes are a pure function of
 fold together over plain git with no conflicts.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
     subgraph EV["local events"]
         direction TB
@@ -171,7 +175,7 @@ dependencies still resolve. Otherwise it falls through to generation and mints a
 claim on the way back.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','fontFamily':'ui-sans-serif, system-ui, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
     SP["spec"] --> FP["fingerprint<br/>MinHash + LSH"]
     FP --> LD["match ladder<br/>exact → near → adapt → miss"]
@@ -231,24 +235,50 @@ parses) swept against every doc artifact → UPDATED / STALE (file:line hits) /
 VERIFIED-UNAFFECTED with the reason recorded. Pure reporter; the gate provides the teeth.
 
 **Docs-check now guards more than names (`src/docs_check.js`).** Beyond
-commands/env/MCP-tools/CHANGELOG, five reconcilers close the blind spots behind recurring
+commands/env/MCP-tools/CHANGELOG, six reconcilers close the blind spots behind recurring
 "docs rot" complaints: `checkDiagrams` scans every `mermaid` block across all Markdown for
 the branded `%%{init` theme and literal-`\n` node breaks; `checkModelTiers` reconciles doc
 prose prices against `src/model_tiers.json`; `checkBenchmarks` reconciles bolded `N ms`
 README claims against the measured table in `reports/benchmarks.md`; `checkLinks` resolves
 every intra-repo Markdown anchor (`#x` and `path.md#x`) against the target's real headings
 (GitHub-exact slugs — em-dashes yield `--`, never collapsed), killing the dead-anchor class;
-and `checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
-version. The two public pages
-(`landing/index.html` + the `build-pages.mjs` status page) share one set of design tokens,
-enforced for parity (plus non-empty changes list, no phantom webfont) by
-`test/pages.test.js` — so neither the docs' numbers nor the site's look can silently drift.
+`checkRoadmap` fails when the ROADMAP's "Now" marker trails the shipped `package.json`
+version; and `checkCrosswalk` resolves every `.js`/`.sh` binding the research paper's
+crosswalk (`research/formal-synthesis/crosswalk.json`) claims for this repo against the
+files that actually exist in `src/`, `global/guards/`, and `hooks/` (kit-only names opt
+out with a `kit:` prefix), so the paper's stated bindings can no longer trail the code; and
+`checkMintlify` extends the reconcile to the hand-maintained Mintlify site (`mintlify/`,
+previously unchecked and prone to drift) — every command must be documented on the English
+site as `forge <name>`, and any env var the site names must be one the code reads (no
+phantom vars). The two public pages
+(`landing/index.html` + the `build-pages.mjs` status page) derive from ONE color source —
+`brand.json.colors` (full dark + light palettes), emitted as CSS by `src/brand.js`
+(`rootTokensCss()`). `test/pages.test.js` enforces full-palette parity: every hex in
+`brand.json` must appear on both surfaces, so the palette can't fork into "two palettes
+claiming to be one" again (plus non-empty changes list, no phantom webfont, present
+social/favicon metadata). `checkDiagrams` extends the same single-source rule to Mermaid —
+every `%%{init` theme must carry the brand's ember + warm-black hexes — so neither the docs'
+numbers nor the site's look can silently drift.
 
 **Auto-release (`.github/workflows/bump.yml` + `scripts/bump.mjs`).** A push to `master`
 runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commit landed
 (or `[Unreleased]` was hand-written), synthesizing changelog notes from commit subjects
 when none exist, and exits `3` (a clean skip, not a failure) otherwise — so releases cut
 themselves without a chore/docs merge spamming the registry.
+
+**Custom-gateway model remap (`src/gateway_model_map.js`).** The tier table (`model_tiers.json`)
+pins public Anthropic IDs, but a self-hosted LiteLLM/proxy gateway serves its own model names, so a
+stock ID sent verbatim 404s. When a non-default gateway base URL is configured, the module fetches
+`GET /v1/models` **once per process** (a spawned-node child with the key in env, never argv — the
+`llm.js` pattern) and scores each advertised id against every tier's family: the family word
+(haiku/sonnet/opus/fable) is a hard gate, the `setOverlap` coefficient of the tier's name tokens
+picks the best match, ties break toward the id closest to the canonical name. `resolveModel`
+(providers) and `buildRunner` (adjudicate) consult it only when the resolved id is a _stock_ ID —
+an explicit `.forge/providers.json` alias or `ANTHROPIC_MODEL` override is never touched — and it
+fails safe to the stock ID on no gateway / unreachable `/v1/models` / no family match, so direct
+`api.anthropic.com` users are byte-identical. `forge doctor`'s **gateway models** row prints the
+resolved `tier→model` mapping for verification. The `MODELS` export shape is unchanged: this is a
+resolution-time layer, not a table edit.
 
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
@@ -277,6 +307,67 @@ the series and a sustained alarm rides the gate's block reason. Proceeding under
 assumptions appends a record the advisory names and the next handoff surfaces — a guess
 can never silently become a fact.
 
+**Commit-boundary gate (`src/commit_gate.js`, `forge precommit`).** The commit rung of
+the gate lattice (turn ⊂ commit ⊂ PR): the Stop hook gates the turn and CI's `docs check`
+gates the PR, so this runs the SAME registry-derived completeness classifier
+(`classifyPath` from `gate.js`) plus `hasSecret` over staged added lines at the commit
+boundary — code staged without its doc/state artifact, or a staged secret, is caught
+while the fix is still one `git add` away. Each rung is an independent catch layer, so
+the silent-miss probability falls multiplicatively.
+
+**Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
+asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
+and aggregates them with the same noisy-OR risk score `lessons.js` uses, behind a
+cross-family gate so correlated structural signals can't block alone. Deep `ok` is a
+conjunction: the core verifier must PASS **and** the lens consensus must not block; an
+unconfigured core can never yield `ok:true`. The score is a calibrated heuristic, not a
+proof.
+
+**Knowledge routing (`src/knowledge_router.js`).** The third routing leg beside `route.js`
+(model tiers) and `intent.js` (intent classes), using the same exemplar k-NN math: a fact
+is routed to its storage home (decisions vs. the ledger vs. …) tuned by adding example
+rows, never regexes. It is TOTAL by construction — a fact resembling nothing falls back to
+the ledger (whose decay semantics make an unsure placement safe), never "nowhere".
+
+**Anti-repetition memory (`src/deja.js`).** Closes the "why do I keep re-solving solved
+tasks" gap: a clean first-try success used to leave no durable trace (cortex only mints on
+correction). At Stop it mints one `summary` claim (a deterministic, secret-redacted gist),
+attaching a `test.run` confirm when the session's tests passed; `dejaLookup` then ranks
+prior summary/lesson/diagnosis claims for a new task with the same `retrieve()` (rel × rec
+× val) the ledger query uses. No new protocol — it reuses the shipped PCM machinery.
+
+**The documentation-impact graph (`src/docs_impact.js`, `forge docs impact`).** Where
+`docs check` reconciles fixed registries and `docs sync` scans a diff for identifiers,
+this answers "I changed X — which documented surfaces mention X and are now potentially
+stale?" via a data-driven `EXTRACTORS` registry (commands, flags, env vars, MCP tools,
+exported symbols, brand tokens, version, package.json fields) reused from `docs_check.js`,
+an inverted entity → `file:line` index over every doc surface, and a diff-scoped impact
+query ranked by confidence. Advisory by default; `--strict` exits non-zero for CI.
+
+**Load-bearing code detector (`src/rank.js`, `forge rank`).** Fuses three classical graph
+readings of the atlas — weighted PageRank centrality (deterministic power iteration over
+sorted node ids), iterative Tarjan SCC (circular-dependency clusters), iterative
+Hopcroft–Tarjan articulation points (chokepoint files) — with the team's own incident
+history from the evidence ledger (`val()`-weighted lesson and session-summary claims that
+name each file). The join `hazard = centralityNorm × (1 + history)` means structurally
+central code that has hurt before outranks equally central code that hasn't. Exposed as the
+`rank_code` MCP tool and the `forge rank` CLI command.
+
+**Parallel-session conflict radar (`src/collide.js`, `forge collide`).** Reads recent
+foreign-session summaries from the team-merged ledger and computes per-file collision risk
+via the same noisy-OR model lessons use: `risk = 1 − ∏(1 − recᵢ × strengthᵢ)` over
+sessions that touched overlapping files or their 1-hop import neighbors. No server, no
+presence protocol — teammate summaries arrive via `forge ledger sync` / `git pull`. Exposed
+as the `collide_check` MCP tool.
+
+**Machine-owned doc surfaces (`src/docs_render.js`, `forge docs render`).** The
+auto-maintenance layer that keeps tables and diagrams in sync with the code registries.
+Four marker-managed blocks (commands table in README, groups and MCP-tools tables in GUIDE,
+repo-map diagram in ARCHITECTURE) are regenerated from `COMMANDS`/`GROUPS`/`TOOLS`; six
+"N MCP tools" count phrases are auto-corrected; and every mermaid block across all `.md`
+and `.mdx` files receives the branded `%%{init` theme. Registry-derived blocks are CI-gated
+errors when stale; tree-derived output is advisory.
+
 **Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
 has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
 library math with tests until a real consumer exists.
@@ -303,6 +394,11 @@ self-correction` (rules) · project-layer template.
 - **`forge sync`** (the cross-tool emitter) · **`forge doctor`** (health check) ·
   **`forge init`** (one-command bootstrap) · **`cost-budget` guard** ·
   **Start-Here catalog** · **`recall`** unified memory subsystem.
+
+**Bundled skills (model-invoked, shipped in `global/tools/`):** beyond the reuse skills
+above, `problem-solver` (a framework-driven Clarify → Classify → Diagnose → Generate →
+Decide → Act cycle) and `catchup` (session re-orientation, pairs with `forge decide`) ship
+as native skills through the plugin's `skills` directory.
 
 ## `atlas` — the code graph
 
@@ -391,6 +487,9 @@ forgekit/
     dash.js               # localhost-only read-only dashboard over the ledger, metrics, and blast radius (node:http, one HTML page)
     metrics.js            # stage-tagged .forge/metrics.jsonl — the measured events every cost figure is computed from
     cost_report.js        # per-stage cost factors as pure arithmetic over metrics.jsonl; composes ONLY measured stages
+    rank.js               # load-bearing code: weighted PageRank centrality × ledger incident history, Tarjan SCC (circular deps), Hopcroft–Tarjan articulation points (chokepoints)
+    collide.js            # parallel-session conflict radar: noisy-OR risk over recent foreign sessions that touched overlapping files or their import neighbors
+    docs_render.js        # machine-owned doc surfaces: registry-derived tables (commands, groups, MCP tools) + tree-derived repo map, auto-normalized mermaid themes
   source/
     rules.json            # THE canonical rules source (git · testing · security · style)
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
@@ -442,3 +541,31 @@ asserts all three resolve to `global/`.
 
 See [ROADMAP.md](ROADMAP.md) for direction and [`docs/adr/`](docs/adr/) for the recorded
 architecture decisions (zero runtime deps, the SKILL.md standard, guard-over-prose).
+
+## Repo map (generated)
+
+Top-level directories sized by file count, edges = import counts between them —
+rendered from the live import graph by `forge docs render`, so it can never drift
+from the tree it describes.
+
+<!-- forge:render:repo-map:begin (generated by `forge docs render` — do not edit) -->
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
+flowchart LR
+  test["test<br/>100 files"]
+  src["src<br/>94 files"]
+  landing["landing<br/>61 files"]
+  research["research<br/>35 files"]
+  bench["bench<br/>2 files"]
+  global["global<br/>2 files"]
+  scripts["scripts<br/>2 files"]
+  docs["docs<br/>1 file"]
+  examples["examples<br/>1 file"]
+  test -- 195 --> src
+  bench -- 7 --> src
+  examples -- 4 --> src
+  test -- 2 --> scripts
+  scripts --> src
+  test --> bench
+```
+<!-- forge:render:repo-map:end -->

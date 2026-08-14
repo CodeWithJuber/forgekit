@@ -4,6 +4,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 export const slug = (s) =>
   String(s)
@@ -13,8 +14,23 @@ export const slug = (s) =>
 
 export const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
+// Normalize a path to POSIX separators. Node's path.relative()/join() emit `\` on Windows,
+// but the graph/atlas/scope layers use repo-relative paths as MAP KEYS, NODE IDS, and values
+// compared against `/`-joined strings (in code and tests). Backslash keys silently miss those
+// lookups on Windows. Canonicalizing to `/` makes every comparison portable; it's a no-op on
+// POSIX (no `\` in the path) and safe on Windows (fs/join accept `/`).
+export const toPosix = (p) => String(p).replaceAll("\\", "/");
+
 export const MS_PER_DAY = 86400000;
 export const epochDay = () => Math.floor(Date.now() / MS_PER_DAY);
+
+// Legacy-store retirement (ROADMAP): the PCM ledger is the convergent WRITE store
+// (dual-write via ledger_bridge since P1) and serves the read view (ledger_read). The
+// ledger is now the DEFAULT and only store — legacy files (lessons/*.md, recall/brain
+// fact files) are no longer written or read. Set FORGE_LEDGER_ONLY=0 (the one-release
+// escape hatch) to restore the legacy file store while external tooling migrates.
+export const ledgerOnly = () =>
+  process.env.FORGE_LEDGER_ONLY !== "0" && process.env.FORGE_LEDGER_ONLY !== "false";
 
 export function hasBin(bin) {
   try {
@@ -29,6 +45,34 @@ export function contentHash(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/** Run a read-only git command in `root`; return trimmed stdout, or "" on ANY failure
+ *  (stderr silenced). Consolidated from four byte-identical copies (session/handoff/
+ *  update/docs_check). Deliberately-divergent variants stay local: verify.js uses a
+ *  different arg order and logs stderr under FORGE_DEBUG; docs_sync/docs_impact keep
+ *  raw (un-trimmed) output on purpose. */
+export function git(root, args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Parse a JSON file, returning null on a missing/corrupt file instead of throwing —
+ *  one bad file must never take down the caller. (Distinct from a strict parse that
+ *  should surface a bad config; those callers keep their own throwing readJson.) */
+export function readJsonSafe(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 let cachedAuthor;
 /** The identity stamped on ledger provenance/evidence — FORGE_AUTHOR env override,
  *  else the git identity, else "" (attribution is best-effort, never a hard fail).
@@ -38,7 +82,9 @@ export function gitAuthor() {
   if (cachedAuthor !== undefined) return cachedAuthor;
   try {
     const get = (k) =>
-      execFileSync("git", ["config", "--get", k], { stdio: ["ignore", "pipe", "ignore"] })
+      execFileSync("git", ["config", "--get", k], {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
         .toString()
         .trim();
     const name = get("user.name");

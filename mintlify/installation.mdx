@@ -1,0 +1,105 @@
+---
+title: "Installation"
+description: "Three front doors onto one tree: the plugin marketplace, npm global, and a no-registry github: install — plus the contributor symlink setup."
+---
+
+Forge follows a **one tree, three front doors** design: the plugin manifest, the
+hardened installer, and the npm bin all reference the same `global/` + `source/` tree.
+Pick the channel that fits your tool.
+
+## Choose a channel
+
+<CardGroup cols={2}>
+  <Card title="Plugin (recommended)" icon="puzzle-piece">
+    For Claude Code and Codex. Guards auto-wire; nothing to merge.
+  </Card>
+  <Card title="npm global" icon="node-js">
+    For any tool. The `forge` CLI from the public npm registry.
+  </Card>
+  <Card title="github: install" icon="github">
+    No registry needed — install straight from the repo.
+  </Card>
+  <Card title="Contributor / local dev" icon="code">
+    Clone + `npm link`, or `bash install.sh` for the symlink setup.
+  </Card>
+</CardGroup>
+
+## Requirements
+
+- **Node.js >= 20**
+- **Zero runtime dependencies** — everything is a Node built-in. Optional tiers
+  (`FORGE_EMBED` embeddings, Playwright for `uicheck visual`) are opt-in and add no
+  required dependencies.
+
+## Plugin marketplace
+
+The recommended path for Claude Code and Codex needs no token and no clone:
+
+```bash
+/plugin marketplace add CodeWithJuber/forgekit
+/plugin install forgekit
+```
+
+The plugin wires the guards through `${CLAUDE_PROJECT_DIR}` so the pre-action gate and
+completion gate fire ambiently.
+
+## npm global
+
+For any tool, from public npm:
+
+```bash
+npm install -g @codewithjuber/forgekit
+forge doctor          # everything green?
+```
+
+## No-registry github: install
+
+```bash
+npm install -g github:CodeWithJuber/forgekit
+```
+
+## Contributor / local dev
+
+<CodeGroup>
+
+```bash npm link
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+npm link
+```
+
+```bash install.sh (symlink setup)
+git clone https://github.com/CodeWithJuber/forgekit.git
+cd forgekit
+bash install.sh
+```
+
+</CodeGroup>
+
+The installer is hardened: idempotent, symlink-based, with backup, and no `curl | sh`.
+
+## Verify
+
+Whichever channel you used, confirm the install:
+
+```bash
+forge doctor          # tools, guards, MCP auth, config drift, update status
+```
+
+<Note>
+  `forge doctor` also surfaces a non-nagging "commits behind upstream" notice for git
+  checkouts. Set `FORGE_NO_UPDATE_CHECK=1` to silence it. Every path is fail-open —
+  offline or detached HEAD reports "unknown", never an error.
+</Note>
+
+## Keeping Forge current
+
+```bash
+forge update --check          # report whether a newer version is available
+forge update                  # apply the update (git checkout or npm/copy install)
+forge update --to <version>   # pin or downgrade to a specific version
+```
+
+<Card title="Now configure a repo" icon="arrow-right" href="/quickstart">
+  Head to the Quickstart to run `forge init` and your first substrate check.
+</Card>

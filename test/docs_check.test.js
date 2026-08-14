@@ -116,9 +116,13 @@ test("docsCheck: an undocumented MCP tool is flagged", () => {
   assert.ok(r.issues.some((i) => i.check === "mcp-tools" && i.detail.includes(TOOLS[0].name)));
 });
 
+// A theme that carries the actual brand color VALUES (ember #f26430 + warm-black
+// #171310), not just the `%%{init` directive.
+const BRAND_INIT =
+  "%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','lineColor':'#f26430','tertiaryColor':'#171310'}}}%%";
+
 test("docsCheck: a branded mermaid diagram with <br/> passes; diagrams is a checked dimension", () => {
-  const good =
-    "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A[\"a<br/>b\"] --> B[\"c\"]\n```\n";
+  const good = `\`\`\`mermaid\n${BRAND_INIT}\nflowchart LR\n  A["a<br/>b"] --> B["c"]\n\`\`\`\n`;
   const r = docsCheck({
     root: fixtureRoot((f) => ({
       ...f,
@@ -127,6 +131,20 @@ test("docsCheck: a branded mermaid diagram with <br/> passes; diagrams is a chec
   });
   assert.deepEqual(r.issues, []);
   assert.ok(r.checked.includes("diagrams"));
+});
+
+test("docsCheck: a mermaid theme missing the brand color values is flagged", () => {
+  // Has `%%{init` but not the brand.json hexes — declares a theme, renders off-brand.
+  const bad = "```mermaid\n%%{init: {'theme':'base'}}%%\nflowchart LR\n  A --> B\n```\n";
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "ARCHITECTURE.md": `${f["ARCHITECTURE.md"]}\n${bad}`,
+  }));
+  const r = docsCheck({ root });
+  assert.ok(
+    r.issues.some((i) => i.check === "diagrams" && /missing the brand/.test(i.detail)),
+    "a theme without the brand hexes is flagged",
+  );
 });
 
 test("docsCheck: an unstyled mermaid diagram (no branded theme) is flagged", () => {
@@ -308,6 +326,88 @@ test("docsCheck: a ROADMAP 'Now' marker behind package.json is flagged; a curren
     current.issues.filter((i) => i.check === "roadmap"),
     [],
     "a roadmap at the shipped version reconciles clean",
+  );
+});
+
+// The research crosswalk fixture: rows whose forgekit column names file tokens the
+// reconciler must resolve against src/ + global/guards/ + hooks/.
+const crosswalkFixture = (rows) => JSON.stringify({ meta: { title: "fixture crosswalk" }, rows });
+
+test("docsCheck: crosswalk bindings naming real src/guard files pass; crosswalk is a checked dimension", () => {
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "global/guards/g.sh": "true\n",
+    "research/formal-synthesis/crosswalk.json": crosswalkFixture([
+      {
+        concept: "gate",
+        forgekit: "src/a.js stop hook via g.sh; reviewer agent verdict",
+      },
+    ]),
+  }));
+  const r = docsCheck({ root });
+  assert.deepEqual(r.issues, []);
+  assert.ok(r.checked.includes("crosswalk"));
+});
+
+test("docsCheck: a crosswalk binding naming a file that exists nowhere is flagged", () => {
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "research/formal-synthesis/crosswalk.json": crosswalkFixture([
+      {
+        concept: "verification",
+        forgekit: "docs-guard.sh Stop hook (blocks finish)",
+      },
+    ]),
+  }));
+  const r = docsCheck({ root });
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.issues.some(
+      (i) =>
+        i.check === "crosswalk" && /verification.*docs-guard\.sh.*exists nowhere/.test(i.detail),
+    ),
+    "a stale hook name in the crosswalk is caught",
+  );
+});
+
+test("docsCheck: a kit:-prefixed crosswalk clause is the kit's binding, never flagged", () => {
+  const root = fixtureRoot((f) => ({
+    ...f,
+    "research/formal-synthesis/crosswalk.json": crosswalkFixture([
+      {
+        concept: "gate",
+        forgekit: "src/a.js stopGate (kit: docs-guard.sh); reviewer verdict",
+      },
+      {
+        concept: "duality",
+        forgekit: "hooks = hard layer; kit: session-context.sh + intent-router.sh",
+      },
+    ]),
+  }));
+  const r = docsCheck({ root });
+  assert.deepEqual(
+    r.issues.filter((i) => i.check === "crosswalk"),
+    [],
+    "names inside a kit: clause belong to the other repo and are not our drift",
+  );
+});
+
+test("docsCheck: a corrupt crosswalk.json is flagged; a missing one is a no-op", () => {
+  const corrupt = docsCheck({
+    root: fixtureRoot((f) => ({
+      ...f,
+      "research/formal-synthesis/crosswalk.json": "{not json",
+    })),
+  });
+  assert.ok(
+    corrupt.issues.some((i) => i.check === "crosswalk" && /not valid JSON/.test(i.detail)),
+    "unparseable crosswalk is an error, not a silent skip",
+  );
+  // The base fixture has no research/ tree at all — already asserted clean above.
+  const missing = docsCheck({ root: fixtureRoot() });
+  assert.deepEqual(
+    missing.issues.filter((i) => i.check === "crosswalk"),
+    [],
   );
 });
 

@@ -129,12 +129,20 @@ export function contradict(lesson, nowDay) {
   return next;
 }
 
-/** Compile a `*` / `**` glob to an anchored RegExp (no sentinel chars — single pass). */
-const globToRe = (glob) => {
-  const body = glob
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*|\*/g, (m) => (m === "**" ? ".*" : "[^/]*"));
-  return new RegExp(`^${body}$`);
+/** Compile a `*` / `**` glob to an anchored RegExp (no sentinel chars — single pass).
+ *  Memoized: matchScore runs per (lesson × file) on every PreToolUse hook, and the
+ *  cache is bounded in practice by the distinct trigger globs in the lesson set. */
+const GLOB_RE_CACHE = new Map();
+export const globToRe = (glob) => {
+  let re = GLOB_RE_CACHE.get(glob);
+  if (!re) {
+    const body = glob
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*|\*/g, (m) => (m === "**" ? ".*" : "[^/]*"));
+    re = new RegExp(`^${body}$`);
+    GLOB_RE_CACHE.set(glob, re);
+  }
+  return re;
 };
 
 // Tokens every path shares — matching on them would make a lesson keyed to
@@ -194,7 +202,10 @@ export function selectForInjection(lessons, context, { budget = 12, nowDay = 0 }
       const val = validity(x.lesson);
       const scopeW = SCOPE_WEIGHT[x.lesson.scope] ?? 0.5;
       const recencyBoost = 1 + (nowDay - x.lesson.lastConfirmedDay <= 14 ? 0.2 : 0);
-      return { lesson: x.lesson, score: rel * rec * val * scopeW * recencyBoost };
+      return {
+        lesson: x.lesson,
+        score: rel * rec * val * scopeW * recencyBoost,
+      };
     })
     .sort((a, b) => b.score - a.score);
 
