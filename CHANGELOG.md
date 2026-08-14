@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-08-14
+
 ### Changed
 
 - **Landing: source-owned technical instrument.** Replaced the delayed, externally pinned
@@ -1689,7 +1691,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.28.0...v0.29.0
