@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plugin load: dropped the duplicate `hooks` declaration from the manifest.** Claude Code
+  loads the standard `hooks/hooks.json` automatically, so `manifest.hooks` pointing at that
+  same path registered it twice and the loader rejected the entire plugin
+  (`Duplicate hooks file detected`) — taking every skill, agent, guard and the `forge-cortex`
+  MCP server down with it. `manifest.hooks` is for additional hook files only; the guards are
+  unchanged and still load from the plugin root. A regression test in `test/channels.test.js`
+  now fails if the standard path is ever re-declared.
+
 ## [0.32.0] - 2026-08-14
 
 ### Changed

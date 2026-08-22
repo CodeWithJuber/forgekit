@@ -16,6 +16,5 @@
     "./global/crew/independent-reviewer.md",
     "./global/crew/scout.md",
     "./global/crew/verifier.md"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }

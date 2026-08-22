@@ -291,9 +291,20 @@ function commandScriptFromPluginRoot(hook) {
 function checkPluginCompatibility(out) {
   try {
     const plugin = readJson(join(BRAND.root, ".claude-plugin", "plugin.json"));
-    const hookRel = plugin.hooks;
-    const hookPath = hookRel ? join(BRAND.root, hookRel) : "";
-    if (!hookRel || !existsSync(hookPath)) {
+    // Claude Code auto-loads the standard hooks/hooks.json from the plugin root;
+    // manifest.hooks exists only for ADDITIONAL hook files. Re-declaring the standard
+    // path registers it twice and the loader rejects the WHOLE plugin.
+    const standardRel = "hooks/hooks.json";
+    const hookRel = plugin.hooks ?? standardRel;
+    const hookPath = join(BRAND.root, hookRel);
+    if (plugin.hooks && hookPath === join(BRAND.root, standardRel)) {
+      out.push(
+        warn(
+          "Claude plugin hooks",
+          "manifest re-declares the auto-loaded hooks/hooks.json — Claude Code rejects the whole plugin (duplicate hooks file)",
+        ),
+      );
+    } else if (!existsSync(hookPath)) {
       out.push(warn("Claude plugin hooks", "manifest hooks path missing or invalid"));
     } else {
       const manifest = readJson(hookPath);
