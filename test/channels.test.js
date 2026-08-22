@@ -48,3 +48,20 @@ test("plugin hooks wire guards from the plugin root", () => {
   assert.match(hooks, /CLAUDE_PLUGIN_ROOT/);
   assert.match(hooks, /global\/guards\/protect-paths\.sh/);
 });
+
+// Claude Code loads the standard hooks/hooks.json automatically. Declaring it in
+// `manifest.hooks` too registers the same file twice, and the loader rejects the
+// WHOLE plugin ("Duplicate hooks file detected") — skills, agents, guards and the
+// MCP server all vanish. manifest.hooks is only for ADDITIONAL hook files.
+test("plugin manifest does not re-declare the standard hooks file", () => {
+  const plugin = readJson(".claude-plugin/plugin.json");
+  const declared = [plugin.hooks ?? []].flat();
+  for (const h of declared) {
+    assert.notMatch(
+      h,
+      /^\.\/hooks\/hooks\.json$/,
+      "hooks/hooks.json loads automatically; declaring it fails plugin load",
+    );
+  }
+  assert.ok(existsSync(join(root, "hooks/hooks.json")), "the auto-loaded hooks file still exists");
+});
