@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "router-gate"
 version = "0.2.0"
-description = "Production-ready complexity router and assumption gate for agentic coding workflows"
+description = "Research prototype for complexity routing and assumption gating in agentic coding workflows"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "router_gate authors" }]
