@@ -140,6 +140,12 @@ derivations, so the rows are comparable in spirit only and are never blended:
 
 <!-- BENCH:RESULTS:END -->
 
+> **Snapshot boundary.** The measured results above were generated at commit `eb68ea9` and
+> do not benchmark the optional embedding adapter now implemented in `src/embed.js` and
+> exercised with a deterministic fake provider in `test/embed.test.js`. MinHash remains the
+> zero-dependency default and failure fallback. The structural comparisons below describe the
+> current source; they do not imply that Forgekit bundles an embedding model or vector database.
+
 ## Uniqueness — structural contrasts with adjacent tools
 
 Adjacent tools per [ecosystem_map.md](../docs/cognitive-substrate/ecosystem_map.md). Every
@@ -158,7 +164,7 @@ that forgekit structurally does not.
 | conflict-free team merge | yes — claim bytes are a pure function of (kind, body, scope); logs are hash-deduped unions; merge is a join-semilattice (`mergeStates`, property-tested), with a `merge=union` gitattributes rule | no — per-machine SQLite or a hosted store; no CRDT merge contract |
 | self-confirmation cannot buy trust | yes — `authorTrust()` excludes an author's own evidence on their own claims | no equivalent mechanism |
 | secrets refused at write time | yes — `SECRET_RE` enforced at both `mintClaim` and `putClaim` | not a protocol invariant |
-| **what the note stores have that forgekit doesn't** | — | hosted sync, web UI, embedding-based semantic search, LLM summarization pipelines; forgekit's ledger is files-in-git with MinHash similarity only |
+| **what the note stores have that forgekit doesn't** | — | hosted sync, web UI, a bundled embedding/index service, and LLM summarization pipelines; forgekit stores its ledger as files in git and can call an optional user-supplied embedding provider, with MinHash as the default and fallback |
 
 ### Transparent routing rubric vs LLM gateways (LiteLLM, OpenRouter, Portkey)
 
@@ -177,7 +183,7 @@ that forgekit structurally does not.
 | retrieved code revalidated against the current code graph | yes — `revalidate()` checks every declared dep still resolves in the atlas before a hit is served | no dependency contract on retrieved chunks |
 | cache demotes itself on ground truth | yes — a failed revalidation appends `graph.reval` *contradict* evidence to the ledger (`reuseQuery`), and the demotion reaches teammates through the merge | index reflects content until re-embedded; retrieval outcomes don't feed back |
 | explicit hit tiers with committed thresholds | yes — exact / near (J ≥ 0.8) / adapt (J ≥ 0.6) ladder with LSH banding (`NEAR_J`, `ADAPT_J`, `bandKeys`) | top-k cosine; thresholds are informal per deployment |
-| **what RAG has that forgekit doesn't** | — | dense embeddings catch paraphrase and cross-language semantics that token-level MinHash misses; RAG works over any corpus with zero curation — the reuse cache only holds artifacts someone minted *with proof* |
+| **what RAG has that forgekit doesn't** | — | document ingestion and chunking, a managed or persistent vector index, citation assembly, arbitrary-corpus retrieval, and hosted scaling; Forgekit's optional embedding adapter improves similarity for its curated claims and artifacts, but it does not provide those RAG pipeline components |
 
 ## Reproduce
 
