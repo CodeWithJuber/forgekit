@@ -231,6 +231,11 @@ Numbers below are reported only with their test boundary. See
 [`reports/benchmarks.md`](reports/benchmarks.md) and the linked evaluation artifacts for full
 methodology.
 
+Parser-stable snapshot labels used by the generated project pages are **A full pre-action gate
+in 118 ms median** (deterministic, warm repository graph, LLM disabled), **Blast radius in 0.43
+ms median** (warm impact query), and **62.1% cost saved** (the 30-task Python routing
+demonstration). The boundaries in the table below are part of each result.
+
 | Measurement | Recorded result | Boundary |
 | --- | ---: | --- |
 | Warm impact query | 0.43 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
