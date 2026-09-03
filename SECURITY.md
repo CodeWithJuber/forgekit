@@ -2,12 +2,14 @@
 
 ## Supported Versions
 
-Only the latest minor line of forgekit receives security updates.
+Only the latest published minor line of forgekit receives security updates. Check the
+[latest release](https://github.com/CodeWithJuber/forgekit/releases/latest) to identify
+that line; earlier minor lines are unsupported once a newer minor is published.
 
-| Version | Supported |
-| ------- | --------- |
-| 0.5.x   | ✅ Yes    |
-| < 0.5   | ❌ No     |
+| Version                | Supported |
+| ---------------------- | --------- |
+| Latest published minor | ✅ Yes    |
+| Earlier minor lines    | ❌ No     |
 
 ## Reporting a Vulnerability
 
