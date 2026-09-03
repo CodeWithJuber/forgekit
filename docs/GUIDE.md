@@ -704,10 +704,10 @@ tools` fixes that without changing what `sync` emits.
 
 - `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
   auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
-  `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`)
-  and which targets are currently gitignored.
+  `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`,
+  `.openclaw/`) and which targets are currently gitignored.
 - `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
-  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo`) as this repo's primary tool in
+  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw`) as this repo's primary tool in
   `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
   (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
   emitted artifacts. Your own `.gitignore` lines are never touched, and the shared
@@ -1297,6 +1297,39 @@ emitted `.mcp.json`):
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
 Code, agent-invoked everywhere else.**
+
+### OpenClaw — rules automatic, MCP one command
+
+OpenClaw appends the execution folder's `AGENTS.md` after its configured agent-workspace
+files as project context, so `forge sync` needs no OpenClaw-specific instruction file:
+the canonical rules arrive on their own. Only `AGENTS.md` travels that way — OpenClaw does
+not read `SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` or `BOOTSTRAP.md` from the
+execution folder — so keep anything OpenClaw must see inside the canonical body.
+
+The MCP server is **not** wired automatically, on purpose. OpenClaw keeps its registry in
+your global `~/.openclaw/openclaw.json` under `mcp.servers`, and Forge does not write to
+another tool's global config. Instead `forge sync` emits the OpenClaw-shaped definition to
+`.openclaw/mcp.json`:
+
+```json
+{ "mcp": { "servers": { "forge-cortex": { "command": "forge", "args": ["cortex-mcp"] } } } }
+```
+
+Register it once, then prove it:
+
+```bash
+openclaw mcp add forge-cortex --command forge --arg cortex-mcp
+openclaw mcp doctor forge-cortex --probe
+```
+
+`.openclaw/mcp.json` is an ordinary managed MCP target: re-running `sync` is idempotent, a
+same-name server you wrote yourself is preserved (claim it with
+`forge integrations add <name> --adopt`), and `forge integrations remove <name>` reverses
+the add there exactly as it does for every other tool. Removing the entry from the file
+does **not** unregister it inside OpenClaw — use `openclaw mcp unset forge-cortex` for that.
+
+Forge installs nothing into OpenClaw's hook system: on OpenClaw the substrate is
+`AGENTS.md` text plus the MCP tools above, with no ambient pre-action guard.
 
 ---
 

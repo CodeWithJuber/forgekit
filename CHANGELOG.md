@@ -6,6 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **OpenClaw is a first-class emit target — the compiler's tenth tool.** Instructions need
+  no new file: OpenClaw appends the execution folder's `AGENTS.md` after its configured
+  agent-workspace files as project context, so the canonical source reaches it the same way
+  it reaches Codex, Cursor and Copilot. MCP is registered explicitly rather than silently:
+  OpenClaw keeps its server registry in the user's global `~/.openclaw/openclaw.json`, which
+  Forge will not write to, so `forge sync` emits an OpenClaw-shaped fragment to
+  `.openclaw/mcp.json` and reports the exact enabling command
+  (`openclaw mcp add forge-cortex --command forge --arg cortex-mcp`). `.openclaw/mcp.json`
+  is an ordinary managed MCP target: idempotent, per-target ownership (a same-name server
+  you wrote yourself is preserved until `--adopt`), and reversible via
+  `forge integrations remove`. `openclaw` is now selectable and auto-detected by
+  `forge tools`. Forge installs **nothing** into OpenClaw's hook system — there are no
+  ambient guards there, only `AGENTS.md` text and the MCP tools.
+
+### Changed
+
+- **MCP targets address their server bucket by dotted key path.** `emit/mcp.js` resolved a
+  single top-level key (`mcpServers`, `servers`, `context_servers`); OpenClaw nests its
+  registry under `mcp.servers`. The resolver now walks a path, creating missing objects only
+  on write, and refuses to restructure a file where any step already holds a non-object —
+  that shape is the user's and is reported, never rewritten.
+
 ## [0.32.1] - 2026-08-22
 
 ### Fixed

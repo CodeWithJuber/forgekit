@@ -12,7 +12,7 @@ small and dependency-free is the whole point, so please read this before opening
 - **Node.js ESM only.** All code is ES modules (`"type": "module"`). No CommonJS.
 - **Supported Node versions:** 20 and 22 (the `>=20` engines floor; Node 18 is EOL).
 - **Cross-tool first.** New behavior should work across the tools forgekit targets
-  (Claude Code, Codex, Cursor, Gemini, Aider, …), emitted from one source — not
+  (Claude Code, Codex, Cursor, Gemini, Aider, OpenClaw, …), emitted from one source — not
   Claude-only. Say so in the PR if a piece is unavoidably tool-specific.
 
 ## Getting started

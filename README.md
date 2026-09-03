@@ -22,16 +22,20 @@ delivers them into every tool you use.
 > content-addressed memory (we call it "proof-carrying memory" / PCM — see the honesty note
 > below), heuristic impact foresight, and guardrail hooks (automatic on Claude Code;
 > instructions and MCP tools elsewhere) — authored once and delivered as native config to
-> Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and Continue (plus MCP
-> config for Roo and VS Code). Guardrails reduce risk; they are not a security sandbox.
+> Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw
+> (plus MCP config for Roo and VS Code). Guardrails reduce risk; they are not a security
+> sandbox.
 
 > **Status: beta — read before you rely on it.**
 >
 > - The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards) is tested and in daily
 >   use; some flags may change before `1.0`.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). The other eight tools receive native config plus MCP tools, but have had less
->   real-world exercise.
+>   guards). The other nine tools receive native config plus MCP tools, but have had less
+>   real-world exercise. On OpenClaw specifically, rules arrive via `AGENTS.md` project
+>   context and the MCP registration is a one-command manual step — there are no ambient
+>   hooks (see
+>   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
 > - **Impact/blast-radius analysis is heuristic** — a regex-approximate, conservative code
 >   graph, not a sound call graph. Treat its output as advisory.
 > - **"Proof-carrying memory" is a name, not a formal proof.** Claims are content-addressed and
@@ -128,7 +132,7 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
   (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
   session snapshot the next session resumes from, `forge decide` records choices so no
   session re-decides them).
-- **One config for 9 tools.** Author your rules once; Forge emits each tool's native config,
+- **One config for 10 tools.** Author your rules once; Forge emits each tool's native config,
   plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain files in git,
   no server.
 

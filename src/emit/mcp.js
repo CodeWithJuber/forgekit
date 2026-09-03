@@ -19,6 +19,16 @@ import { dirname, join } from "node:path";
 import { BRAND } from "../brand.js";
 import { hashContent, isManaged, readIfExists, writeManaged, yamlHeader } from "./_shared.js";
 
+/** The relative path of the OpenClaw MCP artifact. OpenClaw's own MCP registry lives in the
+ *  USER's global config (`~/.openclaw/openclaw.json` → `mcp.servers`), which forge must never
+ *  write to, so this is a repo-local, OpenClaw-SHAPED fragment: valid config to merge or the
+ *  source of the one `openclaw mcp add` command that registers the server. OpenClaw does NOT
+ *  auto-discover it — `openclawAddCommand` renders the explicit enable step, and the emitted
+ *  row says so rather than implying the server is already live. */
+export const OPENCLAW_TARGET = ".openclaw/mcp.json";
+
+// `key` is a DOTTED PATH into the document, not a single top-level key: OpenClaw nests its
+// registry under `mcp.servers`, every other tool uses one flat key. `bucketAt` resolves both.
 const JSON_TARGETS = [
   { tool: "Claude Code", file: ".mcp.json", key: "mcpServers" },
   { tool: "Cursor", file: ".cursor/mcp.json", key: "mcpServers" },
@@ -26,6 +36,7 @@ const JSON_TARGETS = [
   { tool: "Roo Code", file: ".roo/mcp.json", key: "mcpServers" },
   { tool: "Zed", file: ".zed/settings.json", key: "context_servers" },
   { tool: "VS Code / Copilot", file: ".vscode/mcp.json", key: "servers" },
+  { tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
 ];
 
 const CONTINUE_DIR = join(".continue", "mcpServers");
@@ -78,6 +89,28 @@ function validateServers(servers) {
  *  leading indicators, newlines, etc. */
 const yamlScalar = (s) => JSON.stringify(String(s));
 
+/** Quote one shell word only when it needs it, so the rendered enable command stays
+ *  copy-pasteable and readable for the ordinary `forge` / `cortex-mcp` case. */
+const shellWord = (s) =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(String(s))
+    ? String(s)
+    : `'${String(s).replaceAll("'", `'\\''`)}'`;
+
+/**
+ * The exact, current-docs `openclaw mcp add` invocation that registers one stdio server in
+ * OpenClaw's own (global) registry. Forge renders this instead of writing OpenClaw's config:
+ * `mcp.servers` lives in the user's `~/.openclaw/openclaw.json`, which is not forge's to edit.
+ * @param {string} name
+ * @param {{command:string, args?:string[]}} def
+ * @returns {string}
+ */
+export function openclawAddCommand(name, def) {
+  const args = (def.args || []).map((a) => `--arg ${shellWord(a)}`);
+  return ["openclaw mcp add", shellWord(name), `--command ${shellWord(def.command)}`, ...args].join(
+    " ",
+  );
+}
+
 /** Per-server Continue file name. Servers already namespaced `forge-*` keep their name.
  *  Injectivity across a managed set is enforced by validateServers (`foo`/`forge-foo`). */
 export const continueFileFor = (name) =>
@@ -86,6 +119,27 @@ export const continueFileFor = (name) =>
 // ---------------------------------------------------------------------------
 // JSON targets — entry-level ownership (RA-21, ME-08).
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve the server bucket named by a dotted `keyPath` (`"mcpServers"`, `"mcp.servers"`).
+ * With `create`, missing intermediate objects are added. Returns null when ANY step already
+ * holds a non-object (a string, array, null): that is the user's document shape and forge
+ * restructuring it would destroy data — the caller reports and leaves the file alone.
+ * @returns {Record<string, any>|null}
+ */
+function bucketAt(obj, keyPath, { create = false } = {}) {
+  let cur = obj;
+  for (const k of keyPath.split(".")) {
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) return null;
+    const v = cur[k];
+    if (v === undefined) {
+      if (!create) return null;
+      cur[k] = {};
+    } else if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+    cur = cur[k];
+  }
+  return cur;
+}
 
 function mergeJson(path, key, servers, owns) {
   let obj = {};
@@ -96,7 +150,10 @@ function mergeJson(path, key, servers, owns) {
       return { action: "skipped", note: "invalid JSON — left as-is" };
     }
   }
-  const bucket = obj[key] || (obj[key] = {});
+  if (!obj || typeof obj !== "object" || Array.isArray(obj))
+    return { action: "skipped", note: "not a JSON object — left as-is" };
+  const bucket = bucketAt(obj, key, { create: true });
+  if (!bucket) return { action: "skipped", note: `\`${key}\` is not an object — left as-is` };
   // Ownership rules: absent → write; present + owned → refresh on drift; present +
   // NOT owned → leave byte-identical and say so (the entry is the user's — a same-name
   // server they configured themselves must never be silently replaced).
@@ -143,7 +200,7 @@ function removeFromJson(path, key, name) {
   } catch {
     return { action: "skipped", note: "invalid JSON — left as-is" };
   }
-  const bucket = obj?.[key];
+  const bucket = bucketAt(obj, key);
   if (!bucket || bucket[name] === undefined) return { action: "unchanged", note: "absent" };
   delete bucket[name];
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
@@ -323,6 +380,19 @@ function migrateLegacyContinue(dir) {
 // Entry points.
 // ---------------------------------------------------------------------------
 
+/** The report note for the OpenClaw target: what the file is, and the command that actually
+ *  registers it. Multiple managed servers name the forge server's command plus a count, so
+ *  the row stays one line without ever claiming a server is enabled that isn't. */
+function openclawEnableHint(servers) {
+  const names = Object.keys(servers);
+  if (!names.length) return "not auto-loaded by OpenClaw";
+  const first = names.find((n) => n.startsWith("forge-")) ?? names[0];
+  const rest = names.length - 1;
+  return `not auto-loaded — enable with \`${openclawAddCommand(first, servers[first])}\`${
+    rest ? ` (+${rest} more in the file)` : ""
+  }`;
+}
+
 /**
  * Emit `servers` (the full managed set) into every target. `owns(target, name)` decides,
  * PER TARGET, whether forge may OVERWRITE an already-present same-name entry that drifted
@@ -342,7 +412,10 @@ export function emitMcp({ targetRoot, servers, owns = () => true }) {
       tool: `${t.tool} MCP`,
       target: t.file,
       action: r.action,
-      note: r.note,
+      // OpenClaw is the one target whose file is NOT read by the tool: its registry is the
+      // user's global config. Never let the row read like the server is live — always carry
+      // the explicit enable command (RA-03's honesty rule applied to a manual-apply target).
+      note: t.file === OPENCLAW_TARGET ? `${r.note}; ${openclawEnableHint(servers)}` : r.note,
     };
   });
   const codex = emitCodexToml(join(targetRoot, CODEX_FILE), servers, (name) =>
@@ -392,7 +465,7 @@ export function removeMcp({ targetRoot, name, removeJsonEntry }) {
     let current;
     if (existsSync(path)) {
       try {
-        current = JSON.parse(readFileSync(path, "utf8"))?.[t.key]?.[name];
+        current = bucketAt(JSON.parse(readFileSync(path, "utf8")), t.key)?.[name];
       } catch {
         current = undefined;
       }
@@ -465,7 +538,7 @@ export function foreignTargets(targetRoot, name, def) {
     const path = join(targetRoot, t.file);
     if (!existsSync(path)) continue;
     try {
-      const cur = JSON.parse(readFileSync(path, "utf8"))?.[t.key]?.[name];
+      const cur = bucketAt(JSON.parse(readFileSync(path, "utf8")), t.key)?.[name];
       if (cur !== undefined && JSON.stringify(cur) !== JSON.stringify(def)) out.add(t.file);
     } catch {
       // invalid JSON: mergeJson will skip the file entirely — not a claimable entry

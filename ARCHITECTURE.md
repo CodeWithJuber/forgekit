@@ -29,7 +29,7 @@ for the full list.
   Brand stored as **one token** (the `brand` key in `brand.json`); rebrand = 1 edit.
 - **Distributable id = `forgekit`** (npm package + marketplace id) — fixed even if
   the brand token changes, so a rename never breaks install.
-- **Scope = full multi-tool day 1** — nine tools plus MCP, from one canonical source.
+- **Scope = full multi-tool day 1** — ten tools plus MCP, from one canonical source.
 - **Install = all three channels** (plugin + hardened installer + npm CLI), all
   three pointing at the _same_ tree ("one tree, three front doors").
 - **Own `lean` + `atlas`** — as _thin layers over proven primitives_, not
@@ -443,7 +443,7 @@ guards through `${CLAUDE_PROJECT_DIR}`.
 
 ## Verified cross-tool emit matrix
 
-_(All rows confirmed against vendor docs.)_ Forge emits config for **nine tools**, plus
+_(All rows confirmed against vendor docs.)_ Forge emits config for **ten tools**, plus
 an **MCP server** for Roo Code and VS Code.
 
 | Tool               | Native target                                                            | How Forge emits                                                                                        |
@@ -457,9 +457,33 @@ an **MCP server** for Roo Code and VS Code.
 | **Windsurf/Devin** | `AGENTS.md` auto-discovered; caps 6k/12k chars                           | Root `AGENTS.md` under caps; detect `.windsurf` vs `.devin` at init                                    |
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
+| **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file.
+
+### OpenClaw: what is automatic and what is not
+
+OpenClaw appends the execution folder's `AGENTS.md` after its configured agent-workspace
+files as project context, so the canonical rules reach it with **no** extra instruction
+file — the same deal as Codex, Cursor and Copilot. Only `AGENTS.md` travels this way:
+OpenClaw deliberately does not load `SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` or
+`BOOTSTRAP.md` from the execution folder, so anything Forge wants OpenClaw to read has to
+be inside the canonical body.
+
+MCP is deliberately **not** automatic. OpenClaw's server registry is `mcp.servers` in the
+user's global `~/.openclaw/openclaw.json`; Forge never writes to another tool's global
+config. Instead `forge sync` emits a repo-local, OpenClaw-shaped fragment at
+`.openclaw/mcp.json` and reports the exact command that registers it:
+
+```bash
+openclaw mcp add forge-cortex --command forge --arg cortex-mcp
+openclaw mcp doctor forge-cortex --probe   # prove it starts and lists tools
+```
+
+Forge installs **nothing** into OpenClaw's hook system. On OpenClaw the substrate reaches
+the model through `AGENTS.md` text and the `forge-cortex` MCP tools — there are no ambient
+pre-action guards the way there are on Claude Code.
 
 ## Repo layout — one tree, three front doors
 
@@ -552,8 +576,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>100 files"]
-  src["src<br/>94 files"]
+  test["test<br/>103 files"]
+  src["src<br/>97 files"]
   landing["landing<br/>61 files"]
   research["research<br/>35 files"]
   bench["bench<br/>2 files"]
@@ -561,7 +585,7 @@ flowchart LR
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 195 --> src
+  test -- 202 --> src
   bench -- 7 --> src
   examples -- 4 --> src
   test -- 2 --> scripts

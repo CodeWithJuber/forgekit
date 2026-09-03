@@ -14,12 +14,24 @@ import copilot from "./emit/copilot.js";
 import cursor from "./emit/cursor.js";
 import gemini from "./emit/gemini.js";
 import { emitMcp } from "./emit/mcp.js";
+import openclaw from "./emit/openclaw.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
 import { LEGACY_PROFILES, readForgeConfig } from "./repo_config.js";
 
-const MODULES = [codex, cursor, copilot, windsurf, zed, claude, gemini, aider, continueTool];
+const MODULES = [
+  codex,
+  cursor,
+  copilot,
+  windsurf,
+  zed,
+  claude,
+  gemini,
+  aider,
+  continueTool,
+  openclaw,
+];
 
 // Soft budget: Codex hard-truncates at 32 KiB, Windsurf caps ~12k chars. Warn early.
 const SIZE_BUDGET_BYTES = 12 * 1024;
@@ -150,7 +162,7 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   const hash = shared.hashContent(canonical);
   const bytes = Buffer.byteLength(canonical);
 
-  // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed.
+  // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed, OpenClaw.
   // If the repo already has a hand-written (unmanaged) AGENTS.md, never destroy it
   // silently — back it up first so no rules are lost when adopting Forge.
   const agentsPath = join(targetRoot, "AGENTS.md");

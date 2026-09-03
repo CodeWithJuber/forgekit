@@ -77,7 +77,7 @@ compaction.
 
 ## The verified cross-tool emit matrix
 
-Forge emits config for **nine tools**, plus an MCP server for Roo Code and VS Code. Each
+Forge emits config for **ten tools**, plus an MCP server for Roo Code and VS Code. Each
 row is confirmed against vendor docs.
 
 | Tool               | Native target                                                     | How Forge emits                                                        |
@@ -91,9 +91,19 @@ row is confirmed against vendor docs.
 | **Windsurf/Devin** | `AGENTS.md` auto-discovered (caps 6k/12k chars)                | Root `AGENTS.md` under caps; detects `.windsurf` vs `.devin`          |
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`             | Emits `AGENTS.md`; doctor flags any shadowing legacy file             |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`         | Emits a rules file plus the Forge MCP server config                   |
+| **OpenClaw**       | execution-folder `AGENTS.md`; MCP registry is global          | Relies on root `AGENTS.md`; writes `.openclaw/mcp.json` to apply once |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.json`,
 `.vscode/mcp.json`) rather than a rules file.
+
+<Note>
+  **OpenClaw MCP is a deliberate manual step.** OpenClaw stores servers in your global
+  `~/.openclaw/openclaw.json`, which Forge will not write to. `forge sync` leaves the
+  definition in `.openclaw/mcp.json`; register it with
+  `openclaw mcp add forge-cortex --command forge --arg cortex-mcp`, then verify with
+  `openclaw mcp doctor forge-cortex --probe`. Forge adds no OpenClaw hooks — rules reach
+  it through `AGENTS.md` project context and the MCP tools, nothing more.
+</Note>
 
 <Warning>
   **Char caps are real.** Codex truncates at 32 KiB, Windsurf at 6k/12k. `forge sync`
