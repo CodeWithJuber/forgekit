@@ -56,7 +56,7 @@ Personal maintainer use is intentionally not used as proof of organizational ado
 customer count, enterprise deployment, production traffic, or service-level claim is made
 without corresponding public evidence.
 
-## Start in 60 seconds
+## 60-second quickstart
 
 ```bash
 npm install -g @codewithjuber/forgekit   # or: npm install -g github:CodeWithJuber/forgekit
@@ -79,7 +79,7 @@ tools, Forgekit emits instructions and MCP configuration that the tool can invok
 
 - [Portfolio evidence](#portfolio-evidence)
 - [Maturity boundary](#maturity-boundary)
-- [Start in 60 seconds](#start-in-60-seconds)
+- [60-second quickstart](#60-second-quickstart)
 - [Why Forgekit exists](#why-forgekit-exists)
 - [How the loop works](#how-the-loop-works)
 - [Core capabilities](#core-capabilities)
@@ -116,6 +116,7 @@ Forgekit runs a deterministic substrate before work, lets the external coding ag
 and records evidence from tests, CI, or explicit human correction afterwards.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart TD
     T["Task"] --> G["Pre-action substrate"]
     G -->|"Missing information"| Q["Clarify first"]
