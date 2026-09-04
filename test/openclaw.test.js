@@ -5,7 +5,8 @@
 //      guess at some other tool's schema;
 //   3. it is idempotent, non-destructive, and reversible through the same
 //      integrations add/remove path every other target uses;
-//   4. nothing forge emits for OpenClaw carries a secret, and nothing forge writes ever
+//   4. the published package remains an OpenClaw-compatible Codex bundle (skills + MCP);
+//   5. nothing forge emits for OpenClaw carries a secret, and nothing forge writes ever
 //      lands outside the target repo (the user's ~/.openclaw is off limits).
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -20,6 +21,32 @@ import { sync } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-openclaw-"));
 const readTarget = (root) => JSON.parse(readFileSync(join(root, OPENCLAW_TARGET), "utf8"));
+
+// --------------------------------------------------------------------------
+// Package bundle: OpenClaw auto-detects the existing Codex layout.
+// --------------------------------------------------------------------------
+
+test("the published package carries an OpenClaw-compatible Codex bundle", () => {
+  const root = process.cwd();
+  const manifest = JSON.parse(readFileSync(join(root, ".codex-plugin", "plugin.json"), "utf8"));
+  const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const mcp = JSON.parse(readFileSync(join(root, manifest.mcpServers), "utf8"));
+
+  assert.equal(manifest.name, "forgekit");
+  assert.equal(manifest.skills, "global/tools");
+  assert.equal(manifest.mcpServers, ".mcp.json");
+  assert.ok(existsSync(join(root, manifest.skills, "cognitive-substrate", "SKILL.md")));
+  assert.deepEqual(mcp.mcpServers["forge-cortex"], {
+    command: "forge",
+    args: ["cortex-mcp"],
+  });
+
+  // OpenClaw installs the packed archive, not this checkout. Keep every bundle root in
+  // npm's allowlist so packaging cannot silently drop an otherwise valid bundle.
+  for (const path of [".codex-plugin", ".mcp.json", "global"]) {
+    assert.ok(packageJson.files.includes(path), `${path} must be included in npm packages`);
+  }
+});
 
 // --------------------------------------------------------------------------
 // Instructions: AGENTS.md, and only AGENTS.md.

@@ -1298,7 +1298,7 @@ emitted `.mcp.json`):
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
 Code, agent-invoked everywhere else.**
 
-### OpenClaw — rules automatic, MCP one command
+### OpenClaw — emitted config or installable bundle
 
 OpenClaw appends the execution folder's `AGENTS.md` after its configured agent-workspace
 files as project context, so `forge sync` needs no OpenClaw-specific instruction file:
@@ -1306,10 +1306,10 @@ the canonical rules arrive on their own. Only `AGENTS.md` travels that way — O
 not read `SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` or `BOOTSTRAP.md` from the
 execution folder — so keep anything OpenClaw must see inside the canonical body.
 
-The MCP server is **not** wired automatically, on purpose. OpenClaw keeps its registry in
-your global `~/.openclaw/openclaw.json` under `mcp.servers`, and Forge does not write to
-another tool's global config. Instead `forge sync` emits the OpenClaw-shaped definition to
-`.openclaw/mcp.json`:
+When you use only `forge sync`, the MCP server is **not** wired automatically, on purpose.
+OpenClaw keeps its registry in your global `~/.openclaw/openclaw.json` under `mcp.servers`,
+and Forge does not write to another tool's global config. Instead `forge sync` emits the
+OpenClaw-shaped definition to `.openclaw/mcp.json`:
 
 ```json
 { "mcp": { "servers": { "forge-cortex": { "command": "forge", "args": ["cortex-mcp"] } } } }
@@ -1328,8 +1328,23 @@ same-name server you wrote yourself is preserved (claim it with
 the add there exactly as it does for every other tool. Removing the entry from the file
 does **not** unregister it inside OpenClaw — use `openclaw mcp unset forge-cortex` for that.
 
-Forge installs nothing into OpenClaw's hook system: on OpenClaw the substrate is
-`AGENTS.md` text plus the MCP tools above, with no ambient pre-action guard.
+Alternatively, install ForgeKit itself as a compatible bundle. The npm package includes its
+Codex bundle manifest, skills, and MCP definition; OpenClaw maps those to native skills and
+an embedded bundle-scoped MCP server:
+
+```bash
+# Local development checkout
+openclaw plugins install --link . --accept-capabilities
+
+# Or install a trusted archive produced by `npm pack`
+openclaw plugins install ./codewithjuber-forgekit-<version>.tgz --accept-capabilities
+```
+
+Confirm `Format: bundle`, `Bundle format: codex`, and the `forge-cortex` MCP server with
+`openclaw plugins inspect forgekit`. This bundle path does not require the manual global
+`openclaw mcp add` step above. It also does not activate Forge's Claude
+`hooks/hooks.json`: OpenClaw executes only OpenClaw-style hook packs, so Forge still has no
+ambient pre-action guard there.
 
 ---
 

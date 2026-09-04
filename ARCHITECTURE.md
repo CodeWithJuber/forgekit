@@ -471,19 +471,24 @@ OpenClaw deliberately does not load `SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY
 `BOOTSTRAP.md` from the execution folder, so anything Forge wants OpenClaw to read has to
 be inside the canonical body.
 
-MCP is deliberately **not** automatic. OpenClaw's server registry is `mcp.servers` in the
-user's global `~/.openclaw/openclaw.json`; Forge never writes to another tool's global
-config. Instead `forge sync` emits a repo-local, OpenClaw-shaped fragment at
-`.openclaw/mcp.json` and reports the exact command that registers it:
+For the **config compiler path**, MCP is deliberately not automatic. OpenClaw's server
+registry is `mcp.servers` in the user's global `~/.openclaw/openclaw.json`; Forge never
+writes to another tool's global config. Instead `forge sync` emits a repo-local,
+OpenClaw-shaped fragment at `.openclaw/mcp.json` and reports the exact command that
+registers it:
 
 ```bash
 openclaw mcp add forge-cortex --command forge --arg cortex-mcp
 openclaw mcp doctor forge-cortex --probe   # prove it starts and lists tools
 ```
 
-Forge installs **nothing** into OpenClaw's hook system. On OpenClaw the substrate reaches
-the model through `AGENTS.md` text and the `forge-cortex` MCP tools — there are no ambient
-pre-action guards the way there are on Claude Code.
+There is also a separate **bundle installation path**. The published package already ships
+`.codex-plugin/plugin.json`, `global/tools`, and `.mcp.json`; OpenClaw auto-detects that
+layout as a Codex bundle. Installing a trusted local directory or packed archive through
+`openclaw plugins install` loads Forge's skills and bundle-scoped `forge-cortex` MCP server,
+so the manual global registration above is unnecessary for that installation. This does not
+turn Forge's Claude `hooks/hooks.json` automation into OpenClaw guards: only OpenClaw-style
+hook packs execute. Forge therefore provides no ambient pre-action guard on OpenClaw.
 
 ## Repo layout — one tree, three front doors
 

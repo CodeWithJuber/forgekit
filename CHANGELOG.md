@@ -19,8 +19,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is an ordinary managed MCP target: idempotent, per-target ownership (a same-name server
   you wrote yourself is preserved until `--adopt`), and reversible via
   `forge integrations remove`. `openclaw` is now selectable and auto-detected by
-  `forge tools`. Forge installs **nothing** into OpenClaw's hook system — there are no
-  ambient guards there, only `AGENTS.md` text and the MCP tools.
+  `forge tools`. The packaged `.codex-plugin/plugin.json`, `global/tools`, and `.mcp.json`
+  also form an OpenClaw-compatible Codex bundle: installing a trusted checkout or packed
+  archive loads Forge's skills and bundle-scoped MCP server without the config-only path's
+  manual global registration. Forge installs **nothing** into OpenClaw's hook system — there
+  are no ambient guards there, only `AGENTS.md`/skill text and the MCP tools.
 
 ### Changed
 

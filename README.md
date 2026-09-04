@@ -33,8 +33,9 @@ delivers them into every tool you use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
 >   guards). The other nine tools receive native config plus MCP tools, but have had less
 >   real-world exercise. On OpenClaw specifically, rules arrive via `AGENTS.md` project
->   context and the MCP registration is a one-command manual step — there are no ambient
->   hooks (see
+>   context; the config-only path uses a one-command MCP registration, while installing the
+>   package as a compatible Codex bundle loads its skills and bundle-scoped MCP server.
+>   Neither path provides ambient hooks (see
 >   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
 > - **Impact/blast-radius analysis is heuristic** — a regex-approximate, conservative code
 >   graph, not a sound call graph. Treat its output as advisory.
