@@ -581,20 +581,22 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>103 files"]
+  test["test<br/>106 files"]
   src["src<br/>97 files"]
   landing["landing<br/>61 files"]
   research["research<br/>35 files"]
+  global["global<br/>3 files"]
   bench["bench<br/>2 files"]
-  global["global<br/>2 files"]
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 202 --> src
+  test -- 206 --> src
   bench -- 7 --> src
   examples -- 4 --> src
   test -- 2 --> scripts
   scripts --> src
+  src --> global
   test --> bench
+  test --> global
 ```
 <!-- forge:render:repo-map:end -->

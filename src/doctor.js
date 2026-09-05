@@ -14,13 +14,14 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { NO_BASH_HINT, resolveBash } from "../global/guards/run.mjs";
 import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
 import { hashContent, mdHeader } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
-import { ensureLedgerGitattributes, guardKey, mergeSettings } from "./init.js";
+import { ensureLedgerGitattributes, guardKey, isStaleManagedHook, mergeSettings } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
@@ -68,18 +69,23 @@ function templateGuardKeys() {
   }
 }
 
-// Every guard identity actually wired into a settings file's hook tree (quote-normalized).
-function installedGuardKeys(hooks) {
-  const keys = new Set();
+// Every hook entry actually wired into a settings file's hook tree (either form).
+function installedHooks(hooks) {
+  const out = [];
   if (hooks && typeof hooks === "object") {
     for (const entries of Object.values(hooks)) {
       for (const entry of Array.isArray(entries) ? entries : []) {
         for (const h of entry?.hooks || [])
-          if (typeof h?.command === "string" || Array.isArray(h?.args)) keys.add(guardKey(h));
+          if (typeof h?.command === "string" || Array.isArray(h?.args)) out.push(h);
       }
     }
   }
-  return keys;
+  return out;
+}
+
+// Every guard identity actually wired into a settings file's hook tree (quote-normalized).
+function installedGuardKeys(hooks) {
+  return new Set(installedHooks(hooks).map((h) => guardKey(h)));
 }
 
 // The user's ~/.claude/settings.json must carry Forge's hooks + permissions or none of the
@@ -112,6 +118,20 @@ function checkSettings(out, settingsPath) {
   // ACTIVE only when EVERY required guard identity is wired AND permissions are present —
   // a stale/partial install (marker set, guards missing) reports DEGRADED, not green.
   if (required.length && missing.length === 0 && hasPerms) {
+    // Wired but in an OLDER spelling — the pre-launcher `bash …` exec form fails on Windows when
+    // bash is not on PATH — is DEGRADED, not green. The idempotent merge heals owned entries;
+    // unowned, hand-written entries remain untouched and need a manual update.
+    const stale = installedHooks(data.hooks).filter((h) => isStaleManagedHook(h));
+    if (stale.length) {
+      out.push({
+        ...warn(
+          "settings",
+          `${stale.length} hook(s) predate the portable launcher (guards/run.mjs) — they fail on Windows when bash is not on PATH; \`forge doctor --fix\` / \`forge init\` heals Forge-owned entries, while hand-written entries must be updated manually`,
+        ),
+        fix,
+      });
+      return;
+    }
     out.push(
       ok("settings", `forge-managed — ${required.length} hook guard(s) + permissions wired`),
     );
@@ -137,6 +157,15 @@ function checkTooling(out) {
           "node",
           "not found — secret-redact CANNOT run; tool output is NOT scanned for secrets",
         ),
+  );
+  // bash runs every guard, spawned by guards/run.mjs from an exec-form hook. A default Git for
+  // Windows install has git on PATH but NOT bash — resolve it exactly the way the launcher does.
+  const shell = resolveBash();
+  const bashOk = shell.path && (shell.path === "bash" ? hasBin("bash") : existsSync(shell.path));
+  out.push(
+    bashOk
+      ? ok("bash", `found via ${shell.via} — hook guards run through guards/run.mjs`)
+      : fail("bash", `not found — hook guards CANNOT run; ${NO_BASH_HINT}`),
   );
   out.push(
     hasBin("jq")
@@ -376,6 +405,7 @@ function checkPluginCompatibility(out) {
 // verify it is a symlink (or the expected install dir) whose contents include the required
 // guard files, that they are readable and (for the `.sh` launchers) executable.
 const REQUIRED_INSTALL_ASSETS = [
+  join("guards", "run.mjs"),
   join("guards", "protect-paths.sh"),
   join("guards", "secret-redact.sh"),
   join("guards", "secret-redact.mjs"),

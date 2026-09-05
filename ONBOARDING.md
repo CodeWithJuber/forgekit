@@ -185,7 +185,7 @@ Forge would rather ship an honest subset with a clear boundary than a vague clai
 
 - **Add a rule** → a bullet in `source/rules.json`, then `forge sync`.
 - **Add a tool (skill)** → `global/tools/<name>/SKILL.md` with `name` + `description` frontmatter.
-- **Add a guard** → `global/guards/<name>.sh` (source `_guardlib.sh` for fields + the lock), then wire it in `global/settings.template.json` and `hooks/hooks.json`.
+- **Add a guard** → `global/guards/<name>.sh` (source `_guardlib.sh` for fields + the lock), then wire it in `global/settings.template.json` and `hooks/hooks.json` as `node …/guards/run.mjs …/guards/<name>.sh [mode]` — through the portable launcher (bash is not on `PATH` on Windows), never a bare `bash`.
 - **Rebrand** → edit `brand.json` (+ `package.json` bin, `.claude-plugin/plugin.json` name).
 
 Every command with worked examples and the full extension guide live in

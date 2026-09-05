@@ -1209,6 +1209,17 @@ Forge substrate — pre-action advisory (advisory, never blocks):
 Nothing to wire — the plugin's [`hooks/hooks.json`](../hooks/hooks.json) installs the
 `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop` guards for you.
 
+**Windows.** Hooks are exec form (`command` + `args`), which Claude Code spawns directly with a
+plain `PATH` lookup and no shell — and a default Git for Windows install puts `git` on `PATH`
+but **not** `bash`. Every hook therefore runs through the portable launcher
+`global/guards/run.mjs` (`node run.mjs <guard>.sh [mode]`): `node` is always present, and the
+launcher finds Git Bash itself — `FORGE_BASH`, then `CLAUDE_CODE_GIT_BASH_PATH`, then the Git
+install that owns the `git` on `PATH`, the standard install dirs, and finally a `bash.exe` on
+`PATH` (never WSL's System32 launcher) — and passes stdin, stdout and the exit code through
+untouched, so a guard's exit 2 still blocks. `forge doctor` shows which bash it resolved and
+flags hooks left in the old `bash …` spelling; `forge doctor --fix` (or `forge init`) heals
+Forge-owned ones in place. On macOS/Linux nothing changes: `bash` from `PATH`, as before.
+
 Three more ambient layers ride the same hooks:
 
 **Session rehydration (SessionStart).** Besides lessons and the anchored goal, every
@@ -1402,8 +1413,9 @@ picked up by the plugin and by `forge catalog`.
 
 Create `global/guards/<name>.sh` (source `_guardlib.sh` for the shared fields + the
 re-entrancy lock), then wire it in `global/settings.template.json` **and**
-[`hooks/hooks.json`](../hooks/hooks.json). Guards must be idempotent and fail-safe —
-worst case they do nothing.
+[`hooks/hooks.json`](../hooks/hooks.json) as `node …/guards/run.mjs …/guards/<name>.sh [mode]`
+— through the portable launcher, never a bare `bash` (not on `PATH` on Windows). Guards must
+be idempotent and fail-safe — worst case they do nothing.
 
 ### Add a crew member (sub-agent)
 
@@ -1474,6 +1486,8 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_LEDGER_ONLY`                                            | Ledger-only is the DEFAULT (the ledger is the sole store). `0` is the escape hatch — restores the legacy `lessons/*.md` + recall/brain file store while external tooling migrates                                                       |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                                                                                                                                                     |
 | `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                                                                                                                                             |
+| `FORGE_BASH`                                                   | explicit bash for the hook guards (the `global/guards/run.mjs` launcher). Resolution order: this, `CLAUDE_CODE_GIT_BASH_PATH`, then on Windows the Git for Windows install that owns `git` on `PATH`, the standard install dirs, a non-WSL `bash.exe` on `PATH`; POSIX uses `bash` from `PATH` |
+| `CLAUDE_CODE_GIT_BASH_PATH`                                    | Claude Code's own Git Bash location — honored by the hook launcher when `FORGE_BASH` is unset                                                                                                                                           |
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                                                                                                                                                   |
 | `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                                                                                                                                                        |
 | `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                                                                                                                                           |

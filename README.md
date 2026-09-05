@@ -43,7 +43,8 @@ delivers them into every tool you use.
 >   carry evidence references; confidence moves only when independent oracles (tests, CI, a
 >   human) raise it. There is no theorem-prover in the loop.
 > - Some integrations shell out — `forge harden`, `forge scan`, and the git-native ledger
->   assume **Bash, Git, and (for a few paths) `jq`** are available.
+>   assume **Bash, Git, and (for a few paths) `jq`** are available. Claude hooks on Windows do
+>   not require `bash` on `PATH`: their Node launcher finds Git Bash and preserves guard exits.
 
 ## Start in 60 seconds
 

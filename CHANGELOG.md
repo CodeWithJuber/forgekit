@@ -33,6 +33,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on write, and refuses to restructure a file where any step already holds a non-object —
   that shape is the user's and is reported, never rewritten.
 
+### Fixed
+
+- **Claude Code hooks no longer fail on Windows with `spawn bash ENOENT`.** Every Forge hook
+  (the plugin's `hooks/hooks.json`, the `settings.template.json` that `forge init` merges, the
+  statusline) was exec form with `command: "bash"`. Exec-form hooks are spawned directly — no
+  shell, a plain `PATH` lookup — and a default Git for Windows install puts `git.exe` on `PATH`
+  (`Git\cmd`) but not `bash.exe` (`Git\bin`, `Git\usr\bin`), so SessionStart and every other
+  guard died before it ran. Hooks now spawn the zero-dependency launcher
+  `global/guards/run.mjs` (`node run.mjs <guard>.sh …`), which resolves bash — `FORGE_BASH`,
+  `CLAUDE_CODE_GIT_BASH_PATH`, the Git install that owns `git` on `PATH`, the standard install
+  dirs, then `PATH` (never WSL's System32 `bash.exe`) — and passes stdin, stdout and the exit
+  code through verbatim, so exit-2 blocks are unchanged. POSIX behaviour is identical (`bash`
+  from `PATH`). `forge init` heals a Forge-owned install left in the old `bash` spelling in
+  place — ownership manifest included, so uninstall still reverses it — while a hand-written
+  hook at a Forge path is left alone; `forge doctor` shows the resolved bash, flags stale hooks
+  (`--fix` re-merges) and requires the launcher as an install asset. Regression tests cover the
+  Windows default-install `PATH` shape, paths with spaces on both OSes, the no-bash failure
+  mode (exit 1 + hint, never a fabricated block) and the packed archive.
+- **`protect-paths` no longer dies (exit 1, fail-open) on machines without `jq`.** Its grep
+  fallback ran under `set -euo pipefail`, so a payload missing `command` (every Write/Edit) or
+  `file_path` (every Bash call) aborted the guard before it could decide — invisible in CI, where
+  `jq` is preinstalled, but the norm on Windows. The fallback now yields an empty field exactly
+  like the `jq` branch, so `.env` writes and destructive `rm` are blocked without `jq`.
+
 ## [0.32.1] - 2026-08-22
 
 ### Fixed
