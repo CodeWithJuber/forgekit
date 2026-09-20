@@ -5,8 +5,11 @@
   "cleanupPeriodDays": 30,
   "statusLine": {
     "type": "command",
-    "command": "bash",
-    "args": ["~/.forge/statusline.sh"]
+    "command": "node",
+    "args": [
+      "~/.forge/guards/run.mjs",
+      "~/.forge/statusline.sh"
+    ]
   },
   "permissions": {
     "defaultMode": "default",
@@ -77,13 +80,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "prompt"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "prompt"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "preflight"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "preflight"
+            ]
           }
         ]
       }
@@ -94,13 +105,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/recall-load.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/recall-load.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "session-start"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "session-start"
+            ]
           }
         ]
       }
@@ -111,18 +129,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/protect-paths.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/protect-paths.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cost-budget.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cost-budget.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/doom-loop.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/doom-loop.sh"
+            ]
           }
         ]
       },
@@ -131,8 +158,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "pre-edit"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "pre-edit"
+            ]
           }
         ]
       }
@@ -143,13 +174,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/format-on-edit.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/format-on-edit.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "capture"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       },
@@ -158,13 +196,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/secret-redact.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/secret-redact.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "capture"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       }
@@ -174,23 +219,36 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/completion-gate.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/completion-gate.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/lean-guard.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/lean-guard.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/session-learner.sh"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/session-learner.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["~/.forge/guards/cortex.sh", "stop"]
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/cortex.sh",
+              "stop"
+            ]
           }
         ]
       }

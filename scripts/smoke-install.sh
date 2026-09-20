@@ -7,14 +7,16 @@
 #
 # What it proves:
 #   1. `bash install.sh` (driven with HOME=<tmp>) creates resolvable asset symlinks, merges
-#      the exec-form hooks (command:"bash" + args + the _forge marker) into settings.json,
-#      and leaves the guard scripts present + executable.
+#      the exec-form hooks (command:"node" + args through guards/run.mjs + the _forge marker)
+#      into settings.json, and leaves the guard scripts present + executable.
 #   2. `forge init --settings-only` (FORGE_SETTINGS_PATH into the temp HOME) exits 0 and is
 #      idempotent — a second run leaves the file byte-for-byte unchanged.
 #   3. The uninstall path removes the Forge hooks AND the symlinks, exit 0.
 #   4. A corrupt settings.json makes `forge init --settings-only` exit non-zero (RA-04).
-#   5. Installing under a path WITH A SPACE and then executing an installed guard proves the
-#      ME-23 exec form + RA-12 quoting survive spaces (the concrete RA-12/ME-23 regression).
+#   5. Installing under a path WITH A SPACE and then executing an installed guard — directly AND
+#      through the portable launcher (`node run.mjs guard.sh`, the exact exec-form shape the
+#      hooks use) — proves the ME-23 exec form + RA-12 quoting survive spaces and that the
+#      launcher passes stdin + exit code through (a block stays exit 2).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -62,13 +64,17 @@ for g in protect-paths.sh cost-budget.sh doom-loop.sh cortex.sh; do
 done
 ok "guard scripts present + executable"
 
-# Exec form (ME-23): command:"bash", an args array, and the _forge marker must all be present.
-grep -q '"command": "bash"' "$SETTINGS" || fail "settings.json has no exec-form command:\"bash\""
+# Exec form (ME-23) through the portable launcher: command:"node", an args array whose first
+# element is guards/run.mjs, and the _forge marker must all be present. A bare `bash` command is
+# the Windows regression (bash is not on PATH there) and must never come back.
+grep -q '"command": "node"' "$SETTINGS" || fail "settings.json has no exec-form command:\"node\""
+! grep -q '"command": "bash"' "$SETTINGS" || fail "settings.json still spawns a bare bash (Windows regression)"
+grep -q 'guards/run.mjs'    "$SETTINGS" || fail "settings.json hooks don't go through guards/run.mjs"
 grep -q '"args"'            "$SETTINGS" || fail "settings.json hooks have no args array"
 grep -q '"_forge"'          "$SETTINGS" || fail "settings.json missing the _forge marker"
 # A hook must actually point at a guard script (proves args carry the real path).
 grep -q 'guards/protect-paths.sh' "$SETTINGS" || fail "settings.json hooks don't reference the guards"
-ok "settings.json carries exec-form Forge hooks (command/args/_forge)"
+ok "settings.json carries exec-form Forge hooks (node + run.mjs + args + _forge)"
 
 # ---------------------------------------------------------------------------
 phase "2. forge init --settings-only is idempotent"
@@ -129,5 +135,27 @@ gcode=$?
 set -e
 [ "$gcode" -eq 0 ] || { cat "$WORK/guard.log" >&2; fail "guard under spaced path exited $gcode (expected 0)"; }
 ok "installed guard runs from a spaced path and allows a benign call"
+
+# The same guard through the launcher — the exact argv an installed hook spawns. Benign → 0.
+LAUNCHER="$SPACE_HOME/.forge/guards/run.mjs"
+[ -f "$LAUNCHER" ] || fail "launcher missing under spaced path: $LAUNCHER"
+set +e
+"$NODE" "$LAUNCHER" "$GUARD" <"$BENIGN" >"$WORK/launcher-benign.log" 2>&1
+lcode=$?
+set -e
+[ "$lcode" -eq 0 ] || { cat "$WORK/launcher-benign.log" >&2; fail "launcher+guard under spaced path exited $lcode (expected 0)"; }
+ok "launcher runs the installed guard from a spaced path (benign → exit 0)"
+
+# ...and a protected-path write must still BLOCK (exit 2) end to end — the launcher never weakens
+# a guard: stdin reaches bash and bash's exit code comes back verbatim.
+BLOCKED="$WORK/blocked-hook.json"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"/x/.env"}}' >"$BLOCKED"
+set +e
+"$NODE" "$LAUNCHER" "$GUARD" <"$BLOCKED" >"$WORK/launcher-block.log" 2>&1
+bcode=$?
+set -e
+[ "$bcode" -eq 2 ] || { cat "$WORK/launcher-block.log" >&2; fail "launcher+guard did not block a .env write (exit $bcode, expected 2)"; }
+grep -q 'env file' "$WORK/launcher-block.log" || fail "block reason did not pass through the launcher"
+ok "launcher propagates a guard BLOCK (exit 2 + stderr) unchanged"
 
 printf '\nAll %s smoke assertions passed.\n' "$PASS"

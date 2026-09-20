@@ -25,8 +25,8 @@ forge atlas     # build the code graph (needed for blast-radius checks)
 ```
 
 `forge init` configures Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
-and Continue (plus MCP config for Roo and VS Code). On Claude Code the check then runs on
-every prompt automatically.
+Continue, and OpenClaw (plus MCP config for Roo and VS Code). On Claude Code the check then
+runs on every prompt automatically.
 
 ---
 
@@ -156,6 +156,13 @@ can call directly. Details + the exact rule wording:
 
 Forge never pretends it can force a hook into a tool that has none — it's ambient on Claude
 Code, and agent-invoked everywhere else.
+
+**OpenClaw** is agent-invoked in exactly this sense. It picks up the rules on its own (the
+execution folder's `AGENTS.md` becomes project context), but its MCP registry is your global
+`~/.openclaw/openclaw.json`, which Forge will not write to. `forge sync` leaves the
+definition in `.openclaw/mcp.json`; you register it once with
+`openclaw mcp add forge-cortex --command forge --arg cortex-mcp`. Forge installs nothing
+into OpenClaw's own hook system.
 
 ---
 

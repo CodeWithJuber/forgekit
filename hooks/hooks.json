@@ -6,13 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/recall-load.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/recall-load.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
+            "command": "node",
             "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
               "session-start"
             ]
@@ -25,13 +29,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "prompt"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "prompt"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
+            "command": "node",
             "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
               "preflight"
             ]
@@ -45,18 +54,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/protect-paths.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/protect-paths.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cost-budget.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cost-budget.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/doom-loop.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/doom-loop.sh"
+            ]
           }
         ]
       },
@@ -65,8 +83,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
+            "command": "node",
             "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
               "pre-edit"
             ]
@@ -80,13 +99,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/format-on-edit.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/format-on-edit.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "capture"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       },
@@ -95,13 +121,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/secret-redact.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/secret-redact.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "capture"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       }
@@ -111,23 +144,36 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/completion-gate.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/completion-gate.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/lean-guard.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/lean-guard.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/session-learner.sh"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/session-learner.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "stop"]
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "stop"
+            ]
           }
         ]
       }

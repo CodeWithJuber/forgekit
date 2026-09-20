@@ -84,6 +84,21 @@ function isForgeCommand(hook) {
   return c.includes(`${FORGE_GLOBAL}/`) || c.includes("${CLAUDE_PLUGIN_ROOT}/global/");
 }
 
+/** True iff `hook` is the pre-ME-23 legacy shell-string form: one `command` string with NO
+ *  `args` array. Retired since ME-23 — Forge has never written this shape since — so an
+ *  occurrence at a Forge-managed path is unambiguously an old Forge install, safe to heal to
+ *  whatever interpreter the template uses NOW unconditionally. That is NOT true of the exec-form
+ *  `{command:"bash", args:[...]}` shape (post-ME-23, pre-launcher): a hand-written hook can look
+ *  exactly like that, so healing IT stays gated on ownership (HI-05). */
+function isLegacyShellString(hook) {
+  return (
+    Boolean(hook) &&
+    typeof hook === "object" &&
+    typeof hook.command === "string" &&
+    !Array.isArray(hook.args)
+  );
+}
+
 /** Single-quote a path for safe embedding in a shell command: an install prefix containing
  *  spaces (or any shell metacharacter) must not split into words. Embedded single quotes use
  *  the standard `'\''` escape. ME-23 moved hooks to exec form (`command`+`args`, spawned with
@@ -159,9 +174,44 @@ function canonicalCommand(hook) {
   return normalizeCommand(hook);
 }
 
+/** True iff two hook/statusLine entries are the SAME Forge-managed script, whatever spelling
+ *  wrote them: identical canonical command, OR both Forge-owned (a path under the install root or
+ *  the plugin root) with the same guard identity. The second clause is what lets a template change
+ *  of interpreter heal an installed entry — `bash …/cortex.sh prompt` (the pre-launcher exec form
+ *  that dies on Windows when bash is not on PATH) and `node …/run.mjs …/cortex.sh prompt` are one
+ *  guard — while a user's same-basename hook at a DIFFERENT path is never matched (HI-05). */
+function sameManagedEntry(a, b) {
+  if (canonicalCommand(a) === canonicalCommand(b)) return true;
+  return isForgeCommand(a) && isForgeCommand(b) && guardKey(a) === guardKey(b);
+}
+
 function loadTemplate() {
   const path = join(BRAND.root, "global", "settings.template.json");
   return resolveManagedPaths(JSON.parse(readFileSync(path, "utf8")));
+}
+
+/** @type {Map<string, object> | null} guardKey → resolved template hook (lazy, per process) */
+let templateHooksByKeyCache = null;
+function templateHooksByKey() {
+  if (!templateHooksByKeyCache) {
+    templateHooksByKeyCache = new Map();
+    const tpl = loadTemplate();
+    for (const entries of Object.values(tpl.hooks || {}))
+      for (const entry of entries)
+        for (const h of entry.hooks || []) templateHooksByKeyCache.set(guardKey(h), h);
+  }
+  return templateHooksByKeyCache;
+}
+
+/** True iff `hook` is a Forge-managed guard spelled the way an OLDER template wrote it: the same
+ *  guard identity as a current template hook but a different interpreter/launcher — e.g. the
+ *  pre-launcher `{command:"bash", args:["…/guards/cortex.sh","prompt"]}` exec form, which fails on
+ *  Windows when bash is not on PATH. Doctor reports these; a re-merge (`forge init` /
+ *  `forge doctor --fix`) heals the Forge-owned ones in place. Exported for doctor + tests. */
+export function isStaleManagedHook(hook) {
+  if (!hook || !isForgeCommand(hook)) return false;
+  const tpl = templateHooksByKey().get(guardKey(hook));
+  return Boolean(tpl) && canonicalCommand(hook) !== canonicalCommand(tpl);
 }
 
 /** Read an existing settings file, distinguishing a MISSING file (safe to treat as empty
@@ -212,7 +262,11 @@ export function guardKey(hook) {
   // Exec form: the script path is an `args[]` element; the elements after it are its arguments.
   if (hook && typeof hook === "object" && Array.isArray(hook.args)) {
     const args = hook.args.map((a) => String(a));
-    const i = args.findIndex((a) => a.includes(".sh"));
+    // The guard is the element that IS a `.sh` script (`…/cortex.sh`) — not one that merely
+    // contains ".sh": the launcher that precedes it (`…/guards/run.mjs`) or an install prefix
+    // like `~/.shared/` must never be mistaken for the guard. Substring match is the fallback.
+    const exact = args.findIndex((a) => /\.sh$/i.test(a));
+    const i = exact >= 0 ? exact : args.findIndex((a) => a.includes(".sh"));
     if (i >= 0) {
       const base = args[i].split(/[/\\]/).pop();
       const rest = args
@@ -237,10 +291,12 @@ export function guardKey(hook) {
  *  same-basename hook at a DIFFERENT path must NOT block Forge's own install (HI-05). Returns the
  *  merged tree plus the guard identities actually added this merge (`added: [{event, key,
  *  command, args?}]`) so the ownership manifest can reverse exactly them later. */
-function mergeHooks(existing = {}, template = {}) {
+function mergeHooks(existing = {}, template = {}, isOwned = (_event, _key) => false) {
   const merged = { ...existing };
   /** @type {{event:string, key:string, command:string, args?:string[]}[]} */
   const added = [];
+  /** @type {{event:string, key:string, command:string, args?:string[]}[]} */
+  const upgraded = [];
   for (const [event, entries] of Object.entries(template)) {
     const existingEntries = merged[event] || [];
     // guardKey → template hook, to heal legacy shell-string spellings of the same guard.
@@ -256,10 +312,24 @@ function mergeHooks(existing = {}, template = {}) {
       for (const h of entry.hooks || []) {
         if (h.command == null && !Array.isArray(h.args)) continue;
         const tpl = templateByKey.get(guardKey(h));
-        if (tpl && canonicalCommand(h) === canonicalCommand(tpl)) {
+        if (!tpl) continue;
+        // A spelling-only difference (quoting, legacy shell string) always heals. A different
+        // interpreter — the pre-launcher `bash …` exec form vs today's `node run.mjs …` — heals
+        // only an entry Forge itself installed (HI-05): a hand-written one is the user's to change.
+        const spelling = canonicalCommand(h) === canonicalCommand(tpl);
+        const legacyString = isLegacyShellString(h) && isForgeCommand(h);
+        if (spelling || legacyString || (sameManagedEntry(h, tpl) && isOwned(event, guardKey(h)))) {
+          const before = JSON.stringify([h.command, h.args]);
           h.command = tpl.command;
           if (Array.isArray(tpl.args)) h.args = [...tpl.args];
           else delete h.args;
+          if (JSON.stringify([h.command, h.args]) !== before)
+            upgraded.push({
+              event,
+              key: guardKey(h),
+              command: h.command,
+              args: Array.isArray(h.args) ? [...h.args] : undefined,
+            });
         }
       }
     }
@@ -285,7 +355,7 @@ function mergeHooks(existing = {}, template = {}) {
     }
     merged[event] = [...existingEntries, ...newEntries];
   }
-  return { merged, added };
+  return { merged, added, upgraded };
 }
 
 /** Best-effort reconstruction of Forge's footprint from a settings file that predates the
@@ -337,7 +407,7 @@ function legacyOwnedScan(settings, template) {
   if (
     settings.statusLine?.command &&
     template.statusLine?.command &&
-    canonicalCommand(settings.statusLine) === canonicalCommand(template.statusLine)
+    sameManagedEntry(settings.statusLine, template.statusLine)
   )
     owned.statusLine = true;
   if (settings.$schema && settings.$schema === template.$schema) owned.schema = true;
@@ -397,12 +467,21 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
   // Hooks
   if (template.hooks) {
     const beforeHooks = JSON.stringify(existing.hooks || {});
-    const { merged, added } = mergeHooks(existing.hooks, template.hooks);
+    const isOwned = (event, key) => ownedHooks.some((o) => o.event === event && o.key === key);
+    const { merged, added, upgraded } = mergeHooks(existing.hooks, template.hooks, isOwned);
     existing.hooks = merged;
-    // Dedup by event+key: in exec form `command` is always "bash", so a hook's identity is its
-    // guard key (basename+args), not the command string.
-    for (const a of added)
-      if (!ownedHooks.some((o) => o.event === a.event && o.key === a.key)) ownedHooks.push(a);
+    // Dedup by event+key: in exec form `command` is the interpreter/launcher, so a hook's identity
+    // is its guard key (basename+args), not the command string.
+    for (const a of added) if (!isOwned(a.event, a.key)) ownedHooks.push(a);
+    // An entry healed in place (pre-launcher `bash …` → `node run.mjs …`) keeps its ownership
+    // record current, so a later uninstall still matches — and removes — the new spelling.
+    for (const u of upgraded) {
+      const o = ownedHooks.find((x) => x.event === u.event && x.key === u.key);
+      if (!o) continue;
+      o.command = u.command;
+      if (u.args) o.args = [...u.args];
+      else delete o.args;
+    }
     if (JSON.stringify(existing.hooks) !== beforeHooks) report.added.push("hooks");
     else report.unchanged.push("hooks");
   }
@@ -432,6 +511,20 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
     existing.statusLine = template.statusLine;
     report.added.push("statusLine");
     ownedStatusLine = true;
+  } else if (
+    template.statusLine &&
+    ownedStatusLine &&
+    typeof existing.statusLine === "object" &&
+    sameManagedEntry(existing.statusLine, template.statusLine) &&
+    canonicalCommand(existing.statusLine) !== canonicalCommand(template.statusLine)
+  ) {
+    // Forge's OWN statusline in an older spelling (pre-launcher `bash …/statusline.sh`) — heal it
+    // in place like a hook. A user's statusline, even one pointing at Forge's script, is theirs.
+    existing.statusLine = { ...existing.statusLine, command: template.statusLine.command };
+    if (Array.isArray(template.statusLine.args))
+      existing.statusLine.args = [...template.statusLine.args];
+    else delete existing.statusLine.args;
+    report.added.push("statusLine");
   } else if (template.statusLine) {
     report.unchanged.push("statusLine");
   }
@@ -554,7 +647,7 @@ export function removeForgeSettings({ settingsPath } = {}) {
     Boolean(owned.statusLine) &&
     Boolean(settings.statusLine?.command) &&
     Boolean(template.statusLine?.command) &&
-    canonicalCommand(settings.statusLine) === canonicalCommand(template.statusLine);
+    sameManagedEntry(settings.statusLine, template.statusLine);
   const dropSchema =
     Boolean(owned.schema) && Boolean(settings.$schema) && settings.$schema === template.$schema;
 

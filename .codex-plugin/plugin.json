@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "Forge",
     "shortDescription": "Cognitive substrate and one config for every AI coding tool.",
-    "longDescription": "Forge adds a pre-action cognitive substrate for coding agents: assumption gating, transparent model routing, impact prediction, scope decomposition, memory/learning context, and verification checklists. It also emits shared rules and MCP config for Codex, Claude Code, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, and Roo.",
+    "longDescription": "Forge adds a pre-action cognitive substrate for coding agents: assumption gating, transparent model routing, impact prediction, scope decomposition, memory/learning context, and verification checklists. It also emits shared rules and MCP config for Codex, Claude Code, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, OpenClaw, and Roo.",
     "developerName": "CodeWithJuber",
     "category": "Productivity",
     "capabilities": ["MCP", "Skills", "Code Review", "Verification"],

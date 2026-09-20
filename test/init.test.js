@@ -16,6 +16,7 @@ import {
   ensureLedgerGitattributes,
   guardKey,
   init,
+  isStaleManagedHook,
   LEGACY_PROFILES,
   mergeSettings,
   PROFILES,
@@ -353,19 +354,23 @@ test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQU
     .flatMap((e) => e.hooks || []);
   assert.ok(hooks.length > 0, "hooks merged");
   for (const h of hooks) {
-    assert.equal(h.command, "bash", "command is the bare interpreter, no path baked in");
-    assert.ok(Array.isArray(h.args) && h.args.length > 0, "path lives in args[]");
-    const path = h.args[0];
+    // The interpreter is `node`, never `bash`: an exec-form hook is a bare PATH lookup, and a
+    // default Git for Windows install has git on PATH but NOT bash. args[0] is the portable
+    // launcher that finds bash; args[1] is the guard it runs.
+    assert.equal(h.command, "node", "command is the launcher's interpreter, no path baked in");
+    assert.ok(Array.isArray(h.args) && h.args.length > 1, "launcher + guard path live in args[]");
+    assert.equal(h.args[0], `${base}/guards/run.mjs`, "args[0] is the resolved launcher");
+    const path = h.args[1];
     // Resolved to the real install base, NOT the unmaterialized ~/.forge, and — the whole point
     // of exec form — carrying NO surrounding quote characters (spaces would just work).
     assert.ok(path.startsWith(`${base}/`), `args path resolved to the install base: ${path}`);
     assert.ok(!path.includes("~/.forge/"), "no unresolved ~/.forge in args path");
     assert.doesNotMatch(path, /['"]/, `exec-form args path is unquoted: ${path}`);
   }
-  // The statusLine migrated to exec form too.
-  assert.equal(merged.statusLine.command, "bash");
-  assert.equal(merged.statusLine.args[0], `${base}/statusline.sh`);
-  assert.doesNotMatch(merged.statusLine.args[0], /['"]/, "statusline args path unquoted");
+  // The statusLine migrated to exec form too — through the same launcher.
+  assert.equal(merged.statusLine.command, "node");
+  assert.deepEqual(merged.statusLine.args, [`${base}/guards/run.mjs`, `${base}/statusline.sh`]);
+  assert.doesNotMatch(merged.statusLine.args[1], /['"]/, "statusline args path unquoted");
 });
 
 test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no quoting (ME-23)", () => {
@@ -383,8 +388,8 @@ test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no 
   assert.ok(cortexPrompt, "cortex prompt hook present");
   assert.deepEqual(
     cortexPrompt.args,
-    [`${base}/guards/cortex.sh`, "prompt"],
-    "args are the literal resolved path element + trailing arg, verbatim and unquoted",
+    [`${base}/guards/run.mjs`, `${base}/guards/cortex.sh`, "prompt"],
+    "args are the literal resolved launcher + guard path + trailing arg, verbatim and unquoted",
   );
 });
 
@@ -420,9 +425,96 @@ test("an OLD shell-string install dedupes against the exec-form template and is 
     1,
     "no duplicate — the legacy hook deduped against the template",
   );
-  // ...and it was upgraded IN PLACE to exec form (command + resolved, unquoted args).
-  assert.equal(promptHooks[0].command, "bash");
-  assert.deepEqual(promptHooks[0].args, [`${base}/guards/cortex.sh`, "prompt"]);
+  // ...and it was upgraded IN PLACE to exec form (launcher + resolved, unquoted args).
+  assert.equal(promptHooks[0].command, "node");
+  assert.deepEqual(promptHooks[0].args, [
+    `${base}/guards/run.mjs`,
+    `${base}/guards/cortex.sh`,
+    "prompt",
+  ]);
+});
+
+test("guardKey: the launcher form yields the SAME identity — run.mjs or a `.sh`-containing prefix is never the guard", () => {
+  const base = toPosix(join(BRAND.root, "global"));
+  const key = "cortex.sh prompt";
+  const launcherForm = (root) => ({
+    command: "node",
+    args: [`${root}/guards/run.mjs`, `${root}/guards/cortex.sh`, "prompt"],
+  });
+  assert.equal(guardKey(launcherForm(base)), key);
+  assert.equal(guardKey(launcherForm("~/.forge")), key);
+  assert.equal(guardKey(launcherForm("${CLAUDE_PLUGIN_ROOT}/global")), key);
+  // An install prefix that merely CONTAINS ".sh" must not be mistaken for the guard.
+  assert.equal(guardKey(launcherForm("/home/u/.shared/forge")), key);
+  assert.equal(
+    guardKey({ command: "node", args: [`${base}/guards/run.mjs`, `${base}/statusline.sh`] }),
+    "statusline.sh",
+  );
+});
+
+test("a pre-launcher `bash` exec-form install that Forge OWNS is healed to the launcher form — manifest included, so uninstall still reverses it", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-heal-bash-"));
+  const settingsPath = join(tmp, "settings.json");
+  const base = toPosix(join(BRAND.root, "global"));
+  const allHooks = (obj) =>
+    Object.values(obj.hooks || {})
+      .flat()
+      .flatMap((e) => e.hooks || []);
+  mergeSettings({ settingsPath });
+  // Rewind every Forge entry to what v0.32 wrote on Windows: `bash <guard> [mode]`, no launcher
+  // — the exact form that dies with ENOENT when bash is not on PATH.
+  const old = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const rewind = (h) => {
+    if (h?.command === "node" && h.args?.[0] === `${base}/guards/run.mjs`) {
+      h.command = "bash";
+      h.args = h.args.slice(1);
+    }
+  };
+  for (const h of allHooks(old)) rewind(h);
+  rewind(old.statusLine);
+  for (const o of old._forgeOwned.added.hooks) rewind(o);
+  assert.ok(
+    allHooks(old).every((h) => h.command === "bash"),
+    "fixture is the old form",
+  );
+  assert.equal(old.statusLine.command, "bash");
+  writeFileSync(settingsPath, JSON.stringify(old));
+
+  const r = mergeSettings({ settingsPath });
+  const healed = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.ok(r.added.includes("hooks"), "the merge reported the hooks change");
+  assert.equal(allHooks(healed).length, allHooks(old).length, "healed in place — no duplicates");
+  for (const h of allHooks(healed)) {
+    assert.equal(h.command, "node", `healed: ${JSON.stringify(h)}`);
+    assert.equal(h.args[0], `${base}/guards/run.mjs`);
+  }
+  assert.deepEqual(healed.statusLine.args, [`${base}/guards/run.mjs`, `${base}/statusline.sh`]);
+  // The ownership manifest followed, so uninstall matches — and removes — the NEW spelling.
+  for (const o of healed._forgeOwned.added.hooks) assert.equal(o.command, "node");
+  assert.equal(removeForgeSettings({ settingsPath }).action, "removed");
+  const after = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.equal(allHooks(after).length, 0, "every healed hook removed");
+  assert.equal(after.statusLine, undefined, "healed statusLine removed");
+});
+
+test("a hand-written `bash` hook at a Forge path that Forge does NOT own stays byte-identical (HI-05) — and is flagged stale for doctor", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-unowned-bash-"));
+  const settingsPath = join(tmp, "settings.json");
+  const base = toPosix(join(BRAND.root, "global"));
+  const mine = { type: "command", command: "bash", args: [`${base}/guards/cortex.sh`, "prompt"] };
+  writeFileSync(settingsPath, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [mine] }] } }));
+  mergeSettings({ settingsPath });
+  const merged = JSON.parse(readFileSync(settingsPath, "utf8"));
+  const prompt = merged.hooks.UserPromptSubmit.flatMap((e) => e.hooks || []).filter(
+    (h) => guardKey(h) === "cortex.sh prompt",
+  );
+  assert.equal(prompt.length, 1, "deduped against the template, not duplicated");
+  assert.deepEqual(prompt[0], mine, "the user's spelling is theirs to change");
+  assert.ok(isStaleManagedHook(prompt[0]), "…but doctor can tell them it fails on Windows");
+  assert.ok(
+    !isStaleManagedHook({ command: "bash", args: ["/home/user/custom/cortex.sh", "prompt"] }),
+    "a same-basename hook at a NON-Forge path is not Forge's business",
+  );
 });
 
 // ---------------------------------------------------------------------------

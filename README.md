@@ -14,6 +14,39 @@
   </picture>
 </p>
 
+Forge is one shared brain for your AI coding agents. It gives a stateless model the
+three things it structurally lacks — memory, foresight, and guardrail hooks — and
+delivers them into every tool you use.
+
+> An experimental reliability toolkit for AI-assisted coding — evidence-referenced,
+> content-addressed memory (we call it "proof-carrying memory" / PCM — see the honesty note
+> below), heuristic impact foresight, and guardrail hooks (automatic on Claude Code;
+> instructions and MCP tools elsewhere) — authored once and delivered as native config to
+> Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw
+> (plus MCP config for Roo and VS Code). Guardrails reduce risk; they are not a security
+> sandbox.
+
+> **Status: beta — read before you rely on it.**
+>
+> - The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards) is tested and in daily
+>   use; some flags may change before `1.0`.
+> - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
+>   guards). The other nine tools receive native config plus MCP tools, but have had less
+>   real-world exercise. On OpenClaw specifically, rules arrive via `AGENTS.md` project
+>   context; the config-only path uses a one-command MCP registration, while installing the
+>   package as a compatible Codex bundle loads its skills and bundle-scoped MCP server.
+>   Neither path provides ambient hooks (see
+>   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
+> - **Impact/blast-radius analysis is heuristic** — a regex-approximate, conservative code
+>   graph, not a sound call graph. Treat its output as advisory.
+> - **"Proof-carrying memory" is a name, not a formal proof.** Claims are content-addressed and
+>   carry evidence references; confidence moves only when independent oracles (tests, CI, a
+>   human) raise it. There is no theorem-prover in the loop.
+> - Some integrations shell out — `forge harden`, `forge scan`, and the git-native ledger
+>   assume **Bash, Git, and (for a few paths) `jq`** are available. Claude hooks on Windows do
+>   not require `bash` on `PATH`: their Node launcher finds Git Bash and preserves guard exits.
+
+## Start in 60 seconds
 Forgekit is a beta Node.js CLI and MCP server for AI-assisted software development. It
 externalizes project memory, predicts the likely impact of code changes, and adds
 deterministic checks around coding-agent workflows. The same source can emit native
@@ -127,6 +160,54 @@ flowchart TD
     M -.-> G
 ```
 
+Only independent oracles (tests, CI, a human accept/revert) move a memory's confidence —
+so a wrong lesson decays out instead of ossifying. Full design:
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## What you get
+
+The day-to-day value first — the substrate gives a frozen model what it can't hold itself:
+
+- **Memory that persists across sessions and teammates.** _[Implemented]_ Every lesson, fact,
+  and verified reuse is _proof-carrying memory (PCM)_ — our name for **evidence-referenced,
+  content-addressed memory**: a claim that carries references to its own evidence and is only
+  trusted once independent oracles raise its confidence above a floor (the "proof" is that
+  evidence trail, not a formal proof). Wrong lessons decay out instead of ossifying.
+- **Foresight before you break things.** _[Heuristic]_ Ask "what does changing `verifyToken`
+  break?" and get the _blast radius_ — the set of files an edit is predicted to impact, read
+  from a regex-approximate (conservative, not sound) code graph, including coupled files you
+  never named.
+- **Guardrails that can't be forgotten.** _[Implemented on Claude Code]_ Deterministic hooks
+  check the rules a model shouldn't break (protected paths, cost budget, doom loops) — they
+  survive a context compaction the way `CLAUDE.md` prose does not. They reduce risk as
+  defence in depth; they are not a sandbox, and a sufficiently creative shell command can
+  still bypass a regex guard.
+- **Work that finishes end to end.** A completion gate blocks "done" once per session when
+  code moved but no doc or state artifact followed — with the repair checklist as the answer
+  (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
+  session snapshot the next session resumes from, `forge decide` records choices so no
+  session re-decides them).
+- **One config for 10 tools.** Author your rules once; Forge emits each tool's native config,
+  plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain files in git,
+  no server.
+
+### The measured evidence
+
+Every number is a median from `npm run bench` on this repo, recorded with its environment
+block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is _a number is
+an assumption until measured_.
+
+- **Blast radius in 0.43 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
+  real import graph: recall **0.97** vs **0.33** for looking at the edited file alone.
+- **A full pre-action gate in 118 ms** (median on this repo, warm) — assumption check, routing,
+  reuse lookup, context assembly, blast radius, scope, and goal anchor in one deterministic
+  pass, no LLM call. On Claude Code it runs on **every prompt, automatically**.
+- **62.1% cost saved vs always-premium** — from the white paper's live routing prototype on
+  real models (paper §9; that's the paper's measurement, not this repo's — `forge cost
+--stages` reports only _your_ measured stages).
+- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
+  merge is order-independent and property-tested, so teammate ledgers converge to the same state
+  no matter who syncs first, over plain git.
 The substrate is advisory by default. Set `FORGE_ENFORCE=1` to block only its strongest
 signals: a vacuous task, required context that cannot be assembled, or a large impact set
 from a fresh repository graph.
