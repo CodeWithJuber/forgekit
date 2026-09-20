@@ -25,7 +25,7 @@ import { join } from "node:path";
 // zero-maintenance property is the point; test/hermetic.test.js pins it against
 // envVarsRead() so the two can never drift.
 const SCRUB =
-  /^(_?FORGE_|CLAUDE_|ANTHROPIC_|OPENAI_|OPENROUTER_|GEMINI_|GOOGLE_|LITELLM_|ENABLE_CORTEX_|XDG_)/;
+  /^(_?FORGE_|CLAUDE_|ANTHROPIC_|OPENAI_|OPENROUTER_|GEMINI_|GOOGLE_|LITELLM_|ENABLE_CORTEX_|TYPESAFE_|XDG_)/;
 // Not prefix-matchable. FORCE_COLOR is the dangerous one: it OUTRANKS NO_COLOR in
 // src/fmt.js supportsColor(), so an exported FORCE_COLOR=1 defeats the explicit NO_COLOR=1
 // that test/radar.test.js passes to its spawned CLI.

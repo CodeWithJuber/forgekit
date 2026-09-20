@@ -20,6 +20,7 @@ const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"
 // values injected by host tools rather than set by users.
 const INTERNAL_ENV = new Set([
   "_FORGE_LLM_KEY",
+  "_FORGE_JEV_KEY",
   "FORGE_EMBED_KEY",
   // Test-only override of the settings.json path `forge init` targets — plumbing for
   // exercising merge/remove/exit-code behavior without touching the real ~/.claude.
@@ -31,7 +32,8 @@ const INTERNAL_ENV = new Set([
 
 // Prefixes that mark an env var as OURS to document. A doc may freely mention other
 // tools' vars (GITHUB_TOKEN, PATH) — those aren't claims about forge's own surface.
-const ENV_PREFIX_RE = /\b((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX)_[A-Z0-9_]+)\b/g;
+const ENV_PREFIX_RE =
+  /\b((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX|TYPESAFE)_[A-Z0-9_]+)\b/g;
 
 function readDoc(root, rel) {
   const p = join(root, rel);

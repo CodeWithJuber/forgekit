@@ -24,6 +24,22 @@ under an overlap-similarity metric with a confidence gate — not a keyword look
   genuinely needs it.
 </Note>
 
+## Optional typed proposer — TypeSafe Jev
+
+The rubric is the judge; an optional **proposer** layer can refine it. With `FORGE_LLM=1`
+plus `TYPESAFE_API_KEY` set, `route` asks TypeSafe's System One model (Jev) for the
+complexity band as a typed `choice` with probabilities and confidence in ~150ms — instead
+of a multi-second text-LLM round-trip. The same applies to preflight's assumption gate,
+scored as one batched `noul` per rubric dimension.
+
+<Note>
+  Fail-safe by construction: any Jev error falls back to the text-LLM proposer, then to
+  the deterministic rubric — and a miss never changes a verdict. Without the key, behavior
+  is byte-identical. `forge route --json` shows which proposer answered under
+  `llm.provider` (`jev` / `text`), with Jev's confidence. `TYPESAFE_BASE_URL` overrides
+  the endpoint for staging or self-hosted deployments.
+</Note>
+
 ## Intent, then tier
 
 Routing shares its math with intent detection (`src/intent.js`): a prompt maps to an

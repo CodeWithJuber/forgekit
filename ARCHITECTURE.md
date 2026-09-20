@@ -280,6 +280,22 @@ fails safe to the stock ID on no gateway / unreachable `/v1/models` / no family 
 resolved `tier→model` mapping for verification. The `MODELS` export shape is unchanged: this is a
 resolution-time layer, not a table edit.
 
+**Typed proposers via TypeSafe System One (`src/jev.js`).** Two of the substrate's proposer
+judgments are not text-generation tasks at all: `route`'s complexity band is a classification
+(cheap/mid/premium), and preflight's assumption gate is four independent yes/no readings (one
+per rubric dimension). When `TYPESAFE_API_KEY` is set (same `FORGE_LLM=1` opt-in), those two
+faculties ask Jev instead of a text model — one batched `POST /v1/systemone` returning typed
+`choice`/`noul` answers with probability distributions and confidence in ~150ms, versus seconds
+of text plus JSON parsing. The module reuses the adjudicate contract verbatim: opt-in, fail-safe
+(null → text-LLM fallback → deterministic rubric; a null never moves a verdict), zero-dependency
+(the `llm.js` spawned-child pattern, key in child env as `_FORGE_JEV_KEY`), and secret-refusing
+on the outgoing state. Jev answers are validated against the questions asked — a choice naming
+an option we never offered is garble and fails safe. The reconciles are untouched: `BAND_FLOOR`
+still floors the routing band, the assumption gate still bounds completeness to ±band, and
+clarifying free-text questions stay with the deterministic rubric, because a System One model
+judges but does not author prose. Provenance records which proposer answered
+(`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
+
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
 confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
@@ -552,18 +568,17 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>100 files"]
-  src["src<br/>94 files"]
+  test["test<br/>105 files"]
+  src["src<br/>97 files"]
   landing["landing<br/>61 files"]
   research["research<br/>35 files"]
   bench["bench<br/>2 files"]
   global["global<br/>2 files"]
   scripts["scripts<br/>2 files"]
+  _remember[".remember<br/>1 file"]
   docs["docs<br/>1 file"]
-  examples["examples<br/>1 file"]
-  test -- 195 --> src
+  test -- 201 --> src
   bench -- 7 --> src
-  examples -- 4 --> src
   test -- 2 --> scripts
   scripts --> src
   test --> bench
