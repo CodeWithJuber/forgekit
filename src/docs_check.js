@@ -52,8 +52,8 @@ export function srcFiles(root) {
     .map((f) => join(dir, f));
 }
 
-/** Every env var name the package actually reads: process.env.X in src/*.js plus
- *  $X / ${X...} in the shell guards (they are part of the same env contract). */
+/** Every env var name the package actually reads: process.env.X in src/*.js, $X / ${X...} in
+ *  the shell guards, and (process.)env.X in the Node guards/launcher — one env contract. */
 export function envVarsRead(root = BRAND.root) {
   const vars = new Set();
   for (const file of srcFiles(root)) {
@@ -69,6 +69,15 @@ export function envVarsRead(root = BRAND.root) {
       // are shell internals, not env surface the docs owe anyone.
       for (const m of text.matchAll(
         /\$\{?((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX|CLAUDE)_[A-Z0-9_]*)/g,
+      ))
+        vars.add(m[1]);
+    }
+    // The Node guards and the hook launcher (`*.mjs`) are the same contract: `process.env.X`, or
+    // an injected `env.X` (run.mjs takes env as a parameter so its Windows logic is testable).
+    for (const f of readdirSync(guards).filter((f) => f.endsWith(".mjs"))) {
+      const text = readFileSync(join(guards, f), "utf8");
+      for (const m of text.matchAll(
+        /\b(?:process\.)?env\.((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX|CLAUDE)_[A-Z0-9_]*)/g,
       ))
         vars.add(m[1]);
     }

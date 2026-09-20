@@ -39,6 +39,7 @@ const DETECT = [
   { tool: "continue", marker: ".continue" },
   { tool: "windsurf", marker: ".windsurf" },
   { tool: "roo", marker: ".roo" },
+  { tool: "openclaw", marker: ".openclaw" },
 ];
 
 /** Tool names accepted by `forge tools <name>`. Kept in lockstep with the emit targets
@@ -54,6 +55,7 @@ export const KNOWN_TOOLS = [
   "continue",
   "windsurf",
   "roo",
+  "openclaw",
 ];
 
 // Map a sync-report row's tool label to a canonical tool key. The shared source
@@ -70,6 +72,7 @@ const TOOL_KEYS = [
   ["continue", /^Continue/],
   ["windsurf", /^Windsurf/],
   ["roo", /^Roo/],
+  ["openclaw", /^OpenClaw/],
 ];
 
 const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);

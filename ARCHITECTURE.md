@@ -29,7 +29,7 @@ for the full list.
   Brand stored as **one token** (the `brand` key in `brand.json`); rebrand = 1 edit.
 - **Distributable id = `forgekit`** (npm package + marketplace id) — fixed even if
   the brand token changes, so a rename never breaks install.
-- **Scope = full multi-tool day 1** — nine tools plus MCP, from one canonical source.
+- **Scope = full multi-tool day 1** — ten tools plus MCP, from one canonical source.
 - **Install = all three channels** (plugin + hardened installer + npm CLI), all
   three pointing at the _same_ tree ("one tree, three front doors").
 - **Own `lean` + `atlas`** — as _thin layers over proven primitives_, not
@@ -459,7 +459,7 @@ guards through `${CLAUDE_PROJECT_DIR}`.
 
 ## Verified cross-tool emit matrix
 
-_(All rows confirmed against vendor docs.)_ Forge emits config for **nine tools**, plus
+_(All rows confirmed against vendor docs.)_ Forge emits config for **ten tools**, plus
 an **MCP server** for Roo Code and VS Code.
 
 | Tool               | Native target                                                            | How Forge emits                                                                                        |
@@ -473,9 +473,38 @@ an **MCP server** for Roo Code and VS Code.
 | **Windsurf/Devin** | `AGENTS.md` auto-discovered; caps 6k/12k chars                           | Root `AGENTS.md` under caps; detect `.windsurf` vs `.devin` at init                                    |
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
+| **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file.
+
+### OpenClaw: what is automatic and what is not
+
+OpenClaw appends the execution folder's `AGENTS.md` after its configured agent-workspace
+files as project context, so the canonical rules reach it with **no** extra instruction
+file — the same deal as Codex, Cursor and Copilot. Only `AGENTS.md` travels this way:
+OpenClaw deliberately does not load `SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` or
+`BOOTSTRAP.md` from the execution folder, so anything Forge wants OpenClaw to read has to
+be inside the canonical body.
+
+For the **config compiler path**, MCP is deliberately not automatic. OpenClaw's server
+registry is `mcp.servers` in the user's global `~/.openclaw/openclaw.json`; Forge never
+writes to another tool's global config. Instead `forge sync` emits a repo-local,
+OpenClaw-shaped fragment at `.openclaw/mcp.json` and reports the exact command that
+registers it:
+
+```bash
+openclaw mcp add forge-cortex --command forge --arg cortex-mcp
+openclaw mcp doctor forge-cortex --probe   # prove it starts and lists tools
+```
+
+There is also a separate **bundle installation path**. The published package already ships
+`.codex-plugin/plugin.json`, `global/tools`, and `.mcp.json`; OpenClaw auto-detects that
+layout as a Codex bundle. Installing a trusted local directory or packed archive through
+`openclaw plugins install` loads Forge's skills and bundle-scoped `forge-cortex` MCP server,
+so the manual global registration above is unnecessary for that installation. This does not
+turn Forge's Claude `hooks/hooks.json` automation into OpenClaw guards: only OpenClaw-style
+hook packs execute. Forge therefore provides no ambient pre-action guard on OpenClaw.
 
 ## Repo layout — one tree, three front doors
 
@@ -569,18 +598,23 @@ from the tree it describes.
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
   test["test<br/>105 files"]
+  test["test<br/>106 files"]
   src["src<br/>97 files"]
   landing["landing<br/>61 files"]
   research["research<br/>35 files"]
+  global["global<br/>3 files"]
   bench["bench<br/>2 files"]
-  global["global<br/>2 files"]
   scripts["scripts<br/>2 files"]
   _remember[".remember<br/>1 file"]
   docs["docs<br/>1 file"]
   test -- 201 --> src
+  examples["examples<br/>1 file"]
+  test -- 206 --> src
   bench -- 7 --> src
   test -- 2 --> scripts
   scripts --> src
+  src --> global
   test --> bench
+  test --> global
 ```
 <!-- forge:render:repo-map:end -->

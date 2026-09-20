@@ -1,6 +1,6 @@
 # AGENTS.md — <project>
 
-Cross-tool rules (read by Codex, Cursor, Copilot, Gemini, Aider, Zed, and by
+Cross-tool rules (read by Codex, Cursor, Copilot, Gemini, Aider, Zed, OpenClaw, and by
 Claude Code when CLAUDE.md points here). Keep tool-agnostic and thin.
 
 ## Stack

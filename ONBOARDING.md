@@ -5,7 +5,7 @@ context window, wiped every call — so it has no memory of what your team learn
 foresight about what an edit breaks, and no enforced guardrails. forgekit is the
 **cognitive substrate** that supplies exactly those three things, and it delivers them
 as native config to Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
-and Continue at once. Author the brain once; every tool reads it.
+Continue, and OpenClaw at once. Author the brain once; every tool reads it.
 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.
@@ -51,9 +51,22 @@ cd ~/your-project
 forge init                 # emits AGENTS.md, CLAUDE.md, .gemini/settings.json, .aider.conf.yml …
 ```
 
-Now Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and Continue all
-read the **same** rules — each from its own native file (plus MCP server config for Roo
-Code and VS Code).
+Now Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and
+OpenClaw all read the **same** rules — each from its own native file (plus MCP server
+config for Roo Code and VS Code).
+
+On OpenClaw the rules arrive automatically (it reads the execution folder's `AGENTS.md`
+as project context), but the MCP server is a deliberate one-command step, because
+OpenClaw's registry lives in your global `~/.openclaw/openclaw.json` and Forge does not
+write there:
+
+```bash
+openclaw mcp add forge-cortex --command forge --arg cortex-mcp
+openclaw mcp doctor forge-cortex --probe
+```
+
+`forge sync` writes the same definition to `.openclaw/mcp.json` so you can review or
+merge it instead of retyping the flags.
 
 Change a rule later by editing `source/rules.json` (or dropping a per-repo
 `.forge/rules.json`), then:
@@ -172,7 +185,7 @@ Forge would rather ship an honest subset with a clear boundary than a vague clai
 
 - **Add a rule** → a bullet in `source/rules.json`, then `forge sync`.
 - **Add a tool (skill)** → `global/tools/<name>/SKILL.md` with `name` + `description` frontmatter.
-- **Add a guard** → `global/guards/<name>.sh` (source `_guardlib.sh` for fields + the lock), then wire it in `global/settings.template.json` and `hooks/hooks.json`.
+- **Add a guard** → `global/guards/<name>.sh` (source `_guardlib.sh` for fields + the lock), then wire it in `global/settings.template.json` and `hooks/hooks.json` as `node …/guards/run.mjs …/guards/<name>.sh [mode]` — through the portable launcher (bash is not on `PATH` on Windows), never a bare `bash`.
 - **Rebrand** → edit `brand.json` (+ `package.json` bin, `.claude-plugin/plugin.json` name).
 
 Every command with worked examples and the full extension guide live in

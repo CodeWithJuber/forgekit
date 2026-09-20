@@ -82,15 +82,15 @@ state between calls; Forge is the state.
 - **Work that finishes end to end.** A completion gate blocks "done" once per session
   when code moved but no doc or state artifact followed, with the repair checklist as
   the answer.
-- **One config for 9 tools.** Author your rules once; Forge emits each tool's native
+- **One config for 10 tools.** Author your rules once; Forge emits each tool's native
   config, plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain
   files in git, no server.
 
 ## Which tools does Forge feed?
 
-Forge emits config for **nine tools**, plus an MCP server for Roo Code and VS Code:
-Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, and Continue.
-Each reads the same rules from its own native file.
+Forge emits config for **ten tools**, plus an MCP server for Roo Code and VS Code:
+Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, and
+OpenClaw. Each reads the same rules from its own native file.
 
 The only MCP server wired by default is Forge's own (`src/cortex_mcp.js`) — the substrate
 checks and memory reads. Third-party MCP servers such as `context7` are **opt-in** and

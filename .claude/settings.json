@@ -1,8 +1,12 @@
 {
-  "//": "forgekit dogfoods its own plugin during local dev. These hooks mirror hooks/hooks.json but resolve through ${CLAUDE_PROJECT_DIR} (this repo) instead of ${CLAUDE_PLUGIN_ROOT}, so the guards run without a marketplace install. Every guard is advisory/fail-open; the completion gate honors FORGE_STOPGATE=0.",
+  "//": "forgekit dogfoods its own plugin during local dev. These hooks mirror hooks/hooks.json but resolve through ${CLAUDE_PROJECT_DIR} (this repo) instead of ${CLAUDE_PLUGIN_ROOT}, so the guards run without a marketplace install. Exec form via global/guards/run.mjs: node finds bash (Git Bash on Windows, where bash is usually NOT on PATH) and passes stdin/stdout/exit code through untouched. Every guard is advisory/fail-open; the completion gate honors FORGE_STOPGATE=0.",
   "statusLine": {
     "type": "command",
-    "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/statusline.sh"
+    "command": "node",
+    "args": [
+      "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+      "${CLAUDE_PROJECT_DIR}/global/statusline.sh"
+    ]
   },
   "hooks": {
     "SessionStart": [
@@ -11,15 +15,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/recall-load.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/recall-load.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh session-start"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "session-start"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/session-start.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh"
+            ]
           }
         ]
       }
@@ -29,11 +46,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh prompt"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "prompt"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh preflight"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "preflight"
+            ]
           }
         ]
       }
@@ -44,15 +71,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/protect-paths.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/protect-paths.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cost-budget.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cost-budget.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/doom-loop.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/doom-loop.sh"
+            ]
           }
         ]
       },
@@ -61,7 +100,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh pre-edit"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "pre-edit"
+            ]
           }
         ]
       }
@@ -72,11 +116,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/format-on-edit.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/format-on-edit.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       },
@@ -85,11 +138,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/secret-redact.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/secret-redact.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh capture"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "capture"
+            ]
           }
         ]
       }
@@ -99,15 +161,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/completion-gate.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/completion-gate.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/lean-guard.sh"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/lean-guard.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}\"/global/guards/cortex.sh stop"
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "stop"
+            ]
           }
         ]
       }

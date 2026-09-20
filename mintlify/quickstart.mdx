@@ -38,8 +38,9 @@ including the symlink dev setup.
     ```
     This emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and
     the rest — plus the `.gitattributes` union-merge rule the ledger needs. Claude Code,
-    Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, and Continue now read the
-    **same** rules, each from its own native file.
+    Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw now
+    read the **same** rules, each from its own native file. On OpenClaw the MCP server is
+    one extra command: `openclaw mcp add forge-cortex --command forge --arg cortex-mcp`.
   </Step>
   <Step title="Health-check the setup">
     ```bash
