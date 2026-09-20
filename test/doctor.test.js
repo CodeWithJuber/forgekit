@@ -168,7 +168,14 @@ test("doctor: a missing atlas is UNAVAILABLE, not ACTIVE; a fresh one is ACTIVE 
   const atlasRow = r.results.find((x) => x.label === "atlas");
   assert.equal(atlasRow.status, "na", "not built is neither ok nor a failure");
   assert.equal(r.health.atlas, "UNAVAILABLE");
-  assert.equal(r.failed, 0, "na never counts toward failed totals");
+  // Say what this means locally. Asserting `r.failed === 0` proved the same point only when
+  // NO check anywhere failed, which made it machine-dependent: a stale ~/.forge on the
+  // developer's box (a legitimate `fail` from the machine-scoped checkInstall) broke it.
+  assert.equal(
+    r.failed,
+    r.results.filter((x) => x.status === "fail").length,
+    "na never counts toward failed totals",
+  );
 
   const built = fixture();
   writeFileSync(join(built, "a.js"), "export const one = 1;\n");

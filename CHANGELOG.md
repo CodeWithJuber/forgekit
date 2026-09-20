@@ -8,6 +8,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **TypeSafe System One (Jev) as the fast proposer.** Where forge's LLM layer asked a text
+  model for a judgment that is really a classification or a yes/no — `route`'s complexity band
+  and preflight's assumption gate — it can now ask Jev instead: typed `choice`/`noul` answers
+  with real probability distributions and confidence in ~150ms, rather than seconds of text
+  generation followed by JSON parsing. The new `src/jev.js` client follows the existing
+  proposer contract exactly: opt-in (`FORGE_LLM=1` plus `TYPESAFE_API_KEY`, overridable via
+  `TYPESAFE_BASE_URL`), fail-safe (any error → null → text-LLM fallback → deterministic
+  rubric, and a null never changes a verdict), zero-dependency (one raw HTTPS POST through
+  the child-process-fetch pattern, the key travelling via child env — never argv, never
+  logged), and secret-refusing on the way out. Routing keeps its `BAND_FLOOR` reconcile and
+  gains `llm.provider: "jev"` plus confidence in `forge route --json`; the assumption gate
+  scores all four rubric dimensions in one batched call (free-text clarifying questions stay
+  with the deterministic rubric — a System One model judges, it does not author prose).
+  `test/_setup.js` now scrubs `TYPESAFE_*` so the suite stays hermetic with the key exported.
+
+### Fixed
+
+- **The test suite is hermetic.** It inherited the developer's environment, so it was green
+  in CI and red on any machine where forge was actually installed and enabled — the two
+  things a maintainer does. An exported `FORGE_LLM=1` both flipped the "llm off by default"
+  assertion in `test/substrate.test.js` and made the faculties fire real model calls, and a
+  real `~/.forge` reached `doctor()`'s machine-scoped install check through
+  `test/doctor.test.js`. Wall time was 593s with two failures. A new `test/_setup.js`,
+  preloaded via `--import` into every test process, scrubs `FORGE_*`/provider env by prefix,
+  sandboxes `$HOME` to a throwaway tmpdir, and forces the keyless HTTP runner instead of
+  shelling out to a real `claude` binary: **0 failures in ~40s**. `test/hermetic.test.js`
+  pins the scrub list against `envVarsRead()` so the two cannot drift, and fails loudly if
+  anyone drops the `--import` wiring. Two assertions were wrong rather than merely leaky and
+  were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
+  `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
+  opposite of the truth, and the reason that file spent 85s on live calls.
+
+### Documentation
+
+- `CLAUDE.md`: Biome 2.5.2 → 2.5.5 (matching the pin), "600+ tests" → "1000+", and the lint
+  command `npx biome check` → `npm run check` — the documented command fails outright, since
+  the npx package is `@biomejs/biome`, not `biome`.
 - **OpenClaw is a first-class emit target — the compiler's tenth tool.** Instructions need
   no new file: OpenClaw appends the execution folder's `AGENTS.md` after its configured
   agent-workspace files as project context, so the canonical source reaches it the same way
@@ -198,7 +235,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every PreToolUse hook and recompiled the same trigger-glob RegExp each time; compiled
   globs are now cached in a module-level map bounded by the distinct globs in the
   lesson set.
-
 ## [0.27.4] - 2026-08-04
 
 ### Fixed

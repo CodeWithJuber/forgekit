@@ -8,6 +8,7 @@ import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
 import { recordRoute } from "./cost_report.js";
+import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
 import { MODELS } from "./model_tiers.js";
@@ -389,6 +390,51 @@ export function complexityLLM(task, { run = buildRunner() } = {}) {
   return adjudicate({ prompt: buildComplexityPrompt(task), parse: parseComplexityProposal, run });
 }
 
+/** The complexity judgment as a Jev Choice — the same three bands the text proposer uses. */
+export function buildComplexityChoice(task) {
+  return {
+    state: String(task).slice(0, 1200),
+    questions: {
+      band: choice(
+        "Judge the intrinsic complexity of this coding task for model selection (not how to do the task).",
+        {
+          cheap: "Trivial or boilerplate: a typo, rename, formatting, or a one-line helper",
+          mid: "A data structure, class, or library-level change with a few moving parts",
+          premium: "Algorithmic, systems, concurrency, architectural, or multi-module work",
+        },
+      ),
+    },
+  };
+}
+
+/**
+ * Ask Jev (TypeSafe System One) for a complexity band. Same proposal contract as
+ * complexityLLM — the band still floors at BAND_FLOOR and the deterministic rubric still
+ * judges — but the answer is typed and carries the probability distribution Jev computed,
+ * in ~150ms instead of a text round-trip. Returns null when off/unavailable.
+ * @param {string} task
+ * @param {object} [opts]
+ * @param {boolean} [opts.llm]
+ * @param {(payload:object)=>object} [opts.call] injectable Jev transport (tests)
+ */
+export function complexityJev(task, { llm, call } = {}) {
+  if (!jevEnabled({ llm })) return null;
+  const { state, questions } = buildComplexityChoice(task);
+  const res = systemOne({ state, questions, call });
+  const ans = res?.answers?.band;
+  if (!ans) return null;
+  const band = ans.choice.toLowerCase();
+  if (!(band in BAND_FLOOR)) return null;
+  return {
+    band,
+    score: BAND_FLOOR[band],
+    reason: ans.confidence != null ? `jev confidence ${ans.confidence.toFixed(2)}` : "jev choice",
+    provider: "jev",
+    confidence: ans.confidence ?? null,
+    probabilities: ans.probabilities ?? null,
+  };
+}
+
 /**
  * Repo wrapper: gather the real signals for a task and route it. `run` is injectable for tests.
  * @param {string} root
@@ -398,6 +444,7 @@ export function complexityLLM(task, { run = buildRunner() } = {}) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
+ * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
  * @param {boolean} [opts.bidirectional]
  * @param {number} [opts.routingBand]
  * @param {number} [opts.signalFloor]
@@ -411,6 +458,7 @@ export function routeTask(
     model,
     timeoutMs,
     run,
+    jevCall,
     bidirectional = true,
     routingBand = 0.2,
     signalFloor = 0.4,
@@ -453,9 +501,12 @@ export function routeTask(
   // below the rubric, and never below `signalFloor` when the rubric confidently matched an
   // algorithmic/architectural exemplar, so a "distributed rate-limiter" can't be talked down
   // to the cheap tier.
-  // With `bidirectional:false` it stays raise-only. Fail-safe: a null proposal is ignored.
+  // Jev (typed, ~150ms) is the preferred proposer when its key is configured; the text-LLM
+  // runner is the fallback, and a null from either is ignored (fail-safe).
+  // With `bidirectional:false` it stays raise-only.
   const proposal = llmEnabled({ llm })
-    ? complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) })
+    ? (complexityJev(task, { llm, call: jevCall }) ??
+      complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) }))
     : null;
   const strongSignal = rubric.strongTopicSignal;
   let score = detScore;
@@ -481,7 +532,13 @@ export function routeTask(
     signals,
     rubric,
     llm: proposal
-      ? { band: proposal.band, reason: proposal.reason, direction: path.replace("llm-", "") }
+      ? {
+          band: proposal.band,
+          reason: proposal.reason,
+          direction: path.replace("llm-", ""),
+          provider: proposal.provider ?? "text",
+          ...(proposal.confidence != null ? { confidence: proposal.confidence } : {}),
+        }
       : null,
     provenance: { path },
     ...recommended,

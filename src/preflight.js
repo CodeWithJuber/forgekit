@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
+import { jevEnabled, noul, systemOne } from "./jev.js";
 import { sigmoid } from "./predictor.js";
 import { CODE_EXT } from "./util.js";
 
@@ -300,6 +301,49 @@ export function assessTaskLLM(task, { run = buildRunner() } = {}) {
   });
 }
 
+/** The assumption gate as batched Jev nouls — one per rubric dimension, one API call. */
+export function buildAssumptionNouls(task) {
+  const questions = {};
+  for (const d of DIMENSIONS) {
+    questions[d.key] = noul(
+      `A coding agent received this task. Is "${d.key}" — ${d.description} — specified concretely enough to start coding?`,
+      {
+        true: `The ${d.description} is concrete and actionable`,
+        false: `The ${d.description} is missing, vague, or left to be assumed`,
+      },
+    );
+  }
+  return { state: String(task).slice(0, 1200), questions };
+}
+
+/**
+ * Ask Jev (TypeSafe System One) for an assumption reading: one batched call scoring every
+ * rubric dimension as a yes/no probability. `completeness` is their mean; a dimension is
+ * `missing` when its noul lands below 0.5 (more-likely-unspecified — the noul's own
+ * semantics, no new threshold constant). Free-text clarifying questions are beyond a
+ * System One model, so `questions` stays empty and the deterministic rubric's questions
+ * stand. Returns null when off/unavailable.
+ * @param {string} task
+ * @param {object} [opts]
+ * @param {boolean} [opts.llm]
+ * @param {(payload:object)=>object} [opts.call] injectable Jev transport (tests)
+ */
+export function assessTaskJev(task, { llm, call } = {}) {
+  if (!jevEnabled({ llm })) return null;
+  const { state, questions } = buildAssumptionNouls(task);
+  const res = systemOne({ state, questions, call });
+  if (!res) return null;
+  const values = [];
+  for (const k of DIM_KEYS) {
+    const v = res.answers?.[k]?.noul;
+    if (typeof v !== "number") return null;
+    values.push(v);
+  }
+  const completeness = values.reduce((s, v) => s + v, 0) / values.length;
+  const missing = DIM_KEYS.filter((_, i) => values[i] < 0.5);
+  return { completeness, missing, questions: [], provider: "jev" };
+}
+
 /**
  * Verify-don't-trust reconcile for M2. The model may only move completeness within ±band of the
  * deterministic score, so a clearly-specified or clearly-vague task can never be flipped — only a
@@ -311,7 +355,7 @@ export function assessTaskLLM(task, { run = buildRunner() } = {}) {
  * behaviour). Extra questions survive only if they map to a rubric-flagged dimension or (via
  * `grounded`) reference a real repo entity.
  * @param {object} det - assessTask() result
- * @param {{completeness:number, missing:string[], questions:string[]}|null} proposal
+ * @param {{completeness:number, missing:string[], questions:string[], provider?:string}|null} proposal
  * @param {object} [opts]
  * @param {number} [opts.askThreshold]
  * @param {number} [opts.band]
@@ -362,7 +406,11 @@ export function reconcileAssumption(
       shouldAsk && !questions.length
         ? ["What exactly should this produce, and how will we know it is correct?"]
         : questions,
-    provenance: { path, detCompleteness: det.completeness },
+    provenance: {
+      path,
+      detCompleteness: det.completeness,
+      ...(proposal.provider ? { provider: proposal.provider } : {}),
+    },
   };
 }
 
@@ -415,6 +463,7 @@ export function clarifyBlock(result, { threshold = 0.5 } = {}) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
+ * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
  * @param {boolean} [opts.bidirectional]
  * @param {number} [opts.band]
  */
@@ -428,6 +477,7 @@ export function preflightRepo(
     model,
     timeoutMs,
     run,
+    jevCall,
     bidirectional = true,
     band,
   } = {},
@@ -448,9 +498,11 @@ export function preflightRepo(
       ...gap,
       assumption: { ...det, provenance: { path: "deterministic" } },
     };
-  const proposal = assessTaskLLM(text, {
-    run: run || buildRunner({ model, timeoutMs }),
-  });
+  const proposal =
+    assessTaskJev(text, { llm, call: jevCall }) ??
+    assessTaskLLM(text, {
+      run: run || buildRunner({ model, timeoutMs }),
+    });
   const grounded = (q) => {
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));

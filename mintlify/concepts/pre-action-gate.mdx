@@ -48,6 +48,15 @@ flowchart TD
   </Step>
 </Steps>
 
+## Optional model proposers
+
+Every phase above is a deterministic rubric by default. `FORGE_LLM=1` adds a thin
+**proposer** layer that can refine — never decide — the gate. With `TYPESAFE_API_KEY`
+also set, the route and assumption proposers prefer TypeSafe's System One (Jev): typed
+`choice` / `noul` answers with probabilities in ~150ms instead of a text round-trip.
+Any failure falls back to the deterministic path, so the flags are safe to leave off or
+on.
+
 ## Blast radius
 
 **Blast radius** — the set of files an edit is predicted to impact, read from the code

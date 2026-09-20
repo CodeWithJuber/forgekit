@@ -1452,6 +1452,17 @@ exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` / `llm-rai
 conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer with a
 `reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
+**TypeSafe System One (Jev) is the preferred proposer when configured.** Where the judgment
+is already a classification or a yes/no — `route`'s complexity band (a `choice` over
+cheap/mid/premium) and preflight's assumption gate (one batched `noul` per rubric dimension) —
+`src/jev.js` asks Jev instead of a text model: typed answers with real probability
+distributions and confidence in ~150ms, rather than seconds of generation followed by JSON
+parsing. Set `TYPESAFE_API_KEY` (plus the same `FORGE_LLM=1` opt-in) and the two proposers
+prefer it automatically; the text-LLM runner remains the fallback on any failure, and the
+deterministic rubrics still judge. Free-text clarifying questions stay with the rubric — a
+System One model judges, it does not author prose. `forge route --json` shows which proposer
+answered under `llm.provider` (`jev` / `text`) with Jev's confidence.
+
 ### Support a new tool
 
 Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like
@@ -1478,6 +1489,8 @@ code reads but this table misses fails CI on the forge repo):
 | `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                                                                                                                                                     |
 | `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); low-configuration auto-detect fallback after Anthropic                                                                                                                            |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; low-configuration auto-detect fallback after Anthropic                                                                                                                       |
+| `TYPESAFE_API_KEY`                                             | TypeSafe System One (Jev) — with `FORGE_LLM=1`, the route/assumption proposers prefer typed ~150ms judgments over a text round-trip; unset = text-LLM proposer only                                                                     |
+| `TYPESAFE_BASE_URL`                                            | override the Jev endpoint (default `https://api.typesafe.ai`) — staging/self-hosted                                                                                                                                                   |
 | `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                                                                                                                                          |
 | `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                                                                                                                                          |
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent                                                                               |
