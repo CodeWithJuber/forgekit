@@ -10,7 +10,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { homedir, userInfo } from "node:os";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { envVarsRead } from "../src/docs_check.js";
 
 // userInfo().homedir reads the passwd DB and IGNORES $HOME — the only oracle for "the real
@@ -40,7 +39,9 @@ test("canary: a hostile env cannot reach a test process", () => {
     "if(homedir()===userInfo().homedir)throw new Error('HOME leaked');";
   const r = spawnSync(
     process.execPath,
-    ["--import", fileURLToPath(new URL("./_setup.js", import.meta.url)), "-e", canary],
+    // A file:// URL, not a path: --import resolves module specifiers, and on Windows a
+    // plain absolute path (D:\…) parses as the URL scheme "d:" (ERR_UNSUPPORTED_ESM_URL_SCHEME).
+    ["--import", new URL("./_setup.js", import.meta.url).href, "-e", canary],
     {
       encoding: "utf8",
       env: {
