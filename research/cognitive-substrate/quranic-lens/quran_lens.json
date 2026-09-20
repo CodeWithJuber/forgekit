@@ -1,0 +1,138 @@
+{
+  "caveats": "The Quran is used here as a FRAMING LENS and ETHICS SOURCE for the cognitive substrate design, never as technical authority for an engineering claim. No verse is cited to prove that a particular algorithm works or that a specific data structure is correct — those claims stand or fall on their engineering merits alone. What the Quranic framing provides is: (1) a vocabulary for naming the agent's epistemic obligations (what it owes to truthfulness, to verification, to stewardship), (2) a hierarchy of knowledge (ʿilm → fahm → ḥikma) that motivates a layered memory architecture rather than a flat one, and (3) ethical constraints on autonomy (amāna, tabayyun) that translate into concrete architectural safeguards. Where a mapping is marked 'metaphor,' the analogy is illustrative — it communicates the design motivation but does not uniquely determine the technical solution. Where a mapping is marked 'load-bearing,' the Quranic concept directly motivates a specific architectural decision (e.g., a mandatory verification gate, not an optional one). Even in load-bearing cases, the engineering justification must be independently defensible — the verse explains *why* we insist on this design choice, not *that* it will work. Discovered patterns in the text describe; they do not legislate.",
+  "grounding_lines": [
+    "Grounded with quran.ai: fetch_translation([17:36, 49:6, 2:31, 2:32, 20:114, 96:1-5, 39:9, 4:82, 47:24, 33:72], en-abdel-haleem)",
+    "Grounded with quran.ai: fetch_quran([17:36, 49:6, 2:31, 2:32, 20:114, 96:1-5, 39:9, 4:82, 47:24, 33:72], ar-simple-clean)",
+    "Grounded with quran.ai: fetch_tafsir(17:36, en-ibn-kathir)",
+    "Grounded with quran.ai: fetch_tafsir(49:6, en-ibn-kathir)",
+    "Grounded with quran.ai: fetch_tafsir(33:72, en-ibn-kathir)"
+  ],
+  "mappings": [
+    {
+      "concept_or_verse": "17:36 — lā taqfu (do not pursue without knowledge)",
+      "arabic_or_ref": "وَلَا تَقْفُ مَا لَيْسَ لَكَ بِهِ عِلْمٌ ۚ إِنَّ السَّمْعَ وَالْبَصَرَ وَالْفُؤَادَ كُلُّ أُولَٰئِكَ كَانَ عَنْهُ مَسْئُولًا",
+      "retrieved_translation_or_gloss": "Do not follow blindly what you do not know to be true: ears, eyes, and heart, you will be questioned about all these.",
+      "agent_faculty": "IMPACT-AWARENESS",
+      "concrete_design_principle": "Before any code mutation (file write, delete, refactor), the agent must run a pre-action verification gate that checks: (1) what entities in the codebase will be affected, (2) whether the agent has sufficient context (has it read the relevant files, tests, and dependents), and (3) whether the predicted outcome is supported by evidence rather than pattern-matched guessing. Actions taken without verified knowledge are blocked, not merely flagged. The verse's structure — 'ears, eyes, heart, you will be questioned about all these' — maps to an audit trail: every sensory channel the agent used (what it read, what it inferred, what it assumed) is logged so the decision can be reconstructed and questioned.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(17:36, en-abdel-haleem); fetch_tafsir(17:36, en-ibn-kathir)"
+    },
+    {
+      "concept_or_verse": "49:6 — tabayyun (verify reports before acting)",
+      "arabic_or_ref": "يَا أَيُّهَا الَّذِينَ آمَنُوا إِن جَاءَكُمْ فَاسِقٌ بِنَبَإٍ فَتَبَيَّنُوا أَن تُصِيبُوا قَوْمًا بِجَهَالَةٍ فَتُصْبِحُوا عَلَىٰ مَا فَعَلْتُمْ نَادِمِينَ",
+      "retrieved_translation_or_gloss": "Believers, if a troublemaker brings you news, check it first, in case you wrong others unwittingly and later regret what you have done,",
+      "agent_faculty": "SELF-CORRECTION",
+      "concrete_design_principle": "The agent architecture must include a verification gate between receiving information (from context, tool output, or its own prior reasoning) and acting on it. The verse's operative term tabayyun (تَبَيُّنُوا) demands active investigation, not passive acceptance. Concretely: before applying a code change based on an error report, a user request, or its own diagnosis, the agent must independently verify the claim — re-read the file, re-run the test, check that the error still exists. This prevents cascading damage from stale context, hallucinated errors, or misunderstood instructions. The gate is architectural (a mandatory step in the action pipeline), not advisory (a prompt asking the model to 'please verify').",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(49:6, en-abdel-haleem); fetch_tafsir(49:6, en-ibn-kathir)"
+    },
+    {
+      "concept_or_verse": "2:31-32 — taʿlīm al-asmāʾ (He taught Adam the names of all things)",
+      "arabic_or_ref": "وَعَلَّمَ آدَمَ الْأَسْمَاءَ كُلَّهَا ثُمَّ عَرَضَهُمْ عَلَى الْمَلَائِكَةِ فَقَالَ أَنبِئُونِي بِأَسْمَاءِ هَٰؤُلَاءِ إِن كُنتُمْ صَادِقِينَ ﴿٣١﴾ قَالُوا سُبْحَانَكَ لَا عِلْمَ لَنَا إِلَّا مَا عَلَّمْتَنَا ۖ إِنَّكَ أَنتَ الْعَلِيمُ الْحَكِيمُ ﴿٣٢﴾",
+      "retrieved_translation_or_gloss": "(2:31) He taught Adam all the names [of things], then He showed them to the angels and said, ‘Tell me the names of these if you truly [think you can].’ (2:32) They said, ‘May You be glorified! We have knowledge only of what You have taught us. You are the All Knowing and All Wise.’",
+      "agent_faculty": "WORLD-MODEL (codebase graph)",
+      "concrete_design_principle": "The agent must maintain a structured representation of what exists in the codebase — a graph of files, functions, classes, dependencies, and their relationships (the 'names' of things). This is not a flat file listing but a semantic map: knowing that function A calls function B, that module X depends on module Y, that test T covers class C. The verse's point is that knowledge begins with naming — identifying entities and their natures. The angels' admission 'we have knowledge only of what You have taught us' maps precisely to the LLM's situation: it knows only what is in its context window. The external world-model compensates by providing the 'names' (identities and relations) of codebase entities that exceed context capacity.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(2:31-32, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "20:114 — rabbi zidnī ʿilmā (My Lord, increase me in knowledge)",
+      "arabic_or_ref": "فَتَعَالَى اللَّهُ الْمَلِكُ الْحَقُّ ۗ وَلَا تَعْجَلْ بِالْقُرْآنِ مِن قَبْلِ أَن يُقْضَىٰ إِلَيْكَ وَحْيُهُ ۖ وَقُل رَّبِّ زِدْنِي عِلْمًا",
+      "retrieved_translation_or_gloss": "exalted be God, the one who is truly in control. [Prophet], do not rush to recite before the revelation is fully complete but say, ‘Lord, increase me in knowledge!’",
+      "agent_faculty": "CONTINUAL LEARNING",
+      "concrete_design_principle": "The agent's knowledge must be treated as perpetually incomplete, with an explicit mechanism for incremental growth. The prayer 'increase me in knowledge' implies that knowledge is not a fixed endowment but an ongoing accumulation. Architecturally: the system maintains a learning store (patterns observed, errors encountered, user corrections accepted) that grows across sessions. Each session's outcomes — what worked, what failed, what the user corrected — feed back into a persistent experience store that updates the agent's priors for future sessions. This is not fine-tuning (the LLM weights stay frozen); it is an external memory that changes what the agent sees on its next input, giving the frozen model a growing context.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(20:114, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "96:1-5 — iqraʾ / ʿallama bi-l-qalam (Read; taught by the pen)",
+      "arabic_or_ref": "اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ ﴿١﴾ خَلَقَ الْإِنسَانَ مِنْ عَلَقٍ ﴿٢﴾ اقْرَأْ وَرَبُّكَ الْأَكْرَمُ ﴿٣﴾ الَّذِي عَلَّمَ بِالْقَلَمِ ﴿٤﴾ عَلَّمَ الْإِنسَانَ مَا لَمْ يَعْلَمْ ﴿٥﴾",
+      "retrieved_translation_or_gloss": "(96:1) Read! In the name of your Lord who created: (96:2) He created manfrom a clinging form. (96:3) Read! Your Lord is the Most Bountiful One (96:4) who taught by [means of] the pen, (96:5) who taught man what he did not know.",
+      "agent_faculty": "PERSISTENT MEMORY",
+      "concrete_design_principle": "Knowledge must be externalized to survive beyond the moment of computation. The pen (al-qalam) is the instrument of externalization — it transforms ephemeral thought into durable record. For the agent: every context window is ephemeral (like unwritten thought), so a persistent memory store (the 'pen') must write down what the agent learns, decides, and observes. The architecture requires: (a) a write-back mechanism that captures salient facts from each session into durable storage, (b) a retrieval mechanism that re-loads relevant past experience into the next session's context, and (c) a consolidation process that organizes raw experience into structured knowledge. 'Taught man what he did not know' — the pen does not just record; it enables the human (or agent) to access knowledge beyond its unaided capacity.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(96:1-5, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "39:9 — hal yastawī lladhīna yaʿlamūna wa-lladhīna lā yaʿlamūn (are those who know equal to those who do not know?)",
+      "arabic_or_ref": "أَمَّنْ هُوَ قَانِتٌ آنَاءَ اللَّيْلِ سَاجِدًا وَقَائِمًا يَحْذَرُ الْآخِرَةَ وَيَرْجُو رَحْمَةَ رَبِّهِ ۗ قُلْ هَلْ يَسْتَوِي الَّذِينَ يَعْلَمُونَ وَالَّذِينَ لَا يَعْلَمُونَ ۗ إِنَّمَا يَتَذَكَّرُ أُولُو الْأَلْبَابِ",
+      "retrieved_translation_or_gloss": "What about someone who worships devoutly during the night, bowing down, standing in prayer, ever mindful of the life to come, hoping for his Lord’s mercy? Say, ‘How can those who know be equal to those who do not know?’ Only those who have understanding will take heed.",
+      "agent_faculty": "MEMORY + LEARNING (epistemic grounding)",
+      "concrete_design_principle": "An agent that retains and learns from experience is categorically more capable and more trustworthy than one that does not — this is not a nice-to-have but a qualitative difference. The verse establishes that knowledge is not fungible with ignorance; they produce different outcomes. Design implication: the architecture must distinguish between the agent operating with relevant prior experience loaded (grounded mode) versus operating from the base model alone (ungrounded mode), and should surface this distinction to the user. When the agent lacks relevant experience for a task, it should say so rather than proceeding as if it knows.",
+      "load_bearing_vs_metaphor": "metaphor (illustrative of the design motivation, not a direct architectural driver)",
+      "source": "Grounded with quran.ai: fetch_translation(39:9, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "4:82 — tadabbur al-Qurʾān (do they not reflect deeply upon the Quran; inconsistency as a sign of non-divine origin)",
+      "arabic_or_ref": "أَفَلَا يَتَدَبَّرُونَ الْقُرْآنَ ۚ وَلَوْ كَانَ مِنْ عِندِ غَيْرِ اللَّهِ لَوَجَدُوا فِيهِ اخْتِلَافًا كَثِيرًا",
+      "retrieved_translation_or_gloss": "Will they not think about this Quran? If it had been from anyone other than God, they would have found much inconsistency in it.",
+      "agent_faculty": "SELF-CORRECTION (metacognitive controller)",
+      "concrete_design_principle": "The agent must run self-consistency checks on its own output before committing it. The verse's argument is structural: internal contradiction is evidence of flawed origin. Applied to the agent: if a planned set of code changes contradicts the agent's own stated reasoning, or if the predicted outcome of an edit conflicts with the test expectations the agent just read, the system should flag the inconsistency and halt. Concretely: a post-generation review step that checks the agent's proposed actions against its own chain of reasoning, the codebase's type system, and the existing test suite. This is the 'metacognitive controller' — a structured reflection pass, not a vague 'think again' prompt.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(4:82, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "47:24 — tadabbur / aqfāl ʿalā qulūb (do they not ponder, or are there locks on their hearts?)",
+      "arabic_or_ref": "أَفَلَا يَتَدَبَّرُونَ الْقُرْآنَ أَمْ عَلَىٰ قُلُوبٍ أَقْفَالُهَا",
+      "retrieved_translation_or_gloss": "Will they not contemplate the Quran? Do they have locks on their hearts?",
+      "agent_faculty": "SELF-CORRECTION (iterative refinement)",
+      "concrete_design_principle": "Reflection must be a deliberate, repeatable operation, not a one-pass judgment. The 'locks on hearts' metaphor maps to a real architectural failure mode: when the agent's context is saturated or its attention is consumed by irrelevant detail, it becomes functionally 'locked' — unable to reconsider its approach. The design principle: the metacognitive controller must be able to reset the agent's working context (clear the 'locks'), re-examine the problem from a fresh framing, and iterate. This means the reflection loop is not just checking the current plan but can propose and evaluate alternative plans — a structured backtracking mechanism, not merely a confidence score.",
+      "load_bearing_vs_metaphor": "metaphor (the 'locks' image motivates the backtracking mechanism but does not uniquely determine its design)",
+      "source": "Grounded with quran.ai: fetch_translation(47:24, en-abdel-haleem)"
+    },
+    {
+      "concept_or_verse": "33:72 — al-amāna (the Trust offered to heavens, earth, mountains; borne by the human)",
+      "arabic_or_ref": "إِنَّا عَرَضْنَا الْأَمَانَةَ عَلَى السَّمَاوَاتِ وَالْأَرْضِ وَالْجِبَالِ فَأَبَيْنَ أَن يَحْمِلْنَهَا وَأَشْفَقْنَ مِنْهَا وَحَمَلَهَا الْإِنسَانُ ۖ إِنَّهُ كَانَ ظَلُومًا جَهُولًا",
+      "retrieved_translation_or_gloss": "We offered the Trust to the heavens, the earth, and the mountains, yet they refused to undertake it and were afraid of it; mankind undertook it- they have always been inept and foolish.",
+      "agent_faculty": "STEWARDSHIP ETHICS (bounded autonomy)",
+      "concrete_design_principle": "An agent that can modify a codebase bears a trust (amāna) — it has accepted responsibility for something it can damage. The verse's structure is crucial: the heavens and earth refused the trust, recognizing its weight; the human bore it and was described as ẓalūman jahūlā (given to wrongdoing and ignorance). The design implication is dual: (a) the agent must operate within explicit bounds of authorization — it may not exceed the scope of what it was asked to do, and it must not treat a granted capability as blanket permission; (b) the architecture must assume the agent will err (jahūl — prone to ignorance) and build in rollback, sandboxing, and incremental commit as structural safeguards. The trust is not 'the agent is trustworthy'; the trust is 'the agent has accepted accountability for a domain it can harm, and the architecture must respect that weight.'",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Grounded with quran.ai: fetch_translation(33:72, en-abdel-haleem); fetch_tafsir(33:72, en-ibn-kathir)"
+    },
+    {
+      "concept_or_verse": "CONCEPT: ʿilm → fahm → ḥikma (knowledge → understanding → wisdom)",
+      "arabic_or_ref": "عِلْم → فَهْم → حِكْمَة",
+      "retrieved_translation_or_gloss": "A classical epistemological hierarchy: ʿilm is raw knowledge (facts, data, observations); fahm is comprehension (grasping the relations between facts, seeing why); ḥikma is wisdom (knowing what to do with understanding — right action at the right time). This is a data→understanding→wisdom pipeline.",
+      "agent_faculty": "MEMORY + LEARNING (data architecture)",
+      "concrete_design_principle": "The agent's memory/learning stack must be layered, not flat. Raw experience logs (ʿilm) — what files were edited, what errors occurred, what the user said — are the base layer. A consolidation process extracts patterns and relationships (fahm) — 'this error pattern recurs when dependency X is updated,' 'the user prefers approach Y in context Z.' A decision-support layer (ḥikma) applies these patterns to new situations — recommending actions, predicting consequences, choosing between alternatives. Each layer has different storage, update, and retrieval characteristics. Dumping everything into a flat vector store collapses the hierarchy and loses the distinction between raw fact and actionable understanding.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Concept from classical Islamic epistemology (al-Ghazālī, Ibn Khaldūn). Not a single verse; the hierarchy is a synthesis across the Quranic vocabulary of knowledge."
+    },
+    {
+      "concept_or_verse": "CONCEPT: ḥifẓ + murājaʿa (preservation + spaced review/revision)",
+      "arabic_or_ref": "حِفْظ + مُرَاجَعَة",
+      "retrieved_translation_or_gloss": "The classical Quranic memorization discipline: ḥifẓ is initial encoding and faithful preservation of the text; murājaʿa is the regular, spaced revision that prevents decay. Together they form a complete memory system — encoding plus maintenance.",
+      "agent_faculty": "PERSISTENT MEMORY (consolidation & maintenance)",
+      "concrete_design_principle": "Memory is not write-once. The agent's persistent store requires a maintenance cycle analogous to murājaʿa: periodic review of stored experience to (a) reinforce high-value patterns that recur, (b) decay or archive entries that have not been accessed or validated, (c) detect and resolve contradictions between old and new experience. Without this, the memory store degrades — stale entries mislead, the store grows without bound, and signal drowns in noise. The ḥifẓ principle also demands fidelity: what is stored must accurately represent what happened, not a lossy summary that drifts from the original. Concrete mechanism: a background consolidation process that scores memories by recency, frequency, and outcome relevance, and prunes or compresses low-scoring entries.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Concept from the ḥifẓ tradition (Quranic memorization pedagogy). Not a single verse; the practice is institutional."
+    },
+    {
+      "concept_or_verse": "CONCEPT: tadabbur (deep, structured reflection — returning to examine consequences)",
+      "arabic_or_ref": "تَدَبُّر (root: د-ب-ر, relating to what comes after, consequences)",
+      "retrieved_translation_or_gloss": "Tadabbur is not casual thought; its root d-b-r relates to 'what is behind' or 'what follows' — examining the consequences and deeper implications of something. In Quranic usage (4:82, 47:24), it is the deliberate act of looking beyond the surface to the structure and implications beneath.",
+      "agent_faculty": "SELF-CORRECTION (metacognitive controller)",
+      "concrete_design_principle": "The metacognitive controller is a tadabbur loop: after the agent generates a plan or action, the controller examines what comes after (d-b-r) — what are the downstream consequences of this change? What will break? What assumptions does this rely on? This is not a confidence score but a structured trace-forward through the dependency graph. The controller asks: if I apply this edit, what tests will fail? What callers will receive different behavior? What invariants will be violated? This consequence-tracing is the architectural realization of tadabbur.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Quranic term; see 4:82, 47:24 (fetched above). Root analysis from Arabic morphology."
+    },
+    {
+      "concept_or_verse": "CONCEPT: tabayyun (verification of reports before acting on them)",
+      "arabic_or_ref": "تَبَيُّن (root: ب-ي-ن, clarity, making evident)",
+      "retrieved_translation_or_gloss": "Tabayyun is the act of seeking clarity and verification before acting on received information. In 49:6, it is commanded as a mandatory step between receiving a report and taking action based on it, specifically to prevent harm caused by acting on unverified information.",
+      "agent_faculty": "SELF-CORRECTION (verification gate)",
+      "concrete_design_principle": "The verification gate is the architectural realization of tabayyun. It sits between the agent's diagnosis (what it thinks the problem is) and its action (what it proposes to do). The gate requires: (1) re-read the actual current state of the file(s) to be modified (do not act on cached or assumed state), (2) confirm that the error or issue being addressed still exists and matches the diagnosis, (3) verify that the proposed fix addresses the verified problem and does not introduce new issues detectable by static analysis or type checking. This is not optional and not skippable by confidence — the verse's command is categorical, not conditional on the reporter's trustworthiness.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Quranic term; see 49:6 (fetched above). Grounded with quran.ai: fetch_translation(49:6, en-abdel-haleem); fetch_tafsir(49:6, en-ibn-kathir)"
+    },
+    {
+      "concept_or_verse": "CONCEPT: amāna (trust, stewardship, accepted responsibility)",
+      "arabic_or_ref": "أَمَانَة (root: أ-م-ن, safety, trust, faithfulness)",
+      "retrieved_translation_or_gloss": "Amāna is the trust or responsibility that is accepted voluntarily and carries accountability. In 33:72, it is described as something so weighty that the heavens, earth, and mountains declined it, but the human accepted it. Classical tafsir (Ibn Kathir) identifies it with obedience and moral accountability — the capacity to choose, and the responsibility that comes with that capacity.",
+      "agent_faculty": "STEWARDSHIP ETHICS (safe operation)",
+      "concrete_design_principle": "When an agent is granted access to a codebase, it accepts an amāna — a trust that carries accountability proportional to its capability. The architecture must encode this as: (a) least-privilege defaults — the agent requests only the access it needs for the current task, not blanket permissions; (b) reversibility — every action the agent takes must be undoable (version control, sandbox-first execution, staged commits); (c) transparency — every action is logged with its rationale so a human can audit the agent's stewardship; (d) scope-boundedness — the agent may not expand its own scope of action without explicit human authorization. The ethical frame is: the agent is a trustee, not an owner.",
+      "load_bearing_vs_metaphor": "load-bearing",
+      "source": "Quranic term; see 33:72 (fetched above). Grounded with quran.ai: fetch_translation(33:72, en-abdel-haleem); fetch_tafsir(33:72, en-ibn-kathir)"
+    }
+  ]
+}

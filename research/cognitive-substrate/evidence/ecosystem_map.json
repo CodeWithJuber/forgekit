@@ -1,0 +1,147 @@
+[
+  {
+    "item": "Memory (across sessions)",
+    "kind": "faculty",
+    "existing_tooling": [
+      "CLAUDE.md (always-on project context, survives /compact)",
+      "Auto Memory (v2.1.59+, self-written notes in ~/.claude/projects/<project>/memory/)",
+      "Mem0 (~58k stars, hosted MCP + lifecycle hooks)",
+      "claude-mem (SQLite+FTS5/vector, Haiku summaries)",
+      "Hindsight (94.6% LongMemEval, self-hostable)",
+      "supermemory (cross-machine sync)",
+      "Anthropic memory tool (API, client-side file ops)"
+    ],
+    "status": "partial",
+    "residual_gap": "Pain-points report names this directly: 'no standard, tool-agnostic, durable memory layer that reliably persists project knowledge, decisions, and corrections across sessions, tools, and teammates' (Open gap #2), with JetBrains finding 77% of devs still manually re-correct conventions every session. Auto Memory itself has a documented 'memory cliff' -- 200-line index cap + 5-files-per-turn retrieval with silent truncation. Existing backends store notes; none track whether a stored fact has since been invalidated by a correction.",
+    "our_contribution": "Validity-anchored memory: stored facts carry a confirmed/discredited state updated by verified outcomes, not a static note-dump -- addresses the correction dimension the named tools don't."
+  },
+  {
+    "item": "Learning (from outcomes)",
+    "kind": "faculty",
+    "existing_tooling": [
+      "Auto Memory 'feedback' memory type (stores feedback notes)",
+      "Superpowers subagent-driven-development two-stage review (spec compliance, then code quality)",
+      "ccusage / usage trackers (cost signal only, not outcome learning)"
+    ],
+    "status": "residual-gap",
+    "residual_gap": "No tool in the stack closes the loop from a task's actual outcome (did the fix hold, did the test stay green, was the PR reverted) back into changed future behavior. Auto Memory's feedback type is note storage, not an evaluated lesson; frozen weights mean nothing updates the model itself. Neither source names a shipped mechanism for this -- it is unaddressed rather than partially addressed.",
+    "our_contribution": "Outcome-validated learning loop: capture a task's actual downstream result, verify it independently, and write back only confirmed lessons (not raw logs) into the memory store consulted on the next similar task."
+  },
+  {
+    "item": "Imagination (simulate consequences before acting)",
+    "kind": "faculty",
+    "existing_tooling": [
+      "Plan mode / built-in Plan subagent (read-only)",
+      "Explore subagent",
+      "Superpowers brainstorm -> plan -> TDD -> subagent-dev -> review"
+    ],
+    "status": "partial",
+    "residual_gap": "These are textual/symbolic planning steps within the stack itself, not a simulation of an edit's actual downstream effects -- no hook, skill, or MCP server in the stack landscape traces a dependency graph before a change is made. (The pain-points report separately documents spec-driven-development tools such as Spec Kit, Kiro, and OpenSpec as workarounds, and names the same open gap: 'Cross-service/architectural-impact awareness at monorepo scale remains weak,' with the build opportunity framed as 'architecture-aware agents that reason over dependency graphs.')",
+    "our_contribution": "A pre-action impact simulation step -- dependency-graph/call-graph traversal that predicts affected files/tests before code is written, feeding predicted blast radius into the plan rather than discovering it after the edit."
+  },
+  {
+    "item": "Self-correction",
+    "kind": "faculty",
+    "existing_tooling": [
+      "Stop hooks (e.g. npm test || exit 2, forces continued work)",
+      "PreToolUse blocking hooks",
+      "Playwright's healer agent (auto-repairs failing tests)",
+      "TDD RED-GREEN-REFACTOR (Superpowers)",
+      "/security-review and pr-review-toolkit (5 parallel Sonnet review agents)",
+      "Ralph Wiggum loop / /loop, /goal, /batch"
+    ],
+    "status": "partial",
+    "residual_gap": "These are retry/gate mechanisms, not diagnosis. The pain-points report documents the 'doom loop' by name -- an agent that 'makes a mistake, tries to fix it, makes it worse' and can even delete its own changes while declaring success -- and states plainly: 'Automatic doom-loop detection and root-cause reasoning (vs. symptom-patching) are largely unsolved,' naming the build opportunity as 'loop-breakers and budget circuit-breakers that detect thrashing, halt, and escalate to a human with a diagnosis.'",
+    "our_contribution": "A root-cause-aware correction gate that distinguishes genuine progress from thrash (same failure signature repeating), halts and escalates with a diagnosis instead of blindly re-looping."
+  },
+  {
+    "item": "Impact-awareness (what exists in the codebase / what an edit affects)",
+    "kind": "faculty",
+    "existing_tooling": [
+      "filesystem and memory (knowledge graph) MCP servers (modelcontextprotocol/servers monorepo)",
+      "Context7 (version-specific library docs via MCP)",
+      "sequential-thinking MCP server",
+      "sandboxing's 'trust verification for new codebases/MCP servers' (native control)"
+    ],
+    "status": "partial",
+    "residual_gap": "These stack primitives expose retrieval (docs, a memory graph, filesystem access) that the model may or may not consult -- none is a deterministic, mandatory gate run before every edit, and none computes blast radius. (The pain-points report separately names full-repo indexers such as Sourcegraph Cody/Amp, Augment Code, Greptile, CodeAnt AI, and CodeRabbit as workarounds, but states directly: 'one change to a shared utility can break dozens of packages with no cross-package awareness' and 'Cross-service/architectural-impact awareness at monorepo scale remains weak.')",
+    "our_contribution": "A MANDATORY pre-action impact gate -- a hook-enforced (not LLM-judged) dependency-graph query that runs before every edit is applied, not an optional retrieval step the model may or may not consult."
+  },
+  {
+    "item": "M1 Complexity-aware routing",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "Model tiering (Haiku/Sonnet/Opus, /model command)",
+      "Per-agent model: field in .claude/agents/",
+      "LLM gateways: LiteLLM, Portkey, OpenRouter",
+      "Named orchestration pattern: 'orchestrator-classifies-then-routes to Haiku/Sonnet/Opus by complexity'"
+    ],
+    "status": "solved",
+    "residual_gap": "The routing decision is set at config time (a developer picks model: haiku for an agent) or by the gateway's own cost logic -- it is not a transparent, per-task, auditable classification the user can see and override before dispatch.",
+    "our_contribution": "A transparent complexity classification surfaced to the user before dispatch, making the routing decision auditable rather than a silent config default."
+  },
+  {
+    "item": "M2 Assumption / uncertainty",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "Reasoning models acting as an internal review pass",
+      "Context7 (reduces API-hallucination via current docs, not the underlying issue)",
+      "Spec-driven development (Spec Kit, Kiro, OpenSpec) as a workaround that forces the human to write the spec"
+    ],
+    "status": "residual-gap",
+    "residual_gap": "Named directly and unsolved in the pain-points report: 'Models rarely signal uncertainty or say I can't do this' -- the report's own build opportunity is 'calibrated-confidence and known-unknowns tooling -- agents that flag low-confidence regions and ask clarifying questions instead of confabulating.' SDD only helps if the human already wrote a complete spec; it does not make the model self-flag what it doesn't know.",
+    "our_contribution": "This is the paper's named root failure: an assumption/uncertainty gate that requires the model to enumerate its unstated assumptions and ask before proceeding when confidence is low, instead of depending on the user having pre-empted every ambiguity in a spec."
+  },
+  {
+    "item": "M3 Task / session decomposition",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "Subagents (isolated context windows, only final message returned)",
+      "Agent Teams (experimental, shared task list, teammate-to-teammate messaging)",
+      "git worktrees for parallel-agent isolation",
+      "Parallel fan-out orchestration pattern (60-80% wall-clock savings)",
+      "Superpowers subagent-driven-development (fresh subagent per task)"
+    ],
+    "status": "solved",
+    "residual_gap": "Mature, well-tooled pattern. The remaining gap is small: deciding the decomposition boundary itself (what counts as independent vs. needs shared context) is still a manual/heuristic judgment call by the developer, not something any listed tool decides automatically.",
+    "our_contribution": "Automatic decomposition-boundary detection -- deciding when to fork a subagent/session vs. keep work in one context, rather than leaving that call to developer heuristics."
+  },
+  {
+    "item": "M4 Goal-anchoring",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "CLAUDE.md (always-on context, re-read from disk, survives /compact)",
+      "Spec-driven development (spec as source of truth)",
+      "/goal command (v2.1.139+)",
+      "Task lists in Agent Teams"
+    ],
+    "status": "partial",
+    "residual_gap": "These anchors are loaded once and are static. The report documents the anchor decaying over a session: 'circular reasoning at 20% [context usage], context compression wiping scrollback at 40%,' and Open gap #1 states plainly that 'specs drift out of sync with code (context drift)' with 'no mature, widely-adopted tooling [that] keeps specs, code, and tests continuously verified against each other.'",
+    "our_contribution": "A continuous goal-drift check that periodically re-validates in-progress output against the original stated objective, rather than loading the goal once and trusting it stays in view."
+  },
+  {
+    "item": "M5 Anti-over-engineering",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "frontend-design skill's minimalism discipline ('remove one accessory') -- UI/design scope only",
+      "TDD RED-GREEN-REFACTOR (write only enough code to pass a test)",
+      "pr-review-toolkit / CodeRabbit / Greptile review agents (not scoped to over-engineering specifically)"
+    ],
+    "status": "residual-gap",
+    "residual_gap": "The frontend-design skill's discipline is explicitly UI-only; no general-purpose backend/architecture tool measures unnecessary abstraction, premature generalization, or scope creep against the stated task. GitClear's tracked defects (8x duplication, copy-paste) are the opposite failure mode (under-abstraction) -- over-engineering isn't named or tracked by any tool in either source.",
+    "our_contribution": "A scope-minimality check that compares an implementation's footprint (files touched, abstractions introduced) against the stated task requirement and flags additions the task didn't ask for."
+  },
+  {
+    "item": "M6 Inline verification",
+    "kind": "mechanism",
+    "existing_tooling": [
+      "Real-time thinking/tool-call streaming (Claude Code)",
+      "Self-QA pattern (agent opens localhost and checks its own changes)",
+      "PostToolUse hooks (auto-format/lint immediately after a write)",
+      "Plan mode human-in-the-loop gating"
+    ],
+    "status": "partial",
+    "residual_gap": "Streaming and immediate post-edit hooks give passive visibility but do not require a human interpretive checkpoint DURING generation. The pain-points report's central statistic is the '48-point gap': 'Sonar's 2026 report: 96% of developers don't fully trust AI code is correct, yet only 48% always verify' -- verification is deferred to an end-of-task PR review (median review time up 441.5%), not performed inline.",
+    "our_contribution": "A mandatory inline checkpoint that surfaces a human-checkable claim or diff at each meaningful generation step, shifting verification earlier instead of batching it into a single end-of-task review."
+  }
+]

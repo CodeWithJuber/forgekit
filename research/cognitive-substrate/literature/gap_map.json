@@ -1,0 +1,320 @@
+{
+  "memory": {
+    "structural_lack": "A transformer's only state is its weights (frozen at inference) and its context window (bounded, discarded at session end). There is no write-once, addressable, persistent store that survives past the current forward pass \u2014 every 'memory' the model appears to have is either baked into pretraining or re-supplied as tokens in the prompt.",
+    "existing_approaches": [
+      {
+        "name": "Memory Networks",
+        "citation_key": "weston2014",
+        "arxiv_or_doi": "1410.3916",
+        "year": 2014,
+        "core_idea": "An explicit external memory array, addressed and read/written by a learned controller, decoupled from the model's weights.",
+        "what_it_solves": "Gives a network a slot-addressable store bigger than any hidden state, in principle unbounded.",
+        "limitation": "Original formulation used hard, non-differentiable memory addressing and required strong supervision; not built for open-ended, streaming natural-language sessions."
+      },
+      {
+        "name": "End-to-End Memory Networks",
+        "citation_key": "sukhbaatar2015",
+        "arxiv_or_doi": "1503.08895",
+        "year": 2015,
+        "core_idea": "Soft, differentiable attention over memory slots trained end-to-end with only the final answer as supervision.",
+        "what_it_solves": "Removes the need for hand-labeled supporting facts; memory read/write becomes a standard trainable operation.",
+        "limitation": "Memory is still a fixed-size external array baked in at training time, not something a deployed, frozen LLM can grow arbitrarily post-hoc."
+      },
+      {
+        "name": "Neural Turing Machines",
+        "citation_key": "graves2014ntm",
+        "arxiv_or_doi": "1410.5401",
+        "year": 2014,
+        "core_idea": "Couples a controller to a differentiable memory matrix with content- and location-based addressing, analogous to a Turing machine tape.",
+        "what_it_solves": "Demonstrates a network can learn algorithmic read/write/copy operations over external memory via gradient descent.",
+        "limitation": "Addressing is brittle and hard to scale; the memory is trained jointly with the controller, so it cannot be bolted onto an already-frozen LLM without retraining."
+      },
+      {
+        "name": "Differentiable Neural Computer (DNC)",
+        "citation_key": "graves2016dnc",
+        "arxiv_or_doi": "10.1038/nature20101",
+        "year": 2016,
+        "core_idea": "Adds dynamic memory allocation, usage tracking, and temporal links on top of the NTM design.",
+        "what_it_solves": "Handles variable-sized, graph-structured problems (e.g. family trees, transit maps) requiring memory that grows and is explicitly deallocated.",
+        "limitation": "Still trained end-to-end as part of one differentiable system; no route to attach a DNC-style store to a fixed, already-trained LLM whose weights cannot change."
+      },
+      {
+        "name": "Retrieval-Augmented Generation (RAG)",
+        "citation_key": "lewis2020rag",
+        "arxiv_or_doi": "2005.11401",
+        "year": 2020,
+        "core_idea": "Pairs a frozen or fine-tuned generator with a non-parametric retriever over an external document index; retrieved passages are concatenated into context.",
+        "what_it_solves": "Gives a frozen model access to a large, updatable external knowledge store without retraining weights \u2014 the closest existing pattern to 'plugging memory into a frozen LLM'.",
+        "limitation": "Retrieval is stateless per-query lookup, not an accumulating episodic memory: it has no mechanism to write new experience back, to consolidate/forget, or to track what was retrieved and used in a *prior* session; retrieval quality also degrades with noisy/irrelevant chunks and offers no notion of confidence or provenance across turns."
+      },
+      {
+        "name": "MemGPT",
+        "citation_key": "packer2023memgpt",
+        "arxiv_or_doi": "2310.08560",
+        "year": 2023,
+        "core_idea": "An OS-inspired paging scheme where the LLM issues function calls to move information between the bounded context ('main memory') and unbounded external storage ('disk').",
+        "what_it_solves": "Directly attacks the frozen-context problem for an already-deployed LLM: memory management logic lives outside the weights, in an orchestration layer, so no retraining is needed.",
+        "limitation": "The LLM itself decides what to page in/out via prompted self-calls \u2014 there is no learned signal for what is worth remembering, no forgetting/consolidation policy grounded in usage statistics, and errors in self-management (paging out something needed, or hallucinating what was paged) are not self-correcting."
+      },
+      {
+        "name": "Generative Agents",
+        "citation_key": "park2023genagents",
+        "arxiv_or_doi": "2304.03442",
+        "year": 2023,
+        "core_idea": "A memory stream of timestamped observations plus a periodic 'reflection' step that synthesizes higher-level memories from low-level ones, retrieved via recency+importance+relevance scoring.",
+        "what_it_solves": "Shows a concrete retrieval-and-synthesis loop that produces temporally coherent, believable long-horizon agent behavior from an ever-growing log.",
+        "limitation": "Reflection quality depends entirely on the frozen LLM's own summarization judgment (no external ground truth to check against); the memory stream grows unboundedly with no true forgetting or compression guarantee, and nothing here targets code-specific state (e.g. 'this function was refactored, that call site was NOT updated')."
+      }
+    ],
+    "residual_gap": "No existing approach gives a frozen coding-agent LLM a memory that is simultaneously: (a) persistent across sessions without retraining, (b) structured enough to answer 'have I seen this bug/pattern before and what happened', (c) equipped with a principled forget/consolidate policy (vs. RAG's stateless retrieval or MemGPT/Generative-Agents' self-managed, unverified paging), and (d) tied to verifiable software artifacts (commits, test outcomes, past edits) rather than free-text summaries the model itself wrote. This is exactly the gap the proposed cognitive substrate's persistent-memory layer targets."
+  },
+  "learning": {
+    "structural_lack": "Weights are frozen after pretraining/fine-tuning; nothing in a normal inference call updates them. Any apparent 'learning' within a session is really conditioning on the prompt (in-context learning), which vanishes the moment the context is cleared \u2014 there is no mechanism by which an outcome in session N changes the model's behavior in session N+1.",
+    "existing_approaches": [
+      {
+        "name": "Complementary Learning Systems theory",
+        "citation_key": "mcclelland1995cls",
+        "arxiv_or_doi": null,
+        "year": 1995,
+        "core_idea": "Biological argument that the brain needs two separate learning systems \u2014 fast hippocampal (episodic) and slow neocortical (structured, interleaved) \u2014 because a single fast-learning system catastrophically overwrites old knowledge.",
+        "what_it_solves": "Gives a principled account of why online learning and stable long-term knowledge are in tension, and motivates architectures with separate fast/slow update stores.",
+        "limitation": "A neuroscience theory, not an engineering recipe \u2014 translating hippocampal replay/consolidation into a concrete update rule for a transformer-based agent is still an open design problem."
+      },
+      {
+        "name": "CLS theory updated (Kumaran, Hassabis, McClelland 2016)",
+        "citation_key": "kumaran2016cls",
+        "arxiv_or_doi": "10.1016/j.tics.2016.05.004",
+        "year": 2016,
+        "core_idea": "Updates complementary learning systems theory to incorporate deep RL and new episodic-memory findings, arguing intelligent agents need both a fast, instance-based learning system and a slow, structured one, with explicit links to experience replay.",
+        "what_it_solves": "Connects CLS theory directly to a concrete, already-used ML mechanism (replay buffers) and to deep-RL agent architectures.",
+        "limitation": "Replay buffers require retraining/fine-tuning of weights offline; still no online, weight-preserving update path for a deployed frozen LLM."
+      },
+      {
+        "name": "Elastic Weight Consolidation",
+        "citation_key": "kirkpatrick2017ewc",
+        "arxiv_or_doi": "1612.00796",
+        "year": 2017,
+        "core_idea": "Penalizes changes to parameters that were important (high Fisher information) for previously learned tasks when training on a new task.",
+        "what_it_solves": "Directly mitigates catastrophic forgetting during sequential fine-tuning, the core failure mode of naive online weight updates.",
+        "limitation": "Still requires actual gradient-based retraining passes with access to a per-task importance estimate; not applicable to a model an agent developer does not want to (or cannot) retrain per interaction, and doesn't address one-shot 'learn from this single outcome' updates."
+      },
+      {
+        "name": "Test-Time Training",
+        "citation_key": "sun2020ttt",
+        "arxiv_or_doi": "1909.13231",
+        "year": 2020,
+        "core_idea": "Updates model parameters at inference time via a self-supervised auxiliary loss computed on the current test input itself.",
+        "what_it_solves": "Shows weights CAN be adapted per-input at test time without labels, improving robustness to distribution shift.",
+        "limitation": "Needs a well-defined self-supervised auxiliary task tied to the architecture (e.g. rotation prediction for vision); no established analogue exists for 'this coding agent's edit was reverted by the developer' as a training signal, and updates are typically discarded/reset per example rather than accumulated."
+      },
+      {
+        "name": "Fast Weights",
+        "citation_key": "ba2016fastweights",
+        "arxiv_or_doi": "1610.06258",
+        "year": 2016,
+        "core_idea": "A rapidly-decaying auxiliary weight matrix, updated by a Hebbian outer-product rule from recent hidden activity, layered on top of slow, gradient-trained weights.",
+        "what_it_solves": "Gives a genuine intermediate timescale of adaptation between static weights and the (still bounded) hidden state / context.",
+        "limitation": "Operates within a single architecture's forward pass and decays quickly (short-horizon); not a mechanism for accumulating durable, cross-session lessons."
+      },
+      {
+        "name": "LoRA",
+        "citation_key": "hu2021lora",
+        "arxiv_or_doi": "2106.09685",
+        "year": 2021,
+        "core_idea": "Freezes the base weights and trains small low-rank adapter matrices per layer, making fine-tuning cheap and modular.",
+        "what_it_solves": "Makes it computationally realistic to produce many small, swappable weight updates instead of full-model fine-tuning \u2014 a plausible substrate for 'per-outcome' incremental learning.",
+        "limitation": "Still requires an explicit, deliberate training step with a loss and optimizer running outside the normal inference loop; there's no automatic, always-on pathway from 'agent's suggestion was rejected' to 'a LoRA update was applied'."
+      },
+      {
+        "name": "In-context learning as implicit gradient descent",
+        "citation_key": "vonoswald2022icl",
+        "arxiv_or_doi": "2212.07677",
+        "year": 2022,
+        "core_idea": "Constructs transformer weights that provably implement gradient-descent steps on an implicit loss purely via forward-pass attention over the prompt.",
+        "what_it_solves": "Explains mechanistically why in-context learning can mimic optimization, i.e. why prompting can look like learning.",
+        "limitation": "The 'learning' exists only for the duration of that context window and vanishes with it \u2014 nothing persists to the next call, so it is a simulation of learning, not learning."
+      },
+      {
+        "name": "GPT ICL as meta-optimization",
+        "citation_key": "dai2022icl",
+        "arxiv_or_doi": "2212.10559",
+        "year": 2022,
+        "core_idea": "Draws a formal correspondence between attention and gradient-based fine-tuning, treating demonstrations in the prompt as implicit training examples.",
+        "what_it_solves": "Reinforces that ICL is a real (if implicit) optimization process, giving a theoretical handle on why more/better examples in-context improve performance.",
+        "limitation": "Same fundamental boundary as above \u2014 the 'meta-gradient' is recomputed from scratch every call from raw context tokens, an expensive and strictly session-local substitute for actually updating weights."
+      }
+    ],
+    "residual_gap": "There is no accepted, low-cost, always-on pathway that takes a concrete outcome from a coding agent's action (a test failure, a human's revert, a code-review comment) and durably changes future behavior \u2014 either by writing to persistent non-parametric state (memory, see above) or by cheaply updating parameters (LoRA-style) \u2014 without a full offline retraining cycle and without catastrophic forgetting. Existing 'learning' mechanisms are either full retraining (EWC, LoRA \u2014 real but slow/deliberate/decoupled from the interaction loop) or in-context simulation (ICL-as-gradient-descent \u2014 real-time but strictly forgotten at session end). Bridging these two into a fast, safe, incremental update loop is unsolved and is what the substrate's online-learning layer targets."
+  },
+  "self_correction": {
+    "structural_lack": "A transformer has no privileged internal channel that tells it its own output is wrong; any 'checking' it does is just more forward-pass generation conditioned on its own prior tokens, using the same weights and the same possible failure modes that produced the error in the first place \u2014 there is no independent verifier built into the architecture.",
+    "existing_approaches": [
+      {
+        "name": "Reflexion",
+        "citation_key": "shinn2023reflexion",
+        "arxiv_or_doi": "2303.11366",
+        "year": 2023,
+        "core_idea": "After a failed attempt (scored by environment feedback), the agent generates a verbal self-reflection and stores it in an episodic buffer that conditions the next attempt.",
+        "what_it_solves": "Provides a lightweight substitute for RL policy updates \u2014 'reinforcement' via language rather than gradients \u2014 and measurably improves multi-trial task success.",
+        "limitation": "Requires an external, ground-truth reward/feedback signal (e.g. a test suite, a game score) to know an attempt failed; without that oracle, the reflection step has nothing reliable to reflect on."
+      },
+      {
+        "name": "Self-Refine",
+        "citation_key": "madaan2023selfrefine",
+        "arxiv_or_doi": "2303.17651",
+        "year": 2023,
+        "core_idea": "The same frozen LLM alternately plays generator and critic on its own output, iterating refine-critique-refine with no external feedback or training.",
+        "what_it_solves": "Shows measurable quality gains on several generation tasks purely from self-prompting, with no extra model or data.",
+        "limitation": "Critic and generator share the same blind spots (same weights, same failure modes), so it cannot catch errors the model doesn't already 'know' are errors \u2014 consistent with the skeptical finding below."
+      },
+      {
+        "name": "Self-Consistency",
+        "citation_key": "wang2022selfconsistency",
+        "arxiv_or_doi": "2203.11171",
+        "year": 2022,
+        "core_idea": "Sample many independent chain-of-thought reasoning paths and take the majority-vote final answer instead of one greedy decode.",
+        "what_it_solves": "Cheaply improves reasoning accuracy by exploiting the fact that correct reasoning paths tend to converge on the same answer more often than incorrect ones.",
+        "limitation": "Purely statistical marginalization, not correction \u2014 offers no diagnosis of *why* a path is wrong and provides no benefit if the majority of sampled paths share the same systematic error."
+      },
+      {
+        "name": "Outcome/Process Reward Models (Cobbe 2021)",
+        "citation_key": "cobbe2021verifiers",
+        "arxiv_or_doi": "2110.14168",
+        "year": 2021,
+        "core_idea": "Train a verifier to score candidate solutions, selecting the highest-ranked one; outcome-based reward modeling.",
+        "what_it_solves": "Decouples 'checking' from 'generating' by using an independently trained model, escaping the same-weights blind-spot problem that afflicts pure self-critique; process-level supervision (Lightman) catches errors earlier and more reliably than outcome-only checking.",
+        "limitation": "Needs its own labeled training data (human step correctness annotations, in Lightman's case) and is a fixed, separately-trained artifact \u2014 it does not update from the coding agent's specific, evolving codebase or mistakes, and provides no general code-correctness oracle out of the box."
+      },
+      {
+        "name": "Process Reward Models (Lightman 2023)",
+        "citation_key": "lightman2023verify",
+        "arxiv_or_doi": "2305.20050",
+        "year": 2023,
+        "core_idea": "Score each intermediate reasoning step rather than only the final answer; process supervision outperforms outcome supervision for math.",
+        "what_it_solves": "Decouples 'checking' from 'generating' by using an independently trained model, escaping the same-weights blind-spot problem that afflicts pure self-critique; process-level supervision (Lightman) catches errors earlier and more reliably than outcome-only checking.",
+        "limitation": "Needs its own labeled training data (human step correctness annotations, in Lightman's case) and is a fixed, separately-trained artifact \u2014 it does not update from the coding agent's specific, evolving codebase or mistakes, and provides no general code-correctness oracle out of the box."
+      },
+      {
+        "name": "Skeptical evidence: LLMs cannot yet self-correct reasoning",
+        "citation_key": "huang2023cannot",
+        "arxiv_or_doi": "2310.01798",
+        "year": 2023,
+        "core_idea": "Empirically evaluates intrinsic self-correction (no external feedback) across reasoning benchmarks and finds it frequently makes correct answers worse.",
+        "what_it_solves": "Nothing by design \u2014 it is a negative/cautionary result \u2014 but it rigorously delineates when self-correction claims in the literature actually depended on hidden external signals (e.g. ground-truth labels used to decide whether to keep correcting).",
+        "limitation": "N/A (this is the limitation-finding paper itself); its conclusion is that the burden of proof for 'self-correction' claims should be high, and any real system needs a genuine external check, not just more prompting."
+      }
+    ],
+    "residual_gap": "The literature converges on one honest conclusion: self-correction that relies purely on the same frozen weights re-examining their own output is not reliably real (Huang et al.). Approaches that do work (Reflexion, verifiers, process reward models) all inject something the frozen transformer does not have on its own \u2014 an external oracle (unit tests, human labels, a separately trained reward model). For a coding agent specifically, no existing system supplies a cheap, general, always-available 'ground truth' oracle equivalent to a proof checker for code changes (tests exist for some repos but are incomplete, and an LLM-based verifier trained once cannot track an evolving, project-specific notion of correctness). Building that external, evolving verification signal \u2014 not more self-prompting \u2014 is the open problem."
+  },
+  "imagination": {
+    "structural_lack": "A transformer only maps an input sequence to an output distribution; it has no forward model of 'what happens if I take this action' distinct from just emitting more tokens, and no internal loop that rolls out and evaluates hypothetical futures before committing to an action in the world (or in a codebase).",
+    "existing_approaches": [
+      {
+        "name": "World Models",
+        "citation_key": "ha2018worldmodels",
+        "arxiv_or_doi": "1803.10122",
+        "year": 2018,
+        "core_idea": "Learn a compressed generative model of an environment's dynamics (VAE encoder + RNN predictor) and train a small controller by simulating rollouts entirely inside that learned latent model.",
+        "what_it_solves": "Demonstrates that policies can be learned largely 'in imagination', reducing costly real-environment interaction.",
+        "limitation": "The world model is trained on a fixed, narrow environment distribution; nothing here transfers to a symbolic domain like source code, where 'dynamics' means program semantics, not pixel/physics prediction."
+      },
+      {
+        "name": "MuZero",
+        "citation_key": "schrittwieser2020muzero",
+        "arxiv_or_doi": "1911.08265",
+        "year": 2020,
+        "core_idea": "Learns a latent model of only the quantities needed for planning (reward, value, policy) without reconstructing raw observations, and plans via Monte Carlo Tree Search inside that learned model.",
+        "what_it_solves": "Shows planning-with-a-learned-model can reach superhuman performance without ever being given the environment's true rules.",
+        "limitation": "Requires many millions of real environment interactions to train the model and relies on a well-defined, densely-sampleable reward signal \u2014 neither of which is available for 'trying out' a code edit before applying it to a real repository."
+      },
+      {
+        "name": "Dreamer (Hafner 2020)",
+        "citation_key": "hafner2019dreamer",
+        "arxiv_or_doi": "1912.01603",
+        "year": 2019,
+        "core_idea": "Learn behaviors by backpropagating through imagined latent trajectories in a learned world model.",
+        "what_it_solves": "Makes model-based imagination practical and broadly applicable across diverse continuous/discrete control domains.",
+        "limitation": "Still fundamentally a perception-action loop over continuous or discrete environment states; has no analogue for simulating the effect of a discrete code edit on program behavior, test outcomes, or downstream callers."
+      },
+      {
+        "name": "DreamerV3 (Hafner 2023)",
+        "citation_key": "hafner2023dreamerv3",
+        "arxiv_or_doi": "2301.04104",
+        "year": 2023,
+        "core_idea": "A single agent architecture that masters diverse domains from pixels via world models with fixed hyperparameters.",
+        "what_it_solves": "Makes model-based imagination practical and broadly applicable across diverse continuous/discrete control domains.",
+        "limitation": "Still fundamentally a perception-action loop over continuous or discrete environment states; has no analogue for simulating the effect of a discrete code edit on program behavior, test outcomes, or downstream callers."
+      },
+      {
+        "name": "Active inference / free-energy principle",
+        "citation_key": "friston2010freeenergy",
+        "arxiv_or_doi": "10.1038/nrn2787",
+        "year": 2010,
+        "core_idea": "Casts perception, learning, and action as all minimizing (variational) free energy under a generative model \u2014 the brain constantly predicts sensory consequences of hypothetical actions and picks actions that minimize expected surprise.",
+        "what_it_solves": "Provides the deepest theoretical grounding for why 'imagining consequences before acting' is computationally necessary and how prediction and action can be unified in one objective.",
+        "limitation": "A general theoretical framework, not an off-the-shelf algorithm for code; operationalizing 'expected free energy' for 'will this refactor break something' has no existing instantiation."
+      }
+    ],
+    "residual_gap": "Every existing world-model/imagination system is built for continuous perception-action domains (pixels, physics, game boards) with a learnable, differentiable or simulatable dynamics model and a dense reward signal. None of them target the discrete, combinatorial, symbolic domain of source code, where the 'dynamics' to imagine are things like 'which call sites break', 'does this still type-check', 'do the tests still pass'. A coding agent's imagination faculty needs a fast, cheap surrogate simulator over code-change consequences (static analysis, symbolic execution, or an approximate learned model of test/compile outcomes) played out before committing an edit \u2014 this does not exist as a general, reusable component and is a genuinely open build target, not just an application of an existing world-model architecture."
+  },
+  "impact_awareness": {
+    "structural_lack": "A transformer processes only the tokens in its current context window; it has no persistent, queryable structural model of an entire codebase (call graph, dependency graph, data flow) and therefore cannot know, without being told, what else in a multi-million-line repository depends on a symbol it is about to change.",
+    "existing_approaches": [
+      {
+        "name": "Program Dependence Graphs",
+        "citation_key": "ferrante1987pdg",
+        "arxiv_or_doi": "10.1145/24039.24041",
+        "year": 1987,
+        "core_idea": "A graph combining control and data dependence edges between program statements, originally built for compiler optimization.",
+        "what_it_solves": "Establishes the foundational structural representation from which almost all later slicing / impact-analysis tools derive.",
+        "limitation": "Built and consumed by traditional static-analysis tooling, not designed to be read or reasoned over by a language model; scaling PDG construction across a huge, evolving, multi-language repo is itself nontrivial."
+      },
+      {
+        "name": "Interprocedural slicing",
+        "citation_key": "horwitz1990dependence",
+        "arxiv_or_doi": "10.1145/77606.77608",
+        "year": 1990,
+        "core_idea": "Extends dependence-graph slicing across procedure/function boundaries using summary edges, computing what code can affect (backward slice) or be affected by (forward slice) a given point.",
+        "what_it_solves": "Gives an exact, sound method (under its assumptions) for the 'what does this change affect' question at the level of individual statements.",
+        "limitation": "Precise interprocedural slicing is expensive and requires whole-program static analysis machinery per language; it is not integrated with, or exposed to, an LLM-based agent's reasoning process today."
+      },
+      {
+        "name": "Survey of Program Slicing Techniques",
+        "citation_key": "tip1994survey",
+        "arxiv_or_doi": null,
+        "year": 1994,
+        "core_idea": "Systematizes the many slicing variants (static/dynamic, forward/backward, conditioned) developed through the 1980s-90s.",
+        "what_it_solves": "Documents the mature toolbox for exact change-impact reasoning in classical software engineering.",
+        "limitation": "Predates and does not address integration with statistical/learned models of code at all \u2014 a pure symbolic-methods survey."
+      },
+      {
+        "name": "Learning to Represent Programs with Graphs",
+        "citation_key": "allamanis2018graphs",
+        "arxiv_or_doi": "1711.00740",
+        "year": 2018,
+        "core_idea": "Encodes a program as a graph with syntax, control-flow and data-flow edges, and trains a gated graph neural network over it for tasks like variable-misuse and name prediction.",
+        "what_it_solves": "Bridges the symbolic program-structure representations above with learned, differentiable models \u2014 the first serious attempt to let a neural model 'see' code structure, not just token sequences.",
+        "limitation": "Trained and evaluated on function-local tasks in a fixed corpus; does not scale to whole-repository, cross-file, evolving-over-time impact reasoning, and is a separate trained GNN, not something wired into an LLM coding agent's decision loop."
+      },
+      {
+        "name": "code2vec",
+        "citation_key": "alon2019code2vec",
+        "arxiv_or_doi": "10.1145/3290353",
+        "year": 2019,
+        "core_idea": "Represents a code snippet as a bag of AST paths and learns embeddings predictive of semantic properties (e.g. method names).",
+        "what_it_solves": "Shows structural (path-based) features can be learned as compact code representations useful for downstream prediction tasks.",
+        "limitation": "Snippet/function-level representation, not a whole-project dependency model; gives a 'what does this code look like' embedding, not a 'what will break if I change it' answer."
+      },
+      {
+        "name": "Code Property Graphs",
+        "citation_key": "yamaguchi2014cpg",
+        "arxiv_or_doi": "10.1109/sp.2014.44",
+        "year": 2014,
+        "core_idea": "Merges AST, control-flow graph, and program-dependence graph into one joint, queryable graph database representation of a codebase, originally for vulnerability discovery.",
+        "what_it_solves": "Gives a single structural substrate that supports both syntactic pattern queries and dependency/flow queries at scale across a real codebase \u2014 closest existing building block for 'know what already exists and how it connects'.",
+        "limitation": "Built for security-vulnerability pattern matching, not for change-impact prediction or agent-facing querying; no existing open system wires an LLM coding agent's proposed edits directly into live CPG queries before the edit is applied."
+      }
+    ],
+    "residual_gap": "The symbolic tools to compute exact structural impact (dependence graphs, interprocedural slicing, code property graphs) have existed since the 1980s-2010s and are mature, but none of them are integrated into the loop of an LLM coding agent: today's agents either re-read raw file text within a limited context window or rely on the LLM's own (unverified) guess about what a change affects. There is no standard, load-bearing bridge that (a) maintains a live, incrementally-updated structural graph of the whole repository, (b) lets the agent query 'what depends on this symbol' as a fast, sound lookup before proposing an edit, and (c) feeds the query result back into the LLM's context in a way it reliably uses. Building that bridge \u2014 not inventing new graph-analysis theory \u2014 is the residual, and largely engineering-shaped, gap."
+  }
+}

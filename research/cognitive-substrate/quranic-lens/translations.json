@@ -1,0 +1,157 @@
+{
+  "ayahs": [
+    "17:36",
+    "49:6",
+    "2:31",
+    "2:32",
+    "20:114",
+    "96:1",
+    "96:2",
+    "96:3",
+    "96:4",
+    "96:5",
+    "39:9",
+    "4:82",
+    "47:24",
+    "33:72"
+  ],
+  "results": {
+    "en-abdel-haleem": [
+      {
+        "ayah": "2:31",
+        "text": "He taught Adam all the names [of things], then He showed them to the angels and said, ‘Tell me the names of these if you truly [think you can].’"
+      },
+      {
+        "ayah": "2:32",
+        "text": "They said, ‘May You be glorified! We have knowledge only of what You have taught us. You are the All Knowing and All Wise.’"
+      },
+      {
+        "ayah": "4:82",
+        "text": "Will they not think about this Quran? If it had been from anyone other than God, they would have found much inconsistency in it."
+      },
+      {
+        "ayah": "17:36",
+        "text": "Do not follow blindly what you do not know to be true: ears, eyes, and heart, you will be questioned about all these."
+      },
+      {
+        "ayah": "20:114",
+        "text": "exalted be God, the one who is truly in control. [Prophet], do not rush to recite before the revelation is fully complete but say, ‘Lord, increase me in knowledge!’"
+      },
+      {
+        "ayah": "33:72",
+        "text": "We offered the Trust to the heavens, the earth, and the mountains, yet they refused to undertake it and were afraid of it; mankind undertook it- they have always been inept and foolish."
+      },
+      {
+        "ayah": "39:9",
+        "text": "What about someone who worships devoutly during the night, bowing down, standing in prayer, ever mindful of the life to come, hoping for his Lord’s mercy? Say, ‘How can those who know be equal to those who do not know?’ Only those who have understanding will take heed."
+      },
+      {
+        "ayah": "47:24",
+        "text": "Will they not contemplate the Quran? Do they have locks on their hearts?"
+      },
+      {
+        "ayah": "49:6",
+        "text": "Believers, if a troublemaker brings you news, check it first, in case you wrong others unwittingly and later regret what you have done,"
+      },
+      {
+        "ayah": "96:1",
+        "text": "Read! In the name of your Lord who created:"
+      },
+      {
+        "ayah": "96:2",
+        "text": "He created manfrom a clinging form."
+      },
+      {
+        "ayah": "96:3",
+        "text": "Read! Your Lord is the Most Bountiful One"
+      },
+      {
+        "ayah": "96:4",
+        "text": "who taught by [means of] the pen,"
+      },
+      {
+        "ayah": "96:5",
+        "text": "who taught man what he did not know."
+      }
+    ]
+  },
+  "pagination": {
+    "total_items": 14,
+    "has_more": false,
+    "continuation": null,
+    "pages": [
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "2:31"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "2:32"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "4:82"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "17:36"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "20:114"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "33:72"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "39:9"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "47:24"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "49:6"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "96:1"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "96:2"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "96:3"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "96:4"
+      },
+      {
+        "page": 1,
+        "edition_id": "en-abdel-haleem",
+        "ayah_key": "96:5"
+      }
+    ]
+  },
+  "warnings": null,
+  "grounding_rules": null
+}
