@@ -423,6 +423,18 @@ ground-truth pairs are statically connected in principle) and interpret every re
 it. An over-warning is likewise not necessarily an error: it may be a correct dependency that
 has not yet co-changed in the mined window.
 
+\paragraph{Construct, continued: the correctness judge.} No held-out task admitted execution-based
+verification (0/64; the mechanical check was re-run independently and its single candidate hit rejected on
+inspection), so correctness was scored by a fixed-rubric model judge. The judge was pre-declared as
+``neither cheap nor premium'' --- neutral with respect to the \emph{tier ladder}, but not neutral in an
+absolute sense, because the ladder's mid tier is that same model. For the 38 of 64 tasks initially routed
+to mid, and for every mid-tier escalation attempt, the judge grades output from its own model family.
+Evaluators are known to favour their own generations, which biases this measurement in the direction of
+\emph{overstating} mid-tier correctness and therefore overstating the routed pipeline's savings; the
+inversion we report is if anything conservative. Separately, seven generation calls returned empty output
+at the pre-declared token budget and were retried at the same tier with a raised budget; this is logged as
+a deviation rather than silently patched, and no escalation cost is attributed to those retries.
+
 \paragraph{Internal.} The pre-registration, the tuning/held-out split, and the parameter freeze were all
 self-administered within one continuous working session, with no external timestamping authority: a reader
 must take the ordering on trust, evidenced only by the artifact store's own version timestamps and the
