@@ -53,8 +53,17 @@ noticing. Commands are organized into six groups (the last is experimental).
 | `FORGE_NO_UPDATE_CHECK=1` | Silence the "commits behind upstream" notice in `forge doctor`.                                                                                                                           |
 | `FORGE_NO_HINT=1`         | Mute the one-time init tip that prompts you to run `forge init`.                                                                                                                          |
 | `FORGE_VERBOSE=1`         | Show the per-command banner (`Forge <cmd> — …`) that is hidden by default.                                                                                                                |
-| `FORGE_EMBED=1`           | Opt in to the embedding tier for memory recall (MinHash stays the zero-dependency default).                                                                                               |
+| `FORGE_EMBED=cmd:<command>` | Use an external command that reads Forgekit's JSON request on stdin and returns `{"vectors":[...]}` on stdout. MinHash remains the fallback if the command fails, times out, or returns invalid vectors. |
+| `FORGE_EMBED=<http(s)-URL>` | Use an OpenAI-compatible embedding endpoint, for example `FORGE_EMBED=https://api.example.com/v1/embeddings`. MinHash remains the fallback on provider failure. |
+| `FORGE_EMBED_MODEL=<id>`    | Optional model identifier included in HTTP embedding requests and in the cache's provider identity. |
+| `FORGE_EMBED_KEY=<key>`     | Optional bearer token for the configured HTTP embedding endpoint. Keep the value in the environment; do not commit it. |
+| `FORGE_EMBED_TIMEOUT_MS=<ms>` | Optional provider timeout in milliseconds. |
 | `FORGE_LEDGER_ONLY=0`     | Escape hatch. Ledger-only is the DEFAULT — memory (lessons + recall/brain facts) lives only in the content-addressed `.forge/ledger`, and the legacy `lessons/*.md` + fact files are no longer written. Set `0` to restore the legacy file store while external tooling migrates. |
+
+<Note>
+  `FORGE_EMBED` configures an adapter; Forgekit does not bundle an embedding model or a
+  vector database. The zero-dependency default and failure fallback are MinHash.
+</Note>
 
 <Note>
   Run `forge --help` for the always-current list, or `forge catalog` for the Start-Here
