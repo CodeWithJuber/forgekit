@@ -262,6 +262,27 @@ test("HI-02: a verify PASS goes stale once code changes after it (dirtyHash mism
   assert.match(out.reason, /test evidence/i);
 });
 
+test("HI-02: a stale PASS is caught even when the pending diff exceeds 1 MiB (B3)", () => {
+  // computeCodeState read `git diff HEAD` with the 1 MiB default buffer: past it the diff
+  // hashed as "", so every state with a big pending change looked identical and the stale
+  // PASS survived a post-verify edit.
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "data.txt"), "seed\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "data");
+  start(root, "b3big");
+  let big = "";
+  for (let i = 0; i < 40000; i++) big += `row ${i} lorem ipsum dolor sit amet\n`;
+  writeFileSync(join(root, "data.txt"), big); // ~1.5 MB tracked diff
+  writeFileSync(join(root, "a.js"), "export const one = 24;\n");
+  writeFileSync(join(root, ".forge", "state.md"), "# state\n");
+  writeProvenance(root, "PASS");
+  writeFileSync(join(root, "a.js"), "export const one = () => { throw new Error('x'); };\n");
+  const out = JSON.parse(stopGate(root, "b3big").stdout || "{}");
+  assert.equal(out.decision, "block", "the edit after verify must invalidate the stamp");
+  assert.notEqual(computeCodeState(root).dirtyHash, null, "a big diff still binds");
+});
+
 test("HI-02: a verify PASS bound to the FINAL code state + handoff → allow", () => {
   const { root } = gitFixture();
   start(root, "hi2b");

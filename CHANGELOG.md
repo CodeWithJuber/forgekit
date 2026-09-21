@@ -71,6 +71,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
   `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
   still left alone.
+- **The commit gate's secret scan now fails closed.** It read `git diff --cached` with the
+  default 1 MiB `execFileSync` buffer. On overflow the diff became `""`, so a `ghp_` leak
+  alone was refused (exit 1), but the same leak staged next to a 1.5 MB file was "allowed"
+  (exit 0). A repo-controlled `.gitattributes` `-diff`/`binary` marking or a `textconv`
+  driver also hid the added lines. The scan now diffs with `--text --no-ext-diff
+  --no-textconv` and a 256 MiB buffer. If that fails, it retries one file at a time, and any
+  file git still cannot diff is refused as unscanned instead of passed. All three bypasses
+  are refused now. The Stop gate's code-state fingerprint (`computeCodeState`) had the same
+  1 MiB blind spot: a stale `verify` PASS survived a later code edit whenever the pending
+  diff was over 1 MiB. It now hashes a `--binary` diff with the same buffer, and it reports
+  "cannot bind" rather than hashing `""` when git fails.
 
 ### Documentation
 

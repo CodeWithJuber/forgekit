@@ -20,9 +20,23 @@ export function findUnknownSymbols(atlas, symbols) {
   return symbols.filter((s) => !has(atlas, s));
 }
 
+// git output can be large (a lockfile regen, a generated asset): the 1 MiB execFileSync
+// default turned an over-size diff into "" — for computeCodeState that made every state
+// with a big pending change hash identically, so a stale PASS survived later edits.
+const GIT_MAX_BUFFER = 256 * 1024 * 1024;
+/** @param {string[]} args @param {string} cwd — THROWS on any git error / overflow. */
+function gitStrict(args, cwd) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: GIT_MAX_BUFFER,
+  });
+}
+
 function git(args, cwd) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8" });
+    return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: GIT_MAX_BUFFER });
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge verify git: ${err?.message ?? err}\n`);
@@ -37,7 +51,10 @@ function git(args, cwd) {
  * `verify` stamp can be BOUND to the exact code state it validated (HI-02): at Stop the
  * gate recomputes this and only trusts the PASS when the hash still matches. Never throws;
  * `gitAvailable:false` / `dirtyHash:null` is the honest "cannot bind" signal (the gate then
- * refuses to count the stamp). Pure w.r.t. the tree — reads git + files, writes nothing.
+ * refuses to count the stamp) — including when git cannot produce a diff (an error or an
+ * over-size output hashes as "cannot bind", never as the empty diff). Diffs are taken with
+ * `--binary --no-ext-diff --no-textconv`, so repo attributes/drivers cannot hide a change.
+ * Pure w.r.t. the tree — reads git + files, writes nothing.
  * @param {string} [cwd]
  * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean}}
  */
@@ -54,8 +71,10 @@ export function computeCodeState(cwd = process.cwd()) {
       .filter((f) => f && !f.startsWith(".forge/"))
       .sort();
     const h = createHash("sha256");
-    h.update(git(["diff", "HEAD"], cwd));
-    h.update(git(["diff", "--cached"], cwd));
+    const raw = ["--binary", "--no-ext-diff", "--no-textconv", "--no-color"];
+    // Unborn HEAD (no commit yet): index-vs-worktree + staged covers the whole change.
+    h.update(gitStrict(head ? ["diff", "HEAD", ...raw] : ["diff", ...raw], cwd));
+    h.update(gitStrict(["diff", "--cached", ...raw], cwd));
     for (const f of untracked) {
       try {
         h.update(readFileSync(join(cwd, f)));
