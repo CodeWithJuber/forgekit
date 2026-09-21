@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { computeFeatures, featuresForEdit } from "../src/cortex_features.js";
+import { computeFeatures, featuresForEdit, gitChurn, grepFanout } from "../src/cortex_features.js";
 import { newLesson } from "../src/lessons.js";
 
 test("computeFeatures normalizes and derives every feature", () => {
@@ -59,4 +60,49 @@ test("featuresForEdit degrades gracefully on a non-git repo (no throw, valid vec
   assert.equal(f.churn, 0, "no git → no churn");
   assert.equal(f.caller_fanout, 0, "no git grep → no fan-out");
   assert.equal(f.lesson_match, 0, "no lessons yet");
+});
+
+function gitRepo() {
+  const root = mkdtempSync(join(tmpdir(), "forge-feat-git-"));
+  const git = (args, env) =>
+    execFileSync("git", args, {
+      cwd: root,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...env },
+    });
+  git(["init", "-q"]);
+  git(["config", "user.email", "forge@test.invalid"]);
+  git(["config", "user.name", "forge-test"]);
+  const commit = (message, date) => {
+    git(["add", "-A"]);
+    git(["-c", "commit.gpgsign=false", "commit", "-qm", message], {
+      GIT_AUTHOR_DATE: date,
+      GIT_COMMITTER_DATE: date,
+    });
+  };
+  return { root, commit };
+}
+
+test("grepFanout counts whole-word matches only ('get' no longer matches 'target')", () => {
+  const { root, commit } = gitRepo();
+  writeFileSync(join(root, "a.js"), "export const target = 1;\nexport const widget = 2;\n");
+  writeFileSync(join(root, "b.js"), "import { get } from './x.js';\nexport const b = get();\n");
+  writeFileSync(join(root, "c.js"), "export function get() {\n  return 1;\n}\n");
+  commit("fixture");
+  assert.equal(grepFanout(root, "get"), 2, "only the two files that use `get` as a word");
+  assert.equal(grepFanout(root, "target"), 1);
+  assert.equal(grepFanout(root, ""), 0, "no symbol → no fan-out");
+});
+
+test("gitChurn counts only commits inside the time window", () => {
+  const { root, commit } = gitRepo();
+  writeFileSync(join(root, "ancient.js"), "export const a = 1;\n");
+  commit("ancient", "2015-01-01T00:00:00Z");
+  writeFileSync(join(root, "ancient.js"), "export const a = 2;\n");
+  commit("ancient again", "2015-02-01T00:00:00Z");
+  writeFileSync(join(root, "fresh.js"), "export const f = 1;\n");
+  commit("fresh");
+  assert.equal(gitChurn(root, "ancient.js"), 0, "untouched for a decade → no churn");
+  assert.equal(gitChurn(root, "fresh.js"), 1);
+  assert.ok(gitChurn(root, "ancient.js", { days: 6000 }) >= 2, "a wider window sees the history");
 });
