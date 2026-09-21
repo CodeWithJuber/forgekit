@@ -19,11 +19,12 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { BRAND } from "./brand.js";
-import { canonicalize, stateRoot } from "./ledger.js";
+import { canonicalize, mergeStates, stateRoot } from "./ledger.js";
 import { importState, loadState, mergeDirs } from "./ledger_store.js";
 import { gitAuthor } from "./util.js";
 
 const STATE_FILE = "state.json";
+const LOG_MAPS = ["evidence", "provenance", "tombstones"];
 
 // Contract note: syncTarget takes its environment via the injectable `env` param
 // (defaulting to process.env) and reads process.env.FORGE_SYNC_DIR from it — named
@@ -172,20 +173,49 @@ export function syncDir(localDir, otherDir) {
   return { ok: true, mode: "dir", dir: otherDir, pulled, pushed };
 }
 
-/** Read the remote ref's state.json blob and import it into localDir. Returns import
- *  counts; a missing/corrupt blob degrades to {claims:0,records:0} + a note (never
- *  throws) so a garbled remote can never take the local ledger down. */
-function pullRef(localDir, root, ref, run, notes) {
+/** The remote ref's state.json as parsed JSON, or null when absent/unreadable/not a state
+ *  object. Never throws. */
+function readRemoteState(root, ref, run) {
   try {
     const raw = run(["cat-file", "blob", `${ref}:${STATE_FILE}`], {
       cwd: root,
     });
-    const remoteState = JSON.parse(raw);
+    const s = JSON.parse(raw);
+    const isMap = (m) => m === undefined || (m && typeof m === "object" && !Array.isArray(m));
+    if (!s || typeof s !== "object" || !["claims", ...LOG_MAPS].every((k) => isMap(s[k])))
+      return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+/** Read the remote ref's state.json blob and import it into localDir. Returns import
+ *  counts; a missing/corrupt blob degrades to {claims:0,records:0} + a note (never
+ *  throws) so a garbled remote can never take the local ledger down. */
+function pullRef(localDir, root, ref, run, notes) {
+  const remoteState = readRemoteState(root, ref, run);
+  if (!remoteState) {
+    notes.push("remote ledger state unreadable — treated as empty");
+    return { claims: 0, records: 0, quarantined: 0 };
+  }
+  try {
     return importState(localDir, remoteState);
   } catch {
     notes.push("remote ledger state unreadable — treated as empty");
     return { claims: 0, records: 0, quarantined: 0 };
   }
+}
+
+/** The bytes a push writes: the RAW remote state joined with our verified local state.
+ *  Verification happens on READ (importState quarantines what this replica cannot
+ *  resolve — a `file:` path only a teammate has, a commit not fetched yet); pushing only
+ *  the local verified view used to ERASE those records from the shared ref for everyone
+ *  (review C3). The join is the same semilattice merge, so this stays order-independent
+ *  and monotone: the remote only ever grows. */
+function pushBytes(localDir, root, ref, run) {
+  const local = loadState(localDir);
+  const remote = refCommit(root, ref, run) ? readRemoteState(root, ref, run) : null;
+  return `${canonicalize(remote ? mergeStates(remote, local) : local)}\n`;
 }
 
 /** The local commit at `ref`, or null if the ref does not exist. `--verify --quiet`
@@ -246,12 +276,13 @@ export function syncRef(
   }
   if (refCommit(root, ref, run)) pulled = pullRef(localDir, root, ref, run, notes);
 
-  // PUSH: serialize local state to a blob/tree; skip entirely when the remote tree
-  // already equals ours (idempotence — re-running sync is a byte-level no-op). A
-  // non-fast-forward rejection means a teammate raced us: re-fetch, re-import
-  // (monotone), rebuild on the new parent, retry up to maxRetries.
+  // PUSH: serialize remote ⊔ local to a blob/tree (see pushBytes — never just our
+  // verified view); skip entirely when the remote tree already equals it (idempotence —
+  // re-running sync is a byte-level no-op). A non-fast-forward rejection means a teammate
+  // raced us: re-fetch, re-import (monotone), rebuild on the new parent, retry up to
+  // maxRetries.
   for (let retries = 0; ; ) {
-    const bytes = stateBytes(localDir);
+    const bytes = pushBytes(localDir, root, ref, run);
     let blob;
     let tree;
     try {

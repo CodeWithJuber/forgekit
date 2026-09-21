@@ -7,11 +7,15 @@
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -19,9 +23,12 @@ import {
   authorTrust,
   canonicalize,
   claimId,
+  claimText,
+  DEFAULT_HALF_LIFE_DAYS,
   DORMANT_VAL,
   emptyState,
   hasSecret,
+  isDormant,
   liveClaims,
   mergeStates,
   mintClaim,
@@ -33,7 +40,7 @@ import {
   validOutcome,
 } from "./ledger.js";
 import { redactSecrets } from "./secrets.js";
-import { contentHash, readJsonSafe } from "./util.js";
+import { contentHash, epochDay, readJsonSafe } from "./util.js";
 
 /** The canonical repo ledger. (recall's global store keeps its own sibling ledger.) */
 export const repoLedger = (root = process.cwd()) => join(root, ".forge", "ledger");
@@ -79,8 +86,34 @@ const fileResolver = (root) => (p) => {
 };
 
 const LOGS = ["evidence", "provenance", "tombstones"];
+
+/** Append one line to a log, first terminating a TORN final line (a process killed
+ *  mid-append, or a union merge that dropped the trailing newline). Without this the next
+ *  record is glued onto the fragment, becomes one unparseable line, and silently vanishes
+ *  while the append still reports ok:true. The fragment itself stays unparseable — readLog
+ *  skips it and verify() names it. */
+function appendLine(path, line) {
+  let torn = false;
+  try {
+    const size = statSync(path).size;
+    if (size > 0) {
+      const fd = openSync(path, "r");
+      try {
+        const last = Buffer.alloc(1);
+        readSync(fd, last, 0, 1, size - 1);
+        torn = last[0] !== 0x0a;
+      } finally {
+        closeSync(fd);
+      }
+    }
+  } catch {} // no file yet — nothing to terminate
+  appendFileSync(path, `${torn ? "\n" : ""}${line}\n`);
+}
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
+const atticPath = (dir, id) => join(dir, "attic", `${id}.json`);
 const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
+/** A pruned claim is ARCHIVED, not missing: its file sits in attic/ and its logs never move. */
+const inAttic = (dir, id) => existsSync(atticPath(dir, id));
 
 /** Claim file bytes: pure content only. Identical for the same id on every replica. */
 const claimBytes = (claim) =>
@@ -136,11 +169,19 @@ function appendRecord(dir, log, id, record) {
       ok: false,
       reason: "refused: record metadata looks like a secret/credential",
     };
-  if (!existsSync(claimPath(dir, id)))
-    return { ok: false, reason: `no such claim in ledger: ${id}` };
+  const live = existsSync(claimPath(dir, id));
+  const archived = !live && inAttic(dir, id);
+  if (!live && !archived) return { ok: false, reason: `no such claim in ledger: ${id}` };
   if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
+  // NEW evidence on a pruned claim brings it back out of the attic — review restores weight
+  // (01-pcm-protocol.md §3). Any other record (a tombstone, another author's mint) is
+  // appended without un-archiving it.
+  if (archived && log === "evidence") {
+    mkdirSync(join(dir, "claims", id.slice(0, 2)), { recursive: true });
+    renameSync(atticPath(dir, id), claimPath(dir, id));
+  }
   mkdirSync(join(dir, log), { recursive: true });
-  appendFileSync(logPath(dir, log, id), `${canonicalize(record)}\n`);
+  appendLine(logPath(dir, log, id), canonicalize(record));
   return { ok: true, deduped: false };
 }
 
@@ -173,7 +214,7 @@ function* walkClaimFiles(dir) {
  * the claim's provenance record (if any) is appended to the provenance log. A
  * corrupt/truncated file at the claim's path is REPAIRED by rewriting the canonical
  * bytes — a killed process must never leave a claim permanently unloadable.
- * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean}}
+ * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean, pruned?:boolean}}
  */
 export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
@@ -188,6 +229,13 @@ export function putClaim(dir, claim) {
       reason: "refused: claim looks like it contains a secret/credential",
     };
   const path = claimPath(dir, claim.id);
+  // Re-importing a claim this replica has PRUNED must not resurrect it into the live set:
+  // the attic copy is the same content-addressed bytes, and new evidence is what brings a
+  // claim back (see appendRecord). Reported as existing, so merge counts stay honest.
+  if (!existsSync(path) && inAttic(dir, claim.id)) {
+    if (claim.provenance?.h) appendRecord(dir, "provenance", claim.id, claim.provenance);
+    return { ok: true, id: claim.id, existed: true, pruned: true };
+  }
   const already = existsSync(path);
   const healthy = already && readJsonSafe(path) !== null && readFileSync(path, "utf8") === text;
   if (!healthy) {
@@ -223,24 +271,34 @@ export function tombstone(dir, id, { author = "", reason = "", t = 0 } = {}) {
   return appendRecord(dir, "tombstones", id, sealRecord({ author, reason, t }));
 }
 
+/** A full claim id — what an irreversible or agent-initiated write must name exactly. */
+export const FULL_ID_RE = /^[0-9a-f]{64}$/;
+
+/** The identity every agent-callable (MCP) ledger write is stamped with — never the human's
+ *  git identity. val() never counts an `agent:` author as human evidence (ledger.js). */
+export const MCP_AUTHOR = "agent:mcp";
+
 /**
  * Ratify a claim — the fahm→ḥikma promotion (08-dashboard-ux.md §2): mint a `decision`
- * claim pointing at the ratified claim's full id. Promotion is HUMAN-ONLY by design:
- * the caller supplies the author (a person's identity, via gitAuthor()); nothing in the
- * substrate ever calls this automatically. Append-only and content-addressed, so
- * ratifying the same claim twice converges on the same decision ({existed:true}).
+ * claim pointing at the ratified claim's full id. A human ratification is the default
+ * (the CLI and dashboard pass the person's gitAuthor()). An agent may only PROPOSE one:
+ * the MCP tool passes `author: MCP_AUTHOR` plus a note, which makes it a distinct claim, so
+ * an agent proposal can never be mistaken for — or deduped into — a human's ratification.
+ * Neither changes the ratified claim's val: a decision is not evidence. Append-only and
+ * content-addressed, so ratifying the same claim twice converges ({existed:true}).
  * @param {string} dir
- * @param {string} idPrefix
- * @param {{author?: string, t?: number}} [opts]
+ * @param {string} idPrefix an unambiguous id prefix (≥2 chars) or the full id
+ * @param {{author?: string, t?: number, agent?: string, note?: string}} [opts]
  * @returns {{ok:boolean, reason?:string, decisionId?:string, ratifies?:string, existed?:boolean}}
  */
-export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
+export function ratify(dir, idPrefix, { author = "", t = 0, agent = "dash", note = "" } = {}) {
   const target = getClaimByPrefix(dir, idPrefix);
-  if (!target) return { ok: false, reason: `no claim matching ${idPrefix}` };
+  if (!target)
+    return { ok: false, reason: `no claim matching ${idPrefix} (or the prefix is ambiguous)` };
   const minted = mintClaim({
     kind: "decision",
-    body: { ratifies: target.id, note: "" },
-    provenance: { agent: "dash", author },
+    body: { note, ratifies: target.id },
+    provenance: { agent, author },
     t,
   });
   if (!minted.ok)
@@ -262,12 +320,119 @@ export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
   };
 }
 
-/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
- *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
- *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost.
- *  @param {string} dir
- *  @param {{verifyHashes?: boolean}} [opts] */
-export function loadState(dir, { verifyHashes = true } = {}) {
+/**
+ * PROPOSE a retraction without making it: an agent-callable tool must not make a permanent
+ * change on its own (models propose; a human authorizes; corrections supersede rather than
+ * erase). Mints a `decision` claim {retracts, reason} stamped `agent:mcp` — append-only,
+ * content-addressed (the same proposal twice converges), synced like any claim, and visible
+ * via retractionProposals()/stats(). It lowers nothing: the target stays live until a human
+ * runs `forge ledger retract <full id>`, which writes the real tombstone.
+ * @param {string} dir
+ * @param {string} id the target's FULL 64-char claim id — a prefix is refused
+ * @param {{reason?: string, t?: number, author?: string}} [opts]
+ * @returns {{ok:boolean, reason?:string, proposalId?:string, retracts?:string, existed?:boolean}}
+ */
+export function proposeRetraction(dir, id, { reason = "", t = 0, author = MCP_AUTHOR } = {}) {
+  if (!FULL_ID_RE.test(String(id ?? "")))
+    return { ok: false, reason: "a retraction must name one full 64-character claim id" };
+  const target = getClaimByPrefix(dir, id);
+  if (!target || target.id !== id) return { ok: false, reason: `no claim matching ${id}` };
+  const minted = mintClaim({
+    kind: "decision",
+    body: { note: "proposed retraction — pending human confirmation", reason, retracts: id },
+    provenance: { agent: "mcp", author },
+    t,
+  });
+  if (!minted.ok) return { ok: false, reason: "reason" in minted ? minted.reason : "mint failed" };
+  const put = putClaim(dir, minted.claim);
+  if (!put.ok) return { ok: false, reason: put.reason ?? "could not persist the proposal" };
+  return { ok: true, proposalId: minted.claim.id, retracts: id, existed: put.existed };
+}
+
+/** Pending retraction proposals by target id — proposals whose target is still live (a
+ *  human retraction resolves them). Pure over a loadClaims() list.
+ *  @param {any[]} claims
+ *  @returns {Map<string, {proposalId:string, reason:string, author:string, t:number}[]>} */
+export function retractionProposals(claims) {
+  const live = new Set(claims.filter((c) => !c.tombstone).map((c) => c.id));
+  const out = new Map();
+  for (const c of claims) {
+    const target = c.kind === "decision" && !c.tombstone ? c.body?.retracts : null;
+    if (!target || !live.has(target)) continue;
+    if (!out.has(target)) out.set(target, []);
+    out.get(target).push({
+      proposalId: c.id,
+      reason: String(c.body?.reason ?? ""),
+      author: c.provenance?.author ?? "",
+      t: c.provenance?.t ?? 0,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Read path + snapshot cache. A ledger is one small file per claim plus its logs — great
+// for byte-identical replicas and union merges, brutal to re-read: 300 claims is 900 files,
+// ~4 s of syscalls on Windows, and the per-prompt hooks ask three times (lessons, déjà vu,
+// reuse peek). Nothing compacted it, so the cost grew with the ledger forever (review C11).
+//
+// The fix is a DERIVED snapshot, never a second source of truth: a fingerprint of every
+// file's (path, size, mtime) — stat-only, ~0.2 ms per file against ~4 ms to read and parse
+// one — decides whether `.state-cache.json` still describes the directory. Any external
+// edit (a git merge, a hand-edited line, a truncation, a prune) changes the fingerprint and
+// the snapshot is rebuilt from the files. The cache is local and disposable; it is
+// gitignored next to the ledger.
+// ---------------------------------------------------------------------------
+
+const CACHE_FILE = ".state-cache.json";
+const GITIGNORE_FILE = ".gitignore";
+/** dir → {sig, state} for the life of THIS process (a hook asks several times). */
+const stateMemo = new Map();
+
+const fileStamp = (path, rel) => {
+  try {
+    const s = statSync(path);
+    return `${rel}:${s.size}:${Math.round(s.mtimeMs)}`;
+  } catch {
+    return `${rel}:gone`;
+  }
+};
+
+/** Cheap, sound fingerprint of everything loadState reads. */
+function ledgerSignature(dir) {
+  const parts = [];
+  const claimsRoot = join(dir, "claims");
+  if (!existsSync(claimsRoot)) return "empty";
+  for (const shard of readdirSync(claimsRoot).sort())
+    for (const f of readdirSync(join(claimsRoot, shard)).sort())
+      parts.push(fileStamp(join(claimsRoot, shard, f), `claims/${shard}/${f}`));
+  for (const log of LOGS) {
+    const root = join(dir, log);
+    if (!existsSync(root)) continue;
+    for (const f of readdirSync(root).sort()) parts.push(fileStamp(join(root, f), `${log}/${f}`));
+  }
+  return contentHash(parts.join("\n"));
+}
+
+function readStateCache(dir, sig) {
+  const cached = readJsonSafe(join(dir, CACHE_FILE));
+  if (!cached || cached.sig !== sig || !cached.state?.claims) return null;
+  return cached.state;
+}
+
+function writeStateCache(dir, sig, state) {
+  try {
+    mkdirSync(dir, { recursive: true });
+    if (!existsSync(join(dir, GITIGNORE_FILE)))
+      writeFileSync(
+        join(dir, GITIGNORE_FILE),
+        `# derived read cache — rebuilt from the claim files whenever they change (forge)\n${CACHE_FILE}\n`,
+      );
+    writeFileSync(join(dir, CACHE_FILE), JSON.stringify({ sig, state }));
+  } catch {} // a read-only checkout just pays the full read every time
+}
+
+function readStateFromDisk(dir, verifyHashes) {
   const state = emptyState();
   for (const { id, claim } of walkClaimFiles(dir)) {
     if (!claim) continue;
@@ -277,21 +442,43 @@ export function loadState(dir, { verifyHashes = true } = {}) {
   return state;
 }
 
+/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
+ *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
+ *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost (and
+ *  is never cached). The returned state is shared with the snapshot cache: treat it as
+ *  READ-ONLY, like every other view in this module.
+ *  @param {string} dir
+ *  @param {{verifyHashes?: boolean}} [opts] */
+export function loadState(dir, { verifyHashes = true } = {}) {
+  if (!verifyHashes) return readStateFromDisk(dir, false);
+  const sig = ledgerSignature(dir);
+  const memo = stateMemo.get(dir);
+  if (memo?.sig === sig) return memo.state;
+  let state = readStateCache(dir, sig);
+  if (!state) {
+    state = readStateFromDisk(dir, true);
+    writeStateCache(dir, sig, state);
+  }
+  stateMemo.set(dir, { sig, state });
+  return state;
+}
+
 /** All claims with evidence/provenance/tombstone views attached (retrieval input). */
 export function loadClaims(dir) {
   return liveClaims(loadState(dir));
 }
 
 /** Find one claim by id prefix without scanning the whole ledger (ids are sharded by
- *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). */
+ *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). An AMBIGUOUS prefix
+ *  (≥2 claims match) returns null — silently picking the first sorted match let a short
+ *  prefix ratify or retract a claim nobody named. */
 export function getClaimByPrefix(dir, prefix) {
   if (!prefix || prefix.length < 2) return null;
   const shardDir = join(dir, "claims", prefix.slice(0, 2));
   if (!existsSync(shardDir)) return null;
-  const f = readdirSync(shardDir)
-    .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
-    .sort()[0];
-  if (!f) return null;
+  const matches = readdirSync(shardDir).filter((f) => f.endsWith(".json") && f.startsWith(prefix));
+  if (matches.length !== 1) return null;
+  const f = matches[0];
   const id = f.replace(/\.json$/, "");
   const claim = readJsonSafe(join(shardDir, f));
   if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
@@ -323,7 +510,7 @@ function tryImportLine(dir, log, id, rec) {
  *  identity. Reading raw — instead of through loadState's hash-dedup — is what lets two
  *  forged records sharing one fake `h`, and malformed no-`h` lines, all reach quarantine
  *  instead of being silently collapsed or dropped. */
-export function mergeDirs(dstDir, srcDir) {
+export function mergeDirs(dstDir, srcDir, { nowDay = epochDay() } = {}) {
   let claims = 0;
   let records = 0;
   let quarantined = 0;
@@ -356,7 +543,8 @@ export function mergeDirs(dstDir, srcDir) {
       }
     }
   }
-  reindex(dstDir);
+  pruneLedger(dstDir, nowDay);
+  reindex(dstDir, nowDay);
   return { claims, records, quarantined };
 }
 
@@ -410,9 +598,9 @@ function quarantineRecord(dir, id, rec, reason) {
   const qhash = contentHash(canonicalize({ reason, rec: redacted }));
   if (readLog(dir, "quarantine", id).some((q) => q.qhash === qhash)) return 0;
   mkdirSync(join(dir, "quarantine"), { recursive: true });
-  appendFileSync(
+  appendLine(
     logPath(dir, "quarantine", id),
-    `${canonicalize(sealRecord({ qhash, reason, rec: redacted, t: rec?.t ?? 0 }))}\n`,
+    canonicalize(sealRecord({ qhash, reason, rec: redacted, t: rec?.t ?? 0 })),
   );
   return 1;
 }
@@ -422,7 +610,7 @@ function quarantineRecord(dir, id, rec, reason) {
  *  evidence goes through the full appendEvidence gate (validOutcome + ref resolution
  *  against THIS repo) and every record must prove its content hash in appendRecord —
  *  rejects land in quarantine/ for audit and are counted in `quarantined`. */
-export function importState(dir, other) {
+export function importState(dir, other, { nowDay = epochDay() } = {}) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;
   let records = 0;
@@ -439,16 +627,43 @@ export function importState(dir, other) {
       }
     }
   }
-  reindex(dir);
+  pruneLedger(dir, nowDay);
+  reindex(dir, nowDay);
   return { claims, records, quarantined };
 }
 
-/** Regenerate LEDGER.md — the human index (like recall's MEMORY.md). */
-export function reindex(dir, nowDay = 0) {
+/** The merge rule for the generated index, shipped INSIDE the ledger directory so the
+ *  ledger carries its own conflict-free guarantee wherever it is copied (git reads nested
+ *  .gitattributes files). Paths are relative to this directory. */
+const LEDGER_GITATTRIBUTES = [
+  "# Generated by forge from the claim files — rebuilt on every write, so a union merge is",
+  "# always safe and never conflicts (docs/plans/substrate-v2/02-team-memory.md).",
+  "LEDGER.md merge=union linguist-generated=true",
+  "",
+].join("\n");
+
+/**
+ * Regenerate LEDGER.md — the human index (like recall's MEMORY.md).
+ *
+ * Rows are STABLE: id, kind and the claim's own text, with no val. The old rows carried
+ * `val 0.50`, which changes with the clock and with each replica's evidence, so the same
+ * claim produced a different line on every branch and every day — and since the file is
+ * rewritten on every ledger write, two teammates adding one fact each got a CONFLICT in the
+ * "conflict-free by construction" store (review C11). With stable rows, a union merge of
+ * the two branches is exactly the union of their claims, and the next write rewrites it
+ * cleanly anyway.
+ */
+// (`_nowDay` is kept for call-site compatibility and is deliberately unused: the index no
+//  longer prints anything that depends on the clock.)
+export function reindex(dir, _nowDay = 0) {
   const rows = loadClaims(dir)
     .filter((c) => !c.tombstone)
-    .map((c) => `- \`${c.id.slice(0, 12)}\` ${c.kind} · val ${val(c, nowDay).toFixed(2)}`);
+    .map(
+      (c) =>
+        `- \`${c.id.slice(0, 12)}\` ${c.kind} · ${claimText(c).replace(/\s+/g, " ").trim().slice(0, 100)}`,
+    );
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, ".gitattributes"), LEDGER_GITATTRIBUTES);
   writeFileSync(
     join(dir, "LEDGER.md"),
     ["# Proof-Carrying Memory ledger", "", ...rows, ""].join("\n"),
@@ -517,7 +732,34 @@ export function verify(dir) {
   return { ok: issues.length === 0, claims, outcomes, issues };
 }
 
-/** Move dormant/tombstoned claim files to the attic (audit trail, never retrieved). */
+/**
+ * Prune to the attic — the spec's forgetting rule (01-pcm-protocol.md §3) made real: a claim
+ * is archived once it is tombstoned, or dormant, AND nothing new has landed on it for more
+ * than 2·T. (The spec prunes a tombstone immediately; waiting the same 2·T keeps
+ * `forge ledger show/blame` able to answer for a recent retraction — the attic is the audit
+ * trail, not a deletion.) Nothing is lost: the claim bytes move to attic/, every log stays,
+ * and new evidence un-archives the claim. Idempotent.
+ * @param {string} dir
+ * @param {number} [nowDay]
+ * @param {{halfLife?:number}} [opts]
+ * @returns {{pruned:string[]}} ids archived by this pass
+ */
+export function pruneLedger(dir, nowDay = epochDay(), { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  const pruned = [];
+  for (const c of loadClaims(dir)) {
+    const last = Math.max(
+      c.provenance?.t ?? 0,
+      c.tombstone?.t ?? 0,
+      ...(c.evidence ?? []).map((e) => e.t ?? 0),
+    );
+    if (nowDay - last <= 2 * halfLife) continue; // still within the review window
+    if (!c.tombstone && !isDormant(c, nowDay, { halfLife })) continue;
+    if (pruneToAttic(dir, c.id).ok) pruned.push(c.id);
+  }
+  return { pruned };
+}
+
+/** Move one dormant/tombstoned claim file to the attic (audit trail, never retrieved). */
 export function pruneToAttic(dir, id) {
   const from = claimPath(dir, id);
   if (!existsSync(from)) return { ok: false, reason: "no such claim" };
@@ -542,6 +784,8 @@ export function stats(dir, nowDay = 0) {
   return {
     total: claims.length,
     tombstoned: claims.filter((c) => c.tombstone).length,
+    // Agent-proposed retractions awaiting a human `forge ledger retract <full id>`.
+    pendingRetractions: retractionProposals(claims).size,
     byKind,
     val: buckets,
   };

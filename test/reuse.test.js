@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,20 @@ import {
 } from "../src/reuse.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-reuse-"));
+/** A real one-commit repo: store-level evidence must cite a git object that resolves in it
+ *  (the only ref type forge re-derives — review C2). Returns {root, head}. */
+const gitRepo = () => {
+  const root = tmp();
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "f.txt"), "hello\n");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  return { root, head };
+};
 
 // --- normalization -------------------------------------------------------------------
 
@@ -46,13 +61,13 @@ test("fingerprint: exact key is context-sensitive (slice), sketch is stable", ()
   assert.deepEqual(f1.sketch, f2.sketch);
 });
 
-test("bandKeys: 16 deterministic bands; near-duplicates share at least one", () => {
+test("bandKeys: 32 deterministic bands; near-duplicates share at least one", () => {
   const long =
     "implement a token bucket rate limiter for the public api gateway with configurable " +
     "burst size and a redis backing store for distributed counters across instances";
   const k1 = bandKeys(fingerprint(long).sketch);
   const k2 = bandKeys(fingerprint(`${long} please`).sketch);
-  assert.equal(k1.length, 16);
+  assert.equal(k1.length, 32);
   assert.deepEqual(k1, bandKeys(fingerprint(long).sketch), "deterministic");
   assert.ok(
     k1.some((k) => k2.includes(k)),
@@ -73,7 +88,7 @@ const verified = (spec, { slice = "", deps = [], evidence = 2 } = {}) => {
   c.evidence = Array.from({ length: evidence }, (_, i) => ({
     oracle: "test.run",
     result: "confirm",
-    ref: `run:${i}`,
+    ref: `git:${String(i).repeat(8)}`,
     author: "ci",
     t: 0,
     w: 0.8,
@@ -132,36 +147,37 @@ test("revalidate: a vanished dependency blocks serving (stale cache can't ship)"
 
 // --- store level: fill → hit → demote --------------------------------------------------
 
-test("mintArtifact + reuseQuery: verified fill serves; the serve refreshes structural evidence", () => {
-  const root = tmp();
+test("mintArtifact + reuseQuery: verified fill serves; serving adds NO evidence of its own (C2)", () => {
+  const { root, head } = gitRepo();
   const dir = repoLedger(root);
   const m = mintArtifact(
     dir,
     { spec: SPEC, code: { path: "src/limit.js", sha256: "a".repeat(64) } },
-    { evidence: { oracle: "test.run", result: "confirm", ref: "run:42" }, t: 0 },
+    { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
   );
   assert.equal(m.ok, true);
   assert.equal(m.serves, true);
   const atlas = { symbols: [] };
-  const r = reuseQuery(root, SPEC, { atlas, nowDay: 1 });
-  assert.equal(r.tier, "exact");
+  const before = val(loadClaims(dir)[0], 1);
+  for (let day = 1; day <= 10; day++) {
+    const r = reuseQuery(root, SPEC, { atlas, nowDay: day });
+    assert.equal(r.tier, "exact");
+  }
   const ev = readEvidence(dir, m.id);
-  assert.ok(
-    ev.some((e) => e.oracle === "graph.reval" && e.result === "confirm"),
-    "serving appended a structural confirmation",
-  );
+  assert.equal(ev.length, 1, "ten serves appended nothing — a cache hit is not an oracle");
+  assert.ok(val(loadClaims(dir)[0], 1) <= before, "serving never raises confidence");
   const metric = readMetrics(root, { stage: "cache" }).pop();
   assert.equal(metric.outcome, "hit_exact");
   assert.ok(metric.savedEstimate > 0);
 });
 
 test("reuseQuery: failed revalidation demotes the artifact in the ledger — for everyone", () => {
-  const root = tmp();
+  const { root, head } = gitRepo();
   const dir = repoLedger(root);
   const m = mintArtifact(
     dir,
     { spec: SPEC, deps: ["goneHelper"], code: { path: "src/limit.js", sha256: "b".repeat(64) } },
-    { evidence: { oracle: "test.run", result: "confirm", ref: "run:1" }, t: 0 },
+    { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
   );
   const before = val(loadClaims(dir)[0], 0);
   const r = reuseQuery(root, SPEC, { atlas: { symbols: [] }, nowDay: 0 });
@@ -173,6 +189,20 @@ test("reuseQuery: failed revalidation demotes the artifact in the ledger — for
   );
   assert.ok(val(after, 0) < before, "the cache pruned itself by ground truth");
   assert.equal(readMetrics(root, { stage: "cache" }).pop().outcome, "miss");
+});
+
+test("mint with a made-up ref (C2): `--ref lgtm` is stored but honestly reported as not serving", () => {
+  for (const ref of ["lgtm", "session:x", "ci:1", "human:claude@yes"]) {
+    const root = tmp();
+    const m = mintArtifact(
+      repoLedger(root),
+      { spec: `${SPEC} ${ref}`, code: {} },
+      { evidence: { oracle: "test.run", result: "confirm", ref }, t: 0 },
+    );
+    assert.equal(m.ok, true, ref);
+    assert.equal(m.serves, false, `${ref}: an unresolved ref cannot earn the serving floor`);
+    assert.equal(reuseQuery(root, `${SPEC} ${ref}`, { nowDay: 0 }).tier, "miss", ref);
+  }
 });
 
 test("mint without evidence is honest: stored but flagged as not serving", () => {
@@ -217,4 +247,49 @@ test("metrics: record/read/summarize roundtrip; corrupt lines skipped", () => {
   assert.equal(s.cache.events, 2);
   assert.equal(s.cache.byOutcome.hit_exact, 1);
   assert.equal(s.cache.savedEstimate, 100);
+});
+
+// --- C9: the exact tier must mean "the same task" --------------------------------------
+
+test("lookup (C9): a different identifier is never served as exact or near", () => {
+  const cache = [verified("add pagination to listUsers")];
+  const same = lookup(cache, "Add pagination to listUsers", { nowDay: 0 });
+  assert.equal(same.tier, "exact", "the same task, reworded in case, is still exact");
+  const other = lookup(cache, "add pagination to listOrders", { nowDay: 0 });
+  assert.ok(
+    other.tier === "adapt" || other.tier === "miss",
+    `listOrders got tier ${other.tier} (similarity ${other.similarity}) from the listUsers artifact`,
+  );
+  const renamed = lookup(cache, "rename snake_case_var to parseConfig", { nowDay: 0 });
+  assert.equal(renamed.tier, "miss");
+});
+
+test("lookup (C9): two unrelated non-ASCII specs are not 'exact'", () => {
+  const cache = [verified("أضف ترقيم الصفحات إلى قائمة المستخدمين")];
+  assert.equal(lookup(cache, "احذف حساب المستخدم", { nowDay: 0 }).tier, "miss");
+  assert.equal(
+    lookup(cache, "أضف ترقيم الصفحات إلى قائمة المستخدمين", { nowDay: 0 }).tier,
+    "exact",
+    "the identical Arabic spec still hits",
+  );
+  assert.notEqual(normalizeSpec("احذف حساب المستخدم"), "", "non-ASCII words survive normalization");
+});
+
+test("lookup (C9): the LSH prefilter keeps adapt-tier candidates in a big ledger", () => {
+  const BASE =
+    "implement a token bucket rate limiter for the public api gateway with configurable " +
+    "burst size and sliding window fallback plus prometheus metrics and a redis backing store";
+  const query = BASE.replace(
+    "and sliding window fallback plus prometheus metrics",
+    "plus prometheus metrics",
+  );
+  const target = verified(BASE);
+  const fillers = Array.from({ length: 60 }, (_, i) =>
+    verified(`refactor the ${i} unrelated widget renderer module for the storefront theme ${i}`),
+  );
+  const small = lookup([target, ...fillers.slice(0, 10)], query, { nowDay: 0 });
+  assert.equal(small.tier, "adapt", "all-pairs (small pool) finds it");
+  const big = lookup([target, ...fillers], query, { nowDay: 0 });
+  assert.equal(big.tier, "adapt", "and the banded prefilter must not drop it");
+  assert.equal(big.artifact.id, target.id);
 });

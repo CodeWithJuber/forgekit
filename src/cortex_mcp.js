@@ -87,7 +87,7 @@ async function callTool(name, args = {}) {
   }
   if (name === "forge_ledger_query") {
     try {
-      const { loadClaims, repoLedger } = await import("./ledger_store.js");
+      const { loadClaims, repoLedger, retractionProposals } = await import("./ledger_store.js");
       const { retrieve, claimText } = await import("./ledger.js");
       const { claimSim, simLabel } = await import("./embed.js");
       const dir = repoLedger(root);
@@ -95,6 +95,7 @@ async function callTool(name, args = {}) {
       const claims = loadClaims(dir);
       const sim = claimSim(root, q, claims, claimText);
       const ranked = retrieve(q, claims, { nowDay: today(), budget: 8, sim });
+      const pending = retractionProposals(claims);
       return JSON.stringify(
         {
           sim: simLabel(sim),
@@ -103,6 +104,10 @@ async function callTool(name, args = {}) {
             kind: r.claim.kind,
             score: r.score,
             text: claimText(r.claim).slice(0, 200),
+            // An agent proposed retracting this claim; it stays live until a human confirms.
+            ...(pending.has(r.claim.id)
+              ? { pendingRetraction: pending.get(r.claim.id).map((p) => p.reason) }
+              : {}),
           })),
         },
         null,
@@ -152,7 +157,10 @@ async function callTool(name, args = {}) {
   if (name === "forge_remember") {
     const { brainStore, remember } = await import("./brain.js");
     const store = brainStore(root);
-    remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    // Report what the store actually did: it REFUSES secret-shaped content, and saying
+    // "Remembered" over a refusal taught the caller a fact that was never stored.
+    const r = remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    if (!r.ok) return `Not remembered — ${r.reason ?? "the store refused the write"}.`;
     return `Remembered "${args.name}" in ${store}.`;
   }
   if (name === "collide_check") {
@@ -164,27 +172,31 @@ async function callTool(name, args = {}) {
     const { rankReport } = await import("./rank.js");
     return JSON.stringify(rankReport(root, { top: Number(args.top ?? 15) || 15 }), null, 2);
   }
+  // The two agent-callable ledger WRITES act as the agent, never as the human: both are
+  // stamped `agent:mcp` (not gitAuthor()), neither changes any claim's confidence, and
+  // neither is final — a human ratifies or retracts with `forge ledger ratify|retract`.
   if (name === "forge_ledger_ratify") {
-    const { ratify, repoLedger, getClaimByPrefix } = await import("./ledger_store.js");
-    const { gitAuthor } = await import("./util.js");
-    const dir = repoLedger(root);
-    const claim = getClaimByPrefix(dir, String(args.id ?? ""));
-    if (!claim) return `No claim matching prefix "${args.id}".`;
-    ratify(dir, claim.id, { author: gitAuthor(), t: today() });
-    return `Ratified claim ${claim.id}.`;
+    const { ratify, repoLedger, MCP_AUTHOR } = await import("./ledger_store.js");
+    const r = ratify(repoLedger(root), String(args.id ?? ""), {
+      author: MCP_AUTHOR,
+      agent: "mcp",
+      note: "agent-proposed via MCP — not a human ratification",
+      t: today(),
+    });
+    if (!r.ok) return `No claim matching "${args.id}" (unknown or ambiguous prefix).`;
+    return `Recorded an agent-proposed ratification of ${r.ratifies} as decision ${r.decisionId} (author ${MCP_AUTHOR}). This is not a human ratification and does not change the claim's confidence — a human ratifies with \`forge ledger ratify <id>\`.`;
   }
   if (name === "forge_ledger_retract") {
-    const { tombstone, repoLedger, getClaimByPrefix } = await import("./ledger_store.js");
-    const { gitAuthor } = await import("./util.js");
-    const dir = repoLedger(root);
-    const claim = getClaimByPrefix(dir, String(args.id ?? ""));
-    if (!claim) return `No claim matching prefix "${args.id}".`;
-    tombstone(dir, claim.id, {
-      author: gitAuthor(),
+    const { proposeRetraction, repoLedger, FULL_ID_RE } = await import("./ledger_store.js");
+    const id = String(args.id ?? "").trim();
+    if (!FULL_ID_RE.test(id))
+      return `Refused: forge_ledger_retract needs one full 64-character claim id (got "${id}") — prefixes are never accepted, so a retraction can't land on a claim nobody named. forge_ledger_query returns full ids.`;
+    const r = proposeRetraction(repoLedger(root), id, {
       reason: String(args.reason ?? ""),
       t: today(),
     });
-    return `Retracted claim ${claim.id}: ${args.reason}`;
+    if (!r.ok) return `No claim matching "${id}".`;
+    return `Proposed retraction of claim ${id} (proposal ${r.proposalId}, author agent:mcp): ${args.reason}. The claim stays live until a human confirms with \`forge ledger retract ${id} --reason "…"\`.`;
   }
   return null;
 }
@@ -206,7 +218,21 @@ export async function handle(msg) {
   }
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (method === "tools/call") {
-    const text = await callTool(params?.name, params?.arguments);
+    let text;
+    try {
+      text = await callTool(params?.name, params?.arguments);
+    } catch (err) {
+      // A throwing handler (unwritable .forge, corrupt store, …) must still ANSWER — a
+      // request with no reply leaves the MCP client waiting until its own timeout.
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32603,
+          message: `tool ${params?.name} failed: ${String(err?.message ?? err).slice(0, 300)}`,
+        },
+      };
+    }
     if (text === null) {
       return {
         jsonrpc: "2.0",
@@ -242,7 +268,18 @@ export function serve(input = process.stdin, output = process.stdout) {
       .then((res) => {
         if (res) output.write(`${JSON.stringify(res)}\n`);
       })
-      .catch(() => {});
+      .catch((err) => {
+        // Last line of defence: anything handle() itself throws still gets a reply for a
+        // request (id present); notifications stay silent per JSON-RPC.
+        if (msg?.id === undefined) return;
+        output.write(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: { code: -32603, message: String(err?.message ?? err).slice(0, 300) },
+          })}\n`,
+        );
+      });
   });
 }
 

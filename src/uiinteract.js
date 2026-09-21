@@ -16,7 +16,7 @@
 import { outcomeRecord } from "./ledger.js";
 import { appendEvidence, loadClaims, repoLedger } from "./ledger_store.js";
 import { DEFAULT_VIEWPORTS, resolvePlaywright, resolveTarget } from "./uivisual.js";
-import { contentHash } from "./util.js";
+import { contentHash, epochDay } from "./util.js";
 
 /** The interaction checks, in the order they run. Pure data so docs + tests can name them. */
 export const INTERACTION_CHECK_IDS = [
@@ -38,9 +38,11 @@ export function summarizeVerdict(checks) {
  * on the checks so re-running the same verdict is idempotent (appendEvidence dedupes).
  * @param {string} url
  * @param {{pass:boolean, checks:any[]}} verdict
- * @param {{author?:string, t?:number}} [opts]
+ * @param {{author?:string, t?:number}} [opts] `t` defaults to TODAY: a verdict recorded at
+ *   epoch day 0 decays to nothing the moment it lands, so five failing UI runs moved val by
+ *   0.0000 (review C11).
  */
-export function verdictOutcome(url, verdict, { author = "forge-uiinteract", t = 0 } = {}) {
+export function verdictOutcome(url, verdict, { author = "forge-uiinteract", t = epochDay() } = {}) {
   const ref = `ui-interact:${url}#${contentHash(JSON.stringify(verdict?.checks ?? []))}`;
   return outcomeRecord({
     oracle: "behavioral",
@@ -60,7 +62,12 @@ export function verdictOutcome(url, verdict, { author = "forge-uiinteract", t = 
  * @param {{author?:string, t?:number}} [opts]
  * @returns {{recorded:boolean, claimId?:string, reason?:string}}
  */
-export function recordInteraction(root, url, verdict, { author = "forge-uiinteract", t = 0 } = {}) {
+export function recordInteraction(
+  root,
+  url,
+  verdict,
+  { author = "forge-uiinteract", t = epochDay() } = {},
+) {
   const dir = repoLedger(root);
   const claim = loadClaims(dir).find((c) => c.kind === "fingerprint" && !c.tombstone);
   if (!claim)

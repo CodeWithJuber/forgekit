@@ -705,6 +705,13 @@ HANDLERS.ledger = async (argv) => {
     heading(`${BRAND.brand} ledger — proof-carrying memory\n`);
     console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
     for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
+    if (s.pendingRetractions)
+      console.log(
+        paint(
+          `  ${s.pendingRetractions} claim(s) with an agent-proposed retraction — review, then \`forge ledger retract <full id> --reason …\``,
+          "warn",
+        ),
+      );
     console.log(
       `  val: ${paint(`trusted ${s.val.trusted}`, "ok")} · ${paint(`uncertain ${s.val.uncertain}`, "warn")} · ${paint(`dormant ${s.val.dormant}`, "dim")}`,
     );
@@ -732,7 +739,14 @@ HANDLERS.ledger = async (argv) => {
       return;
     }
     const { val } = await import("./ledger.js");
-    return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
+    const pending = ls.retractionProposals(ls.loadClaims(dir)).get(hit.id);
+    return console.log(
+      JSON.stringify(
+        { ...hit, val: val(hit, nowDay), ...(pending ? { pendingRetractions: pending } : {}) },
+        null,
+        2,
+      ),
+    );
   }
   if (sub === "merge") {
     const src = args[2];
@@ -814,8 +828,17 @@ HANDLERS.ledger = async (argv) => {
     const id = args[2];
     const ri = args.indexOf("--reason");
     const reason = ri >= 0 ? (args[ri + 1] ?? "") : "";
-    if (!id || id.length < 2 || id === "--reason" || !reason) {
-      console.error('usage: forge ledger retract <id-prefix> --reason "<why>"');
+    if (!id || id === "--reason" || !reason) {
+      console.error('usage: forge ledger retract <full claim id> --reason "<why>"');
+      process.exitCode = 1;
+      return;
+    }
+    // A tombstone is permanent, so it must name exactly one claim: the full 64-char id,
+    // never a prefix (a short prefix used to retract the first sorted match).
+    if (!ls.FULL_ID_RE.test(id)) {
+      console.error(
+        `  refused: retract needs the full 64-character claim id (got "${id}") — see \`forge ledger query\` or \`forge ledger show <prefix>\``,
+      );
       process.exitCode = 1;
       return;
     }

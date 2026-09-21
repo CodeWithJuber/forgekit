@@ -173,6 +173,155 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entirely. The reviewer measured 63 of 64 well-specified held-out tasks tripping it. Unresolved
   entities are now a floor on _clearing_ a rubric ask only, identically in both modes (a
   rename's new name is unresolved by definition).
+- **A torn ledger line no longer swallows the next record.** A process killed mid-append (or a
+  union merge that dropped the trailing newline) left a final line without `\n`; the next
+  `appendEvidence` was glued onto it, became one unparseable line, and vanished from every read
+  while the append still returned `ok:true` — the repro showed `[run-1]` visible after
+  appending `run-3`. Every ledger log append (evidence, provenance, tombstones, quarantine) now
+  terminates a torn final line first: `[run-1, run-3]`, and a re-append dedupes.
+- **Claim canonicalization normalizes keys before sorting them.** Keys were sorted by their raw
+  spelling and NFC-normalized afterwards, so an NFD key (`e` + combining accent) sorted before
+  `f` while its NFC twin sorts after it. A claim minted with such a key was written with one
+  byte order and re-hashed with another on reload: `loadClaims` saw 0 claims and `verify`
+  reported an id mismatch. Keys are now normalized first; the pinned ASCII fixture ids are
+  unchanged.
+- **An MCP tool that throws now answers with a JSON-RPC error.** `serve()` swallowed handler
+  exceptions (`.catch(() => {})`), so a request whose handler threw — e.g. `forge_remember` with
+  an unwritable `.forge` — never got a reply and the client waited for its own timeout. The
+  server now returns `-32603` with the tool name and message, and keeps serving (the repro
+  received replies for ids `[2]` before, `[2, 1]` after).
+- **`forge ledger sync` no longer erases teammates' evidence from the shared ref.** A push
+  wrote the pushing replica's *verified* state, so any record it had to quarantine (a `file:`
+  proof only a teammate's tree has, a commit it had not fetched) vanished from
+  `refs/forge/ledger` for everyone — the review's alice/bob/carol run ended with the remote
+  holding 0 of alice's 1 record. A push now writes the raw remote state joined with the local
+  verified state (the same semilattice merge) and verification happens only on read: the
+  remote keeps the record (1), bob and carol still quarantine it locally, and a re-run is
+  still a byte-level no-op.
+- **Restoring a superseded fact leaves it live.** Fact claims are content-addressed and
+  tombstones are permanent, so `forge remember api-base v1` → `v2` → `v1` put the restored
+  value back on v1's retired id: the ledger held no live `api-base` fact at all (`list`
+  went from `["api-base"]` to `[]`). A retired value is now re-asserted as the next revision
+  (the lowest `rev` whose claim is not tombstoned — deterministic, so teammates converge),
+  and `reconcileFacts` matches store and ledger by content instead of by rev-0 id.
+- **Eq. 3 retrieval ranks by relevance again.** Five defects compounded into "the ledger
+  answers the wrong question":
+  - *Scope was a strict priority.* The scope weight multiplied σ from outside, and with
+    a+b+g = 1 the sigmoid only spans [0.5, 0.731] — so scope decided every ranking: an
+    unrelated, 400-day-old, contradicted **symbol** claim scored 0.5375 against a
+    perfect-match **repo** claim's 0.3853. Scope is now a bounded term inside σ
+    (`s = 0.10`, symbol−global = 0.06): the same pair now ranks 0.6815 (repo) over 0.5622.
+  - *Short queries found nothing.* `rel` was MinHash over 4-token shingles, so a 2–3 word
+    query was one shingle no claim contained: "auth token refresh" scored `rel` 0 against
+    the auth fact and ranked it **below** an unrelated CSS fact. `rel` is now
+    `max(shingle Jaccard, query-term coverage)`; the same query ranks auth first (0.713 vs
+    0.589).
+  - *Any two non-ASCII texts were "identical".* The tokenizer split on `[^a-z0-9]`, so
+    Arabic, Chinese or Greek text became the empty token set and two empty sketches agreed
+    on all 128 lanes — Jaccard 1. Tokens are now Unicode-aware (`\p{L}\p{N}\p{M}`) and an
+    empty set shares nothing with anything: Arabic vs Chinese is 0, and a real Arabic
+    query retrieves its Arabic fact.
+  - *Contradictions counted as recent evidence.* `rec` keyed on the newest evidence of any
+    polarity, so a fresh refutation RAISED a stale claim's score (0.3280 → 0.3384). `rec`
+    now keys on confirmations (or the mint), and the same contradiction lowers the score.
+  - *Two similarity scales in one ranking.* With a partially embedded ledger, cosine
+    (0.4–0.6 for unrelated same-domain text) competed with Jaccard (≈0), so every embedded
+    claim outranked every lexical one. The backend is chosen once per ranking: cosine only
+    when every candidate is embedded.
+  `EQ3_WEIGHTS` no longer claims to be "calibrated in P8" — P8 shipped cost evaluation, not
+  a retrieval calibration; the spec (01-pcm-protocol.md §4) is updated to match the code.
+- **Déjà vu is gated on relevance, not on the total score.** `DEJA_FLOOR` (0.39) was tuned on
+  repo-scoped summaries, but a symbol-scoped lesson scored ≥ 0.5 for any prompt, so an
+  unrelated `parseConfig` lesson surfaced on EVERY prompt — including "translate the README
+  into French" (0.538). The gate is now `DEJA_REL_FLOOR` on the `rel` term (0.5: at least half
+  the prompt's content words appear in the remembered task): the unrelated prompt is silent at
+  day 100 and day 400, while a genuine repeat still fires.
+- **Future-dated evidence no longer counts at full weight for years.** A record dated 10 years
+  ahead (a skewed clock, a hand-written `t`) pinned `rec` at 1.000 and kept full val weight
+  until the calendar caught up. Age is now the distance from now, so that record's `rec` is
+  0.000 two years later and its val weight ≈ 0, while a one-day skew stays negligible.
+- **A learned lesson stops flapping out of the injection set the next day.** One Stop-hook
+  confirm put a lesson's val at exactly 0.6 against an `active` bar of 0.6, so a single day of
+  decay (0.5988) demoted it: a lesson was injected on the day it was learned and never again
+  (with three confirms it dropped out around day 75). Activation is now hysteretic — on at
+  0.6, off below 0.55 — so one confirm keeps a lesson active for ~52 days, three for ~124, and
+  a contradiction still demotes it immediately. The test that only read on the confirm day now
+  reads at days 101, 130, 150 and 160.
+- **Dormancy latches, and pruning is wired.** A claim refuted by a human revert (val 0.333)
+  drifted back above the 0.35 dormancy floor 11 days later — with no new evidence — and
+  re-entered retrieval. Dormancy now latches at the evidence event and only a later
+  *confirmation* clears it; decay alone never does. `pruneToAttic` had no callers at all, so
+  the spec's forgetting rule (01-pcm-protocol.md §3) was unimplemented: the new `pruneLedger`
+  archives tombstoned or dormant claims that have had nothing new for 2·T, and runs at
+  session end (the déjà-vu Stop write), on `ledger merge` and on `ledger sync` import.
+  Nothing is deleted — the bytes move to `attic/`, every log stays, a re-import never
+  un-prunes, and new evidence brings a claim back with its whole history.
+- **The reuse cache's "exact" tier means the same task again.** The exact and near tiers
+  compared the SHAPE-normalized spec, in which every identifier is `⟨ident⟩` — so
+  "add pagination to listOrders" was served the **listUsers** artifact at tier exact,
+  similarity 1, and (because the tokenizer's `\w` is ASCII-only, which erased every Arabic
+  word) two unrelated Arabic specs were exact matches of each other. Artifacts now carry an
+  identity key — Unicode-aware tokens, case and punctuation normalized, identifiers kept —
+  which the exact and near tiers compare; the shape form still keys the adapt tier, so the
+  listUsers artifact can still be offered as a starting point for listOrders, never as the
+  answer. The three collision cases from the review are now misses.
+- **The LSH prefilter stopped dropping three of every four adapt candidates.** The comment
+  claimed "≈0.96 at J=0.8 and ≈0.17 at J=0.5" for 16 bands × 8 rows; the real figures are
+  0.95 and 0.06, and at the adapt threshold J=0.6 recall was 0.24 — so once a ledger passed
+  32 artifacts, most adapt-tier hits silently became misses. Banding is now 32 × 4 (0.99 at
+  J=0.6, ≈1.00 at J=0.8): in the review's own harness, 67 of 67 adapt-band pairs are found
+  with the prefilter active, against 39 of 67 before.
+- **Goal anchoring measures the right thing, per checkpoint.** Three separate defects:
+  - The per-prompt advisory compared the working diff against the **current prompt**, so
+    "ok, now run the tests please" reported every changed file as goal drift. The hook now
+    re-runs the check against the persisted goal (`.forge/goal.md`), and with no goal set it
+    makes no drift claim at all — a prompt is not a goal.
+  - The CUSUM chart was fed the **cumulative** off-goal ratio every prompt, so one static
+    off-goal file alarmed by itself after three idle prompts (C = 0.32 → 0.63 → 0.95 → 1.27
+    > h = 1.0). It now gets the per-checkpoint increment — the off-goal fraction of what
+    actually moved since the last prompt — so idle prompts score 0 and drain the chart,
+    while a file edited again scores 1 again.
+  - M5 minimality ignored untracked files, which is where over-engineering lives: a 6-class,
+    212-line "framework" dropped next to a one-line fix measured as 1 file, +1 line, 0
+    warnings. Untracked files are now part of the measured footprint (2 files, +213 lines,
+    13 new abstractions, 2 warnings) whether or not they have been `git add`ed.
+- **The doom-loop signature sees the whole failure.** It hashed `tool_response.stdout` only
+  and just its first 800 characters, so a stderr-only failure (jest, mocha, tsc) was never
+  seen at all, and three different failures behind one long passing header shared a signature
+  and were reported as a loop. It now covers stdout and stderr and the whole normalized
+  output (head + tail above 64 KB). The advisory also stops claiming "different edits aren't
+  fixing it" when nothing was edited between the runs.
+- **`LEDGER.md` stopped conflicting in the conflict-free store.** The generated index is
+  rewritten on every ledger write and each row carried `val 0.50` — a number that changes
+  with the clock and with each replica's evidence — so two teammates adding one fact each got
+  a merge CONFLICT in `.forge/ledger/LEDGER.md`. Rows are now stable (id, kind, the claim's
+  own text), and the ledger ships its own nested `.gitattributes` marking the index
+  `merge=union linguist-generated`: the review's alice/bob merge is clean.
+- **The per-prompt hook stopped re-reading the whole ledger, three times.** A ledger is one
+  small file per claim plus its logs (300 claims = 900 files), nothing compacted it, and the
+  hooks ask for it three times per prompt (lessons, déjà vu, reuse peek). `loadState` now
+  keeps a derived snapshot beside the ledger, validated by a stat-only fingerprint of every
+  file's (path, size, mtime) — any external edit, git merge or prune rebuilds it from the
+  files, and the cache is gitignored. Measured on a 300-claim ledger (Windows, the review's
+  own harness): one `loadClaims` 619 ms → 112 ms, and the per-prompt hook path
+  (ambient substrate check + déjà vu) 3026 ms → 517 ms.
+- **A recorded UI interaction verdict is dated today.** `recordInteraction` defaulted to
+  `t = 0` and the CLI passed no day, so every verdict landed 56 years in the past and decayed
+  to nothing on arrival: five failing UI runs left the design fingerprint's val at exactly
+  0.5000. They now move it to 0.3636.
+- **A refuted fact stops being broadcast to every tool.** `.forge/brain`'s index is inlined
+  into the emitted `AGENTS.md`, and it never asked the ledger what a fact was worth: a fact
+  three CI runs had contradicted (val 0.23, dormant) was still shipped verbatim to Codex,
+  Cursor, Gemini and everything else that reads `AGENTS.md`. The index now withholds facts the
+  ledger has sunk below the dormancy floor, and — like the overflow pointer — says how many
+  and why rather than dropping them silently. `forge_remember` also reports a refusal
+  ("Not remembered — refused: looks like a secret…") instead of answering "Remembered" for a
+  write the store rejected.
+- **Only a real test run counts as one.** The test-command grammar matched anywhere in a
+  command, so `echo "run npm test later"` and `grep -r 'jest' package.json` marked a session
+  "tested" — minting a `test.run` confirm for a session that ran no tests — and `npm test ||
+  true` counted as a pass because the `|| true` swallowed the exit code. A command now has to
+  BE a test run (start of the command or after a shell separator) and keep its exit code.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
@@ -376,6 +525,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   1 MiB blind spot: a stale `verify` PASS survived a later code edit whenever the pending
   diff was over 1 MiB. It now hashes a `--binary` diff with the same buffer, and it reports
   "cannot bind" rather than hashing `""` when git fails.
+
+### Security
+
+- **Only evidence forge actually resolved can lift a claim into the trusted band.** Any
+  untyped or unknown-prefix ref counted as fully resolved: `lgtm`, `session:x`, `ci:1`,
+  `human:claude@yes` and `git:HEAD` each took one confirm to val 0.643, and
+  `forge reuse mint --ref lgtm` was served at tier exact. "Resolved" now means forge
+  re-derived the pointer — a `git:` object id, resolved at every append/import gate and
+  re-resolved by `verify` — plus the two bridge pointers on their own bridge oracle
+  (`episode:` ↔ `cortex.episode`, `legacy:` ↔ `legacy.import`). Everything else, including
+  `ci:`/`human:` locators and symbolic `git:HEAD`, counts at format strength and is capped at
+  0.55, below the 0.6 serving floor; an `agent:` identity never supplies human-family evidence
+  at full strength. The review's three hand-written `human.accept` lines now reach 0.55
+  instead of 0.787. What remains: a hand-written line citing a real commit sha still counts —
+  closing that needs signed evidence (key infrastructure), which this release does not add.
+- **Serving a cached artifact no longer confirms it.** Every `forge reuse` hit appended a
+  passing `graph.reval` confirm, so ten daily serves moved val from 0.643 to 0.864 and an
+  artifact stayed served (0.710, tier exact) after two failing test runs. Only a failed
+  revalidation is written back (as a contradiction); ten serves now append nothing, and the
+  same two failing runs drop it to 0.427 — a miss. `mintArtifact` reports `serves` from the
+  confidence the proof actually earns instead of "some evidence was passed".
+- **The MCP ledger write tools act as the agent and only propose.** `forge_ledger_ratify` and
+  `forge_ledger_retract` ran under the human's `gitAuthor()`; retract accepted any 2-character
+  prefix and permanently tombstoned the first sorted match, and ratify's description promised a
+  confidence change it never made. Both are now stamped `agent:mcp`. Ratify mints a distinct
+  agent-proposed decision (never deduped into, or counted as, a human ratification) and says it
+  changes no confidence. Retract requires one exact 64-character id and records a
+  pending-retraction proposal — the claim stays live, val unchanged — shown by `forge_ledger_query`,
+  `forge ledger stats` and `forge ledger show` until a human runs `forge ledger retract`, which
+  now also requires the full id. `getClaimByPrefix` refuses an ambiguous prefix instead of
+  returning the first sorted match.
 
 ### Documentation
 

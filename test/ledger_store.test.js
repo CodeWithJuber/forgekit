@@ -20,6 +20,7 @@ import {
   loadClaims,
   loadState,
   mergeDirs,
+  pruneLedger,
   pruneToAttic,
   putClaim,
   ratify,
@@ -123,6 +124,22 @@ test("appendEvidence: appends, dedupes by hash, requires the claim to exist and 
   );
   const loaded = loadClaims(dir)[0];
   assert.ok(val(loaded, 3) > 0.5, "evidence is attached on load");
+});
+
+test("appendEvidence: a torn final line (killed mid-append) never swallows the next record", () => {
+  const dir = tmp();
+  const c = fact("torn", "text");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", "run-1", 1));
+  const log = join(dir, "evidence", `${c.id}.log`);
+  writeFileSync(log, `${readFileSync(log, "utf8")}{"author":"","oracle":"test.run","ref":"run-2"`);
+  const r = appendEvidence(dir, c.id, ev("confirm", "run-3", 1));
+  assert.deepEqual(r, { ok: true, deduped: false });
+  assert.deepEqual(
+    readEvidence(dir, c.id).map((e) => e.ref),
+    ["run-1", "run-3"],
+    "the record reported as appended is actually readable",
+  );
 });
 
 test("corrupt files are quarantined, not fatal — and verify names what load skips", () => {
@@ -241,6 +258,22 @@ test("getClaimByPrefix: finds one claim via its shard without scanning the ledge
   assert.equal(getClaimByPrefix(dir, "a"), null, "sub-shard prefixes are refused");
 });
 
+test("getClaimByPrefix: an ambiguous prefix finds nothing instead of the first sorted match (C2)", () => {
+  const dir = tmp();
+  const a = fact("twin", "t0");
+  putClaim(dir, a);
+  let b = null;
+  for (let i = 1; !b; i++) {
+    const c = fact("twin", `t${i}`);
+    if (c.id.slice(0, 2) === a.id.slice(0, 2)) b = c;
+  }
+  putClaim(dir, b);
+  assert.equal(getClaimByPrefix(dir, a.id.slice(0, 2)), null, "two matches → refuse");
+  assert.equal(getClaimByPrefix(dir, a.id).id, a.id, "the full id is always unambiguous");
+  assert.equal(getClaimByPrefix(dir, b.id).id, b.id);
+  assert.equal(ratify(dir, a.id.slice(0, 2), { author: "x" }).ok, false, "ratify refuses too");
+});
+
 test("importState: semilattice import is idempotent and merges evidence", () => {
   const a = tmp();
   const b = tmp();
@@ -267,7 +300,9 @@ test("reindex + stats: human index and counts reflect the live ledger", () => {
   putClaim(dir, fact("one", "first fact"));
   putClaim(dir, fact("two", "second fact"));
   assert.equal(reindex(dir), 2);
-  assert.match(readFileSync(join(dir, "LEDGER.md"), "utf8"), /fact · val 0\.50/);
+  const md = readFileSync(join(dir, "LEDGER.md"), "utf8");
+  assert.match(md, /fact · one first fact/);
+  assert.doesNotMatch(md, /val /, "no time-varying value: the index must merge cleanly");
   const s = stats(dir);
   assert.equal(s.total, 2);
   assert.deepEqual(s.byKind, { fact: 2 });
@@ -587,4 +622,117 @@ test("mergeDirs: imported forged/unresolvable evidence is quarantined and cannot
   assert.equal(again.quarantined, 0, "re-merge quarantines nothing new");
   assert.equal(readFileSync(qPath, "utf8"), qLog, "no duplicate quarantine lines");
   assert.equal(val(loadClaims(dst)[0], 5), before, "val still untouched after re-merge");
+});
+
+test("pruneLedger (C7): tombstoned and long-dormant claims go to the attic, new evidence brings them back", () => {
+  // A real repo: a human.revert must cite a git object that resolves here (review C2).
+  const root = mkdtempSync(join(tmpdir(), "forge-prune-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "f.txt"), "x");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const dir = repoLedger(root);
+  const now = 400;
+  const live = fact("live", "still believed", 0);
+  const refuted = fact("refuted", "the legacy auth endpoint is fine", 0);
+  const retracted = fact("retracted", "superseded value", 0);
+  const recent = fact("recent", "refuted yesterday", 0);
+  for (const c of [live, refuted, retracted, recent]) putClaim(dir, c);
+  const revert = (t) =>
+    outcomeRecord({ oracle: "human.revert", result: "contradict", ref: `git:${head}`, t }).outcome;
+  assert.equal(appendEvidence(dir, live.id, ev("confirm", `git:${head.slice(0, 9)}`, 0)).ok, true);
+  assert.equal(appendEvidence(dir, refuted.id, revert(0)).ok, true);
+  assert.equal(appendEvidence(dir, recent.id, revert(now - 1)).ok, true);
+  tombstone(dir, retracted.id, { author: "alice", reason: "superseded", t: 0 });
+
+  const { pruned } = pruneLedger(dir, now);
+  assert.deepEqual(pruned.sort(), [refuted.id, retracted.id].sort());
+  const ids = loadClaims(dir).map((c) => c.id);
+  assert.ok(!ids.includes(refuted.id) && !ids.includes(retracted.id), "archived, not retrieved");
+  assert.ok(ids.includes(live.id) && ids.includes(recent.id), "live and recently-refuted stay");
+  assert.ok(existsSync(join(dir, "attic", `${refuted.id}.json`)), "the bytes are kept for audit");
+  assert.deepEqual(pruneLedger(dir, now).pruned, [], "idempotent");
+  // Re-importing the same state must not resurrect a pruned claim…
+  importState(dir, loadState(dir), { nowDay: now });
+  assert.ok(!loadClaims(dir).some((c) => c.id === refuted.id), "a re-import never un-prunes");
+  // …but new evidence does: review restores weight.
+  assert.equal(
+    appendEvidence(dir, refuted.id, ev("confirm", `git:${head.slice(0, 10)}`, now)).ok,
+    true,
+  );
+  const back = loadClaims(dir).find((c) => c.id === refuted.id);
+  assert.ok(back, "new evidence brought the claim back out of the attic");
+  assert.equal(back.evidence.length, 2, "its whole history is intact");
+});
+
+test("LEDGER.md (C11): two teammates' facts merge without a conflict", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ledgermd-"));
+  const g = (...args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  const dir = repoLedger(root);
+  const add = (name, text) => {
+    putClaim(dir, fact(name, text, 20000));
+    reindex(dir, 20000);
+  };
+  add("base", "shared base fact");
+  g("add", "-A");
+  g("commit", "-qm", "base");
+  g("checkout", "-qb", "alice");
+  add("cache", "the cache ttl is 60s");
+  g("add", "-A");
+  g("commit", "-qm", "alice");
+  g("checkout", "-q", "main");
+  g("checkout", "-qb", "bob");
+  add("queue", "the queue retries three times");
+  g("add", "-A");
+  g("commit", "-qm", "bob");
+  let merged = "";
+  try {
+    merged = g("merge", "alice", "-m", "merge");
+  } catch (e) {
+    merged = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+  }
+  assert.doesNotMatch(merged, /CONFLICT/, merged);
+  const md = readFileSync(join(dir, "LEDGER.md"), "utf8");
+  for (const n of ["base", "cache", "queue"]) assert.match(md, new RegExp(n), `${n} in the index`);
+  assert.ok(
+    existsSync(join(dir, ".gitattributes")),
+    "the ledger ships the merge rule for its own generated index",
+  );
+});
+
+test("loadState (C11): the snapshot cache is derived — an external edit is never served stale", () => {
+  const dir = tmp();
+  const a = fact("cached", "first value");
+  putClaim(dir, a);
+  assert.equal(loadClaims(dir).length, 1);
+  assert.ok(
+    existsSync(join(dir, ".state-cache.json")),
+    "the snapshot is written beside the ledger",
+  );
+  assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /state-cache/, "and gitignored");
+  // A file that appears without going through this module (a git pull, a teammate's merge).
+  const b = fact("external", "arrived out of band");
+  const shard = join(dir, "claims", b.id.slice(0, 2));
+  mkdirSync(shard, { recursive: true });
+  writeFileSync(
+    join(shard, `${b.id}.json`),
+    `${canonicalize({ body: b.body, kind: b.kind, scope: b.scope ?? {}, v: 1 })}\n`,
+  );
+  const ids = loadClaims(dir).map((c) => c.id);
+  assert.equal(ids.length, 2, "the new claim is seen");
+  assert.ok(ids.includes(b.id));
+  // A claim file EDITED in place (same name, new bytes) must not be served from the cache.
+  writeFileSync(join(shard, `${b.id}.json`), "{}\n");
+  assert.equal(loadClaims(dir).length, 1, "a corrupted claim drops out on the next read");
+  // A corrupt cache file is ignored, not fatal.
+  writeFileSync(join(dir, ".state-cache.json"), "{not json");
+  assert.equal(loadClaims(dir).length, 1);
 });

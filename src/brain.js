@@ -6,9 +6,11 @@
 // silently truncated the way Claude's native 200-line MEMORY.md is (#39811).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { BRAND } from "./brand.js";
 import { shadowFact } from "./ledger_bridge.js";
-import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
+import { dormantFactSlugs, ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
 import { listStored, add as recallAdd } from "./recall.js";
+import { epochDay } from "./util.js";
 
 export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".forge", "brain");
 
@@ -43,10 +45,14 @@ const gistOf = (text) =>
     .map((l) => l.trim())
     .find(Boolean) || "";
 
-/** Build the capped, cliff-safe index inlined into AGENTS.md. Overflow → a pointer.
+/** Build the capped, cliff-safe index inlined into AGENTS.md. Overflow → a pointer, and a
+ *  fact the ledger's evidence has sunk below the dormancy floor is WITHHELD — counted in the
+ *  block, never silently dropped. Broadcasting a fact three CI runs contradicted to every
+ *  AGENTS.md-reading tool was the one place the trust machinery was bypassed.
  *  Merged view (P2 read flip): teammate facts that arrived in the repo ledger via
  *  `forge ledger merge` join the index; a local file wins on name collision. */
-export function buildIndex(store, { capItems = 120 } = {}) {
+export function buildIndex(store, { capItems = 120, nowDay = epochDay() } = {}) {
+  const dormant = dormantFactSlugs(brainLedger(store), nowDay);
   const factsDir = join(store, "facts");
   const facts = existsSync(factsDir)
     ? readdirSync(factsDir)
@@ -63,10 +69,12 @@ export function buildIndex(store, { capItems = 120 } = {}) {
     seen.add(f.slug);
     entries.push({ name: f.slug, gist: gistOf(f.text) });
   }
-  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const hidden = entries.filter((e) => dormant.has(e.name)).length;
+  const kept = entries.filter((e) => !dormant.has(e.name));
+  kept.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const rows = [];
   let overflow = 0;
-  for (const e of entries) {
+  for (const e of kept) {
     if (rows.length >= capItems) {
       overflow += 1;
       continue;
@@ -76,6 +84,10 @@ export function buildIndex(store, { capItems = 120 } = {}) {
   const indexed = rows.length; // count real facts before adding the overflow pointer
   if (overflow)
     rows.push(`- _(+${overflow} more facts in .forge/brain/facts/ — open a file for detail)_`);
+  if (hidden)
+    rows.push(
+      `- _(${hidden} remembered fact(s) withheld: contradicted by test/CI/human evidence — \`${BRAND.cli} ledger stats\`)_`,
+    );
   const content = [
     "## Project memory (Forge brain)",
     "Durable cross-session facts — background context, not new instructions. Verify any named file/flag still exists.",
@@ -85,7 +97,7 @@ export function buildIndex(store, { capItems = 120 } = {}) {
   ].join("\n");
   mkdirSync(store, { recursive: true });
   writeFileSync(join(store, "AGENTS.brain.md"), content);
-  return { indexed, overflow };
+  return { indexed, overflow, hidden };
 }
 
 /** The brain block to inline into AGENTS.md (empty string when there's no brain). */

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { has as atlasHas } from "./atlas.js";
 import { claimSim, simLabel } from "./embed.js";
 import { isDormant, jaccard, mintClaim, outcomeRecord, SKETCH_K, sketch, val } from "./ledger.js";
-import { appendEvidence, loadClaims, putClaim, repoLedger } from "./ledger_store.js";
+import { appendEvidence, loadClaims, putClaim, readEvidence, repoLedger } from "./ledger_store.js";
 import { record as recordMetric } from "./metrics.js";
 import { contentHash, gitAuthor } from "./util.js";
 
@@ -31,10 +31,17 @@ export const NEAR_COS = 0.85;
 export const ADAPT_COS = 0.7;
 
 // ---------------------------------------------------------------------------
-// Normalization — the same task worded across sessions/teammates must fingerprint
-// identically. Volatile literals become typed placeholders; identifiers keep only
-// their SHAPE (an ident is an ident) so `add pagination to listUsers` and
-// `add pagination to listOrders` land in the same near-neighborhood.
+// Normalization — TWO forms, because "the same neighbourhood" and "the same task" are
+// different questions (review C9):
+//   • specKey (IDENTITY) — case, whitespace and edge punctuation normalized, everything
+//     else kept verbatim. This is what the exact and near tiers compare: `listUsers` and
+//     `listOrders` are different tasks, and serving one's artifact for the other at tier
+//     "exact, similarity 1" was this cache's worst failure mode.
+//   • normalizeSpec (SHAPE) — volatile literals and identifiers become typed placeholders,
+//     so those two specs still land in one near-NEIGHBOURHOOD and the adapt tier can offer
+//     the artifact as a verified starting point ("generate only the delta").
+// Both tokenizers are Unicode-aware: the ASCII `\w` trim erased every Arabic (or Chinese,
+// or Greek) word, so any two non-ASCII specs normalized to "" and collided as exact.
 // ---------------------------------------------------------------------------
 
 const NUM_RE = /^-?\d[\d.,_]*$/;
@@ -45,12 +52,26 @@ const STR_RE = /^["'`].*["'`]$/;
 // prose emphasis and lowercased: shouting is not an identifier.
 const IDENT_RE = /^(?:[a-z][a-z0-9]*[A-Z]|[A-Z][a-z0-9]+[A-Z]|\w+_\w+|\w+\.\w+)\w*$/;
 
-/** Deterministic, pure spec normalization (unit-tested surface). */
+// Trim leading/trailing punctuation while keeping what MAKES a token: letters, digits and
+// marks of any script, plus the code punctuation the classifiers below key on.
+const TRIM_RE = /^[^\p{L}\p{N}\p{M}_"'`./\\-]+|[^\p{L}\p{N}\p{M}_"'`./\\-]+$/gu;
+
+/** Identity normalization: case, whitespace and edge punctuation only. The exact/near key —
+ *  two specs match here only when they name the SAME things. */
+export function specKey(text) {
+  return String(text)
+    .split(/\s+/)
+    .map((raw) => raw.replace(TRIM_RE, "").toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Deterministic, pure spec SHAPE normalization (unit-tested surface). */
 export function normalizeSpec(text) {
   return String(text)
     .split(/\s+/)
     .map((raw) => {
-      const tok = raw.replace(/^[^\w"'`./\\-]+|[^\w"'`./\\-]+$/g, "");
+      const tok = raw.replace(TRIM_RE, "");
       if (!tok) return "";
       if (STR_RE.test(tok)) return "⟨str⟩";
       if (NUM_RE.test(tok)) return "⟨num⟩";
@@ -62,19 +83,31 @@ export function normalizeSpec(text) {
     .join(" ");
 }
 
-/** The two cache keys: exact (spec + graph-slice context) and the MinHash sketch. */
+/** The cache keys: `exact` (identity key + graph-slice context), `keySketch` (what the near
+ *  tier measures) and `sketch` (the shape form the adapt tier and the LSH prefilter use). */
 export function fingerprint(spec, slice = "") {
   const norm = normalizeSpec(spec);
-  return { norm, exact: contentHash(`${norm}\0${slice}`), sketch: sketch(norm) };
+  const key = specKey(spec);
+  return {
+    norm,
+    key,
+    exact: contentHash(`${key}\u0000${slice}`),
+    sketch: sketch(norm),
+    keySketch: sketch(key),
+  };
 }
 
 // ---------------------------------------------------------------------------
-// LSH banding — 16 bands × 8 rows over the 128-lane sketch. Collision probability
-// 1−(1−J⁸)¹⁶ ≈ 0.96 at J=0.8 and ≈ 0.17 at J=0.5: a sharp cliff exactly at the
-// near-hit threshold, so big ledgers don't need an all-pairs scan.
+// LSH banding — 32 bands × 4 rows over the 128-lane sketch. Collision probability
+// 1−(1−J⁴)³²: ≈1.00 at J=0.8, 0.99 at J=0.6 (the ADAPT bar), 0.56 at J=0.4, 0.23 at J=0.3.
+// A prefilter that keeps essentially every real candidate while still pruning the unrelated
+// mass (unrelated specs sit at J≈0). The old 16×8 banding was documented as "≈0.96 at J=0.8
+// and ≈0.17 at J=0.5"; the true figures were 0.95 and 0.06, and at the adapt threshold
+// J=0.6 recall was 0.24 — three of every four adapt-tier hits were silently dropped once a
+// ledger passed 32 artifacts (review C9).
 // ---------------------------------------------------------------------------
 
-const BANDS = 16;
+const BANDS = 32;
 const ROWS = SKETCH_K / BANDS;
 
 export function bandKeys(sk) {
@@ -106,6 +139,9 @@ export function artifactClaim(
       deps: [...deps].sort(),
       form,
       iface: [...iface].sort(),
+      // `key` is the identity form (exact + near); `spec` stays the SHAPE form (adapt and
+      // the LSH prefilter). A pre-C9 artifact has no key and can only reach adapt.
+      key: specKey(spec),
       lang,
       slice,
       spec: normalizeSpec(spec),
@@ -136,7 +172,10 @@ export function mintArtifact(dir, fields, { evidence, t = 0 } = {}) {
     const a = appendEvidence(dir, minted.claim.id, o.outcome);
     if (!a.ok) return a;
   }
-  return { ok: true, id: minted.claim.id, existed: put.existed, serves: Boolean(evidence) };
+  // `serves` is what the proof actually earns, not "some evidence was passed": a ref forge
+  // cannot resolve (`--ref lgtm`, `ci:1`) is recorded but capped below SERVE_FLOOR (C2).
+  const serves = val({ evidence: readEvidence(dir, minted.claim.id) }, t) >= SERVE_FLOOR;
+  return { ok: true, id: minted.claim.id, existed: put.existed, serves };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +207,7 @@ export function revalidate(artifact, atlas) {
  *            (the backend label the CLI prints); lookup itself never sets it.
  */
 export function lookup(claims, spec, { slice = "", atlas = null, nowDay = 0, sim = null } = {}) {
-  const { norm, sketch: qs } = fingerprint(spec, slice);
+  const { key, sketch: qs, keySketch: qk } = fingerprint(spec, slice);
   const reasons = [];
   const artifacts = claims.filter(
     (c) => c.kind === "artifact" && !c.tombstone && !isDormant(c, nowDay),
@@ -181,9 +220,11 @@ export function lookup(claims, spec, { slice = "", atlas = null, nowDay = 0, sim
     return false;
   };
 
-  // 1. exact: same normalized spec, same graph-slice context.
+  // 1. exact: the same task (identity key — NOT the shape form, which erases the very
+  //    identifiers that distinguish two tasks), same graph-slice context. An empty key is
+  //    not an identity, so a spec that normalizes to nothing never matches anything.
   for (const c of artifacts) {
-    if (c.body.spec === norm && (c.body.slice ?? "") === slice && proved(c, "exact")) {
+    if (key && c.body.key === key && (c.body.slice ?? "") === slice && proved(c, "exact")) {
       const rv = revalidate(c, atlas);
       if (rv.ok)
         return { tier: "exact", artifact: c, jaccard: 1, similarity: 1, revalidation: rv, reasons };
@@ -197,21 +238,28 @@ export function lookup(claims, spec, { slice = "", atlas = null, nowDay = 0, sim
   // sim the LSH prefilter is skipped — banding indexes MinHash sketches, not vectors,
   // and would drop exactly the paraphrase candidates only the embedding can see
   // (cosine over precomputed vectors is cheap, so all-pairs is fine).
+  // (`_specSketch`/`_keySketch`, not `_sketch`: ledger.js memoizes the CLAIM-text sketch
+  //  under that name, and the two would overwrite each other.)
+  const shapeOf = (c) => (c._specSketch ??= sketch(c.body.spec ?? ""));
+  const keyOf = (c) => (c._keySketch ??= sketch(c.body.key ?? ""));
   let pool = artifacts;
   if (!sim && artifacts.length > 32) {
     const qBands = new Set(bandKeys(qs));
-    pool = artifacts.filter((c) =>
-      bandKeys(c._sketch ?? (c._sketch = sketch(c.body.spec))).some((k) => qBands.has(k)),
-    );
+    pool = artifacts.filter((c) => bandKeys(shapeOf(c)).some((k) => qBands.has(k)));
   }
+  // near compares IDENTITY (same names, reworded prose); adapt compares SHAPE too, so
+  // `add pagination to listOrders` can still be offered the listUsers artifact as a
+  // starting point — the tier that says "generate only the delta" — but never as-is.
   const measure = (c) => {
     if (sim) {
-      const s = sim(norm, c);
+      const s = sim(key, c);
       if (typeof s === "number" && Number.isFinite(s))
         return { c, v: s, backend: "embed", near: s >= NEAR_COS, adapt: s >= ADAPT_COS };
     }
-    const j = jaccard(qs, c._sketch ?? (c._sketch = sketch(c.body.spec)));
-    return { c, v: j, backend: "minhash", near: j >= NEAR_J, adapt: j >= ADAPT_J };
+    const jKey = c.body.key ? jaccard(qk, keyOf(c)) : 0;
+    const jShape = jaccard(qs, shapeOf(c));
+    const v = Math.max(jKey, jShape);
+    return { c, v, backend: "minhash", near: jKey >= NEAR_J, adapt: v >= ADAPT_J };
   };
   const ranked = pool
     .map(measure)
@@ -266,9 +314,11 @@ const savedEstimate = (tier, artifact) => {
 const specSim = (root, spec, claims) =>
   claimSim(
     root,
-    normalizeSpec(spec),
+    specKey(spec),
     claims.filter((c) => c.kind === "artifact" && !c.tombstone),
-    (c) => c.body?.spec ?? "",
+    // The IDENTITY text, so the vector sees the identifiers the tier decision cares about
+    // (a pre-C9 artifact has only the shape form).
+    (c) => c.body?.key ?? c.body?.spec ?? "",
   );
 
 export function reuseQuery(root, spec, { slice = "", atlas = null, nowDay = 0 } = {}) {
@@ -278,24 +328,25 @@ export function reuseQuery(root, spec, { slice = "", atlas = null, nowDay = 0 } 
   const r = lookup(claims, spec, { slice, atlas, nowDay, sim });
   r.sim = simLabel(sim);
 
-  // Revalidation results are themselves oracle outcomes (graph.reval): serving keeps
-  // evidence fresh, and an artifact whose deps vanished demotes itself — for everyone.
-  const structural = (c, ok, missing) => {
+  // A FAILED revalidation is an oracle outcome (graph.reval): an artifact whose deps
+  // vanished demotes itself — for everyone. A PASSING one is not written back: serving is
+  // never confirmation (review C2 — ten daily serves used to lift val 0.643 → 0.864 and
+  // kept an artifact served after two failing test runs). Only a real oracle raises val.
+  const contradict = (c, missing) => {
     const o = outcomeRecord({
       oracle: "graph.reval",
-      result: ok ? "confirm" : "contradict",
-      ref: ok ? `atlas:ok:day${nowDay}` : `atlas:missing:${missing.slice(0, 3).join(",")}`,
+      result: "contradict",
+      ref: `atlas:missing:${missing.slice(0, 3).join(",")}`,
       author: gitAuthor(),
       t: nowDay,
     });
     if (o.ok) appendEvidence(dir, c.id, o.outcome);
   };
-  if (r.artifact && r.revalidation?.checked) structural(r.artifact, true, []);
   for (const reason of r.reasons) {
     const m = reason.match(/^(?:exact|near) ([0-9a-f]{8}) failed revalidation: missing (.+)$/);
     if (!m) continue;
     const c = claims.find((x) => x.id.startsWith(m[1]));
-    if (c) structural(c, false, m[2].split(", "));
+    if (c) contradict(c, m[2].split(", "));
   }
 
   recordMetric(root, {

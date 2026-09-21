@@ -60,8 +60,12 @@ export const ORACLES = {
 /** One source of truth for scope weighting — lessons.js re-exports this. */
 export const SCOPE_WEIGHT = { symbol: 1.0, dir: 0.8, repo: 0.6, global: 0.4 };
 
-/** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity) — calibrated in P8. */
-export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3 };
+/** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity, s=scope). a/b/g are the
+ *  spec defaults (01-pcm-protocol.md §4); they are NOT calibrated — the planned
+ *  logistic-regression calibration on retrieval outcomes has not been run. `s` puts scope
+ *  INSIDE the linear term as a small prior (symbol vs global differ by s·0.6 = 0.06): it
+ *  breaks ties between comparably relevant claims but can never outrank a relevance gap. */
+export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3, s: 0.1 };
 
 export const DEFAULT_HALF_LIFE_DAYS = 45;
 /** Below this val a claim is dormant: kept for audit, never retrieved. The trusted
@@ -83,10 +87,19 @@ export function canonicalize(value) {
   if (Array.isArray(value))
     return `[${value.map((v) => (v === undefined ? "null" : canonicalize(v))).join(",")}]`;
   if (typeof value === "object") {
-    const keys = Object.keys(value)
-      .filter((k) => value[k] !== undefined && typeof value[k] !== "function")
-      .sort();
-    return `{${keys.map((k) => `${JSON.stringify(k.normalize("NFC"))}:${canonicalize(value[k])}`).join(",")}}`;
+    // Normalize keys BEFORE sorting: sorting the raw spelling and normalizing afterwards made
+    // an NFD key sort where its NFC twin doesn't, so a claim written with one spelling failed
+    // its own address check once re-parsed (the NFC bytes sort differently). Two raw keys that
+    // collapse to one NFC key are a malformed input; the first in raw-key order wins,
+    // deterministically.
+    const entries = new Map();
+    for (const k of Object.keys(value).sort()) {
+      if (value[k] === undefined || typeof value[k] === "function") continue;
+      const nk = k.normalize("NFC");
+      if (!entries.has(nk)) entries.set(nk, value[k]);
+    }
+    const keys = [...entries.keys()].sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(entries.get(k))}`).join(",")}}`;
   }
   return "null"; // undefined / function at the top level
 }
@@ -140,14 +153,14 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
   };
 }
 
-// Typed evidence refs are `<type>:<value>`. Only these types are recognized; anything
-// else (or a ref with no `type:` prefix) is treated as an untyped/legacy ref and accepted
-// unchanged for back-compat. `git:` is the one type forge can cheaply AND soundly resolve —
-// the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is supplied.
-// The rest now carry real FORMAT grammars (ME-05): `ci:` must be a CI locator, `human:`
+// Typed evidence refs are `<type>:<value>`. Only these types are format-checked; anything
+// else (or a ref with no `type:` prefix) is accepted for back-compat but counts only at
+// FORMAT strength (see refStrength). `git:` is the one type forge can cheaply AND soundly
+// resolve — the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is
+// supplied. The rest carry FORMAT grammars (ME-05): `ci:` must be a CI locator, `human:`
 // must be an explicit ratification, `file:` must resolve to an existing path when a repo
-// root is available. A `test:` run id remains format-only — it is unverifiable — which is
-// why it can never lift confidence into the trusted band (see refStrength/val).
+// root is available. None of those proves the claim, so none lifts confidence into the
+// trusted band on its own (see refStrength/val).
 export const REF_TYPES = new Set(["git", "file", "test", "ci", "human"]);
 
 // A `ci:` ref must be a real CI locator: an http(s) URL, an `owner/repo@run` reference,
@@ -207,25 +220,47 @@ export function validateRef(ref, { resolveGit, resolveFile } = {}) {
   return { ok: true };
 }
 
-// The trust model (ME-05): record-integrity validity (validateRef/validOutcome) is NOT the
-// same as evidence being RESOLVED. Only resolved evidence may lift confidence into the
-// trusted/serving band. Two tiers, both re-derived PURELY from the ref so a forged log line
-// can never buy a strength it isn't entitled to (same discipline as the ORACLES weights):
-//  - RESOLVED: untyped/legacy (historical trust), `git:` (resolved at the append gate —
-//    the one soundly-resolvable type), `ci:` (only well-formed CI locators pass validateRef),
-//    and `human:` (only explicit ratifications pass). These count at full weight.
-//  - FORMAT-ONLY: `file:` and `test:`. A path existing or a run id being well-formed is
-//    record integrity, NOT proof the claim is true, and pure val() cannot re-check existence.
-//    These count at a REDUCED weight and, on their own, are capped below the serving floor.
-const RESOLVED_REF_TYPES = new Set(["git", "ci", "human"]);
+// The trust model (ME-05, tightened after review C2): record-integrity validity
+// (validateRef/validOutcome) is NOT the same as evidence being RESOLVED. Only resolved
+// evidence may lift confidence into the trusted/serving band, and "resolved" means FORGE
+// re-derived the pointer — not that someone typed a plausible string. Two tiers, both
+// re-derived PURELY from the record so a forged log line can never buy a strength it isn't
+// entitled to (same discipline as the ORACLES weights):
+//  - RESOLVED: a `git:` ref naming an OBJECT ID (hex, 7–64 chars). It is resolved against
+//    this repo at every append/import gate and re-resolved by verify(). A symbolic revision
+//    (`git:HEAD`, `git:main`) names no fixed object — HEAD moves — so it is not resolved.
+//    Also the two bridge pointers, and only on the bridge oracle that mints them
+//    (`episode:` ↔ cortex.episode, `legacy:` ↔ legacy.import): forge's own observers, whose
+//    deliberately conservative table weight (0.5) already is the discount.
+//  - FORMAT-ONLY: everything else. Untyped refs (`lgtm`), unknown prefixes (`session:x`),
+//    and the typed-but-unverifiable `ci:`/`human:`/`test:`/`file:` — a CI locator, a named
+//    ratifier, a run id or an existing path is record integrity, not proof, and pure val()
+//    cannot check any of them. These count at a REDUCED weight and, on their own, are
+//    capped below the serving floor.
+// A human-family oracle authored by an `agent:` identity (e.g. the MCP tools' `agent:mcp`)
+// is never resolved either: an agent is not a human, whatever ref it cites.
+const GIT_OID_RE = /^[0-9a-f]{7,64}$/i;
+const BRIDGE_REF_ORACLE = { episode: "cortex.episode", legacy: "legacy.import" };
 
-/** Resolution strength of a ref for confidence weighting: "resolved" or "format".
- *  Pure and total — never throws, never does I/O. */
-export function refStrength(ref) {
-  const parsed = parseRef(ref);
-  if (!parsed) return "resolved"; // untyped/legacy — historical full trust
-  return RESOLVED_REF_TYPES.has(parsed.type) ? "resolved" : "format";
+/** Resolution strength of a ref for confidence weighting: "resolved" or "format". `oracle`
+ *  binds a bridge pointer to the one oracle allowed to cite it. Pure and total — never
+ *  throws, never does I/O.
+ *  @param {string} ref
+ *  @param {string} [oracle] */
+export function refStrength(ref, oracle) {
+  const m = /^([a-z][a-z0-9-]*):(.+)$/.exec(String(ref ?? ""));
+  if (!m) return "format"; // untyped — nothing forge can re-derive
+  const [, type, value] = m;
+  if (type === "git") return GIT_OID_RE.test(value) ? "resolved" : "format";
+  return oracle !== undefined && BRIDGE_REF_ORACLE[type] === oracle ? "resolved" : "format";
 }
+
+/** The strength val() actually applies to one evidence record: refStrength, except that an
+ *  `agent:` identity can never supply HUMAN-family evidence at resolved strength. */
+const recordStrength = (e) =>
+  ORACLES[e.oracle]?.family === "human" && /^agent:/.test(String(e.author ?? ""))
+    ? "format"
+    : refStrength(e.ref, e.oracle);
 
 /** Weight multiplier applied to merely-format-valid (unresolved) evidence in val(). */
 export const UNRESOLVED_WEIGHT = 0.5;
@@ -294,8 +329,12 @@ export function validOutcome(e) {
 
 // Weight comes from the ORACLES table — a stored `w` is audit metadata, never trusted
 // (a hand-edited or forged log line must not be able to buy extra confidence).
+// The age is the DISTANCE from now: a future-dated record (a teammate's skewed clock, a
+// hand-written t) decays by how far ahead it claims to be, instead of counting at full
+// weight — and pinning rec at 1 — until the calendar catches up with it.
+const ageOf = (t, nowDay) => Math.abs(nowDay - (t ?? 0));
 const decayed = (outcome, nowDay, halfLife) =>
-  ORACLES[outcome.oracle].w * 0.5 ** (Math.max(0, nowDay - (outcome.t ?? 0)) / halfLife);
+  ORACLES[outcome.oracle].w * 0.5 ** (ageOf(outcome.t, nowDay) / halfLife);
 
 /**
  * Validity — the paper's `val` term as a time-decayed Beta posterior mean with a
@@ -307,10 +346,10 @@ const decayed = (outcome, nowDay, halfLife) =>
  * appender's earned reliability. Pure function of (evidence set, trust map) ⇒
  * identical after any merge order.
  *
- * Resolution strength (ME-05): merely-format-valid evidence (`file:`/`test:` — a pointer,
- * not a demonstration) counts at UNRESOLVED_WEIGHT, and a claim with NO resolved
- * confirmation is capped at UNRESOLVED_VAL_CAP so `test:made-up-run` (and friends) can
- * never lift confidence into the trusted/serving band. The cap only lowers — contradictions
+ * Resolution strength (ME-05/C2): evidence forge did not resolve (anything but a `git:`
+ * object id or a bridge pointer — see refStrength) counts at UNRESOLVED_WEIGHT, and a claim
+ * with NO resolved confirmation is capped at UNRESOLVED_VAL_CAP so `lgtm`,
+ * `test:made-up-run` (and friends) can never lift confidence into the trusted/serving band. The cap only lowers — contradictions
  * still sink val toward 0 as before.
  * @param {any} claim
  * @param {number} [nowDay]
@@ -322,7 +361,7 @@ export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS, trus
   let resolvedConfirm = false;
   for (const e of claim.evidence ?? []) {
     if (!validOutcome(e)) continue;
-    const resolved = refStrength(e.ref) === "resolved";
+    const resolved = recordStrength(e) === "resolved";
     const strength = resolved ? 1 : UNRESOLVED_WEIGHT;
     const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1) * strength;
     all += d;
@@ -366,15 +405,74 @@ export function authorTrust(claims) {
   return out;
 }
 
-/** Recency — λ^(Δt/T) since the last evidence (or mint, if none). */
+/** Recency — λ^(Δt/T) since the last CONFIRMATION (or the mint, if none). A contradiction
+ *  is not "recent evidence for" a claim: counting it let a fresh refutation raise a stale
+ *  claim's Eq. 3 score (review C5). Δt is the distance from now (see ageOf). */
 export function rec(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
-  const last = Math.max(claim.provenance?.t ?? 0, ...(claim.evidence ?? []).map((e) => e.t ?? 0));
-  return 0.5 ** (Math.max(0, nowDay - last) / halfLife);
+  let nearest = ageOf(claim.provenance?.t, nowDay);
+  for (const e of claim.evidence ?? [])
+    if (e?.result === "confirm" && validOutcome(e)) nearest = Math.min(nearest, ageOf(e.t, nowDay));
+  return 0.5 ** (nearest / halfLife);
 }
 
-/** Dormant claims are kept for audit but never retrieved. */
-export function isDormant(claim, nowDay = 0) {
-  return val(claim, nowDay) < DORMANT_VAL;
+/**
+ * The claim's val AT each of its own evidence events, in (t, h) order — "what did this claim
+ * look like the moment that record landed". Between events val moves only by decay, and decay
+ * is monotone toward 0.5 (every term shares one factor), so a threshold can only be crossed
+ * AT an event or by that monotone drift: evaluating here plus once at `nowDay` is exact, not
+ * a sample. This is what lets dormancy latch and lesson activation be sticky while staying a
+ * pure function of the evidence SET (so replicas still agree after any merge order).
+ * @param {any} claim
+ * @param {{halfLife?:number}} [opts]
+ * @returns {{t:number, v:number, result:string}[]}
+ */
+export function valTimeline(claim, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  const evs = sortRecords((claim.evidence ?? []).filter(validOutcome));
+  return evs.map((e, i) => ({
+    t: e.t ?? 0,
+    result: e.result,
+    v: val({ evidence: evs.slice(0, i + 1) }, e.t ?? 0, { halfLife }),
+  }));
+}
+
+/**
+ * Dormant claims are kept for audit but never retrieved — and dormancy LATCHES. Once a
+ * claim's val drops below DORMANT_VAL when a record lands, only a later CONFIRMATION can
+ * lift it back out; decay alone must not. (Before: a claim refuted by a human revert sat at
+ * 0.333, then drifted back toward the 0.5 prior and re-entered retrieval 11 days later with
+ * no new evidence at all — review C7. Unreviewed claims decay toward uncertainty, but
+ * "nobody has said anything since" is not a reason to start trusting a refuted one again.)
+ * @param {any} claim
+ * @param {number} [nowDay]
+ * @param {{halfLife?:number}} [opts]
+ */
+export function isDormant(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  let latched = false;
+  for (const p of valTimeline(claim, { halfLife })) {
+    if (p.v < DORMANT_VAL) latched = true;
+    else if (latched && p.result === "confirm") latched = false; // review restores weight
+  }
+  return latched || val(claim, nowDay, { halfLife }) < DORMANT_VAL;
+}
+
+/**
+ * Sticky threshold crossing with hysteresis: "on" once val reaches `high` at an evidence
+ * event, and off again only when it falls below `low` (by a contradiction, or by decay past
+ * the lower bar). A single threshold FLAPS — one confirm put a lesson at exactly 0.6 against
+ * an `active` bar of 0.6, so one day of decay retired it and it was never injected again
+ * (review C6). Pure; deterministic across replicas.
+ * @param {any} claim
+ * @param {{high:number, low:number, nowDay?:number, halfLife?:number}} opts
+ * @returns {boolean}
+ */
+export function sticky(claim, { high, low, nowDay = 0, halfLife = DEFAULT_HALF_LIFE_DAYS }) {
+  let on = false;
+  for (const p of valTimeline(claim, { halfLife })) {
+    if (on && p.v < low) on = false;
+    if (p.v >= high) on = true;
+    else if (p.v < low) on = false;
+  }
+  return on && val(claim, nowDay, { halfLife }) >= low;
 }
 
 // ---------------------------------------------------------------------------
@@ -402,10 +500,14 @@ const SEEDS = Array.from({ length: SKETCH_K }, (_, i) => ({
   b: Math.imul(i + 1, 0x85ebca6b) >>> 0,
 }));
 
+// Unicode-aware tokens: letters, digits and combining marks of ANY script. The old
+// `[^a-z0-9]` split turned every non-ASCII text into the EMPTY token set, and two empty sets
+// "agreed" on all 128 sketch lanes — any two Arabic (or Chinese, or Greek) texts scored 1.
 const normalizeText = (text) =>
   String(text)
+    .normalize("NFKC")
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
     .filter(Boolean);
 
 /** n-token shingle set of normalized text (short texts fall back to single tokens). */
@@ -431,13 +533,52 @@ export function sketch(text, k = SKETCH_K) {
   return mins;
 }
 
-/** Jaccard estimate = fraction of agreeing sketch positions (1 for identical texts). */
+/** A sketch lane no hash reached — only an EMPTY shingle set leaves lanes at this value. */
+const EMPTY_LANE = 0xffffffff;
+
+/** Jaccard estimate = fraction of agreeing sketch positions (1 for identical non-empty
+ *  texts). An empty set shares nothing with anything, itself included: untouched lanes
+ *  are not agreement. */
 export function jaccard(a, b) {
   const n = Math.min(a.length, b.length);
   if (!n) return 0;
   let eq = 0;
-  for (let i = 0; i < n; i++) if (a[i] === b[i]) eq++;
+  for (let i = 0; i < n; i++) if (a[i] === b[i] && a[i] !== EMPTY_LANE) eq++;
   return eq / n;
+}
+
+// Function words carry no topic; dropping them keeps "the"/"to" from making every claim
+// look half-relevant to a short query.
+const STOPWORDS = new Set(
+  "a an the to of in on at by for from with and or but not no nor so as if then than that this these those it its is are was were be been being do does did can could will would should must may might shall i me my we us our you your he him his she her they them their what which who whom whose when where why how all any each into onto over under up down out off per via about also just only very".split(
+    " ",
+  ),
+);
+
+/** Query-side precomputation for rel(): its MinHash sketch and its content terms (the
+ *  query's tokens minus stopwords; all tokens when it is nothing but stopwords). */
+export function relQuery(text) {
+  const toks = normalizeText(text);
+  const content = toks.filter((t) => !STOPWORDS.has(t));
+  return { sketch: sketch(text), terms: new Set(content.length ? content : toks) };
+}
+
+/**
+ * Lexical relevance ∈ [0,1] = max(shingle Jaccard, query-term coverage). MinHash over
+ * 4-token shingles is the spec's cheap `rel`, but a 2–3 word query is ONE shingle that no
+ * claim contains, so "csrf login" scored ~0 against the CSRF fact (review C5). Coverage —
+ * the fraction of the query's content terms the claim mentions — is the unigram backstop
+ * that makes short queries work; long near-duplicate texts still score through Jaccard.
+ * @param {{sketch:number[], terms?:Set<string>}} q a relQuery() (or {sketch} alone)
+ * @param {any} claim
+ */
+export function lexicalRel(q, claim) {
+  const j = jaccard(q.sketch, sketchOf(claim));
+  if (!q.terms?.size) return j;
+  const have = termsOf(claim);
+  let hit = 0;
+  for (const t of q.terms) if (have.has(t)) hit++;
+  return Math.max(j, hit / q.terms.size);
 }
 
 /** The retrievable text of a claim, per kind (fallback: its canonical body). */
@@ -468,58 +609,94 @@ export function claimText(claim) {
 // are immutable, so first-use caching is safe and keeps retrieve()/clusters() from
 // re-hashing every claim on every call. (noAssignInExpressions is off in biome.json.)
 const sketchOf = (claim) => (claim._sketch ??= sketch(claimText(claim)));
+const termsOf = (claim) => (claim._terms ??= new Set(normalizeText(claimText(claim))));
 
 /**
- * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val) × scope weight.
- * `query` may be a string or a precomputed sketch. The `g·val` term is the protocol's
- * load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
+ * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val + s·scope). The `g·val` term is
+ * the protocol's load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
+ * Scope sits INSIDE the linear term as a small prior (EQ3_WEIGHTS.s). It used to multiply
+ * σ from outside; with a+b+g = 1, σ only spans [0.5, 0.731], so the multiplier made scope a
+ * strict priority — an unrelated, 400-day-old, contradicted symbol claim (0.5375) outranked a
+ * perfect-match repo claim (0.3853) (review C5).
  *
- * `sim` (optional) replaces the lexical `rel` term with a caller-supplied similarity
- * (the ADR-0005 embeddings tier — built by callers from embed.js; this pure core
- * NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or any
- * non-finite value) falls back to MinHash Jaccard per claim, and negatives clamp to 0
- * — "anti-similar" is just irrelevant, never a penalty below unrelated.
+ * `query` may be a string, a relQuery() object, or (legacy) a bare sketch array — the last
+ * gets Jaccard-only relevance. `sim` (optional) replaces the lexical `rel` term with a
+ * caller-supplied similarity (the ADR-0005 embeddings tier — built by callers from embed.js;
+ * this pure core NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or
+ * any non-finite value) falls back to lexical relevance, and negatives clamp to 0 —
+ * "anti-similar" is just irrelevant, never a penalty below unrelated. (retrieve() decides the
+ * backend once per ranking, so one ranking never mixes cosine with Jaccard.)
  * @param {*} query
  * @param {any} claim
- * @param {{nowDay?:number, weights?:typeof EQ3_WEIGHTS, sim?:(query:any, claim:any)=>number|null}} [opts]
+ * @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number}, sim?:(query:any, claim:any)=>number|null}} [opts]
  */
-export function score(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
+export function score(query, claim, opts = {}) {
+  return scoreParts(query, claim, opts).score;
+}
+
+/** score() plus the relevance term it used — retrieve() reports `rel` so callers (déjà vu)
+ *  can gate on relevance rather than on the whole score.
+ *  @param {*} query
+ *  @param {any} claim
+ *  @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number},
+ *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
+ *  @returns {{score:number, rel:number}} */
+function scoreParts(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
   let rel = null;
   if (sim) {
     const s = sim(query, claim);
     if (typeof s === "number" && Number.isFinite(s)) rel = Math.max(0, Math.min(1, s));
   }
   if (rel === null) {
-    const qs = Array.isArray(query) ? query : sketch(query);
-    rel = jaccard(qs, sketchOf(claim));
+    const q =
+      typeof query === "string"
+        ? relQuery(query)
+        : Array.isArray(query)
+          ? { sketch: query }
+          : query;
+    rel = lexicalRel(q, claim);
   }
-  const x = weights.a * rel + weights.b * rec(claim, nowDay) + weights.g * val(claim, nowDay);
-  const sigma = 1 / (1 + Math.exp(-x));
   const scopeW = SCOPE_WEIGHT[claim.scope?.level] ?? 0.5;
-  return sigma * scopeW;
+  const x =
+    weights.a * rel +
+    weights.b * rec(claim, nowDay) +
+    weights.g * val(claim, nowDay) +
+    (weights.s ?? 0) * scopeW;
+  return { score: 1 / (1 + Math.exp(-x)), rel };
 }
 
-/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`.
- *  Optional `sim` as in score() — the caller-built embedding similarity; the query
- *  string (not the sketch) is what a sim sees.
+/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`. Each row is
+ *  {claim, score, rel}. Optional `sim` as in score() — the caller-built embedding
+ *  similarity; the query string is what a sim sees. The backend is chosen ONCE per ranking:
+ *  cosine only when the provider embedded every candidate, lexical for all otherwise —
+ *  dense cosines sit at 0.4–0.6 for unrelated same-domain text while Jaccard sits near 0,
+ *  so a partially embedded ledger used to rank every embedded claim above every lexical one.
  *  @param {*} query
  *  @param {any[]} claims
- *  @param {{nowDay?:number, budget?:number, weights?:typeof EQ3_WEIGHTS,
- *           sim?:((query:any, claim:any)=>number|null)|null}} [opts] */
+ *  @param {{nowDay?:number, budget?:number, weights?:{a:number,b:number,g:number,s?:number},
+ *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
+ *  @returns {{claim:any, score:number, rel:number}[]} */
 export function retrieve(
   query,
   claims,
   { nowDay = 0, budget = 12, weights = EQ3_WEIGHTS, sim } = {},
 ) {
   const q = String(query);
-  const qs = sketch(q);
-  const boundSim = sim ? (_qs, c) => sim(q, c) : undefined;
-  return claims
-    .filter((c) => !c.tombstone && !isDormant(c, nowDay))
-    .map((c) => ({
-      claim: c,
-      score: score(qs, c, { nowDay, weights, sim: boundSim }),
-    }))
+  const rq = relQuery(q);
+  const live = claims.filter((c) => !c.tombstone && !isDormant(c, nowDay));
+  let boundSim;
+  if (sim && live.length) {
+    const sims = live.map((c) => sim(q, c));
+    if (sims.every((x) => typeof x === "number" && Number.isFinite(x))) {
+      const byClaim = new Map(live.map((c, i) => [c, sims[i]]));
+      boundSim = (_q, c) => byClaim.get(c);
+    }
+  }
+  return live
+    .map((c) => {
+      const p = scoreParts(rq, c, { nowDay, weights, sim: boundSim });
+      return { claim: c, score: p.score, rel: p.rel };
+    })
     .sort((a, b) => b.score - a.score || (a.claim.id < b.claim.id ? -1 : 1))
     .slice(0, budget);
 }

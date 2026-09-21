@@ -85,3 +85,32 @@ test("recordInteraction: no project fingerprint claim → no-op with guidance", 
   assert.equal(r.recorded, false);
   assert.match(r.reason, /no project fingerprint claim/);
 });
+
+test("recordInteraction (C11): a verdict is dated TODAY, not epoch day 0", async () => {
+  const { mintClaim, val } = await import("../src/ledger.js");
+  const { loadClaims, putClaim, repoLedger } = await import("../src/ledger_store.js");
+  const { epochDay } = await import("../src/util.js");
+  const root = tmpRoot();
+  const dir = repoLedger(root);
+  const today = epochDay();
+  const fp = mintClaim({
+    kind: "fingerprint",
+    body: { colors: ["white", "black"] },
+    scope: { level: "repo" },
+    t: today,
+  }).claim;
+  putClaim(dir, fp);
+  for (let i = 0; i < 5; i += 1) {
+    const r = recordInteraction(root, `http://localhost/${i}`, {
+      pass: false,
+      checks: [{ id: "focus-visible", ok: false, i }],
+    });
+    assert.equal(r.recorded, true, r.reason);
+  }
+  const claim = loadClaims(dir).find((c) => c.kind === "fingerprint");
+  assert.equal(claim.evidence[0].t, today, "recorded with today's clock");
+  assert.ok(
+    val(claim, today) < 0.5,
+    `five failing UI verdicts must move val (got ${val(claim, today)})`,
+  );
+});

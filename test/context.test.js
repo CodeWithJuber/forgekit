@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,8 +46,16 @@ const trustedLesson = (root) => {
   });
   putClaim(dir, minted.claim);
   // Four confirmations: val = (1 + 4·0.9)/(2 + 4·0.9) ≈ 0.82 — past the 0.8 floor.
-  // (Three lands at 0.787 and is correctly NOT trusted enough to be required.)
-  for (const ref of ["run:1", "run:2", "pr:7", "pr:9"])
+  // (Three lands at 0.787 and is correctly NOT trusted enough to be required.) The refs
+  // must be git objects that resolve in this repo — the only ref type forge re-derives.
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  g("add", "-A");
+  g("commit", "-m", "fixture");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  for (const ref of [7, 8, 9, 40].map((n) => `git:${head.slice(0, n)}`))
     appendEvidence(
       dir,
       minted.claim.id,
@@ -66,7 +75,7 @@ test("requiredSet: defs, hop-1 dependents, sibling tests, and trusted lessons �
         evidence: ["h1", "h2", "h3", "h4"].map((h) => ({
           oracle: "human.accept",
           result: "confirm",
-          ref: `r:${h}`,
+          ref: `git:${Buffer.from(h).toString("hex").repeat(4)}`,
           t: 0,
           w: 0.9,
           h,

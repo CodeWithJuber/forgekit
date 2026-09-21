@@ -61,17 +61,21 @@ export function lessonClaim(lesson, t = 0) {
 }
 
 /** A recall fact's claim. Name/text are trimmed so the shadow-write path and the
- *  file-parse import path mint the SAME id for the same fact.
+ *  file-parse import path mint the SAME id for the same fact. `rev` (≥1) re-asserts a value
+ *  whose rev-0 claim was retracted — see shadowFact; rev 0 keeps the historical id.
  *  @returns {{ok:boolean, reason?:string, claim?:any}} */
-export function factClaim(name, text, t = 0) {
+export function factClaim(name, text, t = 0, rev = 0) {
   return mintClaim({
     kind: "fact",
-    body: { name: String(name).trim(), text: String(text).trim() },
+    body: { name: String(name).trim(), text: String(text).trim(), ...(rev ? { rev } : {}) },
     scope: { level: "repo" },
     provenance: { agent: "recall", author: gitAuthor() },
     t,
   });
 }
+
+/** The content key of a fact — what "the same fact" means across revisions. */
+const factKey = (name, text) => JSON.stringify([String(name).trim(), String(text).trim()]);
 
 /**
  * Shadow-write one lesson event into the repo ledger.
@@ -143,7 +147,19 @@ export function supersedeLessonClaim(root, before, after, t = epochDay()) {
  */
 export function shadowFact(ledgerDir, name, text, t = epochDay()) {
   return bestEffort(() => {
-    const minted = factClaim(name, text, t);
+    // Tombstones are permanent and ids are content-addressed, so restoring a value that
+    // was superseded (v1 → v2 → v1) would land on v1's RETIRED id and leave no live fact
+    // (review C4). A retired value is re-asserted as the next revision instead — the lowest
+    // `rev` whose claim is not tombstoned — deterministic, so teammates doing the same
+    // sequence still converge on one id. Unretired values keep the rev-0 id.
+    const retired = new Set(
+      loadClaims(ledgerDir)
+        .filter((c) => c.kind === "fact" && c.tombstone)
+        .map((c) => c.id),
+    );
+    let minted = factClaim(name, text, t);
+    for (let rev = 1; minted.ok && retired.has(minted.claim.id); rev++)
+      minted = factClaim(name, text, t, rev);
     if (!minted.ok) return { ok: false, reason: minted.reason };
     const put = putClaim(ledgerDir, minted.claim);
     if (!put.ok) return put;
@@ -177,13 +193,12 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
     // store, so "no backing file ⇒ tombstone" is inverted and would wipe every fact.
     // Reconciliation only makes sense while the file store is canonical (default off).
     if (ledgerOnly()) return { ok: true, removed: 0 };
+    // Compare CONTENT (name, text), not ids: a restored value lives under a `rev` id
+    // (shadowFact) that factClaim(name, text) alone would not reproduce.
     const current = new Set();
     for (const slug of listFacts(store)) {
       const f = readFact(store, slug);
-      if (f) {
-        const minted = factClaim(f.name, f.text, t);
-        if (minted.ok) current.add(minted.claim.id);
-      }
+      if (f) current.add(factKey(f.name, f.text));
     }
     let removed = 0;
     for (const c of loadClaims(ledgerDir)) {
@@ -193,7 +208,8 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
       // with the P2 read flip it IS the readable fact, and tombstoning it here would
       // silently delete team knowledge on every consolidate.
       const mine = (c.provenance?.author ?? "") === gitAuthor();
-      if (c.kind === "fact" && !c.tombstone && mine && !current.has(c.id)) {
+      const backed = current.has(factKey(c.body?.name ?? "", c.body?.text ?? ""));
+      if (c.kind === "fact" && !c.tombstone && mine && !backed) {
         tombstone(ledgerDir, c.id, {
           author: gitAuthor(),
           reason: "removed-from-store",

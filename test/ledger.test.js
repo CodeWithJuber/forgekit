@@ -7,6 +7,7 @@ import {
   claimId,
   claimText,
   clusters,
+  EQ3_WEIGHTS,
   isDormant,
   jaccard,
   liveClaims,
@@ -23,6 +24,7 @@ import {
   sortRecords,
   stateAt,
   stateRoot,
+  sticky,
   UNRESOLVED_VAL_CAP,
   val,
 } from "../src/ledger.js";
@@ -39,6 +41,19 @@ test("canonicalize: key order never changes the bytes (id stability)", () => {
 
 test("canonicalize: drops undefined/function values, keeps null", () => {
   assert.equal(canonicalize({ a: undefined, b: null, c: () => 1 }), '{"b":null}');
+});
+
+test("canonicalize: keys are NFC-normalized BEFORE sorting — NFD and NFC spellings give one byte string", () => {
+  const nfd = "é"; // é as e + combining acute
+  const nfc = "é";
+  // Sorting the raw NFD key ("é" < "f") and then normalizing it produced {"é":1,"f":2},
+  // while the NFC spelling sorts after "f" — two byte strings for one value, so a claim with
+  // an NFD key failed its own address check on reload.
+  assert.equal(canonicalize({ [nfd]: 1, f: 2 }), canonicalize({ [nfc]: 1, f: 2 }));
+  assert.equal(canonicalize({ [nfc]: 1, f: 2 }), '{"f":2,"é":1}');
+  const m = mintClaim({ kind: "fact", body: { name: "x", meta: { [nfd]: 1, f: 2 } } });
+  const reparsed = JSON.parse(canonicalize({ body: m.claim.body, kind: "fact", scope: {} }));
+  assert.equal(claimId("fact", reparsed.body, reparsed.scope), m.claim.id, "id survives a reload");
 });
 
 test("claimId: pinned fixture — the protocol's address must never drift across versions", () => {
@@ -143,19 +158,63 @@ test("validateRef: ci: must be a locator, human: must be a ratification (ME-05 f
   assert.equal(okH("human:the-model-said-yes"), false, "self-assertion refused on format");
 });
 
-test("refStrength: resolved (git/ci/human/legacy) vs format-only (file/test)", () => {
-  assert.equal(refStrength("run:1"), "resolved", "untyped/legacy keeps historical trust");
+test("refStrength: only a git object id (or a bridge pointer on its own bridge oracle) is resolved", () => {
   assert.equal(refStrength("git:cafebabe"), "resolved");
-  assert.equal(refStrength("ci:42"), "resolved");
-  assert.equal(refStrength("human:alice@d1"), "resolved");
-  assert.equal(refStrength("test:made-up-run"), "format", "a run id is a pointer, not a proof");
-  assert.equal(refStrength("file:/some/path"), "format");
+  assert.equal(refStrength(`git:${"a1".repeat(20)}`), "resolved", "full sha1");
+  assert.equal(refStrength("episode:ep_m0_x#n1", "cortex.episode"), "resolved");
+  assert.equal(refStrength("legacy:lsn_a#confirm0", "legacy.import"), "resolved");
+  // C2: none of these is something forge resolved — they are pointers anyone can type.
+  for (const ref of [
+    "lgtm",
+    "run:1",
+    "session:x",
+    "foo:bar",
+    "ci:1",
+    "ci:https://ci.example.com/run/7",
+    "human:claude@yes",
+    "git:HEAD",
+    "git:main",
+    "git:HEAD~0",
+    "test:made-up-run",
+    "file:/some/path",
+  ])
+    assert.equal(refStrength(ref, "test.run"), "format", ref);
+  assert.equal(
+    refStrength("episode:ep_m0_x#n1", "test.run"),
+    "format",
+    "a bridge pointer only counts on the bridge oracle that mints it",
+  );
+});
+
+test("val (C2): made-up refs are capped below the serving floor — no prefix buys full trust", () => {
+  for (const ref of ["lgtm", "session:x", "ci:1", "human:claude@yes", "git:HEAD"]) {
+    const records = Array.from({ length: 3 }, (_, i) =>
+      outcomeRecord({ oracle: "human.accept", result: "confirm", ref, t: i }),
+    );
+    assert.ok(
+      records.every((r) => r.ok),
+      `${ref} passes the format check`,
+    );
+    const c = mkClaim(records.map((r) => ("outcome" in r ? r.outcome : null)));
+    assert.ok(val(c, 0) <= UNRESOLVED_VAL_CAP + 1e-9, `${ref}: val ${val(c, 0)} is capped`);
+    assert.ok(val(c, 0) < SERVE_FLOOR, `${ref} never reaches the serving floor`);
+  }
+});
+
+test("val (C2): an agent identity never supplies human-family evidence at resolved strength", () => {
+  const human = (author) =>
+    mkClaim([
+      outcomeRecord({ oracle: "human.accept", result: "confirm", ref: "git:cafebabe", author })
+        .outcome,
+    ]);
+  assert.ok(val(human("Alice <a@x>"), 0) >= SERVE_FLOOR, "a person's git-anchored accept counts");
+  assert.ok(val(human("agent:mcp"), 0) <= UNRESOLVED_VAL_CAP + 1e-9, "agent:mcp is not a human");
 });
 
 test("val: format-only evidence (test:/file:) cannot lift confidence into the serving band", () => {
-  // A single confirm on an UNTYPED (resolved-trust) ref clears the serving floor as before.
+  // A single confirm on a resolved (git object) ref clears the serving floor.
   const resolved = mkClaim([
-    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:legit" }).outcome,
+    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "git:c0ffee1" }).outcome,
   ]);
   assert.ok(val(resolved, 0) >= SERVE_FLOOR, "resolved evidence still earns trust (no regression)");
 
@@ -219,8 +278,10 @@ const mkClaim = (evidence = []) => {
   });
   return { ...m.claim, evidence };
 };
+// A resolved (git object id) ref, unique per (result, t, oracle) so records never dedupe.
+const gitRef = (s) => `git:${Buffer.from(String(s)).toString("hex").padEnd(8, "0").slice(0, 40)}`;
 const ev = (result, t, oracle = "test.run") =>
-  outcomeRecord({ oracle, result, ref: `r:${result}:${t}:${oracle}`, t }).outcome;
+  outcomeRecord({ oracle, result, ref: gitRef(`${result}${t}${oracle}`), t }).outcome;
 
 test("val: fresh claim sits at the 0.5 prior; confirms raise; contradictions lower", () => {
   assert.equal(val(mkClaim(), 0), 0.5);
@@ -237,7 +298,7 @@ test("val: monotone in confirmations (more independent evidence is never worse)"
         outcomeRecord({
           oracle: "ci.run",
           result: "confirm",
-          ref: `r:${i}`,
+          ref: gitRef(`ci${i}`),
           t: 0,
         }).outcome,
     );
@@ -545,7 +606,7 @@ test("val with trust: a distrusted author's evidence moves confidence less", () 
     outcomeRecord({
       oracle: "test.run",
       result: "confirm",
-      ref: "r",
+      ref: gitRef("r"),
       author: "carol",
       t: 0,
     }).outcome,
@@ -718,4 +779,148 @@ test("beliefDiff ignores claims already tombstoned before the window — dead be
   assert.deepEqual(d.retired, [], "the retirement predates the window");
   assert.deepEqual(d.strengthened, []);
   assert.deepEqual(d.weakened, [], "pure decay on a dead claim is not a belief change");
+});
+
+// --- Eq. 3 retrieval fixes (review C5) -------------------------------------------------
+
+const factAt = (text, level = "repo", evidence = [], t = 0) => ({
+  ...mintClaim({ kind: "fact", body: { name: text.slice(0, 12), text }, scope: { level }, t })
+    .claim,
+  evidence,
+});
+
+test("score (C5): scope is a bounded term inside σ — never a strict priority over relevance", () => {
+  const q = "retry the payment webhook with exponential backoff and jitter on 503";
+  const perfectRepo = factAt(q, "repo", [ev("confirm", 0, "human.accept"), ev("confirm", 0)]);
+  const unrelatedSymbol = factAt(
+    "css grid gutter width is 12px in the dashboard layout",
+    "symbol",
+    [ev("contradict", 0, "typecheck")],
+  );
+  const ranked = retrieve(q, [unrelatedSymbol, perfectRepo], { nowDay: 400 });
+  assert.equal(ranked[0].claim.id, perfectRepo.id, "a perfect match beats an unrelated symbol");
+  // Scope still breaks ties among equally relevant claims.
+  const sym = factAt("check callers before renaming", "symbol");
+  const glob = factAt("check callers before renaming", "global");
+  assert.ok(
+    score("check callers before renaming", sym) > score("check callers before renaming", glob),
+  );
+});
+
+test("rel (C5): a short query finds its fact — unigram coverage backs 4-token shingles", () => {
+  const csrf = factAt("the login handler must validate the csrf token on every POST");
+  const fonts = factAt("fonts are self-hosted from the static assets folder");
+  const ports = factAt("the dev server listens on port 5173 by default");
+  for (const q of ["csrf login", "validate csrf in the login handler"]) {
+    const ranked = retrieve(q, [fonts, ports, csrf], { nowDay: 0 });
+    assert.equal(ranked[0].claim.id, csrf.id, `"${q}" ranks the CSRF fact first`);
+    assert.ok(ranked[0].rel > 0.5, `"${q}": rel ${ranked[0].rel} reflects the overlap`);
+    assert.equal(ranked.find((r) => r.claim.id === fonts.id).rel, 0, "unrelated stays at 0");
+  }
+});
+
+test("rel (C5): non-ASCII text tokenizes — unrelated scripts are NOT identical, empty ≠ everything", () => {
+  assert.equal(jaccard(sketch("مصادقة الرمز تفشل"), sketch("数据库连接超时")), 0);
+  assert.equal(jaccard(sketch(""), sketch("!!!")), 0, "two empty token sets share nothing");
+  assert.equal(jaccard(sketch("مصادقة الرمز تفشل"), sketch("مصادقة الرمز تفشل")), 1);
+  assert.deepEqual([...shingles("café au lait")], ["café au lait"], "accented letters are kept");
+  const ar = factAt("مصادقة الرمز تفشل عند انتهاء الجلسة");
+  const zh = factAt("数据库连接超时");
+  const [top] = retrieve("مصادقة الرمز", [zh, ar], { nowDay: 0 });
+  assert.equal(top.claim.id, ar.id);
+  assert.equal(retrieve("مصادقة الرمز", [zh], { nowDay: 0 })[0].rel, 0);
+});
+
+test("rec (C5): a contradiction is not recent evidence — it never raises a stale claim's score", () => {
+  const base = factAt("use yarn not npm", "repo", [], 19910);
+  const now = 20000;
+  const contradicted = { ...base, evidence: [ev("contradict", now)] };
+  assert.equal(rec(contradicted, now), rec(base, now), "recency keys on confirms and mint only");
+  assert.ok(
+    score("unrelated query text here", contradicted, { nowDay: now }) <
+      score("unrelated query text here", base, { nowDay: now }),
+    "fresh negative evidence lowers the score",
+  );
+  const confirmed = { ...base, evidence: [ev("confirm", now)] };
+  assert.equal(rec(confirmed, now), 1, "a fresh confirm still refreshes recency");
+});
+
+test("val/rec (C11): future-dated evidence decays by its distance from now — no pinning", () => {
+  const today = 20000;
+  const skewed = factAt("x", "repo", [ev("confirm", today + 3650)], today);
+  const honest = factAt("x", "repo", [ev("confirm", today)], today);
+  assert.ok(rec(skewed, today + 730) < 0.01, `rec ${rec(skewed, today + 730)} is not pinned at 1`);
+  assert.ok(val(skewed, today + 730) < 0.51, "a 10-year-future confirm carries ~no weight");
+  assert.ok(val(skewed, today) < val(honest, today), "the skewed record never beats an honest one");
+  assert.ok(
+    Math.abs(
+      val(factAt("x", "repo", [ev("confirm", today + 1)], today), today) - val(honest, today),
+    ) < 0.01,
+    "a one-day clock skew is negligible",
+  );
+});
+
+test("retrieve (C5): one similarity scale per ranking — cosine and Jaccard are never mixed", () => {
+  const unrelatedEmbedded = factAt("render the marketing landing page hero section");
+  const relevantLexical = factAt("rotate the api signing keys every ninety days");
+  // The provider embedded only one claim, at a typical same-domain cosine for unrelated text.
+  const sim = (_q, c) => (c.id === unrelatedEmbedded.id ? 0.6 : null);
+  const ranked = retrieve("rotate the signing keys", [unrelatedEmbedded, relevantLexical], {
+    nowDay: 0,
+    sim,
+  });
+  assert.equal(ranked[0].claim.id, relevantLexical.id, "a partial embedding falls back for all");
+  const full = (_q, c) => (c.id === unrelatedEmbedded.id ? 0.1 : 0.9);
+  const both = retrieve("rotate the signing keys", [unrelatedEmbedded, relevantLexical], {
+    nowDay: 0,
+    sim: full,
+  });
+  assert.equal(both[0].claim.id, relevantLexical.id);
+  assert.equal(both[0].rel, 0.9, "a complete embedding ranks by cosine");
+});
+
+test("EQ3_WEIGHTS: defaults are the spec's (a, b, g) plus a small scope term — not 'calibrated'", () => {
+  assert.deepEqual(EQ3_WEIGHTS, { a: 0.55, b: 0.15, g: 0.3, s: 0.1 });
+});
+
+test("isDormant (C7): dormancy latches — decay alone never revives a refuted claim", () => {
+  const refuted = mkClaim([ev("contradict", 0, "human.revert")]); // val 1/3 ≈ 0.333
+  assert.equal(isDormant(refuted, 0), true);
+  assert.equal(isDormant(refuted, 11), true, "11 days of decay used to bring it back");
+  assert.equal(isDormant(refuted, 400), true);
+  assert.equal(retrieve("x", [refuted], { nowDay: 400 }).length, 0, "and it stays out of reach");
+  // Review restores weight: a later CONFIRMATION is the only way back.
+  const reviewed = mkClaim([
+    ev("contradict", 0, "human.revert"),
+    ev("confirm", 30, "human.accept"),
+  ]);
+  assert.equal(isDormant(reviewed, 30), false);
+  assert.equal(retrieve("f body", [reviewed], { nowDay: 30 }).length, 1);
+});
+
+test("sticky: hysteresis — on at `high`, off only below `low` (never one-day flapping)", () => {
+  const c = mkClaim([ev("confirm", 0, "cortex.episode")]); // val exactly 0.6
+  assert.equal(sticky(c, { high: 0.6, low: 0.55, nowDay: 0 }), true);
+  assert.equal(
+    sticky(c, { high: 0.6, low: 0.55, nowDay: 1 }),
+    true,
+    "one day of decay is not a demotion",
+  );
+  assert.equal(sticky(c, { high: 0.6, low: 0.55, nowDay: 52 }), true);
+  assert.equal(
+    sticky(c, { high: 0.6, low: 0.55, nowDay: 60 }),
+    false,
+    "it still expires unreviewed",
+  );
+  const never = mkClaim([ev("confirm", 0, "behavioral")]); // val 0.535 — never reaches high
+  assert.equal(sticky(never, { high: 0.6, low: 0.55, nowDay: 0 }), false);
+  const refuted = mkClaim([
+    ev("confirm", 0, "cortex.episode"),
+    ev("contradict", 1, "human.revert"),
+  ]);
+  assert.equal(
+    sticky(refuted, { high: 0.6, low: 0.55, nowDay: 1 }),
+    false,
+    "a contradiction demotes",
+  );
 });

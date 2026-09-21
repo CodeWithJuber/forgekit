@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { cusum } from "../src/anchor.js";
 import { setGoal } from "../src/goal.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
@@ -88,4 +89,50 @@ test("a session with no goal and no assumptions records nothing extra", () => {
     0,
     "fully specified → no record",
   );
+});
+
+test("preflight (C10): the drift series is per-checkpoint, and the advisory names the PERSISTED goal", () => {
+  const { root } = gitFixture();
+  setGoal(root, "improve tax calculation accuracy");
+  writeFileSync(join(root, "src", "unrelated.js"), "export const x = 1;\n");
+  const first = feed("preflight", {
+    session_id: "c10",
+    cwd: root,
+    prompt: "tweak the logging colors",
+  });
+  const ctx = JSON.parse(first.stdout).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /Goal drift/, "drift is reported");
+  assert.match(ctx, /unrelated\.js/, "…for the file that is off the STATED goal");
+  assert.doesNotMatch(ctx, /tax\.js/, "…and not for files that match the goal");
+  // Four more prompts that change NOTHING: the chart must drain, not alarm.
+  for (let i = 0; i < 4; i += 1)
+    feed("preflight", { session_id: "c10", cwd: root, prompt: `status check ${i}` });
+  const scores = events(root, "c10")
+    .filter((e) => e.type === "drift")
+    .map((e) => e.score);
+  assert.equal(scores.length, 5);
+  assert.equal(scores[0], 1, "the checkpoint that introduced the off-goal file scores 1");
+  assert.deepEqual(scores.slice(1), [0, 0, 0, 0], "idle prompts add nothing to the chart");
+  assert.equal(cusum(scores).alarm, false, "one static off-goal file never alarms by itself");
+  // Editing the off-goal file again IS new drift.
+  writeFileSync(join(root, "src", "unrelated.js"), "export const x = 2;\nexport const y = 3;\n");
+  feed("preflight", { session_id: "c10", cwd: root, prompt: "one more tweak" });
+  assert.equal(
+    events(root, "c10")
+      .filter((e) => e.type === "drift")
+      .at(-1).score,
+    1,
+  );
+});
+
+test("preflight (C10): with no goal set, the prompt is not treated as one", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "src", "unrelated.js"), "export const x = 1;\n");
+  const r = feed("preflight", {
+    session_id: "c10b",
+    cwd: root,
+    prompt: "ok now run the tests please",
+  });
+  const ctx = JSON.parse(r.stdout || "{}").hookSpecificOutput?.additionalContext ?? "";
+  assert.doesNotMatch(ctx, /Goal drift/, "no stated goal → no drift claim");
 });
