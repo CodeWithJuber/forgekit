@@ -95,6 +95,26 @@ const locFile = (line) => {
  */
 
 /**
+ * The runner's OWN summary from a TAP stream: the LAST `# pass` / `# fail` pair, which is
+ * the one `node --test` prints after every file. Taking the FIRST match (as this did) meant
+ * any earlier line of that shape in the output — a test echoing a fixture, a nested runner —
+ * decided the verdict. `null` when the stream carries no summary at all (a crashed run).
+ * @param {string} stdout
+ * @returns {{passed: number, failed: number} | null}
+ */
+export function tapSummary(stdout) {
+  const last = (/** @type {RegExp} */ re) => {
+    let m = null;
+    for (const x of String(stdout).matchAll(re)) m = x;
+    return m;
+  };
+  const mPass = last(/^# pass (\d+)$/gm);
+  const mFail = last(/^# fail (\d+)$/gm);
+  if (!mPass || !mFail) return null;
+  return { passed: Number(mPass[1]), failed: Number(mFail[1]) };
+}
+
+/**
  * Sandboxed dry-run of a selected suite — the simulation half of ĉ = g(a, C)
  * (spec §2.2): run the tests in an EPHEMERAL `git worktree` of HEAD and discard it.
  * The worktree is HEAD, not the working tree — worktrees share the object store,
@@ -181,9 +201,8 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
           : `runner failed to start: ${run.error}`;
       return { ok: false, reason, durationMs, runner, output };
     }
-    const mPass = /^# pass (\d+)$/m.exec(run.stdout ?? "");
-    const mFail = /^# fail (\d+)$/m.exec(run.stdout ?? "");
-    if (!mPass || !mFail) {
+    const summary = tapSummary(run.stdout ?? "");
+    if (!summary) {
       // Non-zero exit with no TAP summary = the RUN failed (crash, bad flags), which
       // is a different fact than "the tests failed" — report it as one.
       return {
@@ -226,11 +245,22 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     // them; a block that matches none is TAP noise, safely skipped above. Trust the map when
     // it accounts for the run's failures, and abstain only if the suite reported failures we
     // could pin to no file at all — there, partial blame would mislead more than no blame.
-    const failed = Number(mFail[1]);
+    const failed = summary.failed;
+    // A non-zero runner exit with a zero-failure summary means the summary is not the truth
+    // (spoofed output, or a crash after the summary) — report the run, never a clean verdict.
+    if (failed === 0 && (run.status ?? 0) !== 0) {
+      return {
+        ok: false,
+        reason: `runner exited ${run.status} but its TAP summary reports no failures — the output cannot be trusted`,
+        durationMs,
+        runner,
+        output,
+      };
+    }
     const attributable = failed === 0 || failMarks > 0;
     return {
       ok: true,
-      passed: Number(mPass[1]),
+      passed: summary.passed,
       failed,
       ...(attributable ? { perFile } : {}),
       durationMs,

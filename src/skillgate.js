@@ -84,39 +84,47 @@ export function verdict({ critical, high }) {
   return "No critical signature detected — this is NOT a safety certification. Review the source, permissions, package provenance, and network behaviour before installing.";
 }
 
-/** Scan a path (SKILL.md/.mcp.json) or raw text. Real scanner if available, else heuristic. */
-export function scan(target) {
+/** Run the pinned external scanner over `target`, returning its output (or null when it is
+ *  not installed / failed). Injectable so the union logic below is testable without uvx. */
+function runExternalScanner(target) {
+  // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
+  return execFileSync("uvx", ["snyk-agent-scan==0.5.12", target], {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 90000,
+  });
+}
+
+/**
+ * Scan a path (SKILL.md/.mcp.json) or raw text. The heuristic ALWAYS runs; a real scanner
+ * adds to it.
+ * @param {string} target
+ * @param {{runScanner?: (target: string) => string}} [opts]
+ */
+export function scan(target, { runScanner = runExternalScanner } = {}) {
   const isPath = typeof target === "string" && existsSync(target);
   const content = isPath ? readFileSync(target, "utf8") : String(target);
 
+  // The external scanner ADDS to the heuristic; it never replaces it (review B7). A clean
+  // exit from snyk-agent-scan used to return early, so the built-in signatures — the ones
+  // that catch `curl … | sh`, prompt injection and credential exfil — never ran, and a skill
+  // the scanner did not know made `ok: true`. Both run; the verdict is the union.
+  let raw = null;
+  let scannerCritical = false;
   if (isPath && process.env.FORGE_SKILLGATE_NOEXTERNAL !== "1") {
     try {
-      // Pinned (verified 2026-07-05) — never @latest for code we execute; re-verify via dev-radar.
-      const out = execFileSync("uvx", ["snyk-agent-scan==0.5.12", target], {
-        encoding: "utf8",
-        stdio: "pipe",
-        timeout: 90000,
-      });
-      const critical = /\bcritical\b|tool poisoning|prompt injection|malicious/i.test(out);
-      return {
-        ok: !critical,
-        critical,
-        high: false,
-        safe: false, // never certify safety from an absence of findings
-        scanner: "snyk-agent-scan",
-        findings: [],
-        raw: out,
-        verdict: verdict({ critical, high: false }),
-      };
+      raw = runScanner(target);
+      scannerCritical = /\bcritical\b|tool poisoning|prompt injection|malicious/i.test(raw);
     } catch (err) {
       if (process.env.FORGE_DEBUG === "1")
         process.stderr.write(
-          `forge skillgate: scanner failed, using heuristic: ${err?.message ?? err}\n`,
+          `forge skillgate: scanner failed, using heuristic only: ${err?.message ?? err}\n`,
         );
     }
   }
 
   const findings = heuristicScan(content);
+  if (scannerCritical) findings.push({ sev: "critical", msg: "snyk-agent-scan: critical finding" });
   const critical = findings.some((f) => f.sev === "critical");
   const high = findings.some((f) => f.sev === "high");
   // `ok` gates install/exit-code on the blocking (critical) tier only, unchanged. `safe`
@@ -127,8 +135,9 @@ export function scan(target) {
     critical,
     high,
     safe: !critical && !high,
-    scanner: "heuristic",
+    scanner: raw == null ? "heuristic" : "snyk-agent-scan + heuristic",
     findings,
+    ...(raw == null ? {} : { raw }),
     verdict: verdict({ critical, high }),
   };
 }

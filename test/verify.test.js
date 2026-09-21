@@ -5,9 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  classifySuiteFailure,
   computeCodeState,
   extractCalledSymbols,
   findUnknownSymbols,
+  maskedTestScript,
+  provenanceMac,
+  signProvenance,
   verify,
 } from "../src/verify.js";
 
@@ -37,6 +41,17 @@ const gitRepo = () => {
   g("init");
   g("config", "user.email", "t@t.t");
   g("config", "user.name", "t");
+  return root;
+};
+
+// A git repo whose package.json carries `scripts.test` — the shape verify's runner
+// detection and the masked-script check both read.
+const fixtureWithTestScript = (script) => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ name: "t", scripts: { test: script } }),
+  );
   return root;
 };
 
@@ -284,11 +299,33 @@ test("verify: one of two executable suites fails ⇒ FAIL (failure is not hidden
 // ---------------------------------------------------------------------------
 
 test("verify: a suite killed by a signal ⇒ INCOMPLETE, not FAIL (ME-02)", () => {
+  // The classification is pure, so every "never reached a verdict" shape is checked on
+  // EVERY OS. The old test could only express this with a `#!/bin/sh … kill -9 $$` fixture,
+  // which Windows cannot run at all: it exits with a real code, so verify (correctly) called
+  // it FAIL and the test failed for a reason that had nothing to do with signals.
+  const ctx = { label: "pytest -q", bin: "pytest", timeout: 1000 };
+  const killed = classifySuiteFailure({ status: null, signal: "SIGKILL" }, ctx);
+  assert.equal(killed.status, "INCOMPLETE", "a signal-killed run is not a test failure");
+  assert.equal(killed.exitCode, null);
+  assert.equal(killed.signal, "SIGKILL");
+  for (const [e, expected] of [
+    [{ code: "ENOENT" }, "INCOMPLETE"],
+    [{ code: "EACCES" }, "INCOMPLETE"],
+    [{ code: "ENOEXEC" }, "INCOMPLETE"],
+    [{ code: "ETIMEDOUT" }, "INCOMPLETE"],
+    [{ status: null, signal: "SIGTERM" }, "INCOMPLETE"],
+    [{ status: 1, stdout: "1 failed" }, "FAIL"], // the ONLY true FAIL: a completed run
+    [{ status: 2 }, "FAIL"],
+  ]) {
+    assert.equal(classifySuiteFailure(e, ctx).status, expected, JSON.stringify(e));
+  }
+  assert.equal(classifySuiteFailure({ code: "ETIMEDOUT" }, ctx).timedOut, true);
+
+  // End to end where the OS can express it: a suite that really is killed by a signal.
+  if (process.platform === "win32") return;
   const root = gitRepo();
   writeFileSync(join(root, "requirements.txt"), "pytest\n");
   const bin = mkdtempSync(join(tmpdir(), "forge-bin-"));
-  // Starts but is terminated by SIGKILL before reaching a real exit code — it did NOT
-  // complete, so this must be INCOMPLETE, never a false FAIL (a non-zero exit code).
   const p = join(bin, "pytest");
   writeFileSync(p, "#!/bin/sh\nkill -9 $$\n");
   chmodSync(p, 0o755);
@@ -297,7 +334,6 @@ test("verify: a suite killed by a signal ⇒ INCOMPLETE, not FAIL (ME-02)", () =
   assert.equal(r.ok, false);
   const s = r.tests.executed.find((x) => x.label.includes("pytest"));
   assert.equal(s.status, "INCOMPLETE");
-  assert.notEqual(s.status, "FAIL");
   assert.ok(s.signal || s.code, `spawn signal/code recorded (${s.signal ?? s.code})`);
 });
 
@@ -343,4 +379,43 @@ test("verify: provenance carries the codeState fingerprint (HI-02)", () => {
   assert.equal(r.provenance.codeState.gitAvailable, true);
   assert.equal(typeof r.provenance.codeState.dirtyHash, "string");
   assert.ok("head" in r.provenance.codeState);
+});
+
+// B7: `"test": "node --test || true"` exits 0 whatever the tests do, so `forge verify`
+// reported PASS and the Stop gate accepted it as evidence.
+test("verify: a test script that masks its own failures is INCOMPLETE, never PASS (B7)", () => {
+  for (const script of [
+    "node --test || true",
+    "node --test || exit 0",
+    "node --test; true",
+    "node --test || :",
+    "jest --passWithNoTests",
+  ]) {
+    assert.equal(maskedTestScript(fixtureWithTestScript(script)), script, `masked: ${script}`);
+  }
+  for (const script of ["node --test", "npm run test:unit && npm run test:e2e", "jest --ci"]) {
+    assert.equal(maskedTestScript(fixtureWithTestScript(script)), null, `honest: ${script}`);
+  }
+  const root = fixtureWithTestScript("node --test || true");
+  writeFileSync(
+    join(root, "x.test.js"),
+    "import test from 'node:test';\ntest('t', () => { throw new Error('x'); });\n",
+  );
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE", "a masked script cannot produce a verdict");
+  assert.equal(r.ok, false);
+  assert.match(r.tests.executed[0].output, /masks failures/);
+});
+
+// B7: the provenance stamp carries a MAC over the verdict it claims.
+test("verify: the provenance stamp is signed, and an edited one no longer verifies (B7)", () => {
+  const root = fixtureWithTestScript("node --test");
+  const r = verify({ targetRoot: root });
+  assert.equal(typeof r.provenance.signature, "string", "the stamp is signed");
+  assert.equal(r.provenance.signature, provenanceMac(r.provenance));
+  const tampered = { ...r.provenance, tests: { ...r.provenance.tests, status: "PASS" } };
+  if (r.provenance.tests.status !== "PASS")
+    assert.notEqual(tampered.signature, provenanceMac(tampered), "flipping the verdict breaks it");
+  const handWritten = { tests: { status: "PASS" }, codeState: r.provenance.codeState };
+  assert.notEqual(handWritten.signature, provenanceMac(handWritten), "an unsigned stamp fails");
 });
