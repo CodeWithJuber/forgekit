@@ -69,6 +69,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the exact chance baseline of a random ranking instead of a fixed 0.6 (pure noise at 80%
   positives passed 0.6 and let the learned model take over; a real 10%-prevalence signal
   at AP 0.33 was disabled).
+- **`forge radar` rings reflect the risk they find.** The ring score was a weighted mean in
+  which clean signals counted as zeros with the heaviest weights (`deprecated: false` 1.0,
+  "no advisories" 0.9), so they diluted everything else: a dependency 4 majors behind with
+  a 3-year-stale latest release scored **0.221 → adopt**, currency risk could never exceed
+  0.255 (so "assess" was unreachable from the score), and a high-severity advisory alone
+  scored 0.247 → adopt. The score is now a noisy-OR, `1 − ∏(1 − wₖ·sₖ)`, like the lesson
+  and consensus scores: the same dependency scores 0.485 (trial), maximal currency risk
+  0.545 and a high advisory 0.630 (both assess). Absent evidence still lands in "assess"
+  through the evidence-count gate, never through the score.
 
 ### Documentation
 

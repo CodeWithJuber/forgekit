@@ -662,7 +662,8 @@ $ forge radar
 
 Rings are a **formula over registry evidence** (_mizan_ — a philosophical/ethical framing of
 weighed judgment, not a technical authority; every ring ships the evidence that earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
-lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
+lag, open security advisories (severity-weighted), and maintainer deprecation, combined as a
+noisy-OR `score = 1 − ∏(1 − wₖ·sₖ)` — a clean signal adds no risk and dilutes nothing. Repo _usage_
 (import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
 Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
 two verified evidence kinds → **`assess` (never `adopt` on absence)** — missing evidence never

@@ -142,9 +142,10 @@ function majorOf(v) {
 
 /**
  * Classify one dependency into a ring from its evidence — a pure formula, no package lists.
- * Absent evidence is never scored as zero risk (it is simply not averaged in), so a dep we
- * could not verify degrades to "assess", never "adopt". Hard gates (deprecated / critical
- * advisory) win over the score. Every returned ring carries its calibration `reasons`.
+ * The score is a noisy-OR over the verified risk signals (a clean signal neither adds risk
+ * nor dilutes the others); absent evidence is never scored as zero risk — too few verified
+ * kinds degrades to "assess", never "adopt". Hard gates (deprecated / critical advisory)
+ * win over the score. Every returned ring carries its calibration `reasons`.
  * @param {DepEvidence} evidence
  * @param {number} nowDay epoch-day of the scan
  * @returns {{ring:"adopt"|"trial"|"assess"|"hold", score:number,
@@ -200,14 +201,15 @@ export function classifyDep(evidence, nowDay = epochDay()) {
   }
 
   const kinds = Object.keys(signals);
-  let num = 0;
-  let den = 0;
-  for (const k of kinds) {
-    const w = RADAR_WEIGHTS[k] ?? 0;
-    num += w * signals[k];
-    den += w;
-  }
-  const score = den > 0 ? clamp01(num / den) : 0;
+  // Noisy-OR over the risk signals, score = 1 − ∏(1 − wₖ·sₖ) — the lessons.js/consensus.js
+  // shape. A weighted MEAN let every clean signal dilute the others: `deprecated:false`
+  // (w 1.0) and "no advisories" (w 0.9) pulled a dep 4 majors behind and 3 years stale down
+  // to 0.22 → "adopt", capped pure currency risk at 0.25, and even a HIGH advisory scored
+  // 0.25 → "adopt". A clean signal now contributes a factor of 1 (no risk, no dilution);
+  // absent evidence is handled by the evidence-count gate below, never by the score.
+  let clean = 1;
+  for (const k of kinds) clean *= 1 - (RADAR_WEIGHTS[k] ?? 0) * clamp01(signals[k]);
+  const score = clamp01(1 - clean);
 
   // Hard gates first: a deprecated or critically-vulnerable dep is "hold" regardless of freshness.
   /** @type {"adopt"|"trial"|"assess"|"hold"} */
