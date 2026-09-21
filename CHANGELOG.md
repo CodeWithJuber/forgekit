@@ -25,6 +25,85 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`forge impact` actually resolves imports.** JS/TS import specifiers were stored as raw
+  strings and matched against symbol names, so `"./util.js"` could only ever resolve by its
+  last dotted segment: on this repo, 3 of 502 relative import statements resolved and all
+  three were spurious (`"../scripts/build-pages.mjs"` → `mjs` → `const mjs` in `doctor.js`).
+  `export * from`, `export { x as y } from`, multi-line clauses, dynamic `import()` and
+  `require()` were not parsed at all, and the Python pattern crossed newlines (three stacked
+  `import` lines fused into a single edge to a module named `"os<newline>import
+  sys<newline>from pkg"`), dropped parenthesised lists, mapped `import pkg.core as c` to
+  `pkg`, and never resolved a relative import. Specifiers now resolve through one shared
+  resolver in `src/scope.js` — exact file, TypeScript NodeNext `./x.js`→`x.ts`,
+  extensionless, `<dir>/index.*`, and Python modules indexed by PACKAGE ROOT
+  (`src/mypkg/core.py` is `mypkg.core`, so a src layout answers exactly like a flat one) — and an import that resolves to no file stays unresolved instead
+  of being pinned to whatever shares its name. **Measured on this repo: 1,196 → 1,392 import
+  statements seen, 679 of 679 relative ones resolved to the exact file the specifier names, 0
+  wrong (was 3, all wrong).** On a ten-importer fixture the graph now finds 10 of 10 with no
+  false positives (grep finds 10 with 2), and on a seven-importer Python fixture 7 of 7 (was
+  4, plus a file whose only mention is a comment).
+- **The impact graph no longer reads comments and strings as code, and a call belongs to its
+  function.** A comment saying `class Parser` defined a second `Parser`, which made the name
+  ambiguous and silently erased the real edge from `main.js`; a string containing an import
+  was an import. Every structural regex now runs on a masked copy of the source (comments and
+  string/regex contents blanked, offsets and line numbers preserved), and a call is attributed
+  to the innermost enclosing function/class instead of the nearest preceding `const` — so
+  `const value = leaf()` inside `mid()` no longer hides `mid`'s own callers from
+  `impact(leaf)`. Bare names are never resolved across languages any more (a Python
+  `from impact_oracle.oracle import …` used to land on the JS `const oracle` in `eval.js`),
+  local definitions are not cross-file candidates, and names imported from a package are never
+  re-guessed locally: ambiguous references dropped on this repo fell from 3,136 to 877, and
+  they are now COUNTED and reported instead of vanishing (`impact()` returns `ambiguousRefs`,
+  `unresolvedImports`, `capped` and `skippedFiles`; `forge impact` prints them).
+- **Building the graph is linear again, and the file cap counts source files.** Line numbers
+  came from a `slice(0, i).split()` over the whole file per match, and every call scanned
+  every node, so a 16k-line file took seconds; extraction now uses a line index and scope
+  intervals: a 16k-line JavaScript file plus a 16k-line Python file build in **0.3 s, down
+  from 4.9 s** on the same machine (`test/atlas_resolve.test.js` keeps it under 2.5 s). The
+  20,000-file cap counted JSON and Markdown against code and was never reported; it now bounds source files
+  only, docs/configs have their own bound, and a capped graph says so in `forge atlas build`,
+  in `impact()` and in `forge impact`.
+- **Blast radius is no longer reverse-only — the refutation's sibling and forward relations
+  are ported.** `research/empirical-refutation/` diagnosed that 94.7% of real misses were
+  *siblings* (A and B both depend on module C, so C's contract shift co-changes both) and
+  2.1% were forward-only, but only the Python prototype was repaired; the shipped JS graph
+  still walked reverse edges exclusively, so `impact(serializer.js)` reported `app.js` and not
+  the `deserializer.js` that shares `wire_format.js` with it. `impact()` now runs the two
+  ported relations at the replication package's FROZEN parameters (sibling: 1 forward + 1
+  reverse hop, weight 0.7, bridge in-degree cap 100; forward: ≤2 hops, weight 0.5), both
+  terminal — a node they reach is reported, never expanded. Every result carries its
+  `relation`, `relations: ["reverse"]` reproduces the old answer exactly, and
+  `analyzeDiffImpact` (MergeField) receives the same two relations as terminal edges.
+- **The impact-quality numbers are re-measured, and they are not the README's.** The
+  README's precision 0.90 / F1 0.92 did not reproduce at HEAD (`evalImpact` over the
+  committed `bench/impact_cases.mjs` gave precision 0.341, recall 0.972, F1 0.500 there).
+  With the repaired graph it gives **precision 0.094, recall 1.000, F1 0.170** with all three
+  relations and **0.146 / 1.000 / 0.248** reverse-only. The labels name only DIRECT
+  referencers, so every transitive dependent, every doc that mentions the symbol and every
+  sibling now counts against precision — restricted to code files the reverse-only precision
+  is 0.346, and restricted to one hop it is 0.830 at recall 1.000. Four of the six label sets
+  are also stale (`contentHash` has nine importers in `src/` today, six are labelled), so
+  these numbers under-report precision; the fixture needs relabelling before any claim rests
+  on it.
+- **The in-repo Python prototype is the repaired v2, not the refuted v1.**
+  `research/python-prototypes/impact_oracle/oracle.py` was byte-identical to the as-shipped
+  version whose claims the refutation demolished. It now carries both repairs — the src-layout
+  phantom-node merge (pooled recall 0.0220 → 0.2424) and the sibling/forward traversal
+  (held-out precision 0.320, recall 0.647, **F1 0.428 vs grep's 0.371**, reversing 0.042 vs
+  0.437) — with the frozen parameters as module defaults, 13 new regression tests, and
+  `ImpactOracle(wm, sibling_enabled=False, forward_enabled=False)` for the old behaviour.
+- **`forge atlas query` shows the definition you asked for.** Results were unranked, and a
+  qualified name carries the file path, so `query build` returned 30 symbols from
+  `scripts/build-pages.mjs` before `function build` itself. Matches are now ranked: exact
+  name, case-insensitive exact, name prefix, name substring, then path-only matches.
+- **Fan-out and churn stop lying.** `grepFanout` was a substring `git grep`, so "get" counted
+  every file containing "target"; it now matches whole words (`-w -F`). `gitChurn` counted the
+  last 50 commits of ALL history, so a file untouched since 2015 still scored 1.0; it now
+  counts commits inside a 90-day window.
+- **Non-finite weights are zero, not certainty.** The MergeField `clamp01` helpers disagreed:
+  `merge_impact.js` mapped any non-number to 0 while `merge_impact_adapter.js` used
+  `Number(value) || 0`, which turned `Infinity` into a maximal 1.0 criticality. One shared
+  helper now maps every non-finite value to 0 and still accepts numeric strings.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
