@@ -250,9 +250,17 @@ test("a staged file git cannot diff is refused as unscanned, never passed (B3 fa
   const sha = String(git("ls-files", "-s", "cfg.js")).split(/\s+/)[1];
   rmSync(join(root, ".git", "objects", sha.slice(0, 2), sha.slice(2)), { force: true });
   const r = commitGate(root, { env: env() });
-  assert.equal(r.allow, false, "an unreadable diff is not a clean diff");
+  // Diagnostics in the message: which git behaviour this platform actually shows, so a
+  // failure here says WHY (git's status/stderr for the corrupted blob) instead of "false".
+  const probe = spawnSync(
+    "git",
+    ["diff", "--cached", "--unified=0", "--no-color", "--text", "--no-ext-diff", "--no-textconv"],
+    { cwd: root, encoding: "utf8" },
+  );
+  const why = `git status=${probe.status} stderr=${JSON.stringify(String(probe.stderr).slice(0, 200))} stdoutLen=${String(probe.stdout).length} findings=${JSON.stringify(r.findings)}`;
+  assert.equal(r.allow, false, `an unreadable diff is not a clean diff — ${why}`);
   const f = r.findings.find((x) => x.kind === "secret-scan");
-  assert.ok(f, "reported as an unscanned file");
+  assert.ok(f, `reported as an unscanned file — ${why}`);
   assert.deepEqual(f.files, ["cfg.js"], "only the unreadable file is unscanned");
   assert.match(renderCommitGate(r), /could not read the staged lines of: cfg\.js/);
   assert.equal(cli(root).status, 1);
