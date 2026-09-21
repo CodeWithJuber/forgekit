@@ -106,7 +106,7 @@ test("jsImports reads every form; pyImports keeps statements apart", () => {
   assert.deepEqual(
     py.map((i) => i.module),
     ["os", "sys", "pkg.core", "pkg.core"],
-    "`\s` in the old regex fused three statements into one module name",
+    "`s` in the old regex fused three statements into one module name",
   );
 });
 
