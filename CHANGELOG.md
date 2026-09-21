@@ -78,6 +78,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and consensus scores: the same dependency scores 0.485 (trial), maximal currency risk
   0.545 and a high advisory 0.630 (both assess). Absent evidence still lands in "assess"
   through the evidence-count gate, never through the score.
+- **`forge cost` counts what a session actually cost.** Without `ccusage`, the fallback
+  estimate from Claude's session logs priced only `input_tokens` and `output_tokens`,
+  ignoring `cache_creation_input_tokens` and `cache_read_input_tokens` (most of Claude
+  Code's input), and summed every log line although Claude Code writes one response on
+  several lines with the same message id. A one-message fixture logged three times
+  estimated **$0.038 against $0.228**. Cache writes are now priced at 1.25× the model's
+  input rate (2× for 1-hour writes) and reads at 0.1× (Anthropic's caching multipliers;
+  the price table carries base rates only), and each message id counts once across all
+  log files; the fixture now estimates $0.228. `forge cost --stages` stopped calling its
+  composed figure a "lower bound" that "can only grow": the route factor goes negative
+  when routing prices above the always-premium baseline (measuring one such stage took the
+  composition from 50% to 0%). It is now labeled "measured stages only, not a bound". And it
+  no longer prints "the paper measured a 62% routing saving" as context: the line marks
+  the figure as refuted next to the measured −20.2% on total spend
+  (`research/empirical-refutation`).
 
 ### Documentation
 

@@ -2,8 +2,9 @@
 
 > Status: **no data yet.** This document is the artifact the P8 harness
 > ([docs/plans/substrate-v2/05-cost-model.md](../docs/plans/substrate-v2/05-cost-model.md) §3)
-> fills with measurements. Until a cell below holds a measured number, the only claimable
-> figures are the paper's: 62 % routing saving on live tokens (paper §9). The plan's ~90 %
+> fills with measurements. Until a cell below holds a measured number, nothing here is
+> claimable. The paper's 62 % routing saving (§9) is refuted: the held-out replication
+> (research/empirical-refutation) measured −20.2 % on total spend. The plan's ~90 %
 > composed figure is a **target**, not a result, and does not appear in this table.
 
 ## Methodology
@@ -60,7 +61,8 @@ Route and context events are emitted via `recordRoute` / a future context-assemb
 
 - Stage rates are **workload-dependent**: factors describe the recorded traffic of one repo,
   not a general claim (spec §2 — repeat-heavy warm-ledger workloads differ from cold starts).
-- The composed reduction is a **lower bound from measured stages only**; unmeasured stages
-  contribute nothing rather than a target.
+- The composed reduction covers **measured stages only** and is **not a bound**: unmeasured
+  stages contribute nothing rather than a target, and a measured stage can be negative (it
+  raised cost), so measuring another stage can lower the figure.
 - Until the paired-run harness with the correctness guard has run, per-stage factors from
   live metrics are unguarded observational numbers, not eval results.

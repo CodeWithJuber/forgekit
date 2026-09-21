@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  CACHE_PRICE_RATIO,
   composedReduction,
+  estimateSpendFromLogs,
   recordGate,
   recordRoute,
   renderCostReport,
@@ -159,12 +161,97 @@ test('renderCostReport: "90" appears ONLY behind the word "target" — never as 
   assert90OnlyAsTarget(renderCostReport(report(mixed)));
 });
 
-test("renderCostReport: unmeasured stages print as no-data; the 62% figure is labeled as paper context", () => {
+test("renderCostReport: unmeasured stages print as no-data; the 62% figure prints only as REFUTED", () => {
   const out = renderCostReport(report(tmp()));
   assert.ok(out.includes("gate"));
   assert.ok((out.match(/no data/g) || []).length === 4, "all four stages show no data");
-  assert.ok(/context \(not a local measurement\).*62%.*paper §9/.test(out));
+  // Regression (review E4): "the paper measured a 62% routing saving" printed as a result
+  // although the empirical refutation measured −20.2% on total spend.
+  const line = out.split("\n").find((l) => l.includes("62%"));
+  assert.ok(line, "the paper figure is still cited");
+  assert.match(line, /REFUTED/);
+  assert.match(line, /−20\.2%/);
+  assert.ok(!/measured a 62%/.test(out));
   assert.ok(out.includes("caveats:"));
+});
+
+test("composedReduction: a cost-raising stage LOWERS the figure — it is not a lower bound", () => {
+  // Regression (review E4): the report called the composition a "lower bound" that "can only
+  // grow" as stages are measured, but the route factor goes negative when routing prices
+  // above the always-premium baseline (every event on the extreme tier here).
+  const root = tmp();
+  seed(root, [
+    { stage: "cache", outcome: "hit_exact" },
+    { stage: "cache", outcome: "miss" },
+  ]);
+  const before = composedReduction(stageFactors(root)).measuredReduction;
+  seed(root, [
+    { stage: "cache", outcome: "hit_exact" },
+    { stage: "cache", outcome: "miss" },
+    { stage: "route", tier: "fable", tokensIn: 1000, tokensOut: 1000 },
+  ]);
+  const f = stageFactors(root);
+  assert.ok(f.route.value < 0, "routing cost more than the baseline");
+  assert.ok(composedReduction(f).measuredReduction < before, "a measured stage lowered it");
+  const r = report(root);
+  const text = `${renderCostReport(r)}\n${r.caveats.join("\n")}`;
+  assert.ok(!/lower bound/i.test(text), "no lower-bound claim survives");
+  assert.match(text, /not a bound/);
+});
+
+// --- estimateSpendFromLogs: the ccusage-less fallback ----------------------------------
+
+test("estimateSpendFromLogs: prices cache tokens and counts a repeated response once (E4)", () => {
+  // test/_setup.js sandboxes $HOME, so this writes into a throwaway ~/.claude/projects.
+  const dir = join(homedir(), ".claude", "projects", "cost-fixture");
+  mkdirSync(dir, { recursive: true });
+  // Claude Code logs ONE API response on several lines (one per content block) sharing
+  // message.id + usage — and most of the input is cache reads/writes.
+  const msg = {
+    type: "assistant",
+    requestId: "req_1",
+    message: {
+      id: "msg_1",
+      model: "claude-opus-4-8",
+      usage: {
+        input_tokens: 10,
+        cache_creation_input_tokens: 20000,
+        cache_read_input_tokens: 180000,
+        output_tokens: 500,
+      },
+    },
+  };
+  const hourly = {
+    type: "assistant",
+    message: {
+      id: "msg_2",
+      model: "claude-opus-4-8",
+      usage: {
+        input_tokens: 0,
+        cache_creation_input_tokens: 1000,
+        cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 1000 },
+        output_tokens: 0,
+      },
+    },
+  };
+  const lines = (...xs) => `${xs.map((x) => JSON.stringify(x)).join("\n")}\n`;
+  writeFileSync(join(dir, "s1.jsonl"), lines(msg, msg, msg, hourly));
+  writeFileSync(join(dir, "s2.jsonl"), lines(msg)); // a resumed session re-logs history
+  const est = estimateSpendFromLogs();
+  const opus = est.byModel.find((m) => m.model === "claude-opus-4-8");
+  assert.equal(opus.inTokens, 10, "msg_1 counted once across lines and files");
+  assert.equal(opus.cacheReadTokens, 180000);
+  assert.equal(opus.cacheWriteTokens, 21000);
+  // Opus 4.8: $5 in / $25 out per MTok; writes 1.25× (5m) / 2× (1h), reads 0.1× of input
+  const expected =
+    (10 * 5 +
+      500 * 25 +
+      20000 * 5 * CACHE_PRICE_RATIO.write5m +
+      1000 * 5 * CACHE_PRICE_RATIO.write1h +
+      180000 * 5 * CACHE_PRICE_RATIO.read) /
+    1e6;
+  assert.ok(Math.abs(opus.cost - expected) < 1e-12, `${opus.cost} vs ${expected}`);
+  assert.ok(Math.abs(opus.cost - 0.23755) < 1e-9, "was $0.038 before (input+output only)");
 });
 
 test("renderCostReport: measured factors print as percentages with event counts", () => {
