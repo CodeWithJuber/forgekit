@@ -1204,13 +1204,14 @@ HANDLERS.atlas = async (argv) => {
   } else if (sub === "query") {
     const at = need();
     if (!at) return;
+    // Ranked: exact definitions first, path-only (qname) matches last.
     const hits = a.query(at, argv.slice(2).join(" "));
     console.log(
       hits.length
         ? hits
             .slice(0, 30)
             .map((s) => `  ${s.file}:${s.line}  ${s.kind} ${s.name}`)
-            .join("\n")
+            .join("\n") + (hits.length > 30 ? `\n  … ${hits.length - 30} more` : "")
         : "  no match",
     );
   } else if (sub === "has") {
@@ -1703,9 +1704,37 @@ HANDLERS.impact = async (argv) => {
   }
   heading(`${BRAND.brand} impact — blast radius${basic ? "" : " (hazard-aware)"}\n`);
   console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
-  console.log(`  impacted files: ${r.impactedFiles.length}`);
+  const rel = r.relations || {};
+  const parts = ["reverse", "sibling", "forward", "llm-verified"]
+    .filter((k) => rel[k])
+    .map((k) => `${k} ${rel[k]}`);
+  console.log(
+    `  impacted files: ${r.impactedFiles.length}${parts.length ? `  (nodes: ${parts.join(" · ")})` : ""}`,
+  );
   for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
   if (r.impactedFiles.length > 20) console.log(`    … ${r.impactedFiles.length - 20} more`);
+  // Completeness: a blast radius is only as good as the graph under it — say when it isn't.
+  if (r.capped)
+    console.log(
+      paint(
+        `  ! graph capped: ${r.skippedFiles} file(s) not indexed — this list may be incomplete`,
+        "warn",
+      ),
+    );
+  if (r.ambiguousRefs)
+    console.log(
+      paint(
+        `  ! ${r.ambiguousRefs} reference(s) to this target's name(s) matched more than one definition and were not linked`,
+        "warn",
+      ),
+    );
+  if (r.unresolvedImports)
+    console.log(
+      paint(
+        `  · ${r.unresolvedImports} local import(s) in the repo did not resolve to a file`,
+        "dim",
+      ),
+    );
   return;
 };
 HANDLERS.substrate = async (argv) => {
