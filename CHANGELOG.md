@@ -36,9 +36,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pkg`, and never resolved a relative import. Specifiers now resolve through one shared
   resolver in `src/scope.js` — exact file, TypeScript NodeNext `./x.js`→`x.ts`,
   extensionless, `<dir>/index.*`, and Python modules indexed by PACKAGE ROOT
-  (`src/mypkg/core.py` is `mypkg.core`, so a src layout answers exactly like a flat one) — and an import that resolves to no file stays unresolved instead
-  of being pinned to whatever shares its name. **Measured on this repo: 1,196 → 1,392 import
-  statements seen, 679 of 679 relative ones resolved to the exact file the specifier names, 0
+  (`src/mypkg/core.py` is `mypkg.core`, so a src layout answers exactly like a flat one) —
+  and an import that resolves to no file stays unresolved instead of being pinned to whatever
+  shares its name. **Measured on this repo: 1,196 → 1,392 import statements seen, 679 of 679
+  relative ones resolved to the exact file the specifier names, 0
   wrong (was 3, all wrong).** On a ten-importer fixture the graph now finds 10 of 10 with no
   false positives (grep finds 10 with 2), and on a seven-importer Python fixture 7 of 7 (was
   4, plus a file whose only mention is a comment).
@@ -52,17 +53,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `impact(leaf)`. Bare names are never resolved across languages any more (a Python
   `from impact_oracle.oracle import …` used to land on the JS `const oracle` in `eval.js`),
   local definitions are not cross-file candidates, and names imported from a package are never
-  re-guessed locally: ambiguous references dropped on this repo fell from 3,136 to 877, and
-  they are now COUNTED and reported instead of vanishing (`impact()` returns `ambiguousRefs`,
-  `unresolvedImports`, `capped` and `skippedFiles`; `forge impact` prints them).
+  re-guessed locally, and `emit(ctx) {` inside an object is a method DEFINITION rather than
+  a call to whatever unique `emit` exists elsewhere: ambiguous references dropped on this
+  repo fell from 3,136 to 862, and they are now COUNTED and reported instead of vanishing
+  (`impact()` returns `ambiguousRefs`, `unresolvedImports`, `capped` and `skippedFiles`, and
+  `forge impact` prints them).
 - **Building the graph is linear again, and the file cap counts source files.** Line numbers
   came from a `slice(0, i).split()` over the whole file per match, and every call scanned
   every node, so a 16k-line file took seconds; extraction now uses a line index and scope
   intervals: a 16k-line JavaScript file plus a 16k-line Python file build in **0.3 s, down
   from 4.9 s** on the same machine (`test/atlas_resolve.test.js` keeps it under 2.5 s). The
-  20,000-file cap counted JSON and Markdown against code and was never reported; it now bounds source files
-  only, docs/configs have their own bound, and a capped graph says so in `forge atlas build`,
-  in `impact()` and in `forge impact`.
+  20,000-file cap counted JSON and Markdown against code and was never reported; it now
+  bounds source files only, docs/configs have their own bound, and a capped graph says so
+  in `forge atlas build`, in `impact()` and in `forge impact`.
 - **Blast radius is no longer reverse-only — the refutation's sibling and forward relations
   are ported.** `research/empirical-refutation/` diagnosed that 94.7% of real misses were
   *siblings* (A and B both depend on module C, so C's contract shift co-changes both) and
@@ -84,7 +87,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is 0.346, and restricted to one hop it is 0.830 at recall 1.000. Four of the six label sets
   are also stale (`contentHash` has nine importers in `src/` today, six are labelled), so
   these numbers under-report precision; the fixture needs relabelling before any claim rests
-  on it.
+  on it. What the repair fixes outright: nine `src/` files (every `src/emit/*.js`, plus
+  `src/taste.js`) reported **"✓ found · impacted files: 0"** while being imported —
+  **now none do**. The median blast radius of a `src/` file goes from 8 files to 16
+  reverse-only and 70 with the sibling relation on, which is the frozen parameters working
+  as measured, not a bug: `impact(…, { relations: ["reverse"] })` is the dependents-only
+  view.
 - **The in-repo Python prototype is the repaired v2, not the refuted v1.**
   `research/python-prototypes/impact_oracle/oracle.py` was byte-identical to the as-shipped
   version whose claims the refutation demolished. It now carries both repairs — the src-layout
