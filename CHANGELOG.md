@@ -71,6 +71,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pass are one model, add cost per judged-correct output ($1.06 vs $1.76, from 6 and 3 of 64),
   qualify the "96.8% fixable" ceiling, correct the calibration paragraph (bins 27/5/28/4/16,
   ECE 0.103 or 0.078, p = 0.028), and explain 801 labelled vs 759 evaluated files.
+- **The whitepaper marks its refuted prototype claims in place.** A status banner, inline
+  markers and a Corrections section cover the impact oracle's "never misses an affected file"
+  (recall 0.022 on real repositories), the 62.1% routing saving (−20.2% held out), M1's
+  worst-case cost (the sum over every tier, not cheap + premium), Eq. 1 vs M2, and a misquoted
+  Faros figure ("31.3% _more_ PRs merged with no review"). The docs copy and
+  `docs/cognitive-substrate/deliverable-package.md` (which had no refutation banner) match.
 - **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
   Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
   against the extracted replication package. PDFs built from the corrected sources could not

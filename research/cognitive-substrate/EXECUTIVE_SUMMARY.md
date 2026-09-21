@@ -6,12 +6,17 @@
 >
 > | Claim below | Measured on real data |
 > |---|---|
-> | Impact oracle recall **1.00** | **0.022** (9 OSS repos, 801 files); `grep` beats it ~10× on F1 |
-> | Router/gate F1 **1.00**, cost saving **+62.1%** | F1 **0.37**; cost saving **−20.2%** (routing costs *more* than always-premium) |
+> | Impact oracle recall **1.00** | **0.022** (9 OSS repos; 801 labelled files, 759 evaluated); `grep` beats it ~10× on F1 |
+> | Router/gate F1 **1.00**, cost saving **+62.1%** | F1 **0.37**; cost saving **−20.2%** (routing costs *more* than always-premium; per judged-correct output $1.06 vs $1.76, from only 6 and 3 correct outputs of 64) |
 >
 > The theory sections remain the programme's working framework. The *numbers* here do not. A repair
-> recovered a narrow win (recall 0.653, F1 0.416, beating grep's 0.371), documented in the refutation
-> paper. Read this document for the architecture; read the refutation for what is actually true.
+> raised recall to 0.653 and F1 to 0.416, a point estimate above grep's 0.371, documented in the
+> refutation paper; that it beats grep is not established (three held-out repositories, sign-test
+> p = 0.125). Read this document for the architecture; read the refutation for what is actually true.
+>
+> *Corrected 2026-09-21* after an external review: the repair was previously called "a narrow win",
+> and the whitepaper's HTML edition now also marks each refuted claim in place. The whitepaper PDF
+> predates those corrections.
 
 ---
 
@@ -66,14 +71,14 @@
 | Grep baseline (what agents do today) | 0.73 | 0.94 | **0.79** |
 | Edited-file-only | 1.00 | 0.53 | 0.65 |
 
-The oracle does **not** dominate F1 — grep edges it at the default threshold, and we say so. What the oracle uniquely provides is **guaranteed recall**: for "show me everything my edit could break," a silent miss costs far more than an extra file to check, and only the structural oracle drives false negatives to zero (precision tunable, best F1 = 0.79 at threshold 0.4).
+The oracle does **not** dominate F1 — grep edges it at the default threshold, and we say so. What the oracle appeared to provide is **guaranteed recall**: for "show me everything my edit could break," a silent miss costs far more than an extra file to check, and on this package only the structural oracle drove false negatives to zero (precision tunable, best F1 = 0.79 at threshold 0.4). **Refuted:** on real repositories its recall was 0.022 (see the banner).
 
 ### Prototype II — Router + Gate (live, on real models: haiku / sonnet / opus)
 | Metric | Result |
 |---|---|
 | Gate accuracy (should-ask) | 30/30 · precision 1.00 · recall 1.00 |
 | Routing accuracy (well-specified tasks) | 21/21 exact tier |
-| **Real cost saved vs always-premium** | **62.1%** (same measured tokens) |
+| **Real cost saved vs always-premium** | **62.1%** (same measured tokens; tuning set only — **−20.2%** on 80 held-out tasks) |
 | Execution-verified sub-experiment | 3/3 routed-down outputs passed real test cases |
 
 **Honest caveat (both prototypes):** these are **demonstrations, not benchmarks**. The router's 30-task set is hand-labeled and the rubric thresholds were tuned against it, so perfect separation shows the rubric *can* distinguish these cases — not field accuracy. The oracle's evaluation is 5 mutations + 2 stdlib scale checks. We apply the "retired SWE-bench Verified" caution (§4, confirmed) to our own numbers.
@@ -99,4 +104,4 @@ Most components are borrowed (external memory, fast/slow learning, code graphs, 
 
 ## Scope & limitations (stated honestly)
 
-Two faculties/mechanisms are prototyped, not eleven. The impact oracle's static analysis is single-language (Python) and conservative on dynamic dispatch. The router/gate rubrics are keyword heuristics tuned on a small hand-labeled set. Memory validity, outcome learning, and doom-loop diagnosis remain *specified but unbuilt* — the harder research gaps, marked as such rather than gestured at with a demo. The lens is framing: reject it and you lose the organizing vocabulary but none of the technical content.
+Two faculties/mechanisms are prototyped, not eleven. The impact oracle's static analysis is single-language (Python) and misses dynamic dispatch; on real repositories it under-approximated badly (reverse-only traversal and a package-layout defect). The router/gate rubrics are keyword heuristics tuned on a small hand-labeled set. Memory validity, outcome learning, and doom-loop diagnosis remain *specified but unbuilt* — the harder research gaps, marked as such rather than gestured at with a demo. The lens is framing: reject it and you lose the organizing vocabulary but none of the technical content.

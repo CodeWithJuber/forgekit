@@ -241,9 +241,12 @@ needs a hook surface. Tests and human corrections always win. The full, canonica
 
 ## Learn more
 
-- **White paper** — the full argument: [PDF](./cognitive_substrate_whitepaper.pdf) ·
-  [HTML](./cognitive_substrate_whitepaper.html)
-- **[Package overview](./deliverable-package.md)** — headline results and prototypes
+- **White paper** — the full argument: [HTML](./cognitive_substrate_whitepaper.html) (with the
+  2026-09-21 corrections) · [PDF](./cognitive_substrate_whitepaper.pdf) (predates them). Its two
+  prototype results were refuted on real data — see
+  [research/empirical-refutation/](../../research/empirical-refutation/).
+- **[Package overview](./deliverable-package.md)** — headline results (refuted; see its banner)
+  and prototypes
 - **[Evidence map](./evidence_map.md)** — every load-bearing statistic re-graded against
   primary sources (5 confirmed, 5 vendor-reported, 2 dropped)
 - **[Ecosystem map](./ecosystem_map.md)** — each capability vs. the real 2026 tool stack

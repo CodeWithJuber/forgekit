@@ -87,8 +87,16 @@ The evaluation uses **mutation testing** as ground truth:
 | Grep baseline     | 0.733     | 0.943  | 0.787 |
 | Edited-file only  | **1.000** | 0.529  | 0.650 |
 
-The oracle achieves **perfect recall** (never misses a truly affected module),
-with its best F1 of 0.79 at the optimal threshold (t=0.4).
+On this demo package the oracle reached recall 1.000 (it missed no affected module in
+these five mutations), with its best F1 of 0.79 at the optimal threshold (t=0.4).
+
+> **Refuted on real code.** That recall did not transfer. On 759 files in nine open-source
+> Python repositories, with co-change ground truth, this version's recall was **0.022** and a
+> grep baseline scored F1 0.437 against its 0.042: the traversal walks only reverse edges, and a
+> construction defect breaks `src/`-layout packages. A repaired version ships in
+> [`../../empirical-refutation/replication_package.tar.gz`](../../empirical-refutation/). Earlier
+> versions of this README said the oracle "achieves perfect recall (never misses a truly affected
+> module)". (Corrected 2026-09-21.)
 
 ## File structure
 
