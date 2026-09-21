@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { protectPathsDecision } from "../global/guards/protect-paths.mjs";
 
 const guards = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
 
@@ -224,11 +227,17 @@ test("secret-redact redacts a token without jq (Node path)", () => {
 
 test("cost-budget never blocks and warns on a broad command", () => {
   const r = runGuard("cost-budget.sh", {
-    session_id: "t-broad",
+    session_id: `t-broad-${Date.now()}`,
     tool_input: { command: "find / -name x" },
   });
   assert.equal(r.code, 0, "must never block");
   assert.match(r.err, /broad|scope/i);
+  // B8: stderr on an exit-0 PreToolUse hook reaches nobody, so the nudge also rides on the
+  // documented `additionalContext` channel.
+  const out = JSON.parse(r.out);
+  assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
+  assert.match(out.hookSpecificOutput.additionalContext, /broad\/expensive command/);
+  assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "a nudge never decides");
 });
 
 test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
@@ -243,4 +252,148 @@ test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
 test("lean-guard is non-blocking outside a git repo (exit 0)", () => {
   const r = runGuard("lean-guard.sh", {}, { cwd: tmpdir() });
   assert.equal(r.code, 0);
+});
+
+// ── The cortex hook SHIM (cortex.sh), driven exactly as Claude Code drives it: `node run.mjs
+// cortex.sh <mode>` with the hook JSON on stdin. The entrypoint tests pipe straight into
+// node and so could never see a shim bug — and there was one: `stop` runs detached, and a
+// background job in a non-interactive shell gets /dev/null as stdin, so the Stop payload was
+// lost and the REAL session was never processed in any install (no episodes, no lessons,
+// the session log never cleared).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("cortex.sh stop (detached) processes the REAL session from the Stop payload (C1)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-shim-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const sid = "shim-c1";
+  const hook = (mode, payload = {}) =>
+    spawnSync("node", [join(guards, "run.mjs"), join(guards, "cortex.sh"), mode], {
+      input: JSON.stringify({ cwd: root, session_id: sid, ...payload }),
+      encoding: "utf8",
+    });
+  for (let i = 0; i < 3; i++)
+    hook("capture", { tool_name: "Edit", tool_input: { file_path: "src/a.js" } });
+  hook("prompt", { prompt: "that's wrong, undo it" });
+  const sessions = join(root, ".forge", "sessions");
+  const log = join(sessions, `${sid}.jsonl`);
+  assert.ok(existsSync(log), "capture/prompt logged the session through the shim");
+
+  const r = hook("stop");
+  assert.equal(r.status, 0, "the Stop shim never fails the session");
+  // Detached by design — poll for the background run to finish the real session.
+  const deadline = Date.now() + 30000;
+  while (existsSync(log) && Date.now() < deadline) await sleep(100);
+  assert.equal(existsSync(log), false, "the real session's log was consumed and cleared");
+  assert.ok(
+    existsSync(join(root, ".forge", "lessons", "episodes.jsonl")),
+    "episodes were recorded for the real session",
+  );
+  assert.equal(
+    existsSync(join(sessions, "default.jsonl")),
+    false,
+    "nothing fell back to the shared 'default' session",
+  );
+});
+
+// ── B6. The rule set is now a pure function in protect-paths.mjs, so the matrix below runs
+// without a process per case; the end-to-end cases above pin that the shim still exits 2.
+test("protect-paths rules: destructive commands the literal substrings missed (B6)", () => {
+  const blocked = [
+    "git reset --hard HEAD~1",
+    "git -C /repo reset --hard",
+    "git clean -fdx",
+    "git clean --force",
+    "find . -name '*.log' -delete",
+    "find /var -type f -exec rm {} ;",
+    "chmod -R 777 /srv",
+    "dd if=/dev/zero of=/dev/sda",
+    "drop table users;",
+    "psql -c 'DROP DATABASE prod'",
+    "rm -fr /",
+    "sudo rm -Rf ~",
+    "rm --recursive --force $HOME",
+    "git push --force origin main",
+    "git push -f",
+    "git push origin +main",
+    "sudo git push --force",
+    "git -c core.pager=cat push --force",
+  ];
+  for (const command of blocked) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, true, `must block: ${command}`);
+  }
+  const allowed = [
+    "git push --force-with-lease origin main",
+    "git push --force-if-includes",
+    "git push origin main",
+    "git clean -n",
+    "git reset --soft HEAD~1",
+    "truncate -s 0 build.log",
+    "chmod 644 src/a.js",
+    "chmod -r secret.txt", // remove read bit on ONE file: not recursive
+    "find . -name '*.log' -print",
+    "rm -rf node_modules",
+    "dd if=/dev/zero bs=1M count=1",
+    'git commit -m "explain when to push -f and when to reset --hard"', // prose, not a command
+    'git log --grep="git clean -fdx"',
+  ];
+  for (const command of allowed) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+});
+
+test("protect-paths protects the credential stores and Read itself (B6)", () => {
+  for (const file_path of [
+    "/home/u/.aws/credentials",
+    "/home/u/.netrc",
+    "/home/u/.npmrc",
+    "/home/u/.git-credentials",
+    "C:\\Users\\u\\.aws\\credentials", // Windows-native path (backslashes)
+    "C:\\proj\\.env",
+  ]) {
+    for (const tool_name of ["Write", "Read"]) {
+      const r = runGuard("protect-paths.sh", { tool_name, tool_input: { file_path } });
+      assert.equal(r.code, 2, `must block ${tool_name} of ${file_path}`);
+      assert.match(r.err, tool_name === "Read" ? /refusing to read/ : /refusing to modify/);
+    }
+  }
+  // Bash readers/writers of the same stores are blocked too.
+  for (const command of ["cat ~/.netrc", "cat .npmrc", "echo x > ~/.git-credentials"]) {
+    assert.equal(protectPathsDecision({ toolName: "Bash", command }).block, true, command);
+  }
+  // …and an ordinary source file is still untouched.
+  assert.equal(
+    runGuard("protect-paths.sh", { tool_name: "Read", tool_input: { file_path: "src/a.js" } }).code,
+    0,
+  );
+});
+
+test("protect-paths parses the payload with a real parser, not a regex (B6)", () => {
+  // The old grep fallback (used whenever jq was absent — stock Git for Windows, minimal
+  // images) cut the command at the first escaped quote, so everything after it was invisible.
+  for (const command of [
+    'echo "x"; cat .env',
+    'echo "hello world" && cat .env',
+    'git diff -- ".env"',
+  ]) {
+    const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command } });
+    assert.equal(r.code, 2, `must block: ${command}`);
+  }
+  // A LARGE command used to lose its deny to SIGPIPE: `printf | grep -q` under pipefail
+  // reported failure when grep exited early, so the rule "did not match".
+  const big = `cat .env\n${Array.from({ length: 20000 }, (_, i) => `# note ${i}`).join("\n")}`;
+  const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command: big } });
+  assert.equal(r.code, 2, "a 200 KB command still blocks");
+});
+
+test("protect-paths fails CLOSED on an unparsable payload (B6)", () => {
+  // Exit 1 is a NON-blocking hook error in Claude Code, so an internal failure used to let
+  // the tool call through.
+  const r = spawnSync("bash", [join(guards, "protect-paths.sh")], {
+    input: "not json at all",
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 2, "an unparsable payload blocks");
+  assert.match(r.stderr, /fail closed/i);
 });

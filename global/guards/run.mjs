@@ -27,7 +27,9 @@ export const NO_BASH_HINT =
   "FORGE_BASH (or CLAUDE_CODE_GIT_BASH_PATH) at your bash executable";
 
 /**
- * Windows dirs that ship a `bash.exe` which is NOT Git Bash (the WSL launcher in System32).
+ * Windows dirs that ship a `bash.exe` which is NOT Git Bash: the WSL launcher in System32,
+ * and the Store app-execution aliases in `…\Microsoft\WindowsApps` (a zero-byte reparse
+ * point for the same WSL launcher — picking it made every guard exit 127, i.e. fail open).
  * @param {string} dir
  * @param {NodeJS.ProcessEnv} env
  */
@@ -35,6 +37,7 @@ function isSystemDir(dir, env) {
   /** @param {string} p */
   const norm = (p) => String(p).toLowerCase().replaceAll("/", "\\").replace(/\\+$/, "");
   const d = norm(dir);
+  if (d.endsWith("\\microsoft\\windowsapps")) return true;
   return [env.SystemRoot, env.windir, "C:\\Windows"]
     .filter(Boolean)
     .some((r) => d === norm(r) || d.startsWith(`${norm(r)}\\`));

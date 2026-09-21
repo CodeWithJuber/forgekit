@@ -6,8 +6,9 @@
 // ensureGitignoreBlock repeatedly is idempotent. removeGitignoreBlock reverses it,
 // stripping the block alone. This lets `forge tools` hide secondary-tool artifacts
 // (.cursor/, .gemini/, …) for a repo that only uses one agent, reversibly.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { BRAND } from "./brand.js";
 
 export const BEGIN = "# forge:gitignore:begin";
 export const END = "# forge:gitignore:end";
@@ -78,6 +79,35 @@ export function removeGitignoreBlock(root) {
   if (next === existing) return { action: "unchanged", path: file };
   writeFileSync(file, next);
   return { action: "removed", path: file };
+}
+
+// Per-session hook logs (raw prompts and shell commands) under .forge/sessions/ are local
+// runtime state that must never reach git. A repo may deliberately commit OTHER .forge/
+// content (the ledger, decisions.md), so rather than rewrite the user's root .gitignore
+// the tool owns a nested .forge/.gitignore listing only its private runtime dirs.
+export const FORGE_PRIVATE_DIRS = ["sessions/"];
+
+/**
+ * Ensure `<root>/.forge/.gitignore` ignores every FORGE_PRIVATE_DIRS entry. Appends only
+ * the missing lines and keeps anything already there; identical content is a no-op.
+ * @param {string} root
+ * @returns {{action:"written"|"unchanged", path:string}}
+ */
+export function ensureForgePrivateIgnored(root) {
+  const dir = join(root, ".forge");
+  const file = join(dir, ".gitignore");
+  const existing = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const have = new Set(existing.split(/\r?\n/).map((l) => l.trim().replace(/^\//, "")));
+  const missing = FORGE_PRIVATE_DIRS.filter((p) => !have.has(p) && !have.has(p.slice(0, -1)));
+  if (!missing.length) return { action: "unchanged", path: file };
+  const lead = existing
+    ? existing.endsWith("\n")
+      ? ""
+      : "\n"
+    : `# ${BRAND.brand} runtime state — never committed (written by \`${BRAND.cli} init\`)\n`;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, `${existing}${lead}${missing.join("\n")}\n`);
+  return { action: "written", path: file };
 }
 
 /**

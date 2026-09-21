@@ -330,3 +330,28 @@ test("package: the launcher, the guards and both hook manifests ship in the npm 
   ])
     assert.ok(files.includes(want), `${want} missing from the package (${files.length} files)`);
 });
+
+// B6: the Store app-execution alias `…\Microsoft\WindowsApps\bash.exe` is the SAME WSL
+// launcher as System32's — it cannot run a `C:\…` guard path, so every guard exited 127,
+// which Claude Code reads as a non-blocking hook error: the guards failed OPEN.
+test("resolveBash never picks the WindowsApps WSL alias (B6)", () => {
+  const env = {
+    PATH: [
+      "C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps",
+      "C:\\Program Files\\Git\\cmd",
+    ].join(";"),
+    SystemRoot: "C:\\Windows",
+    LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local",
+  };
+  const aliasOnly = (p) => /WindowsApps\\bash\.exe$/i.test(p);
+  assert.deepEqual(
+    resolveBash({ env, platform: "win32", exists: aliasOnly }),
+    { path: null, via: "none" },
+    "no usable bash is honest; the alias is never returned",
+  );
+  const withGit = (p) =>
+    aliasOnly(p) || /Git\\(bin|usr\\bin)\\bash\.exe$/i.test(p) || /Git\\cmd\\git\.exe$/i.test(p);
+  const r = resolveBash({ env, platform: "win32", exists: withGit });
+  assert.equal(r.via, "git-for-windows");
+  assert.match(r.path, /Git\\bin\\bash\.exe$/);
+});

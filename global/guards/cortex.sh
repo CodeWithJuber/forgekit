@@ -9,8 +9,13 @@ DIR="$(cd "$(dirname "$0")" && pwd -P)"
 entry="$DIR/../../src/cortex_hook_main.js"
 # `stop` may distill lessons (an opt-in model call) — run it detached so session exit is
 # never delayed. Other modes are fast and (session-start) must return stdout synchronously.
+# The payload is read HERE, before detaching: a background job in a non-interactive shell
+# gets /dev/null as stdin (POSIX, job control off), so `(node … stop &)` used to see an
+# empty payload, fall back to session "default", and never process the real session —
+# no lessons, no episodes, and the session log was never cleared.
 if [ "$1" = "stop" ]; then
-  (node "$entry" stop >/dev/null 2>&1 &)
+  payload="$(cat)"
+  (printf '%s' "$payload" | node "$entry" stop >/dev/null 2>&1 &)
 else
   node "$entry" "$1" 2>/dev/null || true
 fi

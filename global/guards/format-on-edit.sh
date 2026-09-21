@@ -3,13 +3,14 @@
 # Non-blocking: never fails the turn. Keeps diffs clean without Claude spending tokens on it.
 set -uo pipefail
 
-input="$(cat)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$DIR/_guardlib.sh"
 
-if command -v jq >/dev/null 2>&1; then
-  fpath="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')"
-else
-  fpath="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
-fi
+INPUT="$(cat)"
+# A real JSON parser (jq, else node): the old grep fallback cut the value at the first
+# escaped quote, and mangled Windows paths (backslashes arrive doubled inside JSON).
+fpath="$(forge_field file_path)"
 
 [ -n "${fpath:-}" ] && [ -f "$fpath" ] || exit 0
 

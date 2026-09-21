@@ -132,3 +132,165 @@ test("redaction implies detection: anything redactSecrets rewrites, hasSecret ca
     }
   }
 });
+
+// ── B1: linear time. The old ASSIGNED branch (`\b[\w-]*KEY[\w-]*…`) was cubic on long
+// runs of key-ish words: 6 KB of `token-token-…` took 5 s, 12 KB took 40 s — past the
+// hook timeout, so a large tool output passed through UNREDACTED. Sizes grow so a
+// regression fails fast at the first over-budget size instead of hanging the suite.
+test("hasSecret/redactSecrets: linear time on pathological inputs (ReDoS regression)", () => {
+  const BUDGET_MS = 500;
+  const units = [
+    "token-",
+    "a-",
+    "a",
+    "-----BEGIN ",
+    "secret_",
+    "password=",
+    "token:",
+    "x://a:",
+    "auth=",
+    "Authorization: Bearer ",
+    "sha512-",
+  ];
+  const time = (fn) => {
+    const t0 = process.hrtime.bigint();
+    fn();
+    return Number(process.hrtime.bigint() - t0) / 1e6;
+  };
+  for (const u of units) {
+    for (const n of [2500, 5000, 10000, 20000, 40000]) {
+      const s = u.repeat(Math.ceil(n / u.length)).slice(0, n);
+      const has = time(() => hasSecret(s));
+      const red = time(() => redactSecrets(s));
+      assert.ok(has < BUDGET_MS, `hasSecret(${JSON.stringify(u)} ×${n}) took ${has.toFixed(0)}ms`);
+      assert.ok(
+        red < BUDGET_MS,
+        `redactSecrets(${JSON.stringify(u)} ×${n}) took ${red.toFixed(0)}ms`,
+      );
+    }
+  }
+});
+
+// ── B2: detection gaps. Credential literals are assembled at runtime (see _fixtures.js).
+const b64ish = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+const pw = ["Xk9pLm2Q", "r7Ws4Tz8"].join("");
+
+test("hasSecret/redactSecrets: URL userinfo credentials are caught and masked (B2)", () => {
+  for (const [url, keep] of [
+    [`postgres://app:${pw}@db.example.com:5432/app`, "postgres://app:[REDACTED]@db.example.com"],
+    [`amqp://guest:${pw}@rabbit.internal:5672/vhost`, "amqp://guest:[REDACTED]@rabbit"],
+    [`redis://:${pw}@cache:6379/0`, "redis://:[REDACTED]@cache:6379/0"],
+    [
+      `mongodb+srv://admin:${pw}@cluster0.abcde.mongodb.net/test`,
+      "mongodb+srv://admin:[REDACTED]@",
+    ],
+    [
+      `https://oauth2:${["glpat", "AbCdEfGhIjKlMnOpQrSt"].join("-")}@gitlab.com/g/r.git`,
+      "@gitlab.com",
+    ],
+    [`DATABASE_URL=postgres://app:${pw}@db.example.com/app`, "DATABASE_URL=postgres://app:"],
+  ]) {
+    assert.ok(hasSecret(url), `detect: ${url}`);
+    const out = redactSecrets(url);
+    assert.equal(out.includes(pw), false, `redact: ${url} -> ${out}`);
+    assert.ok(out.includes(keep), `keeps context: ${out}`);
+  }
+});
+
+test("hasSecret/redactSecrets: ordinary URLs without userinfo are not secrets (B2 precision)", () => {
+  for (const url of [
+    "https://example.com:8080/path?x=1",
+    "http://localhost:3000/api",
+    "ssh://git@github.com:22/org/repo.git",
+    "git@github.com:org/repo.git",
+    "http://[::1]:8080/",
+    "https://user@host.example.com/x",
+  ]) {
+    assert.equal(hasSecret(url), false, `no FP: ${url}`);
+    assert.equal(redactSecrets(url), url, `untouched: ${url}`);
+  }
+});
+
+test("hasSecret/redactSecrets: AWS STS, AUTH/CREDENTIALS env, TypeSafe keys (B2)", () => {
+  const asia = ["AS", "IA", "Q7K2M9X4B8N3P5R6"].join("");
+  const hex40 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b";
+  const hex64 = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
+  const typesafe = ["api", `key_${hex40}_${hex64}`].join("");
+  for (const s of [
+    `aws_session key ${asia}`,
+    "AUTH=Basic dXNlcjpwYXNzd29yZA==",
+    "CREDENTIALS=abcdefghijklmnop",
+    typesafe,
+    `Authorization: Bearer ${typesafe}`,
+  ]) {
+    assert.ok(hasSecret(s), `detect: ${s.slice(0, 30)}`);
+    const out = redactSecrets(s);
+    assert.match(out, /\[REDACTED\]/, `redact: ${s.slice(0, 30)}`);
+    for (const frag of [asia, "dXNlcjpwYXNzd29yZA", "abcdefghijklmnop", hex40]) {
+      assert.equal(out.includes(frag), false, `no leak of ${frag} in ${out}`);
+    }
+  }
+  // "auth"/"credentials" only count in the env/query grammar — never prose, YAML, or a
+  // longer word that merely starts with them.
+  for (const s of [
+    "auth: use OAuth",
+    '"author": "someone"',
+    "author=someone",
+    'fetch(u, { credentials: "include" })',
+  ]) {
+    assert.equal(hasSecret(s), false, `no FP: ${s}`);
+  }
+});
+
+test("redactSecrets: an assigned value is masked WHOLE — past '/' and below 8 chars (B2)", () => {
+  // Unquoted values used to be masked only up to the first '/', leaking ~16 chars of
+  // 30% of AWS secrets; values under 8 chars were detected but never masked.
+  for (const s of [
+    `export AWS_SECRET_ACCESS_KEY=${b64ish}`,
+    `aws_secret_access_key = ${b64ish}`,
+    "DB_PASSWORD=hunter2",
+    "DB_PASSWORD=p@ssw0rd!2024",
+    "password: Tr0ub4dor&3",
+    "curl https://api.example.com/cb?state=x&access_token=abc123",
+  ]) {
+    const out = redactSecrets(s);
+    assert.ok(hasSecret(s), `detect: ${s}`);
+    for (const frag of ["K7MDENG", "bPxRfiCY", "wJalrX", "hunter2", "ssw0rd", "4dor", "abc123"]) {
+      assert.equal(out.includes(frag), false, `no leak of ${frag}: ${out}`);
+    }
+  }
+  assert.equal(redactSecrets("DB_PASSWORD=hunter2 ok"), "DB_PASSWORD=[REDACTED] ok");
+  // …but never a variable reference, a kwarg, a path, or a counter that merely has a
+  // secret word in its NAME.
+  for (const s of [
+    ["DB_PASSWORD=$", "{DB_PASSWORD}"].join(""), // a shell expansion, not a value
+    "export TOKEN=$1",
+    "f(password=pw)",
+    "secret_dir = /etc/app/config",
+    "MAX_TOKENS=4096",
+    "TOKEN_TTL=3600",
+    "token = process.env.TOKEN",
+    "password: string;",
+  ]) {
+    assert.equal(redactSecrets(s), s, `untouched: ${s}`);
+  }
+});
+
+// ── B4: content-integrity digests are public, random-looking by design. The entropy leg
+// flagged 90-100% of lockfile/SRI/go.sum hashes, so every lockfile commit was refused.
+test("hasSecret/redactSecrets: lockfile / SRI / go.sum integrity digests are not secrets (B4)", () => {
+  const leftPad =
+    '"integrity": "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==",';
+  for (const line of [
+    leftPad, // the real left-pad@1.3.0 package-lock line
+    "  integrity sha512-+SEC/mFk1a+5mvUANZgbZTaiZXs1nj4iMhL/PHiqDT5TPUEPFIlliEtkKKZB4N862yylHC3UI+/Sj2I0HJEqhA==",
+    '<script src="x.js" integrity="sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC"></script>',
+    "github.com/foo/bar v1.2.3 h1:Zq7Rt2Xk9Lp4Vm1Nc8Yb5Ws3Hd6Fg0Aa1Bb2Cc3Dd4E=",
+    '"integrity": "sha1-Zq7Rt2Xk9Lp4Vm1Nc8Yb5Ws3Hd6=",',
+  ]) {
+    assert.equal(hasSecret(line), false, `no FP: ${line.slice(0, 40)}`);
+    assert.equal(redactSecrets(line), line);
+  }
+  // The exemption is shape-bound: a real token beside a digest is still caught.
+  assert.ok(hasSecret(`${leftPad} ${fakeGithubPat()}`));
+});

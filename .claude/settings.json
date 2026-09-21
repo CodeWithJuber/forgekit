@@ -108,6 +108,19 @@
             ]
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "${CLAUDE_PROJECT_DIR}/global/guards/protect-paths.sh"
+            ]
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -204,6 +204,117 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   overflowed to Infinity/Infinity = **NaN** and components ≲ 1e-162 underflowed to a false
   zero vector; it now scales each vector by its largest component, rejects non-finite
   components, and clamps the result to [-1, 1].
+- **The learning loop runs in real installs again.** `cortex.sh` runs the Stop hook detached,
+  as `(node … stop &)`, and a background job in a non-interactive shell gets `/dev/null` as
+  stdin. So every Stop payload arrived empty, the session id fell back to `"default"`, and
+  the real session was never processed. No correction episodes, lessons, contradictions or
+  deja summaries were written, and `.forge/sessions/<id>.jsonl` was never cleared. The tests
+  missed it because they piped into `cortex_hook_main.js` directly. The shim now reads the
+  payload before detaching and pipes it into the background node. A new shim-level test
+  drives `node run.mjs cortex.sh …` the way Claude Code does: before the fix the session log
+  was still there 30 s after Stop; now it is consumed and `episodes.jsonl` is written in
+  about 3 s, on Linux and under Git Bash on Windows.
+- **Completion-gate evidence can no longer be produced by the agent alone.** The `verify`
+  provenance stamp and the gate's once-per-session marker are files under `.forge/`, so a
+  hand-written `{"tests":{"status":"PASS"},"codeState":…}` satisfied the gate's strong leg and
+  a pre-written `<sid>.blocked` switched the gate off entirely. Both are now MAC'd with a
+  machine-local key kept outside the repo (`$XDG_STATE_HOME/forgekit/evidence.key`, mode
+  0600, created on first use), and an unsigned one is ignored. This is a raise, not a
+  boundary: an agent with shell access can still read the key — real unforgeability needs a
+  signer it cannot reach (CI, or a helper process). Three more evidence holes closed: a
+  comment-only touch to a test file (`// touched`) no longer counts as test evidence (the
+  added lines must contain real code), a `package.json` test script that masks its own
+  failures (`node --test || true`, `|| exit 0`, `--passWithNoTests`) reports INCOMPLETE
+  instead of PASS, and `forge scan`'s external scanner now ADDS to the built-in heuristic
+  instead of replacing it — a clean `snyk-agent-scan` exit used to return early, so the
+  signatures for `curl … | sh`, prompt injection and credential exfil never ran. `imagine`'s
+  dry-run reads the runner's OWN (last) TAP summary and cross-checks the exit code.
+- **The cost governor now governs.** It only wrote to stderr and exited 0, which a PreToolUse
+  hook shows to nobody, so it neither capped nor informed. Past the real-spend ceiling
+  (`FORGE_COST_CEILING`) it now emits `permissionDecision: "ask"` with the reason — the human
+  decides — and the volume/broad-command nudges ride along as `additionalContext` instead of
+  invisible stderr.
+- **`forge harden` writes a deny list Claude Code actually reads.** Its sandbox block emitted
+  a `credentials.deny` key that exists nowhere in Claude Code's settings schema, so the
+  credential paths it "denied" were never denied. It now writes `permissions.deny` with real
+  `Read(<glob>)` rules for `~/.aws`, `~/.ssh`, `~/.config/gcloud`, `~/.netrc`, `~/.npmrc` and
+  `~/.git-credentials`.
+- **The settings allowlist no longer auto-approves three dangerous commands.** `Bash(fd:*)`
+  covered `fd -x <anything>` (arbitrary execution) and is gone; `Bash(git branch:*)` covered
+  `git branch -D` and is replaced by the read-only spellings; `git branch -d/-D` and
+  `git diff --output` are denied outright. (A deny rule is prefix-matched, so
+  `git diff HEAD --output=…` still relies on the permission prompt — noted in the review
+  follow-ups.)
+- **Lockfile commits are no longer refused as leaking a secret.** The entropy leg flagged
+  content-integrity digests as secrets: 100% of package-lock and yarn.lock `sha512-` hashes,
+  99% of SRI `sha384-` and 88% of go.sum `h1:` hashes. The real `left-pad@1.3.0` integrity
+  line was refused by the commit gate, which pushed users to `--no-verify` and switched off
+  the whole scan. These digest shapes are now exempt from the entropy leg only, so format
+  rules still apply. All four rows now score 0%.
+
+### Security
+
+- **The secret filter can no longer be made to hang.** The key-assigned branch of
+  `hasSecret`/`redactSecrets` (`\b[\w-]*KEY[\w-]*…`) backtracked cubically on long runs of
+  key-ish words: 6 KB of `token-token-…` took 5 s and 12 KB took 40 s. It runs on every tool
+  output via the secret-redact hook, so a large output outlived the hook timeout and passed
+  through unredacted. Every quantifier that could re-scan a run is now bounded; 40 KB of each
+  pathological shape (`token-`, `secret_`, `password=`, `auth=`, `x://a:`, …) now takes
+  under 5 ms, pinned by a timing regression test.
+- **Credentials in URLs, STS keys and short or slash-bearing values are now caught and masked
+  whole.** URL userinfo (`postgres://`, `mongodb+srv://`, `amqp://`, `redis://:pw@`,
+  `https://oauth2:glpat-…@`), AWS `ASIA…` STS key ids, `AUTH=`/`CREDENTIALS=` env values,
+  `Authorization: <scheme> <credential>` headers, GitLab `glpat-` tokens and TypeSafe
+  `apikey_<40hex>_<64hex>` keys went from 0% to 100% detected and redacted in the review's
+  matrix. `DB_PASSWORD=hunter2` (under 8 chars) was detected but never masked; unquoted values
+  were masked only up to their first `/`, which left about 16 chars of 30% of AWS secrets
+  visible. Of 2,000 random `AWS_SECRET_ACCESS_KEY=<40 base64>` lines, 1,995 are now masked
+  whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
+  `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
+  still left alone. `secret-redact.sh`'s shell prefilter — which decides whether the Node
+  redactor runs at all — was widened to match: a short URL password has no 20-char token
+  run, so the guard used to skip the scan entirely and the credential reached the
+  transcript.
+- **The guards parse their payload with a real JSON parser, and fail closed.** Without `jq`
+  — stock Git for Windows, most minimal images — every guard fell back to a regex that cut
+  the value at the first escaped quote: `echo "x"; cat .env` arrived as `echo \`, so the
+  secret-read deny never fired, and `git diff -- ".env"` slipped through too (2 of this
+  repo's own tests only passed on machines with jq). `printf … | grep -q` under `pipefail`
+  also lost its match to SIGPIPE whenever grep exited early, so a large command silently
+  stopped being checked. `protect-paths` is now a thin launcher over `protect-paths.mjs`
+  (the split `secret-redact.sh` already uses): one parser, no pipelines, and an unparsable
+  payload or an internal error DENIES (exit 2) instead of exiting 1, which Claude Code reads
+  as a non-blocking hook error. `_guardlib.sh` and the status line read fields through the
+  same parser (`guards/hookfield.mjs`), so the status line no longer collapses to
+  `<dir> · <branch> · ?` without jq. The rule set also grew what the literal, case-sensitive
+  substrings missed — `git reset --hard`, `git clean -f…`, `find … -delete`/`-exec rm`,
+  `chmod -R`, `dd … of=`, lowercase SQL `drop table` — while the SAFE `git push
+  --force-with-lease`, which the old `git push --force` substring blocked, is allowed again.
+  `.aws/credentials`, `.netrc`, `.npmrc` and `.git-credentials` join the protected list, and
+  protect-paths now also runs on **Read** in both hook manifests: a plugin install ships no
+  `permissions.deny` block, so nothing stood between the agent and `.env` there.
+  `resolveBash` no longer selects `…\Microsoft\WindowsApps\bash.exe` — the Store alias for
+  the same WSL launcher, which cannot run a `C:\…` guard path, so every guard exited 127
+  (fail open).
+- **Session hook logs no longer store raw secrets, and `init` keeps them out of git.** The
+  `prompt` and `capture` hooks appended the user's prompt and every Bash command verbatim to
+  `<repo>/.forge/sessions/<id>.jsonl`. A pasted `GITHUB_TOKEN=ghp_…` or an `Authorization:
+  Bearer ghp_…` curl landed on disk in the repo, and `forge init` did not gitignore the
+  directory. Every string in a session event is now passed through `redactSecrets` before
+  it is written (the file now holds `GITHUB_TOKEN=[REDACTED]`). `init` also writes a nested
+  `.forge/.gitignore` that ignores `sessions/` without touching the user's root
+  `.gitignore`, so a deliberately committed ledger or `decisions.md` stays committable.
+- **The commit gate's secret scan now fails closed.** It read `git diff --cached` with the
+  default 1 MiB `execFileSync` buffer. On overflow the diff became `""`, so a `ghp_` leak
+  alone was refused (exit 1), but the same leak staged next to a 1.5 MB file was "allowed"
+  (exit 0). A repo-controlled `.gitattributes` `-diff`/`binary` marking or a `textconv`
+  driver also hid the added lines. The scan now diffs with `--text --no-ext-diff
+  --no-textconv` and a 256 MiB buffer. If that fails, it retries one file at a time, and any
+  file git still cannot diff is refused as unscanned instead of passed. All three bypasses
+  are refused now. The Stop gate's code-state fingerprint (`computeCodeState`) had the same
+  1 MiB blind spot: a stale `verify` PASS survived a later code edit whenever the pending
+  diff was over 1 MiB. It now hashes a `--binary` diff with the same buffer, and it reports
+  "cannot bind" rather than hashing `""` when git fails.
 
 ### Documentation
 

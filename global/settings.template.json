@@ -21,10 +21,13 @@
       "Bash(git status:*)",
       "Bash(git diff)",
       "Bash(git diff:*)",
-      "Bash(git branch:*)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git branch -v)",
+      "Bash(git branch --show-current)",
+      "Bash(git branch --list:*)",
       "Bash(git add:*)",
       "Bash(ls:*)",
-      "Bash(fd:*)",
       "Bash(tree:*)",
       "Bash(wc:*)",
       "Bash(npm run lint)",
@@ -67,11 +70,21 @@
       "Read(./**/id_rsa)",
       "Read(./**/id_ed25519)",
       "Read(./secrets/**)",
+      "Read(./**/.netrc)",
+      "Read(~/.netrc)",
+      "Read(./**/.npmrc)",
+      "Read(~/.npmrc)",
+      "Read(./**/.git-credentials)",
+      "Read(~/.git-credentials)",
+      "Read(~/.aws/credentials)",
       "Bash(rm -rf /:*)",
       "Bash(rm -rf ~:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
-      "Bash(sudo:*)"
+      "Bash(sudo:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git branch -d:*)",
+      "Bash(git diff --output:*)"
     ]
   },
   "hooks": {
@@ -163,6 +176,19 @@
               "~/.forge/guards/run.mjs",
               "~/.forge/guards/cortex.sh",
               "pre-edit"
+            ]
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "~/.forge/guards/protect-paths.sh"
             ]
           }
         ]

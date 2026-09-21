@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  appendSessionEvent,
   classifyEvent,
   detectDoomLoop,
   detectEpisodes,
   doomLoopAdvisory,
   processSession,
+  readSession,
+  sessionPath,
 } from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
+import { fakeGithubPat } from "./_fixtures.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -183,4 +187,25 @@ test("outputSignature normalizes line numbers/timings so the same error matches 
     tool_response: "FAILED test_x.py:57 in 1.1s — assert 1 == 2",
   });
   assert.equal(e1.outputSig, e2.outputSig, "line/timing noise is normalized out");
+});
+
+// B5: prompts and shell commands were appended to .forge/sessions/<sid>.jsonl verbatim, so a
+// pasted `GITHUB_TOKEN=ghp_…` or an `Authorization: Bearer …` curl sat on disk in the repo.
+test("session log never stores a raw secret from a prompt or a command (B5)", () => {
+  const root = fixture();
+  const tok = fakeGithubPat();
+  const log = (hook) => appendSessionEvent(root, "s-b5", classifyEvent(hook));
+  log({ hook_event_name: "UserPromptSubmit", prompt: `deploy with GITHUB_TOKEN=${tok} please` });
+  log({
+    tool_name: "Bash",
+    tool_input: { command: `curl -H 'Authorization: Bearer ${tok}' https://api.github.com` },
+  });
+  log({ tool_name: "Bash", tool_input: { command: "git revert HEAD" }, exitCode: 0 });
+  const raw = readFileSync(sessionPath(root, "s-b5"), "utf8");
+  assert.equal(raw.includes(tok), false, "the token never reaches disk");
+  assert.match(raw, /GITHUB_TOKEN=\[REDACTED\] please/, "the prompt stays readable");
+  // Redaction must not blind the signal detectors (verbs are never secrets).
+  const events = readSession(root, "s-b5");
+  assert.equal(events.length, 3);
+  assert.equal(events[2].command, "git revert HEAD");
 });
