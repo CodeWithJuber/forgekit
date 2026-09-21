@@ -1,19 +1,26 @@
 # shellcheck shell=bash
 # Sourced helpers for Forge guards. Not executable on its own.
-# Provides field extraction (jq or grep) and an atomic re-entrancy lock so a
+# Provides field extraction (a real JSON parser) and an atomic re-entrancy lock so a
 # guard can never recurse — the class of bug behind the runaway-loop cost
 # incident (claude-code #4095: 1.67B tokens / 5h, est. $16k–50k).
 
+GUARDLIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # forge_field <key> — read a field from $INPUT (the raw hook JSON on stdin).
+# `command`/`file_path` are the usual `tool_input.*` shortcuts; anything else is read from
+# the top level. Parsed by jq when it is installed, else by node through hookfield.mjs —
+# never by a regex: the old grep fallback cut the value at the first escaped quote, so
+# `echo "x"; cat .env` arrived as `echo \` and every rule after it silently missed.
 forge_field() {
-  if command -v jq >/dev/null 2>&1; then
-    case "$1" in
-      command) printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' ;;
-      file_path) printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' ;;
-      *) printf '%s' "$INPUT" | jq -r ".$1 // empty" ;;
-    esac
+  local path
+  case "$1" in
+    command | file_path) path="tool_input.$1" ;;
+    *) path="$1" ;;
+  esac
+  if command -v jq > /dev/null 2>&1; then
+    printf '%s' "$INPUT" | jq -r ".${path} // empty"
   else
-    printf '%s' "$INPUT" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"\([^"]*\)"$/\1/'
+    printf '%s' "$INPUT" | node "$GUARDLIB_DIR/hookfield.mjs" "$path"
   fi
 }
 

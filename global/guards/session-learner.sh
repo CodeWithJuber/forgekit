@@ -24,9 +24,12 @@ MAXBYTES="${SESSION_LEARN_MAXBYTES:-60000}"
 OUTDIR="$HOME/.claude/skills/learned"
 LOG="$OUTDIR/.learn.log"
 
-stdin_data="$(cat)"
-tp="$(printf '%s' "$stdin_data" | grep -o '"transcript_path":"[^"]*"' | head -1 | cut -d'"' -f4)"
-cwd="$(printf '%s' "$stdin_data" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)"
+INPUT="$(cat)"
+# A real JSON parser (jq, else node). The old grep read the RAW JSON string, so a Windows
+# transcript path (its backslashes escaped inside JSON) never matched a real file and the
+# learner silently never ran there.
+tp="$(forge_field transcript_path)"
+cwd="$(forge_field cwd)"
 [ -n "$tp" ] && [ -f "$tp" ] || exit 0
 
 # Gate 3: long sessions only.

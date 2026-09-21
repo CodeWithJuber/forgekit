@@ -3,7 +3,15 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "test/**", "scripts/**", "bench/**", "global/guards/run.mjs"]
+    "includes": [
+      "src/**",
+      "test/**",
+      "scripts/**",
+      "bench/**",
+      "global/guards/run.mjs",
+      "global/guards/hookfield.mjs",
+      "global/guards/protect-paths.mjs"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -126,3 +126,29 @@ test("protect-paths + secret-redact matchers agree across both manifests (HI-08)
     );
   }
 });
+
+// B6: a plugin install ships no `permissions.deny` block, so without a Read matcher the
+// agent could read `.env`/keys through the Read tool with nothing in the way.
+test("PreToolUse protect-paths also covers Read in both manifests (B6)", () => {
+  for (const [name, manifest] of [
+    ["settings.template.json", template],
+    ["hooks.json", pluginHooks],
+  ]) {
+    const tools = (manifest.hooks?.PreToolUse ?? [])
+      .filter((g) => (g.hooks ?? []).some((h) => hookText(h).includes("protect-paths.sh")))
+      .flatMap((g) => (g.matcher ?? "").split("|"));
+    assert.ok(tools.includes("Read"), `${name}: protect-paths must run on Read (got: ${tools})`);
+  }
+});
+
+test("the credential stores the guard protects are denied for Read too (B6)", () => {
+  const deny = template.permissions?.deny ?? [];
+  for (const rule of [
+    "Read(~/.aws/credentials)",
+    "Read(~/.netrc)",
+    "Read(./**/.npmrc)",
+    "Read(~/.git-credentials)",
+  ]) {
+    assert.ok(deny.includes(rule), `missing deny rule: ${rule}`);
+  }
+});

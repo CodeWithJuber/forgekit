@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { protectPathsDecision } from "../global/guards/protect-paths.mjs";
+
 const guards = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
 
 function runGuard(script, input, opts = {}) {
@@ -285,4 +287,103 @@ test("cortex.sh stop (detached) processes the REAL session from the Stop payload
     false,
     "nothing fell back to the shared 'default' session",
   );
+});
+
+// ── B6. The rule set is now a pure function in protect-paths.mjs, so the matrix below runs
+// without a process per case; the end-to-end cases above pin that the shim still exits 2.
+test("protect-paths rules: destructive commands the literal substrings missed (B6)", () => {
+  const blocked = [
+    "git reset --hard HEAD~1",
+    "git -C /repo reset --hard",
+    "git clean -fdx",
+    "git clean --force",
+    "find . -name '*.log' -delete",
+    "find /var -type f -exec rm {} ;",
+    "chmod -R 777 /srv",
+    "dd if=/dev/zero of=/dev/sda",
+    "drop table users;",
+    "psql -c 'DROP DATABASE prod'",
+    "rm -fr /",
+    "sudo rm -Rf ~",
+    "rm --recursive --force $HOME",
+    "git push --force origin main",
+    "git push -f",
+    "git push origin +main",
+  ];
+  for (const command of blocked) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, true, `must block: ${command}`);
+  }
+  const allowed = [
+    "git push --force-with-lease origin main",
+    "git push --force-if-includes",
+    "git push origin main",
+    "git clean -n",
+    "git reset --soft HEAD~1",
+    "truncate -s 0 build.log",
+    "chmod 644 src/a.js",
+    "chmod -r secret.txt", // remove read bit on ONE file: not recursive
+    "find . -name '*.log' -print",
+    "rm -rf node_modules",
+    "dd if=/dev/zero bs=1M count=1",
+  ];
+  for (const command of allowed) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+});
+
+test("protect-paths protects the credential stores and Read itself (B6)", () => {
+  for (const file_path of [
+    "/home/u/.aws/credentials",
+    "/home/u/.netrc",
+    "/home/u/.npmrc",
+    "/home/u/.git-credentials",
+    "C:\\Users\\u\\.aws\\credentials", // Windows-native path (backslashes)
+    "C:\\proj\\.env",
+  ]) {
+    for (const tool_name of ["Write", "Read"]) {
+      const r = runGuard("protect-paths.sh", { tool_name, tool_input: { file_path } });
+      assert.equal(r.code, 2, `must block ${tool_name} of ${file_path}`);
+      assert.match(r.err, tool_name === "Read" ? /refusing to read/ : /refusing to modify/);
+    }
+  }
+  // Bash readers/writers of the same stores are blocked too.
+  for (const command of ["cat ~/.netrc", "cat .npmrc", "echo x > ~/.git-credentials"]) {
+    assert.equal(protectPathsDecision({ toolName: "Bash", command }).block, true, command);
+  }
+  // …and an ordinary source file is still untouched.
+  assert.equal(
+    runGuard("protect-paths.sh", { tool_name: "Read", tool_input: { file_path: "src/a.js" } }).code,
+    0,
+  );
+});
+
+test("protect-paths parses the payload with a real parser, not a regex (B6)", () => {
+  // The old grep fallback (used whenever jq was absent — stock Git for Windows, minimal
+  // images) cut the command at the first escaped quote, so everything after it was invisible.
+  for (const command of [
+    'echo "x"; cat .env',
+    'echo "hello world" && cat .env',
+    'git diff -- ".env"',
+  ]) {
+    const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command } });
+    assert.equal(r.code, 2, `must block: ${command}`);
+  }
+  // A LARGE command used to lose its deny to SIGPIPE: `printf | grep -q` under pipefail
+  // reported failure when grep exited early, so the rule "did not match".
+  const big = `cat .env\n${Array.from({ length: 20000 }, (_, i) => `# note ${i}`).join("\n")}`;
+  const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command: big } });
+  assert.equal(r.code, 2, "a 200 KB command still blocks");
+});
+
+test("protect-paths fails CLOSED on an unparsable payload (B6)", () => {
+  // Exit 1 is a NON-blocking hook error in Claude Code, so an internal failure used to let
+  // the tool call through.
+  const r = spawnSync("bash", [join(guards, "protect-paths.sh")], {
+    input: "not json at all",
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 2, "an unparsable payload blocks");
+  assert.match(r.stderr, /fail closed/i);
 });

@@ -7,28 +7,57 @@
 set -uo pipefail
 
 input="$(cat)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+HOOKFIELD="$DIR/guards/hookfield.mjs"
 
-if command -v jq >/dev/null 2>&1; then
+# Every field in ONE pass through a real JSON parser. node is always present (the status
+# line itself is launched as `node guards/run.mjs statusline.sh`); jq is the fallback for a
+# legacy `bash statusline.sh` wiring. There is no regex path: the old one had none either —
+# without jq the line collapsed to "<dir> · <branch> · ?", losing model, cost, diff and
+# cache health entirely (three review-found failures).
+dir=""
+model=""
+cost=""
+add=""
+del=""
+over=""
+cread=""
+cwrite=""
+if command -v node > /dev/null 2>&1 && [ -f "$HOOKFIELD" ]; then
+  ok=""
+  {
+    IFS= read -r -d '' ok &&
+      IFS= read -r -d '' dir &&
+      IFS= read -r -d '' model &&
+      IFS= read -r -d '' cost &&
+      IFS= read -r -d '' add &&
+      IFS= read -r -d '' del &&
+      IFS= read -r -d '' over &&
+      IFS= read -r -d '' cread &&
+      IFS= read -r -d '' cwrite
+  } < <(printf '%s' "$input" | node "$HOOKFIELD" -0 \
+    "workspace.current_dir|cwd" \
+    "model.display_name|model.id" \
+    cost.total_cost_usd \
+    cost.total_lines_added \
+    cost.total_lines_removed \
+    exceeds_200k_tokens \
+    "current_usage.cache_read_input_tokens|cost.cache_read_input_tokens" \
+    "current_usage.cache_creation_input_tokens|cost.cache_creation_input_tokens") || true
+  [ "$ok" = "1" ] || model=""
+elif command -v jq > /dev/null 2>&1; then
   dir="$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // empty')"
-  model="$(printf '%s' "$input" | jq -r '.model.display_name // .model.id // "?"')"
+  model="$(printf '%s' "$input" | jq -r '.model.display_name // .model.id // empty')"
   cost="$(printf '%s' "$input" | jq -r '.cost.total_cost_usd // empty')"
   add="$(printf '%s' "$input" | jq -r '.cost.total_lines_added // empty')"
   del="$(printf '%s' "$input" | jq -r '.cost.total_lines_removed // empty')"
   over="$(printf '%s' "$input" | jq -r '.exceeds_200k_tokens // false')"
   cread="$(printf '%s' "$input" | jq -r '.current_usage.cache_read_input_tokens // .cost.cache_read_input_tokens // empty')"
   cwrite="$(printf '%s' "$input" | jq -r '.current_usage.cache_creation_input_tokens // .cost.cache_creation_input_tokens // empty')"
-else
-  dir="$PWD"
-  model="?"
-  cost=""
-  add=""
-  del=""
-  over="false"
-  cread=""
-  cwrite=""
 fi
 
 [ -n "${dir:-}" ] || dir="$PWD"
+[ -n "${model:-}" ] || model="?"
 short="${dir/#$HOME/\~}"
 
 # Palette — the exact forgekit brand tokens (brand.json.colors.dark) rendered in
