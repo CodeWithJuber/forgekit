@@ -181,11 +181,30 @@ async function main() {
         const { getGoal } = await import("./goal.js");
         const goal = getGoal(root);
         if (goal) {
-          const { goalDrift } = await import("./anchor.js");
+          const { driftIncrement, fileStamps, goalDrift } = await import("./anchor.js");
           const d = goalDrift(root, goal, {
             changed: result.goalAnchor?.changed,
           });
-          appendSessionEvent(root, sid, { type: "drift", score: d.driftScore });
+          // The advisory must be measured against the PERSISTED goal, not against this
+          // prompt: substrateCheck() compares the working diff to the prompt text, so
+          // "ok, now run the tests please" flagged every changed file as drift.
+          result.goalAnchor = d;
+          // …and the CUSUM series gets the per-checkpoint INCREMENT (what moved since the
+          // last prompt), not the cumulative off-goal ratio, which alarmed on one static
+          // off-goal file after three idle prompts.
+          const stamps = fileStamps(root, d.changed);
+          const prev =
+            readSession(root, sid)
+              .filter((e) => e.type === "drift")
+              .at(-1)?.stamps ?? {};
+          appendSessionEvent(root, sid, {
+            type: "drift",
+            score: driftIncrement(d, stamps, prev).score,
+            stamps,
+          });
+        } else if (result.goalAnchor?.drift) {
+          // No goal is set, so there is nothing to have drifted FROM.
+          result.goalAnchor = { ...result.goalAnchor, drift: false, offGoal: [] };
         }
         const a = result.assumption;
         if (!a.shouldAsk && ((a.missing?.length ?? 0) > 0 || (a.questions?.length ?? 0) > 0))

@@ -123,6 +123,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   32 artifacts, most adapt-tier hits silently became misses. Banding is now 32 × 4 (0.99 at
   J=0.6, ≈1.00 at J=0.8): in the review's own harness, 67 of 67 adapt-band pairs are found
   with the prefilter active, against 39 of 67 before.
+- **Goal anchoring measures the right thing, per checkpoint.** Three separate defects:
+  - The per-prompt advisory compared the working diff against the **current prompt**, so
+    "ok, now run the tests please" reported every changed file as goal drift. The hook now
+    re-runs the check against the persisted goal (`.forge/goal.md`), and with no goal set it
+    makes no drift claim at all — a prompt is not a goal.
+  - The CUSUM chart was fed the **cumulative** off-goal ratio every prompt, so one static
+    off-goal file alarmed by itself after three idle prompts (C = 0.32 → 0.63 → 0.95 → 1.27
+    > h = 1.0). It now gets the per-checkpoint increment — the off-goal fraction of what
+    actually moved since the last prompt — so idle prompts score 0 and drain the chart,
+    while a file edited again scores 1 again.
+  - M5 minimality ignored untracked files, which is where over-engineering lives: a 6-class,
+    212-line "framework" dropped next to a one-line fix measured as 1 file, +1 line, 0
+    warnings. Untracked files are now part of the measured footprint (2 files, +213 lines,
+    13 new abstractions, 2 warnings) whether or not they have been `git add`ed.
+- **The doom-loop signature sees the whole failure.** It hashed `tool_response.stdout` only
+  and just its first 800 characters, so a stderr-only failure (jest, mocha, tsc) was never
+  seen at all, and three different failures behind one long passing header shared a signature
+  and were reported as a loop. It now covers stdout and stderr and the whole normalized
+  output (head + tail above 64 KB). The advisory also stops claiming "different edits aren't
+  fixing it" when nothing was edited between the runs.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
