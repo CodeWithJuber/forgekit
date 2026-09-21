@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { read, record } from "./metrics.js";
 import { MODELS } from "./model_tiers.js";
+import { contentHash } from "./util.js";
 
 /** Saving weight per cache-hit tier — must stay consistent with reuse.js savedEstimate
  *  (exact = full regeneration avoided; near/adapt still spend adaptation tokens). */
@@ -204,11 +205,43 @@ export function recordGate(root, { halted, ref } = {}) {
   return record(root, { stage: "gate", outcome: halted ? "halt" : "pass", ref });
 }
 
-/** Record one routed generation with its tier and real token counts.
+/** The metrics `ref` for a task: a short content hash of the task text, never the text
+ *  itself (metrics are telemetry, not a prompt log). The ONE recipe — `meterRoute` writes
+ *  it and `lastRouteEscalation` reads it, so the two can never disagree on the key.
+ *  @param {string} task */
+export const routeRef = (task) => contentHash(String(task)).slice(0, 12);
+
+/** Record one routed generation with its tier and real token counts. `escalateTo` is the
+ *  routing verdict's ADVISORY escalation target (a proposer voted higher and was not
+ *  applied) — recorded so a later EXTERNAL failure can name the tier instead of guessing.
  *  @param {string} root
- *  @param {{tier?: string, tokensIn?: number, tokensOut?: number, ref?: string}} [opts] */
-export function recordRoute(root, { tier, tokensIn, tokensOut, ref } = {}) {
-  return record(root, { stage: "route", tier, tokensIn, tokensOut, ref });
+ *  @param {{tier?: string, tokensIn?: number, tokensOut?: number, ref?: string,
+ *           escalateTo?: string}} [opts] */
+export function recordRoute(root, { tier, tokensIn, tokensOut, ref, escalateTo } = {}) {
+  return record(root, { stage: "route", tier, tokensIn, tokensOut, ref, escalateTo });
+}
+
+/**
+ * The advisory escalation tier routing recorded for this exact task, or "" if there is
+ * none. Most recent wins — a task routed twice escalates to what the latest decision said.
+ * Best-effort like every metrics read: a missing or corrupt log is "no target", never a
+ * throw. Whitepaper §5.1 keeps the trigger elsewhere: this only ANSWERS "which tier",
+ * it never decides that an escalation is warranted.
+ * @param {string} root
+ * @param {string} task the same task text that was routed
+ * @returns {string}
+ */
+export function lastRouteEscalation(root, task) {
+  if (!task) return "";
+  try {
+    const ref = routeRef(task);
+    const hit = read(root, { stage: "route" })
+      .filter((e) => e.ref === ref && typeof e.escalateTo === "string" && e.escalateTo)
+      .pop();
+    return hit ? hit.escalateTo : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

@@ -56,6 +56,40 @@ test("canonicalize: keys are NFC-normalized BEFORE sorting — NFD and NFC spell
   assert.equal(claimId("fact", reparsed.body, reparsed.scope), m.claim.id, "id survives a reload");
 });
 
+test("canonicalize: a CRLF checkout and an LF checkout mint ONE claim id", () => {
+  // `core.autocrlf` hands the same file to a Windows worktree with \r\n and to a Linux one
+  // with \n. Before this, the same logical claim minted on each side landed on two content
+  // addresses and never merged: one fact, two "copies", evidence split between them forever.
+  const lf = "the parser rejects a trailing comma\nreproduced on node 20 and 22";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  const body = (text) => ({ name: "parser", text });
+  assert.equal(
+    claimId("fact", body(crlf), { level: "repo" }),
+    claimId("fact", body(lf), { level: "repo" }),
+    "line endings are a property of the machine, not of the claim",
+  );
+  const a = mintClaim({ kind: "fact", body: body(crlf), t: 1 });
+  const b = mintClaim({ kind: "fact", body: body(lf), t: 1 });
+  assert.ok(a.ok && b.ok);
+  assert.equal(a.claim.id, b.claim.id, "two teammates converge on one claim");
+  assert.equal(canonicalize(body(crlf)), canonicalize(body(lf)), "and on one byte string");
+  // The same rule for a key, so a CRLF-spelled key can't fork an id either.
+  assert.equal(canonicalize({ "a\r\nb": 1 }), canonicalize({ "a\nb": 1 }));
+});
+
+test("canonicalize: text that legitimately differs still gets two ids (no over-folding)", () => {
+  const id = (text) => claimId("fact", { name: "n", text }, { level: "repo" });
+  const base = "line one\nline two";
+  assert.notEqual(id(base), id("line one\nline three"), "different words, different claims");
+  // A LONE \r is a control character in captured terminal output (a progress bar), not a
+  // line ending — folding it into \n would edit the evidence a diagnosis claim carries.
+  assert.notEqual(id("a\rb"), id("a\nb"), "a bare carriage return is content, not formatting");
+  assert.notEqual(id("  indented"), id("indented"), "whitespace is content");
+  assert.notEqual(id("Fix"), id("fix"), "case is content");
+  assert.notEqual(id("line one\n\nline two"), id(base), "a blank line is content");
+  assert.notEqual(id("ﬁle"), id("file"), "NFC only — no compatibility folding (NFKC)");
+});
+
 test("claimId: pinned fixture — the protocol's address must never drift across versions", () => {
   // If this fixture ever fails, existing ledgers on disk stop resolving. Bump v and
   // write a migration before changing canonicalization or the id recipe.

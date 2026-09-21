@@ -122,6 +122,7 @@ async function callTool(name, args = {}) {
       errorText: String(args.errorText ?? ""),
       file: args.file,
       symbol: args.symbol,
+      task: args.task,
     });
     return JSON.stringify(r, null, 2);
   }

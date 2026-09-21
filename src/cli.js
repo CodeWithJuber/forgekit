@@ -2193,12 +2193,13 @@ HANDLERS.diagnose = async (argv) => {
     const i = argv.indexOf(name);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  const args = argv.filter(
-    (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--symbol",
-  );
+  const VALUE_FLAGS = ["--file", "--symbol", "--task"];
+  const args = argv.filter((a, i) => !a.startsWith("--") && !VALUE_FLAGS.includes(argv[i - 1]));
   const errorText = args.slice(1).join(" ");
   if (!errorText) {
-    console.error('usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]');
+    console.error(
+      'usage: forge diagnose "<error text>" [--file f] [--symbol s] [--task "<task>"] [--json]',
+    );
     process.exitCode = 1;
     return;
   }
@@ -2206,6 +2207,10 @@ HANDLERS.diagnose = async (argv) => {
     errorText,
     file: flagVal("--file"),
     symbol: flagVal("--symbol"),
+    // The task this failure came out of — the same text `forge route` was given. When a
+    // routing decision for it is on record, the escalation directive names that decision's
+    // tier instead of "one tier". Omitted → unchanged behaviour.
+    task: flagVal("--task"),
   });
   if (json) return console.log(JSON.stringify(r, null, 2));
   heading(`${BRAND.brand} diagnose — doom-loop check\n`);

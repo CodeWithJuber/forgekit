@@ -199,12 +199,15 @@ Every number is a median from `npm run bench` on this repo, recorded with its en
 block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is _a number is
 an assumption until measured_.
 
-- **Blast radius in 0.43 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
-  real import graph, recall is 0.97 against 0.33 for looking at the edited file alone, but
-  precision is 0.34 at commit `1a82388`, not the 0.90 reported earlier, and on nine real Python
-  repositories the research prototype's impact oracle reached recall 0.022
-  ([refutation](research/empirical-refutation/)). <!-- TODO(impact-numbers): re-measure with `npm run bench` after the impact-graph fix and replace these figures -->
-- **A full pre-action gate in 118 ms** (median on this repo, warm) — assumption check, routing,
+- **Blast radius in 0.40 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
+  real import graph, recall is 1.00 against 0.27 for looking at the edited file alone, and
+  precision is 0.17 — `impact` walks reverse dependencies transitively by default, so it
+  returns everything downstream while the labels name only the direct referencers (restricted
+  to one hop the same cases return their labeled sets). The precision 0.90 this line used to
+  quote does not reproduce. On nine real Python repositories the research prototype's impact
+  oracle reached recall 0.022 ([refutation](research/empirical-refutation/)).
+- **A full pre-action gate in 886 ms** (median on this repo, warm, on a 4-core Windows VM — this
+  row is machine-bound; see the environment block) — assumption check, routing,
   reuse lookup, context assembly, blast radius, scope, and goal anchor in one deterministic
   pass, no LLM call. On Claude Code it runs on **every prompt, automatically**.
 - **The white paper's 62.1% routing saving is refuted.** It was measured on the 30 tasks the
@@ -213,7 +216,8 @@ an assumption until measured_.
   judge accepted it cost $1.06 against $1.76, but only 6 and 3 of 64 outputs were accepted
   ([refutation](research/empirical-refutation/)). `forge cost --stages` reports only _your_
   measured stages.
-- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
+- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **4308 ms** on that
+  same VM (I/O-bound, 4–6x a Linux host); the
   merge is order-independent and property-tested, so teammate ledgers converge to the same state
   no matter who syncs first, over plain git.
 The substrate is advisory by default. Set `FORGE_ENFORCE=1` to block only its strongest
@@ -236,9 +240,10 @@ from a fresh repository graph.
   rather than invented context.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
   signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
-  vote for a higher tier is never applied automatically — it surfaces only as an advisory
-  `escalateTo` recommendation. Forgekit advises which tier to request; it does not itself proxy
-  or fail over model traffic.
+  vote for a higher tier is never applied automatically — it is recorded as an advisory
+  `escalateTo` recommendation, which names the tier only once an external check has actually
+  failed (the doom-loop diagnosis at its thrash threshold). Forgekit advises which tier to
+  request; it does not itself proxy or fail over model traffic.
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
 - **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
@@ -326,8 +331,8 @@ methodology.
 
 Parser-stable snapshot labels used by the generated project pages are:
 
-- **A full pre-action gate in 118 ms median** — deterministic, warm repository graph, LLM disabled;
-- **Blast radius in 0.43 ms median** — warm impact query; and
+- **A full pre-action gate in 886 ms median** — deterministic, warm repository graph, LLM disabled;
+- **Blast radius in 0.40 ms median** — warm impact query; and
 - **20.2% more cost than always-premium** — the held-out routing result. The 62.1% saving the
   white paper reported came from a 30-task demonstration with thresholds tuned on those same
   tasks; on 80 pre-registered held-out tasks the same router spent 20.2% *more* (table below).
@@ -337,10 +342,10 @@ The boundaries in the table below are part of each result.
 
 | Measurement | Recorded result | Boundary |
 | --- | ---: | --- |
-| Warm impact query | 0.43 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
-| Deterministic substrate check | 118 ms median | 3 runs on one repository, warm graph, LLM disabled |
-| Impact quality | precision 0.34, recall 0.97, F1 0.50 at commit `1a82388` (the precision 0.90 and F1 0.92 reported earlier do not reproduce) <!-- TODO(impact-numbers): re-measure with `npm run bench` after the impact-graph fix and replace these figures --> | 6 hand-labelled symbols in this repository, scored by `evalImpact`; edited-file-only baseline recall 0.33 |
-| Ledger replica merge | 158 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared |
+| Warm impact query | 0.40 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
+| Deterministic substrate check | 886 ms median | 3 runs on one repository, warm graph, LLM disabled, on a 4-core Windows VM — wall-clock rows are machine-bound and were ~150 ms on the Linux host that produced the pre-2026-09-22 snapshot; re-run `npm run bench` on your own hardware |
+| Impact quality | precision 0.17, recall 1.00, F1 0.29 (the precision 0.90 / F1 0.92 reported before 2026-09-21 do not reproduce) | 6 hand-labelled symbols in this repository, scored by `evalImpact` against labels re-derived by `git grep`; `impact` walks reverse dependencies transitively by default, so precision measures the transitive closure against direct-only labels; edited-file-only baseline recall 0.27 |
+| Ledger replica merge | 4308 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared, on the same 4-core Windows VM (I/O-bound: 4–6x the Linux host's figure) |
 | Python router live demonstration | 62.1% calculated cost reduction versus always-premium | 30 hand-labelled tasks, thresholds tuned to the set, real measured LLM tokens, approximate public prices; demonstration, not field benchmark |
 | Python router, held-out evaluation | total spend 20.2% **higher** than always-premium; gate F1 0.37 | 80 tasks from real GitHub issues and PRs, thresholds frozen, pre-registered; refutes the row above |
 | Python impact oracle | precision 0.633, recall 1.000, F1 0.753 | 5 mutations in the bundled demo package; mutation-derived test failures as ground truth |

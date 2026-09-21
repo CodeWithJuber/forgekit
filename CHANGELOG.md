@@ -25,6 +25,72 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A claim minted before the CRLF fold is migrated, not deleted.** Folding `
+` into
+  `
+` changes a claim's content address, so a claim written by an earlier version on a
+  Windows checkout carried the pre-fold address in its filename and failed its own address
+  check on load — `loadClaims` returned nothing for it, and `forge ledger verify` reported
+  it as an id mismatch. The read path now accepts the pre-fold address as well, so the
+  claim stays readable and its evidence log keeps resolving; every WRITE uses the current
+  rule, so the old form dies out as claims are rewritten. Content that matches neither
+  address is still refused, which is what the check is for.
+
+- **The impact benchmark's labels are ground truth again, and the numbers they feed are
+  re-measured.** Four of the six label sets in `bench/impact_cases.mjs` had gone stale against
+  the source — `isStale` was missing `src/substrate.js` (an aliased import) and
+  `test/atlas_resolve.test.js`, `mergeStates` was missing `src/ledger_sync.js`, `claimText`
+  three files, `contentHash` four — so the published precision/recall/F1 were scored against a
+  fixture that no longer described the repo. Every case is re-derived with
+  `git grep -n -w -F -e <symbol> -- 'src/*' 'test/*'` with each hit read, and the per-line
+  evidence (plus the deliberate comment/string-only omissions) is recorded in the fixture. A
+  new test re-runs that derivation and fails the moment labels and source disagree, so this
+  cannot rot silently again. `contentHash`'s documented false negative is gone: a named import
+  now resolves to the exact symbol node, so `src/atlas.js` is predicted at one hop despite the
+  `const hash = contentHash;` alias. **Re-measured with `npm run bench`: precision 0.17,
+  recall 1.00, F1 0.29** (edited-file-only baseline recall 0.27), replacing the
+  precision 0.90 / F1 0.92 this repo had published since commit `eb68ea9`. The precision is
+  the transitive closure being scored against direct-only labels — `impact()` walks reverse
+  dependencies transitively by default, and at one hop the six cases return their labeled
+  sets — not a graph that is wrong about who calls what; `reports/benchmarks.md` now says so
+  where the table is. The `TODO(impact-numbers)` markers in `README.md` and
+  `reports/benchmarks.md` are resolved and removed, and the other medians those two files and
+  the landing page quote are re-synced to the same run's environment block.
+- **`llm.escalateTo` is no longer advisory-and-inert — a real failure now consumes it.**
+  Routing recorded the tier a proposer's higher vote would have picked and deliberately did
+  not apply it (whitepaper §5.1: spend more only when an EXTERNAL check fails), but nothing
+  ever read it back, so the doom-loop directive told agents to "escalate ONE model tier"
+  without naming one. `meterRoute()` now stores that target alongside the task ref it
+  already wrote, and `diagnose()` — the one place an external check has demonstrably failed,
+  `THRASH_K` recurrences of a single failure signature — names it: "escalate to opus (the
+  tier routing already flagged for this task)", plus `escalateTo` in `--json`. The model's
+  vote still triggers nothing on its own; it only answers *which* tier once a real failure
+  has earned an escalation. Fail-safe and opt-in: `forge diagnose --task "<task>"` (and the
+  `task` argument on the `forge_diagnose` MCP tool) is what supplies the join key — without
+  it, or with no routing record for that exact task, the wording is unchanged.
+- **A CRLF checkout no longer forks a claim id.** `canonicalize()` NFC-normalized strings but
+  passed line endings through, so the same logical claim written on a Windows worktree
+  (`core.autocrlf` → `\r\n`) and on a Linux one (`\n`) produced different canonical bytes and
+  therefore different content addresses: one fact stored as two claims that could never merge,
+  with the evidence split between them forever. Every string in a canonical document — key and
+  value alike — now passes through one rule: NFC, and `\r\n` → `\n`. Deliberately left alone,
+  each documented at the call site: a LONE `\r` (in the captured terminal output a `diagnosis`
+  body carries, a bare carriage return is a progress-bar control character, not a line ending —
+  same conservative rule as `normalizeError()`), whitespace and indentation, blank lines, case,
+  and every Unicode fold beyond NFC (no NFKC: `ﬁ` stays distinct from `fi`). **Migration note:**
+  a claim minted before this change whose body contains `\r\n` re-addresses, so it no longer
+  matches its filename and `forge ledger verify` reports it. Such a claim was already the
+  duplicate half of a pair; re-mint it (or merge from a replica) to land on the shared address.
+- **`caller_fanout` is no longer dead for callers that only have a path.**
+  `featuresForEdit()` asked `grepFanout()` about `edit.symbol`, so every caller holding
+  only a file path — which is every hook fired on an edit event — got `grepFanout(root,
+  undefined) === 0`: a module with twenty importers scored exactly like one nobody
+  references. Without a symbol the feature now falls back to the FILE's own fan-out (how
+  many code modules name this one as a whole word), which is the honest answer such a
+  caller can have. The "who references this module" rule — module stem, directory for
+  `index`/`__init__`/`mod`/`main`, tests separated from callers — now lives once in
+  `cortex_features.referencingFiles()` and the pre-edit hook uses it instead of its own
+  copy, so the two can never drift.
 - **`forge impact` actually resolves imports.** JS/TS import specifiers were stored as raw
   strings and matched against symbol names, so `"./util.js"` could only ever resolve by its
   last dotted segment: on this repo, 3 of 502 relative import statements resolved and all
