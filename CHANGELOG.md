@@ -111,7 +111,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   visible. Of 2,000 random `AWS_SECRET_ACCESS_KEY=<40 base64>` lines, 1,995 are now masked
   whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
   `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
-  still left alone.
+  still left alone. `secret-redact.sh`'s shell prefilter — which decides whether the Node
+  redactor runs at all — was widened to match: a short URL password has no 20-char token
+  run, so the guard used to skip the scan entirely and the credential reached the
+  transcript.
 - **The guards parse their payload with a real JSON parser, and fail closed.** Without `jq`
   — stock Git for Windows, most minimal images — every guard fell back to a regex that cut
   the value at the first escaped quote: `echo "x"; cat .env` arrived as `echo \`, so the
