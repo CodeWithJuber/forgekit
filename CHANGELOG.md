@@ -47,6 +47,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **The formal synthesis's Theorem D is restated as a bound, and its definitions are fixed.**
+  An external deep review (2026-09-21) found the theorem circular as stated (its criterion,
+  `P(≥1 miss) → 1`, also condemns the composed system) and its Eq. 5 dependent on an
+  independence the design contradicts — the same classifier at Stop, pre-commit and CI fires
+  together, so the product understates the residual 400× in the paper's own example. The
+  synthesis and the extended preprint now state the residual as `(1 − p)·P(no check fires |
+  miss)` with Fréchet bounds, bound it by `ε` over an explicit `(p, q)` region, show that the
+  gate's catch rate depends on agent behaviour (a STATE.md touch passes it), and fix the `lfp`
+  definition, the oracle-vs-`Δ*` "identity", T4, T5, T6 (A7 gains the catch-all arm
+  `src/knowledge_router.js` already has), A1's type error, A3's definitional I1, the use of
+  Rice's theorem, the faculty table (now matching the whitepaper), Eq. 1 vs the amnesia
+  equation, the Appendix A tally (9 confirmed, not 8), and the "independent" convergence.
+  Priority is conceded in both, as the refutation paper already did. Each paper ends with a
+  dated Corrections section quoting the original wording; `crosswalk.json`/`.md` and the
+  formal-synthesis README follow.
 - **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
   Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
   against the extracted replication package. PDFs built from the corrected sources could not

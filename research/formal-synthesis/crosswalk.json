@@ -24,9 +24,9 @@
     {
       "concept": "Impact-awareness / partial-work failure",
       "substrate": "Faculty: impact-awareness gap; the developer silently simulates 'what will this edit break'. Prototype I = Impact Oracle (reverse-dependency blast radius with confidence decay)",
-      "framework": "F1 partial work; dependents operator N(X); required change closure Delta* = least fixpoint of X |-> X \u222a N(X); Done predicate; Algorithm A1 IMPACT-CLOSURE",
+      "framework": "F1 partial work; dependents operator N(X); required change closure Delta* = lfp(X |-> Delta_0 \u222a N(X)) (the lfp of X |-> X \u222a N(X) alone is the empty set) [corrected 2026-09-21]; Done predicate; Algorithm A1 IMPACT-CLOSURE",
       "forgekit": "/impact skill; documentation-map.md (R_declared); grep identifier sweep (R_discovered)",
-      "relation": "IDENTICAL MATHEMATICS. The Impact Oracle computes N(X) by reverse reachability on the dependency graph; Delta* is exactly the oracle's transitive blast-radius set. The oracle adds a confidence-decay weight the framework's set-theoretic N(X) leaves boolean."
+      "relation": "SAME SHAPE, NOT IDENTICAL [corrected 2026-09-21]. The Impact Oracle computes a thresholded, depth-limited reverse reachability over the AST relation, which approximates Delta* over a different relation. It adds a confidence-decay weight the framework's set-theoretic N(X) leaves boolean. Measured on nine real repositories, its recall was 0.022."
     },
     {
       "concept": "Memory / session-amnesia failure",
@@ -38,7 +38,7 @@
     {
       "concept": "Why assumptions happen (the root the user named)",
       "substrate": "M2 assumption/uncertainty gate: under-specified input -> the model confabulates a convention",
-      "framework": "amnesia equation: when f \u2208 essential(K) is missing from L(P), assumption \u2248 argmax P(convention | training data) \u2014 the mathematically EXPECTED result of missing context, not misbehavior. Invariant I3 (no fabrication)",
+      "framework": "amnesia equation: when f \u2208 essential(K) is missing from L(P), assumption \u2248 argmax P(convention | training data) under greedy decoding (a draw from that prior under sampling) \u2014 the mathematically EXPECTED result of missing context, not misbehavior. Invariant I3 (no fabrication)",
       "forgekit": "CLAUDE.md No-assumptions rule; intent-router SPEC card ('state assumptions explicitly')",
       "relation": "The framework gives the substrate's M2 gate its formal justification: assumption is argmax over the prior, so the fix is to supply context (raise what L loads) OR gate on missing context (halt), never to hope."
     },
@@ -47,7 +47,7 @@
       "substrate": "M6 inline verification; Prototype-II verify step; self-correction faculty",
       "framework": "Algorithm A6 COMPLETION-GATE (deterministic Stop-hook floor); Hoare postcondition Done(t); the verification operator in A3 (verified-unaffected requires an actual grep, not an assumption)",
       "forgekit": "src/gate.js stopGate Stop hook via cortex.sh (blocks finish if code changed but no doc/state artifact did; kit: docs-guard.sh); reviewer agent verdict",
-      "relation": "Same verify-gate. Substrate framed it as a mechanism; framework proves it terminates (T1) and is sound (T3) and makes it the deterministic layer of the duality."
+      "relation": "Same verify-gate. Substrate framed it as a mechanism; framework proves it terminates (T1) and fires exactly on its proxy signal (T3) and makes it the deterministic layer of the duality."
     },
     {
       "concept": "Complexity routing",
@@ -108,16 +108,16 @@
     {
       "concept": "The two-layer duality (THE central new insight)",
       "substrate": "implicit: the substrate wraps a probabilistic core with deterministic external structure, but v2 never states it as a law",
-      "framework": "DESIGN LAW: instructions (Pi3) are PROBABILISTIC (raise p); interception (Pi2) is DETERMINISTIC (guarantee a floor c->1). P(silent miss) = (1-p)\u00b7prod_j(1-c_j). Since p<1 always, neither layer alone suffices.",
+      "framework": "DESIGN LAW: instructions (Pi3) are PROBABILISTIC (raise p); interception (Pi2) is DETERMINISTIC (guarantee a floor c->1). P(silent miss) = (1-p)\u00b7P(no check fires | miss), which is (1-p)\u00b7prod_j(1-c_j) only for independent checks [corrected 2026-09-21]. Where p and c are each bounded below 1, both layers are needed to reach a small residual.",
       "forgekit": "the split itself: CLAUDE.md/rules/skills = soft layer; hooks (cortex.sh -> src/gate.js, src/session.js, src/intent.js; kit: docs-guard, session-context, intent-router) = hard layer",
-      "relation": "THIS is what the kit gives the substrate theory: the reason the substrate must be TWO layers, stated as a theorem. The user's own discipline ('never trust AI output \u2014 it is calculated probability') is exactly (1-p)>0, which forces the deterministic layer."
+      "relation": "THIS is what the kit gives the substrate theory: the reason the substrate must be TWO layers, stated as a bound over (p, q) [corrected 2026-09-21]. The user's own discipline ('never trust AI output \u2014 it is calculated probability') is exactly (1-p)>0, which forces the deterministic layer."
     },
     {
       "concept": "The probabilistic failure model",
       "substrate": "eval honesty: perfect accuracy shows separation not a benchmark; p<1",
-      "framework": "P(>=1 miss) = 1 - p^n over n tasks (0.9 -> 65% at 10, 96% at 30); layered: P(silent miss)=(1-p)\u00b7prod(1-c_j)",
+      "framework": "P(>=1 miss) = 1 - p^n over n independent tasks (0.9 -> 65% at 10, 96% at 30); layered: P(silent miss)=(1-p)\u00b7P(no check fires | miss) [corrected 2026-09-21]",
       "forgekit": "the lattice of gates: turn-level (hook) \u2282 commit-level (pre-commit) \u2282 PR-level (CI)",
-      "relation": "The math that makes 'it works sometimes then forgets' a geometric certainty rather than bad luck \u2014 and quantifies why each added deterministic gate multiplies down the residual."
+      "relation": "The math that makes 'it works sometimes then forgets' a geometric certainty rather than bad luck \u2014 and quantifies when an added deterministic gate lowers the residual: only when it catches misses the earlier gates did not (a copy of the same check adds nothing) [corrected 2026-09-21]."
     },
     {
       "concept": "Stewardship / governance boundary",

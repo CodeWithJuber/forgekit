@@ -1,5 +1,12 @@
 # Review — `wisdom-lens` plugin and `hikmah-stack` v3.0.0
 
+> **Editorial note (2026-09-21).** This review is kept as written. Two of its framings were
+> later corrected: the four layers in §1 are the same author's work (forgekit and hikmah-stack
+> are both under the author's GitHub account), so their convergence is consistency, not
+> "four independent efforts"; and Theorem D's product `(1-p)·∏(1-c_j)` holds only when the
+> checks fire independently given a miss. See the Corrections section of
+> [`../substrate_synthesis.html`](../substrate_synthesis.html).
+
 **Reviewer:** Claude Science, on request. **Date:** 13 August 2026.
 **Audited:** `wisdomlens.zip` (plugin v1.0.0, 15 files); `CodeWithJuber/hikmah-stack` at commit
 `4827966f` (main, Rust kernel v3.0.0); the two source manuscripts *The New Lens* and
