@@ -130,6 +130,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`forge route calibrate` stops calling itself "outcome-calibrated routing".** Nothing in it
+  comes from an outcome: the fixture is 24 hand-written task phrases with hand-assigned
+  complexities, and forge records nothing that could replace them — a `route` metrics event
+  carries the chosen tier and a task hash, a `verify` event carries pass/fail with no task
+  reference, so no (task, tier, outcome) triple exists to calibrate on. `calibratedComplexity`
+  has no caller in `src/` either: routing keeps the raw rubric. The command heading and closing
+  note, the module comment, GUIDE and ROADMAP now say so plainly, and joining a routed task's
+  tier to its verification result is named as open work rather than implied to be done.
 - **The routing rubric stops counting a task's length twice and stops matching on one shared
   word.** Both defects pushed every real task into the middle: on the reviewer's 80-task
   held-out set the router sent 54 of 64 well-specified tasks to mid and reached premium once.

@@ -206,23 +206,29 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
 **`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
-affine correction of the rubric's score toward a held-out labeled fixture and reports
-whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
+affine correction of the rubric's score toward a held-out split of a labelled fixture and
+reports whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
 margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
 generalized in `src/promote.js` so any advisory signal (routing weights here;
 consolidation and hazard next) can only become active by measurement, never by assertion.
-It is advisory: routing keeps the rubric until a promoted calibration is explicitly
-adopted.
+
+Read the name literally: it calibrates **the rubric against hand-written labels**, not against
+outcomes. The fixture is 24 hand-written task phrases with hand-assigned complexities, and forge
+records nothing that could replace them — a `route` metrics event carries the tier and a task
+hash, a `verify` event carries pass/fail with no task reference — so there is no
+(task, tier, outcome) triple to calibrate on. It is advisory twice over: routing keeps the raw
+rubric, and nothing in `src/` adopts a promoted calibration.
 
 ```console
 $ forge route calibrate
-Forge route calibrate — outcome-calibrated routing (measured gate)
+Forge route calibrate — rubric calibration check (measured gate)
 
-  samples: 24 labeled task(s)
-  held-out MAE: rubric 0.152 · calibrated 0.226
+  samples: 24 hand-labelled task phrase(s) — no routing outcomes exist
+  held-out MAE: rubric 0.191 · calibrated 0.266
   → keep the rubric — baseline retained — candidate did not beat it by the margin
 
-  advisory — routing stays on the rubric until a promoted calibration is adopted
+  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,
+  and calibrating on real routing outcomes needs data forge does not record
 ```
 
 Here the gate does exactly its job: the rubric already generalizes well, the affine

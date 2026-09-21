@@ -1896,12 +1896,13 @@ HANDLERS.route = async (argv) => {
   }
   if (argv[1] === "calibrate") {
     // Advisory → gated promotion (ROADMAP): measure whether an affine calibration of the
-    // routing rubric beats the raw rubric on the held-out fixture. Advisory — routing
-    // keeps the rubric unless the gate promotes AND a caller adopts the calibration.
+    // routing rubric beats the raw rubric on a held-out split of the HAND-LABELLED fixture
+    // (there is no outcome data). Advisory — routing keeps the rubric unless the gate
+    // promotes AND a caller adopts the calibration, which nothing in src/ does.
     const res = r.calibrateRouting();
     if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
-    heading(`${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`);
-    console.log(`  samples: ${res.n} labeled task(s)`);
+    heading(`${BRAND.brand} route calibrate — rubric calibration check (measured gate)\n`);
+    console.log(`  samples: ${res.n} hand-labelled task phrase(s) — no routing outcomes exist`);
     if (res.baselineMetric !== undefined)
       console.log(
         `  held-out MAE: rubric ${res.baselineMetric} · calibrated ${res.candidateMetric}`,
@@ -1912,8 +1913,9 @@ HANDLERS.route = async (argv) => {
         : `  → keep the rubric — ${res.reason}`,
     );
     console.log(
-      "\n  advisory — routing stays on the rubric until a promoted calibration is adopted",
+      "\n  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,",
     );
+    console.log("  and calibrating on real routing outcomes needs data forge does not record");
     return;
   }
   const json = argv.includes("--json");

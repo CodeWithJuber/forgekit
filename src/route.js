@@ -234,12 +234,17 @@ export function rubricComplexity(task = "") {
 }
 
 // ---------------------------------------------------------------------------
-// Outcome-calibrated routing (ROADMAP: advisory → gated promotion). The rubric above
-// is the advisory baseline. Below: fit an affine correction of its score toward labeled
-// complexities and PROMOTE it over the raw rubric ONLY if it beats the rubric on a
-// held-out fixture (promote.js measured gate) — never on assertion. recommend() keeps
-// the raw rubric unless a caller opts into the returned calibration, so this stays
-// advisory until the measurement earns the promotion (overview §4 honesty register).
+// Rubric calibration check (ROADMAP: advisory → gated promotion). Fit an affine correction of
+// the rubric's score toward labeled complexities and PROMOTE it over the raw rubric ONLY if it
+// beats the rubric on a held-out split (promote.js measured gate) — never on assertion.
+//
+// HONESTY, since this was once described as "outcome-calibrated routing": there are NO outcomes
+// in it. The labels below are 24 hand-written phrases with hand-assigned complexities, and forge
+// records nothing that could replace them — `stage:"route"` metrics carry the chosen tier and a
+// task hash, `stage:"verify"` metrics carry a pass/fail with no task reference, so no
+// (task, tier, outcome) triple exists to calibrate on. Nothing here is wired into routeTask
+// either: `calibratedComplexity` has no caller in src/, by design (the gate has never promoted),
+// and outcome-labelled routing data remains open work.
 // ---------------------------------------------------------------------------
 
 /**
@@ -308,8 +313,10 @@ const stridedSplit = (samples) => {
 
 /**
  * Run the measured-promotion gate on the routing rubric: fit an affine correction on the
- * training split and promote it only if it lowers held-out MAE past the margin.
- * @param {{text:string,y:number}[]} [samples] labeled tasks (default: the held-out fixture)
+ * training split and promote it only if it lowers held-out MAE past the margin. The default
+ * fixture is hand-written phrases with hand-assigned labels — a generalization check for the
+ * rubric, not evidence from routed work.
+ * @param {{text:string,y:number}[]} [samples] labeled tasks (default: the hand-labelled fixture)
  * @param {{margin?:number, minSamples?:number}} [opts]
  */
 export function calibrateRouting(samples = CALIBRATION_SAMPLES, opts = {}) {
@@ -327,8 +334,9 @@ export function calibrateRouting(samples = CALIBRATION_SAMPLES, opts = {}) {
 }
 
 /**
- * The live complexity estimate: the calibrated mapping ONLY if the gate blessed it
- * (mirrors predictor.riskFor). Falls back to the raw rubric otherwise.
+ * The complexity estimate under a promotion: the calibrated mapping ONLY if the gate blessed it
+ * (mirrors predictor.riskFor), the raw rubric otherwise. NOT called by routeTask — routing keeps
+ * the raw rubric, and adopting a calibration is an explicit caller's choice.
  * @param {string} task
  * @param {{mode:string, model?:{a:number,b:number}}} [promotion] result of calibrateRouting
  */
