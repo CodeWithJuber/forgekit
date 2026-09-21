@@ -31,6 +31,63 @@ test("referencedEntities ignores plain English (no false identifiers)", () => {
   assert.deepEqual(r.files, []);
 });
 
+// --- deep review D7: the scanners read addresses, fences and prose as code ---
+
+test("D7: a code fence never pairs with inline backticks — its words are not identifiers", () => {
+  const text =
+    "Credentials leak from the `DelayedDelivery` consumer:\n\n```\nSetting up delayed delivery for broker `amqp://user:pw@host:5672` ...\n```\n\nUse `maybe_sanitize_url()` for this.";
+  const { symbols, files } = referencedEntities(text);
+  assert.ok(symbols.includes("DelayedDelivery") && symbols.includes("maybe_sanitize_url"));
+  for (const w of ["Setting", "up", "delayed", "for", "broker"])
+    assert.ok(!symbols.includes(w), `fence prose "${w}" is not an identifier`);
+  assert.deepEqual(files, []);
+  // RST/markdown ``double`` spans don't pair their inner backticks across the prose between.
+  const rst = referencedEntities(
+    "Add ``closes #XYZW`` to the description and/or commits (``XYZW``)",
+  );
+  assert.deepEqual(rst.files, [], "prose between two double-backtick spans is not code");
+});
+
+test("D7: URLs, links, images and N/A are not files; real paths still are", () => {
+  const r = referencedEntities(
+    "See https://example.com/issue/12, [the docs](https://docs.example.org/a/b.html) and " +
+      "![shot](https://img.example.com/a.png); github.com/org/repo; N/A for docs; and/or; " +
+      "input/output. <details><summary>env</summary></details> " +
+      "Touch `src/api/`, src/api/user.js and ./scripts/run.",
+  );
+  assert.deepEqual(r.files.sort(), ["./scripts/run", "src/api/", "src/api/user.js"]);
+});
+
+test("D7: concreteness anchors ignore URLs, image links, contractions and versions", () => {
+  const cases = [
+    "Make it work somehow, don't break it, it's the login thing",
+    "Fix the bug. ![screenshot](https://user-images.example.com/a.png) Something is wrong with it (again) since v2.3: it's broken.",
+    "Improve the auth stuff. Version 2: see https://example.com/x",
+  ];
+  for (const text of cases)
+    assert.equal(completenessFeatures(text).concreteness, 0, `no concrete anchor in: ${text}`);
+  assert.equal(assessTask(cases[0]).hardUnderspecified, true, "vague + no anchor → hard ask");
+  // ...while real anchors still fire.
+  assert.ok(completenessFeatures("set `retries: 3` in config.yaml").concreteness >= 2);
+  assert.ok(completenessFeatures("rename it to 'prod', e.g. for the deploy").concreteness >= 2);
+});
+
+test("D7: a named code identifier is a concrete anchor", () => {
+  const rename = assessTask("Rename getUser to fetchUser everywhere");
+  assert.equal(rename.hardUnderspecified, false, "two named identifiers are not 'no anchor'");
+  assert.ok(completenessFeatures("Rename getUser to fetchUser everywhere").concreteness >= 1);
+  const withPath = assessTask("Rename getUser to fetchUser in src/api/user.js");
+  assert.equal(withPath.shouldAsk, false, "identifier + path clears the gate");
+});
+
+test("D7: the success-criteria cue needs the word test, not 'latest'", () => {
+  const r = assessTask("Improve startup by upgrading to the latest release");
+  assert.ok(
+    r.missing.some((m) => m.key === "success_criteria"),
+    "'latest' does not say how success is verified",
+  );
+});
+
 test("ambiguityMarkers catches vague wording", () => {
   const m = ambiguityMarkers("handle errors somehow and add several validations, etc.");
   assert.ok(m.includes("somehow") || m.includes("handle errors"));
@@ -310,19 +367,29 @@ test("D6: unresolved entities never force an ask the rubric and the model both c
 test("D6 (integration): a grounded rename with a background URL is not asked when the model agrees", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-pre-d6-"));
   mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "test"));
   writeFileSync(join(root, "src", "util.js"), "export function clamp01(x) { return x; }\n");
-  // `clampUnit` is the rename TARGET — unresolved by definition — and the URL is background.
-  const task =
-    "Rename the helper `clamp01` in src/util.js to `clampUnit` and update every caller; " +
-    "the existing tests must pass unchanged. Background: https://example.com/issue/12";
-  const off = preflightRepo(root, task, { llm: false });
-  assert.equal(off.assumption.shouldAsk, false, "precondition: the rubric proceeds");
-  const on = preflightRepo(root, task, {
-    llm: true,
-    run: () => '{"completeness":0.99,"missing":[],"questions":[]}',
-  });
-  assert.equal(on.assumption.shouldAsk, false, "a unanimous proceed is not turned into an ask");
-  assert.notEqual(on.assumption.provenance.path, "llm-tightened");
+  writeFileSync(join(root, "test", "util.test.js"), "// tests\n");
+  // `clampUnit` is the rename TARGET — unresolved by definition; the URL and the "N/A"
+  // placeholder are prose, and neither is a file the repo is missing.
+  const tasks = [
+    "Rename the helper `clamp01` in src/util.js to `clampUnit`, update every caller; tests in " +
+      "test/util.test.js must pass unchanged (N/A for docs).",
+    "Rename the helper `clamp01` in src/util.js to `clampUnit` and update every caller; the " +
+      "existing tests must pass unchanged. Background: https://example.com/issue/12",
+  ];
+  for (const task of tasks) {
+    const off = preflightRepo(root, task, { llm: false });
+    assert.deepEqual(off.unresolved.files, [], `no phantom unresolved file in: ${task}`);
+    assert.deepEqual(off.unresolved.symbols, ["clampUnit"], "only the rename target is unknown");
+    assert.equal(off.assumption.shouldAsk, false, "precondition: the rubric proceeds");
+    const on = preflightRepo(root, task, {
+      llm: true,
+      run: () => '{"completeness":0.99,"missing":[],"questions":[]}',
+    });
+    assert.equal(on.assumption.shouldAsk, false, "a unanimous proceed is not turned into an ask");
+    assert.notEqual(on.assumption.provenance.path, "llm-tightened");
+  }
 });
 
 // --- deep review D8: the proposer is judged on its own scale, not clipped to det±band ---

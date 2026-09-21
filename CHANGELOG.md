@@ -29,6 +29,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
   through to fable. A non-finite score now routes to the default tier (sonnet) with an
   `unknown-score` reason, logged under `FORGE_DEBUG=1`.
+- **The preflight scanners no longer read addresses, code fences and prose as code.** On the
+  80-task held-out set (diagnostic only — those tasks are spent for tuning), the entities a task
+  was said to reference fell from 210 files and 1,414 symbols to 42 and 388 across the 64
+  well-specified tasks. Four misfires:
+  - a code fence's third backtick paired with the next inline backtick, so **every word inside a
+    fence became an identifier** — a broker-URL log line yielded "Setting", "up", "delayed",
+    "for", "broker" — and each one then went to the substring `git grep` that feeds routing
+    fan-out. Fenced blocks are stripped before the inline-code scan, and an inline span now needs
+    a closing backtick run of the same length, so RST ``double`` spans stop pairing across prose;
+  - URLs, markdown links and images, `N/A` and `and/or` counted as **files**
+    (`example.com/issue/12`). Addresses are removed before every scan (`stripUrls`), and a bare
+    slash token must look like a path — an extension, a `./ ../ ~/ /` prefix, or a trailing `/`;
+  - the concreteness anchors fired on URLs, image links, contractions (`'t break it, it'`) and
+    versions (`since v2.3:`). The quoted-literal anchor now refuses apostrophes inside words, the
+    filename anchor needs a letter-initial extension, and the worked-value anchor needs a number
+    beside an arrow, an equality or a `key: 42` colon — the filename anchor's firing rate on
+    gold-ask tasks falls from 0.69 to 0.31. `e.g.` and `example:` also fire at last: their
+    trailing `\b` had made them unmatchable before a space;
+  - **a named code identifier was not an anchor**, so "Rename getUser to fetchUser everywhere"
+    was hard-flagged as having nothing concrete to act on. It now counts as one anchor (that task
+    is no longer hard-flagged; with a file path it clears the gate outright), and the
+    success-criteria cue matches `\btest` rather than the "test" inside "latest".
 - **With the LLM layer on, the assumption gate no longer asks just because a task names
   something the repo lacks.** In bidirectional mode `reconcileAssumption` put `hasUnresolved` in
   the ask condition itself, so it forced an ask even when the rubric proceeded and the model
