@@ -42,7 +42,13 @@ export function clearSession(root, sid) {
 }
 
 const REVERT_RE = /\bgit\s+(revert|reset\s+--hard|checkout\s+--|restore)\b/;
-const TEST_RE = /\b(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+// One grammar with deja.js: the command must BE a test run (start of the command or after a
+// shell separator — `echo "run npm test later"` is not one) and keep its exit code (`npm test
+// || true` proves nothing).
+const TEST_RE =
+  /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
+const isTestRun = (command) => TEST_RE.test(String(command ?? "")) && !MASKED_RE.test(command);
 // Negation must be corrective, not incidental ("no problem"); require a corrective verb.
 const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
 
@@ -135,7 +141,7 @@ export function detectEpisodes(events, { nowDay = 0 } = {}) {
       recentEdits.push(e.file);
       if (sawTestFail) failFiles.add(e.file);
     } else if (e.type === "bash") {
-      if (TEST_RE.test(e.command)) {
+      if (isTestRun(e.command)) {
         if (typeof e.exitCode === "number" && e.exitCode !== 0) sawTestFail = true;
         else if (e.exitCode === 0 && sawTestFail) {
           for (const f of failFiles) add(f, "S1"); // fail → edit → pass, same files

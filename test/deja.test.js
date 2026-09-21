@@ -193,3 +193,16 @@ test("déjà vu is gated on RELEVANCE (C8): an unrelated prompt never surfaces a
     assert.match(hit, /dark mode/);
   }
 });
+
+test("buildSummary: only a REAL test run counts as verification", () => {
+  const tested = (command) =>
+    buildSummary([
+      { type: "prompt", text: "refactor billing" },
+      { type: "bash", command, exitCode: 0 },
+    ]).tested;
+  assert.equal(tested("npm test"), true);
+  assert.equal(tested("cd api && npx vitest run"), true);
+  assert.equal(tested("echo 'run npm test later'"), false, "mentioning a test is not running one");
+  assert.equal(tested("grep -r 'jest' package.json"), false);
+  assert.equal(tested("npm test || true"), false, "a swallowed exit code proves nothing");
+});

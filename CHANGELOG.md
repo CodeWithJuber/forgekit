@@ -169,6 +169,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and why rather than dropping them silently. `forge_remember` also reports a refusal
   ("Not remembered — refused: looks like a secret…") instead of answering "Remembered" for a
   write the store rejected.
+- **Only a real test run counts as one.** The test-command grammar matched anywhere in a
+  command, so `echo "run npm test later"` and `grep -r 'jest' package.json` marked a session
+  "tested" — minting a `test.run` confirm for a session that ran no tests — and `npm test ||
+  true` counted as a pass because the `|| true` swallowed the exit code. A command now has to
+  BE a test run (start of the command or after a shell separator) and keep its exit code.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for

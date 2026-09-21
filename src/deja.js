@@ -45,7 +45,15 @@ export const DEJA_REL_FLOOR = 0.5;
 // Same test-command grammar cortex_hook.js keys its S1 signal on — a passing run here
 // is exactly what "this session's work was verified" means. Kept local (one small
 // regex) so deja is a self-contained leaf module.
-const TEST_RE = /\b(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+const TEST_RE =
+  /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+// A command whose failure is swallowed proves nothing: `npm test || true` exits 0 whatever
+// the suite did. (With the old bare-word regex, `echo "run npm test later"` also counted as
+// a verified session — the mint attached a test.run confirm to a session that ran no tests.)
+const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
+
+/** Did this command actually RUN a test suite, with its exit code intact? */
+const isTestRun = (command) => TEST_RE.test(command) && !MASKED_RE.test(command);
 
 /**
  * Distill a session's normalized event log into a deterministic summary body, or null
@@ -68,7 +76,7 @@ export function buildSummary(events = []) {
   if (!gist && !files.length) return null;
   const text = gist || `touched ${files.join(", ")}`;
   const tested = events.some(
-    (e) => e.type === "bash" && e.exitCode === 0 && TEST_RE.test(e.command || ""),
+    (e) => e.type === "bash" && e.exitCode === 0 && isTestRun(e.command || ""),
   );
   return { text, files, tested };
 }
