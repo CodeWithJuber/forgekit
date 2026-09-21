@@ -246,9 +246,14 @@ test("a staged file git cannot diff is refused as unscanned, never passed (B3 fa
   writeFileSync(join(root, "cfg.js"), leak());
   writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n");
   git("add", "-A");
-  // Corrupt the object store under the staged blob: every diff of it now errors.
+  // Corrupt the object store under the staged blob: every diff of it now errors. The
+  // worktree copy goes too — with it in place and its stat matching the index, git can
+  // answer `diff --cached` from the file and never touch the missing object (it does on
+  // the Linux/macOS runners: status 0, empty stderr, a full diff), which would make this
+  // test pass for the wrong reason on one platform and fail on another.
   const sha = String(git("ls-files", "-s", "cfg.js")).split(/\s+/)[1];
   rmSync(join(root, ".git", "objects", sha.slice(0, 2), sha.slice(2)), { force: true });
+  rmSync(join(root, "cfg.js"), { force: true });
   const r = commitGate(root, { env: env() });
   // Diagnostics in the message: which git behaviour this platform actually shows, so a
   // failure here says WHY (git's status/stderr for the corrupted blob) instead of "false".
