@@ -30,11 +30,39 @@ traverses reverse dependencies to predict what will break.
 ┌───────────────────────────────────────────────────────┐
 │  Impact Oracle (oracle.py)                            │
 │  - Reverse-dependency BFS with confidence decay       │
+│  - + SIBLING and FORWARD relations (repair v2)        │
 │  - Per-edge-kind weights (calls > imports > refs)     │
 │  - Ranked impact set with explanation paths           │
 │  - Baselines: grep + edited-file-only                 │
 └───────────────────────────────────────────────────────┘
 ```
+
+### Repaired (v2) — what changed and why
+
+The empirical refutation in [`research/empirical-refutation/`](../../empirical-refutation/)
+measured this prototype against real co-change data on nine repositories and found two
+defects. Both repairs now live here, and the frozen parameters they were tuned with are
+in `oracle.py` as the module defaults:
+
+1. **src-layout phantom nodes** (`world_model.py`, `_merge_phantom_nodes`). A module's
+   qualified name came from its path relative to the codebase root, so in a `src/` layout a
+   real node carried a `src.` prefix that absolute imports elsewhere in the same repo
+   legitimately omit — and the unprefixed target was auto-created as an empty phantom. The
+   merge now also matches that direction, stripping only a top-level path segment the
+   parser actually observed, and only when exactly one real node results.
+   Pooled recall 0.0220 → 0.2424 at threshold 0.02.
+2. **Reverse-only traversal** (`oracle.py`, `predict_impact`). 94.7% of the remaining
+   misses were *siblings* — A and B both depend on module C — and 2.1% were pure forward
+   dependencies. Two terminal relations were added: `sibling` (one bounded forward hop to a
+   bridge, then one bounded reverse hop from it, skipping bridges whose in-degree exceeds
+   the cap) and `forward` (the changed symbol's own dependencies, ≤2 hops).
+   Held-out (never-tuned) repos at threshold 0.10: precision 0.320, recall 0.647,
+   **F1 0.428 vs the grep baseline's 0.371** — a reversal of the as-shipped 0.042 vs 0.437.
+
+`ImpactOracle(wm, sibling_enabled=False, forward_enabled=False)` reproduces the
+as-shipped reverse-only traversal exactly; the untouched as-shipped package is archived as
+`prototypes/impact_oracle_v1_as_shipped.zip` inside the replication tarball. The same two
+repairs are ported to the shipped Node implementation (`src/atlas.js`, `forge impact`).
 
 ### Graph structure
 
@@ -122,6 +150,7 @@ demo_package/           # Example multi-module codebase (8 files)
 
 tests/
   test_demo_package.py  # 36 tests exercising the demo package
+  test_repair_fixes.py  # 13 regression tests for the two v2 repairs
 
 demo.py                 # End-to-end demonstration script
 evaluate.py             # Mutation-based evaluation

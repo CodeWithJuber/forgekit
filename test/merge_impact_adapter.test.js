@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { build } from "../src/atlas.js";
 import {
   analyzeDiffImpact,
   artifactKind,
   atlasEvidence,
   classifyChangedFile,
+  siblingForwardRelations,
 } from "../src/merge_impact_adapter.js";
+import { sibFiles, writeRepo } from "./fixtures/impact_repos.mjs";
 
 const node = (id, file, kind = "module") => ({ id, file, kind, name: id });
 
@@ -187,4 +190,35 @@ test("workflow and manifest paths get distinct change semantics", () => {
     }).kind,
     "dependency",
   );
+});
+
+test("A2: the diff analysis carries sibling and forward relations from the atlas", () => {
+  const atlas = build({ root: writeRepo(sibFiles) });
+  const result = analyzeDiffImpact({
+    atlas,
+    files: [
+      {
+        filename: "src/serializer.js",
+        additions: 1,
+        deletions: 1,
+        patch:
+          "@@ -1 +1 @@\n-export function serialize(obj) {\n+export function serialize(obj, opts) {",
+      },
+    ],
+  });
+  assert.ok(result.evidence.siblingRelations >= 1, JSON.stringify(result.evidence));
+  assert.ok(
+    result.impacted.some((item) => item.id === "src/deserializer.js"),
+    "the file that shares wire_format.js is in the field",
+  );
+  assert.ok(
+    result.impacted.some((item) => item.id === "src/app.js"),
+    "reverse still works",
+  );
+  const relations = siblingForwardRelations(atlas, ["src/serializer.js"]);
+  assert.ok(
+    relations.every((r) => r.terminal === true),
+    "ported relations never re-expand",
+  );
+  assert.deepEqual(siblingForwardRelations(null, ["src/serializer.js"]), [], "no atlas → none");
 });

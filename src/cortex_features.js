@@ -52,17 +52,26 @@ const tryExec = (bin, args, root) => {
   }
 };
 
-/** How many commits recently touched this file (git churn) — 0 if not a git repo. */
-export function gitChurn(root, file) {
+// Churn is RECENT activity: commits in the last CHURN_DAYS days. Without a window, `-n 50`
+// counted a file's whole history, so a file untouched since 2015 scored as maximally hot.
+export const CHURN_DAYS = 90;
+
+/** How many commits touched this file in the last `days` days (git churn) — 0 if not a git repo. */
+export function gitChurn(root, file, { days = CHURN_DAYS } = {}) {
   if (!file) return 0;
-  const out = tryExec("git", ["log", "--oneline", "-n", "50", "--", file], root);
+  const out = tryExec(
+    "git",
+    ["log", `--since=${days} days ago`, "--oneline", "-n", "50", "--", file],
+    root,
+  );
   return out ? out.trim().split("\n").filter(Boolean).length : 0;
 }
 
-/** Rough fan-out: how many files mention the symbol (grep). SEAM for a real call graph. */
+/** Rough fan-out: how many files mention the symbol as a WHOLE WORD (git grep -w, fixed
+ *  string — "get" no longer counts every "target"). SEAM for a real call graph. */
 export function grepFanout(root, symbol) {
   if (!symbol) return 0;
-  const out = tryExec("git", ["grep", "-l", "--", symbol], root);
+  const out = tryExec("git", ["grep", "-l", "-w", "-F", "-e", symbol], root);
   return out ? out.trim().split("\n").filter(Boolean).length : 0;
 }
 
