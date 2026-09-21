@@ -5,6 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
+import { redactSecrets } from "./secrets.js";
 import { contentHash, slug } from "./util.js";
 
 // One naming rule for every per-session artifact (event log, git baseline, gate marker,
@@ -15,12 +16,26 @@ export const sessionPath = (root, sid, ext = "jsonl") =>
 
 const sessionFile = (root, sid) => sessionPath(root, sid);
 
-/** Append one normalized event to a session's log (called by capture hooks). */
+/** Every string leaf of an event, secret-redacted; structure and non-strings untouched. */
+const redactEvent = (v) =>
+  typeof v === "string"
+    ? redactSecrets(v)
+    : Array.isArray(v)
+      ? v.map(redactEvent)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redactEvent(x)]))
+        : v;
+
+/** Append one normalized event to a session's log (called by capture hooks). Prompts and
+ *  shell commands are the user's raw text — a pasted `GITHUB_TOKEN=…` or an
+ *  `Authorization: Bearer …` curl used to land verbatim on disk — so every string is
+ *  redacted BEFORE it is written (the signals read verbs like `npm test`/`git revert`,
+ *  which redaction never touches). */
 export function appendSessionEvent(root, sid, event) {
   if (!event) return;
   const path = sessionFile(root, sid);
   mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(event)}\n`);
+  appendFileSync(path, `${JSON.stringify(redactEvent(event))}\n`);
 }
 
 export function readSession(root, sid) {

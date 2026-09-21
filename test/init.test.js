@@ -45,6 +45,14 @@ test("init emits the shared config for a fresh repo in one call", () => {
   assert.ok(existsSync(join(root, ".aider.conf.yml")), ".aider.conf.yml");
 });
 
+test("init gitignores the per-session hook logs under .forge/sessions (B5)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-init-"));
+  init({ targetRoot: root, settingsPath: join(root, ".claude", "settings.json") });
+  const gi = join(root, ".forge", ".gitignore");
+  assert.ok(existsSync(gi), ".forge/.gitignore written");
+  assert.match(readFileSync(gi, "utf8"), /^sessions\/$/m);
+});
+
 test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
   const tmp = mkdtempSync(join(tmpdir(), "forge-hooks-"));
   const settingsPath = join(tmp, ".claude", "settings.json");

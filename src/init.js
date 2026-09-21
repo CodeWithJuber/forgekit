@@ -13,6 +13,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
+import { ensureForgePrivateIgnored } from "./gitignore.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
 import { validateProfile, writeForgeConfig } from "./repo_config.js";
@@ -790,6 +791,8 @@ export function init({
   if (profileResult?.error) return { profile: profileResult, aborted: true };
   const r = sync({ targetRoot });
   ensureLedgerGitattributes(targetRoot);
+  // Session hook logs hold raw prompts/commands — never let them be committed.
+  ensureForgePrivateIgnored(targetRoot);
   const settings = mergeSettings({
     noSettings,
     settingsPath,

@@ -81,6 +81,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
   `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
   still left alone.
+- **Session hook logs no longer store raw secrets, and `init` keeps them out of git.** The
+  `prompt` and `capture` hooks appended the user's prompt and every Bash command verbatim to
+  `<repo>/.forge/sessions/<id>.jsonl`. A pasted `GITHUB_TOKEN=ghp_…` or an `Authorization:
+  Bearer ghp_…` curl landed on disk in the repo, and `forge init` did not gitignore the
+  directory. Every string in a session event is now passed through `redactSecrets` before
+  it is written (the file now holds `GITHUB_TOKEN=[REDACTED]`). `init` also writes a nested
+  `.forge/.gitignore` that ignores `sessions/` without touching the user's root
+  `.gitignore`, so a deliberately committed ledger or `decisions.md` stays committable.
 - **The commit gate's secret scan now fails closed.** It read `git diff --cached` with the
   default 1 MiB `execFileSync` buffer. On overflow the diff became `""`, so a `ghp_` leak
   alone was refused (exit 1), but the same leak staged next to a 1.5 MB file was "allowed"
