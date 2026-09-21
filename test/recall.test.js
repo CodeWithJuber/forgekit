@@ -56,3 +56,13 @@ test("consolidate removes exact-duplicate bodies", () => {
   assert.equal(removed, 1);
   assert.equal(list(s).length, 1);
 });
+
+test("add regression (E5): two non-ASCII fact names no longer overwrite each other", () => {
+  // Both names slugged to "" → the "fact" fallback, so the second add overwrote the first.
+  const s = store();
+  assert.equal(add(s, "مفتاح الواجهة", "the api base is https://a.example").ok, true);
+  assert.equal(add(s, "数据库地址", "db host is db.internal").ok, true);
+  const slugs = list(s);
+  assert.equal(slugs.length, 2, `both facts kept: ${slugs.join(", ")}`);
+  assert.ok(!slugs.includes("fact"));
+});

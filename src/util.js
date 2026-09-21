@@ -6,13 +6,34 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-export const slug = (s) =>
-  String(s)
+/**
+ * Filesystem- and id-safe slug. Unicode-aware: letters, marks and digits of ANY script
+ * survive (NFKC-normalized, lower-cased), so "مفتاح الواجهة" and "数据库地址" get distinct
+ * slugs — an ASCII-only class turned every non-Latin name into "" and every caller's
+ * fallback then collided them (two facts, one "fact" slug). A name with no letter or digit
+ * at all (emoji, punctuation) falls back to a short content hash, so distinct names still
+ * never collide; blank input stays "" for the callers' own fallbacks. ASCII input slugs
+ * exactly as before.
+ * @param {unknown} s
+ * @returns {string}
+ */
+export const slug = (s) => {
+  const text = String(s ?? "");
+  const out = text
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
     .replace(/(^-|-$)/g, "");
+  if (out || !text.trim()) return out;
+  return `h-${contentHash(text).slice(0, 10)}`;
+};
 
-export const clamp01 = (x) => Math.max(0, Math.min(1, x));
+/** Clamp to [0,1]. NaN and non-numeric input fail to 0 — Math.max/min would pass NaN
+ *  straight through, and one NaN poisons every score it touches. */
+export const clamp01 = (x) => {
+  const n = Number(x);
+  return n > 0 ? (n < 1 ? n : 1) : 0;
+};
 
 // Normalize a path to POSIX separators. Node's path.relative()/join() emit `\` on Windows,
 // but the graph/atlas/scope layers use repo-relative paths as MAP KEYS, NODE IDS, and values

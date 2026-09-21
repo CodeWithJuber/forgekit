@@ -106,6 +106,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **6** items before stopping, and it used `break`, which ended the fill for every source.
   The cut is now checked before taking an item, at the floor the comment describes (the
   4th item's δ³ ≈ 0.34), and skips only that source: 10 candidate facts now yield 3.
+- **Non-ASCII names no longer collide, and NaN no longer propagates.** `slug()` kept only
+  `[a-z0-9]`, so every non-Latin name ("مفتاح الواجهة", "数据库地址") slugged to `""` and fell
+  back to the same literal — two facts with different names overwrote each other under one
+  `fact` slug. It is Unicode-aware now (NFKC, letters/marks/digits of any script), with a
+  short content hash for names that carry no letter or digit at all; ASCII slugs are
+  unchanged. `clamp01(NaN)` returned NaN (`Math.max(0, Math.min(1, NaN))`) and poisoned
+  every score it fed; it fails to 0, along with any non-numeric input. `cosine()` promised
+  "never NaN" but squared components before dividing, so vectors with components ≳ 1e154
+  overflowed to Infinity/Infinity = **NaN** and components ≲ 1e-162 underflowed to a false
+  zero vector; it now scales each vector by its largest component, rejects non-finite
+  components, and clamps the result to [-1, 1].
 
 ### Documentation
 
