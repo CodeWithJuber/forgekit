@@ -44,6 +44,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
+- **Lockfile commits are no longer refused as leaking a secret.** The entropy leg flagged
+  content-integrity digests as secrets: 100% of package-lock and yarn.lock `sha512-` hashes,
+  99% of SRI `sha384-` and 88% of go.sum `h1:` hashes. The real `left-pad@1.3.0` integrity
+  line was refused by the commit gate, which pushed users to `--no-verify` and switched off
+  the whole scan. These digest shapes are now exempt from the entropy leg only, so format
+  rules still apply. All four rows now score 0%.
+
+### Security
+
+- **The secret filter can no longer be made to hang.** The key-assigned branch of
+  `hasSecret`/`redactSecrets` (`\b[\w-]*KEY[\w-]*…`) backtracked cubically on long runs of
+  key-ish words: 6 KB of `token-token-…` took 5 s and 12 KB took 40 s. It runs on every tool
+  output via the secret-redact hook, so a large output outlived the hook timeout and passed
+  through unredacted. Every quantifier that could re-scan a run is now bounded; 40 KB of each
+  pathological shape (`token-`, `secret_`, `password=`, `auth=`, `x://a:`, …) now takes
+  under 5 ms, pinned by a timing regression test.
+- **Credentials in URLs, STS keys and short or slash-bearing values are now caught and masked
+  whole.** URL userinfo (`postgres://`, `mongodb+srv://`, `amqp://`, `redis://:pw@`,
+  `https://oauth2:glpat-…@`), AWS `ASIA…` STS key ids, `AUTH=`/`CREDENTIALS=` env values,
+  `Authorization: <scheme> <credential>` headers, GitLab `glpat-` tokens and TypeSafe
+  `apikey_<40hex>_<64hex>` keys went from 0% to 100% detected and redacted in the review's
+  matrix. `DB_PASSWORD=hunter2` (under 8 chars) was detected but never masked; unquoted values
+  were masked only up to their first `/`, which left about 16 chars of 30% of AWS secrets
+  visible. Of 2,000 random `AWS_SECRET_ACCESS_KEY=<40 base64>` lines, 1,995 are now masked
+  whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
+  `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
+  still left alone.
 
 ### Documentation
 
