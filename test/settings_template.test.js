@@ -152,3 +152,22 @@ test("the credential stores the guard protects are denied for Read too (B6)", ()
     assert.ok(deny.includes(rule), `missing deny rule: ${rule}`);
   }
 });
+
+// B8: three allow rules auto-approved commands that run anything (`fd -x <cmd>`), delete a
+// branch (`git branch -D`) or write a file (`git diff --output`).
+test("the allowlist no longer auto-approves fd -x, git branch -D or git diff --output (B8)", () => {
+  const allow = template.permissions?.allow ?? [];
+  const deny = template.permissions?.deny ?? [];
+  assert.ok(!allow.includes("Bash(fd:*)"), "fd -x runs arbitrary commands");
+  assert.ok(!allow.includes("Bash(git branch:*)"), "git branch:* covers git branch -D");
+  assert.ok(
+    allow.includes("Bash(git branch --show-current)") && allow.includes("Bash(git branch)"),
+    "the read-only spellings stay allowed",
+  );
+  for (const rule of [
+    "Bash(git branch -D:*)",
+    "Bash(git branch -d:*)",
+    "Bash(git diff --output:*)",
+  ])
+    assert.ok(deny.includes(rule), `missing deny rule: ${rule}`);
+});

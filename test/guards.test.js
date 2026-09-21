@@ -227,11 +227,17 @@ test("secret-redact redacts a token without jq (Node path)", () => {
 
 test("cost-budget never blocks and warns on a broad command", () => {
   const r = runGuard("cost-budget.sh", {
-    session_id: "t-broad",
+    session_id: `t-broad-${Date.now()}`,
     tool_input: { command: "find / -name x" },
   });
   assert.equal(r.code, 0, "must never block");
   assert.match(r.err, /broad|scope/i);
+  // B8: stderr on an exit-0 PreToolUse hook reaches nobody, so the nudge also rides on the
+  // documented `additionalContext` channel.
+  const out = JSON.parse(r.out);
+  assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
+  assert.match(out.hookSpecificOutput.additionalContext, /broad\/expensive command/);
+  assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "a nudge never decides");
 });
 
 test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
