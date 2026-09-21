@@ -44,6 +44,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
+- **The learning loop runs in real installs again.** `cortex.sh` runs the Stop hook detached,
+  as `(node … stop &)`, and a background job in a non-interactive shell gets `/dev/null` as
+  stdin. So every Stop payload arrived empty, the session id fell back to `"default"`, and
+  the real session was never processed. No correction episodes, lessons, contradictions or
+  deja summaries were written, and `.forge/sessions/<id>.jsonl` was never cleared. The tests
+  missed it because they piped into `cortex_hook_main.js` directly. The shim now reads the
+  payload before detaching and pipes it into the background node. A new shim-level test
+  drives `node run.mjs cortex.sh …` the way Claude Code does: before the fix the session log
+  was still there 30 s after Stop; now it is consumed and `episodes.jsonl` is written in
+  about 3 s, on Linux and under Git Bash on Windows.
 - **Lockfile commits are no longer refused as leaking a secret.** The entropy leg flagged
   content-integrity digests as secrets: 100% of package-lock and yarn.lock `sha512-` hashes,
   99% of SRI `sha384-` and 88% of go.sum `h1:` hashes. The real `left-pad@1.3.0` integrity

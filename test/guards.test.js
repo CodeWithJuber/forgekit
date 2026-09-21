@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -243,4 +244,45 @@ test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
 test("lean-guard is non-blocking outside a git repo (exit 0)", () => {
   const r = runGuard("lean-guard.sh", {}, { cwd: tmpdir() });
   assert.equal(r.code, 0);
+});
+
+// ── The cortex hook SHIM (cortex.sh), driven exactly as Claude Code drives it: `node run.mjs
+// cortex.sh <mode>` with the hook JSON on stdin. The entrypoint tests pipe straight into
+// node and so could never see a shim bug — and there was one: `stop` runs detached, and a
+// background job in a non-interactive shell gets /dev/null as stdin, so the Stop payload was
+// lost and the REAL session was never processed in any install (no episodes, no lessons,
+// the session log never cleared).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("cortex.sh stop (detached) processes the REAL session from the Stop payload (C1)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-shim-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const sid = "shim-c1";
+  const hook = (mode, payload = {}) =>
+    spawnSync("node", [join(guards, "run.mjs"), join(guards, "cortex.sh"), mode], {
+      input: JSON.stringify({ cwd: root, session_id: sid, ...payload }),
+      encoding: "utf8",
+    });
+  for (let i = 0; i < 3; i++)
+    hook("capture", { tool_name: "Edit", tool_input: { file_path: "src/a.js" } });
+  hook("prompt", { prompt: "that's wrong, undo it" });
+  const sessions = join(root, ".forge", "sessions");
+  const log = join(sessions, `${sid}.jsonl`);
+  assert.ok(existsSync(log), "capture/prompt logged the session through the shim");
+
+  const r = hook("stop");
+  assert.equal(r.status, 0, "the Stop shim never fails the session");
+  // Detached by design — poll for the background run to finish the real session.
+  const deadline = Date.now() + 30000;
+  while (existsSync(log) && Date.now() < deadline) await sleep(100);
+  assert.equal(existsSync(log), false, "the real session's log was consumed and cleared");
+  assert.ok(
+    existsSync(join(root, ".forge", "lessons", "episodes.jsonl")),
+    "episodes were recorded for the real session",
+  );
+  assert.equal(
+    existsSync(join(sessions, "default.jsonl")),
+    false,
+    "nothing fell back to the shared 'default' session",
+  );
 });
