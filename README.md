@@ -235,8 +235,10 @@ from a fresh repository graph.
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
-  signals. An optional LLM proposal can raise the tier or lower it only inside bounded rails.
-  Forgekit advises which tier to request; it does not itself proxy or fail over model traffic.
+  signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
+  vote for a higher tier is never applied automatically — it surfaces only as an advisory
+  `escalateTo` recommendation. Forgekit advises which tier to request; it does not itself proxy
+  or fail over model traffic.
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
 - **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
