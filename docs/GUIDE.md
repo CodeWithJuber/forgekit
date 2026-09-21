@@ -988,6 +988,13 @@ Below the threshold it just records and says keep going. Advisory — halting th
 loop is the agent's move, not an exit code. Because the claim rides the team ledger, the
 same loop becomes a one-per-team event, not one-per-session.
 
+Pass `--task "<the task text>"` — the same text you gave `forge route` — and the directive
+names the tier instead of "ONE model tier", when routing recorded an advisory `escalateTo`
+for that task (a proposer voted for a higher band and was, correctly, not obeyed). This is
+the only place that target is ever consumed: three recurrences of one failure signature is
+an external check failing, which is the only thing that may buy a bigger model (§5.1). With
+no `--task`, or no routing record for it, the wording is unchanged.
+
 ### `forge imagine "<task>"` — consequence simulation
 
 The static half of the paper's Eq. 4: entities → blast radius → predicted breaks with
@@ -1488,8 +1495,10 @@ fresh labelled data; a text-model vote reports no probability and so cannot move
 you set it to 0); a vote for a **higher** band is never applied, because the tier may escalate
 only when a verifier fails, never on the model's own assessment (whitepaper §5.1). The tier it
 would have picked is reported in `--json` as `llm.escalateTo` — an **advisory recommendation
-only**: nothing in Forge acts on it automatically; escalating after a verifier failure is still
-yours (or the doom-loop diagnosis's) to do. Impact edges must be real + grep-confirmed; goal-drift moves
+only**: nothing acts on it at routing time. It is recorded against the task, and the doom-loop
+diagnosis consumes it: `forge diagnose --task "<the same task text>"` names that tier once the
+same failure signature has recurred `THRASH_K` times, instead of saying "escalate one tier".
+Deciding to escalate is still a real failure's job, never the model's vote. Impact edges must be real + grep-confirmed; goal-drift moves
 off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
 or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
 `llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in

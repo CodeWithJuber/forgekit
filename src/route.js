@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
-import { recordRoute } from "./cost_report.js";
+import { recordRoute, routeRef } from "./cost_report.js";
 import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
@@ -15,7 +15,7 @@ import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { promotionGate } from "./promote.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { clamp01, contentHash, epochDay } from "./util.js";
+import { clamp01, epochDay } from "./util.js";
 
 // ---------------------------------------------------------------------------
 // Text-complexity rubric: similarity-weighted k-NN regression over a labeled
@@ -452,8 +452,11 @@ function proposalConfidence(proposal) {
  *   - higher band      → NOT applied (whitepaper §5.1: spend more only when an external check
  *                        on the output fails, never on a model's self-assessment). The tier the
  *                        vote would have picked is returned as `escalateTo` — an ADVISORY
- *                        recommendation only: nothing in forge acts on it automatically (no
- *                        verifier-failure path consumes it yet) ("llm-raise-deferred");
+ *                        recommendation: nothing acts on it at routing time. `meterRoute`
+ *                        records it against the task, and the ONE consumer is `diagnose()` at
+ *                        its thrash threshold — an external check that has failed THRASH_K
+ *                        times. The vote never triggers an escalation; it only names the tier
+ *                        once a real failure has earned one ("llm-raise-deferred");
  *   - lower band       → lowered to that band's ceiling — only when bidirectional, only when
  *                        the vote clears `minConfidence`, and never below `signalFloor` when
  *                        the rubric has a strong topic signal ("llm-lowered"); otherwise the
@@ -672,7 +675,7 @@ export function routeTask(
           : []),
         ...(path === "llm-raise-deferred"
           ? [
-              `model judged ${proposal.band} — not applied; advisory only: consider ${verdict.escalateTo} if a verifier fails (nothing escalates automatically)`,
+              `model judged ${proposal.band} — not applied; advisory only: ${verdict.escalateTo} is the target if a check on the output fails (nothing escalates automatically; \`forge diagnose --task\` uses it at the thrash threshold)`,
             ]
           : []),
       ]),
@@ -689,13 +692,21 @@ export function routeTask(
  * telemetry, not a prompt log). No token counts here — this is an advisory routing
  * decision, not a priced generation, and the cost report excludes unpriced events
  * rather than estimating them.
+ * The verdict's advisory `llm.escalateTo` rides along when there is one: it is the tier a
+ * proposer's higher vote WOULD have picked and that routing deliberately did not apply
+ * (§5.1). Recording it is what lets a later external failure — `diagnose()` at its thrash
+ * threshold — name that tier instead of guessing one. Nothing reads it before then.
  * @param {string} root
  * @param {string} task
- * @param {{tier?: string}} rec the routeTask result (only .tier is read)
+ * @param {{tier?: string, llm?: {escalateTo?: string}|null}} rec the routeTask result
  */
 export function meterRoute(root, task, rec) {
   try {
-    recordRoute(root, { tier: rec?.tier, ref: contentHash(String(task)).slice(0, 12) });
+    recordRoute(root, {
+      tier: rec?.tier,
+      ref: routeRef(task),
+      ...(rec?.llm?.escalateTo ? { escalateTo: rec.llm.escalateTo } : {}),
+    });
   } catch {}
 }
 

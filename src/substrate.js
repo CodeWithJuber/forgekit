@@ -424,7 +424,7 @@ export function substrateCheck(
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
         "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
-        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only reported as an advisory escalateTo that nothing acts on)",
+        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only recorded as an advisory escalateTo that names the tier IF an external check later fails — the doom-loop diagnosis is its only consumer)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],

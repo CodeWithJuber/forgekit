@@ -213,8 +213,10 @@ but never past a hard floor:
   strong-signal (algorithmic/architectural) floor, so a "distributed rate-limiter" can't be
   talked down to the cheap tier. A vote for a _higher_ band is **not applied** — escalation
   follows a verifier failure, never the model's self-assessment (§5.1). The tier it would have
-  picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on
-  automatically;
+  picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on at
+  routing time: it is recorded against the task, and `forge diagnose --task "<task>"` names it
+  once the same failure signature has recurred `THRASH_K` times — a real external check
+  failing, which is the only thing that may buy a bigger model (§5.1);
 - **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
   with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
   guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness

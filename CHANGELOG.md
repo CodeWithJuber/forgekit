@@ -25,6 +25,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`llm.escalateTo` is no longer advisory-and-inert — a real failure now consumes it.**
+  Routing recorded the tier a proposer's higher vote would have picked and deliberately did
+  not apply it (whitepaper §5.1: spend more only when an EXTERNAL check fails), but nothing
+  ever read it back, so the doom-loop directive told agents to "escalate ONE model tier"
+  without naming one. `meterRoute()` now stores that target alongside the task ref it
+  already wrote, and `diagnose()` — the one place an external check has demonstrably failed,
+  `THRASH_K` recurrences of a single failure signature — names it: "escalate to opus (the
+  tier routing already flagged for this task)", plus `escalateTo` in `--json`. The model's
+  vote still triggers nothing on its own; it only answers *which* tier once a real failure
+  has earned an escalation. Fail-safe and opt-in: `forge diagnose --task "<task>"` (and the
+  `task` argument on the `forge_diagnose` MCP tool) is what supplies the join key — without
+  it, or with no routing record for that exact task, the wording is unchanged.
 - **A CRLF checkout no longer forks a claim id.** `canonicalize()` NFC-normalized strings but
   passed line endings through, so the same logical claim written on a Windows worktree
   (`core.autocrlf` → `\r\n`) and on a Linux one (`\n`) produced different canonical bytes and

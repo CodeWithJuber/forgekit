@@ -148,6 +148,11 @@ export const TOOLS = [
         errorText: { type: "string", description: "the error message" },
         file: { type: "string", description: "file where the error occurred" },
         symbol: { type: "string", description: "symbol involved" },
+        task: {
+          type: "string",
+          description:
+            "the task this failure came out of (same text given to forge_route) — lets the escalation directive name the tier routing already flagged instead of 'one tier'",
+        },
       },
       required: ["errorText"],
     },

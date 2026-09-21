@@ -236,9 +236,10 @@ from a fresh repository graph.
   rather than invented context.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
   signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
-  vote for a higher tier is never applied automatically — it surfaces only as an advisory
-  `escalateTo` recommendation. Forgekit advises which tier to request; it does not itself proxy
-  or fail over model traffic.
+  vote for a higher tier is never applied automatically — it is recorded as an advisory
+  `escalateTo` recommendation, which names the tier only once an external check has actually
+  failed (the doom-loop diagnosis at its thrash threshold). Forgekit advises which tier to
+  request; it does not itself proxy or fail over model traffic.
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
 - **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
