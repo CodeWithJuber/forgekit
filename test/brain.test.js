@@ -46,7 +46,10 @@ test("the broadcast index withholds a fact the ledger's evidence refuted (and sa
   const root = fixture();
   const store = brainStore(root);
   const today = epochDay();
-  assert.equal(remember(store, "deploy", "Run `npm run deploy:prod` directly, CI is optional").ok, true);
+  assert.equal(
+    remember(store, "deploy", "Run `npm run deploy:prod` directly, CI is optional").ok,
+    true,
+  );
   assert.match(brainBlock(root), /deploy/, "a fresh fact is broadcast");
   const dir = repoLedger(root);
   const claim = loadClaims(dir).find((c) => c.kind === "fact");
