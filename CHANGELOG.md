@@ -25,6 +25,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
+  executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
+  hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
+  every push since #140. Windows ignores `X_OK`, which is why the Windows job stayed green.
+  The file now carries mode `100755`, like its sibling `secret-redact.mjs`.
 - **The test suite is hermetic.** It inherited the developer's environment, so it was green
   in CI and red on any machine where forge was actually installed and enabled — the two
   things a maintainer does. An exported `FORGE_LLM=1` both flipped the "llm off by default"
