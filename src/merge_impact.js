@@ -9,7 +9,16 @@ export const DIMENSIONS = Object.freeze([
 ]);
 
 const ZERO = Object.freeze(Object.fromEntries(DIMENSIONS.map((dimension) => [dimension, 0])));
-const clamp01 = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value) : 0));
+/**
+ * Clamp to [0, 1]. Anything that is not a finite number after `Number()` — NaN, ±Infinity,
+ * a non-numeric string, undefined — is 0, never 1: an unknown weight must not read as
+ * certainty. Numeric strings ("0.4") are honored. Shared with merge_impact_adapter.js.
+ * @param {unknown} value
+ */
+export const clamp01 = (value) => {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+};
 const vector = (value = {}) =>
   Object.fromEntries(DIMENSIONS.map((dimension) => [dimension, clamp01(value[dimension] ?? 0)]));
 const maxDimension = (value) => Math.max(...DIMENSIONS.map((dimension) => value[dimension] ?? 0));
@@ -281,7 +290,12 @@ export function analyzeMergeImpact({
   let truncated = false;
   for (const change of changes) {
     const signal = signalForChange(change);
+    // `best` is what each artifact REPORTS; `flow` is what it PROPAGATES. They differ only
+    // for `terminal` relations (the ported sibling/forward relations of the impact oracle):
+    // their target is reported but never expanded, so a sibling's own dependents are not
+    // dragged in through it — even if the same artifact is also reached another way.
     const best = new Map([[change.artifact, signal]]);
+    const flow = new Map([[change.artifact, signal]]);
     const queue = [change.artifact];
     let head = 0;
     const maxRelaxations = Math.max(
@@ -292,7 +306,7 @@ export function analyzeMergeImpact({
 
     while (head < queue.length && relaxations < maxRelaxations) {
       const from = queue[head++];
-      const current = best.get(from) || ZERO;
+      const current = flow.get(from) || ZERO;
       for (const relation of outgoing.get(from) || []) {
         const matrix = relation.matrix || RELATION_MATRICES[relation.kind];
         if (!matrix) continue;
@@ -302,11 +316,14 @@ export function analyzeMergeImpact({
           clamp01(relation.confidence ?? 1),
           clamp01(relation.decay ?? decay),
         );
-        const previous = best.get(relation.to) || ZERO;
-        const { next, changed } = improve(previous, candidate, epsilon);
-        if (changed) {
-          best.set(relation.to, next);
-          queue.push(relation.to);
+        const reported = improve(best.get(relation.to) || ZERO, candidate, epsilon);
+        if (reported.changed) best.set(relation.to, reported.next);
+        if (!relation.terminal) {
+          const flowing = improve(flow.get(relation.to) || ZERO, candidate, epsilon);
+          if (flowing.changed) {
+            flow.set(relation.to, flowing.next);
+            queue.push(relation.to);
+          }
         }
         relaxations++;
         if (relaxations >= maxRelaxations) break;

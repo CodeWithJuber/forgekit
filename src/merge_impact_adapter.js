@@ -1,5 +1,6 @@
 import { extname } from "node:path";
-import { analyzeMergeImpact } from "./merge_impact.js";
+import { impact } from "./atlas.js";
+import { analyzeMergeImpact, clamp01 } from "./merge_impact.js";
 
 const DOC_EXTS = new Set([".md", ".mdx", ".rst", ".adoc"]);
 const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg"]);
@@ -17,8 +18,6 @@ const SECURITY_RE =
   /\b(?:auth(?:entication|orization)?|permission|role|scope|token|secret|password|credential|session|cookie|csrf|cors|crypto|encrypt|decrypt|sign(?:ature)?|verify|acl|rbac|oauth|jwt)\b/i;
 const DEPENDENCY_TEXT_RE =
   /["']?(?:dependencies|devDependencies|peerDependencies|optionalDependencies)["']?\s*:|\b(?:version|image)\s*:/i;
-
-const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
 
 export function artifactKind(path = "") {
   const normalized = String(path).replaceAll("\\", "/");
@@ -222,6 +221,47 @@ export function atlasEvidence(atlas, { criticality = {}, generatedTargets = {} }
   return { artifacts: [...artifactMap.values()], relations: [...relations.values()] };
 }
 
+const PROPAGATING_KINDS = new Set(["calls", "imports", "inherits"]);
+
+/**
+ * The impact oracle's SIBLING and FORWARD relations for the changed files, as TERMINAL
+ * MergeField relations (reported, never expanded). atlasEvidence alone is reverse-only —
+ * the refutation's Defect 2 — so a file sharing a dependency with the change, or the
+ * change's own dependency, never received a consequence. Each relation reuses the transfer
+ * matrix of the atlas edge it rests on (the sibling's own edge into the shared file; the
+ * change's first forward edge) and carries the oracle's frozen-parameter confidence.
+ * @param {object|null} atlas
+ * @param {string[]} changedFiles
+ * @returns {{from:string, to:string, kind:string, confidence:number, terminal:true, relation:string}[]}
+ */
+export function siblingForwardRelations(atlas, changedFiles = []) {
+  if (!atlas) return [];
+  const changed = new Set(changedFiles);
+  const relations = new Map();
+  for (const file of changed) {
+    const report = impact(atlas, file, { relations: ["sibling", "forward"] });
+    for (const item of report.impacted) {
+      const to = item.node?.file;
+      if (!to || changed.has(to)) continue;
+      const kinds = item.edgeKinds || [];
+      const kind = item.relation === "sibling" ? kinds[kinds.length - 1] : kinds[0];
+      if (!PROPAGATING_KINDS.has(kind)) continue;
+      const relation = {
+        from: file,
+        to,
+        kind,
+        confidence: clamp01(item.confidence),
+        terminal: /** @type {const} */ (true),
+        relation: item.relation,
+      };
+      const key = relationKey(relation);
+      const prior = relations.get(key);
+      if (!prior || relation.confidence > prior.confidence) relations.set(key, relation);
+    }
+  }
+  return [...relations.values()];
+}
+
 export function analyzeDiffImpact({
   files = [],
   atlas = null,
@@ -242,10 +282,23 @@ export function analyzeDiffImpact({
     }
   }
 
+  const oracleRelations = siblingForwardRelations(
+    atlas,
+    changes.map((change) => change.artifact),
+  );
+  for (const relation of oracleRelations) {
+    if (!artifactMap.has(relation.to))
+      artifactMap.set(relation.to, {
+        id: relation.to,
+        kind: artifactKind(relation.to),
+        criticality: clamp01(criticality[relation.to] || 0),
+      });
+  }
+
   const result = analyzeMergeImpact({
     artifacts: [...artifactMap.values()],
     changes,
-    relations: [...evidence.relations, ...extraRelations],
+    relations: [...evidence.relations, ...oracleRelations, ...extraRelations],
   });
 
   return {
@@ -253,6 +306,8 @@ export function analyzeDiffImpact({
     changes,
     evidence: {
       atlasRelations: evidence.relations.length,
+      siblingRelations: oracleRelations.filter((r) => r.relation === "sibling").length,
+      forwardRelations: oracleRelations.filter((r) => r.relation === "forward").length,
       extraRelations: extraRelations.length,
       generatedRelations: Object.values(generatedTargets || {}).reduce(
         (sum, targets) => sum + (targets?.length || 0),
