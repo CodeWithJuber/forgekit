@@ -152,6 +152,33 @@ test("shadowFact: mints, and supersedes the stale same-name claim on update", ()
   assert.equal(refused.ok, false, "secrets refused end-to-end");
 });
 
+test("shadowFact (C4): restoring a superseded value (v1 → v2 → v1) leaves a LIVE fact", () => {
+  const store = tmp();
+  const dir = join(store, "ledger");
+  const live = () =>
+    loadClaims(dir)
+      .filter((c) => c.kind === "fact" && !c.tombstone)
+      .map((c) => c.body.text);
+  shadowFact(dir, "api-base", "https://api.v1.example", 1);
+  shadowFact(dir, "api-base", "https://api.v2.example", 2);
+  assert.deepEqual(live(), ["https://api.v2.example"]);
+  const back = shadowFact(dir, "api-base", "https://api.v1.example", 3);
+  assert.equal(back.ok, true);
+  assert.deepEqual(live(), ["https://api.v1.example"], "the restored value is the live fact");
+  assert.equal(
+    loadClaims(dir).find((c) => c.id === back.id).tombstone,
+    undefined,
+    "never the permanently tombstoned v1 id",
+  );
+  // Idempotent: re-remembering the current value changes nothing.
+  assert.equal(shadowFact(dir, "api-base", "https://api.v1.example", 4).id, back.id);
+  assert.deepEqual(live(), ["https://api.v1.example"]);
+  // And the store/ledger reconciliation still recognises the restored claim as backed.
+  recallAdd(store, "api-base", "https://api.v1.example");
+  assert.equal(reconcileFacts(store, dir, 5).removed, 0);
+  assert.deepEqual(live(), ["https://api.v1.example"]);
+});
+
 test("factClaim: trims name/text so the shadow path and the file-parse path mint one id", () => {
   const a = factClaim("deploy", "run migrations first \n", 0);
   const b = factClaim(" deploy ", "run migrations first", 5);

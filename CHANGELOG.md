@@ -42,6 +42,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an unwritable `.forge` — never got a reply and the client waited for its own timeout. The
   server now returns `-32603` with the tool name and message, and keeps serving (the repro
   received replies for ids `[2]` before, `[2, 1]` after).
+- **`forge ledger sync` no longer erases teammates' evidence from the shared ref.** A push
+  wrote the pushing replica's *verified* state, so any record it had to quarantine (a `file:`
+  proof only a teammate's tree has, a commit it had not fetched) vanished from
+  `refs/forge/ledger` for everyone — the review's alice/bob/carol run ended with the remote
+  holding 0 of alice's 1 record. A push now writes the raw remote state joined with the local
+  verified state (the same semilattice merge) and verification happens only on read: the
+  remote keeps the record (1), bob and carol still quarantine it locally, and a re-run is
+  still a byte-level no-op.
+- **Restoring a superseded fact leaves it live.** Fact claims are content-addressed and
+  tombstones are permanent, so `forge remember api-base v1` → `v2` → `v1` put the restored
+  value back on v1's retired id: the ledger held no live `api-base` fact at all (`list`
+  went from `["api-base"]` to `[]`). A retired value is now re-asserted as the next revision
+  (the lowest `rev` whose claim is not tombstoned — deterministic, so teammates converge),
+  and `reconcileFacts` matches store and ledger by content instead of by rev-0 id.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
