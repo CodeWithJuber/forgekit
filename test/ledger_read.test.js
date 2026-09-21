@@ -279,3 +279,28 @@ test("brain.buildIndex inlines repo-ledger facts (merged team memory reaches AGE
   assert.match(block, /- \*\*deploy-order\*\* — run migrations before the app roll/);
   assert.match(block, /- \*\*flaky-suite\*\* — retry integration tests once before failing/);
 });
+
+test("claimToLesson (C6): activation is sticky — a lesson is not retired by one day of decay", () => {
+  const claim = mkClaim({ t: 100 });
+  // The real shape: a Stop-hook episode confirm (bridge oracle w=0.5 → val exactly 0.6).
+  claim.evidence = [ev("confirm", "episode:ep_m0_cfg#n1", 100, "cortex.episode")];
+  assert.equal(claimToLesson(claim, 100).status, "active", "the confirm promotes it");
+  for (const day of [101, 130, 150]) {
+    assert.equal(claimToLesson(claim, day).status, "active", `day ${day}: still injected`);
+  }
+  assert.equal(claimToLesson(claim, 160).status, "candidate", "unreviewed, it still expires");
+  // Three confirms hold it much longer than the old single-threshold 75 days.
+  const thrice = mkClaim({ t: 100 });
+  thrice.evidence = [100, 101, 102].map((t) =>
+    ev("confirm", `episode:ep_m0_cfg#n${t}`, t, "cortex.episode"),
+  );
+  assert.equal(claimToLesson(thrice, 175).status, "active", "still active at day 175");
+  assert.equal(claimToLesson(thrice, 260).status, "candidate");
+  // A contradiction demotes it even while it is fresh.
+  const refuted = mkClaim({ t: 100 });
+  refuted.evidence = [
+    ev("confirm", "episode:ep_m0_cfg#n1", 100, "cortex.episode"),
+    ev("contradict", "git:c0ffee2", 101, "human.revert"),
+  ];
+  assert.notEqual(claimToLesson(refuted, 101).status, "active");
+});

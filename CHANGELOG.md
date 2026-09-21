@@ -92,6 +92,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ahead (a skewed clock, a hand-written `t`) pinned `rec` at 1.000 and kept full val weight
   until the calendar caught up. Age is now the distance from now, so that record's `rec` is
   0.000 two years later and its val weight ≈ 0, while a one-day skew stays negligible.
+- **A learned lesson stops flapping out of the injection set the next day.** One Stop-hook
+  confirm put a lesson's val at exactly 0.6 against an `active` bar of 0.6, so a single day of
+  decay (0.5988) demoted it: a lesson was injected on the day it was learned and never again
+  (with three confirms it dropped out around day 75). Activation is now hysteretic — on at
+  0.6, off below 0.55 — so one confirm keeps a lesson active for ~52 days, three for ~124, and
+  a contradiction still demotes it immediately. The test that only read on the confirm day now
+  reads at days 101, 130, 150 and 160.
+- **Dormancy latches, and pruning is wired.** A claim refuted by a human revert (val 0.333)
+  drifted back above the 0.35 dormancy floor 11 days later — with no new evidence — and
+  re-entered retrieval. Dormancy now latches at the evidence event and only a later
+  *confirmation* clears it; decay alone never does. `pruneToAttic` had no callers at all, so
+  the spec's forgetting rule (01-pcm-protocol.md §3) was unimplemented: the new `pruneLedger`
+  archives tombstoned or dormant claims that have had nothing new for 2·T, and runs at
+  session end (the déjà-vu Stop write), on `ledger merge` and on `ledger sync` import.
+  Nothing is deleted — the bytes move to `attic/`, every log stays, a re-import never
+  un-prunes, and new evidence brings a claim back with its whole history.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for

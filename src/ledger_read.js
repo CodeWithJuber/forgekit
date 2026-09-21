@@ -10,7 +10,7 @@
 // Everything here is READ-ONLY and best-effort by design: hooks call these on every
 // session start / pre-edit, so a missing or corrupt ledger degrades to legacy-only —
 // never an error, never a write.
-import { DEFAULT_HALF_LIFE_DAYS, val, validOutcome } from "./ledger.js";
+import { DEFAULT_HALF_LIFE_DAYS, sticky, val, validOutcome } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { load } from "./lessons_store.js";
 import { ledgerOnly, slug } from "./util.js";
@@ -29,9 +29,13 @@ import { ledgerOnly, slug } from "./util.js";
  * | claim state                          | derived status | rationale |
  * |--------------------------------------|----------------|-----------|
  * | tombstoned                           | "retired"      | a retraction is the ledger's retirement |
- * | val(claim, nowDay) ≥ 0.6             | "active"       | one fresh confirm (bridge oracle w=0.5 → val 0.6) clears it — mirrors confirm()'s promote-on-recurrence |
+ * | sticky(≥ LESSON_ACTIVE_VAL, stays ≥ LESSON_KEEP_VAL) | "active" | one fresh confirm (bridge oracle w=0.5 → val 0.6) clears the bar — mirrors confirm()'s promote-on-recurrence — and it STAYS active until a contradiction or ~a half-life of silence pulls it under the lower bar |
  * | val < 0.45 and ≥ 1 contradiction     | "quarantined"  | net-negative outcome evidence — mirrors contradict()'s demotion |
  * | otherwise                            | "candidate"    | a fresh claim sits at the 0.5 prior, exactly newLesson() |
+ *
+ * The two activation bars are what stops the lifecycle FLAPPING: one confirm put val at
+ * exactly 0.6 against a single `active` bar of 0.6, so ONE day of decay (0.5988) retired the
+ * lesson and it was never injected again (review C6).
  *
  * Count/date fields are rebuilt from the evidence log: evidenceCount = valid confirm
  * outcomes, contradictionCount = valid contradict outcomes, lastConfirmedDay = latest
@@ -40,6 +44,12 @@ import { ledgerOnly, slug } from "./util.js";
  * @param {number} [nowDay] epoch day used for the val() decay clock
  * @returns {object} a legacy-shaped lesson
  */
+/** Activation bars for a ledger-derived lesson (hysteresis, review C6): a confirm lifts a
+ *  lesson to "active" at 0.6, and it stays active while val ≥ 0.55 — about one half-life of
+ *  silence after a single bridge-oracle confirm, or until a contradiction pulls it under. */
+export const LESSON_ACTIVE_VAL = 0.6;
+export const LESSON_KEEP_VAL = 0.55;
+
 export function claimToLesson(claim, nowDay = 0) {
   const body = claim.body ?? {};
   const evidence = (claim.evidence ?? []).filter(validOutcome);
@@ -47,9 +57,14 @@ export function claimToLesson(claim, nowDay = 0) {
   const contradictions = evidence.length - confirms.length;
   const createdDay = claim.provenance?.t ?? 0;
   const v = val(claim, nowDay);
+  const active = sticky(claim, {
+    high: LESSON_ACTIVE_VAL,
+    low: LESSON_KEEP_VAL,
+    nowDay,
+  });
   const status = claim.tombstone
     ? "retired"
-    : v >= 0.6
+    : active
       ? "active"
       : v < 0.45 && contradictions >= 1
         ? "quarantined"

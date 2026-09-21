@@ -23,9 +23,11 @@ import {
   authorTrust,
   canonicalize,
   claimId,
+  DEFAULT_HALF_LIFE_DAYS,
   DORMANT_VAL,
   emptyState,
   hasSecret,
+  isDormant,
   liveClaims,
   mergeStates,
   mintClaim,
@@ -37,7 +39,7 @@ import {
   validOutcome,
 } from "./ledger.js";
 import { redactSecrets } from "./secrets.js";
-import { contentHash, readJsonSafe } from "./util.js";
+import { contentHash, epochDay, readJsonSafe } from "./util.js";
 
 /** The canonical repo ledger. (recall's global store keeps its own sibling ledger.) */
 export const repoLedger = (root = process.cwd()) => join(root, ".forge", "ledger");
@@ -107,7 +109,10 @@ function appendLine(path, line) {
   appendFileSync(path, `${torn ? "\n" : ""}${line}\n`);
 }
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
+const atticPath = (dir, id) => join(dir, "attic", `${id}.json`);
 const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
+/** A pruned claim is ARCHIVED, not missing: its file sits in attic/ and its logs never move. */
+const inAttic = (dir, id) => existsSync(atticPath(dir, id));
 
 /** Claim file bytes: pure content only. Identical for the same id on every replica. */
 const claimBytes = (claim) =>
@@ -163,9 +168,17 @@ function appendRecord(dir, log, id, record) {
       ok: false,
       reason: "refused: record metadata looks like a secret/credential",
     };
-  if (!existsSync(claimPath(dir, id)))
-    return { ok: false, reason: `no such claim in ledger: ${id}` };
+  const live = existsSync(claimPath(dir, id));
+  const archived = !live && inAttic(dir, id);
+  if (!live && !archived) return { ok: false, reason: `no such claim in ledger: ${id}` };
   if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
+  // NEW evidence on a pruned claim brings it back out of the attic — review restores weight
+  // (01-pcm-protocol.md §3). Any other record (a tombstone, another author's mint) is
+  // appended without un-archiving it.
+  if (archived && log === "evidence") {
+    mkdirSync(join(dir, "claims", id.slice(0, 2)), { recursive: true });
+    renameSync(atticPath(dir, id), claimPath(dir, id));
+  }
   mkdirSync(join(dir, log), { recursive: true });
   appendLine(logPath(dir, log, id), canonicalize(record));
   return { ok: true, deduped: false };
@@ -200,7 +213,7 @@ function* walkClaimFiles(dir) {
  * the claim's provenance record (if any) is appended to the provenance log. A
  * corrupt/truncated file at the claim's path is REPAIRED by rewriting the canonical
  * bytes — a killed process must never leave a claim permanently unloadable.
- * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean}}
+ * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean, pruned?:boolean}}
  */
 export function putClaim(dir, claim) {
   if (!claim?.id || claim.id !== claimId(claim.kind, claim.body, claim.scope))
@@ -215,6 +228,13 @@ export function putClaim(dir, claim) {
       reason: "refused: claim looks like it contains a secret/credential",
     };
   const path = claimPath(dir, claim.id);
+  // Re-importing a claim this replica has PRUNED must not resurrect it into the live set:
+  // the attic copy is the same content-addressed bytes, and new evidence is what brings a
+  // claim back (see appendRecord). Reported as existing, so merge counts stay honest.
+  if (!existsSync(path) && inAttic(dir, claim.id)) {
+    if (claim.provenance?.h) appendRecord(dir, "provenance", claim.id, claim.provenance);
+    return { ok: true, id: claim.id, existed: true, pruned: true };
+  }
   const already = existsSync(path);
   const healthy = already && readJsonSafe(path) !== null && readFileSync(path, "utf8") === text;
   if (!healthy) {
@@ -411,7 +431,7 @@ function tryImportLine(dir, log, id, rec) {
  *  identity. Reading raw — instead of through loadState's hash-dedup — is what lets two
  *  forged records sharing one fake `h`, and malformed no-`h` lines, all reach quarantine
  *  instead of being silently collapsed or dropped. */
-export function mergeDirs(dstDir, srcDir) {
+export function mergeDirs(dstDir, srcDir, { nowDay = epochDay() } = {}) {
   let claims = 0;
   let records = 0;
   let quarantined = 0;
@@ -444,7 +464,8 @@ export function mergeDirs(dstDir, srcDir) {
       }
     }
   }
-  reindex(dstDir);
+  pruneLedger(dstDir, nowDay);
+  reindex(dstDir, nowDay);
   return { claims, records, quarantined };
 }
 
@@ -510,7 +531,7 @@ function quarantineRecord(dir, id, rec, reason) {
  *  evidence goes through the full appendEvidence gate (validOutcome + ref resolution
  *  against THIS repo) and every record must prove its content hash in appendRecord —
  *  rejects land in quarantine/ for audit and are counted in `quarantined`. */
-export function importState(dir, other) {
+export function importState(dir, other, { nowDay = epochDay() } = {}) {
   const merged = mergeStates(loadState(dir), other);
   let claims = 0;
   let records = 0;
@@ -527,7 +548,8 @@ export function importState(dir, other) {
       }
     }
   }
-  reindex(dir);
+  pruneLedger(dir, nowDay);
+  reindex(dir, nowDay);
   return { claims, records, quarantined };
 }
 
@@ -605,7 +627,34 @@ export function verify(dir) {
   return { ok: issues.length === 0, claims, outcomes, issues };
 }
 
-/** Move dormant/tombstoned claim files to the attic (audit trail, never retrieved). */
+/**
+ * Prune to the attic — the spec's forgetting rule (01-pcm-protocol.md §3) made real: a claim
+ * is archived once it is tombstoned, or dormant, AND nothing new has landed on it for more
+ * than 2·T. (The spec prunes a tombstone immediately; waiting the same 2·T keeps
+ * `forge ledger show/blame` able to answer for a recent retraction — the attic is the audit
+ * trail, not a deletion.) Nothing is lost: the claim bytes move to attic/, every log stays,
+ * and new evidence un-archives the claim. Idempotent.
+ * @param {string} dir
+ * @param {number} [nowDay]
+ * @param {{halfLife?:number}} [opts]
+ * @returns {{pruned:string[]}} ids archived by this pass
+ */
+export function pruneLedger(dir, nowDay = epochDay(), { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  const pruned = [];
+  for (const c of loadClaims(dir)) {
+    const last = Math.max(
+      c.provenance?.t ?? 0,
+      c.tombstone?.t ?? 0,
+      ...(c.evidence ?? []).map((e) => e.t ?? 0),
+    );
+    if (nowDay - last <= 2 * halfLife) continue; // still within the review window
+    if (!c.tombstone && !isDormant(c, nowDay, { halfLife })) continue;
+    if (pruneToAttic(dir, c.id).ok) pruned.push(c.id);
+  }
+  return { pruned };
+}
+
+/** Move one dormant/tombstoned claim file to the attic (audit trail, never retrieved). */
 export function pruneToAttic(dir, id) {
   const from = claimPath(dir, id);
   if (!existsSync(from)) return { ok: false, reason: "no such claim" };

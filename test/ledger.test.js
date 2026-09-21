@@ -24,6 +24,7 @@ import {
   sortRecords,
   stateAt,
   stateRoot,
+  sticky,
   UNRESOLVED_VAL_CAP,
   val,
 } from "../src/ledger.js";
@@ -880,4 +881,46 @@ test("retrieve (C5): one similarity scale per ranking — cosine and Jaccard are
 
 test("EQ3_WEIGHTS: defaults are the spec's (a, b, g) plus a small scope term — not 'calibrated'", () => {
   assert.deepEqual(EQ3_WEIGHTS, { a: 0.55, b: 0.15, g: 0.3, s: 0.1 });
+});
+
+test("isDormant (C7): dormancy latches — decay alone never revives a refuted claim", () => {
+  const refuted = mkClaim([ev("contradict", 0, "human.revert")]); // val 1/3 ≈ 0.333
+  assert.equal(isDormant(refuted, 0), true);
+  assert.equal(isDormant(refuted, 11), true, "11 days of decay used to bring it back");
+  assert.equal(isDormant(refuted, 400), true);
+  assert.equal(retrieve("x", [refuted], { nowDay: 400 }).length, 0, "and it stays out of reach");
+  // Review restores weight: a later CONFIRMATION is the only way back.
+  const reviewed = mkClaim([
+    ev("contradict", 0, "human.revert"),
+    ev("confirm", 30, "human.accept"),
+  ]);
+  assert.equal(isDormant(reviewed, 30), false);
+  assert.equal(retrieve("f body", [reviewed], { nowDay: 30 }).length, 1);
+});
+
+test("sticky: hysteresis — on at `high`, off only below `low` (never one-day flapping)", () => {
+  const c = mkClaim([ev("confirm", 0, "cortex.episode")]); // val exactly 0.6
+  assert.equal(sticky(c, { high: 0.6, low: 0.55, nowDay: 0 }), true);
+  assert.equal(
+    sticky(c, { high: 0.6, low: 0.55, nowDay: 1 }),
+    true,
+    "one day of decay is not a demotion",
+  );
+  assert.equal(sticky(c, { high: 0.6, low: 0.55, nowDay: 52 }), true);
+  assert.equal(
+    sticky(c, { high: 0.6, low: 0.55, nowDay: 60 }),
+    false,
+    "it still expires unreviewed",
+  );
+  const never = mkClaim([ev("confirm", 0, "behavioral")]); // val 0.535 — never reaches high
+  assert.equal(sticky(never, { high: 0.6, low: 0.55, nowDay: 0 }), false);
+  const refuted = mkClaim([
+    ev("confirm", 0, "cortex.episode"),
+    ev("contradict", 1, "human.revert"),
+  ]);
+  assert.equal(
+    sticky(refuted, { high: 0.6, low: 0.55, nowDay: 1 }),
+    false,
+    "a contradiction demotes",
+  );
 });

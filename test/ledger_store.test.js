@@ -20,6 +20,7 @@ import {
   loadClaims,
   loadState,
   mergeDirs,
+  pruneLedger,
   pruneToAttic,
   putClaim,
   ratify,
@@ -619,4 +620,49 @@ test("mergeDirs: imported forged/unresolvable evidence is quarantined and cannot
   assert.equal(again.quarantined, 0, "re-merge quarantines nothing new");
   assert.equal(readFileSync(qPath, "utf8"), qLog, "no duplicate quarantine lines");
   assert.equal(val(loadClaims(dst)[0], 5), before, "val still untouched after re-merge");
+});
+
+test("pruneLedger (C7): tombstoned and long-dormant claims go to the attic, new evidence brings them back", () => {
+  // A real repo: a human.revert must cite a git object that resolves here (review C2).
+  const root = mkdtempSync(join(tmpdir(), "forge-prune-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "f.txt"), "x");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const dir = repoLedger(root);
+  const now = 400;
+  const live = fact("live", "still believed", 0);
+  const refuted = fact("refuted", "the legacy auth endpoint is fine", 0);
+  const retracted = fact("retracted", "superseded value", 0);
+  const recent = fact("recent", "refuted yesterday", 0);
+  for (const c of [live, refuted, retracted, recent]) putClaim(dir, c);
+  const revert = (t) =>
+    outcomeRecord({ oracle: "human.revert", result: "contradict", ref: `git:${head}`, t }).outcome;
+  assert.equal(appendEvidence(dir, live.id, ev("confirm", `git:${head.slice(0, 9)}`, 0)).ok, true);
+  assert.equal(appendEvidence(dir, refuted.id, revert(0)).ok, true);
+  assert.equal(appendEvidence(dir, recent.id, revert(now - 1)).ok, true);
+  tombstone(dir, retracted.id, { author: "alice", reason: "superseded", t: 0 });
+
+  const { pruned } = pruneLedger(dir, now);
+  assert.deepEqual(pruned.sort(), [refuted.id, retracted.id].sort());
+  const ids = loadClaims(dir).map((c) => c.id);
+  assert.ok(!ids.includes(refuted.id) && !ids.includes(retracted.id), "archived, not retrieved");
+  assert.ok(ids.includes(live.id) && ids.includes(recent.id), "live and recently-refuted stay");
+  assert.ok(existsSync(join(dir, "attic", `${refuted.id}.json`)), "the bytes are kept for audit");
+  assert.deepEqual(pruneLedger(dir, now).pruned, [], "idempotent");
+  // Re-importing the same state must not resurrect a pruned claim…
+  importState(dir, loadState(dir), { nowDay: now });
+  assert.ok(!loadClaims(dir).some((c) => c.id === refuted.id), "a re-import never un-prunes");
+  // …but new evidence does: review restores weight.
+  assert.equal(
+    appendEvidence(dir, refuted.id, ev("confirm", `git:${head.slice(0, 10)}`, now)).ok,
+    true,
+  );
+  const back = loadClaims(dir).find((c) => c.id === refuted.id);
+  assert.ok(back, "new evidence brought the claim back out of the attic");
+  assert.equal(back.evidence.length, 2, "its whole history is intact");
 });

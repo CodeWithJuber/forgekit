@@ -415,9 +415,64 @@ export function rec(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {
   return 0.5 ** (nearest / halfLife);
 }
 
-/** Dormant claims are kept for audit but never retrieved. */
-export function isDormant(claim, nowDay = 0) {
-  return val(claim, nowDay) < DORMANT_VAL;
+/**
+ * The claim's val AT each of its own evidence events, in (t, h) order — "what did this claim
+ * look like the moment that record landed". Between events val moves only by decay, and decay
+ * is monotone toward 0.5 (every term shares one factor), so a threshold can only be crossed
+ * AT an event or by that monotone drift: evaluating here plus once at `nowDay` is exact, not
+ * a sample. This is what lets dormancy latch and lesson activation be sticky while staying a
+ * pure function of the evidence SET (so replicas still agree after any merge order).
+ * @param {any} claim
+ * @param {{halfLife?:number}} [opts]
+ * @returns {{t:number, v:number, result:string}[]}
+ */
+export function valTimeline(claim, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  const evs = sortRecords((claim.evidence ?? []).filter(validOutcome));
+  return evs.map((e, i) => ({
+    t: e.t ?? 0,
+    result: e.result,
+    v: val({ evidence: evs.slice(0, i + 1) }, e.t ?? 0, { halfLife }),
+  }));
+}
+
+/**
+ * Dormant claims are kept for audit but never retrieved — and dormancy LATCHES. Once a
+ * claim's val drops below DORMANT_VAL when a record lands, only a later CONFIRMATION can
+ * lift it back out; decay alone must not. (Before: a claim refuted by a human revert sat at
+ * 0.333, then drifted back toward the 0.5 prior and re-entered retrieval 11 days later with
+ * no new evidence at all — review C7. Unreviewed claims decay toward uncertainty, but
+ * "nobody has said anything since" is not a reason to start trusting a refuted one again.)
+ * @param {any} claim
+ * @param {number} [nowDay]
+ * @param {{halfLife?:number}} [opts]
+ */
+export function isDormant(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  let latched = false;
+  for (const p of valTimeline(claim, { halfLife })) {
+    if (p.v < DORMANT_VAL) latched = true;
+    else if (latched && p.result === "confirm") latched = false; // review restores weight
+  }
+  return latched || val(claim, nowDay, { halfLife }) < DORMANT_VAL;
+}
+
+/**
+ * Sticky threshold crossing with hysteresis: "on" once val reaches `high` at an evidence
+ * event, and off again only when it falls below `low` (by a contradiction, or by decay past
+ * the lower bar). A single threshold FLAPS — one confirm put a lesson at exactly 0.6 against
+ * an `active` bar of 0.6, so one day of decay retired it and it was never injected again
+ * (review C6). Pure; deterministic across replicas.
+ * @param {any} claim
+ * @param {{high:number, low:number, nowDay?:number, halfLife?:number}} opts
+ * @returns {boolean}
+ */
+export function sticky(claim, { high, low, nowDay = 0, halfLife = DEFAULT_HALF_LIFE_DAYS }) {
+  let on = false;
+  for (const p of valTimeline(claim, { halfLife })) {
+    if (on && p.v < low) on = false;
+    if (p.v >= high) on = true;
+    else if (p.v < low) on = false;
+  }
+  return on && val(claim, nowDay, { halfLife }) >= low;
 }
 
 // ---------------------------------------------------------------------------

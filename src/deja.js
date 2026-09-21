@@ -17,7 +17,14 @@
 // a failure to summarize or look up must never break a Stop hook or a CLI command.
 import { BRAND } from "./brand.js";
 import { claimText, mintClaim, outcomeRecord, retrieve, val } from "./ledger.js";
-import { appendEvidence, loadClaims, putClaim, reindex, repoLedger } from "./ledger_store.js";
+import {
+  appendEvidence,
+  loadClaims,
+  pruneLedger,
+  putClaim,
+  reindex,
+  repoLedger,
+} from "./ledger_store.js";
 import { redactSecrets } from "./secrets.js";
 import { epochDay, gitAuthor } from "./util.js";
 
@@ -109,6 +116,10 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
       });
       if (o.ok) appendEvidence(dir, minted.claim.id, o.outcome);
     }
+    // Session-end housekeeping (the murāja'a job): archive what the protocol says is
+    // forgotten — tombstoned or dormant with nothing new for 2·T — so the ledger the next
+    // prompt reads stays bounded. Nothing is deleted; new evidence un-archives a claim.
+    pruneLedger(dir, nowDay);
     reindex(dir, nowDay);
     return { ok: true, id: minted.claim.id, tested: s.tested };
   } catch (err) {
