@@ -157,7 +157,10 @@ async function callTool(name, args = {}) {
   if (name === "forge_remember") {
     const { brainStore, remember } = await import("./brain.js");
     const store = brainStore(root);
-    remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    // Report what the store actually did: it REFUSES secret-shaped content, and saying
+    // "Remembered" over a refusal taught the caller a fact that was never stored.
+    const r = remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    if (!r.ok) return `Not remembered — ${r.reason ?? "the store refused the write"}.`;
     return `Remembered "${args.name}" in ${store}.`;
   }
   if (name === "collide_check") {

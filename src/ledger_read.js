@@ -10,7 +10,7 @@
 // Everything here is READ-ONLY and best-effort by design: hooks call these on every
 // session start / pre-edit, so a missing or corrupt ledger degrades to legacy-only —
 // never an error, never a write.
-import { DEFAULT_HALF_LIFE_DAYS, sticky, val, validOutcome } from "./ledger.js";
+import { DEFAULT_HALF_LIFE_DAYS, isDormant, sticky, val, validOutcome } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { load } from "./lessons_store.js";
 import { ledgerOnly, slug } from "./util.js";
@@ -150,6 +150,26 @@ export function ledgerFacts(dir) {
       }));
   } catch {
     return [];
+  }
+}
+
+/** Slugs of fact claims the evidence has SUNK below the dormancy floor — facts the ledger no
+ *  longer believes. The claim is kept (audit), but a consumer that BROADCASTS facts (the
+ *  brain index inlined into AGENTS.md, read by every other tool) must stop publishing them:
+ *  a fact contradicted by three CI runs was still shipped verbatim, because the index never
+ *  asked the ledger what it was worth. Best-effort: empty on any failure.
+ *  @param {string} dir
+ *  @param {number} [nowDay]
+ *  @returns {Set<string>} */
+export function dormantFactSlugs(dir, nowDay = 0) {
+  try {
+    return new Set(
+      loadClaims(dir)
+        .filter((c) => c.kind === "fact" && !c.tombstone && isDormant(c, nowDay))
+        .map((c) => slug(c.body?.name ?? "") || "fact"),
+    );
+  } catch {
+    return new Set();
   }
 }
 

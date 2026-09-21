@@ -161,6 +161,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `t = 0` and the CLI passed no day, so every verdict landed 56 years in the past and decayed
   to nothing on arrival: five failing UI runs left the design fingerprint's val at exactly
   0.5000. They now move it to 0.3636.
+- **A refuted fact stops being broadcast to every tool.** `.forge/brain`'s index is inlined
+  into the emitted `AGENTS.md`, and it never asked the ledger what a fact was worth: a fact
+  three CI runs had contradicted (val 0.23, dormant) was still shipped verbatim to Codex,
+  Cursor, Gemini and everything else that reads `AGENTS.md`. The index now withholds facts the
+  ledger has sunk below the dormancy floor, and — like the overflow pointer — says how many
+  and why rather than dropping them silently. `forge_remember` also reports a refusal
+  ("Not remembered — refused: looks like a secret…") instead of answering "Remembered" for a
+  write the store rejected.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for

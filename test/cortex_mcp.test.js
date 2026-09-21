@@ -10,6 +10,7 @@ import { handle } from "../src/cortex_mcp.js";
 import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
+import { fakeGithubPat } from "./_fixtures.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -275,4 +276,15 @@ test("forge_ledger_ratify is stamped agent:mcp, changes no confidence, and says 
   assert.equal(val(loadClaims(dir).find((c) => c.id === ids[0])), before, "val unchanged");
   const tool = TOOLS.find((t) => t.name === "forge_ledger_ratify");
   assert.doesNotMatch(tool.description, /promote .*confidence/i, "no false promise in the schema");
+});
+
+test("forge_remember reports a refusal instead of claiming it remembered", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-refuse-"));
+  const out = callServer(root, [
+    { name: "forge_remember", arguments: { name: "gh", body: `GITHUB_TOKEN=${fakeGithubPat()}` } },
+    { name: "forge_brain", arguments: {} },
+  ]);
+  assert.match(out[1], /Not remembered/);
+  assert.match(out[1], /secret/i);
+  assert.deepEqual(JSON.parse(out[2]).items, [], "and nothing was stored");
 });

@@ -38,3 +38,27 @@ test("buildIndex caps items and reports overflow (cliff-safe)", () => {
   assert.equal(idx.indexed, 2);
   assert.equal(idx.overflow, 3);
 });
+
+test("the broadcast index withholds a fact the ledger's evidence refuted (and says so)", async () => {
+  const { outcomeRecord } = await import("../src/ledger.js");
+  const { appendEvidence, loadClaims, repoLedger } = await import("../src/ledger_store.js");
+  const { epochDay } = await import("../src/util.js");
+  const root = fixture();
+  const store = brainStore(root);
+  const today = epochDay();
+  assert.equal(remember(store, "deploy", "Run `npm run deploy:prod` directly, CI is optional").ok, true);
+  assert.match(brainBlock(root), /deploy/, "a fresh fact is broadcast");
+  const dir = repoLedger(root);
+  const claim = loadClaims(dir).find((c) => c.kind === "fact");
+  for (const ref of ["ci:101", "ci:102", "ci:103"])
+    appendEvidence(
+      dir,
+      claim.id,
+      outcomeRecord({ oracle: "ci.run", result: "contradict", ref, t: today }).outcome,
+    );
+  const idx = buildIndex(store, { nowDay: today });
+  assert.equal(idx.hidden, 1, "the contradicted fact is withheld from every AGENTS.md reader");
+  const block = brainBlock(root);
+  assert.doesNotMatch(block, /deploy:prod/, "its content is no longer broadcast");
+  assert.match(block, /withheld: contradicted/, "and the withholding is stated, never silent");
+});
