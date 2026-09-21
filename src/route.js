@@ -30,7 +30,10 @@ import { clamp01, contentHash, epochDay } from "./util.js";
 /**
  * Labeled exemplars. `y` = target complexity in [0,1], calibrated to the tier
  * cutoffs in recommend(): ~0.08 trivial, ~0.42 data-structure/library level,
- * ~0.78 algorithmic/systems, ~0.85 architectural. Add rows freely — coverage
+ * ~0.78 algorithmic/systems AND architectural/cross-module. No label may reach
+ * the fable cutoff (0.8): model_tiers puts "architecture, cross-module refactor,
+ * novel algorithms" on Opus and keeps Fable for research-grade reasoning, so a
+ * label at 0.85 contradicted the table it routes into. Add rows freely — coverage
  * improves routing without touching any weight.
  */
 export const EXEMPLARS = [
@@ -87,14 +90,14 @@ export const EXEMPLARS = [
   { text: "compiler pass over an abstract syntax tree", y: 0.78 },
   { text: "idempotent retry with exactly-once delivery semantics", y: 0.78 },
   // architectural / cross-module
-  { text: "design the architecture of a new service", y: 0.85 },
-  { text: "refactor module boundaries across the codebase", y: 0.85 },
-  { text: "design a schema migration for the database", y: 0.85 },
-  { text: "api design with consistency guarantees and trade-offs", y: 0.85 },
-  { text: "migrate a multi-module system end to end", y: 0.85 },
-  { text: "design a locking strategy across services", y: 0.85 },
-  { text: "plan scalability for a growing distributed system", y: 0.85 },
-  { text: "cross-module refactor of shared interfaces", y: 0.85 },
+  { text: "design the architecture of a new service", y: 0.78 },
+  { text: "refactor module boundaries across the codebase", y: 0.78 },
+  { text: "design a schema migration for the database", y: 0.78 },
+  { text: "api design with consistency guarantees and trade-offs", y: 0.78 },
+  { text: "migrate a multi-module system end to end", y: 0.78 },
+  { text: "design a locking strategy across services", y: 0.78 },
+  { text: "plan scalability for a growing distributed system", y: 0.78 },
+  { text: "cross-module refactor of shared interfaces", y: 0.78 },
 ];
 
 // Excluded from the lexical footprint: function words AND generic task verbs
@@ -127,6 +130,14 @@ export function contentGrams(text) {
   return grams;
 }
 
+/** How many grams two footprints have in common. */
+const sharedGrams = (a, b) => {
+  let n = 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  for (const x of small) if (large.has(x)) n++;
+  return n;
+};
+
 /** Every rubric constant in one inspectable table (same transparency rule as WEIGHTS). */
 export const RUBRIC = {
   k: 3, // neighbors in the k-NN estimate
@@ -137,8 +148,10 @@ export const RUBRIC = {
   // overlaps its exemplar at ~0.43 (extra scope words dilute the coefficient), and
   // the floor MUST hold there — 0.5 let a bad LLM vote talk concurrency work down.
   strongConf: 0.35,
-  bands: { cheap: 0.3, mid: 0.6 }, // score < cheap → cheap; ≤ mid → mid; else premium
-  struct: { codeContext: 0.05, length: 0.1, constraints: 0.05, steps: 0.05 },
+  minShared: 2, // grams a neighbor must share before it counts as a match at all
+  // Bands are recommend()'s own cutoffs (bandOf) — a second, different pair of band edges here
+  // meant `rubric.band` and the routed tier disagreed on what "mid" was.
+  struct: { codeContext: 0.05, constraints: 0.05, steps: 0.05 },
 };
 
 // Exemplar footprints are static — compute once, not per routeTask call (the ambient
@@ -149,6 +162,9 @@ const EXEMPLAR_GRAMS = EXEMPLARS.map((e) => ({ ...e, grams: contentGrams(e.text)
 export function rubricSignals(task = "") {
   const text = String(task);
   return {
+    // Informational only: task size is weighted ONCE, by the repo facet's `size` signal. It used
+    // to be weighted here as well, and both terms saturate on real issue prose (a 600-char body
+    // maxes this one out), which floored every long task near the cheap/mid boundary.
     lengthTokens: Math.max(1, Math.floor(text.length / 4)),
     hasCodeContext: /```/.test(text),
     // Explicit requirement markers: bullet/numbered lines and modal verbs. A count
@@ -171,10 +187,18 @@ export function rubricSignals(task = "") {
 export function rubricComplexity(task = "") {
   const sig = rubricSignals(task);
   const grams = contentGrams(task);
+  // One shared word is a coincidence, not a match: on a real issue corpus 146 of 167 top-3
+  // matches rested on a single token, and against an exemplar whose whole footprint is that
+  // token ("fix a typo" → {typo}) the overlap coefficient reads 1.0 — full confidence in the
+  // coincidence. A neighbor must share `minShared` grams, or the task's whole footprint when
+  // the task itself is shorter than that ("fix the deadlock" still matches its exemplar).
+  const need = Math.min(RUBRIC.minShared, grams.size);
   const neighbors = EXEMPLAR_GRAMS.map(({ grams: eg, ...e }) => ({
     ...e,
+    shared: sharedGrams(grams, eg),
     sim: setOverlap(grams, eg),
   }))
+    .filter((n) => n.shared >= need)
     .sort((a, b) => b.sim - a.sim)
     .slice(0, RUBRIC.k)
     .filter((n) => n.sim > 0);
@@ -186,13 +210,12 @@ export function rubricComplexity(task = "") {
   const s = RUBRIC.struct;
   const struct =
     s.codeContext * (sig.hasCodeContext ? 1 : 0) +
-    s.length * clamp01(sig.lengthTokens / 150) +
     s.constraints * clamp01(sig.nConstraints / 5) +
     s.steps * clamp01(sig.nSteps / 3);
   // Structure adds complexity on top of topic, saturating — it can never flip a
-  // trivial topic into premium on its own (struct is bounded by Σ weights = 0.25).
+  // trivial topic into premium on its own (struct is bounded by Σ weights = 0.15).
   const score = clamp01(topic + struct * (1 - topic));
-  const band = score < RUBRIC.bands.cheap ? "cheap" : score <= RUBRIC.bands.mid ? "mid" : "premium";
+  const band = bandOf(score);
   const strongTopicSignal = knn >= RUBRIC.strongScore && confidence >= RUBRIC.strongConf;
   const reasons = [
     ...neighbors
@@ -202,14 +225,6 @@ export function rubricComplexity(task = "") {
         reason: `similar to "${n.text}" (sim ${n.sim.toFixed(2)}, complexity ${n.y})`,
       })),
     ...(sig.hasCodeContext ? [{ weight: s.codeContext, reason: "carries code context" }] : []),
-    ...(sig.lengthTokens > 55
-      ? [
-          {
-            weight: s.length * clamp01(sig.lengthTokens / 150),
-            reason: `long spec (~${sig.lengthTokens} tok)`,
-          },
-        ]
-      : []),
     ...(sig.nConstraints >= 5
       ? [{ weight: s.constraints, reason: `${sig.nConstraints} explicit constraints` }]
       : []),
@@ -230,34 +245,34 @@ export function rubricComplexity(task = "") {
 /**
  * Held-out labeled complexities, DISTINCT from EXEMPLARS (the k-NN bank), so the gate
  * measures generalization, not memorization. Interleaved by tier so any strided split is
- * balanced. y matches the recommend() cutoffs: ~0.08 trivial · ~0.42 library-level ·
- * ~0.78 algorithmic/systems · ~0.85 architectural.
+ * balanced. y matches the recommend() cutoffs: ~0.08 trivial · ~0.42 library-level · ~0.78
+ * algorithmic/systems and architectural (Opus; no label reaches the fable band).
  */
 export const CALIBRATION_SAMPLES = [
   { text: "print numbers from 1 to 100", y: 0.08 },
   { text: "implement a fixed-size ring buffer", y: 0.42 },
   { text: "detect a cycle in a directed graph", y: 0.78 },
-  { text: "design a multi-tenant billing subsystem", y: 0.85 },
+  { text: "design a multi-tenant billing subsystem", y: 0.78 },
   { text: "trim whitespace from a string", y: 0.08 },
   { text: "group a list of records by a key", y: 0.42 },
   { text: "implement quicksort in place", y: 0.78 },
-  { text: "plan a migration from a monolith to services", y: 0.85 },
+  { text: "plan a migration from a monolith to services", y: 0.78 },
   { text: "swap two variables", y: 0.08 },
   { text: "flatten a deeply nested array", y: 0.42 },
   { text: "build a thread-safe bounded blocking queue", y: 0.78 },
-  { text: "architect an event-sourced order pipeline", y: 0.85 },
+  { text: "architect an event-sourced order pipeline", y: 0.78 },
   { text: "return the length of an array", y: 0.08 },
   { text: "add pagination to a list query", y: 0.42 },
   { text: "write an lru eviction policy with o(1) operations", y: 0.78 },
-  { text: "design cross-region data replication", y: 0.85 },
+  { text: "design cross-region data replication", y: 0.78 },
   { text: "convert a string to uppercase", y: 0.08 },
   { text: "build a simple event emitter class", y: 0.42 },
   { text: "parse arithmetic expressions with operator precedence", y: 0.78 },
-  { text: "define the module boundaries for a new platform", y: 0.85 },
+  { text: "define the module boundaries for a new platform", y: 0.78 },
   { text: "add two integers", y: 0.08 },
   { text: "validate an email address format", y: 0.42 },
   { text: "coordinate leader election across nodes", y: 0.78 },
-  { text: "design an auth system with roles and sessions", y: 0.85 },
+  { text: "design an auth system with roles and sessions", y: 0.78 },
 ];
 
 /** Least-squares affine calibration a·x + b mapping a rubric score x to the label y. Pure. */

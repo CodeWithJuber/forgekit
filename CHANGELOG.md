@@ -103,6 +103,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The routing rubric stops counting a task's length twice and stops matching on one shared
+  word.** Both defects pushed every real task into the middle: on the reviewer's 80-task
+  held-out set the router sent 54 of 64 well-specified tasks to mid and reached premium once.
+  - **Length was weighted twice** — by the repo facet's `size` signal and again by the rubric's
+    `struct.length` — and both saturate on real issue prose, so every long task was floored near
+    the cheap/mid line whatever it was about. The later of the two (`struct.length`, added with
+    the k-NN rubric) is gone; `rubricSignals().lengthTokens` stays as an informational field.
+  - **One shared word counted as a match.** 146 of 167 top-3 matches rested on a single token,
+    and against an exemplar whose whole footprint is that token (`fix a typo` → `{typo}`) the
+    overlap coefficient reads 1.00 — full confidence in a coincidence, which is how "resolve the
+    deadlock between the comment writer and the comment indexer threads" matched "add a comment"
+    at 1.00 and routed mid. A neighbor now has to share `RUBRIC.minShared` (2) grams, or the
+    task's whole footprint when the task is shorter than that, so "fix the deadlock" still
+    matches its exemplar.
+  - `rubric.band` now uses recommend()'s own cutoffs (0.25 / 0.55) instead of a second, different
+    pair (0.3 / 0.6) that disagreed with the tier actually routed.
+  - **No exemplar labels into the fable band any more.** The architectural rows carried y = 0.85,
+    at or above the 0.8 fable cutoff, while `model_tiers` puts "architecture, cross-module
+    refactor, novel algorithms" on Opus and keeps Fable for research-grade reasoning; they are
+    0.78 now (the held-out calibration fixture too).
+  - Diagnostic on the spent 80-task set (**not** an evaluation — those tasks are burnt for
+    tuning, and routing was measured in an empty repo): exact tier accuracy 0.344 → 0.453, the
+    predicted distribution 9/54/1 → 38/25/1 (cheap/mid/premium), and premium-vs-rest AUROC
+    0.652 → 0.753. Premium recall is still 0 of 17: the toy exemplar bank has no vocabulary for
+    real premium issue prose, which needs a real-issue bank and a **new** held-out set.
 - **Model routing reconciles the proposer's band with the deterministic band, not a point
   score.** `routeTask` compared the proposer's band floor (cheap 0.15 / mid 0.40 / premium 0.65)
   against the deterministic point score, so even a vote that _agreed_ moved the score: a

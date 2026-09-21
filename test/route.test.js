@@ -58,6 +58,50 @@ test("rubric: confidence shrinks weak matches toward the prior", () => {
   assert.ok(strong.confidence > weak.confidence);
 });
 
+test("rubric: one shared word is not a match (deep review D1)", () => {
+  // "add a comment" reduces to the single gram {comment}, so the overlap coefficient read 1.00
+  // against any prose containing "comment" — and a concurrency bug was routed as a trivial one.
+  const r = rubricComplexity(
+    "resolve the deadlock between the comment writer and the comment indexer threads",
+  );
+  assert.ok(
+    !r.neighbors.some((n) => n.text === "add a comment"),
+    `a one-word coincidence is not a neighbor: ${JSON.stringify(r.neighbors)}`,
+  );
+  assert.equal(r.band, "premium", `deadlock work stays premium (score ${r.score})`);
+  for (const n of r.neighbors) assert.ok(n.shared >= 2, "every neighbor shares at least 2 grams");
+  // A task whose whole footprint IS one gram still matches on it — that is all the evidence there is.
+  assert.equal(rubricComplexity("fix the deadlock").band, "premium");
+  // ...and an incidental single-word overlap falls back to the no-signal prior.
+  const weak = rubricComplexity("the dijkstra approach discussion notes");
+  assert.equal(weak.neighbors.length, 0);
+  assert.ok(Math.abs(weak.score - RUBRIC.prior) < 1e-9);
+});
+
+test("rubric: task size is weighted once, by the repo facet — not again here (D1)", () => {
+  // Both terms saturate on real issue prose, which floored every long task near the cheap/mid
+  // line. Padding a task with function words must not move its rubric score at all now.
+  const task = "add validation to user input";
+  const padded = `${task} ${"the ".repeat(200)}`;
+  assert.equal(rubricComplexity(padded).score, rubricComplexity(task).score);
+  assert.equal(RUBRIC.struct.length, undefined, "no length weight in the struct table");
+  // The repo facet still counts size, so the signal is not lost.
+  assert.ok(complexity({ sizeWords: 90 }).score > complexity({ sizeWords: 4 }).score);
+});
+
+test("EXEMPLARS: no label reaches the fable band — model_tiers routes architecture to Opus", () => {
+  for (const e of EXEMPLARS)
+    assert.notEqual(
+      recommend(e.y).key,
+      "fable",
+      `${e.text} (y ${e.y}) must not label into the fable band`,
+    );
+  assert.ok(
+    EXEMPLARS.some((e) => /architecture|module boundaries|cross-module/.test(e.text)),
+    "architectural rows are still in the bank",
+  );
+});
+
 test("EXEMPLARS: labels are valid and every band is represented", () => {
   for (const e of EXEMPLARS) {
     assert.ok(typeof e.text === "string" && e.text.length > 0);
