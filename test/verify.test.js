@@ -418,4 +418,6 @@ test("verify: the provenance stamp is signed, and an edited one no longer verifi
     assert.notEqual(tampered.signature, provenanceMac(tampered), "flipping the verdict breaks it");
   const handWritten = { tests: { status: "PASS" }, codeState: r.provenance.codeState };
   assert.notEqual(handWritten.signature, provenanceMac(handWritten), "an unsigned stamp fails");
+  // …and the signer is what closes the gap: only `forge verify` runs it.
+  assert.equal(signProvenance(handWritten).signature, provenanceMac(handWritten));
 });
