@@ -38,7 +38,7 @@ const TARGET = "[\"']?(/|~|\\$HOME|\\$\\{HOME\\})"; // an absolute/home path ope
 const RECUR = "(-[A-Za-z]*[rR][A-Za-z]*|--recursive)";
 // Git readers that can print file or history content (RA-05, HI-07), behind an optional
 // `env `/`command `/`VAR=val ` prefix, an absolute path, and git's own global options.
-const gitpfx = "([A-Za-z0-9_]+=\\S+\\s+|(env|command)\\s+)*(\\S*/)?git\\s+";
+const gitpfx = "([A-Za-z0-9_]+=\\S+\\s+|(env|command|sudo)\\s+)*(\\S*/)?git\\s+";
 const gitopt =
   "(-C\\s+\\S+\\s+|--no-pager\\s+|-c\\s+\\S+\\s+|--git-dir=\\S+\\s+|--work-tree=\\S+\\s+)*";
 const gitsub = "(show|log|diff|stash|cat-file|archive|grep|blame|show-index|bundle)(\\s|$)";
@@ -84,17 +84,19 @@ const COMMAND_RULES = [
     // `--force-with-lease` / `--force-if-includes` are the SAFE variants and stay allowed.
     all: [
       new RegExp(
-        `git\\s${SEG}push\\s${SEG}(--force([\\s=]|$)|-[A-Za-z0-9]*f[A-Za-z0-9]*(\\s|$)|\\+\\S+(\\s|$))`,
+        `${gitpfx}${gitopt}push\\s${SEG}(--force([\\s=]|$)|-[A-Za-z0-9]*f[A-Za-z0-9]*(\\s|$)|\\+\\S+(\\s|$))`,
       ),
     ],
     reason: "force-push blocked (--force-with-lease is allowed). Ask the user first.",
   },
   {
-    all: [new RegExp(`git\\s${SEG}reset\\s${SEG}--hard(\\s|$)`)],
+    all: [new RegExp(`${gitpfx}${gitopt}reset\\s${SEG}--hard(\\s|$)`)],
     reason: "`git reset --hard` discards uncommitted work. Ask the user first.",
   },
   {
-    all: [new RegExp(`git\\s${SEG}clean\\s${SEG}(-[A-Za-z0-9]*f[A-Za-z0-9]*|--force)(\\s|$)`)],
+    all: [
+      new RegExp(`${gitpfx}${gitopt}clean\\s${SEG}(-[A-Za-z0-9]*f[A-Za-z0-9]*|--force)(\\s|$)`),
+    ],
     reason: "`git clean -f` deletes untracked files for good. Ask the user first.",
   },
   {

@@ -309,6 +309,8 @@ test("protect-paths rules: destructive commands the literal substrings missed (B
     "git push --force origin main",
     "git push -f",
     "git push origin +main",
+    "sudo git push --force",
+    "git -c core.pager=cat push --force",
   ];
   for (const command of blocked) {
     const d = protectPathsDecision({ toolName: "Bash", command });
@@ -326,6 +328,8 @@ test("protect-paths rules: destructive commands the literal substrings missed (B
     "find . -name '*.log' -print",
     "rm -rf node_modules",
     "dd if=/dev/zero bs=1M count=1",
+    'git commit -m "explain when to push -f and when to reset --hard"', // prose, not a command
+    'git log --grep="git clean -fdx"',
   ];
   for (const command of allowed) {
     const d = protectPathsDecision({ toolName: "Bash", command });
