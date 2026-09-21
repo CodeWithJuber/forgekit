@@ -320,9 +320,10 @@ rank answers "which X-es should I worry about at all". Weighted PageRank over th
 graph scores structural centrality (using the same edge weights the blast-radius search
 trusts), Tarjan SCC finds circular-import clusters, articulation points find chokepoint
 files whose removal would split the import graph — and the ledger join is the part
-nobody else has: each file's past-incident history (val()-weighted lesson and session
-claims that name it) multiplies into `hazard = centrality × (1 + history)`, so central
-code that has already bitten the team outranks equally central code that hasn't. Run
+nobody else has: each file's past-incident history (val()-weighted lesson claims —
+recorded mistakes — that name it; ordinary session records are not incidents) multiplies
+into `hazard = centrality × (1 + history)`, so central code that has already bitten the
+team outranks equally central code that hasn't. Run
 `forge atlas build` first. Also exposed to every MCP-capable agent as `rank_code`.
 
 ```console
@@ -570,10 +571,15 @@ the way the lesson miner scores mistakes: a noisy-OR **defect risk score (heuris
 `p = 1 − ∏(1 − wᵢsᵢ)` (shown as `P(defect)` in the CLI), with a **cross-family gate**, so
 any number of correlated structural signals stays advisory while a failing test suite or a
 leaked secret blocks on its own. `p` is a calibrated heuristic, not a measured probability
-of defect. Every run reports the `residual` `∏(1 − cⱼ)` over the lenses that actually ran
-— the **remaining unchecked weight**, i.e. how much silent-miss weight a PASS still leaves
-uncovered — and extends `.forge/provenance.json` with the per-lens evidence plus one
-`stage:"verify"` metrics record.
+of defect. Every run reports the `residual` — the **remaining unchecked weight**, i.e. how
+much silent-miss weight a PASS still leaves uncovered. It is dependence-aware: each lens
+targets one defect class (behavior, symbol, dependents, docs, secret) with an assumed catch
+probability `cⱼ` (its own column, not the precision weight `w`); lenses on the same class
+are treated as nested checks (`1 − c_max`, never a product), a lens that examined no input
+catches nothing, and the reported figure is the worst class (`residualByClass` has each).
+An empty diff with no test run therefore reports `1`, not a near-zero product. Each run
+extends `.forge/provenance.json` with the per-lens evidence plus one `stage:"verify"`
+metrics record.
 
 `--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
 over the added lines, strict-majority vote, abstaining honestly when fewer than half
@@ -593,7 +599,7 @@ $ forge verify --deep
   ! dependents of the changed code are not in this diff: src/route.js
 
   P(defect):  █░░░░░░░░░ 0.07  (families: structural)
-  residual:   0.005 — Theorem-D silent-miss bound
+  residual:   0.700 — Theorem-D silent-miss bound
 
   PASS
 ```
@@ -657,7 +663,8 @@ $ forge radar
 
 Rings are a **formula over registry evidence** (_mizan_ — a philosophical/ethical framing of
 weighed judgment, not a technical authority; every ring ships the evidence that earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
-lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
+lag, open security advisories (severity-weighted), and maintainer deprecation, combined as a
+noisy-OR `score = 1 − ∏(1 − wₖ·sₖ)` — a clean signal adds no risk and dilutes nothing. Repo _usage_
 (import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
 Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
 two verified evidence kinds → **`assess` (never `adopt` on absence)** — missing evidence never
@@ -1122,8 +1129,9 @@ $ forge report
 ### `forge cost --stages` — the measured cost report
 
 Per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`. A stage with no
-events says **no data** — never a default; the composed figure is a lower bound over
-measured stages only.
+events says **no data** — never a default; the composed figure covers measured stages
+only and is not a bound (a stage can be negative — routing that priced above the
+always-premium baseline raises cost — so a newly measured stage can lower it).
 
 ```console
 $ forge cost --stages
@@ -1135,10 +1143,10 @@ Forge cost — measured stage factors (.forge/metrics.jsonl)
   route     no data    0
   context   no data    0
 
-  composed measured reduction: 6.2% (from: gate) — lower bound, measured stages only
+  composed measured reduction: 6.2% (from: gate) — measured stages only, not a bound (a stage can raise cost)
   totals: 16 metric event(s) · ~0 tokens saved (stage self-estimates)
 
-  context (not a local measurement): the paper measured a 62% routing saving on live tokens (paper §9)
+  context (not a local measurement): the paper's 62% routing saving (§9) is REFUTED — the held-out replication measured −20.2% on total spend: routing cost more than always-premium (research/empirical-refutation)
   target (unmet until measured): the plan's composed target is ~90% (docs/plans/substrate-v2/05-cost-model.md)
 ```
 
@@ -1546,7 +1554,8 @@ code reads but this table misses fails CI on the forge repo):
 - **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
   tokenized palette is partially invisible to the design gate.
 - **`forge cost --stages` reports measured stages only** — a stage with no events says
-  "no data", never a default; the composed figure is a lower bound and ~90 % is a
+  "no data", never a default; the composed figure is not a bound (a stage can raise
+  cost) and ~90 % is a
   labeled _target_, not a claim.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
   use. What's _asserted_ (safe to gate on): repo grounding, graph traversal, scope

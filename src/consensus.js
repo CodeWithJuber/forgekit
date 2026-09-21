@@ -13,9 +13,10 @@
 //
 // Mizan (weighed judgment — a philosophical/ethical framing, not a technical guarantee):
 // the verdict ships WITH its evidence. Every lens reports whether it ran and what it saw,
-// and the remaining-unchecked-weight bound ∏ⱼ(1 − cⱼ) over the lenses that actually ran
-// (the field is `residual`) states how much silent-miss weight remains even on PASS — a
-// green light is an evidenced heuristic claim, never a vibe, and never a proof. The reviewer lens (LLM
+// and the silent-miss bound `residual` (the worst defect class's 1 − best catch among the
+// lenses that examined real input — see silentMissBound) states how much silent-miss
+// weight remains even on PASS — a green light is an evidenced heuristic claim, never a
+// vibe, and never a proof. The reviewer lens (LLM
 // majority-of-N) is opt-in, fail-safe, and can never block alone: it is a proposer
 // in the adjudicate.js sense, one voice among deterministic checks.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -31,39 +32,92 @@ import { verify } from "./verify.js";
 
 /**
  * Lens taxonomy — mirrors lessons.js SIGNALS / ledger.js ORACLES: `weight` = prior
- * that a firing lens reflects a real defect (and the Theorem-D catch probability cⱼ
- * of a lens that ran); `family` powers the cross-family gate; `solo: true` = trusted
- * to block on its own (only the project's own failing tests and a leaked secret
- * qualify). Everything structural — and the model reviewer — needs a second family.
+ * that a FIRING lens reflects a real defect (precision — feeds `p`); `family` powers the
+ * cross-family gate; `solo: true` = trusted to block on its own (only the project's own
+ * failing tests and a leaked secret qualify). Everything structural — and the model
+ * reviewer — needs a second family.
+ *
+ * `target` + `catch` feed the silent-miss bound (`residual`), and are deliberately NOT
+ * the weight: `catch` is the Theorem-D cⱼ — P(this lens flags a defect | a defect of its
+ * `target` class is in the diff), i.e. recall, where `weight` is precision. They are
+ * ASSUMED priors, not measured recall, kept modest on purpose: a lens only sees its own
+ * class, and a proxy check (docsdrift: "no doc moved") is satisfied by an unrelated doc
+ * edit, so its recall for the real miss (a stale doc) is lower than its detection of the
+ * proxy (review F3).
  */
 export const LENSES = {
-  tests: { weight: 0.8, family: "outcome", solo: true }, // the project's own suite failed
-  symbols: { weight: 0.4, family: "structural" }, // calls to symbols defined nowhere
-  impact: { weight: 0.35, family: "structural" }, // atlas dependents the diff never touched
-  docsdrift: { weight: 0.3, family: "structural" }, // code moved, no doc artifact moved
-  secrets: { weight: 0.9, family: "security", solo: true }, // secret-shaped token in added lines
-  speclock: { weight: 0.4, family: "structural" }, // a spec still claims a dropped symbol
-  reviewer: { weight: 0.3, family: "model" }, // N-sample LLM majority — never solo
+  // the project's own suite failed — catches a behavioral defect only where it has coverage
+  tests: { weight: 0.8, family: "outcome", solo: true, target: "behavior", catch: 0.6 },
+  // calls to symbols defined nowhere — exact for static calls, blind to dynamic dispatch
+  symbols: { weight: 0.4, family: "structural", target: "symbol", catch: 0.6 },
+  // atlas dependents the diff never touched — only as good as the graph's resolved edges
+  impact: { weight: 0.35, family: "structural", target: "dependents", catch: 0.4 },
+  // code moved, no doc artifact moved — a proxy; any doc edit satisfies it
+  docsdrift: { weight: 0.3, family: "structural", target: "docs", catch: 0.3 },
+  // secret-shaped token in added lines — known formats + entropy; novel formats slip
+  secrets: { weight: 0.9, family: "security", solo: true, target: "secret", catch: 0.6 },
+  // a spec still claims a dropped symbol — exact for locked specs, blind to unlocked ones
+  speclock: { weight: 0.4, family: "structural", target: "docs", catch: 0.6 },
+  // N-sample LLM majority — never solo; judges the same behavior class the tests do
+  reviewer: { weight: 0.3, family: "model", target: "behavior", catch: 0.3 },
 };
+
+/** The defect classes the lenses target — the unit the silent-miss bound is taken over. */
+export const TARGET_CLASSES = [...new Set(Object.values(LENSES).map((l) => l.target))];
 
 /** A firing consensus below this P(defect) stays advisory — same bar as lessons.js classify. */
 export const BLOCK_THRESHOLD = 0.5;
 
 /**
- * @typedef {{lens: string, ran?: boolean, s?: number}} LensEvent
- *   `ran !== false` means the lens executed; `s` in [0,1] is its signal strength
- *   (0 = clean). Unknown lens names are ignored (a bad event can't corrupt the verdict).
+ * @typedef {{lens: string, ran?: boolean, examined?: boolean, s?: number}} LensEvent
+ *   `ran !== false` means the lens executed; `examined === false` means it executed over
+ *   NOTHING (no changed files, no added lines, no symbols) — it can't have caught
+ *   anything, so it claims no coverage. `s` in [0,1] is its signal strength (0 = clean).
+ *   Unknown lens names are ignored (a bad event can't corrupt the verdict).
  */
+
+/**
+ * The silent-miss bound: P(every lens misses | the diff holds a defect), dependence-aware.
+ *
+ * Assumptions (review E1/F2 — Theorem D Eq. 5 multiplied ∏(1 − cⱼ) across every lens,
+ * which assumes the lenses are independent tries at the SAME defect; they are not):
+ *  - A lens only ever catches defects of its own `target` class. Lenses aimed at different
+ *    classes never combine — a secret scan says nothing about a behavioral bug.
+ *  - Within a class, lenses are NOT assumed independent (they read the same diff, and
+ *    checks of one event are positively correlated). The only dependence-free bound is
+ *    P(all miss) ≤ minⱼ P(miss) = 1 − c_max — the nested/identical-check case (F2).
+ *  - The mix of defect classes is unknown, so the reported figure is the WORST class:
+ *    residual = max over classes of (1 − c_max). A class no lens examined is 1 — so an
+ *    empty diff with no test run claims no coverage at all (it was 0.042 under Eq. 5).
+ *  - The agent's own miss rate (1 − p in Theorem D) is not known here and is not folded
+ *    in; the figure is the checks' share only. `catch` values are assumed priors (LENSES).
+ * @param {LensEvent[]} events
+ * @returns {{residual:number, byClass:Record<string,number>}}
+ */
+export function silentMissBound(events) {
+  /** @type {Record<string,number>} */
+  const best = Object.fromEntries(TARGET_CLASSES.map((k) => [k, 0]));
+  for (const e of events ?? []) {
+    const lens = e && LENSES[e.lens];
+    if (!lens || e.ran === false || e.examined === false) continue; // c = 0: caught nothing
+    best[lens.target] = Math.max(best[lens.target], lens.catch);
+  }
+  /** @type {Record<string,number>} */
+  const byClass = {};
+  for (const k of TARGET_CLASSES) byClass[k] = 1 - best[k];
+  return { residual: Math.max(...Object.values(byClass)), byClass };
+}
 
 /**
  * Aggregate lens events — byte-for-byte the scoreMistake shape (lessons.js):
  * noisy-OR over firing lenses (bounded in [0,1), so many weak signals can't fake
  * one strong one) + the cross-family gate. `p` is the defect risk score (heuristic).
- * `residual` is the remaining-unchecked-weight bound ∏ⱼ(1 − cⱼ) over every lens that
- * RAN (firing or clean): the share of silent-miss weight a PASS still leaves uncovered.
+ * `residual` is the silent-miss bound (silentMissBound): the share of silent-miss
+ * weight a PASS still leaves uncovered, per defect class in `residualByClass`.
  * @param {LensEvent[]} events
- * @returns {{p:number, fires:boolean, families:string[], residual:number, block:boolean}}
- *   `p` = defect risk score (heuristic); `residual` = remaining unchecked weight.
+ * @returns {{p:number, fires:boolean, families:string[], residual:number,
+ *   residualByClass:Record<string,number>, block:boolean}}
+ *   `p` = defect risk score (heuristic); `residual` = silent-miss bound (heuristic priors).
  */
 export function aggregate(events) {
   const ran = (events ?? []).filter((e) => e && LENSES[e.lens] && e.ran !== false);
@@ -76,8 +130,15 @@ export function aggregate(events) {
   const families = [...new Set(firing.map((e) => LENSES[e.lens].family))];
   const soloOk = firing.some((e) => LENSES[e.lens].solo);
   const fires = families.length >= 2 || soloOk;
-  const residual = ran.reduce((acc, e) => acc * (1 - LENSES[e.lens].weight), 1);
-  return { p, fires, families, residual, block: fires && p >= BLOCK_THRESHOLD };
+  const { residual, byClass } = silentMissBound(ran);
+  return {
+    p,
+    fires,
+    families,
+    residual,
+    residualByClass: byClass,
+    block: fires && p >= BLOCK_THRESHOLD,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,12 +156,15 @@ export function testsLens(tests) {
   };
 }
 
-/** symbols — verify()'s hallucinated-symbol heuristic as a structural lens. */
-export function symbolsLens(unknown) {
+/** symbols — verify()'s hallucinated-symbol heuristic as a structural lens. `checked` is
+ *  how many called symbols verify() looked up (provenance.symbolsChecked); with none
+ *  checked the lens examined nothing and claims no coverage (unknown count → assume none). */
+export function symbolsLens(unknown, checked) {
   const list = Array.isArray(unknown) ? unknown : [];
   return {
     lens: "symbols",
     ran: true,
+    examined: list.length > 0 || Number(checked) > 0,
     s: list.length ? 1 : 0,
     unknown: list.slice(0, 12),
   };
@@ -129,6 +193,7 @@ export function impactLens(atlas, changedFiles = []) {
   return {
     lens: "impact",
     ran: true,
+    examined: changedFiles.some((f) => classifyPath(f) === "code"), // traversed from ≥1 code file
     s: clamp01(dependents.size / 5),
     dependents: list,
   };
@@ -148,6 +213,7 @@ export function docsDriftLens(changedFiles = []) {
   return {
     lens: "docsdrift",
     ran: true,
+    examined: changedFiles.length > 0,
     s: drifted ? 1 : 0,
     codeFiles: code.slice(0, 10),
   };
@@ -163,6 +229,7 @@ export function secretsLens(added) {
   return {
     lens: "secrets",
     ran: true,
+    examined: text.trim().length > 0,
     s: hasSecret(text) && redactSecrets(text) !== text ? 1 : 0,
   };
 }
@@ -231,6 +298,7 @@ export function reviewerLens({ files = [], added = "", n = 3, llm, run } = {}) {
   return {
     lens: "reviewer",
     ran: true,
+    examined: files.length > 0 || String(added).trim().length > 0, // judged a real diff
     s: defect ? defects / votes.length : 0,
     verdict: defect ? "defect" : "pass",
     votes,
@@ -305,7 +373,7 @@ export function verifyDeep({
   } catch {}
   const lenses = [
     testsLens(core.tests),
-    symbolsLens(core.unknown),
+    symbolsLens(core.unknown, core.provenance?.symbolsChecked),
     impactLens(atlas, changed),
     docsDriftLens(changed),
     secretsLens(added),
@@ -327,15 +395,21 @@ export function verifyDeep({
     lenses: lenses.map((l) => ({
       lens: l.lens,
       ran: l.ran !== false,
+      examined: l.ran !== false && l.examined !== false, // additive: ran over real input
       s: round4(l.s ?? 0),
       weight: LENSES[l.lens].weight,
       family: LENSES[l.lens].family,
+      target: LENSES[l.lens].target,
+      catch: LENSES[l.lens].catch,
     })),
     findings,
     p: round4(verdict.p),
     families: verdict.families,
     fires: verdict.fires,
     residual: round4(verdict.residual),
+    residualByClass: Object.fromEntries(
+      Object.entries(verdict.residualByClass).map(([k, v]) => [k, round4(v)]),
+    ),
     block: verdict.block,
     status, // additive: the four-state deep verdict (RA-01)
   };

@@ -44,6 +44,79 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
+- **`verify --deep` no longer claims coverage it never had.** The `residual` silent-miss
+  bound multiplied `∏(1 − wⱼ)` over every lens that "ran": it used the precision-style lens
+  weights as catch probabilities, multiplied checks aimed at disjoint defect classes as if
+  they were independent tries at one defect, and counted lenses that ran over nothing. With
+  the tests never run and an empty diff it reported **0.042** — 96% coverage from zero
+  checks. Each lens now names its target class and an assumed catch probability in its own
+  `catch` column; same-class lenses combine as nested checks (`1 − c_max`, review F2), a lens
+  that examined no input catches nothing, and the figure is the worst class, with
+  `residualByClass` in the provenance. The same case now reports **1**; a typical clean run
+  reports 0.7 instead of 0.005.
+- **The pre-edit risk advisory can fire.** The hook passed the predictor only the file path,
+  so four of its seven features were pinned to 0 and the heuristic topped out at
+  σ(−1.0) = **0.27**, below the 0.66 "high" band: the high-risk advisory could never appear.
+  The hook now computes them from the repo and the edit itself — callers and tests from one
+  bounded `git grep` of the module name, whether the edit rewrites an existing declaration,
+  and whether any caller is in the working diff — and the advisory names the reasons. A
+  hot file with ten importers, no test, and a rewritten exported signature now scores 0.91
+  ("high"); the same file with a covering test and a body-only edit stays quiet. In
+  `src/predictor.js`, `aucPr` now ranks tied scores as one threshold (the same data gave
+  **1.0 or 0.333** depending on input order; now 0.333 either way), and the kill criteria
+  no longer decide on a held-out split under 10 samples or 2 of each class (a 4-sample split
+  with no positive used to disable a perfectly predictive feature) and compare AUC-PR with
+  the exact chance baseline of a random ranking instead of a fixed 0.6 (pure noise at 80%
+  positives passed 0.6 and let the learned model take over; a real 10%-prevalence signal
+  at AP 0.33 was disabled).
+- **`forge radar` rings reflect the risk they find.** The ring score was a weighted mean in
+  which clean signals counted as zeros with the heaviest weights (`deprecated: false` 1.0,
+  "no advisories" 0.9), so they diluted everything else: a dependency 4 majors behind with
+  a 3-year-stale latest release scored **0.221 → adopt**, currency risk could never exceed
+  0.255 (so "assess" was unreachable from the score), and a high-severity advisory alone
+  scored 0.247 → adopt. The score is now a noisy-OR, `1 − ∏(1 − wₖ·sₖ)`, like the lesson
+  and consensus scores: the same dependency scores 0.485 (trial), maximal currency risk
+  0.545 and a high advisory 0.630 (both assess). Absent evidence still lands in "assess"
+  through the evidence-count gate, never through the score.
+- **`forge cost` counts what a session actually cost.** Without `ccusage`, the fallback
+  estimate from Claude's session logs priced only `input_tokens` and `output_tokens`,
+  ignoring `cache_creation_input_tokens` and `cache_read_input_tokens` (most of Claude
+  Code's input), and summed every log line although Claude Code writes one response on
+  several lines with the same message id. A one-message fixture logged three times
+  estimated **$0.038 against $0.228**. Cache writes are now priced at 1.25× the model's
+  input rate (2× for 1-hour writes) and reads at 0.1× (Anthropic's caching multipliers;
+  the price table carries base rates only), and each message id counts once across all
+  log files; the fixture now estimates $0.228. `forge cost --stages` stopped calling its
+  composed figure a "lower bound" that "can only grow": the route factor goes negative
+  when routing prices above the always-premium baseline (measuring one such stage took the
+  composition from 50% to 0%). It is now labeled "measured stages only, not a bound". And it
+  no longer prints "the paper measured a 62% routing saving" as context: the line marks
+  the figure as refuted next to the measured −20.2% on total spend
+  (`research/empirical-refutation`).
+- **`forge rank` hazard counts incidents, not sessions.** The history overlay summed
+  `val()` over lesson claims AND every deja session summary naming a file, but a summary
+  is minted for every session, first-try successes included, and a session whose own
+  tests passed carries a confirm outcome: every edit became an "incident", five ordinary
+  sessions added 2.5 to a file's history, and a tested, passing session added **0.64**
+  against an untested one's **0.5**. Only lesson claims (recorded mistakes) count now;
+  session summaries add 0.
+- **Context assembly stops a source at its 3rd optional item, and only that source.** The
+  per-source diminishing-returns cut (`δ^(j−1)`, δ = 0.7, "fourth+ item from one source:
+  value has decayed away") was checked after taking the item with a 0.2 floor, so it took
+  **6** items before stopping, and it used `break`, which ended the fill for every source.
+  The cut is now checked before taking an item, at the floor the comment describes (the
+  4th item's δ³ ≈ 0.34), and skips only that source: 10 candidate facts now yield 3.
+- **Non-ASCII names no longer collide, and NaN no longer propagates.** `slug()` kept only
+  `[a-z0-9]`, so every non-Latin name ("مفتاح الواجهة", "数据库地址") slugged to `""` and fell
+  back to the same literal — two facts with different names overwrote each other under one
+  `fact` slug. It is Unicode-aware now (NFKC, letters/marks/digits of any script), with a
+  short content hash for names that carry no letter or digit at all; ASCII slugs are
+  unchanged. `clamp01(NaN)` returned NaN (`Math.max(0, Math.min(1, NaN))`) and poisoned
+  every score it fed; it fails to 0, along with any non-numeric input. `cosine()` promised
+  "never NaN" but squared components before dividing, so vectors with components ≳ 1e154
+  overflowed to Infinity/Infinity = **NaN** and components ≲ 1e-162 underflowed to a false
+  zero vector; it now scales each vector by its largest component, rejects non-finite
+  components, and clamps the result to [-1, 1].
 
 ### Documentation
 

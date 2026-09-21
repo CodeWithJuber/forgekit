@@ -73,6 +73,22 @@ test("cosine: identical → 1, orthogonal → 0, opposite → -1, degenerate →
   assert.equal(cosine([0, 0], [1, 1]), 0);
 });
 
+test("cosine regression (E5): huge, tiny and non-finite components never yield NaN", () => {
+  // Unscaled, 1e200² overflowed to Infinity and Infinity/Infinity = NaN, contradicting
+  // "never NaN"; 1e-200² underflowed to 0 and a real vector read as the zero vector.
+  assert.equal(cosine([1e200, 1e200], [1e200, 1e200]), 1);
+  assert.equal(cosine([1e200, 0], [0, 1e200]), 0);
+  assert.equal(cosine([1e-200, 0], [3e-200, 0]), 1);
+  assert.ok(Math.abs(cosine([3e160, 4e160], [6, 8]) - 1) < 1e-12, "mixed scales");
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])
+    assert.equal(cosine([bad, 1], [1, 1]), 0, `${bad} component → 0`);
+  for (let i = 0; i < 50; i++) {
+    const v = Array.from({ length: 8 }, (_, j) => Math.sin(i * 7 + j) * 10 ** ((i % 9) - 4));
+    const c = cosine(v, v);
+    assert.ok(c <= 1 && c >= -1, `bounded: ${c}`);
+  }
+});
+
 // --- embed + the disk cache --------------------------------------------------------------
 
 test("embed: fake provider returns aligned vectors; cache hit avoids re-spawning", () => {

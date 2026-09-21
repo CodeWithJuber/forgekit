@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { build } from "../src/atlas.js";
-import { mintClaim } from "../src/ledger.js";
+import { mintClaim, outcomeRecord } from "../src/ledger.js";
 import { appendEvidence, putClaim, repoLedger } from "../src/ledger_store.js";
 import { centrality, chokepoints, cycles, history, pagerank, rankReport } from "../src/rank.js";
 import { directedImportGraph, importGraph } from "../src/scope.js";
@@ -82,7 +82,7 @@ test("chokepoints flags the bridge file between two clusters, not the leaves", (
   assert.ok(points[0].splits >= 1, "it splits off at least one subtree");
 });
 
-test("history weighs files named by lesson globs and summary file lists; empty ledger → zeros", () => {
+test("history weighs files named by lesson globs; session summaries are not incidents; empty ledger → zeros", () => {
   const lesson = mintClaim({
     kind: "lesson",
     body: {
@@ -119,7 +119,8 @@ test("history weighs files named by lesson globs and summary file lists; empty l
   const h = history([lesson, summary], files, 10);
   assert.ok(h.get("src/gen/out.js").weight > 0, "glob-matched file carries lesson weight");
   assert.equal(h.get("src/gen/out.js").hits, 1);
-  assert.ok(h.get("src/app.js").weight > 0, "summary-listed file carries weight");
+  assert.equal(h.get("src/app.js").weight, 0, "a session summary is work done, not an incident");
+  assert.equal(h.get("src/app.js").hits, 0);
   assert.equal(h.get("src/quiet.js").weight, 0, "unnamed file carries none");
   const empty = history([], files, 10);
   assert.ok(
@@ -203,10 +204,52 @@ test("history relativizes absolute hook-minted claim paths against root (the pro
     t: 10,
   }).claim;
   const h = history([lesson, summary], ["src/app.js"], 10, root);
-  assert.equal(h.get("src/app.js").hits, 2, "both claim kinds match after relativization");
+  assert.equal(h.get("src/app.js").hits, 1, "the lesson matches after relativization");
   assert.ok(h.get("src/app.js").weight > 0, "the hazard join is alive for production claims");
   const without = history([lesson, summary], ["src/app.js"], 10);
   assert.equal(without.get("src/app.js").hits, 0, "without root the absolute paths cannot match");
+});
+
+test("history regression (E5): sessions are not incidents, and a passing test never adds hazard", () => {
+  // Before: every deja session summary counted as an incident, and one whose own tests
+  // PASSED (a test.run confirm) weighed 0.64 against an untested session's 0.5.
+  const session = (i, tested) => {
+    const c = mintClaim({
+      kind: "summary",
+      body: { text: `clean session ${i}`, files: ["src/a.js"] },
+      scope: { level: "repo" },
+      t: 0,
+    }).claim;
+    c.evidence = tested
+      ? [
+          outcomeRecord({ oracle: "test.run", result: "confirm", ref: `session:${i}`, t: 0 })
+            .outcome,
+        ]
+      : [];
+    return c;
+  };
+  const at = (claims) => history(claims, ["src/a.js"], 0).get("src/a.js");
+  assert.deepEqual(at([session(1, true)]), { weight: 0, hits: 0 }, "tested-passing session");
+  assert.deepEqual(at([session(2, false)]), { weight: 0, hits: 0 }, "untested session");
+  assert.deepEqual(
+    at([1, 2, 3, 4, 5].map((i) => session(i, false))),
+    { weight: 0, hits: 0 },
+    "five ordinary sessions are not five incidents",
+  );
+  // a recorded mistake on the file still counts
+  const lesson = mintClaim({
+    kind: "lesson",
+    body: {
+      correctedBehavior: "re-run the pricing tests",
+      trigger: { action: "edit", files: ["src/a.js"], keywords: [], symbols: [] },
+      whatWentWrong: "shipped a pricing regression",
+    },
+    scope: { level: "repo" },
+    t: 0,
+  }).claim;
+  const withLesson = at([lesson, session(6, true)]);
+  assert.equal(withLesson.hits, 1);
+  assert.ok(withLesson.weight > 0);
 });
 
 test("centrality counts a duplicated atlas node id once, like pagerank does", () => {

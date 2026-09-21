@@ -159,7 +159,12 @@ test("factName: short stable slug, never empty", () => {
     factName("The API rate limit is 100 requests per minute"),
     "the-api-rate-limit-is-100",
   );
-  assert.equal(factName("???"), "fact");
+  // No letter or digit at all → util's hash fallback: still short, stable and non-empty,
+  // and (unlike the old shared "fact") distinct per text, so two such facts can coexist.
+  const q = factName("???");
+  assert.ok(q.length > 0 && q.length <= 16);
+  assert.equal(q, factName("???"), "stable");
+  assert.notEqual(q, factName("!!!"));
 });
 
 test("cli: forge know --dry-run --json routes without writing", () => {

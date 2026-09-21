@@ -13,8 +13,10 @@ import {
   parseReviewProposal,
   reviewerLens,
   secretsLens,
+  silentMissBound,
   speclockLens,
   symbolsLens,
+  TARGET_CLASSES,
   testsLens,
   verifyDeep,
 } from "../src/consensus.js";
@@ -89,17 +91,76 @@ test("aggregate: P(defect) stays bounded < 1 with every lens firing", () => {
   assert.ok(r.p < 1);
 });
 
-test("aggregate: residual is ∏(1−w) over lenses that RAN — clean lenses count, skipped don't", () => {
+test("LENSES: catch (recall prior) is its own column, never the precision weight", () => {
+  for (const [name, l] of Object.entries(LENSES)) {
+    assert.ok(l.catch > 0 && l.catch < 1, `${name} catch bounded`);
+    assert.ok(TARGET_CLASSES.includes(l.target), `${name} targets a known class`);
+  }
+  // tests 0.8 / secrets 0.9 are precision priors; a lens's recall for its class is not that
+  assert.notEqual(LENSES.tests.catch, LENSES.tests.weight);
+  assert.notEqual(LENSES.secrets.catch, LENSES.secrets.weight);
+});
+
+test("residual regression (E1): tests never ran + empty diff claims NO coverage, not 0.042", () => {
+  // Eq. 5 multiplied (1−0.4)(1−0.3)(1−0.9) = 0.042 over three lenses that "ran" on nothing.
   const r = aggregate([
-    { lens: "tests", s: 0 },
-    { lens: "symbols", s: 0 },
-    { lens: "reviewer", ran: false },
+    testsLens({ ran: false }),
+    symbolsLens([]),
+    docsDriftLens([]),
+    secretsLens(""),
   ]);
-  assert.equal(r.p, 0);
-  assert.equal(r.fires, false);
-  assert.ok(Math.abs(r.residual - 0.2 * 0.6) < 1e-9, "0.2·0.6 — reviewer skipped");
+  assert.equal(r.residual, 1, "no lens examined any input — nothing can have been caught");
+  for (const k of TARGET_CLASSES) assert.equal(r.residualByClass[k], 1, `${k} unchecked`);
   const none = aggregate([{ lens: "tests", ran: false }]);
   assert.equal(none.residual, 1, "nothing ran → no coverage claimed");
+});
+
+test("residual: disjoint defect classes never multiply — the worst class is the bound", () => {
+  const events = [
+    { lens: "tests", s: 0 },
+    { lens: "symbols", s: 0 },
+    { lens: "impact", s: 0 },
+    { lens: "docsdrift", s: 0 },
+    { lens: "secrets", s: 0 },
+    { lens: "reviewer", ran: false },
+  ];
+  const r = aggregate(events);
+  assert.equal(r.p, 0);
+  assert.equal(r.fires, false);
+  const eq5 = events
+    .filter((e) => e.ran !== false)
+    .reduce((acc, e) => acc * (1 - LENSES[e.lens].catch), 1);
+  assert.ok(r.residual > eq5, "a secret scan says nothing about a behavioral bug");
+  const worst = Math.max(...TARGET_CLASSES.map((k) => r.residualByClass[k]));
+  assert.equal(r.residual, worst);
+  assert.ok(Math.abs(r.residualByClass.behavior - (1 - LENSES.tests.catch)) < 1e-12);
+  assert.ok(Math.abs(r.residualByClass.docs - (1 - LENSES.docsdrift.catch)) < 1e-12);
+});
+
+test("residual: same-class checks are nested, not independent — 1 − c_max (review F2)", () => {
+  const both = silentMissBound([
+    { lens: "tests", s: 0 },
+    { lens: "reviewer", s: 0 },
+  ]);
+  const cMax = Math.max(LENSES.tests.catch, LENSES.reviewer.catch);
+  assert.ok(Math.abs(both.byClass.behavior - (1 - cMax)) < 1e-12);
+  const independent = (1 - LENSES.tests.catch) * (1 - LENSES.reviewer.catch);
+  assert.ok(both.byClass.behavior > independent, "no credit for a correlated second look");
+  // a lens that ran over nothing (examined:false) catches nothing: c = 0
+  const idle = silentMissBound([{ lens: "secrets", ran: true, examined: false, s: 0 }]);
+  assert.equal(idle.byClass.secret, 1);
+});
+
+test("lens builders report whether they examined real input", () => {
+  assert.equal(symbolsLens([]).examined, false, "unknown checked count → no coverage claimed");
+  assert.equal(symbolsLens([], 0).examined, false);
+  assert.equal(symbolsLens([], 7).examined, true);
+  assert.equal(symbolsLens(["ghostFn"]).examined, true);
+  assert.equal(docsDriftLens([]).examined, false);
+  assert.equal(docsDriftLens(["README.md"]).examined, true);
+  assert.equal(secretsLens("").examined, false);
+  assert.equal(secretsLens("  \n\t").examined, false);
+  assert.equal(secretsLens("const x = 1;").examined, true);
 });
 
 test("aggregate: clean lenses contribute no family; unknown lens names are ignored", () => {
@@ -271,11 +332,16 @@ test("verifyDeep: clean diff passes, persists provenance.deep + one verify metri
     assert.equal(r.ok, true);
     assert.deepEqual(r.findings, []);
     assert.equal(r.p, 0);
-    assert.ok(r.residual > 0 && r.residual < 1, "some lenses ran — coverage is claimed");
     const prov = JSON.parse(readFileSync(join(dir, ".forge", "provenance.json"), "utf8"));
     assert.equal(prov.deep.block, false);
     assert.ok(Array.isArray(prov.deep.lenses) && prov.deep.lenses.length === 7);
     assert.equal(prov.deep.residual, r.residual);
+    assert.ok(prov.deep.residualByClass.behavior < 1, "the suite ran — behavior coverage claimed");
+    assert.ok(prov.deep.residualByClass.secret < 1, "added lines were scanned");
+    // no atlas → impact abstained, and no symbol was checked: those classes claim nothing,
+    // so the worst-class bound honestly stays at 1 instead of multiplying the rest down
+    assert.equal(prov.deep.residualByClass.dependents, 1);
+    assert.equal(r.residual, 1);
     const metrics = readFileSync(join(dir, ".forge", "metrics.jsonl"), "utf8")
       .trim()
       .split("\n")

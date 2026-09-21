@@ -19,8 +19,12 @@ export const tokensOf = (text) => Math.ceil(String(text).length / 3.6);
 
 /** Lessons must be THIS trusted to enter the required set (spec §3: lessons*(S)). */
 export const LESSON_REQUIRED_VAL = 0.8;
-/** Per-source diminishing returns for optional items (spec §2). */
+/** Per-source diminishing returns for optional items (spec §2): the j-th item taken from
+ *  one source is worth δ^(j−1). Once that falls below the floor the source's value has
+ *  decayed away — with δ = 0.7 that is the 4th item (δ³ ≈ 0.34), so each source adds at
+ *  most three optional items. */
 const SOURCE_DISCOUNT = 0.7;
+const SOURCE_VALUE_FLOOR = 0.4;
 /** Default assembly budget in tokens (callers pass the real per-tool cap). */
 export const DEFAULT_BUDGET = 6000;
 
@@ -215,15 +219,17 @@ export function assemble(
     if (!cand) break; // everything is already a pointer — required coverage beats budget
     cand.v++;
   }
-  // Greedy fill by value density with per-source diminishing returns.
+  // Greedy fill by value density with per-source diminishing returns. The cut is checked
+  // BEFORE taking an item, and skips only that source — other sources keep competing
+  // (a `break` here used to end the whole fill, and only after taking a 6th item).
   const perSource = {};
   for (const item of optional) {
+    const taken = perSource[item.source] ?? 0;
+    if (SOURCE_DISCOUNT ** taken < SOURCE_VALUE_FLOOR) continue; // 4th+ from this source
     const variant = item.variants[0];
-    const discount = SOURCE_DISCOUNT ** (perSource[item.source] ?? 0);
     if (used() + variant.tokens > budget) continue;
     chosen.push({ item, v: 0 });
-    perSource[item.source] = (perSource[item.source] ?? 0) + 1;
-    if (discount < 0.2) break; // fourth+ item from one source: value has decayed away
+    perSource[item.source] = taken + 1;
   }
 
   const covered = new Set(chosen.flatMap((c) => c.item.covers));
