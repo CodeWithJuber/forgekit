@@ -93,6 +93,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no longer prints "the paper measured a 62% routing saving" as context: the line marks
   the figure as refuted next to the measured −20.2% on total spend
   (`research/empirical-refutation`).
+- **`forge rank` hazard counts incidents, not sessions.** The history overlay summed
+  `val()` over lesson claims AND every deja session summary naming a file, but a summary
+  is minted for every session, first-try successes included, and a session whose own
+  tests passed carries a confirm outcome: every edit became an "incident", five ordinary
+  sessions added 2.5 to a file's history, and a tested, passing session added **0.64**
+  against an untested one's **0.5**. Only lesson claims (recorded mistakes) count now;
+  session summaries add 0.
+- **Context assembly stops a source at its 3rd optional item, and only that source.** The
+  per-source diminishing-returns cut (`δ^(j−1)`, δ = 0.7, "fourth+ item from one source:
+  value has decayed away") was checked after taking the item with a 0.2 floor, so it took
+  **6** items before stopping, and it used `break`, which ended the fill for every source.
+  The cut is now checked before taking an item, at the floor the comment describes (the
+  4th item's δ³ ≈ 0.34), and skips only that source: 10 candidate facts now yield 3.
 
 ### Documentation
 

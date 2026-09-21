@@ -3,8 +3,8 @@
 // (weighted PageRank centrality), WHERE the dependency graph is knotted (Tarjan SCC →
 // circular-dependency clusters), WHERE the import graph would split if a file vanished
 // (Hopcroft–Tarjan articulation points), and — the original part — how often each file
-// has ALREADY bitten the team, from the evidence ledger (val()-weighted lesson and
-// session-summary claims that name it). hazard = centralityNorm × (1 + history):
+// has ALREADY bitten the team, from the evidence ledger (val()-weighted lesson claims —
+// recorded mistakes — that name it). hazard = centralityNorm × (1 + history):
 // structurally central code that has hurt before outranks equally central code that
 // hasn't. DATA may be a table; DECISIONS are these formulas.
 //
@@ -234,11 +234,16 @@ export function chokepoints(graph) {
 }
 
 /**
- * The team-history overlay — how much verified memory already points at each file.
- * Per file: Σ val(claim) over lesson claims whose trigger.files glob-match it and
- * summary claims (deja session records) that list it. val() is the ledger's
- * time-decayed Beta posterior, so stale incidents fade on the same clock everything
- * else in the substrate uses. Pure; fail-open — no claims → all zeros.
+ * The team-history overlay — how often each file has already bitten the team.
+ * Per file: Σ val(claim) over lesson claims (each one a recorded mistake) whose
+ * trigger.files glob-match it; val() is the ledger's time-decayed Beta posterior, so
+ * reviewed evidence moves the weight. Pure; fail-open — no claims → all zeros.
+ *
+ * Session `summary` claims (deja records) are NOT incidents: one is minted for every
+ * session, first-try successes included, and a session whose own tests passed carries a
+ * confirm outcome — so counting them made every edit an "incident" and made a verified,
+ * passing session add MORE hazard (val 0.64) than an untested one (0.5). A summary says
+ * work happened, not that it went wrong; it contributes nothing here.
  *
  * Path normalization is load-bearing, not cosmetic: hook-minted claims store the raw
  * tool-input paths (ABSOLUTE — cortex_hook stores file_path verbatim), while atlas
@@ -259,15 +264,11 @@ export function history(claims, files, nowDay, root = "") {
   };
   const out = new Map(files.map((f) => [f, { weight: 0, hits: 0 }]));
   for (const claim of claims ?? []) {
-    let touched = [];
-    if (claim.kind === "lesson") {
-      const globs = (claim.body?.trigger?.files ?? []).map(norm);
-      if (globs.length)
-        touched = files.filter((f) => globs.some((g) => globToRe(String(g)).test(f)));
-    } else if (claim.kind === "summary") {
-      const set = new Set((claim.body?.files ?? []).map(norm));
-      touched = files.filter((f) => set.has(f));
-    }
+    if (claim?.kind !== "lesson") continue; // only recorded mistakes are incidents
+    const globs = (claim.body?.trigger?.files ?? []).map(norm);
+    const touched = globs.length
+      ? files.filter((f) => globs.some((g) => globToRe(String(g)).test(f)))
+      : [];
     if (!touched.length) continue;
     const w = val(claim, nowDay);
     for (const f of touched) {

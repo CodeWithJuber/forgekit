@@ -320,9 +320,10 @@ rank answers "which X-es should I worry about at all". Weighted PageRank over th
 graph scores structural centrality (using the same edge weights the blast-radius search
 trusts), Tarjan SCC finds circular-import clusters, articulation points find chokepoint
 files whose removal would split the import graph — and the ledger join is the part
-nobody else has: each file's past-incident history (val()-weighted lesson and session
-claims that name it) multiplies into `hazard = centrality × (1 + history)`, so central
-code that has already bitten the team outranks equally central code that hasn't. Run
+nobody else has: each file's past-incident history (val()-weighted lesson claims —
+recorded mistakes — that name it; ordinary session records are not incidents) multiplies
+into `hazard = centrality × (1 + history)`, so central code that has already bitten the
+team outranks equally central code that hasn't. Run
 `forge atlas build` first. Also exposed to every MCP-capable agent as `rank_code`.
 
 ```console

@@ -169,3 +169,23 @@ test("renderContext + tokensOf: sane output surface", () => {
   assert.match(out, /\+ deps:computeTax/);
   assert.equal(tokensOf("x".repeat(36)), 10);
 });
+
+test("assemble regression (E5): a source's 4th+ optional item is dropped — not its 7th", () => {
+  // The per-source discount is δ^(j−1), δ = 0.7: the 4th item is worth 0.34 and "has decayed
+  // away" per the code's own comment, but the old loop only broke AFTER taking a 6th item.
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  const facts = Array.from(
+    { length: 10 },
+    (_, i) =>
+      mintClaim({
+        kind: "fact",
+        body: { name: `f${i}`, text: `fact number ${i}` },
+        scope: { level: "repo" },
+        t: 0,
+      }).claim,
+  );
+  const r = assemble(root, "do something", { claims: facts, budget: 6000 });
+  const taken = r.selection.filter((s) => s.source === "fact");
+  assert.equal(taken.length, 3, "three optional facts, then the source is spent");
+  assert.ok(r.tokens <= 6000);
+});
