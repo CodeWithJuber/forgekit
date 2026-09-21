@@ -15,6 +15,7 @@ import {
   readFileSync,
   readSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -686,6 +687,51 @@ export function reindex(dir, _nowDay = 0) {
  * skips, verify names.
  * @returns {{ok:boolean, claims:number, outcomes:number, issues:string[]}}
  */
+/**
+ * Re-address every claim still stored under its PRE-CRLF-fold id (see legacyClaimId).
+ * Reads already accept that address, so nothing is broken without this — but the old and
+ * the newly-minted form of one fact stay TWO entries until their bytes agree, which is the
+ * fork the fold exists to prevent. This moves the claim file to its current address and
+ * takes its logs with it, unioning into an existing log rather than overwriting one (the
+ * logs are append-only sets deduped by content hash, so a union is the merge).
+ * Idempotent: a second run finds nothing to do.
+ * @param {string} dir ledger dir
+ * @returns {{migrated: string[], merged: string[], failed: string[]}}
+ */
+export function migrateAddresses(dir) {
+  const migrated = [];
+  const merged = [];
+  const failed = [];
+  for (const { id, path, claim } of [...walkClaimFiles(dir)]) {
+    if (!claim) continue;
+    const current = claimId(claim.kind, claim.body, claim.scope);
+    if (current === id) continue; // already at its current address
+    if (legacyClaimId(claim.kind, claim.body, claim.scope) !== id) continue; // not ours to touch
+    try {
+      const target = claimPath(dir, current);
+      const already = existsSync(target);
+      if (!already) {
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, claimBytes({ ...claim, id: current }));
+      }
+      for (const log of LOGS) {
+        const from = logPath(dir, log, id);
+        if (!existsSync(from)) continue;
+        const lines = readFileSync(from, "utf8");
+        const to = logPath(dir, log, current);
+        mkdirSync(dirname(to), { recursive: true });
+        for (const line of lines.split(/\r?\n/)) if (line.trim()) appendLine(to, line);
+        rmSync(from, { force: true });
+      }
+      rmSync(path, { force: true });
+      (already ? merged : migrated).push(current);
+    } catch {
+      failed.push(id);
+    }
+  }
+  return { migrated, merged, failed };
+}
+
 export function verify(dir) {
   const issues = [];
   let claims = 0;

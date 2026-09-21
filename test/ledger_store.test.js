@@ -22,6 +22,7 @@ import {
   loadClaims,
   loadState,
   mergeDirs,
+  migrateAddresses,
   pruneLedger,
   pruneToAttic,
   putClaim,
@@ -764,4 +765,27 @@ test("a claim minted before the CRLF fold survives the upgrade (migration, not d
     '{"kind":"fact","body":{"name":"evil","text":"tampered"},"scope":{},"v":1}',
   );
   assert.equal(loadClaims(dir).length, 1, "a tampered claim is still refused");
+});
+
+test("migrateAddresses moves a pre-CRLF-fold claim to its current address, logs and all", () => {
+  // Accepting the legacy address on read keeps the claim alive, but the old form and a
+  // freshly minted twin are still two entries. This is the other half: re-address it.
+  const dir = tmp();
+  const body = { name: "build", text: "step one\r\nstep two" };
+  const legacyId = legacyClaimId("fact", body, {});
+  const currentId = claimId("fact", body, {});
+  mkdirSync(join(dir, "claims", legacyId.slice(0, 2)), { recursive: true });
+  writeFileSync(
+    join(dir, "claims", legacyId.slice(0, 2), `${legacyId}.json`),
+    JSON.stringify({ kind: "fact", body, scope: {}, v: 1 }),
+  );
+  appendEvidence(dir, legacyId, ev("confirm", "run:1"));
+  const r = migrateAddresses(dir);
+  assert.deepEqual(r.migrated, [currentId], "the claim moved to its current address");
+  assert.equal(existsSync(join(dir, "claims", legacyId.slice(0, 2), `${legacyId}.json`)), false);
+  const loaded = loadClaims(dir);
+  assert.equal(loaded.length, 1, "still exactly one claim");
+  assert.equal(loaded[0].id, currentId);
+  assert.equal(loaded[0].evidence.length, 1, "its evidence came with it");
+  assert.deepEqual(migrateAddresses(dir).migrated, [], "idempotent: nothing left to move");
 });

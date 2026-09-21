@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`forge ledger verify --fix` re-addresses pre-CRLF-fold claims.** Accepting the old
+  address on read keeps such a claim alive, but it and a teammate's freshly minted copy of
+  the same fact remain two entries until their bytes agree — the fork the fold exists to
+  prevent. The flag moves each claim to its current address and takes its evidence and
+  provenance logs with it, unioning into an existing twin instead of overwriting (the logs
+  are append-only sets deduped by content hash, so union IS the merge). Idempotent.
+
 - **TypeSafe System One (Jev) as the fast proposer.** Where forge's LLM layer asked a text
   model for a judgment that is really a classification or a yes/no — `route`'s complexity band
   and preflight's assumption gate — it can now ask Jev instead: typed `choice`/`noul` answers

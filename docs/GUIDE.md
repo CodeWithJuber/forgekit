@@ -819,6 +819,14 @@ Forge ledger — proof-carrying memory
   stored in .forge/ledger/ (git-committable, conflict-free merge)
 ```
 
+`forge ledger verify` re-derives every claim's address and every log line's hash, and names
+what it had to skip. `forge ledger verify --fix` additionally re-addresses claims written
+before canonicalization folded CRLF into LF: those carry their pre-fold id in the filename,
+which reads still accept, so nothing is broken without it — but the old form and a teammate's
+freshly minted copy of the same fact stay two entries until you run it. It moves each claim's
+evidence and provenance logs with it, unions them into an existing twin rather than
+overwriting, and is idempotent.
+
 `forge ledger blame <id-prefix>` is the accountability view — every mint, every oracle
 outcome, every retraction, and per-author trust:
 

@@ -721,8 +721,18 @@ HANDLERS.ledger = async (argv) => {
     return;
   }
   if (sub === "verify") {
+    // --fix re-addresses claims still stored under their pre-CRLF-fold id. Reads accept
+    // that address either way, so this is not a repair — it is what stops one fact living
+    // at two addresses once a teammate on another platform mints its current form.
+    const migration = args.includes("--fix") ? ls.migrateAddresses(dir) : null;
     const r = ls.verify(dir);
-    if (json) return console.log(JSON.stringify(r, null, 2));
+    if (json) return console.log(JSON.stringify(migration ? { ...r, migration } : r, null, 2));
+    if (migration) {
+      const { migrated, merged, failed } = migration;
+      console.log(
+        `  migrated ${migrated.length} claim(s) to their current address, merged ${merged.length} into an existing twin${failed.length ? `, ${failed.length} failed` : ""}`,
+      );
+    }
     console.log(`  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`);
     for (const i of r.issues) console.log(`    - ${i}`);
     if (!r.ok) process.exitCode = 1;
