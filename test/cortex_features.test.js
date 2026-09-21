@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { computeFeatures, featuresForEdit, gitChurn, grepFanout } from "../src/cortex_features.js";
+import {
+  computeFeatures,
+  featuresForEdit,
+  gitChurn,
+  grepFanout,
+  moduleStem,
+  referencingFiles,
+} from "../src/cortex_features.js";
 import { newLesson } from "../src/lessons.js";
 
 test("computeFeatures normalizes and derives every feature", () => {
@@ -105,4 +112,60 @@ test("gitChurn counts only commits inside the time window", () => {
   assert.equal(gitChurn(root, "ancient.js"), 0, "untouched for a decade → no churn");
   assert.equal(gitChurn(root, "fresh.js"), 1);
   assert.ok(gitChurn(root, "ancient.js", { days: 6000 }) >= 2, "a wider window sees the history");
+});
+
+// --- caller_fanout from the FILE when the caller has no symbol --------------------------
+
+/** A module with `callers` importers, one test, and one same-named doc (never a caller). */
+const fanoutRepo = (callers = 6) => {
+  const { root, commit } = gitRepo();
+  mkdirSync(join(root, "src"), { recursive: true });
+  mkdirSync(join(root, "test"), { recursive: true });
+  writeFileSync(join(root, "src", "pricing.js"), "export function pricing(q) {\n  return q;\n}\n");
+  for (let i = 0; i < callers; i++)
+    writeFileSync(
+      join(root, "src", `caller${i}.js`),
+      `import { pricing } from "./pricing.js";\nexport const v${i} = pricing(${i});\n`,
+    );
+  writeFileSync(join(root, "test", "pricing.test.js"), 'import "../src/pricing.js";\n');
+  writeFileSync(join(root, "PRICING.md"), "# pricing\n\nThe pricing module.\n");
+  commit("fixture");
+  return root;
+};
+
+test("featuresForEdit derives caller_fanout from the FILE when the edit has no symbol", () => {
+  // The production callers (the pre-edit hook) only ever have a path. Asking grepFanout
+  // about `undefined` pinned caller_fanout at 0 for every one of them — the feature was
+  // dead. Six importers must now register.
+  const root = fanoutRepo(6);
+  const bySymbol = featuresForEdit(root, { file: "src/pricing.js", symbol: "pricing" });
+  const byFile = featuresForEdit(root, { file: "src/pricing.js" });
+  assert.ok(bySymbol.caller_fanout > 0, "symbol path still works");
+  assert.equal(byFile.caller_fanout, 0.6, "6 code importers / 10 — the file's own fan-out");
+  assert.equal(
+    featuresForEdit(root, { file: "src/unreferenced.js" }).caller_fanout,
+    0,
+    "a file nobody names still has no fan-out — the signal did not become free",
+  );
+});
+
+test("referencingFiles splits callers from tests and never counts the file itself", () => {
+  const root = fanoutRepo(2);
+  const { callers, tests } = referencingFiles(root, "src/pricing.js");
+  assert.deepEqual(callers.sort(), ["src/caller0.js", "src/caller1.js"]);
+  assert.deepEqual(
+    tests,
+    ["test/pricing.test.js"],
+    "a test referencing it is coverage, not fan-out",
+  );
+  assert.ok(!callers.includes("src/pricing.js"), "the definition is not its own caller");
+  assert.ok(!callers.includes("PRICING.md"), "prose that names the module is not a caller");
+});
+
+test("moduleStem uses the directory for entry-point names and refuses short stems", () => {
+  assert.equal(moduleStem("src/pricing.js"), "pricing");
+  assert.equal(moduleStem("src/auth/index.js"), "auth");
+  assert.equal(moduleStem("pkg/mod.rs"), "pkg");
+  assert.equal(moduleStem("src/db.js"), "", "a 2-char stem greps too widely to be signal");
+  assert.equal(moduleStem(""), "");
 });

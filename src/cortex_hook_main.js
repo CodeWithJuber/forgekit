@@ -271,11 +271,11 @@ async function preEditAdvisory(root, input, today) {
 // working set, and the edit payload itself for the signature check. Outside a git work
 // tree nothing is inferred (no test gap, no fan-out): absent evidence never raises risk.
 async function liveEditFeatures(root, file, input, today) {
-  const { computeFeatures, gitChurn } = await import("./cortex_features.js");
+  const { computeFeatures, gitChurn, referencingFiles } = await import("./cortex_features.js");
   const { toPosix } = await import("./util.js");
   const { execFileSync } = await import("node:child_process");
   const { readFileSync } = await import("node:fs");
-  const { basename, dirname, isAbsolute, join, relative } = await import("node:path");
+  const { isAbsolute, join } = await import("node:path");
   const git = (args) => {
     try {
       return execFileSync("git", args, {
@@ -294,22 +294,10 @@ async function liveEditFeatures(root, file, input, today) {
       .map((f) => toPosix(f.trim()))
       .filter(Boolean);
   const abs = isAbsolute(file) ? file : join(root, file);
-  const rel = toPosix(relative(root, abs));
   const inRepo = git(["rev-parse", "--is-inside-work-tree"]).trim() === "true";
-  let callers = [];
-  let tests = [];
-  if (inRepo) {
-    // The module's import name: its stem, or its directory for index/__init__/mod/main.
-    let stem = basename(rel).replace(/\.[^.]+$/, "");
-    if (/^(index|__init__|mod|main)$/i.test(stem)) stem = basename(dirname(rel));
-    if (stem.length >= 3) {
-      const hits = lines(git(["grep", "-l", "-I", "-w", "-F", "-e", stem])).filter(
-        (f) => f !== rel,
-      );
-      tests = hits.filter((f) => TEST_PATH_RE.test(f));
-      callers = hits.filter((f) => !TEST_PATH_RE.test(f) && CALLER_EXT_RE.test(f));
-    }
-  }
+  // One shared rule for "who references this module" (cortex_features.referencingFiles),
+  // so the hook and featuresForEdit can never drift on what counts as a caller.
+  const { callers, tests } = inRepo ? referencingFiles(root, abs) : { callers: [], tests: [] };
   const inDiff = new Set(lines(git(["diff", "--name-only", "--relative", "HEAD"])));
   const before = () => {
     try {
@@ -331,11 +319,6 @@ async function liveEditFeatures(root, file, input, today) {
     },
   );
 }
-
-const TEST_PATH_RE =
-  /(^|\/)(tests?|__tests__|spec)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/i;
-const CALLER_EXT_RE =
-  /\.(m?[jt]sx?|cjs|py|go|rs|java|kt|rb|php|cs|c|cc|cpp|h|hpp|swift|vue|svelte)$/i;
 
 // A declaration header (function / class / def / fn / func, or a const-bound function).
 // Rough on purpose — one line, no parser — and only used to ask "does this edit remove or

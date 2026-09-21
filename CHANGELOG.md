@@ -25,6 +25,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`caller_fanout` is no longer dead for callers that only have a path.**
+  `featuresForEdit()` asked `grepFanout()` about `edit.symbol`, so every caller holding
+  only a file path — which is every hook fired on an edit event — got `grepFanout(root,
+  undefined) === 0`: a module with twenty importers scored exactly like one nobody
+  references. Without a symbol the feature now falls back to the FILE's own fan-out (how
+  many code modules name this one as a whole word), which is the honest answer such a
+  caller can have. The "who references this module" rule — module stem, directory for
+  `index`/`__init__`/`mod`/`main`, tests separated from callers — now lives once in
+  `cortex_features.referencingFiles()` and the pre-edit hook uses it instead of its own
+  copy, so the two can never drift.
 - **`forge impact` actually resolves imports.** JS/TS import specifiers were stored as raw
   strings and matched against symbol names, so `"./util.js"` could only ever resolve by its
   last dotted segment: on this repo, 3 of 502 relative import statements resolved and all
