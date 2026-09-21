@@ -325,8 +325,10 @@ Parser-stable snapshot labels used by the generated project pages are:
 
 - **A full pre-action gate in 118 ms median** — deterministic, warm repository graph, LLM disabled;
 - **Blast radius in 0.43 ms median** — warm impact query; and
-- **62.1% cost saved** — the 30-task Python routing demonstration, tuned on those tasks and
-  **refuted** on 80 held-out tasks, where routing cost 20.2% more than always-premium (table below).
+- **20.2% more cost than always-premium** — the held-out routing result. The 62.1% saving the
+  white paper reported came from a 30-task demonstration with thresholds tuned on those same
+  tasks; on 80 pre-registered held-out tasks the same router spent 20.2% *more* (table below).
+  Per judged-correct output the pipeline cost $1.06 against always-premium's $1.76.
 
 The boundaries in the table below are part of each result.
 
