@@ -54,6 +54,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that examined no input catches nothing, and the figure is the worst class, with
   `residualByClass` in the provenance. The same case now reports **1**; a typical clean run
   reports 0.7 instead of 0.005.
+- **The pre-edit risk advisory can fire.** The hook passed the predictor only the file path,
+  so four of its seven features were pinned to 0 and the heuristic topped out at
+  σ(−1.0) = **0.27**, below the 0.66 "high" band: the high-risk advisory could never appear.
+  The hook now computes them from the repo and the edit itself — callers and tests from one
+  bounded `git grep` of the module name, whether the edit rewrites an existing declaration,
+  and whether any caller is in the working diff — and the advisory names the reasons. A
+  hot file with ten importers, no test, and a rewritten exported signature now scores 0.91
+  ("high"); the same file with a covering test and a body-only edit stays quiet. In
+  `src/predictor.js`, `aucPr` now ranks tied scores as one threshold (the same data gave
+  **1.0 or 0.333** depending on input order; now 0.333 either way), and the kill criteria
+  no longer decide on a held-out split under 10 samples or 2 of each class (a 4-sample split
+  with no positive used to disable a perfectly predictive feature) and compare AUC-PR with
+  the exact chance baseline of a random ranking instead of a fixed 0.6 (pure noise at 80%
+  positives passed 0.6 and let the learned model take over; a real 10%-prevalence signal
+  at AP 0.33 was disabled).
 
 ### Documentation
 

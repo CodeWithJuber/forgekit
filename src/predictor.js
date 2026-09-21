@@ -59,34 +59,72 @@ export function predictLogistic(w, features, keys = FEATURE_KEYS) {
 /**
  * Average precision (area under precision-recall). PR, not ROC: mistakes are the rare
  * positive class, and ROC-AUC flatters a model under imbalance.
+ *
+ * Tied scores are ONE threshold: the items sharing a score enter the ranking together, so
+ * the result cannot depend on input order (the same data once gave 1.0 with the positive
+ * listed first and 0.333 with it last). AP = Σ over distinct scores of ΔRecall × Precision
+ * — the standard step-wise definition (as sklearn's average_precision_score).
  * @param {{score:number, label:number}[]} scored
  */
 export function aucPr(scored) {
   const positives = scored.filter((s) => s.label === 1).length;
   if (!positives) return 0;
-  const sorted = [...scored].sort((a, b) => b.score - a.score);
+  // NaN would make the sort comparator inconsistent and never equal itself — rank it last.
+  const key = (x) => (Number.isNaN(x) ? Number.NEGATIVE_INFINITY : x);
+  const sorted = [...scored].sort((a, b) => key(b.score) - key(a.score) || 0);
   let tp = 0;
   let fp = 0;
-  let sumPrecision = 0;
-  for (const s of sorted) {
-    if (s.label === 1) {
-      tp += 1;
-      sumPrecision += tp / (tp + fp);
-    } else {
-      fp += 1;
-    }
+  let ap = 0;
+  for (let i = 0; i < sorted.length; ) {
+    const threshold = key(sorted[i].score);
+    let groupTp = 0;
+    do {
+      if (sorted[i].label === 1) groupTp += 1;
+      else fp += 1;
+      i += 1;
+    } while (i < sorted.length && key(sorted[i].score) === threshold);
+    tp += groupTp;
+    if (groupTp) ap += (groupTp / positives) * (tp / (tp + fp));
   }
-  return sumPrecision / positives;
+  return ap;
+}
+
+/**
+ * Expected AUC-PR of a RANDOM ranking of `n` items holding `pos` positives — the chance
+ * baseline a ranking must beat before it counts as signal. It tends to the prevalence
+ * pos/n as n grows, but sits above it at the small held-out sizes the kill criteria see:
+ *   E[AP] = (1/n)·Σᵢ₌₁ⁿ [1 + (pos−1)(i−1)/(n−1)] / i
+ * (a positive lands at rank i with probability pos/n, and then the other pos−1 positives
+ * fill the i−1 ranks above it at rate (pos−1)/(n−1)).
+ * @param {number} n
+ * @param {number} pos
+ */
+export function chanceAucPr(n, pos) {
+  if (!n || !pos) return 0;
+  if (n === 1) return 1;
+  let sum = 0;
+  for (let i = 1; i <= n; i += 1) sum += (1 + ((pos - 1) * (i - 1)) / (n - 1)) / i;
+  return sum / n;
 }
 
 /**
  * Prequential (train-on-past / test-on-future) evaluation + the KILL CRITERIA that decide
  * whether the learned model is allowed to take over. This is the anti-vaporware gate.
+ *
+ * Both decisions are measured on the held-out future split, so that split must be big
+ * enough to measure anything: below `minTest` samples, or with fewer than `minPerClass`
+ * positives or negatives, the heuristic is kept and nothing is killed (a 4-sample split
+ * with no positive scores AP 0 and used to disable a perfectly predictive feature). The
+ * "no signal" bar is the chance baseline (chanceAucPr) plus `margin`, not a fixed floor:
+ * AUC-PR scales with prevalence, so a fixed 0.6 let pure noise pass at 80% positives and
+ * killed a real signal at 10%.
  * @param {{features:object, label:number}[]} samples - time-ordered.
- * @returns {{mode:"heuristic"|"learned"|"disabled", reason:string, heuristicAucPr?:number, learnedAucPr?:number, weights?:object, n:number}}
+ * @param {string[]} [keys]
+ * @param {{minSamples?:number, minTest?:number, minPerClass?:number, margin?:number}} [opts]
+ * @returns {{mode:"heuristic"|"learned"|"disabled", reason:string, heuristicAucPr?:number, learnedAucPr?:number, chanceAucPr?:number, weights?:object, n:number}}
  */
 export function evaluate(samples, keys = FEATURE_KEYS, opts = {}) {
-  const { minSamples = 20, floor = 0.6, margin = 0.05 } = opts;
+  const { minSamples = 20, minTest = 10, minPerClass = 2, margin = 0.05 } = opts;
   if (samples.length < minSamples) {
     return {
       mode: "heuristic",
@@ -97,17 +135,27 @@ export function evaluate(samples, keys = FEATURE_KEYS, opts = {}) {
   const cut = Math.floor(samples.length * 0.8);
   const train = samples.slice(0, cut);
   const test = samples.slice(cut);
+  const pos = test.filter((s) => s.label === 1).length;
+  if (test.length < minTest || pos < minPerClass || test.length - pos < minPerClass) {
+    return {
+      mode: "heuristic",
+      reason: `held-out split too small to judge (${test.length} samples, ${pos} positive; need ≥${minTest} with ≥${minPerClass} of each class)`,
+      n: samples.length,
+    };
+  }
+  const chance = chanceAucPr(test.length, pos);
 
   const heuristicAucPr = aucPr(
     test.map((s) => ({ score: heuristicRisk(s.features), label: s.label })),
   );
-  // If even the heuristic can't separate mistakes here, the features carry no signal for
-  // this repo — disable prediction entirely rather than nag on noise.
-  if (heuristicAucPr < floor) {
+  // If even the heuristic ranks no better than chance here, the features carry no signal
+  // for this repo — disable prediction entirely rather than nag on noise.
+  if (heuristicAucPr < chance + margin) {
     return {
       mode: "disabled",
-      reason: "features carry no signal in this repo",
-      heuristicAucPr,
+      reason: "features carry no signal in this repo (heuristic AUC-PR no better than chance)",
+      heuristicAucPr: Number(heuristicAucPr.toFixed(3)),
+      chanceAucPr: Number(chance.toFixed(3)),
       n: samples.length,
     };
   }
@@ -127,6 +175,7 @@ export function evaluate(samples, keys = FEATURE_KEYS, opts = {}) {
       : "heuristic retained — learned did not beat it by the margin",
     heuristicAucPr: Number(heuristicAucPr.toFixed(3)),
     learnedAucPr: Number(learnedAucPr.toFixed(3)),
+    chanceAucPr: Number(chance.toFixed(3)),
     weights: beats ? w : undefined,
     n: samples.length,
   };
