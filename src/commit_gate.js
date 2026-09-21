@@ -23,7 +23,7 @@
 // "couldn't look" must never read as "nothing there" (the old 1 MiB default buffer
 // turned any leak + one big file into a silent pass).
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { BRAND } from "./brand.js";
 import { CLASSES, classifyPath } from "./gate.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
@@ -43,12 +43,19 @@ const lineBlockSecret = (text) => hasSecret(text) && redactSecrets(text) !== tex
 // file, never into an empty diff.
 const MAX_DIFF_BYTES = 256 * 1024 * 1024;
 function gitStrict(root, args) {
-  return execFileSync("git", args, {
-    cwd: root,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: MAX_DIFF_BYTES,
-  });
+  const r = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES });
+  if (r.error) throw r.error; // spawn failure or ENOBUFS — the caller falls back per file
+  if (r.status !== 0) throw new Error(`git exited ${r.status}`);
+  // git can report a hard error on stderr and STILL exit 0 — a staged blob whose object is
+  // missing or unreadable prints `error: unable to read …` and yields an EMPTY diff, which
+  // would read as "this file added no lines" and let a credential through unscanned. Which
+  // git versions exit non-zero for this differs by platform, so trust the message, not the
+  // status. Warnings are routine (CRLF conversion on a Windows checkout) and never fatal.
+  const bad = String(r.stderr || "")
+    .split("\n")
+    .find((l) => /^(error|fatal):/i.test(l.trim()));
+  if (bad) throw new Error(`git reported: ${bad.trim()}`);
+  return r.stdout;
 }
 function gitRaw(root, args) {
   try {
