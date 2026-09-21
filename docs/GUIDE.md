@@ -282,6 +282,14 @@ impacts all co-members) and a data-driven threshold from PageRank centrality
 and ledger incident history. `--basic` reverts to the fixed-threshold mode.
 Run `forge atlas build` first.
 
+By default the walk follows **reverse dependencies only** — the files that actually
+reference the target. `--all-relations` additionally walks the empirical refutation's
+repaired **sibling** and **forward** rules at their frozen parameters (a file that shares
+a dependency with the target, and what the target itself depends on). That is a recall
+instrument, not an everyday view: on forgekit itself the median answer goes from 15 files
+to 78 of ~450 (recall 1.00, precision 0.09), so reach for it when you need "what could
+conceivably be affected", not "what references this".
+
 ```console
 $ forge impact verifyToken
 Forge impact — blast radius (hazard-aware)

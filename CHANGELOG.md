@@ -623,6 +623,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`forge impact` stays focused by default; the wide walk is `--all-relations`.** The
+  sibling and forward relations ported from the empirical refutation's repaired oracle are
+  a recall instrument: on this repo they take the median answer from 15 files to 78 of ~450
+  (max 196) — recall 1.00, precision 0.09 — and the substrate's 25-file blast threshold
+  would trip on almost every edit. `impact()` now walks reverse dependencies only unless a
+  caller passes `relations` (`IMPACT_RELATIONS` for all three), and `forge impact
+  --all-relations` asks for the wide walk. The relations themselves are unchanged, at their
+  frozen parameters; only which ones run by default changed.
+
 - **`forge route calibrate` stops calling itself "outcome-calibrated routing".** Nothing in it
   comes from an outcome: the fixture is 24 hand-written task phrases with hand-assigned
   complexities, and forge records nothing that could replace them — a `route` metrics event

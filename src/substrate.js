@@ -165,11 +165,13 @@ export function loadRankData(root) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {boolean} [opts.basic] skip hazard-aware enhancements
+ * @param {readonly string[]} [opts.relations] which relations to walk; omitted means
+ *   impact()'s own default (reverse only). Pass IMPACT_RELATIONS for the wide walk.
  */
 export function predictImpact(
   root,
   target,
-  { threshold = 0.1, llm, model, timeoutMs, basic } = {},
+  { threshold = 0.1, llm, model, timeoutMs, basic, relations } = {},
 ) {
   const cached = loadAtlas(root);
   const atlas = cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
@@ -177,6 +179,9 @@ export function predictImpact(
   const rankData = basic ? {} : loadRankData(root);
   return impactGraph(atlas, target, {
     threshold,
+    // undefined → impact()'s own default (reverse only). `forge impact --all-relations`
+    // passes IMPACT_RELATIONS to add the paper's sibling/forward walk.
+    ...(relations ? { relations } : {}),
     llm: useLLM,
     run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
     verify: makeImpactVerify(root),

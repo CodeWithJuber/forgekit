@@ -1225,6 +1225,13 @@ export const SIBLING = Object.freeze({
 });
 export const FORWARD = Object.freeze({ maxHops: 2, weight: 0.5 });
 export const IMPACT_RELATIONS = Object.freeze(["reverse", "sibling", "forward"]);
+/** What `impact()` walks unless a caller asks for more. The sibling/forward rules above are
+ *  the paper's repair and they work — but they are a RECALL instrument: on this repo the
+ *  median answer goes from 15 files to 78 of ~450 (max 196), recall 1.00, precision 0.093.
+ *  An everyday "what does this change touch?" wants the focused answer, and a gate whose
+ *  blast threshold is 25 files would otherwise trip on almost every edit. So the wider walk
+ *  is opt-in: `impact(atlas, f, { relations: IMPACT_RELATIONS })`, or `--all-relations`. */
+export const DEFAULT_IMPACT_RELATIONS = Object.freeze(["reverse"]);
 
 const round4 = (x) => Number(x.toFixed(4));
 
@@ -1235,7 +1242,8 @@ const round4 = (x) => Number(x.toFixed(4));
  * @param {number} [opts.threshold]
  * @param {number} [opts.maxHops] reverse-dependency hop cap
  * @param {number} [opts.decay]
- * @param {readonly string[]} [opts.relations] subset of IMPACT_RELATIONS (default: all)
+ * @param {readonly string[]} [opts.relations] subset of IMPACT_RELATIONS
+ *   (default: DEFAULT_IMPACT_RELATIONS — reverse only; pass IMPACT_RELATIONS for the wide walk)
  * @param {boolean} [opts.llm]
  * @param {(p:string)=>string} [opts.run]
  * @param {(file:string, target:string)=>boolean} [opts.verify]
@@ -1249,7 +1257,7 @@ export function impact(
     threshold = 0.1,
     maxHops = 6,
     decay = 0.85,
-    relations = IMPACT_RELATIONS,
+    relations = DEFAULT_IMPACT_RELATIONS,
     llm,
     run,
     verify,

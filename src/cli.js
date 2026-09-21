@@ -1711,16 +1711,24 @@ HANDLERS.impact = async (argv) => {
   const { predictImpact } = await import("./substrate.js");
   const json = argv.includes("--json");
   const basic = argv.includes("--basic");
+  // Default is the focused reverse walk. --all-relations adds the paper's sibling/forward
+  // rules: recall 1.00, but on this repo the median answer goes from 15 files to 78.
+  const all = argv.includes("--all-relations");
+  const FLAGS = new Set(["--json", "--basic", "--all-relations"]);
   const target = argv
     .slice(1)
-    .filter((a) => a !== "--json" && a !== "--basic")
+    .filter((a) => !FLAGS.has(a))
     .join(" ");
   if (!target) {
-    console.error("usage: forge impact <symbol|file> [--json] [--basic]");
+    console.error("usage: forge impact <symbol|file> [--json] [--basic] [--all-relations]");
     process.exitCode = 1;
     return;
   }
-  const r = predictImpact(process.cwd(), target, { basic });
+  const { IMPACT_RELATIONS } = await import("./atlas.js");
+  const r = predictImpact(process.cwd(), target, {
+    basic,
+    ...(all ? { relations: IMPACT_RELATIONS } : {}),
+  });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
