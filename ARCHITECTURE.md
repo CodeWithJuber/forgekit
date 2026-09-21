@@ -291,9 +291,11 @@ of text plus JSON parsing. The module reuses the adjudicate contract verbatim: o
 (the `llm.js` spawned-child pattern, key in child env as `_FORGE_JEV_KEY`), and secret-refusing
 on the outgoing state. Jev answers are validated against the questions asked — a choice naming
 an option we never offered is garble and fails safe. The reconciles judge Jev like any proposer:
-`reconcileRoute` compares its band with the deterministic score's band and gates on p(band), the
-assumption gate still bounds completeness to ±band, and clarifying free-text questions stay with
-the deterministic rubric, because a System One model judges but does not author prose.
+`reconcileRoute` compares its band with the deterministic score's band and gates on p(band);
+`reconcileAssumption` compares Jev's ask/proceed verdict (mean noul vs 0.5) with the rubric's
+and lets it flip the gate only at p ≥ `minConfidence` — the two completeness scales are never
+blended; and clarifying free-text questions stay with the deterministic rubric, because a
+System One model judges but does not author prose.
 Provenance records which proposer answered
 (`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
 

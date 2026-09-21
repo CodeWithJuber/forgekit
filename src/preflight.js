@@ -345,62 +345,72 @@ export function assessTaskJev(task, { llm, call } = {}) {
 }
 
 /**
- * Verify-don't-trust reconcile for M2. The model may only move completeness within ±band of the
- * deterministic score, so a clearly-specified or clearly-vague task can never be flipped — only a
- * borderline reading shifts. In `bidirectional` mode (default) the ask is recomputed purely from
- * that bounded completeness, so a verified reading can also CLEAR a false ask — but two hard
- * floors the model can never override still force the ask: a task with no concrete anchor
- * (`hardUnderspecified`), or one naming symbols/files the repo doesn't define (`hasUnresolved`).
- * With `bidirectional:false` the gate only ever tightens (the conservative pre-bidirectional
- * behaviour). Extra questions survive only if they map to a rubric-flagged dimension or (via
+ * Minimum probability a proposer must put on its OWN verdict (ask vs proceed) before it may flip
+ * the rubric's. An a-priori conservative default, NOT fit to any data: the right value has to be
+ * chosen on fresh labelled tasks (the frozen held-out set is spent). Configurable per call and via
+ * `llm.minConfidence` in source/substrate.json (0 disables the gate).
+ */
+export const GATE_MIN_CONFIDENCE = 0.8;
+
+/**
+ * Verify-don't-trust reconcile for M2, band to band. The rubric's completeness and a proposer's
+ * are on different scales — the rubric's logistic saturates on real issues (median ≈ 0.98) while a
+ * proposer's reading is a probability that the task is specified, centred on 0.5 — so each is
+ * judged against its OWN threshold and only the two verdicts are compared (the old ±band clamp of
+ * one onto the other pinned the proposer to the edge of the band and left it no say). When they
+ * disagree, the proposer's verdict wins only if it holds it with probability ≥ `minConfidence`:
+ *   - TIGHTEN (rubric proceeds, proposer asks) — always allowed; caution can only grow.
+ *   - CLEAR (rubric asks, proposer proceeds) — only in `bidirectional` mode, and never past two
+ *     floors: a task with no concrete anchor (`hardUnderspecified`), or one naming symbols/files
+ *     the repo doesn't define (`hasUnresolved`). The floors guard clearing ONLY — they never force
+ *     an ask the rubric didn't raise (a rename's new name is unresolved by definition).
+ * The reported `completeness`/`risk` stay the rubric's; the proposer's reading rides along in
+ * provenance. Extra questions survive only if they map to a rubric-flagged dimension or (via
  * `grounded`) reference a real repo entity.
  * @param {object} det - assessTask() result
  * @param {{completeness:number, missing:string[], questions:string[], provider?:string}|null} proposal
  * @param {object} [opts]
- * @param {number} [opts.askThreshold]
- * @param {number} [opts.band]
  * @param {(q:string)=>boolean} [opts.grounded]
  * @param {boolean} [opts.bidirectional]
  * @param {boolean} [opts.hasUnresolved]
+ * @param {number} [opts.minConfidence]
  */
 export function reconcileAssumption(
   det,
   proposal,
   {
-    askThreshold = 0.6,
-    band = 0.25,
     grounded = () => false,
     bidirectional = true,
     hasUnresolved = false,
+    minConfidence = GATE_MIN_CONFIDENCE,
   } = {},
 ) {
   if (!proposal) return { ...det, provenance: { path: "deterministic" } };
-  const bounded = Math.max(
-    det.completeness - band,
-    Math.min(det.completeness + band, proposal.completeness),
-  );
-  const completeness = Math.max(0, Math.min(1, bounded));
+  const p = proposal.completeness; // P(specified) on the proposer's own scale
+  const modelAsk = p < 0.5;
+  const confidence = modelAsk ? 1 - p : p;
   const flaggedDims = new Set(det.missing.map((m) => m.key));
   const extraQuestions = proposal.questions.filter(
     (q) => proposal.missing.some((m) => flaggedDims.has(m)) || grounded(q),
   );
   const questions = [...new Set([...det.questions, ...extraQuestions])].slice(0, 3);
-  // Bidirectional (default): the ask follows the bounded completeness, guarded by two floors the
-  // model can't override. Tighten-only: the rubric's ask always stands, the model can only add one.
-  const shouldAsk = bidirectional
-    ? det.hardUnderspecified || hasUnresolved || completeness < askThreshold
-    : det.shouldAsk || det.hardUnderspecified || completeness < askThreshold;
-  const risk = completeness < 0.45 ? "high" : completeness < 0.7 ? "medium" : "low";
-  const moved =
-    Math.abs(completeness - det.completeness) > 1e-9 || questions.length !== det.questions.length;
+  let shouldAsk = det.shouldAsk;
+  let overruledBy = null;
+  if (modelAsk !== det.shouldAsk) {
+    if (minConfidence > 0 && confidence < minConfidence) overruledBy = "confidence";
+    else if (modelAsk) shouldAsk = true;
+    else if (!bidirectional) overruledBy = "bidirectional-off";
+    else if (det.hardUnderspecified) overruledBy = "no-anchor";
+    else if (hasUnresolved) overruledBy = "unresolved-entities";
+    else shouldAsk = false;
+  }
   let path;
   if (shouldAsk && !det.shouldAsk) path = "llm-tightened";
   else if (!shouldAsk && det.shouldAsk) path = "llm-cleared";
-  else path = moved ? "llm-verified" : "llm-agreed";
+  else if (overruledBy) path = "llm-overruled";
+  else path = questions.length !== det.questions.length ? "llm-verified" : "llm-agreed";
   return {
     ...det,
-    completeness,
-    risk,
     shouldAsk,
     questions:
       shouldAsk && !questions.length
@@ -409,6 +419,8 @@ export function reconcileAssumption(
     provenance: {
       path,
       detCompleteness: det.completeness,
+      proposalCompleteness: p,
+      ...(overruledBy ? { overruledBy } : {}),
       ...(proposal.provider ? { provider: proposal.provider } : {}),
     },
   };
@@ -465,7 +477,7 @@ export function clarifyBlock(result, { threshold = 0.5 } = {}) {
  * @param {(p:string)=>string} [opts.run]
  * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
  * @param {boolean} [opts.bidirectional]
- * @param {number} [opts.band]
+ * @param {number} [opts.minConfidence] probability a proposer needs on its verdict to flip the rubric's
  */
 export function preflightRepo(
   root,
@@ -479,7 +491,7 @@ export function preflightRepo(
     run,
     jevCall,
     bidirectional = true,
-    band,
+    minConfidence,
   } = {},
 ) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
@@ -507,17 +519,17 @@ export function preflightRepo(
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));
   };
-  // Repo grounding is a hard floor on clearing: if the task names entities the repo lacks, the
-  // model can never wave the gate through no matter how "complete" it judges the prose.
+  // Repo grounding is a hard floor on CLEARING: if the task names entities the repo lacks, the
+  // model can never wave a rubric ask through no matter how "complete" it judges the prose. It is
+  // not a reason to ask by itself — the rubric already weighed the task without it.
   const hasUnresolved = gap.unresolved.symbols.length + gap.unresolved.files.length > 0;
   return {
     ...gap,
     assumption: reconcileAssumption(det, proposal, {
-      askThreshold,
       grounded,
       bidirectional,
       hasUnresolved,
-      ...(typeof band === "number" ? { band } : {}),
+      ...(typeof minConfidence === "number" ? { minConfidence } : {}),
     }),
   };
 }

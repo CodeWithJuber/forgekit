@@ -230,7 +230,6 @@ export function substrateCheck(
     model,
     timeoutMs,
     bidirectional: bi,
-    band: spec?.llm?.band,
     minConfidence: spec?.llm?.minConfidence,
     signalFloor: spec?.llm?.signalFloor,
   };
@@ -419,7 +418,7 @@ export function substrateCheck(
       // Proposed by a model, then checked against the repo/graph/tests before it could move a
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
-        "assumption refinement (bounded ±band; clears a false ask only past the no-anchor + repo-grounding floors)",
+        "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
         "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; raises deferred to a verifier failure)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",

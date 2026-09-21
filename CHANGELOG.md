@@ -29,6 +29,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
   through to fable. A non-finite score now routes to the default tier (sonnet) with an
   `unknown-score` reason, logged under `FORGE_DEBUG=1`.
+- **With the LLM layer on, the assumption gate no longer asks just because a task names
+  something the repo lacks.** In bidirectional mode `reconcileAssumption` put `hasUnresolved` in
+  the ask condition itself, so it forced an ask even when the rubric proceeded and the model
+  judged the task complete — a grounded rename (`clamp01` → `clampUnit`) with a background URL:
+  rubric proceeds, model 0.99 → asked, path `llm-tightened` — while tighten-only mode ignored it
+  entirely. The reviewer measured 63 of 64 well-specified held-out tasks tripping it. Unresolved
+  entities are now a floor on _clearing_ a rubric ask only, identically in both modes (a
+  rename's new name is unresolved by definition).
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
@@ -100,6 +108,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the verifier-failure path — a prime finder with a 0.99 "premium" vote stays on haiku instead
   of jumping to opus. Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
   `llm-raise-deferred` / `llm-overruled` (+ `overruledBy`); `llm-raised` is gone.
+- **The assumption gate compares the proposer's verdict with the rubric's instead of clipping
+  one scale onto the other.** The rubric's logistic saturates on real issues (median
+  completeness 0.983 on the 80 held-out tasks) while Jev's mean noul is a probability centred on
+  0.5, and the reconcile bounded Jev to det ± 0.25 — so Jev almost never had a say: with a stub
+  proposer at Jev's reported median (0.29), 74 of 80 reconciled values sat exactly at det − 0.25
+  (the reviewer measured 71 of 79 with real Jev answers, which are not in the repo). Each reading
+  is now judged against its own threshold (the rubric's `askThreshold`, the proposer's 0.5); the
+  proposer flips the verdict only when it holds its own with probability ≥ `minConfidence`
+  (`GATE_MIN_CONFIDENCE` = 0.8 — a-priori, not fit to data; same `llm.minConfidence` key as
+  routing); tightening is always allowed, and clearing still stops at the no-anchor and
+  repo-grounding floors. The reported `completeness`/`risk` stay the rubric's, the proposer's
+  reading is `provenance.proposalCompleteness`, and a blocked flip is `llm-overruled` with
+  `overruledBy`. The `band` key is gone from `source/substrate.json`.
 - **MCP targets address their server bucket by dotted key path.** `emit/mcp.js` resolved a
   single top-level key (`mcpServers`, `servers`, `context_servers`); OpenClaw nests its
   registry under `mcp.servers`. The resolver now walks a path, creating missing objects only

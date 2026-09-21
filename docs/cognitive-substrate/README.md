@@ -215,7 +215,10 @@ but never past a hard floor:
   follows a verifier failure, never the model's self-assessment (§5.1) — and is kept as
   `llm.escalateTo`;
 - **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
-  with no concrete anchor, or one naming symbols/files the repo doesn't define;
+  with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
+  guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness
+  and the proposer's are on different scales, so only their ask/proceed verdicts are compared,
+  and the proposer flips the rubric only when it holds its verdict with p ≥ `llm.minConfidence`;
 - **impact edges** — kept only if the file is real _and_ a grep confirms the reference;
 - **goal-drift** — rescues an off-goal file only with a goal-referencing reason (off→on only).
 

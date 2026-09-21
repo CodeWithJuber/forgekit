@@ -1445,7 +1445,11 @@ model never decides: each proposal is verified against the rubric, the code grap
 before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
 a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
 but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
-routing floor). Routing compares **bands, not points**: a vote for the band the deterministic
+routing floor); the gate's floors only ever block a _clear_ — they never raise an ask the
+rubric didn't. The gate compares **verdicts, not scales**: the rubric's completeness and the
+proposer's are judged against their own thresholds, and the proposer flips the rubric's
+ask/proceed only when it holds its own verdict with p ≥ `llm.minConfidence`. Routing compares
+**bands, not points**: a vote for the band the deterministic
 score already sits in leaves it alone; a vote for a lower band moves the score to that band's
 ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
 fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless

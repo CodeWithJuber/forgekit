@@ -262,17 +262,15 @@ test("preflightRepo (llm on): the Jev reading flows through reconcileAssumption 
     }),
   });
   assert.equal(r.assumption.provenance.provider, "jev");
-  // Verify-don't-trust: the Jev reading (0.9) is bounded to within ±band of the
-  // deterministic completeness — it lifts, but can never flip the gate on its own.
+  // Verify-don't-trust: the Jev reading (mean noul 0.9) is compared verdict to verdict — the
+  // rubric keeps its own completeness, Jev's rides along, and the no-anchor floor keeps a
+  // four-word "fix the login bug" asked however complete Jev judges it.
   const det = preflightRepo(root, "fix the login bug", { allowBuild: false, llm: false });
-  assert.ok(
-    r.assumption.completeness > det.assumption.completeness,
-    `lifts past deterministic ${det.assumption.completeness}, got ${r.assumption.completeness}`,
-  );
-  assert.ok(
-    r.assumption.completeness <= det.assumption.completeness + 0.25 + 1e-9,
-    "but never beyond the reconcile band",
-  );
+  assert.equal(r.assumption.completeness, det.assumption.completeness);
+  assert.ok(Math.abs(r.assumption.provenance.proposalCompleteness - 0.9) < 1e-9);
+  assert.equal(r.assumption.shouldAsk, true);
+  assert.equal(r.assumption.provenance.path, "llm-overruled");
+  assert.equal(r.assumption.provenance.overruledBy, "no-anchor");
 });
 
 // --- routing reconcile through a typed Jev vote (deep review D2–D5) ---
