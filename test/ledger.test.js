@@ -7,6 +7,7 @@ import {
   claimId,
   claimText,
   clusters,
+  EQ3_WEIGHTS,
   isDormant,
   jaccard,
   liveClaims,
@@ -777,4 +778,106 @@ test("beliefDiff ignores claims already tombstoned before the window — dead be
   assert.deepEqual(d.retired, [], "the retirement predates the window");
   assert.deepEqual(d.strengthened, []);
   assert.deepEqual(d.weakened, [], "pure decay on a dead claim is not a belief change");
+});
+
+// --- Eq. 3 retrieval fixes (review C5) -------------------------------------------------
+
+const factAt = (text, level = "repo", evidence = [], t = 0) => ({
+  ...mintClaim({ kind: "fact", body: { name: text.slice(0, 12), text }, scope: { level }, t })
+    .claim,
+  evidence,
+});
+
+test("score (C5): scope is a bounded term inside σ — never a strict priority over relevance", () => {
+  const q = "retry the payment webhook with exponential backoff and jitter on 503";
+  const perfectRepo = factAt(q, "repo", [ev("confirm", 0, "human.accept"), ev("confirm", 0)]);
+  const unrelatedSymbol = factAt(
+    "css grid gutter width is 12px in the dashboard layout",
+    "symbol",
+    [ev("contradict", 0, "typecheck")],
+  );
+  const ranked = retrieve(q, [unrelatedSymbol, perfectRepo], { nowDay: 400 });
+  assert.equal(ranked[0].claim.id, perfectRepo.id, "a perfect match beats an unrelated symbol");
+  // Scope still breaks ties among equally relevant claims.
+  const sym = factAt("check callers before renaming", "symbol");
+  const glob = factAt("check callers before renaming", "global");
+  assert.ok(
+    score("check callers before renaming", sym) > score("check callers before renaming", glob),
+  );
+});
+
+test("rel (C5): a short query finds its fact — unigram coverage backs 4-token shingles", () => {
+  const csrf = factAt("the login handler must validate the csrf token on every POST");
+  const fonts = factAt("fonts are self-hosted from the static assets folder");
+  const ports = factAt("the dev server listens on port 5173 by default");
+  for (const q of ["csrf login", "validate csrf in the login handler"]) {
+    const ranked = retrieve(q, [fonts, ports, csrf], { nowDay: 0 });
+    assert.equal(ranked[0].claim.id, csrf.id, `"${q}" ranks the CSRF fact first`);
+    assert.ok(ranked[0].rel > 0.5, `"${q}": rel ${ranked[0].rel} reflects the overlap`);
+    assert.equal(ranked.find((r) => r.claim.id === fonts.id).rel, 0, "unrelated stays at 0");
+  }
+});
+
+test("rel (C5): non-ASCII text tokenizes — unrelated scripts are NOT identical, empty ≠ everything", () => {
+  assert.equal(jaccard(sketch("مصادقة الرمز تفشل"), sketch("数据库连接超时")), 0);
+  assert.equal(jaccard(sketch(""), sketch("!!!")), 0, "two empty token sets share nothing");
+  assert.equal(jaccard(sketch("مصادقة الرمز تفشل"), sketch("مصادقة الرمز تفشل")), 1);
+  assert.deepEqual([...shingles("café au lait")], ["café au lait"], "accented letters are kept");
+  const ar = factAt("مصادقة الرمز تفشل عند انتهاء الجلسة");
+  const zh = factAt("数据库连接超时");
+  const [top] = retrieve("مصادقة الرمز", [zh, ar], { nowDay: 0 });
+  assert.equal(top.claim.id, ar.id);
+  assert.equal(retrieve("مصادقة الرمز", [zh], { nowDay: 0 })[0].rel, 0);
+});
+
+test("rec (C5): a contradiction is not recent evidence — it never raises a stale claim's score", () => {
+  const base = factAt("use yarn not npm", "repo", [], 19910);
+  const now = 20000;
+  const contradicted = { ...base, evidence: [ev("contradict", now)] };
+  assert.equal(rec(contradicted, now), rec(base, now), "recency keys on confirms and mint only");
+  assert.ok(
+    score("unrelated query text here", contradicted, { nowDay: now }) <
+      score("unrelated query text here", base, { nowDay: now }),
+    "fresh negative evidence lowers the score",
+  );
+  const confirmed = { ...base, evidence: [ev("confirm", now)] };
+  assert.equal(rec(confirmed, now), 1, "a fresh confirm still refreshes recency");
+});
+
+test("val/rec (C11): future-dated evidence decays by its distance from now — no pinning", () => {
+  const today = 20000;
+  const skewed = factAt("x", "repo", [ev("confirm", today + 3650)], today);
+  const honest = factAt("x", "repo", [ev("confirm", today)], today);
+  assert.ok(rec(skewed, today + 730) < 0.01, `rec ${rec(skewed, today + 730)} is not pinned at 1`);
+  assert.ok(val(skewed, today + 730) < 0.51, "a 10-year-future confirm carries ~no weight");
+  assert.ok(val(skewed, today) < val(honest, today), "the skewed record never beats an honest one");
+  assert.ok(
+    Math.abs(
+      val(factAt("x", "repo", [ev("confirm", today + 1)], today), today) - val(honest, today),
+    ) < 0.01,
+    "a one-day clock skew is negligible",
+  );
+});
+
+test("retrieve (C5): one similarity scale per ranking — cosine and Jaccard are never mixed", () => {
+  const unrelatedEmbedded = factAt("render the marketing landing page hero section");
+  const relevantLexical = factAt("rotate the api signing keys every ninety days");
+  // The provider embedded only one claim, at a typical same-domain cosine for unrelated text.
+  const sim = (_q, c) => (c.id === unrelatedEmbedded.id ? 0.6 : null);
+  const ranked = retrieve("rotate the signing keys", [unrelatedEmbedded, relevantLexical], {
+    nowDay: 0,
+    sim,
+  });
+  assert.equal(ranked[0].claim.id, relevantLexical.id, "a partial embedding falls back for all");
+  const full = (_q, c) => (c.id === unrelatedEmbedded.id ? 0.1 : 0.9);
+  const both = retrieve("rotate the signing keys", [unrelatedEmbedded, relevantLexical], {
+    nowDay: 0,
+    sim: full,
+  });
+  assert.equal(both[0].claim.id, relevantLexical.id);
+  assert.equal(both[0].rel, 0.9, "a complete embedding ranks by cosine");
+});
+
+test("EQ3_WEIGHTS: defaults are the spec's (a, b, g) plus a small scope term — not 'calibrated'", () => {
+  assert.deepEqual(EQ3_WEIGHTS, { a: 0.55, b: 0.15, g: 0.3, s: 0.1 });
 });

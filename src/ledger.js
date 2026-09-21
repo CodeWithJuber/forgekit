@@ -60,8 +60,12 @@ export const ORACLES = {
 /** One source of truth for scope weighting — lessons.js re-exports this. */
 export const SCOPE_WEIGHT = { symbol: 1.0, dir: 0.8, repo: 0.6, global: 0.4 };
 
-/** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity) — calibrated in P8. */
-export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3 };
+/** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity, s=scope). a/b/g are the
+ *  spec defaults (01-pcm-protocol.md §4); they are NOT calibrated — the planned
+ *  logistic-regression calibration on retrieval outcomes has not been run. `s` puts scope
+ *  INSIDE the linear term as a small prior (symbol vs global differ by s·0.6 = 0.06): it
+ *  breaks ties between comparably relevant claims but can never outrank a relevance gap. */
+export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3, s: 0.1 };
 
 export const DEFAULT_HALF_LIFE_DAYS = 45;
 /** Below this val a claim is dormant: kept for audit, never retrieved. The trusted
@@ -325,8 +329,12 @@ export function validOutcome(e) {
 
 // Weight comes from the ORACLES table — a stored `w` is audit metadata, never trusted
 // (a hand-edited or forged log line must not be able to buy extra confidence).
+// The age is the DISTANCE from now: a future-dated record (a teammate's skewed clock, a
+// hand-written t) decays by how far ahead it claims to be, instead of counting at full
+// weight — and pinning rec at 1 — until the calendar catches up with it.
+const ageOf = (t, nowDay) => Math.abs(nowDay - (t ?? 0));
 const decayed = (outcome, nowDay, halfLife) =>
-  ORACLES[outcome.oracle].w * 0.5 ** (Math.max(0, nowDay - (outcome.t ?? 0)) / halfLife);
+  ORACLES[outcome.oracle].w * 0.5 ** (ageOf(outcome.t, nowDay) / halfLife);
 
 /**
  * Validity — the paper's `val` term as a time-decayed Beta posterior mean with a
@@ -397,10 +405,14 @@ export function authorTrust(claims) {
   return out;
 }
 
-/** Recency — λ^(Δt/T) since the last evidence (or mint, if none). */
+/** Recency — λ^(Δt/T) since the last CONFIRMATION (or the mint, if none). A contradiction
+ *  is not "recent evidence for" a claim: counting it let a fresh refutation raise a stale
+ *  claim's Eq. 3 score (review C5). Δt is the distance from now (see ageOf). */
 export function rec(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
-  const last = Math.max(claim.provenance?.t ?? 0, ...(claim.evidence ?? []).map((e) => e.t ?? 0));
-  return 0.5 ** (Math.max(0, nowDay - last) / halfLife);
+  let nearest = ageOf(claim.provenance?.t, nowDay);
+  for (const e of claim.evidence ?? [])
+    if (e?.result === "confirm" && validOutcome(e)) nearest = Math.min(nearest, ageOf(e.t, nowDay));
+  return 0.5 ** (nearest / halfLife);
 }
 
 /** Dormant claims are kept for audit but never retrieved. */
@@ -433,10 +445,14 @@ const SEEDS = Array.from({ length: SKETCH_K }, (_, i) => ({
   b: Math.imul(i + 1, 0x85ebca6b) >>> 0,
 }));
 
+// Unicode-aware tokens: letters, digits and combining marks of ANY script. The old
+// `[^a-z0-9]` split turned every non-ASCII text into the EMPTY token set, and two empty sets
+// "agreed" on all 128 sketch lanes — any two Arabic (or Chinese, or Greek) texts scored 1.
 const normalizeText = (text) =>
   String(text)
+    .normalize("NFKC")
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
     .filter(Boolean);
 
 /** n-token shingle set of normalized text (short texts fall back to single tokens). */
@@ -462,13 +478,52 @@ export function sketch(text, k = SKETCH_K) {
   return mins;
 }
 
-/** Jaccard estimate = fraction of agreeing sketch positions (1 for identical texts). */
+/** A sketch lane no hash reached — only an EMPTY shingle set leaves lanes at this value. */
+const EMPTY_LANE = 0xffffffff;
+
+/** Jaccard estimate = fraction of agreeing sketch positions (1 for identical non-empty
+ *  texts). An empty set shares nothing with anything, itself included: untouched lanes
+ *  are not agreement. */
 export function jaccard(a, b) {
   const n = Math.min(a.length, b.length);
   if (!n) return 0;
   let eq = 0;
-  for (let i = 0; i < n; i++) if (a[i] === b[i]) eq++;
+  for (let i = 0; i < n; i++) if (a[i] === b[i] && a[i] !== EMPTY_LANE) eq++;
   return eq / n;
+}
+
+// Function words carry no topic; dropping them keeps "the"/"to" from making every claim
+// look half-relevant to a short query.
+const STOPWORDS = new Set(
+  "a an the to of in on at by for from with and or but not no nor so as if then than that this these those it its is are was were be been being do does did can could will would should must may might shall i me my we us our you your he him his she her they them their what which who whom whose when where why how all any each into onto over under up down out off per via about also just only very".split(
+    " ",
+  ),
+);
+
+/** Query-side precomputation for rel(): its MinHash sketch and its content terms (the
+ *  query's tokens minus stopwords; all tokens when it is nothing but stopwords). */
+export function relQuery(text) {
+  const toks = normalizeText(text);
+  const content = toks.filter((t) => !STOPWORDS.has(t));
+  return { sketch: sketch(text), terms: new Set(content.length ? content : toks) };
+}
+
+/**
+ * Lexical relevance ∈ [0,1] = max(shingle Jaccard, query-term coverage). MinHash over
+ * 4-token shingles is the spec's cheap `rel`, but a 2–3 word query is ONE shingle that no
+ * claim contains, so "csrf login" scored ~0 against the CSRF fact (review C5). Coverage —
+ * the fraction of the query's content terms the claim mentions — is the unigram backstop
+ * that makes short queries work; long near-duplicate texts still score through Jaccard.
+ * @param {{sketch:number[], terms?:Set<string>}} q a relQuery() (or {sketch} alone)
+ * @param {any} claim
+ */
+export function lexicalRel(q, claim) {
+  const j = jaccard(q.sketch, sketchOf(claim));
+  if (!q.terms?.size) return j;
+  const have = termsOf(claim);
+  let hit = 0;
+  for (const t of q.terms) if (have.has(t)) hit++;
+  return Math.max(j, hit / q.terms.size);
 }
 
 /** The retrievable text of a claim, per kind (fallback: its canonical body). */
@@ -499,58 +554,94 @@ export function claimText(claim) {
 // are immutable, so first-use caching is safe and keeps retrieve()/clusters() from
 // re-hashing every claim on every call. (noAssignInExpressions is off in biome.json.)
 const sketchOf = (claim) => (claim._sketch ??= sketch(claimText(claim)));
+const termsOf = (claim) => (claim._terms ??= new Set(normalizeText(claimText(claim))));
 
 /**
- * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val) × scope weight.
- * `query` may be a string or a precomputed sketch. The `g·val` term is the protocol's
- * load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
+ * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val + s·scope). The `g·val` term is
+ * the protocol's load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
+ * Scope sits INSIDE the linear term as a small prior (EQ3_WEIGHTS.s). It used to multiply
+ * σ from outside; with a+b+g = 1, σ only spans [0.5, 0.731], so the multiplier made scope a
+ * strict priority — an unrelated, 400-day-old, contradicted symbol claim (0.5375) outranked a
+ * perfect-match repo claim (0.3853) (review C5).
  *
- * `sim` (optional) replaces the lexical `rel` term with a caller-supplied similarity
- * (the ADR-0005 embeddings tier — built by callers from embed.js; this pure core
- * NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or any
- * non-finite value) falls back to MinHash Jaccard per claim, and negatives clamp to 0
- * — "anti-similar" is just irrelevant, never a penalty below unrelated.
+ * `query` may be a string, a relQuery() object, or (legacy) a bare sketch array — the last
+ * gets Jaccard-only relevance. `sim` (optional) replaces the lexical `rel` term with a
+ * caller-supplied similarity (the ADR-0005 embeddings tier — built by callers from embed.js;
+ * this pure core NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or
+ * any non-finite value) falls back to lexical relevance, and negatives clamp to 0 —
+ * "anti-similar" is just irrelevant, never a penalty below unrelated. (retrieve() decides the
+ * backend once per ranking, so one ranking never mixes cosine with Jaccard.)
  * @param {*} query
  * @param {any} claim
- * @param {{nowDay?:number, weights?:typeof EQ3_WEIGHTS, sim?:(query:any, claim:any)=>number|null}} [opts]
+ * @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number}, sim?:(query:any, claim:any)=>number|null}} [opts]
  */
-export function score(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
+export function score(query, claim, opts = {}) {
+  return scoreParts(query, claim, opts).score;
+}
+
+/** score() plus the relevance term it used — retrieve() reports `rel` so callers (déjà vu)
+ *  can gate on relevance rather than on the whole score.
+ *  @param {*} query
+ *  @param {any} claim
+ *  @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number},
+ *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
+ *  @returns {{score:number, rel:number}} */
+function scoreParts(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
   let rel = null;
   if (sim) {
     const s = sim(query, claim);
     if (typeof s === "number" && Number.isFinite(s)) rel = Math.max(0, Math.min(1, s));
   }
   if (rel === null) {
-    const qs = Array.isArray(query) ? query : sketch(query);
-    rel = jaccard(qs, sketchOf(claim));
+    const q =
+      typeof query === "string"
+        ? relQuery(query)
+        : Array.isArray(query)
+          ? { sketch: query }
+          : query;
+    rel = lexicalRel(q, claim);
   }
-  const x = weights.a * rel + weights.b * rec(claim, nowDay) + weights.g * val(claim, nowDay);
-  const sigma = 1 / (1 + Math.exp(-x));
   const scopeW = SCOPE_WEIGHT[claim.scope?.level] ?? 0.5;
-  return sigma * scopeW;
+  const x =
+    weights.a * rel +
+    weights.b * rec(claim, nowDay) +
+    weights.g * val(claim, nowDay) +
+    (weights.s ?? 0) * scopeW;
+  return { score: 1 / (1 + Math.exp(-x)), rel };
 }
 
-/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`.
- *  Optional `sim` as in score() — the caller-built embedding similarity; the query
- *  string (not the sketch) is what a sim sees.
+/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`. Each row is
+ *  {claim, score, rel}. Optional `sim` as in score() — the caller-built embedding
+ *  similarity; the query string is what a sim sees. The backend is chosen ONCE per ranking:
+ *  cosine only when the provider embedded every candidate, lexical for all otherwise —
+ *  dense cosines sit at 0.4–0.6 for unrelated same-domain text while Jaccard sits near 0,
+ *  so a partially embedded ledger used to rank every embedded claim above every lexical one.
  *  @param {*} query
  *  @param {any[]} claims
- *  @param {{nowDay?:number, budget?:number, weights?:typeof EQ3_WEIGHTS,
- *           sim?:((query:any, claim:any)=>number|null)|null}} [opts] */
+ *  @param {{nowDay?:number, budget?:number, weights?:{a:number,b:number,g:number,s?:number},
+ *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
+ *  @returns {{claim:any, score:number, rel:number}[]} */
 export function retrieve(
   query,
   claims,
   { nowDay = 0, budget = 12, weights = EQ3_WEIGHTS, sim } = {},
 ) {
   const q = String(query);
-  const qs = sketch(q);
-  const boundSim = sim ? (_qs, c) => sim(q, c) : undefined;
-  return claims
-    .filter((c) => !c.tombstone && !isDormant(c, nowDay))
-    .map((c) => ({
-      claim: c,
-      score: score(qs, c, { nowDay, weights, sim: boundSim }),
-    }))
+  const rq = relQuery(q);
+  const live = claims.filter((c) => !c.tombstone && !isDormant(c, nowDay));
+  let boundSim;
+  if (sim && live.length) {
+    const sims = live.map((c) => sim(q, c));
+    if (sims.every((x) => typeof x === "number" && Number.isFinite(x))) {
+      const byClaim = new Map(live.map((c, i) => [c, sims[i]]));
+      boundSim = (_q, c) => byClaim.get(c);
+    }
+  }
+  return live
+    .map((c) => {
+      const p = scoreParts(rq, c, { nowDay, weights, sim: boundSim });
+      return { claim: c, score: p.score, rel: p.rel };
+    })
     .sort((a, b) => b.score - a.score || (a.claim.id < b.claim.id ? -1 : 1))
     .slice(0, budget);
 }

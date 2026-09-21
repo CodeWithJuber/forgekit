@@ -56,6 +56,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   went from `["api-base"]` to `[]`). A retired value is now re-asserted as the next revision
   (the lowest `rev` whose claim is not tombstoned — deterministic, so teammates converge),
   and `reconcileFacts` matches store and ledger by content instead of by rev-0 id.
+- **Eq. 3 retrieval ranks by relevance again.** Five defects compounded into "the ledger
+  answers the wrong question":
+  - *Scope was a strict priority.* The scope weight multiplied σ from outside, and with
+    a+b+g = 1 the sigmoid only spans [0.5, 0.731] — so scope decided every ranking: an
+    unrelated, 400-day-old, contradicted **symbol** claim scored 0.5375 against a
+    perfect-match **repo** claim's 0.3853. Scope is now a bounded term inside σ
+    (`s = 0.10`, symbol−global = 0.06): the same pair now ranks 0.6815 (repo) over 0.5622.
+  - *Short queries found nothing.* `rel` was MinHash over 4-token shingles, so a 2–3 word
+    query was one shingle no claim contained: "auth token refresh" scored `rel` 0 against
+    the auth fact and ranked it **below** an unrelated CSS fact. `rel` is now
+    `max(shingle Jaccard, query-term coverage)`; the same query ranks auth first (0.713 vs
+    0.589).
+  - *Any two non-ASCII texts were "identical".* The tokenizer split on `[^a-z0-9]`, so
+    Arabic, Chinese or Greek text became the empty token set and two empty sketches agreed
+    on all 128 lanes — Jaccard 1. Tokens are now Unicode-aware (`\p{L}\p{N}\p{M}`) and an
+    empty set shares nothing with anything: Arabic vs Chinese is 0, and a real Arabic
+    query retrieves its Arabic fact.
+  - *Contradictions counted as recent evidence.* `rec` keyed on the newest evidence of any
+    polarity, so a fresh refutation RAISED a stale claim's score (0.3280 → 0.3384). `rec`
+    now keys on confirmations (or the mint), and the same contradiction lowers the score.
+  - *Two similarity scales in one ranking.* With a partially embedded ledger, cosine
+    (0.4–0.6 for unrelated same-domain text) competed with Jaccard (≈0), so every embedded
+    claim outranked every lexical one. The backend is chosen once per ranking: cosine only
+    when every candidate is embedded.
+  `EQ3_WEIGHTS` no longer claims to be "calibrated in P8" — P8 shipped cost evaluation, not
+  a retrieval calibration; the spec (01-pcm-protocol.md §4) is updated to match the code.
+- **Déjà vu is gated on relevance, not on the total score.** `DEJA_FLOOR` (0.39) was tuned on
+  repo-scoped summaries, but a symbol-scoped lesson scored ≥ 0.5 for any prompt, so an
+  unrelated `parseConfig` lesson surfaced on EVERY prompt — including "translate the README
+  into French" (0.538). The gate is now `DEJA_REL_FLOOR` on the `rel` term (0.5: at least half
+  the prompt's content words appear in the remembered task): the unrelated prompt is silent at
+  day 100 and day 400, while a genuine repeat still fires.
+- **Future-dated evidence no longer counts at full weight for years.** A record dated 10 years
+  ahead (a skewed clock, a hand-written `t`) pinned `rec` at 1.000 and kept full val weight
+  until the calendar caught up. Age is now the distance from now, so that record's `rec` is
+  0.000 two years later and its val weight ≈ 0, while a one-day skew stays negligible.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for

@@ -26,14 +26,14 @@ import { epochDay, gitAuthor } from "./util.js";
  *  edges, fingerprints) are not "have I done this task before" memory. */
 export const DEJA_KINDS = ["summary", "lesson", "diagnosis"];
 
-/** Retrieval score below which a hit is noise, not a déjà vu — calibrated against the
- *  REAL range of retrieve() for repo-scoped `summary` claims. score() = σ(a·rel+b·rec+g·val)
- *  × SCOPE_WEIGHT.repo (ledger.js): with a+b+g=1 the σ term is < 0.7311 and the 0.6 repo
- *  weight caps a same-day identical-task hit at ≈0.42, while an unrelated task sits ≈0.34.
- *  The floor must live in that band — 0.55 (the old value) exceeded the ceiling, so the
- *  advisory could NEVER fire. 0.39 clears the noise floor with margin and still catches a
- *  strong match. A test drives the full path so this stays inside the achievable range. */
-export const DEJA_FLOOR = 0.39;
+/** RELEVANCE below which a hit is noise, not a déjà vu. The gate is the `rel` term, not the
+ *  whole Eq. 3 score: score() also carries recency, validity and scope, so a symbol-scoped
+ *  lesson scored ≥ 0.5 no matter what the prompt said and the old total-score floor (0.39)
+ *  fired an unrelated `parseConfig` lesson on EVERY prompt, including "translate the README
+ *  into French" (review C8). Relevance is the only term that answers "have I done THIS task
+ *  before": 0.5 means at least half the prompt's content words appear in the remembered task
+ *  (or a 4-token-shingle Jaccard that high). Ties are still ordered by the full score. */
+export const DEJA_REL_FLOOR = 0.5;
 
 // Same test-command grammar cortex_hook.js keys its S1 signal on — a passing run here
 // is exactly what "this session's work was verified" means. Kept local (one small
@@ -125,7 +125,7 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
  * @param {any[]} claims live claims (loadClaims output)
  * @param {string} task the task about to be started
  * @param {{nowDay?:number, budget?:number}} [opts]
- * @returns {{claim:any, score:number}[]}
+ * @returns {{claim:any, score:number, rel:number}[]}
  */
 export function dejaLookup(claims, task, { nowDay = 0, budget = 5 } = {}) {
   const kinds = new Set(DEJA_KINDS);
@@ -144,16 +144,16 @@ export function dejaFromLedger(root, task, { nowDay = epochDay(), budget = 5 } =
 }
 
 /**
- * The one-line advisory for the top hit, or "" when it is below the noise floor (so an
+ * The one-line advisory for the top hit, or "" when it is below the relevance floor (so an
  * unrelated task stays silent). "verified" appears only when the claim carries a
  * confirming oracle outcome (val > 0.5 — a fresh, evidence-free summary sits exactly at
  * the 0.5 prior).
- * @param {{claim:any, score:number}} [top] the highest-ranked hit
+ * @param {{claim:any, score:number, rel:number}} [top] the highest-ranked hit
  * @param {number} [nowDay]
  * @returns {string}
  */
 export function dejaLine(top, nowDay = 0) {
-  if (!top || top.score < DEJA_FLOOR) return "";
+  if (!top || (top.rel ?? 0) < DEJA_REL_FLOOR) return "";
   const { claim } = top;
   const verified = val(claim, nowDay) > 0.5;
   const day = claim.provenance?.t ?? 0;
