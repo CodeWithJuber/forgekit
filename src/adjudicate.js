@@ -65,16 +65,40 @@ export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
     });
 }
 
-/** Extract the first balanced-ish JSON object from model output, or null. */
+/**
+ * Extract the FIRST balanced JSON object from model output, or null. The old greedy
+ * `/\{[\s\S]*\}/` spanned from the first brace to the LAST one, so a reply with two objects, or
+ * with a stray brace in the prose around it ("the {config} object"), parsed as nothing at all
+ * and the proposal was silently dropped. Brace counting is string-aware — a brace inside a JSON
+ * string never opens or closes an object — and a candidate that does not parse is skipped, not
+ * grown.
+ */
 export function extractJson(text) {
-  if (!text) return null;
-  const match = String(text).match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
+  const s = String(text ?? "");
+  for (let i = s.indexOf("{"); i !== -1; i = s.indexOf("{", i + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let j = i; j < s.length; j++) {
+      const c = s[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') inString = true;
+      else if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) {
+        try {
+          return JSON.parse(s.slice(i, j + 1));
+        } catch {
+          break; // not JSON after all — try the next opening brace
+        }
+      }
+    }
   }
+  return null;
 }
 
 /**

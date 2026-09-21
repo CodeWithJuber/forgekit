@@ -22,10 +22,9 @@
     "model": "haiku",
     "timeoutMs": 20000,
     "bidirectional": true,
-    "band": 0.25,
-    "routingBand": 0.2,
+    "minConfidence": 0.8,
     "signalFloor": 0.4,
-    "note": "Opt-in (FORGE_LLM=1). The model PROPOSES; the deterministic rubric + repo grounding + tests VERIFY. Any failure falls back to the deterministic path — never blind, never blocking. `bidirectional` (default true) lets a verified reading also clear a false ask / route a tier down, within `band`/`routingBand` and never past the hard floors (`signalFloor`, repo grounding, no-anchor). Set false for the conservative tighten/raise-only mode."
+    "note": "Opt-in (FORGE_LLM=1). The model PROPOSES; the deterministic rubric + repo grounding + tests VERIFY. Any failure falls back to the deterministic path — never blind, never blocking. `bidirectional` (default true) lets a verified reading also clear a false ask / route a tier down (to the voted band), never past the hard floors (`signalFloor`, repo grounding, no-anchor). Readings are compared verdict to verdict (ask vs proceed, band vs band), and a proposer flips the rubric only when it holds its own verdict with probability >= `minConfidence`. A model vote for a HIGHER tier is never applied (escalate only on a verifier failure); it is reported as an advisory `llm.escalateTo` that nothing acts on automatically. `minConfidence` is an a-priori conservative default, not fit to data - choose it on fresh labelled tasks. Set `bidirectional` false for the conservative mode (the model can only tighten the gate and never moves the tier)."
   },
   "policies": {
     "preAction": "Run substrate before ambiguous, expensive, multi-file, or mutating work.",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -29,6 +29,63 @@ test("referencedEntities ignores plain English (no false identifiers)", () => {
   const r = referencedEntities("add a dark mode toggle to the settings page");
   assert.deepEqual(r.symbols, []);
   assert.deepEqual(r.files, []);
+});
+
+// --- deep review D7: the scanners read addresses, fences and prose as code ---
+
+test("D7: a code fence never pairs with inline backticks — its words are not identifiers", () => {
+  const text =
+    "Credentials leak from the `DelayedDelivery` consumer:\n\n```\nSetting up delayed delivery for broker `amqp://user:pw@host:5672` ...\n```\n\nUse `maybe_sanitize_url()` for this.";
+  const { symbols, files } = referencedEntities(text);
+  assert.ok(symbols.includes("DelayedDelivery") && symbols.includes("maybe_sanitize_url"));
+  for (const w of ["Setting", "up", "delayed", "for", "broker"])
+    assert.ok(!symbols.includes(w), `fence prose "${w}" is not an identifier`);
+  assert.deepEqual(files, []);
+  // RST/markdown ``double`` spans don't pair their inner backticks across the prose between.
+  const rst = referencedEntities(
+    "Add ``closes #XYZW`` to the description and/or commits (``XYZW``)",
+  );
+  assert.deepEqual(rst.files, [], "prose between two double-backtick spans is not code");
+});
+
+test("D7: URLs, links, images and N/A are not files; real paths still are", () => {
+  const r = referencedEntities(
+    "See https://example.com/issue/12, [the docs](https://docs.example.org/a/b.html) and " +
+      "![shot](https://img.example.com/a.png); github.com/org/repo; N/A for docs; and/or; " +
+      "input/output. <details><summary>env</summary></details> " +
+      "Touch `src/api/`, src/api/user.js and ./scripts/run.",
+  );
+  assert.deepEqual(r.files.sort(), ["./scripts/run", "src/api/", "src/api/user.js"]);
+});
+
+test("D7: concreteness anchors ignore URLs, image links, contractions and versions", () => {
+  const cases = [
+    "Make it work somehow, don't break it, it's the login thing",
+    "Fix the bug. ![screenshot](https://user-images.example.com/a.png) Something is wrong with it (again) since v2.3: it's broken.",
+    "Improve the auth stuff. Version 2: see https://example.com/x",
+  ];
+  for (const text of cases)
+    assert.equal(completenessFeatures(text).concreteness, 0, `no concrete anchor in: ${text}`);
+  assert.equal(assessTask(cases[0]).hardUnderspecified, true, "vague + no anchor → hard ask");
+  // ...while real anchors still fire.
+  assert.ok(completenessFeatures("set `retries: 3` in config.yaml").concreteness >= 2);
+  assert.ok(completenessFeatures("rename it to 'prod', e.g. for the deploy").concreteness >= 2);
+});
+
+test("D7: a named code identifier is a concrete anchor", () => {
+  const rename = assessTask("Rename getUser to fetchUser everywhere");
+  assert.equal(rename.hardUnderspecified, false, "two named identifiers are not 'no anchor'");
+  assert.ok(completenessFeatures("Rename getUser to fetchUser everywhere").concreteness >= 1);
+  const withPath = assessTask("Rename getUser to fetchUser in src/api/user.js");
+  assert.equal(withPath.shouldAsk, false, "identifier + path clears the gate");
+});
+
+test("D7: the success-criteria cue needs the word test, not 'latest'", () => {
+  const r = assessTask("Improve startup by upgrading to the latest release");
+  assert.ok(
+    r.missing.some((m) => m.key === "success_criteria"),
+    "'latest' does not say how success is verified",
+  );
 });
 
 test("ambiguityMarkers catches vague wording", () => {
@@ -153,16 +210,16 @@ test("assessTaskLLM: parses a completeness reading, rejects junk", () => {
   assert.equal(assessTaskLLM("x", { run: () => '{"completeness":"nope"}' }), null);
 });
 
-test("reconcileAssumption: model can only move completeness within ±band of the rubric", () => {
-  const det = assessTask("Fix the bug."); // under-specified, low completeness, shouldAsk
-  // Model claims fully specified — bounded, cannot flip a clearly-vague task to 1.0.
-  const r = reconcileAssumption(
-    det,
-    { completeness: 1, missing: [], questions: [] },
-    { band: 0.25 },
-  );
-  assert.ok(r.completeness <= det.completeness + 0.25 + 1e-9, "clamped to +band");
-  assert.equal(r.provenance.path, "llm-verified");
+test("reconcileAssumption: verdicts are compared, never the two scales blended", () => {
+  const det = assessTask("Fix the bug."); // under-specified, no anchor, shouldAsk
+  // Model claims fully specified — the no-anchor floor keeps the ask, and the reported
+  // completeness stays the rubric's own; the proposer's reading rides along in provenance.
+  const r = reconcileAssumption(det, { completeness: 1, missing: [], questions: [] });
+  assert.equal(r.shouldAsk, true);
+  assert.equal(r.completeness, det.completeness);
+  assert.equal(r.provenance.proposalCompleteness, 1);
+  assert.equal(r.provenance.path, "llm-overruled");
+  assert.equal(r.provenance.overruledBy, "no-anchor");
 });
 
 test("reconcileAssumption: never clears a deterministic / hard-underspecified ask", () => {
@@ -269,26 +326,90 @@ test("bidirectional: an unresolved-entity task is NEVER cleared (repo grounding 
   assert.equal(r.shouldAsk, true, "names symbols/files the repo lacks → still asks");
 });
 
-test("bidirectional: a genuinely vague task can't be lifted over the line (band clamp)", () => {
+test("bidirectional: an unconfident reading can't lift a vague task over the line", () => {
   const det = detStub({ completeness: 0.2, shouldAsk: true });
-  const r = reconcileAssumption(
+  const r = reconcileAssumption(det, { completeness: 0.7, missing: [], questions: [] });
+  assert.equal(r.shouldAsk, true, "p(proceed) 0.7 < minConfidence 0.8 → the rubric's ask stands");
+  assert.equal(r.provenance.overruledBy, "confidence");
+  const opened = reconcileAssumption(
     det,
-    { completeness: 1, missing: [], questions: [] },
-    { band: 0.25 },
+    { completeness: 0.7, missing: [], questions: [] },
+    { minConfidence: 0.6 },
   );
-  assert.ok(r.completeness <= 0.45 + 1e-9, "clamped to det+band");
-  assert.equal(r.shouldAsk, true, "0.45 < 0.6 threshold → still asks");
+  assert.equal(opened.shouldAsk, false, "the threshold is configurable");
 });
 
 test("bidirectional: the model can still TIGHTEN a rubric-proceed task into an ask", () => {
   const det = detStub({ completeness: 0.7, shouldAsk: false, questions: [] });
-  const r = reconcileAssumption(
-    det,
-    { completeness: 0.4, missing: [], questions: [] },
-    { band: 0.25 },
-  );
-  assert.equal(r.shouldAsk, true, "lowered below threshold → now asks");
+  const r = reconcileAssumption(det, { completeness: 0.1, missing: [], questions: [] });
+  assert.equal(r.shouldAsk, true, "a confident 'unspecified' reading → now asks");
   assert.equal(r.provenance.path, "llm-tightened");
+});
+
+// --- deep review D6: repo grounding floors CLEARING only; it never forces an ask ---
+
+test("D6: unresolved entities never force an ask the rubric and the model both cleared", () => {
+  const det = detStub({ completeness: 0.9, shouldAsk: false, questions: [] });
+  const complete = { completeness: 0.99, missing: [], questions: [] };
+  for (const bidirectional of [true, false]) {
+    const r = reconcileAssumption(det, complete, { hasUnresolved: true, bidirectional });
+    assert.equal(r.shouldAsk, false, `bidirectional:${bidirectional} — no ask out of thin air`);
+    assert.equal(r.provenance.path, "llm-agreed");
+  }
+  // ...while it still blocks CLEARING a rubric ask, in both modes.
+  const asking = detStub({ completeness: 0.5, shouldAsk: true });
+  for (const bidirectional of [true, false]) {
+    const r = reconcileAssumption(asking, complete, { hasUnresolved: true, bidirectional });
+    assert.equal(r.shouldAsk, true);
+  }
+});
+
+test("D6 (integration): a grounded rename with a background URL is not asked when the model agrees", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-pre-d6-"));
+  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "test"));
+  writeFileSync(join(root, "src", "util.js"), "export function clamp01(x) { return x; }\n");
+  writeFileSync(join(root, "test", "util.test.js"), "// tests\n");
+  // `clampUnit` is the rename TARGET — unresolved by definition; the URL and the "N/A"
+  // placeholder are prose, and neither is a file the repo is missing.
+  const tasks = [
+    "Rename the helper `clamp01` in src/util.js to `clampUnit`, update every caller; tests in " +
+      "test/util.test.js must pass unchanged (N/A for docs).",
+    "Rename the helper `clamp01` in src/util.js to `clampUnit` and update every caller; the " +
+      "existing tests must pass unchanged. Background: https://example.com/issue/12",
+  ];
+  for (const task of tasks) {
+    const off = preflightRepo(root, task, { llm: false });
+    assert.deepEqual(off.unresolved.files, [], `no phantom unresolved file in: ${task}`);
+    assert.deepEqual(off.unresolved.symbols, ["clampUnit"], "only the rename target is unknown");
+    assert.equal(off.assumption.shouldAsk, false, "precondition: the rubric proceeds");
+    const on = preflightRepo(root, task, {
+      llm: true,
+      run: () => '{"completeness":0.99,"missing":[],"questions":[]}',
+    });
+    assert.equal(on.assumption.shouldAsk, false, "a unanimous proceed is not turned into an ask");
+    assert.notEqual(on.assumption.provenance.path, "llm-tightened");
+  }
+});
+
+// --- deep review D8: the proposer is judged on its own scale, not clipped to det±band ---
+
+test("D8: a saturated rubric no longer pins a confident proposer to det − band", () => {
+  const det = detStub({ completeness: 0.98, shouldAsk: false, questions: [] });
+  const tight = reconcileAssumption(det, { completeness: 0.05, missing: [], questions: [] });
+  assert.equal(
+    tight.shouldAsk,
+    true,
+    "a confident 'unspecified' reading tightens a saturated rubric",
+  );
+  assert.equal(tight.completeness, 0.98, "and the rubric's number is not dragged onto its scale");
+  const median = reconcileAssumption(det, { completeness: 0.29, missing: [], questions: [] });
+  assert.equal(median.completeness, 0.98, "no clip to det − 0.25");
+  assert.equal(median.provenance.proposalCompleteness, 0.29);
+  assert.equal(median.shouldAsk, false, "p(ask) 0.71 is below the confidence gate");
+  const low = detStub({ completeness: 0.1, shouldAsk: true });
+  const cleared = reconcileAssumption(low, { completeness: 0.95, missing: [], questions: [] });
+  assert.equal(cleared.shouldAsk, false, "a confident reading can clear below det 0.35 too");
 });
 
 test("bidirectional:false — the model can never clear a deterministic ask", () => {

@@ -9,6 +9,7 @@ import {
   gatewayBase,
   gatewayModelId,
   gatewayModelMap,
+  versionOf,
 } from "../src/gateway_model_map.js";
 
 // ---------------------------------------------------------------------------
@@ -26,9 +27,23 @@ test("familyScore requires the family word and scores higher on a version match"
   assert.ok(bare > 0 && bare < exact, "a bare family match still scores, but below an exact one");
 });
 
-test("familyTokens carries the tier key plus its marketing-name tokens", () => {
+test("familyTokens carries the tier key plus its marketing-name version", () => {
   assert.deepEqual([...familyTokens("sonnet")].sort(), ["5", "sonnet"]);
-  assert.deepEqual([...familyTokens("haiku")].sort(), ["4", "5", "haiku"]);
+  // One version token, not loose digits: "4" and "5" separately matched any id containing a 5.
+  assert.deepEqual([...familyTokens("haiku")].sort(), ["4.5", "haiku"]);
+});
+
+test("versions are parsed, so Sonnet 3.5 no longer wins the Sonnet tier (deep review D9)", () => {
+  assert.deepEqual(versionOf("claude-3-5-sonnet-20241022"), [3, 5]);
+  assert.deepEqual(versionOf("claude-sonnet-4-5-20250929"), [4, 5]);
+  assert.deepEqual(versionOf("claude-sonnet-5"), [5]);
+  assert.equal(versionOf("prod-sonnet"), null, "a date stamp alone is not a version");
+  const map = buildGatewayMap(["claude-3-5-sonnet-20241022", "claude-sonnet-4-5-20250929"]);
+  assert.equal(
+    map.sonnet.id,
+    "claude-sonnet-4-5-20250929",
+    "neither is the pinned Sonnet 5 — the newest of the family wins",
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -112,6 +112,67 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `merge_impact.js` mapped any non-number to 0 while `merge_impact_adapter.js` used
   `Number(value) || 0`, which turned `Infinity` into a maximal 1.0 criticality. One shared
   helper now maps every non-finite value to 0 and still accepts numeric strings.
+- **`recommend()` no longer sends a non-finite score to the most expensive tier.** Every
+  comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
+  through to fable. A non-finite score now routes to the default tier (sonnet) with an
+  `unknown-score` reason, logged under `FORGE_DEBUG=1`.
+- **`extractJson` reads the first balanced JSON object, not everything between the first brace
+  and the last.** The greedy `/\{[\s\S]*\}/` meant any reply carrying two objects, or a stray
+  brace in the prose around one ("Considering the {config} object: {…}"), parsed as nothing and
+  the proposal was silently dropped — for every faculty that adjudicates (routing band,
+  assumption gate, impact, distill). Brace counting is now string-aware, and a candidate that
+  does not parse is skipped rather than grown.
+- **The gateway model map parses versions instead of matching loose digits.** A tier's reference
+  tokens were `{haiku, 4, 5}`, so "claude-3-5-sonnet-20241022" scored exactly as well as
+  "claude-sonnet-4-5-20250929" for the Sonnet tier — the "5" of "3-5" matched the "5" of Sonnet
+  5 — and won the lexicographic tie, pointing a self-hosted gateway at a two-generation-old
+  model. Consecutive version numbers collapse into one token ("3.5"), a date stamp is not a
+  version, and equal scores break toward the newest model of the family.
+- **`classifyIntent` reports the winning intent's confidence, not a losing neighbor's.** When two
+  runner-up rows outvoted one closer row, the reported confidence was the closer row's
+  similarity — evidence for the intent that lost ("what does the release script do" → `release`
+  at 0.571, the `question` neighbor's score; now 0.333).
+- **`knowledge_router` keeps the first-person signal it routes on.** It tokenized facts with
+  intent.js's stop-set, which drops `i/my/we/our/your/their` as function words — the one thing
+  separating a personal preference (recall) from a project convention. "i prefer short commit
+  messages" and "the team prefers short commit messages in this repo" both scored 1.00 against
+  the same recall row; now 1.00 and 0.78.
+- **A null `noul` from Jev is "no answer", not a confident zero, and a choice matches the offered
+  option case-insensitively.** `Number(null)` is 0, so a dimension the API returned as null read
+  as "definitely unspecified" and dragged the assumption gate's completeness down; it now fails
+  safe like any other garble. A `"Mid"` answer to a `{cheap, mid, premium}` choice was thrown
+  away entirely; it now resolves back to the `mid` we offered (an option we never offered still
+  fails safe).
+- **The preflight scanners no longer read addresses, code fences and prose as code.** On the
+  80-task held-out set (diagnostic only — those tasks are spent for tuning), the entities a task
+  was said to reference fell from 210 files and 1,414 symbols to 42 and 388 across the 64
+  well-specified tasks. Four misfires:
+  - a code fence's third backtick paired with the next inline backtick, so **every word inside a
+    fence became an identifier** — a broker-URL log line yielded "Setting", "up", "delayed",
+    "for", "broker" — and each one then went to the substring `git grep` that feeds routing
+    fan-out. Fenced blocks are stripped before the inline-code scan, and an inline span now needs
+    a closing backtick run of the same length, so RST ``double`` spans stop pairing across prose;
+  - URLs, markdown links and images, `N/A` and `and/or` counted as **files**
+    (`example.com/issue/12`). Addresses are removed before every scan (`stripUrls`), and a bare
+    slash token must look like a path — an extension, a `./ ../ ~/ /` prefix, or a trailing `/`;
+  - the concreteness anchors fired on URLs, image links, contractions (`'t break it, it'`) and
+    versions (`since v2.3:`). The quoted-literal anchor now refuses apostrophes inside words, the
+    filename anchor needs a letter-initial extension, and the worked-value anchor needs a number
+    beside an arrow, an equality or a `key: 42` colon — the filename anchor's firing rate on
+    gold-ask tasks falls from 0.69 to 0.31. `e.g.` and `example:` also fire at last: their
+    trailing `\b` had made them unmatchable before a space;
+  - **a named code identifier was not an anchor**, so "Rename getUser to fetchUser everywhere"
+    was hard-flagged as having nothing concrete to act on. It now counts as one anchor (that task
+    is no longer hard-flagged; with a file path it clears the gate outright), and the
+    success-criteria cue matches `\btest` rather than the "test" inside "latest".
+- **With the LLM layer on, the assumption gate no longer asks just because a task names
+  something the repo lacks.** In bidirectional mode `reconcileAssumption` put `hasUnresolved` in
+  the ask condition itself, so it forced an ask even when the rubric proceeded and the model
+  judged the task complete — a grounded rename (`clamp01` → `clampUnit`) with a background URL:
+  rubric proceeds, model 0.99 → asked, path `llm-tightened` — while tighten-only mode ignored it
+  entirely. The reviewer measured 63 of 64 well-specified held-out tasks tripping it. Unresolved
+  entities are now a floor on _clearing_ a rubric ask only, identically in both modes (a
+  rename's new name is unresolved by definition).
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
@@ -382,6 +443,80 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`forge route calibrate` stops calling itself "outcome-calibrated routing".** Nothing in it
+  comes from an outcome: the fixture is 24 hand-written task phrases with hand-assigned
+  complexities, and forge records nothing that could replace them — a `route` metrics event
+  carries the chosen tier and a task hash, a `verify` event carries pass/fail with no task
+  reference, so no (task, tier, outcome) triple exists to calibrate on. `calibratedComplexity`
+  has no caller in `src/` either: routing keeps the raw rubric. The command heading and closing
+  note, the module comment, GUIDE and ROADMAP now say so plainly, and joining a routed task's
+  tier to its verification result is named as open work rather than implied to be done.
+- **The routing rubric stops counting a task's length twice and stops matching on one shared
+  word.** Both defects pushed every real task into the middle: on the reviewer's 80-task
+  held-out set the router sent 54 of 64 well-specified tasks to mid and reached premium once.
+  - **Length was weighted twice** — by the repo facet's `size` signal and again by the rubric's
+    `struct.length` — and both saturate on real issue prose, so every long task was floored near
+    the cheap/mid line whatever it was about. The later of the two (`struct.length`, added with
+    the k-NN rubric) is gone; `rubricSignals().lengthTokens` stays as an informational field.
+  - **One shared word counted as a match.** 146 of 167 top-3 matches rested on a single token,
+    and against an exemplar whose whole footprint is that token (`fix a typo` → `{typo}`) the
+    overlap coefficient reads 1.00 — full confidence in a coincidence, which is how "resolve the
+    deadlock between the comment writer and the comment indexer threads" matched "add a comment"
+    at 1.00 and routed mid. A neighbor now has to share `RUBRIC.minShared` (2) grams, or the
+    task's whole footprint when the task is shorter than that, so "fix the deadlock" still
+    matches its exemplar.
+  - `rubric.band` now uses recommend()'s own cutoffs (0.25 / 0.55) instead of a second, different
+    pair (0.3 / 0.6) that disagreed with the tier actually routed.
+  - **No exemplar labels into the fable band any more.** The architectural rows carried y = 0.85,
+    at or above the 0.8 fable cutoff, while `model_tiers` puts "architecture, cross-module
+    refactor, novel algorithms" on Opus and keeps Fable for research-grade reasoning; they are
+    0.78 now (the held-out calibration fixture too).
+  - Diagnostic on the spent 80-task set (**not** an evaluation — those tasks are burnt for
+    tuning, and routing was measured in an empty repo): exact tier accuracy 0.344 → 0.453, the
+    predicted distribution 9/54/1 → 38/25/1 (cheap/mid/premium), and premium-vs-rest AUROC
+    0.652 → 0.753. Premium recall is still 0 of 17: the toy exemplar bank has no vocabulary for
+    real premium issue prose, which needs a real-issue bank and a **new** held-out set.
+- **Model routing reconciles the proposer's band with the deterministic band, not a point
+  score.** `routeTask` compared the proposer's band floor (cheap 0.15 / mid 0.40 / premium 0.65)
+  against the deterministic point score, so even a vote that _agreed_ moved the score: a
+  fable-level task (0.887) with a Jev "premium" vote dropped to 0.688 (opus) and was logged
+  `llm-lowered`; a sonnet-level 0.431 with a "mid" vote became 0.400, also "lowered"; a 0.087
+  prime-finder with a "cheap" vote was "raised" to 0.150; and a premium vote could never yield
+  fable. The new pure `reconcileRoute` maps the score to its band first (recommend()'s 0.25 /
+  0.55 cutoffs): the same band keeps the score (`llm-agreed`), a lower band moves it to that
+  band's ceiling. The old one-band point bound (`routingBand`, removed from
+  `source/substrate.json`) also blocked correct down-routes from the top of a band — a 0.508
+  task with a 0.95 "cheap" vote stayed on sonnet; it now lands on haiku. The strong-signal floor
+  (`signalFloor`) still holds a confidently-hard topic at mid.
+- **A proposer vote moves the tier only when the proposer is confident.** Jev's confidence was
+  logged but ignored — a 0.34 and a 1.00 "cheap" vote routed identically. A vote now needs
+  p(band) (Jev's probability on the voted band, else its confidence) ≥ `minConfidence`:
+  `ROUTE_MIN_CONFIDENCE` = 0.8, configurable per call and as `llm.minConfidence` in
+  `source/substrate.json`. 0.8 is an a-priori conservative default, **not fit to data** — it
+  has to be chosen on fresh labelled tasks (the frozen 80-task held-out set is spent). The
+  text-LLM proposer reports no probability, so by default it can no longer move the tier
+  (`llm-overruled`, `overruledBy: "confidence"`); `minConfidence: 0` switches the gate off.
+- **The proposer can no longer raise the tier.** The "free raise" escalated on the model's own
+  assessment, which whitepaper §5.1 rules out (escalate "only if an external check on the
+  output fails … never by the model's self-assessment"). A higher-band vote is now recorded,
+  not applied: path `llm-raise-deferred` — a prime finder with a 0.99 "premium" vote stays on
+  haiku instead of jumping to opus. The would-be tier is reported as `llm.escalateTo`, an
+  **advisory recommendation only**: nothing in forge acts on it automatically (no
+  verifier-failure path consumes it yet). Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
+  `llm-raise-deferred` / `llm-overruled` (+ `overruledBy`); `llm-raised` is gone.
+- **The assumption gate compares the proposer's verdict with the rubric's instead of clipping
+  one scale onto the other.** The rubric's logistic saturates on real issues (median
+  completeness 0.983 on the 80 held-out tasks) while Jev's mean noul is a probability centred on
+  0.5, and the reconcile bounded Jev to det ± 0.25 — so Jev almost never had a say: with a stub
+  proposer at Jev's reported median (0.29), 74 of 80 reconciled values sat exactly at det − 0.25
+  (the reviewer measured 71 of 79 with real Jev answers, which are not in the repo). Each reading
+  is now judged against its own threshold (the rubric's `askThreshold`, the proposer's 0.5); the
+  proposer flips the verdict only when it holds its own with probability ≥ `minConfidence`
+  (`GATE_MIN_CONFIDENCE` = 0.8 — a-priori, not fit to data; same `llm.minConfidence` key as
+  routing); tightening is always allowed, and clearing still stops at the no-anchor and
+  repo-grounding floors. The reported `completeness`/`risk` stay the rubric's, the proposer's
+  reading is `provenance.proposalCompleteness`, and a blocked flip is `llm-overruled` with
+  `overruledBy`. The `band` key is gone from `source/substrate.json`.
 - **MCP targets address their server bucket by dotted key path.** `emit/mcp.js` resolved a
   single top-level key (`mcpServers`, `servers`, `context_servers`); OpenClaw nests its
   registry under `mcp.servers`. The resolver now walks a path, creating missing objects only

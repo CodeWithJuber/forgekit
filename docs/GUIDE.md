@@ -206,23 +206,29 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
 **`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
-affine correction of the rubric's score toward a held-out labeled fixture and reports
-whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
+affine correction of the rubric's score toward a held-out split of a labelled fixture and
+reports whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
 margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
 generalized in `src/promote.js` so any advisory signal (routing weights here;
 consolidation and hazard next) can only become active by measurement, never by assertion.
-It is advisory: routing keeps the rubric until a promoted calibration is explicitly
-adopted.
+
+Read the name literally: it calibrates **the rubric against hand-written labels**, not against
+outcomes. The fixture is 24 hand-written task phrases with hand-assigned complexities, and forge
+records nothing that could replace them — a `route` metrics event carries the tier and a task
+hash, a `verify` event carries pass/fail with no task reference — so there is no
+(task, tier, outcome) triple to calibrate on. It is advisory twice over: routing keeps the raw
+rubric, and nothing in `src/` adopts a promoted calibration.
 
 ```console
 $ forge route calibrate
-Forge route calibrate — outcome-calibrated routing (measured gate)
+Forge route calibrate — rubric calibration check (measured gate)
 
-  samples: 24 labeled task(s)
-  held-out MAE: rubric 0.152 · calibrated 0.226
+  samples: 24 hand-labelled task phrase(s) — no routing outcomes exist
+  held-out MAE: rubric 0.191 · calibrated 0.266
   → keep the rubric — baseline retained — candidate did not beat it by the margin
 
-  advisory — routing stays on the rubric until a promoted calibration is adopted
+  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,
+  and calibrating on real routing outcomes needs data forge does not record
 ```
 
 Here the gate does exactly its job: the rubric already generalizes well, the affine
@@ -1459,11 +1465,24 @@ model never decides: each proposal is verified against the rubric, the code grap
 before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
 a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
 but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
-routing floor). Impact edges must be real + grep-confirmed; goal-drift moves off→on only. Any
-failure falls back to the deterministic path, so the flag is safe to leave off or on. `--json`
-exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` / `llm-raised` /
-`llm-lowered` / …). Set `llm.bidirectional: false` in `source/substrate.json` for the
-conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer with a
+routing floor); the gate's floors only ever block a _clear_ — they never raise an ask the
+rubric didn't. The gate compares **verdicts, not scales**: the rubric's completeness and the
+proposer's are judged against their own thresholds, and the proposer flips the rubric's
+ask/proceed only when it holds its own verdict with p ≥ `llm.minConfidence`. Routing compares
+**bands, not points**: a vote for the band the deterministic
+score already sits in leaves it alone; a vote for a lower band moves the score to that band's
+ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
+fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless
+you set it to 0); a vote for a **higher** band is never applied, because the tier may escalate
+only when a verifier fails, never on the model's own assessment (whitepaper §5.1). The tier it
+would have picked is reported in `--json` as `llm.escalateTo` — an **advisory recommendation
+only**: nothing in Forge acts on it automatically; escalating after a verifier failure is still
+yours (or the doom-loop diagnosis's) to do. Impact edges must be real + grep-confirmed; goal-drift moves
+off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
+or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
+`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in
+`source/substrate.json` for the conservative mode (the gate can only tighten, the tier never
+moves). Each faculty pairs a pure `*LLM` proposer with a
 `reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
 **TypeSafe System One (Jev) is the preferred proposer when configured.** Where the judgment

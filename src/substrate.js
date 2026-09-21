@@ -230,8 +230,7 @@ export function substrateCheck(
     model,
     timeoutMs,
     bidirectional: bi,
-    band: spec?.llm?.band,
-    routingBand: spec?.llm?.routingBand,
+    minConfidence: spec?.llm?.minConfidence,
     signalFloor: spec?.llm?.signalFloor,
   };
   const entities = referencedEntities(text);
@@ -393,8 +392,9 @@ export function substrateCheck(
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
     // Which faculties, if any, had a model proposal survive external verification this run, and
-    // which direction it moved (…-cleared / …-tightened for the gate, …-raised / …-lowered for
-    // routing). Every non-deterministic value was checked before it counted.
+    // which direction it moved (…-cleared / …-tightened for the gate, …-lowered for routing; a
+    // routing …-raise-deferred is recorded as advisory only and never applied). Every non-deterministic value was
+    // checked before it counted.
     llm: {
       enabled: useLLM,
       bidirectional: bi,
@@ -418,8 +418,8 @@ export function substrateCheck(
       // Proposed by a model, then checked against the repo/graph/tests before it could move a
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
-        "assumption refinement (bounded ±band; clears a false ask only past the no-anchor + repo-grounding floors)",
-        "routing (free raise; bounded lower, never below strong-signal floor)",
+        "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
+        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only reported as an advisory escalateTo that nothing acts on)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],
