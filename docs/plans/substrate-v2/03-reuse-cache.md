@@ -25,7 +25,8 @@ served — the cache prunes itself by ground truth.
 
 ```
 artifact.body := {
-  spec:       normalized task specification text,
+  key:        IDENTITY-normalized task text (case/whitespace/punctuation only),
+  spec:       SHAPE-normalized task specification text,
   sketch:     MinHash sketch of spec (for near-match),
   slice:      sha256 of the atlas graph slice the artifact touches,   // context key
   interface:  [ exported symbols + signatures the artifact declares ],
@@ -37,29 +38,39 @@ artifact.body := {
 
 ## 2. Fingerprinting
 
-**Normalization** strips volatility so the same task fingerprints identically across
-sessions and teammates: lowercase, collapse whitespace, drop punctuation-only tokens,
-replace literal identifiers/paths/numbers with typed placeholders (`⟨ident⟩`, `⟨path⟩`,
-`⟨num⟩`), sort simple constraint clauses. (Deterministic, pure — a P3 unit-test surface;
-same spirit as `src/preflight.js`'s lexical feature extraction.)
+**Normalization comes in two forms**, because "the same task" and "the same
+neighbourhood" are different questions:
 
-**Two keys per artifact:**
+- **identity** (`key`): Unicode-aware tokens, lowercased, edge punctuation dropped,
+  whitespace collapsed — and NOTHING else. Identifiers, paths and numbers stay verbatim.
+- **shape** (`spec`): identity plus typed placeholders for identifiers, paths, numbers and
+  string literals (`⟨ident⟩`, `⟨path⟩`, `⟨num⟩`, `⟨str⟩`).
 
-- `exact = sha256(normalized spec ‖ slice)` — O(1) lookup for the literal repeat.
-- `sketch = MinHash_k(shingles₄(normalized spec))`, k = 128 — near-match. `E[|sketch
-  match|/k] = Jaccard(A,B)`, so sketch agreement is an unbiased Jaccard estimator with
-  standard error `≈ √(J(1−J)/k)` ≤ 0.045 — accurate enough to threshold at τ = 0.8.
-  LSH banding (16 bands × 8 rows) finds candidates without scanning: collision
-  probability `1−(1−J⁸)¹⁶` — ≈ 0.96 at J = 0.8, ≈ 0.17 at J = 0.5 — a sharp cliff
-  exactly where we want it.
+The shape form alone once keyed the exact tier, which made "add pagination to listOrders"
+an EXACT hit on the listUsers artifact (similarity 1), and — because the tokenizer was
+ASCII-only — made any two non-ASCII specs identical. Identity keys the tiers that serve
+code as-is; shape only keys the adapt tier, which asks for the delta.
+
+**Keys per artifact:**
+
+- `exact = sha256(identity key ‖ slice)` — O(1) lookup for the literal repeat.
+- `keySketch = MinHash_k(shingles₄(identity key))`, k = 128 — the NEAR bar (τ = 0.8).
+  `E[|sketch match|/k] = Jaccard(A,B)`, an unbiased Jaccard estimator with standard error
+  `≈ √(J(1−J)/k)` ≤ 0.045.
+- `sketch = MinHash_k(shingles₄(shape))` — the ADAPT bar (τ = 0.6) and the LSH prefilter.
+  Banding is 32 bands × 4 rows: collision probability `1−(1−J⁴)³²` ≈ 1.00 at J = 0.8,
+  0.99 at J = 0.6 (the adapt bar), 0.56 at J = 0.4, 0.23 at J = 0.3. (The previous 16×8
+  banding was documented as ≈0.96 at J = 0.8 / ≈0.17 at J = 0.5; the true figures were
+  0.95 and 0.06, and recall at the adapt bar was 0.24 — the prefilter dropped three of
+  every four adapt candidates.)
 
 ## 3. The lookup ladder
 
 ```
 reuse(x):
-  1. exact hit  (same spec, same slice)               → serve, cost ≈ 0
-  2. near hit   (Jaccard ≥ 0.8, compatible slice)     → REVALIDATE, then serve-with-diff
-  3. adapt hit  (Jaccard ≥ 0.6)                       → inject artifact as context ("start
+  1. exact hit  (same identity key, same slice)       → serve, cost ≈ 0
+  2. near hit   (identity Jaccard ≥ 0.8)              → REVALIDATE, then serve-with-diff
+  3. adapt hit  (identity or shape Jaccard ≥ 0.6)     → inject artifact as context ("start
                                                         from this verified code"), generate
                                                         the delta only — cheaper prompt,
                                                         strong anchor against re-invention

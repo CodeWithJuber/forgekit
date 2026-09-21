@@ -108,6 +108,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session end (the déjà-vu Stop write), on `ledger merge` and on `ledger sync` import.
   Nothing is deleted — the bytes move to `attic/`, every log stays, a re-import never
   un-prunes, and new evidence brings a claim back with its whole history.
+- **The reuse cache's "exact" tier means the same task again.** The exact and near tiers
+  compared the SHAPE-normalized spec, in which every identifier is `⟨ident⟩` — so
+  "add pagination to listOrders" was served the **listUsers** artifact at tier exact,
+  similarity 1, and (because the tokenizer's `\w` is ASCII-only, which erased every Arabic
+  word) two unrelated Arabic specs were exact matches of each other. Artifacts now carry an
+  identity key — Unicode-aware tokens, case and punctuation normalized, identifiers kept —
+  which the exact and near tiers compare; the shape form still keys the adapt tier, so the
+  listUsers artifact can still be offered as a starting point for listOrders, never as the
+  answer. The three collision cases from the review are now misses.
+- **The LSH prefilter stopped dropping three of every four adapt candidates.** The comment
+  claimed "≈0.96 at J=0.8 and ≈0.17 at J=0.5" for 16 bands × 8 rows; the real figures are
+  0.95 and 0.06, and at the adapt threshold J=0.6 recall was 0.24 — so once a ledger passed
+  32 artifacts, most adapt-tier hits silently became misses. Banding is now 32 × 4 (0.99 at
+  J=0.6, ≈1.00 at J=0.8): in the review's own harness, 67 of 67 adapt-band pairs are found
+  with the prefilter active, against 39 of 67 before.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
