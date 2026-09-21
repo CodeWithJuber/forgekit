@@ -161,8 +161,9 @@ Mechanically: evidence and tombstones are append-only, hash-deduped logs; confid
 (`val`) is a decayed Beta posterior moved only by oracles; merge is a join-semilattice
 (property-tested: commutative, associative, idempotent), so ledgers converge in any
 order. `forge init` emits the union-merge `.gitattributes` rule; `forge ledger merge`
-folds in any other ledger tree. The legacy stores remain the read path — the ledger is
-where their events converge. Surface: `forge ledger stats | verify | show | blame |
+folds in any other ledger tree. The ledger is now the default and only store — legacy
+files are no longer written or read (`FORGE_LEDGER_ONLY=0` is the one-release escape
+hatch back to them). Surface: `forge ledger stats | verify | show | blame |
 query | ratify | retract | merge | import` (`--personal` for the per-user ledger).
 Decision recorded in
 [`docs/adr/0006-proof-carrying-memory.md`](docs/adr/0006-proof-carrying-memory.md).
@@ -523,8 +524,8 @@ forgekit/
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
-    ledger_bridge.js      # legacy-store bridge: cortex/recall/brain shadow-writes + idempotent `ledger import`
-    ledger_read.js        # merged legacy∪ledger read path: cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
+    ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
+    ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
