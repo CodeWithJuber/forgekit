@@ -130,6 +130,22 @@ test("A6: two definitions of one name — importers resolve to their own file; a
   assert.ok(atlas.stats.names.ambiguous >= 1);
 });
 
+test("A6: a method definition is not a call to a same-named function elsewhere", () => {
+  const root = writeRepo({
+    "src/hook.js": 'export function emit(event, text) {\n  return event + ":" + text;\n}\n',
+    "src/emit/claude.js":
+      'export const claude = {\n  name: "claude",\n  emit(ctx) {\n    return ctx;\n  },\n};\n',
+    "src/caller.js": 'import { emit } from "./hook.js";\nexport const go = () => emit("a", "b");\n',
+  });
+  const atlas = build({ root });
+  const r = impact(atlas, "emit");
+  assert.ok(r.impactedFiles.includes("src/caller.js"), "the real caller is found");
+  assert.ok(
+    !r.impactedFiles.includes("src/emit/claude.js"),
+    `an \`emit(ctx) {\` method is a definition, not a call: ${JSON.stringify(r.impactedFiles)}`,
+  );
+});
+
 test("A6: the file cap counts only source files and a capped graph says so", () => {
   const files = { "a.js": "export const a = 1;\n", "b.js": "export const b = 2;\n" };
   for (let i = 0; i < 6; i++) files[`doc${i}.md`] = `# doc ${i}\n`;

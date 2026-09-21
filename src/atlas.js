@@ -577,6 +577,33 @@ function scopeFinder(scopes) {
   };
 }
 
+// `name(args) {` in a brace language is a method/function DEFINITION, not a call — and an
+// object or class method is not indexed as a symbol, so without this every `emit(ctx) {`
+// became a call edge to whatever unique `emit` existed elsewhere in the repo.
+const METHOD_DEF_SCAN = 2000;
+function isMethodDef(code, from) {
+  let i = from;
+  while (i < code.length && /[ \t]/.test(code[i])) i += 1;
+  if (code[i] !== "(") return false;
+  let depth = 0;
+  const limit = Math.min(code.length, i + METHOD_DEF_SCAN);
+  for (; i < limit; i++) {
+    const c = code[i];
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  if (depth !== 0) return false;
+  for (i += 1; i < code.length; i++) {
+    const c = code[i];
+    if (/\s/.test(c)) continue;
+    return c === "{";
+  }
+  return false;
+}
+
 function extractFile(path, root, preRead) {
   const ext = extname(path);
   const rules = RULES[ext];
@@ -733,6 +760,7 @@ function extractFile(path, root, preRead) {
       if (BUILTINS.has(callee)) continue;
       const pos = s + (cm.indices?.[1]?.[0] ?? cm.index);
       if (defAt.has(pos)) continue;
+      if (lex !== "py" && isMethodDef(code, pos + callee.length)) continue;
       const source = ownerAt(pos);
       if (source.name === callee) continue;
       edges.push({
