@@ -41,6 +41,18 @@ export function add(store, name, body) {
   if (!ledgerOnly()) {
     const dir = factsDir(store);
     mkdirSync(dir, { recursive: true });
+    // Slug migration: `slug()` became Unicode-aware, so a fact written by an older version
+    // can sit under a different (lossier) key — often the shared "fact" fallback, because
+    // a non-Latin name used to strip to "". Writing the new key alone would leave the old
+    // file behind as a second entry that list()/MEMORY.md keep serving, so the reader gets
+    // the stale value forever. One fact per NAME: drop any other file holding this name.
+    if (existsSync(dir)) {
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith(".md") || file === `${slug}.md`) continue;
+        const prev = readFact(store, file.slice(0, -3));
+        if (prev?.name === name) rmSync(join(dir, file));
+      }
+    }
     writeFileSync(join(dir, `${slug}.md`), `# ${name}\n\n${body.trim()}\n`);
   }
   reindex(store);

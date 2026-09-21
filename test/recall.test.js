@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -65,4 +65,19 @@ test("add regression (E5): two non-ASCII fact names no longer overwrite each oth
   const slugs = list(s);
   assert.equal(slugs.length, 2, `both facts kept: ${slugs.join(", ")}`);
   assert.ok(!slugs.includes("fact"));
+});
+
+test("add: a fact stored under an older, lossier slug is migrated, not duplicated", () => {
+  // The Unicode-aware slug changed this fact's key: it used to strip to "" and land on the
+  // shared "fact" fallback. Re-adding it must MOVE the fact, not leave the pre-upgrade file
+  // behind — a stale twin that list()/MEMORY.md would keep serving (found by review).
+  const s = store();
+  const dir = join(s, "facts");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "fact.md"), "# مفتاح الواجهة\n\nthe api base is https://old.example\n");
+  assert.equal(add(s, "مفتاح الواجهة", "the api base is https://new.example").ok, true);
+  const slugs = list(s);
+  assert.equal(slugs.length, 1, `one entry per name, got: ${slugs.join(", ")}`);
+  assert.ok(!existsSync(join(dir, "fact.md")), "the pre-upgrade file is gone");
+  assert.match(readFileSync(join(dir, `${slugs[0]}.md`), "utf8"), /new\.example/);
 });
