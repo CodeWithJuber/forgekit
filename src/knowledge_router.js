@@ -11,7 +11,7 @@
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { appendDecision } from "./decide.js";
-import { intentGrams } from "./intent.js";
+import { INTENT_STOP, intentGrams } from "./intent.js";
 import { shadowFact } from "./ledger_bridge.js";
 import { repoLedger } from "./ledger_store.js";
 import { setOverlap } from "./math.js";
@@ -233,10 +233,19 @@ export const HOME_EXEMPLARS = [
 ];
 
 // intentGrams, not a new tokenizer: task verbs and function-word stripping behave the
-// same for "what kind of knowledge is this" as for "what kind of work is this".
+// same for "what kind of knowledge is this" as for "what kind of work is this" — except for
+// person. "i prefer …" / "my editor is …" is exactly what separates a personal preference
+// (recall) from a project convention (claude-md), and intent's stop-set drops those pronouns,
+// so a team convention scored 1.00 against a first-person recall row. Here they are content.
+const PERSON = new Set(["i", "me", "my", "we", "us", "our", "you", "your", "their"]);
+const FACT_STOP = new Set([...INTENT_STOP].filter((w) => !PERSON.has(w)));
+
+/** intentGrams with the person pronouns kept — the signal this router routes on. */
+export const factGrams = (text) => intentGrams(text, FACT_STOP);
+
 const EXEMPLAR_GRAMS = HOME_EXEMPLARS.map((e) => ({
   ...e,
-  grams: intentGrams(e.text),
+  grams: factGrams(e.text),
 }));
 
 /**
@@ -249,7 +258,7 @@ const EXEMPLAR_GRAMS = HOME_EXEMPLARS.map((e) => ({
  * @returns {{home:string, confidence:number, provenance:"knn"|"fallback", write:"auto"|"advise", neighbors:{text:string, home:string, sim:number}[]}}
  */
 export function routeFact(text, { k = 3, minConf = 0.25 } = {}) {
-  const grams = intentGrams(text);
+  const grams = factGrams(text);
   const sims = !grams.size
     ? []
     : EXEMPLAR_GRAMS.map((e) => ({

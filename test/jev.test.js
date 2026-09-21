@@ -108,6 +108,61 @@ test("systemOne: garble fails safe per question — and wholly null when nothing
   );
 });
 
+test("systemOne: a missing noul is no answer, not a confident zero (deep review D9)", () => {
+  const questions = { io: noul("Specified?"), rate: score("Rate", ["low", "high"]) };
+  const res = systemOne({
+    state: "x",
+    questions,
+    call: () => ({
+      answers: { io: { type: "noul", noul: null }, rate: { type: "score", score: 2 } },
+    }),
+  });
+  assert.equal(res.answers.io, undefined, "Number(null) is 0 — a null noul must fail safe");
+  assert.equal(res.answers.rate.score, 2, "a real answer beside it still validates");
+  assert.equal(
+    systemOne({
+      state: "x",
+      questions: { io: noul("Specified?") },
+      call: () => ({ answers: { io: { type: "noul", noul: null } } }),
+    }),
+    null,
+    "nothing left to read → the caller keeps its deterministic path",
+  );
+  assert.equal(
+    systemOne({
+      state: "x",
+      questions: { io: noul("Specified?") },
+      call: () => ({ answers: { io: { type: "noul", noul: "0.7" } } }),
+    }).answers.io.noul,
+    0.7,
+    "a numeric string is still a number",
+  );
+});
+
+test("systemOne: a choice matches the offered option case-insensitively (deep review D9)", () => {
+  const questions = { band: choice("Band?", { cheap: "c", mid: "m", premium: "p" }) };
+  const res = systemOne({
+    state: "x",
+    questions,
+    call: () => ({
+      answers: {
+        band: { type: "choice", choice: "Mid", probabilities: { Mid: 0.8, Cheap: 0.2 } },
+      },
+    }),
+  });
+  assert.equal(res.answers.band.choice, "mid", "resolved back to the option we offered");
+  assert.deepEqual(res.answers.band.probabilities, { mid: 0.8, cheap: 0.2 });
+  assert.equal(
+    systemOne({
+      state: "x",
+      questions,
+      call: () => ({ answers: { band: { type: "choice", choice: "Deluxe" } } }),
+    }),
+    null,
+    "an option we never offered is still garble",
+  );
+});
+
 test("systemOne: refuses to send secret-shaped state, key or no key", () => {
   let called = false;
   const res = systemOne({

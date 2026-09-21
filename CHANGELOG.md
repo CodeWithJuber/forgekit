@@ -29,6 +29,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
   through to fable. A non-finite score now routes to the default tier (sonnet) with an
   `unknown-score` reason, logged under `FORGE_DEBUG=1`.
+- **`extractJson` reads the first balanced JSON object, not everything between the first brace
+  and the last.** The greedy `/\{[\s\S]*\}/` meant any reply carrying two objects, or a stray
+  brace in the prose around one ("Considering the {config} object: {…}"), parsed as nothing and
+  the proposal was silently dropped — for every faculty that adjudicates (routing band,
+  assumption gate, impact, distill). Brace counting is now string-aware, and a candidate that
+  does not parse is skipped rather than grown.
+- **The gateway model map parses versions instead of matching loose digits.** A tier's reference
+  tokens were `{haiku, 4, 5}`, so "claude-3-5-sonnet-20241022" scored exactly as well as
+  "claude-sonnet-4-5-20250929" for the Sonnet tier — the "5" of "3-5" matched the "5" of Sonnet
+  5 — and won the lexicographic tie, pointing a self-hosted gateway at a two-generation-old
+  model. Consecutive version numbers collapse into one token ("3.5"), a date stamp is not a
+  version, and equal scores break toward the newest model of the family.
+- **`classifyIntent` reports the winning intent's confidence, not a losing neighbor's.** When two
+  runner-up rows outvoted one closer row, the reported confidence was the closer row's
+  similarity — evidence for the intent that lost ("what does the release script do" → `release`
+  at 0.571, the `question` neighbor's score; now 0.333).
+- **`knowledge_router` keeps the first-person signal it routes on.** It tokenized facts with
+  intent.js's stop-set, which drops `i/my/we/our/your/their` as function words — the one thing
+  separating a personal preference (recall) from a project convention. "i prefer short commit
+  messages" and "the team prefers short commit messages in this repo" both scored 1.00 against
+  the same recall row; now 1.00 and 0.78.
+- **A null `noul` from Jev is "no answer", not a confident zero, and a choice matches the offered
+  option case-insensitively.** `Number(null)` is 0, so a dimension the API returned as null read
+  as "definitely unspecified" and dragged the assumption gate's completeness down; it now fails
+  safe like any other garble. A `"Mid"` answer to a `{cheap, mid, premium}` choice was thrown
+  away entirely; it now resolves back to the `mid` we offered (an option we never offered still
+  fails safe).
 - **The preflight scanners no longer read addresses, code fences and prose as code.** On the
   80-task held-out set (diagnostic only — those tasks are spent for tuning), the entities a task
   was said to reference fell from 210 files and 1,414 symbols to 42 and 388 across the 64

@@ -40,6 +40,30 @@ test("extractJson: pulls a JSON object out of chatty output, tolerates garbage",
   assert.equal(extractJson(""), null);
 });
 
+test("extractJson: the FIRST balanced object, not first-brace-to-last (deep review D9)", () => {
+  // The greedy /\{[\s\S]*\}/ spanned to the LAST brace in the reply, so each of these parsed as
+  // nothing and the proposal was dropped.
+  assert.deepEqual(extractJson('{"band":"premium"}\n{"note":"alt"}'), { band: "premium" });
+  assert.deepEqual(extractJson('Considering the {config} object: {"band":"premium"}'), {
+    band: "premium",
+  });
+  assert.deepEqual(extractJson('{"band":"premium"} (I ignored the {placeholder})'), {
+    band: "premium",
+  });
+  assert.deepEqual(
+    extractJson('```json\n{"band":"cheap"}\n```\nFormat was {"band":"cheap|mid|premium"}'),
+    { band: "cheap" },
+  );
+  // String-aware: a brace inside a string neither opens nor closes an object.
+  assert.deepEqual(extractJson('{"reason":"a } brace","ok":true}'), {
+    reason: "a } brace",
+    ok: true,
+  });
+  assert.deepEqual(extractJson('{"reason":"escaped \\" quote }"}'), {
+    reason: 'escaped " quote }',
+  });
+});
+
 test("adjudicate: happy path returns the validated proposal", () => {
   const run = () => '{"score": 0.42, "reason": "some detail"}';
   assert.deepEqual(adjudicate({ prompt: "x", parse: parseScore, run }), {

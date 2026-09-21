@@ -97,15 +97,59 @@ export function fetchModelIds(base, { timeoutMs = 5000, fetchImpl } = {}) {
   return result;
 }
 
-const tokenize = (s) =>
-  new Set(
-    String(s)
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean),
-  );
+// A version part is a short number; a date stamp (20250929) is not. A run of them is ONE token
+// ("claude-3-5-sonnet" → "3.5"), because as separate "3" and "5" tokens the 5 of Sonnet 3.5
+// matched the 5 of Sonnet 5 and the gateway map picked a two-generation-old model.
+const isVersionPart = (t) => /^\d{1,3}$/.test(t);
 
-/** Reference token set for a tier: the family key plus its marketing-name tokens (e.g. haiku → {haiku,4,5}). */
+/** Tokens of a model id or name, with consecutive version numbers collapsed into one token. */
+function tokenize(s) {
+  const parts = String(s)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  const out = new Set();
+  for (let i = 0; i < parts.length; ) {
+    if (!isVersionPart(parts[i])) {
+      out.add(parts[i++]);
+      continue;
+    }
+    const run = [];
+    while (i < parts.length && isVersionPart(parts[i])) run.push(parts[i++]);
+    out.add(run.join(".").replace(/(?:\.0)+$/, ""));
+  }
+  return out;
+}
+
+/** The first version in an id ("claude-sonnet-4-5-20250929" → [4,5]), or null. */
+export function versionOf(modelId) {
+  const parts = String(modelId)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    if (!isVersionPart(parts[i])) continue;
+    const run = [];
+    while (i < parts.length && isVersionPart(parts[i])) run.push(Number(parts[i++]));
+    while (run.length > 1 && run[run.length - 1] === 0) run.pop();
+    return run;
+  }
+  return null;
+}
+
+/** Newer first; an id with no version ranks last. */
+function compareVersions(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+/** Reference token set for a tier: the family key plus its marketing-name tokens (e.g. haiku → {haiku,"4.5"}). */
 export function familyTokens(tier) {
   return tokenize(`${tier} ${MODELS[tier]?.name ?? ""}`);
 }
@@ -126,9 +170,12 @@ export function familyScore(modelId, tier) {
   return setOverlap(familyTokens(tier), toks);
 }
 
-// Deterministic tie-break among equal-scoring candidates: prefer the id closest to the canonical
-// name (fewest tokens — less vendor/deployment noise), then lexicographic for stability.
+// Deterministic tie-break among equal-scoring candidates: the newest version of the family first
+// (Sonnet 4.5 over Sonnet 3.5 when neither is the pinned Sonnet 5), then the id closest to the
+// canonical name (fewest tokens — less vendor/deployment noise), then lexicographic for stability.
 function tieBreak(a, b) {
+  const byVersion = compareVersions(versionOf(a), versionOf(b));
+  if (byVersion) return byVersion;
   const na = tokenize(a).size;
   const nb = tokenize(b).size;
   if (na !== nb) return na - nb;

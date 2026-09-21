@@ -51,6 +51,14 @@ export const score = (instructions, criteria) => ({ type: "score", instructions,
 
 const isUnit = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
 
+// Number(null) is 0 and Number("") is 0, so a null/absent noul used to validate as a confident
+// "definitely not" instead of failing safe as no answer at all.
+const toNumber = (v) => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim()) return Number(v);
+  return Number.NaN;
+};
+
 /**
  * Validate one raw answer against its question; returns a clean answer or null.
  * Typed output guarantees the interface, not the values — a Choice naming an option we
@@ -59,28 +67,38 @@ const isUnit = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v
 function validateAnswer(question, answer) {
   if (!answer || typeof answer !== "object" || answer.type !== question.type) return null;
   if (question.type === "noul") {
-    const n = Number(answer.noul);
+    const n = toNumber(answer.noul);
     if (!Number.isFinite(n)) return null;
     return { type: "noul", noul: clamp01(n) };
   }
   if (question.type === "choice") {
-    const pick = String(answer.choice ?? "");
-    if (!Object.hasOwn(question.criteria, pick)) return null;
+    // Case-insensitive, but resolved back to the option WE offered: an answer of "Mid" is the
+    // "mid" we asked about, not garble, while an option we never offered still fails safe.
+    const option = (v) =>
+      Object.keys(question.criteria).find(
+        (k) =>
+          k.toLowerCase() ===
+          String(v ?? "")
+            .trim()
+            .toLowerCase(),
+      );
+    const pick = option(answer.choice);
+    if (!pick) return null;
     const out = { type: "choice", choice: pick };
     if (isUnit(answer.confidence)) out.confidence = answer.confidence;
     if (answer.probabilities && typeof answer.probabilities === "object") {
       const probabilities = {};
-      for (const [option, p] of Object.entries(answer.probabilities)) {
-        const n = Number(p);
-        if (Object.hasOwn(question.criteria, option) && Number.isFinite(n))
-          probabilities[option] = clamp01(n);
+      for (const [key, p] of Object.entries(answer.probabilities)) {
+        const n = toNumber(p);
+        const named = option(key);
+        if (named && Number.isFinite(n)) probabilities[named] = clamp01(n);
       }
       out.probabilities = probabilities;
     }
     return out;
   }
   if (question.type === "score") {
-    const n = Number(answer.score);
+    const n = toNumber(answer.score);
     if (!Number.isFinite(n)) return null;
     const out = { type: "score", score: n };
     if (isUnit(answer.confidence)) out.confidence = answer.confidence;

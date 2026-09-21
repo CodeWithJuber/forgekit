@@ -73,8 +73,10 @@ export const INTENT_EXEMPLARS = [
 ];
 
 // Function words ONLY (English + Hinglish auxiliaries/pronouns). Task verbs stay —
-// they are the intent signal (see module header).
-const STOP = new Set(
+// they are the intent signal (see module header). Exported because knowledge_router routes on
+// a signal this set removes (first person: "i prefer …" is a personal fact), so it subtracts
+// the pronouns before tokenizing.
+export const INTENT_STOP = new Set(
   (
     "a an the in on of to for with and or is are be it its this that as at by from into up out " +
     "my your our their please can you i we " +
@@ -84,12 +86,13 @@ const STOP = new Set(
 
 const stem = (t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t);
 
-/** Same shape as route.js contentGrams — different stop-set (function words only). */
-export function intentGrams(text) {
+/** Same shape as route.js contentGrams — different stop-set (function words only, overridable
+ *  for callers whose signal lives in a word this set drops). */
+export function intentGrams(text, stop = INTENT_STOP) {
   const toks = String(text)
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((t) => t && !STOP.has(t))
+    .filter((t) => t && !stop.has(t))
     .map(stem);
   const grams = new Set(toks);
   for (let i = 0; i + 1 < toks.length; i++) grams.add(`${toks[i]} ${toks[i + 1]}`);
@@ -119,7 +122,11 @@ export function classifyIntent(text, { k = 3, minConf = 0.25 } = {}) {
   const votes = new Map();
   for (const s of sims) votes.set(s.intent, (votes.get(s.intent) ?? 0) + s.sim);
   const [intent] = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
-  return { intent, confidence: Number(top.sim.toFixed(3)), neighbors: sims };
+  // The WINNER's own best similarity, not the top neighbor's: when two runner-up rows outvote a
+  // single closer one, reporting that closer row's similarity credited the verdict to evidence
+  // for a different intent ("what does the release script do" → release at the question row's 0.57).
+  const confidence = Math.max(...sims.filter((s) => s.intent === intent).map((s) => s.sim));
+  return { intent, confidence: Number(confidence.toFixed(3)), neighbors: sims };
 }
 
 /** Protocol cards — data. `question`/`none` deliberately have no card (no ceremony). */
