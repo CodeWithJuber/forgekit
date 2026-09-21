@@ -41,4 +41,9 @@ jobs:
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz -C /tmp gitleaks
           # `detect` walks the whole git log (fetch-depth:0 above); non-zero exit on any find.
-          /tmp/gitleaks detect --source . --no-banner --redact --exit-code 1
+          # --config is EXPLICIT: the repo's .gitleaks.toml carries the allowlist for the
+          # synthetic fixtures and bibliography citation keys, and a scan that silently ran
+          # without it reported findings nobody could act on. --verbose prints each finding
+          # (path, line, rule; the secret itself stays redacted) so a red gate names what to fix.
+          /tmp/gitleaks detect --source . --config .gitleaks.toml \
+            --no-banner --redact --verbose --exit-code 1
