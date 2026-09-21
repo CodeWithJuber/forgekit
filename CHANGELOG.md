@@ -25,6 +25,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The impact benchmark's labels are ground truth again, and the numbers they feed are
+  re-measured.** Four of the six label sets in `bench/impact_cases.mjs` had gone stale against
+  the source — `isStale` was missing `src/substrate.js` (an aliased import) and
+  `test/atlas_resolve.test.js`, `mergeStates` was missing `src/ledger_sync.js`, `claimText`
+  three files, `contentHash` four — so the published precision/recall/F1 were scored against a
+  fixture that no longer described the repo. Every case is re-derived with
+  `git grep -n -w -F -e <symbol> -- 'src/*' 'test/*'` with each hit read, and the per-line
+  evidence (plus the deliberate comment/string-only omissions) is recorded in the fixture. A
+  new test re-runs that derivation and fails the moment labels and source disagree, so this
+  cannot rot silently again. `contentHash`'s documented false negative is gone: a named import
+  now resolves to the exact symbol node, so `src/atlas.js` is predicted at one hop despite the
+  `const hash = contentHash;` alias. **Re-measured with `npm run bench`: precision 0.17,
+  recall 1.00, F1 0.29** (edited-file-only baseline recall 0.27), replacing the
+  precision 0.90 / F1 0.92 this repo had published since commit `eb68ea9`. The precision is
+  the transitive closure being scored against direct-only labels — `impact()` walks reverse
+  dependencies transitively by default, and at one hop the six cases return their labeled
+  sets — not a graph that is wrong about who calls what; `reports/benchmarks.md` now says so
+  where the table is. The `TODO(impact-numbers)` markers in `README.md` and
+  `reports/benchmarks.md` are resolved and removed, and the other medians those two files and
+  the landing page quote are re-synced to the same run's environment block.
 - **`llm.escalateTo` is no longer advisory-and-inert — a real failure now consumes it.**
   Routing recorded the tier a proposer's higher vote would have picked and deliberately did
   not apply it (whitepaper §5.1: spend more only when an EXTERNAL check fails), but nothing

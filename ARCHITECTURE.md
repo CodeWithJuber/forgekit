@@ -613,10 +613,10 @@ flowchart LR
   test -- 227 --> src
   bench -- 7 --> src
   examples -- 4 --> src
+  test -- 2 --> bench
   test -- 2 --> global
   test -- 2 --> scripts
   scripts --> src
   src --> global
-  test --> bench
 ```
 <!-- forge:render:repo-map:end -->

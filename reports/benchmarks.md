@@ -64,15 +64,29 @@ order-of-magnitude, not three-significant-digit truths.
 
 Cases live in [`bench/impact_cases.mjs`](../bench/impact_cases.mjs), scored by
 `evalImpact()` (`src/eval.js`). Labeling rule: `expected` = the defining file plus every
-file with a **direct, hand-verified reference** (an `import { X }` with a use, or a call
-site) — each one listed, per file, in the fixture's comments, checkable with grep.
+file with a **direct reference** (an `import { X }` — static, dynamic or aliased — with a
+use, or a call site) — each one listed, per file and per line, in the fixture's comments.
+The labels are **ground truth, not the graph's own output**: every one is re-derived with
+`git grep -n -w -F -e <symbol> -- 'src/*' 'test/*'` and confirmed by reading each hit, and a
+name that appears only in a comment or inside a string (an assertion message, a doc line) is
+not a reference and is not labeled — the omissions are listed too, so a re-check can tell
+"deliberate" from "missed".
+
 Transitive dependents are *not* labeled, so the oracle's transitive predictions count
 against precision — the same over-approximation penalty the paper's mutation-derived
-scoring applied. The set deliberately includes one case (`contentHash`) with a reference
-the regex atlas is **known to miss** (`src/atlas.js` binds it to an alias without calling
-it: `const hash = contentHash;` — no call parentheses, and the JS import regex captures
-module paths, not named bindings), so recall is measured against a documented false
-negative rather than a curated-to-be-perfect set.
+scoring applied. **That penalty is now most of the number.** `impact()` walks reverse
+dependencies transitively by default (`maxHops: 6`), so for `contentHash` it returns 89
+files where 10 are directly labeled. Restricted to one hop it returns exactly the 10
+labeled files plus one documentation edge — i.e. the precision figure below measures the
+gap between "everything downstream" and "the direct referencers", not a graph that is
+wrong about who calls what. Read precision here as *how much wider than the direct set the
+default answer is*, and recall as *does it ever miss a direct referencer* (it does not).
+
+`contentHash` used to carry a genuine false negative — `src/atlas.js` binds it to an alias,
+`const hash = contentHash;`, with no call parentheses, and the old import regex captured
+module paths rather than named bindings, so nothing reached `atlas.js`. Import specifiers
+now resolve to the exact symbol (`src/atlas.js:17 imports → src/util.js:contentHash:65`) and
+`atlas.js` is predicted at one hop; the case is kept for its fan-out, not for the miss.
 
 What these numbers do **not** mean: n = 6 cases, one JavaScript repo, symbols chosen to be
 uniquely named (the atlas resolves ambiguous names to nothing — a separate, known
@@ -80,15 +94,19 @@ limitation). They are not comparable to the paper's numbers, which came from mut
 testing a Python codebase against a real test suite. The two appear side by side below,
 labeled, and are never blended.
 
-> **The impact-quality table in the generated section below is stale (noted 2026-09-21).**
-> Re-running `evalImpact` on the same six cases at commit `1a82388` gives precision **0.34**,
-> recall **0.97**, F1 **0.50** (edited-file-only baseline recall 0.33), not the precision 0.90 /
-> F1 0.92 recorded below; the atlas now predicts several unlabelled files per case. Neither
-> figure is field evidence: on nine real Python repositories the paper's prototype oracle reached
-> recall **0.022** ([research/empirical-refutation/](../research/empirical-refutation/)), and its
-> "recall 1.00" row below comes from five mutations of its own demo package. The generated block
-> is rewritten only by `npm run bench`.
-> <!-- TODO(impact-numbers): re-run `npm run bench` after the impact-graph fix, then update or drop this note -->
+> **History of this row.** The precision 0.90 / F1 0.92 this file carried until 2026-09-21 came
+> from a much smaller atlas (145 files) and a reverse walk that stopped at the direct
+> referencers. Two things changed since: `impact()` now walks reverse dependencies
+> transitively by default, and four of the six label sets had gone stale against the source.
+> Re-labelling every case from `git grep` and re-running `npm run bench` gives the generated
+> table below — precision **0.17**, recall **1.00**, F1 **0.29** (edited-file-only baseline
+> recall 0.27), where the precision loss is the transitive closure being scored against
+> direct-only labels, not a graph that is wrong about who calls what (at one hop the six cases
+> return their labeled sets). Neither figure is field evidence: on nine real Python
+> repositories the paper's prototype oracle reached recall **0.022**
+> ([research/empirical-refutation/](../research/empirical-refutation/)), and its "recall 1.00"
+> row below comes from five mutations of its own demo package. The generated block is rewritten
+> only by `npm run bench`.
 
 <!-- BENCH:RESULTS:BEGIN (generated by bench/bench.mjs — do not edit) -->
 
@@ -96,49 +114,49 @@ labeled, and are never blended.
 
 ```json
 {
-  "node": "v22.22.2",
-  "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+  "node": "v24.19.0",
+  "cpu": "AMD EPYC Processor (with IBPB)",
   "cores": 4,
-  "memGB": 16,
-  "platform": "linux",
+  "memGB": 8,
+  "platform": "win32",
   "arch": "x64",
-  "commit": "eb68ea97dbbf226580fd9a03cef26806c15bc2e9",
-  "date": "2026-07-07T19:36:54.342Z"
+  "commit": "703da31d574c30d22bef019b1c8563ade0d0d6be",
+  "date": "2026-09-21T22:09:58.366Z"
 }
 ```
 
 ### Measured results
 
-| suite     | benchmark                                   | median  | p95     | runs | notes                                  |
-|-----------|---------------------------------------------|---------|---------|------|----------------------------------------|
-| atlas     | full build (this repo)                      | 131 ms  | 140 ms  | 5    | 145 files, 2777 symbols, 7892 edges    |
-| atlas     | incremental rebuild (unchanged)             | 55.7 ms | 75.9 ms | 5    | per-file hash cache hit                |
-| atlas     | impact("claimText") (warm adjacency)        | 0.43 ms | 0.51 ms | 30   | 5 files impacted                       |
-| ledger    | mint+put 1000 claims                        | 834 ms  | 994 ms  | 5    | 1,199/s                                |
-| ledger    | loadClaims at 1000 claims                   | 55.8 ms | 56.1 ms | 5    | full state from disk                   |
-| ledger    | mergeDirs 2×500-claim replicas (250 shared) | 158 ms  | 188 ms  | 3    | +250 claims, +313 records              |
-| ledger    | val() over 1000 claims                      | 0.28 ms | 0.42 ms | 20   | 3,547,798/s (mean val 0.53)            |
-| reuse     | fingerprint 2000 specs                      | 142 ms  | 152 ms  | 5    | 14,043/s                               |
-| reuse     | lookup exact @ 100 artifacts                | 0.12 ms | 0.16 ms | 10   | tier=exact                             |
-| reuse     | lookup near (LSH) @ 100 artifacts           | 9.96 ms | 13.5 ms | 5    | tier=near, j=0.98                      |
-| reuse     | lookup exact @ 1000 artifacts               | 0.43 ms | 0.76 ms | 10   | tier=exact                             |
-| reuse     | lookup near (LSH) @ 1000 artifacts          | 107 ms  | 110 ms  | 5    | tier=near, j=0.95                      |
-| context   | assemble() (this repo, 3-symbol task)       | 3.80 ms | 8.94 ms | 10   | 2617/6000 tokens, 9 required, complete |
-| substrate | substrateCheck (allowBuild, llm off)        | 118 ms  | 120 ms  | 3    | 18 impacted files, route simple        |
+| suite     | benchmark                                   | median   | p95     | runs | notes                                  |
+|-----------|---------------------------------------------|----------|---------|------|----------------------------------------|
+| atlas     | full build (this repo)                      | 530 ms   | 622 ms  | 5    | 455 files, 10498 symbols, 29728 edges  |
+| atlas     | incremental rebuild (unchanged)             | 339 ms   | 359 ms  | 5    | per-file hash cache hit                |
+| atlas     | impact("claimText") (warm adjacency)        | 0.40 ms  | 1.08 ms | 30   | 51 files impacted                      |
+| ledger    | mint+put 1000 claims                        | 1854 ms  | 1986 ms | 5    | 539/s                                  |
+| ledger    | loadClaims at 1000 claims                   | 213 ms   | 230 ms  | 5    | full state from disk                   |
+| ledger    | mergeDirs 2×500-claim replicas (250 shared) | 4308 ms  | 4409 ms | 3    | +250 claims, +313 records              |
+| ledger    | val() over 1000 claims                      | 0.076 ms | 0.16 ms | 20   | 13,140,604/s (mean val 0.51)           |
+| reuse     | fingerprint 2000 specs                      | 116 ms   | 156 ms  | 5    | 17,171/s                               |
+| reuse     | lookup exact @ 100 artifacts                | 5.71 ms  | 10.5 ms | 10   | tier=miss                              |
+| reuse     | lookup near (LSH) @ 100 artifacts           | 4.76 ms  | 5.18 ms | 5    | tier=miss, j=-                         |
+| reuse     | lookup exact @ 1000 artifacts               | 52.8 ms  | 88.5 ms | 10   | tier=miss                              |
+| reuse     | lookup near (LSH) @ 1000 artifacts          | 46.7 ms  | 89.8 ms | 5    | tier=miss, j=-                         |
+| context   | assemble() (this repo, 3-symbol task)       | 12.6 ms  | 30.0 ms | 10   | 4070/6000 tokens, 9 required, complete |
+| substrate | substrateCheck (allowBuild, llm off)        | 886 ms   | 908 ms  | 3    | 99 impacted files, route simple        |
 
 ### Impact-oracle quality (hand-labeled cases, this repo)
 
 | case (target) | precision | recall | F1   | predicted | truth |
 |---------------|-----------|--------|------|-----------|-------|
-| normalizeSpec | 1.00      | 1.00   | 1.00 | 2         | 2     |
-| evalImpact    | 1.00      | 1.00   | 1.00 | 2         | 2     |
-| isStale       | 1.00      | 1.00   | 1.00 | 4         | 4     |
-| mergeStates   | 1.00      | 1.00   | 1.00 | 3         | 3     |
-| claimText     | 1.00      | 1.00   | 1.00 | 5         | 5     |
-| contentHash   | 0.38      | 0.83   | 0.53 | 13        | 6     |
-| mean of 6     | 0.90      | 0.97   | 0.92 |           |       |
+| normalizeSpec | 0.12      | 1.00   | 0.21 | 17        | 2     |
+| evalImpact    | 0.29      | 1.00   | 0.44 | 7         | 2     |
+| isStale       | 0.20      | 1.00   | 0.33 | 30        | 6     |
+| mergeStates   | 0.16      | 1.00   | 0.28 | 25        | 4     |
+| claimText     | 0.16      | 1.00   | 0.27 | 51        | 8     |
+| contentHash   | 0.11      | 1.00   | 0.21 | 87        | 10    |
+| mean of 6     | 0.17      | 1.00   | 0.29 |           |       |
 
-Edited-file-only baseline recall over the same cases: **0.33**.
+Edited-file-only baseline recall over the same cases: **0.27**.
 
 Two methodologies, side by side — different codebases, different ground-truth
 derivations, so the rows are comparable in spirit only and are never blended:
@@ -146,7 +164,7 @@ derivations, so the rows are comparable in spirit only and are never blended:
 | series                                     | precision | recall | F1   | ground truth                                  |
 |--------------------------------------------|-----------|--------|------|-----------------------------------------------|
 | paper prototype (Python, mutation-derived) | 0.63      | 1.00   | 0.75 | mutation testing against a real suite         |
-| this repo (regex atlas, hand-labeled)      | 0.90      | 0.97   | 0.92 | 6 hand-labeled cases (bench/impact_cases.mjs) |
+| this repo (regex atlas, hand-labeled)      | 0.17      | 1.00   | 0.29 | 6 hand-labeled cases (bench/impact_cases.mjs) |
 
 <!-- BENCH:RESULTS:END -->
 
