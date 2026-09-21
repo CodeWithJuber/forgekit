@@ -25,6 +25,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A CRLF checkout no longer forks a claim id.** `canonicalize()` NFC-normalized strings but
+  passed line endings through, so the same logical claim written on a Windows worktree
+  (`core.autocrlf` → `\r\n`) and on a Linux one (`\n`) produced different canonical bytes and
+  therefore different content addresses: one fact stored as two claims that could never merge,
+  with the evidence split between them forever. Every string in a canonical document — key and
+  value alike — now passes through one rule: NFC, and `\r\n` → `\n`. Deliberately left alone,
+  each documented at the call site: a LONE `\r` (in the captured terminal output a `diagnosis`
+  body carries, a bare carriage return is a progress-bar control character, not a line ending —
+  same conservative rule as `normalizeError()`), whitespace and indentation, blank lines, case,
+  and every Unicode fold beyond NFC (no NFKC: `ﬁ` stays distinct from `fi`). **Migration note:**
+  a claim minted before this change whose body contains `\r\n` re-addresses, so it no longer
+  matches its filename and `forge ledger verify` reports it. Such a claim was already the
+  duplicate half of a pair; re-mint it (or merge from a replica) to land on the shared address.
 - **`caller_fanout` is no longer dead for callers that only have a path.**
   `featuresForEdit()` asked `grepFanout()` about `edit.symbol`, so every caller holding
   only a file path — which is every hook fired on an edit event — got `grepFanout(root,

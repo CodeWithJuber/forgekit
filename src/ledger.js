@@ -73,17 +73,41 @@ export const DEFAULT_HALF_LIFE_DAYS = 45;
 export const DORMANT_VAL = 0.35;
 
 /**
+ * Every string in a canonical document — key or value — passes through here.
+ *
+ * NORMALIZED, both deliberately:
+ *   - Unicode NFC. The same text typed on macOS (NFD) and on Linux (NFC) is one fact.
+ *   - CRLF → LF. A checkout's line endings are a property of the MACHINE, not of the
+ *     claim: `core.autocrlf` hands the same file to a Windows worktree with \r\n and to
+ *     a Linux one with \n, so the same logical claim minted on each side used to land on
+ *     two different content addresses and never merge — one fact, two "copies", evidence
+ *     split between them forever.
+ *
+ * DELIBERATELY LEFT ALONE — each one can carry meaning, and canonicalization must never
+ * silently rewrite a claim's content:
+ *   - A LONE \r. In captured terminal output (which is exactly what a `diagnosis` body
+ *     holds) a bare carriage return is a progress-bar control character, not a line
+ *     ending. Folding it into \n would edit the evidence. Same conservative rule as
+ *     `normalizeError()` in src/diagnose.js.
+ *   - Leading/trailing and interior whitespace, blank lines, indentation — "  x" and "x"
+ *     are different claims, and a code snippet's indentation is its content.
+ *   - Case, punctuation, and every other Unicode fold beyond NFC (no NFKC: "ﬁ" ≠ "fi").
+ *   - Non-string values: numbers, booleans and null serialize as JSON.stringify does.
+ */
+const canonText = (s) => s.normalize("NFC").replace(/\r\n/g, "\n");
+
+/**
  * Deterministic canonical JSON: lexicographically sorted keys, no insignificant
- * whitespace, NFC-normalized strings, no undefined/function values (dropped, as in
- * JSON.stringify). The canonical BYTES are what gets hashed and stored — id stability
- * under re-serialization is a protocol guarantee.
+ * whitespace, NFC + LF-normalized strings (see `canonText`), no undefined/function values
+ * (dropped, as in JSON.stringify). The canonical BYTES are what gets hashed and stored —
+ * id stability under re-serialization is a protocol guarantee.
  * @param {*} value
  * @returns {string}
  */
 export function canonicalize(value) {
   if (value === null || typeof value === "number" || typeof value === "boolean")
     return JSON.stringify(value);
-  if (typeof value === "string") return JSON.stringify(value.normalize("NFC"));
+  if (typeof value === "string") return JSON.stringify(canonText(value));
   if (Array.isArray(value))
     return `[${value.map((v) => (v === undefined ? "null" : canonicalize(v))).join(",")}]`;
   if (typeof value === "object") {
@@ -91,11 +115,12 @@ export function canonicalize(value) {
     // an NFD key sort where its NFC twin doesn't, so a claim written with one spelling failed
     // its own address check once re-parsed (the NFC bytes sort differently). Two raw keys that
     // collapse to one NFC key are a malformed input; the first in raw-key order wins,
-    // deterministically.
+    // deterministically. Keys take the same normalization as values — one rule for every
+    // string in the document, so a key can't fork an id the way a value used to.
     const entries = new Map();
     for (const k of Object.keys(value).sort()) {
       if (value[k] === undefined || typeof value[k] === "function") continue;
-      const nk = k.normalize("NFC");
+      const nk = canonText(k);
       if (!entries.has(nk)) entries.set(nk, value[k]);
     }
     const keys = [...entries.keys()].sort();
