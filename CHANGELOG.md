@@ -62,6 +62,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
 
+### Security
+
+- **Only evidence forge actually resolved can lift a claim into the trusted band.** Any
+  untyped or unknown-prefix ref counted as fully resolved: `lgtm`, `session:x`, `ci:1`,
+  `human:claude@yes` and `git:HEAD` each took one confirm to val 0.643, and
+  `forge reuse mint --ref lgtm` was served at tier exact. "Resolved" now means forge
+  re-derived the pointer — a `git:` object id, resolved at every append/import gate and
+  re-resolved by `verify` — plus the two bridge pointers on their own bridge oracle
+  (`episode:` ↔ `cortex.episode`, `legacy:` ↔ `legacy.import`). Everything else, including
+  `ci:`/`human:` locators and symbolic `git:HEAD`, counts at format strength and is capped at
+  0.55, below the 0.6 serving floor; an `agent:` identity never supplies human-family evidence
+  at full strength. The review's three hand-written `human.accept` lines now reach 0.55
+  instead of 0.787. What remains: a hand-written line citing a real commit sha still counts —
+  closing that needs signed evidence (key infrastructure), which this release does not add.
+- **Serving a cached artifact no longer confirms it.** Every `forge reuse` hit appended a
+  passing `graph.reval` confirm, so ten daily serves moved val from 0.643 to 0.864 and an
+  artifact stayed served (0.710, tier exact) after two failing test runs. Only a failed
+  revalidation is written back (as a contradiction); ten serves now append nothing, and the
+  same two failing runs drop it to 0.427 — a miss. `mintArtifact` reports `serves` from the
+  confidence the proof actually earns instead of "some evidence was passed".
+- **The MCP ledger write tools act as the agent and only propose.** `forge_ledger_ratify` and
+  `forge_ledger_retract` ran under the human's `gitAuthor()`; retract accepted any 2-character
+  prefix and permanently tombstoned the first sorted match, and ratify's description promised a
+  confidence change it never made. Both are now stamped `agent:mcp`. Ratify mints a distinct
+  agent-proposed decision (never deduped into, or counted as, a human ratification) and says it
+  changes no confidence. Retract requires one exact 64-character id and records a
+  pending-retraction proposal — the claim stays live, val unchanged — shown by `forge_ledger_query`,
+  `forge ledger stats` and `forge ledger show` until a human runs `forge ledger retract`, which
+  now also requires the full id. `getClaimByPrefix` refuses an ambiguous prefix instead of
+  returning the first sorted match.
+
 ### Documentation
 
 - `CLAUDE.md`: Biome 2.5.2 → 2.5.5 (matching the pin), "600+ tests" → "1000+", and the lint

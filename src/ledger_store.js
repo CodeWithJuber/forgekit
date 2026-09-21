@@ -250,24 +250,34 @@ export function tombstone(dir, id, { author = "", reason = "", t = 0 } = {}) {
   return appendRecord(dir, "tombstones", id, sealRecord({ author, reason, t }));
 }
 
+/** A full claim id — what an irreversible or agent-initiated write must name exactly. */
+export const FULL_ID_RE = /^[0-9a-f]{64}$/;
+
+/** The identity every agent-callable (MCP) ledger write is stamped with — never the human's
+ *  git identity. val() never counts an `agent:` author as human evidence (ledger.js). */
+export const MCP_AUTHOR = "agent:mcp";
+
 /**
  * Ratify a claim — the fahm→ḥikma promotion (08-dashboard-ux.md §2): mint a `decision`
- * claim pointing at the ratified claim's full id. Promotion is HUMAN-ONLY by design:
- * the caller supplies the author (a person's identity, via gitAuthor()); nothing in the
- * substrate ever calls this automatically. Append-only and content-addressed, so
- * ratifying the same claim twice converges on the same decision ({existed:true}).
+ * claim pointing at the ratified claim's full id. A human ratification is the default
+ * (the CLI and dashboard pass the person's gitAuthor()). An agent may only PROPOSE one:
+ * the MCP tool passes `author: MCP_AUTHOR` plus a note, which makes it a distinct claim, so
+ * an agent proposal can never be mistaken for — or deduped into — a human's ratification.
+ * Neither changes the ratified claim's val: a decision is not evidence. Append-only and
+ * content-addressed, so ratifying the same claim twice converges ({existed:true}).
  * @param {string} dir
- * @param {string} idPrefix
- * @param {{author?: string, t?: number}} [opts]
+ * @param {string} idPrefix an unambiguous id prefix (≥2 chars) or the full id
+ * @param {{author?: string, t?: number, agent?: string, note?: string}} [opts]
  * @returns {{ok:boolean, reason?:string, decisionId?:string, ratifies?:string, existed?:boolean}}
  */
-export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
+export function ratify(dir, idPrefix, { author = "", t = 0, agent = "dash", note = "" } = {}) {
   const target = getClaimByPrefix(dir, idPrefix);
-  if (!target) return { ok: false, reason: `no claim matching ${idPrefix}` };
+  if (!target)
+    return { ok: false, reason: `no claim matching ${idPrefix} (or the prefix is ambiguous)` };
   const minted = mintClaim({
     kind: "decision",
-    body: { ratifies: target.id, note: "" },
-    provenance: { agent: "dash", author },
+    body: { note, ratifies: target.id },
+    provenance: { agent, author },
     t,
   });
   if (!minted.ok)
@@ -287,6 +297,56 @@ export function ratify(dir, idPrefix, { author = "", t = 0 } = {}) {
     ratifies: target.id,
     existed: put.existed,
   };
+}
+
+/**
+ * PROPOSE a retraction without making it: an agent-callable tool must not make a permanent
+ * change on its own (models propose; a human authorizes; corrections supersede rather than
+ * erase). Mints a `decision` claim {retracts, reason} stamped `agent:mcp` — append-only,
+ * content-addressed (the same proposal twice converges), synced like any claim, and visible
+ * via retractionProposals()/stats(). It lowers nothing: the target stays live until a human
+ * runs `forge ledger retract <full id>`, which writes the real tombstone.
+ * @param {string} dir
+ * @param {string} id the target's FULL 64-char claim id — a prefix is refused
+ * @param {{reason?: string, t?: number, author?: string}} [opts]
+ * @returns {{ok:boolean, reason?:string, proposalId?:string, retracts?:string, existed?:boolean}}
+ */
+export function proposeRetraction(dir, id, { reason = "", t = 0, author = MCP_AUTHOR } = {}) {
+  if (!FULL_ID_RE.test(String(id ?? "")))
+    return { ok: false, reason: "a retraction must name one full 64-character claim id" };
+  const target = getClaimByPrefix(dir, id);
+  if (!target || target.id !== id) return { ok: false, reason: `no claim matching ${id}` };
+  const minted = mintClaim({
+    kind: "decision",
+    body: { note: "proposed retraction — pending human confirmation", reason, retracts: id },
+    provenance: { agent: "mcp", author },
+    t,
+  });
+  if (!minted.ok) return { ok: false, reason: "reason" in minted ? minted.reason : "mint failed" };
+  const put = putClaim(dir, minted.claim);
+  if (!put.ok) return { ok: false, reason: put.reason ?? "could not persist the proposal" };
+  return { ok: true, proposalId: minted.claim.id, retracts: id, existed: put.existed };
+}
+
+/** Pending retraction proposals by target id — proposals whose target is still live (a
+ *  human retraction resolves them). Pure over a loadClaims() list.
+ *  @param {any[]} claims
+ *  @returns {Map<string, {proposalId:string, reason:string, author:string, t:number}[]>} */
+export function retractionProposals(claims) {
+  const live = new Set(claims.filter((c) => !c.tombstone).map((c) => c.id));
+  const out = new Map();
+  for (const c of claims) {
+    const target = c.kind === "decision" && !c.tombstone ? c.body?.retracts : null;
+    if (!target || !live.has(target)) continue;
+    if (!out.has(target)) out.set(target, []);
+    out.get(target).push({
+      proposalId: c.id,
+      reason: String(c.body?.reason ?? ""),
+      author: c.provenance?.author ?? "",
+      t: c.provenance?.t ?? 0,
+    });
+  }
+  return out;
 }
 
 /** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
@@ -310,15 +370,16 @@ export function loadClaims(dir) {
 }
 
 /** Find one claim by id prefix without scanning the whole ledger (ids are sharded by
- *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). */
+ *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). An AMBIGUOUS prefix
+ *  (≥2 claims match) returns null — silently picking the first sorted match let a short
+ *  prefix ratify or retract a claim nobody named. */
 export function getClaimByPrefix(dir, prefix) {
   if (!prefix || prefix.length < 2) return null;
   const shardDir = join(dir, "claims", prefix.slice(0, 2));
   if (!existsSync(shardDir)) return null;
-  const f = readdirSync(shardDir)
-    .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
-    .sort()[0];
-  if (!f) return null;
+  const matches = readdirSync(shardDir).filter((f) => f.endsWith(".json") && f.startsWith(prefix));
+  if (matches.length !== 1) return null;
+  const f = matches[0];
   const id = f.replace(/\.json$/, "");
   const claim = readJsonSafe(join(shardDir, f));
   if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
@@ -569,6 +630,8 @@ export function stats(dir, nowDay = 0) {
   return {
     total: claims.length,
     tombstoned: claims.filter((c) => c.tombstone).length,
+    // Agent-proposed retractions awaiting a human `forge ledger retract <full id>`.
+    pendingRetractions: retractionProposals(claims).size,
     byKind,
     val: buckets,
   };

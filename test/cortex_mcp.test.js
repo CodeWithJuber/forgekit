@@ -7,6 +7,9 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
+import { mintClaim, val } from "../src/ledger.js";
+import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
+import { TOOLS } from "../src/mcp_tools.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -181,31 +184,95 @@ test("handle: a tool handler that throws still gets a JSON-RPC error reply (no c
   );
 });
 
-test("forge_ledger_retract returns error for missing claim via stdio", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-mcp-ret-"));
-  mkdirSync(join(root, ".forge", "ledger"), { recursive: true });
-  const requests = [
-    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+/** Drive the live server with tools/call requests; returns {id → text|error}. */
+const callServer = (root, calls) => {
+  const requests = calls.map((c, i) =>
     JSON.stringify({
       jsonrpc: "2.0",
-      id: 2,
+      id: i + 1,
       method: "tools/call",
-      params: {
-        name: "forge_ledger_retract",
-        arguments: { id: "nonexistent", reason: "test" },
-      },
+      params: { name: c.name, arguments: c.arguments },
     }),
-  ].join("\n");
+  );
   const r = spawnSync("node", [SERVER], {
-    input: `${requests}\n`,
+    input: `${requests.join("\n")}\n`,
     encoding: "utf8",
-    env: { ...process.env, FORGE_ROOT: root },
+    env: { ...process.env, FORGE_ROOT: root, FORGE_AUTHOR: "Alice Human <alice@corp>" },
     timeout: 10000,
   });
-  const responses = r.stdout
-    .trim()
-    .split("\n")
-    .map((l) => JSON.parse(l));
-  const call = responses.find((x) => x.id === 2);
-  assert.match(call.result.content[0].text, /No claim matching/);
+  const out = {};
+  for (const l of r.stdout.trim().split("\n").filter(Boolean)) {
+    const x = JSON.parse(l);
+    out[x.id] = x.result?.content?.[0]?.text ?? x.error;
+  }
+  return out;
+};
+
+/** A ledger with two fact claims whose ids share their first two hex chars. */
+const ledgerWithTwinPrefix = () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-led-"));
+  const dir = repoLedger(root);
+  const first = mintClaim({ kind: "fact", body: { name: "a", text: "t0" } }).claim;
+  putClaim(dir, first);
+  for (let i = 1; ; i++) {
+    const c = mintClaim({ kind: "fact", body: { name: "a", text: `t${i}` } }).claim;
+    if (c.id.slice(0, 2) === first.id.slice(0, 2)) {
+      putClaim(dir, c);
+      return { root, dir, ids: [first.id, c.id].sort() };
+    }
+  }
+};
+
+test("forge_ledger_retract refuses anything but one full claim id (C2)", () => {
+  const { root, dir, ids } = ledgerWithTwinPrefix();
+  const out = callServer(root, [
+    { name: "forge_ledger_retract", arguments: { id: "nonexistent", reason: "test" } },
+    { name: "forge_ledger_retract", arguments: { id: ids[1].slice(0, 2), reason: "stale" } },
+    { name: "forge_ledger_retract", arguments: { id: ids[1].slice(0, 12), reason: "stale" } },
+    { name: "forge_ledger_retract", arguments: { id: "f".repeat(64), reason: "stale" } },
+  ]);
+  for (const id of [1, 2, 3]) assert.match(out[id], /full 64-character claim id/, `call ${id}`);
+  assert.match(out[4], /No claim matching/);
+  assert.equal(loadClaims(dir).length, 2, "a refused call writes nothing at all");
+});
+
+test("forge_ledger_retract only PROPOSES: the claim stays live and the proposal is visible", () => {
+  const { root, dir, ids } = ledgerWithTwinPrefix();
+  const before = val(loadClaims(dir).find((c) => c.id === ids[1]));
+  const out = callServer(root, [
+    { name: "forge_ledger_retract", arguments: { id: ids[1], reason: "stale value" } },
+    { name: "forge_ledger_query", arguments: { query: "a t1" } },
+  ]);
+  assert.match(out[1], /Proposed retraction/);
+  assert.match(out[1], /stays live until a human confirms/);
+  const target = loadClaims(dir).find((c) => c.id === ids[1]);
+  assert.equal(target.tombstone, undefined, "no permanent tombstone from an agent-callable tool");
+  assert.equal(val(target), before, "a proposal lowers nothing");
+  const proposal = loadClaims(dir).find((c) => c.body?.retracts === ids[1]);
+  assert.equal(proposal.provenance.author, "agent:mcp", "stamped as the agent, never the human");
+  assert.equal(proposal.body.reason, "stale value");
+  assert.equal(stats(dir).pendingRetractions, 1, "visible in ledger stats");
+  const row = JSON.parse(out[2]).results.find((r) => r.id === ids[1]);
+  assert.deepEqual(row.pendingRetraction, ["stale value"], "visible in ledger query output");
+});
+
+test("forge_ledger_ratify is stamped agent:mcp, changes no confidence, and says so (C2)", () => {
+  const { root, dir, ids } = ledgerWithTwinPrefix();
+  const before = val(loadClaims(dir).find((c) => c.id === ids[0]));
+  const out = callServer(root, [
+    { name: "forge_ledger_ratify", arguments: { id: ids[0].slice(0, 2) } },
+    { name: "forge_ledger_ratify", arguments: { id: ids[0] } },
+  ]);
+  assert.match(out[1], /No claim matching|ambiguous/i, "an ambiguous prefix is refused");
+  assert.match(out[2], /not a human ratification/i);
+  const decision = loadClaims(dir).find((c) => c.kind === "decision");
+  assert.equal(decision.body.ratifies, ids[0]);
+  assert.equal(decision.provenance.author, "agent:mcp");
+  assert.ok(
+    decision.provenanceAll.every((p) => !/alice/i.test(p.author ?? "")),
+    "the human's identity is never used",
+  );
+  assert.equal(val(loadClaims(dir).find((c) => c.id === ids[0])), before, "val unchanged");
+  const tool = TOOLS.find((t) => t.name === "forge_ledger_ratify");
+  assert.doesNotMatch(tool.description, /promote .*confidence/i, "no false promise in the schema");
 });

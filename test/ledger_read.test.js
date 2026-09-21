@@ -83,7 +83,7 @@ test("claimToLesson: fresh claim → candidate at the 0.5 prior, fields from bod
 
 test("claimToLesson: a fresh confirm crosses val ≥ 0.6 → active, lastConfirmedDay = confirm t", () => {
   const claim = mkClaim({ t: 1 });
-  claim.evidence = [ev("confirm", "run:1", 5)]; // test.run w=0.8 → val 1.8/2.8 ≈ 0.64
+  claim.evidence = [ev("confirm", "git:c0ffee1", 5)]; // test.run w=0.8 → val 1.8/2.8 ≈ 0.64
   const l = claimToLesson(claim, 5);
   assert.equal(l.status, "active");
   assert.equal(l.evidenceCount, 1);
@@ -93,7 +93,7 @@ test("claimToLesson: a fresh confirm crosses val ≥ 0.6 → active, lastConfirm
 
 test("claimToLesson: net-negative evidence (val < 0.45, ≥1 contradiction) → quarantined", () => {
   const claim = mkClaim();
-  claim.evidence = [ev("contradict", "revert:abc", 2, "human.revert")]; // val 1/3 ≈ 0.33
+  claim.evidence = [ev("contradict", "git:abc1234", 2, "human.revert")]; // val 1/3 ≈ 0.33
   const l = claimToLesson(claim, 2);
   assert.equal(l.status, "quarantined");
   assert.equal(l.contradictionCount, 1);
@@ -101,14 +101,14 @@ test("claimToLesson: net-negative evidence (val < 0.45, ≥1 contradiction) → 
 
 test("claimToLesson: an old decayed confirm falls back to candidate, NOT quarantined", () => {
   const claim = mkClaim({ t: 0 });
-  claim.evidence = [ev("confirm", "run:0", 0)];
+  claim.evidence = [ev("confirm", "git:c0ffee0", 0)];
   const l = claimToLesson(claim, 400); // decay pulls val back to ~0.5 (the prior)
   assert.equal(l.status, "candidate", "no contradiction → uncertainty, never quarantine");
 });
 
 test("claimToLesson: tombstoned → retired, regardless of evidence", () => {
   const claim = mkClaim();
-  claim.evidence = [ev("confirm", "run:1", 1)];
+  claim.evidence = [ev("confirm", "git:c0ffee1", 1)];
   claim.tombstone = { author: "x", reason: "superseded", t: 2 };
   assert.equal(claimToLesson(claim, 1).status, "retired");
 });
@@ -117,7 +117,7 @@ test("claimToLesson: no provenance.task → deterministic lsn_<id8> fallback; ju
   const claim = mkClaim({ task: "" });
   claim.evidence = [
     { oracle: "made.up", result: "confirm", ref: "x", h: "deadbeef", t: 1 }, // unknown oracle
-    ev("confirm", "run:1", 1),
+    ev("confirm", "git:c0ffee1", 1),
   ];
   const l = claimToLesson(claim, 1);
   assert.equal(l.id, `lsn_${claim.id.slice(0, 8)}`);

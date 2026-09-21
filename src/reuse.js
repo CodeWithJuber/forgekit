@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { has as atlasHas } from "./atlas.js";
 import { claimSim, simLabel } from "./embed.js";
 import { isDormant, jaccard, mintClaim, outcomeRecord, SKETCH_K, sketch, val } from "./ledger.js";
-import { appendEvidence, loadClaims, putClaim, repoLedger } from "./ledger_store.js";
+import { appendEvidence, loadClaims, putClaim, readEvidence, repoLedger } from "./ledger_store.js";
 import { record as recordMetric } from "./metrics.js";
 import { contentHash, gitAuthor } from "./util.js";
 
@@ -136,7 +136,10 @@ export function mintArtifact(dir, fields, { evidence, t = 0 } = {}) {
     const a = appendEvidence(dir, minted.claim.id, o.outcome);
     if (!a.ok) return a;
   }
-  return { ok: true, id: minted.claim.id, existed: put.existed, serves: Boolean(evidence) };
+  // `serves` is what the proof actually earns, not "some evidence was passed": a ref forge
+  // cannot resolve (`--ref lgtm`, `ci:1`) is recorded but capped below SERVE_FLOOR (C2).
+  const serves = val({ evidence: readEvidence(dir, minted.claim.id) }, t) >= SERVE_FLOOR;
+  return { ok: true, id: minted.claim.id, existed: put.existed, serves };
 }
 
 // ---------------------------------------------------------------------------
@@ -278,24 +281,25 @@ export function reuseQuery(root, spec, { slice = "", atlas = null, nowDay = 0 } 
   const r = lookup(claims, spec, { slice, atlas, nowDay, sim });
   r.sim = simLabel(sim);
 
-  // Revalidation results are themselves oracle outcomes (graph.reval): serving keeps
-  // evidence fresh, and an artifact whose deps vanished demotes itself — for everyone.
-  const structural = (c, ok, missing) => {
+  // A FAILED revalidation is an oracle outcome (graph.reval): an artifact whose deps
+  // vanished demotes itself — for everyone. A PASSING one is not written back: serving is
+  // never confirmation (review C2 — ten daily serves used to lift val 0.643 → 0.864 and
+  // kept an artifact served after two failing test runs). Only a real oracle raises val.
+  const contradict = (c, missing) => {
     const o = outcomeRecord({
       oracle: "graph.reval",
-      result: ok ? "confirm" : "contradict",
-      ref: ok ? `atlas:ok:day${nowDay}` : `atlas:missing:${missing.slice(0, 3).join(",")}`,
+      result: "contradict",
+      ref: `atlas:missing:${missing.slice(0, 3).join(",")}`,
       author: gitAuthor(),
       t: nowDay,
     });
     if (o.ok) appendEvidence(dir, c.id, o.outcome);
   };
-  if (r.artifact && r.revalidation?.checked) structural(r.artifact, true, []);
   for (const reason of r.reasons) {
     const m = reason.match(/^(?:exact|near) ([0-9a-f]{8}) failed revalidation: missing (.+)$/);
     if (!m) continue;
     const c = claims.find((x) => x.id.startsWith(m[1]));
-    if (c) structural(c, false, m[2].split(", "));
+    if (c) contradict(c, m[2].split(", "));
   }
 
   recordMetric(root, {

@@ -149,14 +149,14 @@ export function mintClaim({ kind, body, scope = {}, provenance = {}, t = 0 }) {
   };
 }
 
-// Typed evidence refs are `<type>:<value>`. Only these types are recognized; anything
-// else (or a ref with no `type:` prefix) is treated as an untyped/legacy ref and accepted
-// unchanged for back-compat. `git:` is the one type forge can cheaply AND soundly resolve —
-// the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is supplied.
-// The rest now carry real FORMAT grammars (ME-05): `ci:` must be a CI locator, `human:`
+// Typed evidence refs are `<type>:<value>`. Only these types are format-checked; anything
+// else (or a ref with no `type:` prefix) is accepted for back-compat but counts only at
+// FORMAT strength (see refStrength). `git:` is the one type forge can cheaply AND soundly
+// resolve — the object must exist in THIS repo — so it is ALWAYS resolved when a resolver is
+// supplied. The rest carry FORMAT grammars (ME-05): `ci:` must be a CI locator, `human:`
 // must be an explicit ratification, `file:` must resolve to an existing path when a repo
-// root is available. A `test:` run id remains format-only — it is unverifiable — which is
-// why it can never lift confidence into the trusted band (see refStrength/val).
+// root is available. None of those proves the claim, so none lifts confidence into the
+// trusted band on its own (see refStrength/val).
 export const REF_TYPES = new Set(["git", "file", "test", "ci", "human"]);
 
 // A `ci:` ref must be a real CI locator: an http(s) URL, an `owner/repo@run` reference,
@@ -216,25 +216,47 @@ export function validateRef(ref, { resolveGit, resolveFile } = {}) {
   return { ok: true };
 }
 
-// The trust model (ME-05): record-integrity validity (validateRef/validOutcome) is NOT the
-// same as evidence being RESOLVED. Only resolved evidence may lift confidence into the
-// trusted/serving band. Two tiers, both re-derived PURELY from the ref so a forged log line
-// can never buy a strength it isn't entitled to (same discipline as the ORACLES weights):
-//  - RESOLVED: untyped/legacy (historical trust), `git:` (resolved at the append gate —
-//    the one soundly-resolvable type), `ci:` (only well-formed CI locators pass validateRef),
-//    and `human:` (only explicit ratifications pass). These count at full weight.
-//  - FORMAT-ONLY: `file:` and `test:`. A path existing or a run id being well-formed is
-//    record integrity, NOT proof the claim is true, and pure val() cannot re-check existence.
-//    These count at a REDUCED weight and, on their own, are capped below the serving floor.
-const RESOLVED_REF_TYPES = new Set(["git", "ci", "human"]);
+// The trust model (ME-05, tightened after review C2): record-integrity validity
+// (validateRef/validOutcome) is NOT the same as evidence being RESOLVED. Only resolved
+// evidence may lift confidence into the trusted/serving band, and "resolved" means FORGE
+// re-derived the pointer — not that someone typed a plausible string. Two tiers, both
+// re-derived PURELY from the record so a forged log line can never buy a strength it isn't
+// entitled to (same discipline as the ORACLES weights):
+//  - RESOLVED: a `git:` ref naming an OBJECT ID (hex, 7–64 chars). It is resolved against
+//    this repo at every append/import gate and re-resolved by verify(). A symbolic revision
+//    (`git:HEAD`, `git:main`) names no fixed object — HEAD moves — so it is not resolved.
+//    Also the two bridge pointers, and only on the bridge oracle that mints them
+//    (`episode:` ↔ cortex.episode, `legacy:` ↔ legacy.import): forge's own observers, whose
+//    deliberately conservative table weight (0.5) already is the discount.
+//  - FORMAT-ONLY: everything else. Untyped refs (`lgtm`), unknown prefixes (`session:x`),
+//    and the typed-but-unverifiable `ci:`/`human:`/`test:`/`file:` — a CI locator, a named
+//    ratifier, a run id or an existing path is record integrity, not proof, and pure val()
+//    cannot check any of them. These count at a REDUCED weight and, on their own, are
+//    capped below the serving floor.
+// A human-family oracle authored by an `agent:` identity (e.g. the MCP tools' `agent:mcp`)
+// is never resolved either: an agent is not a human, whatever ref it cites.
+const GIT_OID_RE = /^[0-9a-f]{7,64}$/i;
+const BRIDGE_REF_ORACLE = { episode: "cortex.episode", legacy: "legacy.import" };
 
-/** Resolution strength of a ref for confidence weighting: "resolved" or "format".
- *  Pure and total — never throws, never does I/O. */
-export function refStrength(ref) {
-  const parsed = parseRef(ref);
-  if (!parsed) return "resolved"; // untyped/legacy — historical full trust
-  return RESOLVED_REF_TYPES.has(parsed.type) ? "resolved" : "format";
+/** Resolution strength of a ref for confidence weighting: "resolved" or "format". `oracle`
+ *  binds a bridge pointer to the one oracle allowed to cite it. Pure and total — never
+ *  throws, never does I/O.
+ *  @param {string} ref
+ *  @param {string} [oracle] */
+export function refStrength(ref, oracle) {
+  const m = /^([a-z][a-z0-9-]*):(.+)$/.exec(String(ref ?? ""));
+  if (!m) return "format"; // untyped — nothing forge can re-derive
+  const [, type, value] = m;
+  if (type === "git") return GIT_OID_RE.test(value) ? "resolved" : "format";
+  return oracle !== undefined && BRIDGE_REF_ORACLE[type] === oracle ? "resolved" : "format";
 }
+
+/** The strength val() actually applies to one evidence record: refStrength, except that an
+ *  `agent:` identity can never supply HUMAN-family evidence at resolved strength. */
+const recordStrength = (e) =>
+  ORACLES[e.oracle]?.family === "human" && /^agent:/.test(String(e.author ?? ""))
+    ? "format"
+    : refStrength(e.ref, e.oracle);
 
 /** Weight multiplier applied to merely-format-valid (unresolved) evidence in val(). */
 export const UNRESOLVED_WEIGHT = 0.5;
@@ -316,10 +338,10 @@ const decayed = (outcome, nowDay, halfLife) =>
  * appender's earned reliability. Pure function of (evidence set, trust map) ⇒
  * identical after any merge order.
  *
- * Resolution strength (ME-05): merely-format-valid evidence (`file:`/`test:` — a pointer,
- * not a demonstration) counts at UNRESOLVED_WEIGHT, and a claim with NO resolved
- * confirmation is capped at UNRESOLVED_VAL_CAP so `test:made-up-run` (and friends) can
- * never lift confidence into the trusted/serving band. The cap only lowers — contradictions
+ * Resolution strength (ME-05/C2): evidence forge did not resolve (anything but a `git:`
+ * object id or a bridge pointer — see refStrength) counts at UNRESOLVED_WEIGHT, and a claim
+ * with NO resolved confirmation is capped at UNRESOLVED_VAL_CAP so `lgtm`,
+ * `test:made-up-run` (and friends) can never lift confidence into the trusted/serving band. The cap only lowers — contradictions
  * still sink val toward 0 as before.
  * @param {any} claim
  * @param {number} [nowDay]
@@ -331,7 +353,7 @@ export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS, trus
   let resolvedConfirm = false;
   for (const e of claim.evidence ?? []) {
     if (!validOutcome(e)) continue;
-    const resolved = refStrength(e.ref) === "resolved";
+    const resolved = recordStrength(e) === "resolved";
     const strength = resolved ? 1 : UNRESOLVED_WEIGHT;
     const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1) * strength;
     all += d;

@@ -3,7 +3,7 @@
 // NO network anywhere — the provider is test/fixtures/fake_embed.mjs (deterministic
 // hash-based pseudo-vectors that make two designated spec strings close).
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +27,20 @@ const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const FAKE = fileURLToPath(new URL("./fixtures/fake_embed.mjs", import.meta.url));
 const fakeCmd = (flags = "") => `cmd:node ${FAKE}${flags ? ` ${flags}` : ""}`;
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-embed-"));
+/** A one-commit git repo: store-level evidence must cite a git object that resolves here
+ *  (the only ref type forge re-derives). Returns {root, head}. */
+const gitTmp = () => {
+  const root = tmp();
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "f.txt"), "x");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  return { root, head };
+};
 
 /** Run fn with env vars set, restore after (getProvider re-resolves per env value). */
 const withEnv = (vars, fn) => {
@@ -132,11 +146,11 @@ const STORED = "delete a user account";
 const REWORDED = "remove a user account";
 
 const verifiedArtifactRoot = () => {
-  const root = tmp();
+  const { root, head } = gitTmp();
   const m = mintArtifact(
     repoLedger(root),
     { spec: STORED, code: { path: "src/users.js", sha256: "a".repeat(64) } },
-    { evidence: { oracle: "test.run", result: "confirm", ref: "run:1" }, t: 0 },
+    { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
   );
   assert.equal(m.ok, true);
   return root;
@@ -184,7 +198,7 @@ test("lookup: per-candidate fallback — a candidate with no vector still ranks 
       {
         oracle: "test.run",
         result: "confirm",
-        ref: "run:1",
+        ref: "git:c0ffee1",
         author: "ci",
         t: 0,
         w: 0.8,
@@ -265,14 +279,14 @@ test("claimSim: one provider call covers query+candidates; unset/failure → nul
 // --- CLI: the backend line ------------------------------------------------------------------
 
 test("forge ledger query / reuse query print which similarity backend served", () => {
-  const cwd = tmp();
+  const { root: cwd, head } = gitTmp();
   const dir = repoLedger(cwd);
   const claim = factClaim("users", STORED);
   putClaim(dir, claim);
   appendEvidence(dir, claim.id, {
     oracle: "test.run",
     result: "confirm",
-    ref: "run:1",
+    ref: `git:${head}`,
     t: 0,
     w: 0.8,
     h: "c".repeat(64),
@@ -282,7 +296,10 @@ test("forge ledger query / reuse query print which similarity backend served", (
   const m = mintArtifact(
     dir,
     { spec: STORED, code: { path: "src/users.js", sha256: "e".repeat(64) } },
-    { evidence: { oracle: "test.run", result: "confirm", ref: "run:2" }, t: epochDay() },
+    {
+      evidence: { oracle: "test.run", result: "confirm", ref: `git:${head.slice(0, 12)}` },
+      t: epochDay(),
+    },
   );
   assert.equal(m.ok, true);
 

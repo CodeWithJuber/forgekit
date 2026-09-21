@@ -156,19 +156,63 @@ test("validateRef: ci: must be a locator, human: must be a ratification (ME-05 f
   assert.equal(okH("human:the-model-said-yes"), false, "self-assertion refused on format");
 });
 
-test("refStrength: resolved (git/ci/human/legacy) vs format-only (file/test)", () => {
-  assert.equal(refStrength("run:1"), "resolved", "untyped/legacy keeps historical trust");
+test("refStrength: only a git object id (or a bridge pointer on its own bridge oracle) is resolved", () => {
   assert.equal(refStrength("git:cafebabe"), "resolved");
-  assert.equal(refStrength("ci:42"), "resolved");
-  assert.equal(refStrength("human:alice@d1"), "resolved");
-  assert.equal(refStrength("test:made-up-run"), "format", "a run id is a pointer, not a proof");
-  assert.equal(refStrength("file:/some/path"), "format");
+  assert.equal(refStrength(`git:${"a1".repeat(20)}`), "resolved", "full sha1");
+  assert.equal(refStrength("episode:ep_m0_x#n1", "cortex.episode"), "resolved");
+  assert.equal(refStrength("legacy:lsn_a#confirm0", "legacy.import"), "resolved");
+  // C2: none of these is something forge resolved — they are pointers anyone can type.
+  for (const ref of [
+    "lgtm",
+    "run:1",
+    "session:x",
+    "foo:bar",
+    "ci:1",
+    "ci:https://ci.example.com/run/7",
+    "human:claude@yes",
+    "git:HEAD",
+    "git:main",
+    "git:HEAD~0",
+    "test:made-up-run",
+    "file:/some/path",
+  ])
+    assert.equal(refStrength(ref, "test.run"), "format", ref);
+  assert.equal(
+    refStrength("episode:ep_m0_x#n1", "test.run"),
+    "format",
+    "a bridge pointer only counts on the bridge oracle that mints it",
+  );
+});
+
+test("val (C2): made-up refs are capped below the serving floor — no prefix buys full trust", () => {
+  for (const ref of ["lgtm", "session:x", "ci:1", "human:claude@yes", "git:HEAD"]) {
+    const records = Array.from({ length: 3 }, (_, i) =>
+      outcomeRecord({ oracle: "human.accept", result: "confirm", ref, t: i }),
+    );
+    assert.ok(
+      records.every((r) => r.ok),
+      `${ref} passes the format check`,
+    );
+    const c = mkClaim(records.map((r) => ("outcome" in r ? r.outcome : null)));
+    assert.ok(val(c, 0) <= UNRESOLVED_VAL_CAP + 1e-9, `${ref}: val ${val(c, 0)} is capped`);
+    assert.ok(val(c, 0) < SERVE_FLOOR, `${ref} never reaches the serving floor`);
+  }
+});
+
+test("val (C2): an agent identity never supplies human-family evidence at resolved strength", () => {
+  const human = (author) =>
+    mkClaim([
+      outcomeRecord({ oracle: "human.accept", result: "confirm", ref: "git:cafebabe", author })
+        .outcome,
+    ]);
+  assert.ok(val(human("Alice <a@x>"), 0) >= SERVE_FLOOR, "a person's git-anchored accept counts");
+  assert.ok(val(human("agent:mcp"), 0) <= UNRESOLVED_VAL_CAP + 1e-9, "agent:mcp is not a human");
 });
 
 test("val: format-only evidence (test:/file:) cannot lift confidence into the serving band", () => {
-  // A single confirm on an UNTYPED (resolved-trust) ref clears the serving floor as before.
+  // A single confirm on a resolved (git object) ref clears the serving floor.
   const resolved = mkClaim([
-    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "run:legit" }).outcome,
+    outcomeRecord({ oracle: "test.run", result: "confirm", ref: "git:c0ffee1" }).outcome,
   ]);
   assert.ok(val(resolved, 0) >= SERVE_FLOOR, "resolved evidence still earns trust (no regression)");
 
@@ -232,8 +276,10 @@ const mkClaim = (evidence = []) => {
   });
   return { ...m.claim, evidence };
 };
+// A resolved (git object id) ref, unique per (result, t, oracle) so records never dedupe.
+const gitRef = (s) => `git:${Buffer.from(String(s)).toString("hex").padEnd(8, "0").slice(0, 40)}`;
 const ev = (result, t, oracle = "test.run") =>
-  outcomeRecord({ oracle, result, ref: `r:${result}:${t}:${oracle}`, t }).outcome;
+  outcomeRecord({ oracle, result, ref: gitRef(`${result}${t}${oracle}`), t }).outcome;
 
 test("val: fresh claim sits at the 0.5 prior; confirms raise; contradictions lower", () => {
   assert.equal(val(mkClaim(), 0), 0.5);
@@ -250,7 +296,7 @@ test("val: monotone in confirmations (more independent evidence is never worse)"
         outcomeRecord({
           oracle: "ci.run",
           result: "confirm",
-          ref: `r:${i}`,
+          ref: gitRef(`ci${i}`),
           t: 0,
         }).outcome,
     );
@@ -558,7 +604,7 @@ test("val with trust: a distrusted author's evidence moves confidence less", () 
     outcomeRecord({
       oracle: "test.run",
       result: "confirm",
-      ref: "r",
+      ref: gitRef("r"),
       author: "carol",
       t: 0,
     }).outcome,

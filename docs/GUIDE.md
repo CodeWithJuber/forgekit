@@ -834,11 +834,15 @@ $ forge ledger diff 2026-07-01
 The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
 tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
 record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
-paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id>` and
-`retract <id>` are the human oracle — a manual accept or revert that appends evidence and
-moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
-tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
-target the per-user ledger beside the global recall store, `--json` for scripts.
+paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id>` records a
+human ratification (a `decision` claim under your git identity — it does not change the
+claim's `val`) and `retract <full id> --reason "<why>"` tombstones exactly one claim (a
+prefix is refused — a tombstone is permanent). The MCP twins only *propose*: they are
+stamped `agent:mcp`, change no confidence, and a retraction proposal stays pending (shown
+by `stats` and `show`) until a human runs `retract`; `verify` recomputes every content
+hash (CI-friendly, exit 1 on tampering); `import` back-fills legacy lessons/facts
+idempotently. Add `--personal` to target the per-user ledger beside the global recall store,
+`--json` for scripts.
 
 `forge ledger sync` is `merge` without a path argument — a transport that moves the CRDT
 state between machines. Target precedence: `--dir <path>` (a shared folder, bidirectional
@@ -1300,10 +1304,10 @@ emitted `.mcp.json`):
 | `forge_doctor`          | Health check — verify installed tools, guards, MCP auth, config drift, and system state.                                                                                                                                                                          |
 | `forge_provider_status` | Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.                                                                                                                                                 |
 | `forge_remember`        | Store a durable fact in this repo's portable memory (.forge/brain/).                                                                                                                                                                                              |
-| `forge_ledger_ratify`   | Promote a ledger claim's confidence — record an independent oracle ratification (the claim held under test).                                                                                                                                                      |
+| `forge_ledger_ratify`   | Propose a ratification of a ledger claim as agent:mcp (never as the human) — mints a decision claim and does NOT change the claim's confidence.                                                                                                                   |
 | `collide_check`         | Parallel-session conflict radar — which recent teammate/agent sessions touched the files (or their import neighbors) you are about to edit, from the team-merged Forge ledger.                                                                                    |
 | `rank_code`             | Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph. |
-| `forge_ledger_retract`  | Tombstone a ledger claim with a reason — mark it as no longer valid so it stops influencing routing and memory.                                                                                                                                                   |
+| `forge_ledger_retract`  | Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`.                                                                  |
 <!-- forge:render:mcp-tools:end -->
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude

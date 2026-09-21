@@ -257,6 +257,22 @@ test("getClaimByPrefix: finds one claim via its shard without scanning the ledge
   assert.equal(getClaimByPrefix(dir, "a"), null, "sub-shard prefixes are refused");
 });
 
+test("getClaimByPrefix: an ambiguous prefix finds nothing instead of the first sorted match (C2)", () => {
+  const dir = tmp();
+  const a = fact("twin", "t0");
+  putClaim(dir, a);
+  let b = null;
+  for (let i = 1; !b; i++) {
+    const c = fact("twin", `t${i}`);
+    if (c.id.slice(0, 2) === a.id.slice(0, 2)) b = c;
+  }
+  putClaim(dir, b);
+  assert.equal(getClaimByPrefix(dir, a.id.slice(0, 2)), null, "two matches → refuse");
+  assert.equal(getClaimByPrefix(dir, a.id).id, a.id, "the full id is always unambiguous");
+  assert.equal(getClaimByPrefix(dir, b.id).id, b.id);
+  assert.equal(ratify(dir, a.id.slice(0, 2), { author: "x" }).ok, false, "ratify refuses too");
+});
+
 test("importState: semilattice import is idempotent and merges evidence", () => {
   const a = tmp();
   const b = tmp();
