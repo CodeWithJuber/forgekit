@@ -317,3 +317,39 @@ test("stateBytes: deterministic and newline-terminated", () => {
   assert.equal(stateBytes(a), stateBytes(a));
   assert.ok(stateBytes(a).endsWith("\n"));
 });
+
+// ── 8. no replica can erase what it could not verify (review C3) ──────────────
+test("ref sync: a record one replica quarantines survives on the shared ref for everyone", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { outcomeRecord } = await import("../src/ledger.js");
+  const { appendEvidence, readEvidence } = await import("../src/ledger_store.js");
+  const bare = initBare();
+  const [alice, bob, carol] = [initRepo(), initRepo(), initRepo()];
+  for (const r of [alice, bob, carol]) git(r, "remote", "add", "origin", bare);
+  const c = fact("perf", "p99 < 20ms", 20000);
+  putClaim(ledgerOf(alice), c);
+  // The proof exists only in alice's tree, so bob and carol cannot resolve it on import.
+  writeFileSync(join(alice, "bench.txt"), "p99 18ms");
+  const o = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    ref: "file:bench.txt",
+    t: 20000,
+  }).outcome;
+  assert.equal(appendEvidence(ledgerOf(alice), c.id, o).ok, true);
+  const remoteEvidence = () =>
+    JSON.parse(git(carol, "cat-file", "blob", "refs/forge/ledger:state.json")).evidence[c.id] ?? [];
+
+  assert.equal(ledgerSync({ dir: ledgerOf(alice), root: alice }).ok, true);
+  const b = ledgerSync({ dir: ledgerOf(bob), root: bob });
+  assert.equal(b.ok, true);
+  assert.equal(b.pulled.quarantined, 1, "bob cannot verify the record — quarantined locally");
+  assert.equal(readEvidence(ledgerOf(bob), c.id).length, 0);
+  assert.equal(ledgerSync({ dir: ledgerOf(carol), root: carol }).ok, true);
+  assert.equal(
+    remoteEvidence().length,
+    1,
+    "bob's push merged into the remote instead of replacing it with his verified view",
+  );
+  assert.equal(readEvidence(ledgerOf(alice), c.id).length, 1, "alice still has it");
+});
