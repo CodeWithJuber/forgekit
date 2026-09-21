@@ -47,6 +47,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
+  Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
+  against the extracted replication package. PDFs built from the corrected sources could not
+  be rebuilt here and are flagged as predating the corrections.
 - `CLAUDE.md`: Biome 2.5.2 → 2.5.5 (matching the pin), "600+ tests" → "1000+", and the lint
   command `npx biome check` → `npm run check` — the documented command fails outright, since
   the npx package is `@biomejs/biome`, not `biome`.

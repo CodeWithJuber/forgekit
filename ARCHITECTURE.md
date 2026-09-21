@@ -600,7 +600,7 @@ flowchart LR
   test["test<br/>109 files"]
   src["src<br/>98 files"]
   landing["landing<br/>61 files"]
-  research["research<br/>35 files"]
+  research["research<br/>36 files"]
   global["global<br/>3 files"]
   bench["bench<br/>2 files"]
   scripts["scripts<br/>2 files"]
