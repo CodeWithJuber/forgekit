@@ -44,6 +44,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
+- **`verify --deep` no longer claims coverage it never had.** The `residual` silent-miss
+  bound multiplied `∏(1 − wⱼ)` over every lens that "ran": it used the precision-style lens
+  weights as catch probabilities, multiplied checks aimed at disjoint defect classes as if
+  they were independent tries at one defect, and counted lenses that ran over nothing. With
+  the tests never run and an empty diff it reported **0.042** — 96% coverage from zero
+  checks. Each lens now names its target class and an assumed catch probability in its own
+  `catch` column; same-class lenses combine as nested checks (`1 − c_max`, review F2), a lens
+  that examined no input catches nothing, and the figure is the worst class, with
+  `residualByClass` in the provenance. The same case now reports **1**; a typical clean run
+  reports 0.7 instead of 0.005.
 
 ### Documentation
 

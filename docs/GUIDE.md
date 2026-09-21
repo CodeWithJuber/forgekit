@@ -570,10 +570,15 @@ the way the lesson miner scores mistakes: a noisy-OR **defect risk score (heuris
 `p = 1 − ∏(1 − wᵢsᵢ)` (shown as `P(defect)` in the CLI), with a **cross-family gate**, so
 any number of correlated structural signals stays advisory while a failing test suite or a
 leaked secret blocks on its own. `p` is a calibrated heuristic, not a measured probability
-of defect. Every run reports the `residual` `∏(1 − cⱼ)` over the lenses that actually ran
-— the **remaining unchecked weight**, i.e. how much silent-miss weight a PASS still leaves
-uncovered — and extends `.forge/provenance.json` with the per-lens evidence plus one
-`stage:"verify"` metrics record.
+of defect. Every run reports the `residual` — the **remaining unchecked weight**, i.e. how
+much silent-miss weight a PASS still leaves uncovered. It is dependence-aware: each lens
+targets one defect class (behavior, symbol, dependents, docs, secret) with an assumed catch
+probability `cⱼ` (its own column, not the precision weight `w`); lenses on the same class
+are treated as nested checks (`1 − c_max`, never a product), a lens that examined no input
+catches nothing, and the reported figure is the worst class (`residualByClass` has each).
+An empty diff with no test run therefore reports `1`, not a near-zero product. Each run
+extends `.forge/provenance.json` with the per-lens evidence plus one `stage:"verify"`
+metrics record.
 
 `--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
 over the added lines, strict-majority vote, abstaining honestly when fewer than half
@@ -593,7 +598,7 @@ $ forge verify --deep
   ! dependents of the changed code are not in this diff: src/route.js
 
   P(defect):  █░░░░░░░░░ 0.07  (families: structural)
-  residual:   0.005 — Theorem-D silent-miss bound
+  residual:   0.700 — Theorem-D silent-miss bound
 
   PASS
 ```
