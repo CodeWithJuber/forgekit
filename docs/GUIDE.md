@@ -1453,9 +1453,11 @@ ask/proceed only when it holds its own verdict with p ≥ `llm.minConfidence`. R
 score already sits in leaves it alone; a vote for a lower band moves the score to that band's
 ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
 fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless
-you set it to 0); a vote for a **higher** band is never applied — it is recorded as
-`llm.escalateTo`, because the tier escalates only when a verifier fails, never on the model's
-own assessment (whitepaper §5.1). Impact edges must be real + grep-confirmed; goal-drift moves
+you set it to 0); a vote for a **higher** band is never applied, because the tier may escalate
+only when a verifier fails, never on the model's own assessment (whitepaper §5.1). The tier it
+would have picked is reported in `--json` as `llm.escalateTo` — an **advisory recommendation
+only**: nothing in Forge acts on it automatically; escalating after a verifier failure is still
+yours (or the doom-loop diagnosis's) to do. Impact edges must be real + grep-confirmed; goal-drift moves
 off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
 or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
 `llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in

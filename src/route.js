@@ -427,9 +427,10 @@ function proposalConfidence(proposal) {
  * Pure: reconcile the deterministic complexity score with a proposer's band vote.
  *   - same band        → the deterministic score stands ("llm-agreed");
  *   - higher band      → NOT applied (whitepaper §5.1: spend more only when an external check
- *                        on the output fails, never on a model's self-assessment). The target
- *                        is kept as `escalateTo` for that verifier-failure path
- *                        ("llm-raise-deferred");
+ *                        on the output fails, never on a model's self-assessment). The tier the
+ *                        vote would have picked is returned as `escalateTo` — an ADVISORY
+ *                        recommendation only: nothing in forge acts on it automatically (no
+ *                        verifier-failure path consumes it yet) ("llm-raise-deferred");
  *   - lower band       → lowered to that band's ceiling — only when bidirectional, only when
  *                        the vote clears `minConfidence`, and never below `signalFloor` when
  *                        the rubric has a strong topic signal ("llm-lowered"); otherwise the
@@ -648,7 +649,7 @@ export function routeTask(
           : []),
         ...(path === "llm-raise-deferred"
           ? [
-              `model judged ${proposal.band} — not applied; escalate to ${verdict.escalateTo} only if a verifier fails`,
+              `model judged ${proposal.band} — not applied; advisory only: consider ${verdict.escalateTo} if a verifier fails (nothing escalates automatically)`,
             ]
           : []),
       ]),

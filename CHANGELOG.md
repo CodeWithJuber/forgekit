@@ -104,9 +104,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The proposer can no longer raise the tier.** The "free raise" escalated on the model's own
   assessment, which whitepaper §5.1 rules out (escalate "only if an external check on the
   output fails … never by the model's self-assessment"). A higher-band vote is now recorded,
-  not applied: path `llm-raise-deferred`, with the would-be tier kept as `llm.escalateTo` for
-  the verifier-failure path — a prime finder with a 0.99 "premium" vote stays on haiku instead
-  of jumping to opus. Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
+  not applied: path `llm-raise-deferred` — a prime finder with a 0.99 "premium" vote stays on
+  haiku instead of jumping to opus. The would-be tier is reported as `llm.escalateTo`, an
+  **advisory recommendation only**: nothing in forge acts on it automatically (no
+  verifier-failure path consumes it yet). Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
   `llm-raise-deferred` / `llm-overruled` (+ `overruledBy`); `llm-raised` is gone.
 - **The assumption gate compares the proposer's verdict with the rubric's instead of clipping
   one scale onto the other.** The rubric's logistic saturates on real issues (median

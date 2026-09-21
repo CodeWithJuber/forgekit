@@ -212,8 +212,9 @@ but never past a hard floor:
   ceiling only when the vote's p(band) reaches `llm.minConfidence`, and never below a
   strong-signal (algorithmic/architectural) floor, so a "distributed rate-limiter" can't be
   talked down to the cheap tier. A vote for a _higher_ band is **not applied** — escalation
-  follows a verifier failure, never the model's self-assessment (§5.1) — and is kept as
-  `llm.escalateTo`;
+  follows a verifier failure, never the model's self-assessment (§5.1). The tier it would have
+  picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on
+  automatically;
 - **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
   with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
   guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness

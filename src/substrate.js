@@ -393,7 +393,7 @@ export function substrateCheck(
     substrate: loadSubstrateSpec(),
     // Which faculties, if any, had a model proposal survive external verification this run, and
     // which direction it moved (…-cleared / …-tightened for the gate, …-lowered for routing; a
-    // routing …-raise-deferred is recorded but never applied). Every non-deterministic value was
+    // routing …-raise-deferred is recorded as advisory only and never applied). Every non-deterministic value was
     // checked before it counted.
     llm: {
       enabled: useLLM,
@@ -419,7 +419,7 @@ export function substrateCheck(
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
         "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
-        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; raises deferred to a verifier failure)",
+        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only reported as an advisory escalateTo that nothing acts on)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],
