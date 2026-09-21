@@ -62,6 +62,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Priority is conceded in both, as the refutation paper already did. Each paper ends with a
   dated Corrections section quoting the original wording; `crosswalk.json`/`.md` and the
   formal-synthesis README follow.
+- **The refutation paper's statistics are tightened without changing the refutation.** The
+  LaTeX source and the extended preprint now report repository-cluster bootstrap intervals
+  (every ground-truth pair is mirrored and files cluster in nine repositories: oracle
+  precision [0.15, 0.91], recall [0.0005, 0.052], seed 1234), no longer claim the repaired
+  oracle beats grep (3/3 repositories, sign-test p = 0.125, pytest 71% of pairs, relation
+  choice made on all nine repositories), say that the gold labels and the "independent" second
+  pass are one model, add cost per judged-correct output ($1.06 vs $1.76, from 6 and 3 of 64),
+  qualify the "96.8% fixable" ceiling, correct the calibration paragraph (bins 27/5/28/4/16,
+  ECE 0.103 or 0.078, p = 0.028), and explain 801 labelled vs 759 evaluated files.
 - **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
   Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
   against the extracted replication package. PDFs built from the corrected sources could not

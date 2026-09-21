@@ -2,6 +2,9 @@
 
 *Static Impact Analysis Does Not Transfer: A Pre-Registered Refutation of Two LLM-Agent Reliability Mechanisms*
 
+> **Corrected 2026-09-21** — see [Corrections](#corrections-2026-09-21) at the end. The PDFs in
+> this directory predate the corrections; the LaTeX and HTML sources carry them.
+
 This package contains everything needed to check every number in the paper. It is organised so that
 a reviewer can start from the frozen protocol and work forward, in the order the work was actually
 done.
@@ -94,3 +97,38 @@ static analysis can predict, and an over-warning may be a correct dependency tha
 co-changed. The 96.9% ceiling is measured on the graph the as-shipped oracle builds, and reachability
 in a dense graph is a weak property — it bounds what any static method could attain, and is not
 evidence that a reachable pair is causally related.
+
+## Corrections (2026-09-21)
+
+An external deep review of the repository recomputed every statistic from this package. The
+counts reproduced exactly; some inferences did not. `paper/main.tex` (in this directory) and
+`extended_preprint.html` are corrected in place, with dated Corrections sections that quote the
+original wording. **`paper.pdf` and `extended_preprint.pdf` predate the corrections** (no TeX or
+WeasyPrint toolchain was available to rebuild them), and the copies of the paper inside
+`replication_package.tar.gz` are left exactly as published.
+
+- **Cluster the bootstrap.** Every ground-truth pair is mirrored (all 20,144 pairs among the 801
+  labelled files are counted from both ends) and files cluster in nine repositories, so the
+  file-resampled intervals are too narrow. Resampling repositories (seed 1234, 20,000 resamples):
+  oracle precision [0.15, 0.91], recall [0.0005, 0.052]; the refutation survives, oracle F1
+  [0.001, 0.093] against grep's [0.381, 0.539].
+- **801 vs 759.** 801 files are labelled; 759 are evaluated, because the pre-registered cap of 200
+  files per repository cut pytest from 242 to 200.
+- **The repair does not demonstrably beat grep.** Paired ΔF1 is +0.044 at t = 0.02; at t = 0.10
+  all three held-out repositories favour the oracle, but three out of three is a one-sided
+  sign-test p of 0.125, pytest supplies 71% of the held-out pairs, and the choice of which
+  relations to add was made on all nine repositories.
+- **One model made the labels.** The gold labels and the second pass are the same model with two
+  prompts (n = 30), and it is also the judge and the mid-tier executor, so κ measures prompt
+  robustness, not label validity.
+- **Cost per accepted output.** $1.06 for the pipeline against $1.76 for always-premium, from 6 and
+  3 accepted outputs of 64; 58 of 64 tasks failed at every tier, which is what makes the −20.2%
+  largely mechanical.
+- **The ceiling** counts pairs with any static path, treats symmetric co-change as directional
+  impact, and had no random-pair control, so "96.8% fixable" is now read as a bound.
+- **Calibration.** Bins held 27/5/28/4/16 tasks because of ties; ECE is 0.103 or 0.078 depending on
+  tie handling; the 2-of-4 bin has p = 0.028 against the middle bin's accuracy, so it is not "well
+  within sampling noise".
+
+Re-derive them with [`../recompute_corrections.py`](../recompute_corrections.py) (standard-library
+Python): extract this package and run `python research/recompute_corrections.py <dir>/repro`.
