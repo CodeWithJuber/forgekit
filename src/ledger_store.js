@@ -7,11 +7,15 @@
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -79,6 +83,29 @@ const fileResolver = (root) => (p) => {
 };
 
 const LOGS = ["evidence", "provenance", "tombstones"];
+
+/** Append one line to a log, first terminating a TORN final line (a process killed
+ *  mid-append, or a union merge that dropped the trailing newline). Without this the next
+ *  record is glued onto the fragment, becomes one unparseable line, and silently vanishes
+ *  while the append still reports ok:true. The fragment itself stays unparseable — readLog
+ *  skips it and verify() names it. */
+function appendLine(path, line) {
+  let torn = false;
+  try {
+    const size = statSync(path).size;
+    if (size > 0) {
+      const fd = openSync(path, "r");
+      try {
+        const last = Buffer.alloc(1);
+        readSync(fd, last, 0, 1, size - 1);
+        torn = last[0] !== 0x0a;
+      } finally {
+        closeSync(fd);
+      }
+    }
+  } catch {} // no file yet — nothing to terminate
+  appendFileSync(path, `${torn ? "\n" : ""}${line}\n`);
+}
 const claimPath = (dir, id) => join(dir, "claims", id.slice(0, 2), `${id}.json`);
 const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
 
@@ -140,7 +167,7 @@ function appendRecord(dir, log, id, record) {
     return { ok: false, reason: `no such claim in ledger: ${id}` };
   if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
   mkdirSync(join(dir, log), { recursive: true });
-  appendFileSync(logPath(dir, log, id), `${canonicalize(record)}\n`);
+  appendLine(logPath(dir, log, id), canonicalize(record));
   return { ok: true, deduped: false };
 }
 
@@ -410,9 +437,9 @@ function quarantineRecord(dir, id, rec, reason) {
   const qhash = contentHash(canonicalize({ reason, rec: redacted }));
   if (readLog(dir, "quarantine", id).some((q) => q.qhash === qhash)) return 0;
   mkdirSync(join(dir, "quarantine"), { recursive: true });
-  appendFileSync(
+  appendLine(
     logPath(dir, "quarantine", id),
-    `${canonicalize(sealRecord({ qhash, reason, rec: redacted, t: rec?.t ?? 0 }))}\n`,
+    canonicalize(sealRecord({ qhash, reason, rec: redacted, t: rec?.t ?? 0 })),
   );
   return 1;
 }

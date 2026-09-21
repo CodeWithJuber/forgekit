@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -145,6 +145,40 @@ test("forge_remember writes a fact to .forge/brain/ via stdio", () => {
   assert.match(call.result.content[0].text, /Remembered/);
   const written = readFileSync(join(root, ".forge", "brain", "facts", "test-fact.md"), "utf8");
   assert.match(written, /testing MCP write/);
+});
+
+test("handle: a tool handler that throws still gets a JSON-RPC error reply (no client hang)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-throw-"));
+  // `.forge` is a FILE, so every store write under it throws ENOTDIR inside the handler.
+  writeFileSync(join(root, ".forge"), "not a dir");
+  const requests = [
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "forge_remember", arguments: { name: "x", body: "y" } },
+    }),
+    JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+  ].join("\n");
+  const r = spawnSync("node", [SERVER], {
+    input: `${requests}\n`,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_ROOT: root },
+    timeout: 10000,
+  });
+  const responses = r.stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  const failed = responses.find((x) => x.id === 1);
+  assert.ok(failed, "the throwing call is answered");
+  assert.equal(failed.error?.code, -32603);
+  assert.match(failed.error.message, /forge_remember/);
+  assert.ok(
+    responses.some((x) => x.id === 2),
+    "the server keeps serving after the failure",
+  );
 });
 
 test("forge_ledger_retract returns error for missing claim via stdio", () => {

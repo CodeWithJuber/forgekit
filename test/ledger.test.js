@@ -41,6 +41,19 @@ test("canonicalize: drops undefined/function values, keeps null", () => {
   assert.equal(canonicalize({ a: undefined, b: null, c: () => 1 }), '{"b":null}');
 });
 
+test("canonicalize: keys are NFC-normalized BEFORE sorting — NFD and NFC spellings give one byte string", () => {
+  const nfd = "é"; // é as e + combining acute
+  const nfc = "é";
+  // Sorting the raw NFD key ("é" < "f") and then normalizing it produced {"é":1,"f":2},
+  // while the NFC spelling sorts after "f" — two byte strings for one value, so a claim with
+  // an NFD key failed its own address check on reload.
+  assert.equal(canonicalize({ [nfd]: 1, f: 2 }), canonicalize({ [nfc]: 1, f: 2 }));
+  assert.equal(canonicalize({ [nfc]: 1, f: 2 }), '{"f":2,"é":1}');
+  const m = mintClaim({ kind: "fact", body: { name: "x", meta: { [nfd]: 1, f: 2 } } });
+  const reparsed = JSON.parse(canonicalize({ body: m.claim.body, kind: "fact", scope: {} }));
+  assert.equal(claimId("fact", reparsed.body, reparsed.scope), m.claim.id, "id survives a reload");
+});
+
 test("claimId: pinned fixture — the protocol's address must never drift across versions", () => {
   // If this fixture ever fails, existing ledgers on disk stop resolving. Bump v and
   // write a migration before changing canonicalization or the id recipe.

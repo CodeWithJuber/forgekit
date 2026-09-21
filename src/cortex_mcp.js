@@ -206,7 +206,21 @@ export async function handle(msg) {
   }
   if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   if (method === "tools/call") {
-    const text = await callTool(params?.name, params?.arguments);
+    let text;
+    try {
+      text = await callTool(params?.name, params?.arguments);
+    } catch (err) {
+      // A throwing handler (unwritable .forge, corrupt store, …) must still ANSWER — a
+      // request with no reply leaves the MCP client waiting until its own timeout.
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32603,
+          message: `tool ${params?.name} failed: ${String(err?.message ?? err).slice(0, 300)}`,
+        },
+      };
+    }
     if (text === null) {
       return {
         jsonrpc: "2.0",
@@ -242,7 +256,18 @@ export function serve(input = process.stdin, output = process.stdout) {
       .then((res) => {
         if (res) output.write(`${JSON.stringify(res)}\n`);
       })
-      .catch(() => {});
+      .catch((err) => {
+        // Last line of defence: anything handle() itself throws still gets a reply for a
+        // request (id present); notifications stay silent per JSON-RPC.
+        if (msg?.id === undefined) return;
+        output.write(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: { code: -32603, message: String(err?.message ?? err).slice(0, 300) },
+          })}\n`,
+        );
+      });
   });
 }
 

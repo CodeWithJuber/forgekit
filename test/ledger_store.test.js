@@ -125,6 +125,22 @@ test("appendEvidence: appends, dedupes by hash, requires the claim to exist and 
   assert.ok(val(loaded, 3) > 0.5, "evidence is attached on load");
 });
 
+test("appendEvidence: a torn final line (killed mid-append) never swallows the next record", () => {
+  const dir = tmp();
+  const c = fact("torn", "text");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", "run-1", 1));
+  const log = join(dir, "evidence", `${c.id}.log`);
+  writeFileSync(log, `${readFileSync(log, "utf8")}{"author":"","oracle":"test.run","ref":"run-2"`);
+  const r = appendEvidence(dir, c.id, ev("confirm", "run-3", 1));
+  assert.deepEqual(r, { ok: true, deduped: false });
+  assert.deepEqual(
+    readEvidence(dir, c.id).map((e) => e.ref),
+    ["run-1", "run-3"],
+    "the record reported as appended is actually readable",
+  );
+});
+
 test("corrupt files are quarantined, not fatal — and verify names what load skips", () => {
   const dir = tmp();
   const good = fact("good", "content");

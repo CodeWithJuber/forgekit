@@ -25,6 +25,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A torn ledger line no longer swallows the next record.** A process killed mid-append (or a
+  union merge that dropped the trailing newline) left a final line without `\n`; the next
+  `appendEvidence` was glued onto it, became one unparseable line, and vanished from every read
+  while the append still returned `ok:true` — the repro showed `[run-1]` visible after
+  appending `run-3`. Every ledger log append (evidence, provenance, tombstones, quarantine) now
+  terminates a torn final line first: `[run-1, run-3]`, and a re-append dedupes.
+- **Claim canonicalization normalizes keys before sorting them.** Keys were sorted by their raw
+  spelling and NFC-normalized afterwards, so an NFD key (`e` + combining accent) sorted before
+  `f` while its NFC twin sorts after it. A claim minted with such a key was written with one
+  byte order and re-hashed with another on reload: `loadClaims` saw 0 claims and `verify`
+  reported an id mismatch. Keys are now normalized first; the pinned ASCII fixture ids are
+  unchanged.
+- **An MCP tool that throws now answers with a JSON-RPC error.** `serve()` swallowed handler
+  exceptions (`.catch(() => {})`), so a request whose handler threw — e.g. `forge_remember` with
+  an unwritable `.forge` — never got a reply and the client waited for its own timeout. The
+  server now returns `-32603` with the tool name and message, and keeps serving (the repro
+  received replies for ids `[2]` before, `[2, 1]` after).
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for

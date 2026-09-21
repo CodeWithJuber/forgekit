@@ -83,10 +83,19 @@ export function canonicalize(value) {
   if (Array.isArray(value))
     return `[${value.map((v) => (v === undefined ? "null" : canonicalize(v))).join(",")}]`;
   if (typeof value === "object") {
-    const keys = Object.keys(value)
-      .filter((k) => value[k] !== undefined && typeof value[k] !== "function")
-      .sort();
-    return `{${keys.map((k) => `${JSON.stringify(k.normalize("NFC"))}:${canonicalize(value[k])}`).join(",")}}`;
+    // Normalize keys BEFORE sorting: sorting the raw spelling and normalizing afterwards made
+    // an NFD key sort where its NFC twin doesn't, so a claim written with one spelling failed
+    // its own address check once re-parsed (the NFC bytes sort differently). Two raw keys that
+    // collapse to one NFC key are a malformed input; the first in raw-key order wins,
+    // deterministically.
+    const entries = new Map();
+    for (const k of Object.keys(value).sort()) {
+      if (value[k] === undefined || typeof value[k] === "function") continue;
+      const nk = k.normalize("NFC");
+      if (!entries.has(nk)) entries.set(nk, value[k]);
+    }
+    const keys = [...entries.keys()].sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(entries.get(k))}`).join(",")}}`;
   }
   return "null"; // undefined / function at the top level
 }
