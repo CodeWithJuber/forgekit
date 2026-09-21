@@ -1445,11 +1445,18 @@ model never decides: each proposal is verified against the rubric, the code grap
 before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
 a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
 but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
-routing floor). Impact edges must be real + grep-confirmed; goal-drift moves off→on only. Any
-failure falls back to the deterministic path, so the flag is safe to leave off or on. `--json`
-exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` / `llm-raised` /
-`llm-lowered` / …). Set `llm.bidirectional: false` in `source/substrate.json` for the
-conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer with a
+routing floor). Routing compares **bands, not points**: a vote for the band the deterministic
+score already sits in leaves it alone; a vote for a lower band moves the score to that band's
+ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
+fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless
+you set it to 0); a vote for a **higher** band is never applied — it is recorded as
+`llm.escalateTo`, because the tier escalates only when a verifier fails, never on the model's
+own assessment (whitepaper §5.1). Impact edges must be real + grep-confirmed; goal-drift moves
+off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
+or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
+`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in
+`source/substrate.json` for the conservative mode (the gate can only tighten, the tier never
+moves). Each faculty pairs a pure `*LLM` proposer with a
 `reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
 **TypeSafe System One (Jev) is the preferred proposer when configured.** Where the judgment

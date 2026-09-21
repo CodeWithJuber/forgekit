@@ -352,21 +352,126 @@ export function complexity(s = {}) {
   return { score: clamp01(score), norm };
 }
 
+/** recommend()'s tier cutoffs — the ONE complexity scale every routing input is read on. */
+export const TIER_CUTOFFS = { haiku: 0.25, sonnet: 0.55, opus: 0.8 };
+
+/** Tier used when the score is not a finite number: unknown complexity is routed to the
+ *  default tier (model_tiers: sonnet is "the default"), never to the most expensive one. */
+const UNKNOWN_SCORE_KEY = "sonnet";
+
 /** Pure: score → recommended model + the reasons that drove it. */
 export function recommend(score, norm = {}) {
-  const key = score < 0.25 ? "haiku" : score < 0.55 ? "sonnet" : score < 0.8 ? "opus" : "fable";
   const reasons = Object.entries(norm)
     .filter(([, v]) => v >= 0.5)
     .map(([k]) => k)
     .sort();
+  // Fail safe on a non-finite score (NaN from a garbled signal, ±Infinity): every comparison
+  // below is false for NaN, which used to fall through to fable — the most expensive tier.
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge route: non-finite complexity score (${score}) → default tier\n`);
+    const key = UNKNOWN_SCORE_KEY;
+    return {
+      key,
+      model: MODELS[key],
+      tier: MODELS[key].tier,
+      reasons: [...reasons, "unknown-score"],
+    };
+  }
+  const key =
+    score < TIER_CUTOFFS.haiku
+      ? "haiku"
+      : score < TIER_CUTOFFS.sonnet
+        ? "sonnet"
+        : score < TIER_CUTOFFS.opus
+          ? "opus"
+          : "fable";
   return { key, model: MODELS[key], tier: MODELS[key].tier, reasons };
 }
 
 // M1 routing — LLM proposer. Estimates task complexity c(x) as a coarse band. PROPOSER ONLY:
-// the reconcile in routeTask() lets a RAISE through freely but bounds any LOWER (within one band
-// and never below a strong-signal floor), so the model can escalate on hidden complexity yet can
-// never under-provision a genuinely hard task; escalation still gates on a verified failure.
-const BAND_FLOOR = { cheap: 0.15, mid: 0.4, premium: 0.65 };
+// reconcileRoute() compares the proposer's band with the band the deterministic score already
+// sits in — band to band, never band floor against point score. The three bands are intervals
+// on recommend()'s scale (cheap = haiku, mid = sonnet, premium = opus/fable); each ceiling sits
+// just under the next band's floor so a score moved onto it stays inside the band.
+const BAND_ORDER = ["cheap", "mid", "premium"];
+export const BANDS = {
+  cheap: { floor: 0, ceiling: TIER_CUTOFFS.haiku - 0.01 },
+  mid: { floor: TIER_CUTOFFS.haiku, ceiling: TIER_CUTOFFS.sonnet - 0.01 },
+  premium: { floor: TIER_CUTOFFS.sonnet, ceiling: 1 },
+};
+
+/** The band a complexity score falls in (same cutoffs as recommend()). */
+export const bandOf = (score) =>
+  score < TIER_CUTOFFS.haiku ? "cheap" : score < TIER_CUTOFFS.sonnet ? "mid" : "premium";
+
+/**
+ * Minimum probability a proposer must put on its band before the vote may move the tier.
+ * An a-priori conservative default, NOT fit to any data: the right value has to be chosen on
+ * fresh labelled tasks (the frozen held-out set is spent). A proposal that reports no
+ * probability at all (the text-LLM proposer) cannot clear it; configurable per call and via
+ * `llm.minConfidence` in source/substrate.json (0 disables the gate).
+ */
+export const ROUTE_MIN_CONFIDENCE = 0.8;
+
+/** p(band) for a proposal: Jev's probability on the voted band, else its confidence, else null. */
+function proposalConfidence(proposal) {
+  const p = proposal?.probabilities?.[proposal.band];
+  if (typeof p === "number" && Number.isFinite(p)) return p;
+  return typeof proposal?.confidence === "number" && Number.isFinite(proposal.confidence)
+    ? proposal.confidence
+    : null;
+}
+
+/**
+ * Pure: reconcile the deterministic complexity score with a proposer's band vote.
+ *   - same band        → the deterministic score stands ("llm-agreed");
+ *   - higher band      → NOT applied (whitepaper §5.1: spend more only when an external check
+ *                        on the output fails, never on a model's self-assessment). The target
+ *                        is kept as `escalateTo` for that verifier-failure path
+ *                        ("llm-raise-deferred");
+ *   - lower band       → lowered to that band's ceiling — only when bidirectional, only when
+ *                        the vote clears `minConfidence`, and never below `signalFloor` when
+ *                        the rubric has a strong topic signal ("llm-lowered"); otherwise the
+ *                        deterministic score stands and `overruledBy` says why ("llm-overruled").
+ * @param {number} detScore
+ * @param {{band:string, confidence?:number|null, probabilities?:Record<string,number>|null}|null} proposal
+ * @param {{bidirectional?:boolean, minConfidence?:number, strongSignal?:boolean, signalFloor?:number}} [opts]
+ * @returns {{score:number, path:string, escalateTo?:string, overruledBy?:string, floored?:boolean}}
+ */
+export function reconcileRoute(
+  detScore,
+  proposal,
+  {
+    bidirectional = true,
+    minConfidence = ROUTE_MIN_CONFIDENCE,
+    strongSignal = false,
+    signalFloor = 0.4,
+  } = {},
+) {
+  if (!proposal || !(proposal.band in BANDS)) return { score: detScore, path: "deterministic" };
+  const detBand = bandOf(detScore);
+  const vote = proposal.band;
+  if (vote === detBand) return { score: detScore, path: "llm-agreed" };
+  if (BAND_ORDER.indexOf(vote) > BAND_ORDER.indexOf(detBand)) {
+    return {
+      score: detScore,
+      path: "llm-raise-deferred",
+      escalateTo: recommend(BANDS[vote].floor).key,
+    };
+  }
+  if (!bidirectional)
+    return { score: detScore, path: "llm-overruled", overruledBy: "bidirectional-off" };
+  const p = proposalConfidence(proposal);
+  if (minConfidence > 0 && (p == null || p < minConfidence))
+    return { score: detScore, path: "llm-overruled", overruledBy: "confidence" };
+  const ceiling = BANDS[vote].ceiling;
+  const floored = strongSignal && signalFloor > ceiling;
+  const target = floored ? signalFloor : ceiling;
+  if (bandOf(target) === detBand)
+    return { score: detScore, path: "llm-overruled", overruledBy: "signal-floor" };
+  return { score: target, path: "llm-lowered", ...(floored ? { floored: true } : {}) };
+}
 
 export function buildComplexityPrompt(task) {
   return `Judge the intrinsic complexity of this coding task for model selection (not how to do it).
@@ -381,8 +486,8 @@ export function parseComplexityProposal(obj) {
   const band = String(obj.band ?? "")
     .trim()
     .toLowerCase();
-  if (!(band in BAND_FLOOR)) return null;
-  return { band, score: BAND_FLOOR[band], reason: asText(obj.reason) };
+  if (!(band in BANDS)) return null;
+  return { band, score: BANDS[band].floor, reason: asText(obj.reason) };
 }
 
 /** Ask the model for a complexity band (proposer). Returns null when off/unavailable. */
@@ -409,9 +514,10 @@ export function buildComplexityChoice(task) {
 
 /**
  * Ask Jev (TypeSafe System One) for a complexity band. Same proposal contract as
- * complexityLLM — the band still floors at BAND_FLOOR and the deterministic rubric still
- * judges — but the answer is typed and carries the probability distribution Jev computed,
- * in ~150ms instead of a text round-trip. Returns null when off/unavailable.
+ * complexityLLM — reconcileRoute() still judges the band against the deterministic score —
+ * but the answer is typed and carries the probability distribution Jev computed (which the
+ * reconcile's confidence gate reads), in ~150ms instead of a text round-trip. Returns null
+ * when off/unavailable.
  * @param {string} task
  * @param {object} [opts]
  * @param {boolean} [opts.llm]
@@ -424,10 +530,10 @@ export function complexityJev(task, { llm, call } = {}) {
   const ans = res?.answers?.band;
   if (!ans) return null;
   const band = ans.choice.toLowerCase();
-  if (!(band in BAND_FLOOR)) return null;
+  if (!(band in BANDS)) return null;
   return {
     band,
-    score: BAND_FLOOR[band],
+    score: BANDS[band].floor,
     reason: ans.confidence != null ? `jev confidence ${ans.confidence.toFixed(2)}` : "jev choice",
     provider: "jev",
     confidence: ans.confidence ?? null,
@@ -445,8 +551,8 @@ export function complexityJev(task, { llm, call } = {}) {
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
  * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
- * @param {boolean} [opts.bidirectional]
- * @param {number} [opts.routingBand]
+ * @param {boolean} [opts.bidirectional] may a proposer LOWER the tier (false: it never moves it)
+ * @param {number} [opts.minConfidence] p(band) a vote needs before it may move the tier
  * @param {number} [opts.signalFloor]
  * @param {number} [opts.ambiguity] precomputed information-gap (skips a duplicate preflight pass)
  */
@@ -460,7 +566,7 @@ export function routeTask(
     run,
     jevCall,
     bidirectional = true,
-    routingBand = 0.2,
+    minConfidence = ROUTE_MIN_CONFIDENCE,
     signalFloor = 0.4,
     ambiguity,
   } = {},
@@ -494,36 +600,23 @@ export function routeTask(
   // Upper envelope, not an average: text and repo signals measure DIFFERENT facets
   // of complexity, and under-provisioning is the expensive failure (an escalation
   // retry costs more than a one-tier overshoot). Whichever facet detects difficulty
-  // sets the tier — same philosophy as the LLM proposer's "free raise" below.
+  // sets the tier.
   const detScore = Math.max(repoScore, rubric.score);
-  // M1 proposer (opt-in): the model PROPOSES a complexity band. A RAISE is free (spotting hidden
-  // complexity costs at most a bigger model). A LOWER is bounded — never more than one `band`
-  // below the rubric, and never below `signalFloor` when the rubric confidently matched an
-  // algorithmic/architectural exemplar, so a "distributed rate-limiter" can't be talked down
-  // to the cheap tier.
-  // Jev (typed, ~150ms) is the preferred proposer when its key is configured; the text-LLM
-  // runner is the fallback, and a null from either is ignored (fail-safe).
-  // With `bidirectional:false` it stays raise-only.
+  // M1 proposer (opt-in): the model PROPOSES a complexity band; reconcileRoute() decides what it
+  // may change (band-to-band, confidence-gated, lower-only — see its doc). Jev (typed, ~150ms)
+  // is the preferred proposer when its key is configured; the text-LLM runner is the fallback,
+  // and a null from either is ignored (fail-safe).
   const proposal = llmEnabled({ llm })
     ? (complexityJev(task, { llm, call: jevCall }) ??
       complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) }))
     : null;
-  const strongSignal = rubric.strongTopicSignal;
-  let score = detScore;
-  let path = proposal ? "llm-agreed" : "deterministic";
-  if (proposal) {
-    if (proposal.score > detScore) {
-      score = proposal.score; // free raise
-      path = "llm-raised";
-    } else if (bidirectional && proposal.score < detScore) {
-      const floor = Math.max(detScore - routingBand, strongSignal ? signalFloor : 0);
-      const lowered = Math.max(floor, proposal.score);
-      if (lowered < detScore) {
-        score = lowered; // bounded lower
-        path = "llm-lowered";
-      }
-    }
-  }
+  const verdict = reconcileRoute(detScore, proposal, {
+    bidirectional,
+    minConfidence,
+    strongSignal: rubric.strongTopicSignal,
+    signalFloor,
+  });
+  const { score, path } = verdict;
   const recommended = recommend(score, norm);
   const modelOvr = envModelOverride();
   return {
@@ -538,6 +631,9 @@ export function routeTask(
           direction: path.replace("llm-", ""),
           provider: proposal.provider ?? "text",
           ...(proposal.confidence != null ? { confidence: proposal.confidence } : {}),
+          ...(verdict.escalateTo ? { escalateTo: verdict.escalateTo } : {}),
+          ...(verdict.overruledBy ? { overruledBy: verdict.overruledBy } : {}),
+          ...(verdict.floored ? { floored: true } : {}),
         }
       : null,
     provenance: { path },
@@ -547,8 +643,13 @@ export function routeTask(
       ...new Set([
         ...(recommended.reasons || []),
         ...rubric.reasons.filter((r) => r.weight > 0).map((r) => r.reason),
-        ...(path === "llm-raised" || path === "llm-lowered"
-          ? [`model judged ${proposal.band} (${path.replace("llm-", "")}): ${proposal.reason}`]
+        ...(path === "llm-lowered"
+          ? [`model judged ${proposal.band} (lowered): ${proposal.reason}`]
+          : []),
+        ...(path === "llm-raise-deferred"
+          ? [
+              `model judged ${proposal.band} — not applied; escalate to ${verdict.escalateTo} only if a verifier fails`,
+            ]
           : []),
       ]),
     ],

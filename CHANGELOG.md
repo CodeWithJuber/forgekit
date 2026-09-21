@@ -25,6 +25,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`recommend()` no longer sends a non-finite score to the most expensive tier.** Every
+  comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
+  through to fable. A non-finite score now routes to the default tier (sonnet) with an
+  `unknown-score` reason, logged under `FORGE_DEBUG=1`.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
@@ -69,6 +73,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Model routing reconciles the proposer's band with the deterministic band, not a point
+  score.** `routeTask` compared the proposer's band floor (cheap 0.15 / mid 0.40 / premium 0.65)
+  against the deterministic point score, so even a vote that _agreed_ moved the score: a
+  fable-level task (0.887) with a Jev "premium" vote dropped to 0.688 (opus) and was logged
+  `llm-lowered`; a sonnet-level 0.431 with a "mid" vote became 0.400, also "lowered"; a 0.087
+  prime-finder with a "cheap" vote was "raised" to 0.150; and a premium vote could never yield
+  fable. The new pure `reconcileRoute` maps the score to its band first (recommend()'s 0.25 /
+  0.55 cutoffs): the same band keeps the score (`llm-agreed`), a lower band moves it to that
+  band's ceiling. The old one-band point bound (`routingBand`, removed from
+  `source/substrate.json`) also blocked correct down-routes from the top of a band — a 0.508
+  task with a 0.95 "cheap" vote stayed on sonnet; it now lands on haiku. The strong-signal floor
+  (`signalFloor`) still holds a confidently-hard topic at mid.
+- **A proposer vote moves the tier only when the proposer is confident.** Jev's confidence was
+  logged but ignored — a 0.34 and a 1.00 "cheap" vote routed identically. A vote now needs
+  p(band) (Jev's probability on the voted band, else its confidence) ≥ `minConfidence`:
+  `ROUTE_MIN_CONFIDENCE` = 0.8, configurable per call and as `llm.minConfidence` in
+  `source/substrate.json`. 0.8 is an a-priori conservative default, **not fit to data** — it
+  has to be chosen on fresh labelled tasks (the frozen 80-task held-out set is spent). The
+  text-LLM proposer reports no probability, so by default it can no longer move the tier
+  (`llm-overruled`, `overruledBy: "confidence"`); `minConfidence: 0` switches the gate off.
+- **The proposer can no longer raise the tier.** The "free raise" escalated on the model's own
+  assessment, which whitepaper §5.1 rules out (escalate "only if an external check on the
+  output fails … never by the model's self-assessment"). A higher-band vote is now recorded,
+  not applied: path `llm-raise-deferred`, with the would-be tier kept as `llm.escalateTo` for
+  the verifier-failure path — a prime finder with a 0.99 "premium" vote stays on haiku instead
+  of jumping to opus. Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
+  `llm-raise-deferred` / `llm-overruled` (+ `overruledBy`); `llm-raised` is gone.
 - **MCP targets address their server bucket by dotted key path.** `emit/mcp.js` resolved a
   single top-level key (`mcpServers`, `servers`, `context_servers`); OpenClaw nests its
   registry under `mcp.servers`. The resolver now walks a path, creating missing objects only
