@@ -2,9 +2,11 @@
 
 > Status: **no data yet.** This document is the artifact the P8 harness
 > ([docs/plans/substrate-v2/05-cost-model.md](../docs/plans/substrate-v2/05-cost-model.md) §3)
-> fills with measurements. Until a cell below holds a measured number, the only claimable
-> figures are the paper's: 62 % routing saving on live tokens (paper §9). The plan's ~90 %
-> composed figure is a **target**, not a result, and does not appear in this table.
+> fills with measurements. Until a cell below holds a measured number, there is no claimable
+> saving. The paper's 62 % routing saving (paper §9) was measured on the 30 tasks its
+> thresholds were tuned on and is **refuted**: on 80 held-out tasks, counting every escalation,
+> routing cost 20.2 % _more_ than always-premium ([research/empirical-refutation/](../research/empirical-refutation/)).
+> The plan's ~90 % composed figure is a **target**, not a result, and does not appear in this table.
 
 ## Methodology
 

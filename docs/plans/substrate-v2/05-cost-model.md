@@ -74,8 +74,10 @@ stage tags), `substrateCheck()`, and the reuse/context modules. `forge cost` lea
    entry).
 4. **Report:** per-stage factors with confidence intervals → `reports/cost-eval.md`;
    the README claim gets updated to whatever the harness measured, with the workload
-   caveat attached. Until then the README may say "62.1 % measured (routing); ~90 %
-   composed target" — never "90 % achieved".
+   caveat attached. Until then the README may say "~90 % composed target" — never "90 %
+   achieved". (It used to also say "62.1 % measured (routing)"; that figure came from the 30
+   tasks the router was tuned on and was refuted on 80 held-out tasks, where routing cost
+   20.2 % more than always-premium — see `research/empirical-refutation/`.)
 
 ## 4. Cost of the substrate itself
 

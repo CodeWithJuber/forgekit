@@ -34,7 +34,7 @@
     "honesty": "Label memory relevance, routing fit, and minimality as advisory unless verified by tests, graph membership, or explicit user scope."
   },
   "limits": [
-    "Graph edges are static and conservative; dynamic dispatch and generated code may be missed.",
+    "Graph edges are static and approximate, not conservative: dependents can be missed (dynamic dispatch, generated code, unresolved imports), so an empty impact set means unknown, not safe.",
     "Memory and learning are external file-backed lessons, not weight-level learning.",
     "Non-hook editors receive advisory MCP/context only; Forge cannot enforce hooks where the host has no hook surface."
   ]

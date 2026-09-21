@@ -37,8 +37,9 @@ delivers them into every tool you use.
 >   package as a compatible Codex bundle loads its skills and bundle-scoped MCP server.
 >   Neither path provides ambient hooks (see
 >   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
-> - **Impact/blast-radius analysis is heuristic** — a regex-approximate, conservative code
->   graph, not a sound call graph. Treat its output as advisory.
+> - **Impact/blast-radius analysis is heuristic** — a regex-approximate code graph, not a sound
+>   call graph. It is not conservative: it can miss affected files as well as flag unaffected
+>   ones, so treat its output as advisory and an empty result as "unknown", not "safe".
 > - **"Proof-carrying memory" is a name, not a formal proof.** Claims are content-addressed and
 >   carry evidence references; confidence moves only when independent oracles (tests, CI, a
 >   human) raise it. There is no theorem-prover in the loop.
@@ -175,8 +176,8 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
   evidence trail, not a formal proof). Wrong lessons decay out instead of ossifying.
 - **Foresight before you break things.** _[Heuristic]_ Ask "what does changing `verifyToken`
   break?" and get the _blast radius_ — the set of files an edit is predicted to impact, read
-  from a regex-approximate (conservative, not sound) code graph, including coupled files you
-  never named.
+  from a regex-approximate code graph (not sound, and it can miss affected files), including
+  coupled files you never named.
 - **Guardrails that can't be forgotten.** _[Implemented on Claude Code]_ Deterministic hooks
   check the rules a model shouldn't break (protected paths, cost budget, doom loops) — they
   survive a context compaction the way `CLAUDE.md` prose does not. They reduce risk as
@@ -198,13 +199,19 @@ block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule i
 an assumption until measured_.
 
 - **Blast radius in 0.43 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
-  real import graph: recall **0.97** vs **0.33** for looking at the edited file alone.
+  real import graph, recall is 0.97 against 0.33 for looking at the edited file alone, but
+  precision is 0.34 at commit `1a82388`, not the 0.90 reported earlier, and on nine real Python
+  repositories the research prototype's impact oracle reached recall 0.022
+  ([refutation](research/empirical-refutation/)). <!-- TODO(impact-numbers): re-measure with `npm run bench` after the impact-graph fix and replace these figures -->
 - **A full pre-action gate in 118 ms** (median on this repo, warm) — assumption check, routing,
   reuse lookup, context assembly, blast radius, scope, and goal anchor in one deterministic
   pass, no LLM call. On Claude Code it runs on **every prompt, automatically**.
-- **62.1% cost saved vs always-premium** — from the white paper's live routing prototype on
-  real models (paper §9; that's the paper's measurement, not this repo's — `forge cost
---stages` reports only _your_ measured stages).
+- **The white paper's 62.1% routing saving is refuted.** It was measured on the 30 tasks the
+  prototype's thresholds were tuned on. On 80 held-out tasks from real issues, counting every
+  escalation, the pipeline spent **20.2% more** than always using the premium tier; per output a
+  judge accepted it cost $1.06 against $1.76, but only 6 and 3 of 64 outputs were accepted
+  ([refutation](research/empirical-refutation/)). `forge cost --stages` reports only _your_
+  measured stages.
 - **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
   merge is order-independent and property-tested, so teammate ledgers converge to the same state
   no matter who syncs first, over plain git.
@@ -220,8 +227,9 @@ from a fresh repository graph.
 - **Git-native team merge.** Claims and append-only logs merge by set union. The join is
   property-tested for commutativity, associativity, and idempotence.
 - **Heuristic impact prediction.** Forgekit builds a regex-derived code graph and walks
-  reverse dependencies to estimate affected files and tests. It is conservative and may
-  produce false positives or miss language constructs its parser does not recognize.
+  reverse dependencies to estimate affected files and tests. It is not conservative: it can
+  miss affected files (including constructs its parser does not recognize) as well as produce
+  false positives.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context.
@@ -317,7 +325,8 @@ Parser-stable snapshot labels used by the generated project pages are:
 
 - **A full pre-action gate in 118 ms median** — deterministic, warm repository graph, LLM disabled;
 - **Blast radius in 0.43 ms median** — warm impact query; and
-- **62.1% cost saved** — the 30-task Python routing demonstration.
+- **62.1% cost saved** — the 30-task Python routing demonstration, tuned on those tasks and
+  **refuted** on 80 held-out tasks, where routing cost 20.2% more than always-premium (table below).
 
 The boundaries in the table below are part of each result.
 
@@ -325,10 +334,12 @@ The boundaries in the table below are part of each result.
 | --- | ---: | --- |
 | Warm impact query | 0.43 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
 | Deterministic substrate check | 118 ms median | 3 runs on one repository, warm graph, LLM disabled |
-| Impact quality | precision 0.90, recall 0.97, F1 0.92 | 6 hand-labelled symbols in this repository; edited-file-only baseline recall 0.33 |
+| Impact quality | precision 0.34, recall 0.97, F1 0.50 at commit `1a82388` (the precision 0.90 and F1 0.92 reported earlier do not reproduce) <!-- TODO(impact-numbers): re-measure with `npm run bench` after the impact-graph fix and replace these figures --> | 6 hand-labelled symbols in this repository, scored by `evalImpact`; edited-file-only baseline recall 0.33 |
 | Ledger replica merge | 158 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared |
 | Python router live demonstration | 62.1% calculated cost reduction versus always-premium | 30 hand-labelled tasks, thresholds tuned to the set, real measured LLM tokens, approximate public prices; demonstration, not field benchmark |
+| Python router, held-out evaluation | total spend 20.2% **higher** than always-premium; gate F1 0.37 | 80 tasks from real GitHub issues and PRs, thresholds frozen, pre-registered; refutes the row above |
 | Python impact oracle | precision 0.633, recall 1.000, F1 0.753 | 5 mutations in the bundled demo package; mutation-derived test failures as ground truth |
+| Python impact oracle, real repositories | precision 0.398, recall 0.022, F1 0.042 (grep baseline F1 0.437) | 759 files in 9 open-source repositories, co-change ground truth, pre-registered; refutes the row above |
 
 The current audited CI run at commit `3d9be37` completed successfully for Node 20, Node 22,
 and Windows Git Bash, plus the reusable quality gate. The quality gate ran the Node unit suite,

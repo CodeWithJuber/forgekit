@@ -27,7 +27,7 @@ the storage, trust, and wire protocol for the whole substrate.
 
 | Paper capability (§10 map)                              | ForgeKit v0.4                                                           | Gap                                                          | Closed by                                                                |
 | ------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| M1 routing + M2 assumption gate (opp. #1)               | `src/route.js`, `src/preflight.js` — 62 % measured saving               | ✅ shipped; residue: outcome-calibrated weights              | [06](./06-faculties-and-mechanisms.md) §7                                |
+| M1 routing + M2 assumption gate (opp. #1)               | `src/route.js`, `src/preflight.js` — 62 % demo saving, refuted (−20.2 % held out) | ✅ shipped; residue: outcome-calibrated weights              | [06](./06-faculties-and-mechanisms.md) §7                                |
 | Impact oracle, mandatory gate (opp. #3)                 | `src/atlas.js` regex graph; gate opt-in (`FORGE_ENFORCE=1`)             | precision; gate not mandatory                                | [06](./06-faculties-and-mechanisms.md) §1                                |
 | Validity-anchored memory (opp. #2, Eq. 3)               | cortex confidence exists (`src/lessons.js` already keeps α/β evidence)  | no Eq. 3 retrieval, no forget/consolidate policy, flat store | [01](./01-pcm-protocol.md)                                               |
 | Outcome-validated learning (opp. #4, Eq. 2)             | outcomes update lessons, but not _the memories that informed an action_ | write-back band incomplete                                   | [01](./01-pcm-protocol.md) §6, [06](./06-faculties-and-mechanisms.md) §6 |
@@ -38,7 +38,7 @@ the storage, trust, and wire protocol for the whole substrate.
 | Imagination (faculty, §3)                               | atlas traversal only — no dry-run of consequences                       | test selection + sandbox                                     | [06](./06-faculties-and-mechanisms.md) §2                                |
 | M3/M4/M5/M6 (decomposition, drift, lean, inline verify) | `scope.js`/`anchor.js`/`lean.js`/`verify.js` heuristics                 | each gets its algorithm                                      | [06](./06-faculties-and-mechanisms.md) §3–§6                             |
 | Generated-UI quality (owner pain; M5-shaped)            | `src/uicheck.js` WCAG contrast only; taste is prose                     | anti-template gate                                           | [07](./07-ui-quality-gate.md)                                            |
-| Cost to ~90 % (owner target)                            | routing alone: 62 % measured                                            | cache + context + gate stages unmeasured                     | [05](./05-cost-model.md)                                                 |
+| Cost to ~90 % (owner target)                            | routing alone: 62 % on a tuned demo, refuted (−20.2 % held out)         | cache + context + gate stages unmeasured                     | [05](./05-cost-model.md)                                                 |
 | ForgeKit's own UX                                       | CLI only                                                                | `forge dash` dashboard                                       | [08](./08-dashboard-ux.md)                                               |
 
 ## 2. The 11-capability master table
@@ -99,8 +99,10 @@ flowchart LR
 
 ## 4. Honesty register (the paper's own discipline, applied to this plan)
 
-- **Measured:** 62 % routing saving (paper §9, live tokens); atlas recall/precision method
-  (paper §8). Everything else in [05-cost-model.md](./05-cost-model.md) is a **target** until
+- **Measured, then refuted:** the 62 % routing saving (paper §9, live tokens) was measured on
+  the 30 tasks its thresholds were tuned on; on 80 held-out tasks routing cost 20.2 % more than
+  always-premium ([research/empirical-refutation/](../../../research/empirical-refutation/)).
+  The atlas recall/precision method (paper §8) is a 6-case self-labelled benchmark. Everything else in [05-cost-model.md](./05-cost-model.md) is a **target** until
   P8 measures it — the ~90 % figure is a composition argument, not a result.
 - **Solved-elsewhere, not rebuilt:** subagent orchestration (M3's mechanics), model
   gateways (M1's plumbing) — per paper §10 "do not rebuild".

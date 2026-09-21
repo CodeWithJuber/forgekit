@@ -1142,6 +1142,12 @@ Forge cost — measured stage factors (.forge/metrics.jsonl)
   target (unmet until measured): the plan's composed target is ~90% (docs/plans/substrate-v2/05-cost-model.md)
 ```
 
+Read the `context` line with care: that 62% is the white paper's 30-task routing
+demonstration, measured on the tasks its thresholds were tuned on. A pre-registered
+evaluation on 80 held-out tasks refuted it — counting every escalation, routing cost
+20.2% _more_ than always-premium ([research/empirical-refutation/](../research/empirical-refutation/)).
+The line is quoted here as the CLI currently prints it.
+
 Plain `forge cost` remains the per-day spend view via `ccusage`.
 
 ### The rest
@@ -1531,8 +1537,9 @@ code reads but this table misses fails CI on the forge repo):
 - **Guards reduce, don't eliminate** the "ignored my rules" problem — semantic rules
   still live in prose.
 - **`recall` / `cortex` are file + prompt memory**, not weight-level learning.
-- **The atlas graph is regex-approximate** — conservative, not a sound call graph;
-  dynamic dispatch and generated code can be missed.
+- **The atlas graph is regex-approximate** — not a sound call graph, and not conservative:
+  it can miss affected files (dynamic dispatch and generated code among them), so an empty
+  impact set means "unknown", not "safe".
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
   to too few shingles to rank reliably; write a sentence, not a keyword — or configure
   the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.

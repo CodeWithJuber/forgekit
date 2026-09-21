@@ -77,6 +77,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   worst-case cost (the sum over every tier, not cheap + premium), Eq. 1 vs M2, and a misquoted
   Faros figure ("31.3% _more_ PRs merged with no review"). The docs copy and
   `docs/cognitive-substrate/deliverable-package.md` (which had no refutation banner) match.
+- **The README and docs stop calling the impact graph conservative and stop presenting 62% as
+  a saving.** The graph can miss affected files, so it is now described as approximate and
+  an empty impact set as "unknown". The README's impact-quality row (precision 0.90, F1 0.92)
+  did not reproduce — `evalImpact` gives precision 0.34, recall 0.97, F1 0.50 at `1a82388` —
+  and is marked for re-measurement after the impact-graph fix; the prototype rows now sit
+  beside their real-data refutations (recall 0.022; −20.2%). `docs/GUIDE.md`,
+  `reports/cost-eval.md`, `reports/benchmarks.md`, the substrate-v2 plan, the Mintlify intro,
+  the capability map and `source/substrate.json`'s limits say the same.
 - **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
   Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
   against the extracted replication package. PDFs built from the corrected sources could not

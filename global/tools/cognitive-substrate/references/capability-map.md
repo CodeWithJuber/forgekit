@@ -14,4 +14,4 @@
 | M5 anti-over-engineering | `forge lean`, `forge uicheck design` | Footprint vs ask; UI slop-distance + fingerprint conformance gate. |
 | M6 inline verification | `forge verify` | External checks are required before done. |
 
-Limits: static graph edges are conservative; memory relevance and model routing are advisory; non-hook tools cannot be forcibly blocked.
+Limits: static graph edges are approximate and can miss dependents (an empty impact set means "unknown", not "safe"); memory relevance and model routing are advisory; non-hook tools cannot be forcibly blocked.

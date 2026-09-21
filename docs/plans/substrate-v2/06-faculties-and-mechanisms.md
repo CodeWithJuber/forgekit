@@ -7,7 +7,7 @@
 
 ## §1 Impact-awareness — harden the atlas, make the gate mandatory
 
-**Today:** `src/atlas.js` builds a regex-approximate symbol graph (honest, conservative);
+**Today:** `src/atlas.js` builds a regex-approximate symbol graph (not conservative: it can miss dependents);
 `impact()` traverses reverse edges with hop-decay; the gate only blocks under
 `FORGE_ENFORCE=1`.
 
