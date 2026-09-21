@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   canonicalize,
+  claimId,
+  legacyClaimId,
   liveClaims,
   mintClaim,
   outcomeRecord,
@@ -735,4 +737,31 @@ test("loadState (C11): the snapshot cache is derived — an external edit is nev
   // A corrupt cache file is ignored, not fatal.
   writeFileSync(join(dir, ".state-cache.json"), "{not json");
   assert.equal(loadClaims(dir).length, 1);
+});
+
+test("a claim minted before the CRLF fold survives the upgrade (migration, not deletion)", () => {
+  // canonicalize() now folds \r\n → \n, which CHANGES the content address. A claim written
+  // by an older version on a CRLF checkout carries the pre-fold address in its filename, so
+  // recomputing it under the new rule made the file fail its own check — loadClaims returned
+  // NOTHING for it. The read path accepts the legacy address so the claim is still there.
+  const dir = tmp();
+  const body = { name: "build", text: "step one\r\nstep two" };
+  const legacyId = legacyClaimId("fact", body, {});
+  assert.notEqual(legacyId, claimId("fact", body, {}), "the fold really does re-address it");
+  mkdirSync(join(dir, "claims", legacyId.slice(0, 2)), { recursive: true });
+  writeFileSync(
+    join(dir, "claims", legacyId.slice(0, 2), `${legacyId}.json`),
+    JSON.stringify({ kind: "fact", body, scope: {}, v: 1 }),
+  );
+  const loaded = loadClaims(dir);
+  assert.equal(loaded.length, 1, "the pre-fold claim is readable, not orphaned");
+  assert.equal(loaded[0].body.text, "step one\r\nstep two", "its bytes are untouched");
+  // The escape hatch stays narrow: content that matches NEITHER address is still refused.
+  const evil = `${"a".repeat(63)}b`;
+  mkdirSync(join(dir, "claims", evil.slice(0, 2)), { recursive: true });
+  writeFileSync(
+    join(dir, "claims", evil.slice(0, 2), `${evil}.json`),
+    '{"kind":"fact","body":{"name":"evil","text":"tampered"},"scope":{},"v":1}',
+  );
+  assert.equal(loadClaims(dir).length, 1, "a tampered claim is still refused");
 });

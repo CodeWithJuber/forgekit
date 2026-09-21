@@ -95,6 +95,12 @@ export const DORMANT_VAL = 0.35;
  *   - Non-string values: numbers, booleans and null serialize as JSON.stringify does.
  */
 const canonText = (s) => s.normalize("NFC").replace(/\r\n/g, "\n");
+// The rule BEFORE the CRLF fold. A claim minted on a CRLF checkout carries the old address
+// in its FILENAME, and recomputing it under the new rule made the file fail its own address
+// check: the claim did not degrade, it vanished — loadClaims returned nothing for it. The
+// store therefore accepts either address on READ, so no existing claim is lost; nothing
+// writes this one. Remove when no ledger in the wild predates the fold.
+const canonTextLegacy = (s) => s.normalize("NFC");
 
 /**
  * Deterministic canonical JSON: lexicographically sorted keys, no insignificant
@@ -104,12 +110,12 @@ const canonText = (s) => s.normalize("NFC").replace(/\r\n/g, "\n");
  * @param {*} value
  * @returns {string}
  */
-export function canonicalize(value) {
+export function canonicalize(value, norm = canonText) {
   if (value === null || typeof value === "number" || typeof value === "boolean")
     return JSON.stringify(value);
-  if (typeof value === "string") return JSON.stringify(canonText(value));
+  if (typeof value === "string") return JSON.stringify(norm(value));
   if (Array.isArray(value))
-    return `[${value.map((v) => (v === undefined ? "null" : canonicalize(v))).join(",")}]`;
+    return `[${value.map((v) => (v === undefined ? "null" : canonicalize(v, norm))).join(",")}]`;
   if (typeof value === "object") {
     // Normalize keys BEFORE sorting: sorting the raw spelling and normalizing afterwards made
     // an NFD key sort where its NFC twin doesn't, so a claim written with one spelling failed
@@ -120,11 +126,11 @@ export function canonicalize(value) {
     const entries = new Map();
     for (const k of Object.keys(value).sort()) {
       if (value[k] === undefined || typeof value[k] === "function") continue;
-      const nk = canonText(k);
+      const nk = norm(k);
       if (!entries.has(nk)) entries.set(nk, value[k]);
     }
     const keys = [...entries.keys()].sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(entries.get(k))}`).join(",")}}`;
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(entries.get(k), norm)}`).join(",")}}`;
   }
   return "null"; // undefined / function at the top level
 }
@@ -134,6 +140,13 @@ export function canonicalize(value) {
  *  evidence merges instead of duplicating. */
 export function claimId(kind, body, scope = {}) {
   return contentHash(canonicalize({ body, kind, scope }));
+}
+
+/** The address a claim minted BEFORE the CRLF fold carries in its filename. READ PATH ONLY:
+ *  walkClaimFiles accepts it so an existing claim survives the upgrade, and nothing writes
+ *  it. A file matching only this is pre-fold data, not a tampered claim. */
+export function legacyClaimId(kind, body, scope = {}) {
+  return contentHash(canonicalize({ body, kind, scope }, canonTextLegacy));
 }
 
 /** Stamp a record with its content hash (the dedupe key in every append-only log). */

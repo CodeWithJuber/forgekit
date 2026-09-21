@@ -25,6 +25,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A claim minted before the CRLF fold is migrated, not deleted.** Folding `
+` into
+  `
+` changes a claim's content address, so a claim written by an earlier version on a
+  Windows checkout carried the pre-fold address in its filename and failed its own address
+  check on load — `loadClaims` returned nothing for it, and `forge ledger verify` reported
+  it as an id mismatch. The read path now accepts the pre-fold address as well, so the
+  claim stays readable and its evidence log keeps resolving; every WRITE uses the current
+  rule, so the old form dies out as claims are rewritten. Content that matches neither
+  address is still refused, which is what the check is for.
+
 - **The impact benchmark's labels are ground truth again, and the numbers they feed are
   re-measured.** Four of the six label sets in `bench/impact_cases.mjs` had gone stale against
   the source — `isStale` was missing `src/substrate.js` (an aliased import) and

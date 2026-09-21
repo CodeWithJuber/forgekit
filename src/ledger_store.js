@@ -29,6 +29,7 @@ import {
   emptyState,
   hasSecret,
   isDormant,
+  legacyClaimId,
   liveClaims,
   mergeStates,
   mintClaim,
@@ -197,8 +198,15 @@ function* walkClaimFiles(dir) {
       const path = join(claimsRoot, shard, f);
       const id = f.replace(/\.json$/, "");
       const parsed = readJsonSafe(path);
-      // Verify the address: a tampered/corrupt claim is surfaced as claim:null.
-      const valid = parsed && claimId(parsed.kind, parsed.body, parsed.scope) === id;
+      // Verify the address: a tampered/corrupt claim is surfaced as claim:null. A claim
+      // minted before the CRLF fold carries the PRE-fold address in its filename, so that
+      // address counts too — otherwise the fold would delete, not migrate: every such claim
+      // failed its own check and disappeared from loadClaims. Only reads accept it; every
+      // write uses the current rule, so the pre-fold form dies out as claims are rewritten.
+      const valid =
+        parsed &&
+        (claimId(parsed.kind, parsed.body, parsed.scope) === id ||
+          legacyClaimId(parsed.kind, parsed.body, parsed.scope) === id);
       yield {
         id,
         path,
