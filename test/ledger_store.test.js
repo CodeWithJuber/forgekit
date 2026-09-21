@@ -300,7 +300,9 @@ test("reindex + stats: human index and counts reflect the live ledger", () => {
   putClaim(dir, fact("one", "first fact"));
   putClaim(dir, fact("two", "second fact"));
   assert.equal(reindex(dir), 2);
-  assert.match(readFileSync(join(dir, "LEDGER.md"), "utf8"), /fact · val 0\.50/);
+  const md = readFileSync(join(dir, "LEDGER.md"), "utf8");
+  assert.match(md, /fact · one first fact/);
+  assert.doesNotMatch(md, /val /, "no time-varying value: the index must merge cleanly");
   const s = stats(dir);
   assert.equal(s.total, 2);
   assert.deepEqual(s.byKind, { fact: 2 });
@@ -665,4 +667,72 @@ test("pruneLedger (C7): tombstoned and long-dormant claims go to the attic, new 
   const back = loadClaims(dir).find((c) => c.id === refuted.id);
   assert.ok(back, "new evidence brought the claim back out of the attic");
   assert.equal(back.evidence.length, 2, "its whole history is intact");
+});
+
+test("LEDGER.md (C11): two teammates' facts merge without a conflict", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-ledgermd-"));
+  const g = (...args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  const dir = repoLedger(root);
+  const add = (name, text) => {
+    putClaim(dir, fact(name, text, 20000));
+    reindex(dir, 20000);
+  };
+  add("base", "shared base fact");
+  g("add", "-A");
+  g("commit", "-qm", "base");
+  g("checkout", "-qb", "alice");
+  add("cache", "the cache ttl is 60s");
+  g("add", "-A");
+  g("commit", "-qm", "alice");
+  g("checkout", "-q", "main");
+  g("checkout", "-qb", "bob");
+  add("queue", "the queue retries three times");
+  g("add", "-A");
+  g("commit", "-qm", "bob");
+  let merged = "";
+  try {
+    merged = g("merge", "alice", "-m", "merge");
+  } catch (e) {
+    merged = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+  }
+  assert.doesNotMatch(merged, /CONFLICT/, merged);
+  const md = readFileSync(join(dir, "LEDGER.md"), "utf8");
+  for (const n of ["base", "cache", "queue"]) assert.match(md, new RegExp(n), `${n} in the index`);
+  assert.ok(
+    existsSync(join(dir, ".gitattributes")),
+    "the ledger ships the merge rule for its own generated index",
+  );
+});
+
+test("loadState (C11): the snapshot cache is derived — an external edit is never served stale", () => {
+  const dir = tmp();
+  const a = fact("cached", "first value");
+  putClaim(dir, a);
+  assert.equal(loadClaims(dir).length, 1);
+  assert.ok(
+    existsSync(join(dir, ".state-cache.json")),
+    "the snapshot is written beside the ledger",
+  );
+  assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /state-cache/, "and gitignored");
+  // A file that appears without going through this module (a git pull, a teammate's merge).
+  const b = fact("external", "arrived out of band");
+  const shard = join(dir, "claims", b.id.slice(0, 2));
+  mkdirSync(shard, { recursive: true });
+  writeFileSync(
+    join(shard, `${b.id}.json`),
+    `${canonicalize({ body: b.body, kind: b.kind, scope: b.scope ?? {}, v: 1 })}\n`,
+  );
+  const ids = loadClaims(dir).map((c) => c.id);
+  assert.equal(ids.length, 2, "the new claim is seen");
+  assert.ok(ids.includes(b.id));
+  // A claim file EDITED in place (same name, new bytes) must not be served from the cache.
+  writeFileSync(join(shard, `${b.id}.json`), "{}\n");
+  assert.equal(loadClaims(dir).length, 1, "a corrupted claim drops out on the next read");
+  // A corrupt cache file is ignored, not fatal.
+  writeFileSync(join(dir, ".state-cache.json"), "{not json");
+  assert.equal(loadClaims(dir).length, 1);
 });

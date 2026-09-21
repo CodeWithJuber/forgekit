@@ -23,6 +23,7 @@ import {
   authorTrust,
   canonicalize,
   claimId,
+  claimText,
   DEFAULT_HALF_LIFE_DAYS,
   DORMANT_VAL,
   emptyState,
@@ -369,18 +370,96 @@ export function retractionProposals(claims) {
   return out;
 }
 
-/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
- *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
- *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost.
- *  @param {string} dir
- *  @param {{verifyHashes?: boolean}} [opts] */
-export function loadState(dir, { verifyHashes = true } = {}) {
+// ---------------------------------------------------------------------------
+// Read path + snapshot cache. A ledger is one small file per claim plus its logs — great
+// for byte-identical replicas and union merges, brutal to re-read: 300 claims is 900 files,
+// ~4 s of syscalls on Windows, and the per-prompt hooks ask three times (lessons, déjà vu,
+// reuse peek). Nothing compacted it, so the cost grew with the ledger forever (review C11).
+//
+// The fix is a DERIVED snapshot, never a second source of truth: a fingerprint of every
+// file's (path, size, mtime) — stat-only, ~0.2 ms per file against ~4 ms to read and parse
+// one — decides whether `.state-cache.json` still describes the directory. Any external
+// edit (a git merge, a hand-edited line, a truncation, a prune) changes the fingerprint and
+// the snapshot is rebuilt from the files. The cache is local and disposable; it is
+// gitignored next to the ledger.
+// ---------------------------------------------------------------------------
+
+const CACHE_FILE = ".state-cache.json";
+const GITIGNORE_FILE = ".gitignore";
+/** dir → {sig, state} for the life of THIS process (a hook asks several times). */
+const stateMemo = new Map();
+
+const fileStamp = (path, rel) => {
+  try {
+    const s = statSync(path);
+    return `${rel}:${s.size}:${Math.round(s.mtimeMs)}`;
+  } catch {
+    return `${rel}:gone`;
+  }
+};
+
+/** Cheap, sound fingerprint of everything loadState reads. */
+function ledgerSignature(dir) {
+  const parts = [];
+  const claimsRoot = join(dir, "claims");
+  if (!existsSync(claimsRoot)) return "empty";
+  for (const shard of readdirSync(claimsRoot).sort())
+    for (const f of readdirSync(join(claimsRoot, shard)).sort())
+      parts.push(fileStamp(join(claimsRoot, shard, f), `claims/${shard}/${f}`));
+  for (const log of LOGS) {
+    const root = join(dir, log);
+    if (!existsSync(root)) continue;
+    for (const f of readdirSync(root).sort()) parts.push(fileStamp(join(root, f), `${log}/${f}`));
+  }
+  return contentHash(parts.join("\n"));
+}
+
+function readStateCache(dir, sig) {
+  const cached = readJsonSafe(join(dir, CACHE_FILE));
+  if (!cached || cached.sig !== sig || !cached.state?.claims) return null;
+  return cached.state;
+}
+
+function writeStateCache(dir, sig, state) {
+  try {
+    mkdirSync(dir, { recursive: true });
+    if (!existsSync(join(dir, GITIGNORE_FILE)))
+      writeFileSync(
+        join(dir, GITIGNORE_FILE),
+        `# derived read cache — rebuilt from the claim files whenever they change (forge)\n${CACHE_FILE}\n`,
+      );
+    writeFileSync(join(dir, CACHE_FILE), JSON.stringify({ sig, state }));
+  } catch {} // a read-only checkout just pays the full read every time
+}
+
+function readStateFromDisk(dir, verifyHashes) {
   const state = emptyState();
   for (const { id, claim } of walkClaimFiles(dir)) {
     if (!claim) continue;
     state.claims[id] = claim;
     for (const log of LOGS) state[log][id] = readLog(dir, log, id, { verifyHashes });
   }
+  return state;
+}
+
+/** Load the full ledger state {claims, evidence, provenance, tombstones}. Log lines
+ *  are hash-verified on read (see readLog); `verifyHashes:false` is internal-only —
+ *  mergeDirs reads its SOURCE raw so bad records get quarantined, not silently lost (and
+ *  is never cached). The returned state is shared with the snapshot cache: treat it as
+ *  READ-ONLY, like every other view in this module.
+ *  @param {string} dir
+ *  @param {{verifyHashes?: boolean}} [opts] */
+export function loadState(dir, { verifyHashes = true } = {}) {
+  if (!verifyHashes) return readStateFromDisk(dir, false);
+  const sig = ledgerSignature(dir);
+  const memo = stateMemo.get(dir);
+  if (memo?.sig === sig) return memo.state;
+  let state = readStateCache(dir, sig);
+  if (!state) {
+    state = readStateFromDisk(dir, true);
+    writeStateCache(dir, sig, state);
+  }
+  stateMemo.set(dir, { sig, state });
   return state;
 }
 
@@ -553,12 +632,38 @@ export function importState(dir, other, { nowDay = epochDay() } = {}) {
   return { claims, records, quarantined };
 }
 
-/** Regenerate LEDGER.md — the human index (like recall's MEMORY.md). */
-export function reindex(dir, nowDay = 0) {
+/** The merge rule for the generated index, shipped INSIDE the ledger directory so the
+ *  ledger carries its own conflict-free guarantee wherever it is copied (git reads nested
+ *  .gitattributes files). Paths are relative to this directory. */
+const LEDGER_GITATTRIBUTES = [
+  "# Generated by forge from the claim files — rebuilt on every write, so a union merge is",
+  "# always safe and never conflicts (docs/plans/substrate-v2/02-team-memory.md).",
+  "LEDGER.md merge=union linguist-generated=true",
+  "",
+].join("\n");
+
+/**
+ * Regenerate LEDGER.md — the human index (like recall's MEMORY.md).
+ *
+ * Rows are STABLE: id, kind and the claim's own text, with no val. The old rows carried
+ * `val 0.50`, which changes with the clock and with each replica's evidence, so the same
+ * claim produced a different line on every branch and every day — and since the file is
+ * rewritten on every ledger write, two teammates adding one fact each got a CONFLICT in the
+ * "conflict-free by construction" store (review C11). With stable rows, a union merge of
+ * the two branches is exactly the union of their claims, and the next write rewrites it
+ * cleanly anyway.
+ */
+// (`_nowDay` is kept for call-site compatibility and is deliberately unused: the index no
+//  longer prints anything that depends on the clock.)
+export function reindex(dir, _nowDay = 0) {
   const rows = loadClaims(dir)
     .filter((c) => !c.tombstone)
-    .map((c) => `- \`${c.id.slice(0, 12)}\` ${c.kind} · val ${val(c, nowDay).toFixed(2)}`);
+    .map(
+      (c) =>
+        `- \`${c.id.slice(0, 12)}\` ${c.kind} · ${claimText(c).replace(/\s+/g, " ").trim().slice(0, 100)}`,
+    );
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, ".gitattributes"), LEDGER_GITATTRIBUTES);
   writeFileSync(
     join(dir, "LEDGER.md"),
     ["# Proof-Carrying Memory ledger", "", ...rows, ""].join("\n"),

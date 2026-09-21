@@ -143,6 +143,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and were reported as a loop. It now covers stdout and stderr and the whole normalized
   output (head + tail above 64 KB). The advisory also stops claiming "different edits aren't
   fixing it" when nothing was edited between the runs.
+- **`LEDGER.md` stopped conflicting in the conflict-free store.** The generated index is
+  rewritten on every ledger write and each row carried `val 0.50` — a number that changes
+  with the clock and with each replica's evidence — so two teammates adding one fact each got
+  a merge CONFLICT in `.forge/ledger/LEDGER.md`. Rows are now stable (id, kind, the claim's
+  own text), and the ledger ships its own nested `.gitattributes` marking the index
+  `merge=union linguist-generated`: the review's alice/bob merge is clean.
+- **The per-prompt hook stopped re-reading the whole ledger, three times.** A ledger is one
+  small file per claim plus its logs (300 claims = 900 files), nothing compacted it, and the
+  hooks ask for it three times per prompt (lessons, déjà vu, reuse peek). `loadState` now
+  keeps a derived snapshot beside the ledger, validated by a stat-only fingerprint of every
+  file's (path, size, mtime) — any external edit, git merge or prune rebuilds it from the
+  files, and the cache is gitignored. Measured on a 300-claim ledger (Windows, the review's
+  own harness): one `loadClaims` 619 ms → 112 ms, and the per-prompt hook path
+  (ambient substrate check + déjà vu) 3026 ms → 517 ms.
+- **A recorded UI interaction verdict is dated today.** `recordInteraction` defaulted to
+  `t = 0` and the CLI passed no day, so every verdict landed 56 years in the past and decayed
+  to nothing on arrival: five failing UI runs left the design fingerprint's val at exactly
+  0.5000. They now move it to 0.3636.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
   hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
