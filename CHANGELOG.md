@@ -77,10 +77,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model rewrite remains behind an explicit `--llm` first argument, with "contradicted" removed
   from its prompt.
 
-- **`learn-consolidate.sh --llm` works on macOS.** It wrapped the model call in GNU `timeout`,
-  which stock macOS does not ship; with stderr discarded the missing command failed silently,
-  the model was never called, and every run ended in "response too short". The call now uses
-  `timeout`, else Homebrew's `gtimeout`, else runs unwrapped.
+- **The session learner and `learn-consolidate.sh --llm` work on macOS.** Both wrapped the
+  model call in GNU `timeout`, which stock macOS does not ship. The missing command failed
+  silently, so the model was never called: the opt-in session learner recorded nothing, and
+  every `--llm` run ended in "response too short". A shared `forge_timeout` in
+  `_guardlib.sh` uses `timeout`, else Homebrew's `gtimeout`, else a bash watchdog, so the
+  90 s cap the learner's re-entrancy lock relies on still holds.
 
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
