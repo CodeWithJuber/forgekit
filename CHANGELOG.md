@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-22
+
 ### Added
 
 - **The universal router's benchmark is independently replicated.** harness-bench run 4 was
@@ -2642,7 +2644,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.1...v1.0.0
