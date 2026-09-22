@@ -1,0 +1,190 @@
+{
+  "$comment": "Model registry for the universal router. Data only: add models, prices and provider ids here or in .forge/models.json. Prices are USD per million tokens and are used only for models without observed attempt costs. `providers` maps a provider name (as in providers.js) to the id that provider serves; an empty map means the model is recommended by id but cannot be applied until you add a provider id.",
+  "models": [
+    {
+      "id": "claude-haiku-4.5",
+      "label": "Claude Haiku 4.5",
+      "org": "Anthropic",
+      "run_model_id": "claude-haiku-4-5-20251001",
+      "benchmark_run": "20260217_mini-v2.0.0_claude-4-5-haiku-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": 1,
+      "price_out": 5,
+      "price_source": "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-22)",
+      "providers": {
+        "anthropic": "claude-haiku-4-5-20251001"
+      }
+    },
+    {
+      "id": "claude-sonnet-4.5",
+      "label": "Claude Sonnet 4.5",
+      "org": "Anthropic",
+      "run_model_id": "claude-sonnet-4-5-20250929",
+      "benchmark_run": "20260217_mini-v2.0.0_claude-4-5-sonnet-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": 3,
+      "price_out": 15,
+      "price_source": "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-22)",
+      "providers": {
+        "anthropic": "claude-sonnet-4-5-20250929"
+      }
+    },
+    {
+      "id": "claude-opus-4.5",
+      "label": "Claude Opus 4.5",
+      "org": "Anthropic",
+      "run_model_id": "claude-4-5-opus",
+      "benchmark_run": "20260217_mini-v2.0.0_claude-4-5-opus-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": 5,
+      "price_out": 25,
+      "price_source": "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-22)",
+      "providers": {
+        "anthropic": "claude-opus-4-5"
+      }
+    },
+    {
+      "id": "claude-opus-4.6",
+      "label": "Claude Opus 4.6",
+      "org": "Anthropic",
+      "run_model_id": "claude-opus-4-6",
+      "benchmark_run": "20260217_mini-v2.0.0_claude-4-6-opus",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {
+        "anthropic": "claude-opus-4-6"
+      }
+    },
+    {
+      "id": "deepseek-v3.2",
+      "label": "DeepSeek V3.2",
+      "org": "DeepSeek",
+      "run_model_id": "deepseek-v3.2",
+      "benchmark_run": "20260217_mini-v2.0.0_deepseek-3-2-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "gemini-3-flash",
+      "label": "Gemini 3 Flash",
+      "org": "Google DeepMind",
+      "run_model_id": "gemini-3-flash-preview",
+      "benchmark_run": "20260217_mini-v2.0.0_gemini-3-flash-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "glm-5",
+      "label": "GLM 5",
+      "org": "Z-AI",
+      "run_model_id": "glm-5",
+      "benchmark_run": "20260217_mini-v2.0.0_glm-5-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "gpt-5.2",
+      "label": "GPT 5.2",
+      "org": "OpenAI",
+      "run_model_id": "gpt-5-2",
+      "benchmark_run": "20260217_mini-v2.0.0_gpt-5-2-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "gpt-5-mini",
+      "label": "GPT 5 mini",
+      "org": "OpenAI",
+      "run_model_id": "gpt-5-mini-2025-08-07",
+      "benchmark_run": "20260217_mini-v2.0.0_gpt-5-mini",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "kimi-k2.5",
+      "label": "Kimi K2.5",
+      "org": "Moonshot AI",
+      "run_model_id": "kimi-k2.5",
+      "benchmark_run": "20260217_mini-v2.0.0_kimi-k2-5-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "minimax-m2.5",
+      "label": "MiniMax M2.5",
+      "org": "MiniMax",
+      "run_model_id": "minimax-m2.5",
+      "benchmark_run": "20260217_mini-v2.0.0_minimax-2-5-high",
+      "evidence": "SWE-bench Verified, mini-SWE-agent 2.0.0, one attempt per task (SWE-bench/experiments@40f164d, runs dated 2026-02-17)",
+      "price_in": null,
+      "price_out": null,
+      "price_source": null,
+      "providers": {}
+    },
+    {
+      "id": "claude-sonnet-5",
+      "label": "Claude Sonnet 5",
+      "org": "Anthropic",
+      "run_model_id": null,
+      "benchmark_run": null,
+      "evidence": null,
+      "price_in": 3,
+      "price_out": 15,
+      "price_source": "forgekit src/model_tiers.json (pricingVerified 2026-07-17)",
+      "providers": {
+        "anthropic": "claude-sonnet-5"
+      },
+      "note": "no public per-task runs in the prior: enters cold (population-mean ability, cost from price) until outcomes are recorded"
+    },
+    {
+      "id": "claude-opus-4.8",
+      "label": "Claude Opus 4.8",
+      "org": "Anthropic",
+      "run_model_id": null,
+      "benchmark_run": null,
+      "evidence": null,
+      "price_in": 5,
+      "price_out": 25,
+      "price_source": "forgekit src/model_tiers.json (pricingVerified 2026-07-17)",
+      "providers": {
+        "anthropic": "claude-opus-4-8"
+      },
+      "note": "cold until outcomes are recorded"
+    },
+    {
+      "id": "claude-fable-5",
+      "label": "Claude Fable 5",
+      "org": "Anthropic",
+      "run_model_id": null,
+      "benchmark_run": null,
+      "evidence": null,
+      "price_in": 10,
+      "price_out": 50,
+      "price_source": "forgekit src/model_tiers.json (pricingVerified 2026-07-17)",
+      "providers": {
+        "anthropic": "claude-fable-5"
+      },
+      "note": "cold until outcomes are recorded"
+    }
+  ]
+}
