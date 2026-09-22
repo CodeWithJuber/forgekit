@@ -21,7 +21,16 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { cusum } from "./anchor.js";
-import { CODE_EXTS, DOC_EXTS, impact, isConfigFile, load as loadAtlas } from "./atlas.js";
+import {
+  byRelation,
+  CODE_EXTS,
+  DOC_EXTS,
+  fileRelations,
+  IMPACT_RELATIONS,
+  impact,
+  isConfigFile,
+  load as loadAtlas,
+} from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { readSession, sessionPath } from "./cortex_hook.js";
 import { decisionsPath } from "./decide.js";
@@ -281,23 +290,43 @@ export function obligationsFor(classes = {}) {
  *  so it leads with the MISSING leg (test evidence vs docs vs config docs); the old
  *  "handoff alone satisfies the gate" claim survives only on the config-only row, where
  *  that lighter bar is real. Stale-doc candidates come from the CACHED atlas only (a
- *  hook never builds).
+ *  hook never builds). The same walk names the code files the graph predicts should
+ *  co-change but the session never touched, tagged by relation — the reverse-only walk
+ *  missed the sibling files that were 94.7% of the empirical refutation's misses, so the
+ *  default walks IMPACT_RELATIONS; `relations: ["reverse"]` is the reverse-only option.
  *  @param {string} root
  *  @param {{codeFiles?: string[], driftAlarm?: boolean,
- *    classes?: {code?: string[], config?: string[], test?: string[]}, row?: string}} [opts] */
+ *    classes?: {code?: string[], config?: string[], test?: string[], docs?: string[]},
+ *    row?: string, relations?: readonly string[]}} [opts] */
 export function repairReason(
   root,
-  { codeFiles = [], driftAlarm = false, classes = {}, row = "code-without-docs" } = {},
+  {
+    codeFiles = [],
+    driftAlarm = false,
+    classes = {},
+    row = "code-without-docs",
+    relations = IMPACT_RELATIONS,
+  } = {},
 ) {
   let likelyDocs = [];
+  /** @type {string[]} */
+  let coChange = [];
   try {
     const atlas = loadAtlas(root);
     if (atlas) {
       const docs = new Set();
-      for (const f of codeFiles.slice(0, 10))
-        for (const d of impact(atlas, f, { maxHops: 2 }).impactedFiles)
-          if (d.endsWith(".md")) docs.add(d);
+      const reports = codeFiles
+        .slice(0, 10)
+        .map((f) => impact(atlas, f, { maxHops: 2, relations }));
+      for (const r of reports) for (const d of r.impactedFiles) if (d.endsWith(".md")) docs.add(d);
       likelyDocs = [...docs].slice(0, 5);
+      const touched = new Set(Object.values(classes).flat());
+      for (const f of codeFiles) touched.add(f);
+      const rels = fileRelations(reports);
+      coChange = byRelation(
+        Object.keys(rels).filter((f) => !touched.has(f) && classifyPath(f) === "code"),
+        rels,
+      ).map((f) => `${f} (${rels[f]})`);
     }
   } catch {}
   const cited = codeFiles.length ? codeFiles : (classes.config ?? []);
@@ -310,6 +339,13 @@ export function repairReason(
   const handoffStep = (suffix = "") =>
     `\`${BRAND.cli} handoff "<what you did>" --next "<what's next>"\` — rewrite the session snapshot the next session resumes from${suffix}.`;
   const decideStep = `\`${BRAND.cli} decide "<choice — reason>"\` if a non-obvious decision was made.`;
+  const coChangeStep = coChange.length
+    ? `Co-change candidates the graph predicts but this session never touched — confirm each needs no change: ${coChange
+        .slice(0, 8)
+        .join(
+          ", ",
+        )}${coChange.length > 8 ? ` (+${coChange.length - 8} more)` : ""}. (reverse = depends on the change · sibling = shares a dependency with it · forward = the change depends on it)`
+    : "";
   let headline;
   const steps = [];
   if (row === "code-without-test-evidence") {
@@ -333,6 +369,8 @@ export function repairReason(
       "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.";
     steps.push(docsSyncStep, handoffStep(), decideStep);
   }
+  // Second, right after the row's lead step: the files the diff may still owe a change.
+  if (coChangeStep) steps.splice(1, 0, coChangeStep);
   if (driftAlarm)
     steps.push(
       `Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,

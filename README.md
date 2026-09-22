@@ -232,9 +232,12 @@ from a fresh repository graph.
 - **Git-native team merge.** Claims and append-only logs merge by set union. The join is
   property-tested for commutativity, associativity, and idempotence.
 - **Heuristic impact prediction.** Forgekit builds a regex-derived code graph and walks
-  reverse dependencies to estimate affected files and tests. It is not conservative: it can
-  miss affected files (including constructs its parser does not recognize) as well as produce
-  false positives.
+  reverse dependencies to estimate affected files and tests; the pre-action check and the
+  Stop gate's repair checklist also walk the empirical refutation's sibling and forward
+  relations and tag each file with the relation that reached it. It is not conservative: it
+  can miss affected files (including constructs its parser does not recognize) as well as
+  produce false positives, and the sibling/forward files are lower-precision co-change
+  candidates.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context.

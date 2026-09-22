@@ -115,14 +115,19 @@ anything. The analysis is **hazard-aware**: SCC-aware propagation (a change to a
 in a circular-dependency cluster impacts all co-members, via Tarjan from `forge rank`)
 and a data-driven threshold derived from PageRank centrality and ledger incident history
 (`effectiveThreshold = base / (1 + hazard)`). `--basic` reverts to the fixed-threshold
-mode.
+mode. `forge impact` walks reverse dependents; the pre-action check, the ambient prompt hook
+and the Stop gate's repair checklist also walk the empirical refutation's repaired sibling
+and forward relations (frozen parameters, `SIBLING`/`FORWARD` in `src/atlas.js`) and tag
+every file `reverse`, `sibling` or `forward`, because the reverse-only walk missed the
+sibling files that were 94.7% of the refutation's misses.
 
 The verdict is **advisory by default** — it reports, it does not block. Set
 `FORGE_ENFORCE=1` to turn the strongest signals into a hard block:
 
 - a **vacuous or underspecified** prompt (preflight finds no actionable intent),
 - **un-assemblable required context** (the completeness gate cannot cover the edit set),
-- a **blast radius over threshold** (default ~25 files).
+- a **blast radius over threshold** (default ~25 dependent files; sibling/forward
+  co-change candidates are named in the reason but not counted).
 
 Everything else stays a warning the human can override.
 
@@ -611,7 +616,7 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>113 files"]
+  test["test<br/>114 files"]
   src["src<br/>98 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
@@ -620,7 +625,7 @@ flowchart LR
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 227 --> src
+  test -- 230 --> src
   bench -- 7 --> src
   examples -- 4 --> src
   test -- 2 --> bench

@@ -123,10 +123,10 @@ Forge substrate — pre-action check
 
   context: complete — 4 required item(s), 1840/12000 tokens (`forge context` for the assembly)
 
-  impact: 3 file(s) predicted
-    - src/auth.js
-    - src/login.js
-    - src/session.js
+  impact: 3 file(s) predicted — 3 reverse
+    - src/auth.js (reverse)
+    - src/login.js (reverse)
+    - src/session.js (reverse)
 
   verify:
     - review impacted files before editing
@@ -135,6 +135,17 @@ Forge substrate — pre-action check
 
 It found `login.js` and `session.js` — the two files that import `verifyToken` but you
 never named. That's the "forgot the coupled file" bug, caught _before_ the edit.
+
+Each impacted file carries the relation that reached it. `reverse` files depend on the
+change. The pre-action check (and so the ambient hook and the enforce gate) also walks the
+empirical refutation's repaired **sibling** relation — a file that shares a dependency with
+the target, like `deserializer.js` beside a changed `serializer.js` when both use
+`wire_format.js` — and its **forward** relation, what the target itself depends on. The
+reverse-only walk measured recall 0.022 on nine real repositories, and 94.7% of its misses
+were siblings. Sibling and forward files are co-change candidates to check, not certain
+breaks: on forgekit itself they take the median answer from 15 files to about 80 (precision
+0.09). Pass `relations: ["reverse"]` to `substrateCheck` for the old answer; `forge impact`
+stays reverse-only unless you add `--all-relations`.
 
 **A vague task — it tells you to ask first:**
 
@@ -282,8 +293,9 @@ impacts all co-members) and a data-driven threshold from PageRank centrality
 and ledger incident history. `--basic` reverts to the fixed-threshold mode.
 Run `forge atlas build` first.
 
-By default the walk follows **reverse dependencies only** — the files that actually
-reference the target. `--all-relations` additionally walks the empirical refutation's
+By default `forge impact` follows **reverse dependencies only** — the files that actually
+reference the target. (`forge substrate`, the ambient prompt hook and the Stop gate's repair
+checklist walk all three relations and tag each file.) `--all-relations` additionally walks the empirical refutation's
 repaired **sibling** and **forward** rules at their frozen parameters (a file that shares
 a dependency with the target, and what the target itself depends on). That is a recall
 instrument, not an everyday view: on forgekit itself the median answer goes from 15 files
@@ -1228,7 +1240,11 @@ forge substrate "update verifyToken in src/auth.js" --json
   "okToProceed": false,
   "assumption": { "risk": "high", "shouldAsk": true, "questions": ["…"] },
   "route": { "tier": "simple", "model": { "name": "Haiku 4.5" } },
-  "impact": { "impactedFiles": ["src/auth.js", "src/login.js"] },
+  "impact": {
+    "impactedFiles": ["src/auth.js", "src/login.js"],
+    "fileRelations": { "src/auth.js": "reverse", "src/login.js": "reverse" },
+    "relationCounts": { "reverse": 2 },
+  },
   "verification": { "checklist": ["npm test", "npm run typecheck"] },
 }
 ```
@@ -1253,7 +1269,7 @@ Forge substrate — pre-action advisory (advisory, never blocks):
 - Under-specified (high risk). Ask before editing:
     • What constraints must be respected: performance, dependencies, style, compatibility?
 - Suggested model: Haiku 4.5 (simple); escalate only on a verifier failure.
-- Predicted blast radius (2): login.js, auth.js. Review these before editing.
+- Predicted blast radius (2: 2 reverse): auth.js (reverse), login.js (reverse). Review these before editing.
 - Verify with: review impacted files before editing · run the narrowest affected test first
 ```
 
@@ -1416,7 +1432,7 @@ ambient pre-action guard there.
 | ------------------------------------------- | --------------------------------- | ----------------------------------------------- |
 | `proceed: ASK FIRST` / `okToProceed: false` | task is under-specified           | ask the `clarify` questions, don't guess        |
 | `route`                                     | cheapest capable model            | start there; escalate only if a verifier fails  |
-| `impact`                                    | predicted blast radius            | read these files before editing                 |
+| `impact`                                    | predicted blast radius, tagged    | read the `reverse` files; check `sibling`/`forward` ones for a needed co-change |
 | `scope`                                     | independent vs. coupled work      | split independent groups into separate sessions |
 | `memory`                                    | past Cortex lessons for this area | context, not law — tests override it            |
 | `verify`                                    | how to prove it works             | run it, show the output, then say "done"        |
@@ -1485,7 +1501,7 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | when the ambient hook speaks                    | `src/substrate.js` → `substrateContext()`                                                                                             |
 | the cross-tool rule wording                     | `source/rules.json` → `substrate` section (then `forge init`)                                                                         |
 | opt-in LLM adjudication                         | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm`                                       |
-| opt-in enforcing gate (halt, don't just advise) | `FORGE_ENFORCE=1` — blocks a no-anchor prompt or a very-large-blast action; `src/substrate.js` → `enforceDecision()`. Off by default. |
+| opt-in enforcing gate (halt, don't just advise) | `FORGE_ENFORCE=1` — blocks a no-anchor prompt or a very-large-blast action (counted over dependents; sibling/forward candidates are named, not counted — `blastRelations` changes that); `src/substrate.js` → `enforceDecision()`. Off by default. |
 | verify test timeout                             | `FORGE_VERIFY_TIMEOUT_MS` (default 600000)                                                                                            |
 
 ### Opt into LLM-assisted judgments

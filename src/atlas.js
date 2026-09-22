@@ -1225,13 +1225,58 @@ export const SIBLING = Object.freeze({
 });
 export const FORWARD = Object.freeze({ maxHops: 2, weight: 0.5 });
 export const IMPACT_RELATIONS = Object.freeze(["reverse", "sibling", "forward"]);
-/** What `impact()` walks unless a caller asks for more. The sibling/forward rules above are
- *  the paper's repair and they work — but they are a RECALL instrument: on this repo the
- *  median answer goes from 15 files to 78 of ~450 (max 196), recall 1.00, precision 0.093.
- *  An everyday "what does this change touch?" wants the focused answer, and a gate whose
- *  blast threshold is 25 files would otherwise trip on almost every edit. So the wider walk
- *  is opt-in: `impact(atlas, f, { relations: IMPACT_RELATIONS })`, or `--all-relations`. */
+/** What a bare `impact()` call (and `forge impact`) walks: the focused "what references
+ *  this?" answer. The sibling/forward rules above are the paper's repair and a RECALL
+ *  instrument: on this repo the median answer goes from 15 files to about 80 of ~450
+ *  (max ~197), recall 1.00, precision 0.093. The recall-critical callers — the substrate
+ *  pre-action check (and so the ambient prompt hook and the enforce gate), and the Stop
+ *  gate's repair checklist — pass IMPACT_RELATIONS and tag every file with the relation
+ *  that reached it; `relations: DEFAULT_IMPACT_RELATIONS` is their explicit reverse-only
+ *  option, and `forge impact --all-relations` is the CLI's wide walk. */
 export const DEFAULT_IMPACT_RELATIONS = Object.freeze(["reverse"]);
+/** Relations ranked by the strength of their structural claim: a reverse file DEPENDS on
+ *  the change; an llm-verified one was graph- and grep-confirmed to reference it; a
+ *  sibling shares a dependency with it; a forward file is something the change depends on. */
+export const RELATION_ORDER = Object.freeze(["reverse", "llm-verified", "sibling", "forward"]);
+/** The relations that mean "this file depends on the change" — what a blocking count uses. */
+export const DEPENDENT_RELATIONS = Object.freeze(["reverse", "llm-verified"]);
+/** Position of a relation in RELATION_ORDER (unknown relations sort last). */
+export const relationRank = (r) => {
+  const i = RELATION_ORDER.indexOf(r);
+  return i < 0 ? RELATION_ORDER.length : i;
+};
+
+/**
+ * Per-file relation tags over one or more impact() reports: each impacted file gets the
+ * strongest relation (RELATION_ORDER) any of its items was reached by, so output can say
+ * WHY a file is listed and a count can be taken per relation.
+ * @param {{impacted?: {relation?: string, node?: {file?: string}}[]}[]} reports
+ * @returns {Record<string, string>} file → relation
+ */
+export function fileRelations(reports) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const r of reports || [])
+    for (const x of r?.impacted || []) {
+      const file = x?.node?.file;
+      const rel = x?.relation || "reverse";
+      if (!file) continue;
+      if (!(file in out) || relationRank(rel) < relationRank(out[file])) out[file] = rel;
+    }
+  return out;
+}
+
+/**
+ * Files ordered strongest relation first, then by path — the display order every
+ * relation-aware caller uses so the dependents lead and co-change candidates follow.
+ * @param {string[]} files
+ * @param {Record<string, string>} rels file → relation (from fileRelations)
+ */
+export function byRelation(files, rels) {
+  return [...files].sort(
+    (a, b) => relationRank(rels[a]) - relationRank(rels[b]) || (a < b ? -1 : a > b ? 1 : 0),
+  );
+}
 
 const round4 = (x) => Number(x.toFixed(4));
 
@@ -1357,11 +1402,14 @@ export function impact(
 
   // Sibling/forward items carry `relation` + `relationHops`; `hopDistance` stays the
   // REVERSE-dependency distance (null here), so "direct dependents" filters keep meaning.
+  // A reverse dependent keeps its label even when a sibling/forward path scores higher:
+  // the wide walk ADDS files and never relabels a dependent, so the reverse-tagged set of
+  // a wide walk is exactly the reverse-only answer (a count over it cannot drift).
   const offer = (id, confidence, relation, path, edgeKinds) => {
     const node = nodeById.get(id);
     if (!node || confidence < threshold) return;
     const prev = visited.get(id);
-    if (prev && prev.confidence >= round4(confidence)) return;
+    if (prev && (prev.relation === "reverse" || prev.confidence >= round4(confidence))) return;
     visited.set(id, {
       id,
       node,

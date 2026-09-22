@@ -30,6 +30,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The everyday blast-radius checks walk sibling and forward relations, tagged.** The
+  substrate pre-action check (so also the ambient prompt hook and the `FORGE_ENFORCE` gate)
+  and the Stop gate's repair checklist ran the reverse-only walk that the empirical
+  refutation measured at recall 0.022, where 94.7% of the misses were sibling files. They now
+  walk reverse + the paper's repaired sibling and forward relations at the frozen parameters
+  already in `src/atlas.js`, and every file is tagged with the relation that reached it:
+  `forge substrate` and the ambient advisory print `path (reverse|sibling|forward)` with a
+  per-relation count, `--json` adds `impact.fileRelations` and `impact.relationCounts`, and the
+  Stop gate's block reason lists the untouched co-change candidates. The enforce gate still
+  counts only dependents toward its 25-file block (the wide walk would put 79 of this repo's
+  98 source files over it, against 35 today, at precision about 0.09) and names the other
+  candidates in its reason; `blastRelations` changes what it counts. A wide walk never relabels
+  a reverse dependent, so its reverse-tagged set equals the reverse-only answer. Scope
+  decomposition and lesson matching keep using dependents only. `relations: ["reverse"]`
+  (`substrateCheck`, `repairReason`) is the explicit reverse-only option; `forge impact` and
+  `predict_impact` are unchanged (reverse-only unless `--all-relations`). The
+  `source/substrate.json` impact faculties move from `operational-v1` to
+  `operational-v2-recall`, with a guarantee that says the frozen parameters were tuned on a
+  different graph builder and are not held-out validated here.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch

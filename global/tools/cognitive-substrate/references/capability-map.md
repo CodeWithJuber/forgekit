@@ -6,7 +6,7 @@
 | Learning | `forge cortex`, ledger oracles | External outcomes (tests, CI, human accept/revert) move claim confidence; model weights do not change. |
 | Imagination | `forge imagine [--run]`, `forge impact` | Predicted breaks + minimal covering test suite; `--run` dry-runs it in a sandboxed worktree. |
 | Self-correction | `forge verify`, `forge diagnose` | Tests/builds beat model claims; 3× the same failure signature mints a diagnosis + escalation. |
-| Impact-awareness | `forge atlas`, `forge impact` | Known symbols/files and likely dependents are surfaced. |
+| Impact-awareness | `forge atlas`, `forge impact`, `forge substrate` | Known symbols/files, likely dependents, and sibling/forward co-change candidates are surfaced, each tagged by relation (`forge impact` alone is reverse-only unless `--all-relations`). |
 | M1 routing | `forge route` | Transparent model-tier recommendation. |
 | M2 assumption gate | `forge preflight`, `forge context` | Under-specified tasks return *computed* missing-set questions. |
 | M3 decomposition | `forge scope` | Import clusters show independent vs coupled files. |
