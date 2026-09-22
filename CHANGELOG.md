@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-22
+
 ### Fixed
 
 - **The session learner works on macOS.** `session-learner.sh` wrapped its model call in GNU
@@ -2621,7 +2623,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.1...v1.0.0
 [0.32.1]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.0...v0.32.1
