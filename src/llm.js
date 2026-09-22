@@ -7,6 +7,7 @@
 // config: the Anthropic Messages API (default), and the OpenAI-compatible chat/completions
 // API that OpenAI, Google Gemini, OpenRouter, and LiteLLM all expose.
 import { spawnSync } from "node:child_process";
+import { resolveTierModel } from "./model_tiers.js";
 
 // Anthropic Messages API — POST {baseUrl}/v1/messages, x-api-key / bearer auth.
 const HTTP_CHILD_ANTHROPIC = `let raw="";process.stdin.on("data",(d)=>{raw+=d;});process.stdin.on("end",async()=>{try{const{url,model,prompt,maxTokens}=JSON.parse(raw);const key=process.env._FORGE_LLM_KEY||"";const headers={"content-type":"application/json","anthropic-version":"2023-06-01"};if(key.startsWith("Bearer "))headers.authorization=key;else if(key)headers["x-api-key"]=key;const body=JSON.stringify({model,max_tokens:maxTokens||1024,messages:[{role:"user",content:prompt}]});const res=await fetch(url,{method:"POST",headers,body});if(!res.ok){process.stderr.write("llm: http "+res.status);process.exit(1);}const data=await res.json();const text=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");process.stdout.write(text);}catch(e){process.stderr.write("llm: "+(e.message||e));process.exit(1);}});`;
@@ -77,10 +78,11 @@ export function resolveHttpProvider() {
 /**
  * Build an HTTP-based LLM runner. Same contract as adjudicate.buildRunner:
  * returns (prompt) => string. Selects the Anthropic or OpenAI-compatible wire format
- * from the resolved provider.
+ * from the resolved provider. With no `model`, the haiku tier is resolved at call time (live
+ * catalog, else the shipped snapshot) — there is no model id pinned here.
  * @param {{model?: string, timeoutMs?: number}} [opts]
  */
-export function buildHttpRunner({ model = "claude-haiku-4-5-20251001", timeoutMs = 20000 } = {}) {
+export function buildHttpRunner({ model, timeoutMs = 20000 } = {}) {
   return (prompt) => {
     const provider = resolveHttpProvider();
     if (!provider)
@@ -88,7 +90,11 @@ export function buildHttpRunner({ model = "claude-haiku-4-5-20251001", timeoutMs
         "no LLM provider configured — set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY",
       );
     const child = provider.format === "openai" ? HTTP_CHILD_OPENAI : HTTP_CHILD_ANTHROPIC;
-    const chosenModel = provider.model || provider.defaultModel || model;
+    const chosenModel =
+      provider.model ||
+      provider.defaultModel ||
+      model ||
+      resolveTierModel("haiku", { root: process.cwd() })?.id;
     const input = JSON.stringify({
       url: `${provider.baseUrl}${provider.path}`,
       model: chosenModel,

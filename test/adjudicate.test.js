@@ -7,7 +7,10 @@ import {
   buildRunner,
   extractJson,
   llmEnabled,
+  runnerModel,
 } from "../src/adjudicate.js";
+import { MODELS } from "../src/model_tiers.js";
+import { anthropicPage, ok, stubTransport } from "./_catalog_stub.js";
 
 const parseScore = (o) => {
   const score = asUnit(o.score);
@@ -163,5 +166,33 @@ test("buildRunner: FORGE_LLM_HTTP=1 with no provider → runner throws descripti
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
+  }
+});
+
+test("runnerModel: a tier resolves through the catalog; overrides and literal ids pass verbatim", () => {
+  const t = stubTransport({
+    "api.anthropic.com": ok(
+      anthropicPage([
+        ["claude-haiku-9", "2027-01-01T00:00:00Z"],
+        ["claude-haiku-4-5-20251001", "2025-10-01T00:00:00Z"],
+      ]),
+    ),
+  });
+  const env = { ANTHROPIC_API_KEY: "sk-test" };
+  assert.equal(runnerModel("haiku", { root: null, fetchImpl: t.fetchImpl, env }), "claude-haiku-9");
+  assert.equal(
+    runnerModel("claude-some-literal-id", { root: null, fetchImpl: t.fetchImpl, env }),
+    "claude-some-literal-id",
+  );
+  assert.equal(
+    runnerModel("haiku", { root: null, fetchImpl: () => null, env }),
+    MODELS.haiku.id,
+    "snapshot fallback",
+  );
+  process.env.ANTHROPIC_MODEL = "pinned-model";
+  try {
+    assert.equal(runnerModel("haiku", { root: null, fetchImpl: t.fetchImpl, env }), "pinned-model");
+  } finally {
+    delete process.env.ANTHROPIC_MODEL;
   }
 });

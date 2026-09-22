@@ -19,6 +19,7 @@ import {
   routeTask,
   rubricComplexity,
 } from "../src/route.js";
+import { anthropicPage, ok, stubTransport } from "./_catalog_stub.js";
 
 test("contentGrams: stopwords dropped, unigrams+bigrams kept", () => {
   const g = contentGrams("Implement a rate limiter with the token bucket");
@@ -169,6 +170,42 @@ test("emitGatewayConfig writes a LiteLLM config that never pins @latest", () => 
     /model_name: claude-haiku/,
     "passthrough for real model names so plain claude-* traffic works",
   );
+});
+
+test("emitGatewayConfig resolves each tier from the live catalog and says so — no pinned date", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
+  const offline = readFileSync(emitGatewayConfig(root), "utf8");
+  assert.doesNotMatch(offline, /Models verified/, "no hard-coded verification date");
+  assert.match(offline, /# id: shipped snapshot, pricing verified/);
+
+  const t = stubTransport({
+    "api.anthropic.com": ok(
+      anthropicPage([
+        ["claude-opus-5", "2026-08-01T00:00:00Z", "Claude Opus 5"],
+        ["claude-opus-4-8", "2026-05-01T00:00:00Z", "Claude Opus 4.8"],
+        ["claude-sonnet-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5"],
+        ["claude-haiku-4-5-20251001", "2025-10-01T00:00:00Z", "Claude Haiku 4.5"],
+      ]),
+    ),
+  });
+  const yaml = readFileSync(
+    emitGatewayConfig(root, { fetchImpl: t.fetchImpl, env: { ANTHROPIC_API_KEY: "sk-test" } }),
+    "utf8",
+  );
+  const lines = yaml.split(/\r?\n/).map((l) => l.trim());
+  const alias = lines.findIndex((l) => l.startsWith("- model_name: forge-complex"));
+  assert.match(lines[alias], /Claude Opus 5/, "the catalog's display name");
+  assert.equal(
+    lines[alias + 1],
+    "# id: newest opus in the api.anthropic.com catalog, created 2026-08-01",
+  );
+  assert.equal(lines[alias + 2], "litellm_params: { model: anthropic/claude-opus-5 }");
+  assert.ok(lines.includes("- model_name: claude-opus-5"), "the resolved id passes through");
+  assert.ok(
+    lines.includes("- model_name: claude-opus-4-8"),
+    "a client pinned to the snapshot id still passes",
+  );
+  assert.doesNotMatch(yaml, /@latest|:latest/);
 });
 
 test("complexityLLM: parses a band into a score floor, rejects junk", () => {

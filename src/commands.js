@@ -83,6 +83,13 @@ export const COMMANDS = {
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
+  models: {
+    summary:
+      "each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from",
+    usage: "forge models [--json]",
+    flags: [{ flag: "--json", desc: "machine-readable resolution (id, created, price, sources)" }],
+    examples: ["forge models", "forge models --json"],
+  },
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
@@ -209,7 +216,7 @@ export const GROUPS = {
   ],
   Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
   Quality: ["scan", "spec", "harden", "radar"],
-  Config: ["brand", "atlas", "stack", "integrations", "cost"],
+  Config: ["brand", "atlas", "stack", "integrations", "cost", "models"],
   "Labs (experimental)": [
     "taste",
     "uicheck",

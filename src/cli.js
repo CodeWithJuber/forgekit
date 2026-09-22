@@ -1527,7 +1527,7 @@ HANDLERS.cost = async (argv) => {
     console.log(out.trim());
   } catch {
     const { estimateSpendFromLogs } = await import("./cost_report.js");
-    const est = estimateSpendFromLogs();
+    const est = estimateSpendFromLogs({ root: process.cwd() });
     if (est && est.totalCost > 0) {
       console.log(
         `  $${est.totalCost.toFixed(2)} estimated from Claude session logs (${est.sessions} session(s))`,
@@ -1535,9 +1535,16 @@ HANDLERS.cost = async (argv) => {
       if (est.byModel.length) {
         for (const m of est.byModel)
           console.log(
-            `    ${m.model.padEnd(30)} $${m.cost.toFixed(4)}  (${m.inTokens} in / ${m.outTokens} out)`,
+            `    ${m.model.padEnd(30)} ${m.priced ? `$${m.cost.toFixed(4)}` : "unpriced"}  (${m.inTokens} in / ${m.outTokens} out)${m.priceSource ? ` · price: ${m.priceSource}` : ""}`,
           );
       }
+      if (est.unpriced?.length)
+        console.log(
+          paint(
+            `  not in the total — no catalog or snapshot price for: ${est.unpriced.join(", ")}`,
+            "dim",
+          ),
+        );
       console.log(paint("\n  install ccusage for precise tracking: npm i -g ccusage", "dim"));
     } else {
       console.log(
@@ -1548,6 +1555,61 @@ HANDLERS.cost = async (argv) => {
   console.log(
     paint(
       `\n  ceiling: FORGE_COST_CEILING (default $10) — the cost-budget guard warns when a day exceeds it.`,
+      "dim",
+    ),
+  );
+  return;
+};
+HANDLERS.models = async (argv) => {
+  // What each tier resolves to RIGHT NOW: family → newest model in the active provider's live
+  // catalog (else the shipped snapshot), priced from OpenRouter's catalog (else the snapshot).
+  const { describeResolution, PRICING_VERIFIED, resolveTiers } = await import("./model_tiers.js");
+  const { activeProvider, envModelOverride } = await import("./providers.js");
+  const root = process.cwd();
+  const provider = activeProvider(root);
+  const tiers = resolveTiers({ root, provider });
+  const override = envModelOverride();
+  if (argv.includes("--json"))
+    return console.log(
+      JSON.stringify(
+        { provider: provider.name, override, pricingVerified: PRICING_VERIFIED, tiers },
+        null,
+        2,
+      ),
+    );
+  heading(`${BRAND.brand} models — each tier's family, resolved to a concrete model\n`);
+  console.log(`  provider  ${provider.name} (${provider.label || provider.name})`);
+  if (override)
+    console.log(
+      `  override  ${override} — ANTHROPIC_MODEL/FORGE_MODEL pins every call; the tiers below apply without it`,
+    );
+  const priceText = (p) => (p ? `$${p.inCost}/$${p.outCost}` : "—");
+  const priceFrom = (p) =>
+    !p
+      ? "unpriced"
+      : p.source === "catalog"
+        ? "catalog"
+        : `snapshot${p.basis === "family" ? " (tier)" : ""}`;
+  const width = Math.max(28, ...tiers.map((t) => (t.model?.id ?? "").length + 2));
+  console.log(
+    `\n  ${"tier".padEnd(8)} ${"family".padEnd(7)} ${"model".padEnd(width)} ${"created".padEnd(11)} ${"$/M tok".padEnd(10)} ${"id from".padEnd(9)} price from`,
+  );
+  for (const t of tiers) {
+    console.log(
+      `  ${t.class.padEnd(8)} ${t.family.padEnd(7)} ${(t.model?.id ?? "—").padEnd(width)} ${(t.model?.createdAt?.slice(0, 10) ?? "—").padEnd(11)} ${priceText(t.price).padEnd(10)} ${(t.model?.source ?? "—").padEnd(9)} ${priceFrom(t.price)}`,
+    );
+  }
+  console.log("");
+  for (const t of tiers) console.log(`  ${t.family.padEnd(7)} ${describeResolution(t.model)}`);
+  const live = tiers.find((t) => t.price?.source === "catalog")?.price;
+  console.log(
+    live
+      ? `\n  prices: live from ${live.catalog}${live.cache === "stale" ? " (last cached copy — catalog unreachable)" : ""}`
+      : `\n  prices: shipped snapshot, verified ${PRICING_VERIFIED} (OpenRouter's catalog unavailable or unlisted)`,
+  );
+  console.log(
+    paint(
+      "  cache: .forge/cache/ — reused while the response's own Cache-Control/Expires says fresh, else revalidated (ETag); FORGE_NO_CATALOG_FETCH=1 stays offline",
       "dim",
     ),
   );
@@ -2022,14 +2084,23 @@ HANDLERS.route = async (argv) => {
     console.log(JSON.stringify(rec, null, 2));
   } else {
     heading(`${BRAND.brand} route — cheapest capable model\n`);
-    const { priceOf } = await import("./model_tiers.js");
-    const price = priceOf(rec.key) || {
-      inCost: rec.model.inCost,
-      outCost: rec.model.outCost,
-    };
-    console.log(
-      `  → ${paint(rec.model.name, "accent")}  (${rec.tier}, $${price.inCost}/$${price.outCost} per M tok, current effective)`,
+    // The recommendation is a tier (a model family). Its concrete id and price are resolved here,
+    // for display only — routeTask itself stays network-free because the hooks run it.
+    const { describeResolution, resolveTierModel, resolveTierPrice } = await import(
+      "./model_tiers.js"
     );
+    const { activeProvider } = await import("./providers.js");
+    const opts = { root: process.cwd(), provider: activeProvider(process.cwd()) };
+    const resolved = resolveTierModel(rec.key, opts);
+    const price = resolveTierPrice(rec.key, { ...opts, resolved });
+    const name =
+      resolved?.source === "catalog" && resolved.displayName
+        ? resolved.displayName
+        : rec.model.name;
+    console.log(
+      `  → ${paint(name, "accent")}  (${rec.tier}, ${price ? `${price.inCost}/${price.outCost} per M tok, ${price.source === "catalog" ? "live price" : "current effective"}` : "price unknown"})`,
+    );
+    if (resolved) console.log(`    model: ${resolved.id} — ${describeResolution(resolved)}`);
     console.log(`    ${rec.model.use}`);
     console.log(
       `    complexity ${bar(rec.score, 8)} ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
