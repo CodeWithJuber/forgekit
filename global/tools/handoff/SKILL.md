@@ -6,8 +6,10 @@ description: End-of-session checkpoint. Use when finishing, pausing, or switchin
 # handoff — persist what this session knows
 
 Session memory is volatile; `.forge/state.md` is the committed-brain checkpoint the
-SessionStart hook re-injects. Rewritten every time (bounded ≤150 lines), never appended —
-the next session reads a snapshot, not an archive.
+SessionStart hook re-injects. Rewritten every time, never appended, and bounded by the
+same 8 KB budget the SessionStart loader injects — the next session reads back the whole
+snapshot, not an archive. When rows do not fit, `done` rows go first and next steps and
+gotchas stay.
 
 ## When
 - Ending or pausing a work session, or before a risky context switch.

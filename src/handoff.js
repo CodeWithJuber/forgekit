@@ -13,6 +13,23 @@ import { git } from "./util.js";
 
 export const statePath = (root) => join(root, ".forge", "state.md");
 
+/**
+ * The ONE size budget for the snapshot, shared by the writer (writeState) and the loader
+ * (stateBlock), in one unit: UTF-8 bytes of the snapshot body (the provenance line, which
+ * the loader strips, is not counted). The formal synthesis's T4 correction (2026-09-21)
+ * found its handoff bounded LINES while its loader injected at most 8 KB, so a valid
+ * snapshot could be cut at session start; forge had reproduced that mismatch in lines
+ * (150 written, 80 injected), silently dropping everything past line 80. The writer now
+ * selects rows until the body fits this budget, so the loader never truncates what the
+ * writer wrote. 8192 is the synthesis's A5 cap (roughly 2k tokens per session start).
+ */
+export const STATE_BUDGET_BYTES = 8192;
+
+const byteLen = (s) => Buffer.byteLength(s, "utf8");
+/** Bytes of `lines` joined by newlines — the measure both sides apply. */
+const bodyBytes = (lines) =>
+  lines.reduce((n, l) => n + byteLen(l), 0) + Math.max(0, lines.length - 1);
+
 /** Branch, dirty files (capped), recent commits — empty-safe outside a git repo. */
 export function gatherGitFacts(root, { statusCap = 20 } = {}) {
   const branch = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -61,21 +78,67 @@ export function gatherAssumptions(root, { cap = 5 } = {}) {
 const arr = (v) =>
   (Array.isArray(v) ? v : v ? [v] : []).map((x) => String(x).trim()).filter(Boolean);
 
-const section = (title, rows, fallback = "- (none)") => [
-  `## ${title}`,
-  ...(rows.length ? rows.map((r) => `- ${r}`) : [fallback]),
-  "",
-];
+const omitted = (n, budget) => `- (+${n} more not kept — over the ${budget}-byte snapshot budget)`;
+
+/**
+ * Choose rows in PRIORITY order until the snapshot fits `budget` bytes. `sections` arrive
+ * in priority order, which is also the display order, so even a loader cut of a
+ * hand-edited file loses the least important rows first. Every header stays; a section
+ * whose rows did not all fit ends with an explicit "(+N more not kept)" row, so a drop is
+ * never silent. Within a section rows keep their given order; a row that does not fit is
+ * dropped (with the rest of its section) and later, smaller sections may still fit.
+ * @param {{title: string, rows: string[], fallback?: string}[]} sections
+ * @param {number} budget
+ * @returns {string[]}
+ */
+export function selectSnapshot(sections, budget = STATE_BUDGET_BYTES) {
+  const head = ["# Session state", ""];
+  // Fixed cost first: every header, its blank line, and one reserved line per section —
+  // its fallback when empty, else the worst-case omission marker.
+  const reserve = sections.map((sec) =>
+    sec.rows.length ? omitted(sec.rows.length, budget) : sec.fallback || "- (none)",
+  );
+  let used = bodyBytes([
+    ...head,
+    ...sections.flatMap((sec, i) => [`## ${sec.title}`, reserve[i], ""]),
+  ]);
+  const kept = sections.map(() => /** @type {string[]} */ ([]));
+  sections.forEach((sec, i) => {
+    for (const r of sec.rows) {
+      const line = `- ${r}`;
+      const cost = byteLen(line) + 1; // the row plus its newline
+      if (used + cost > budget) break;
+      used += cost;
+      kept[i].push(line);
+    }
+  });
+  const out = [...head];
+  sections.forEach((sec, i) => {
+    const dropped = sec.rows.length - kept[i].length;
+    out.push(`## ${sec.title}`, ...kept[i]);
+    if (!sec.rows.length) out.push(sec.fallback || "- (none)");
+    else if (dropped) out.push(omitted(dropped, budget));
+    out.push("");
+  });
+  return out;
+}
 
 /**
  * Rewrite the whole snapshot from this session's fields + auto-gathered git facts.
  * Refuses secrets in the human-supplied fields (same rule as every forge store) and
- * truncates to `maxLines` so the session-start injection can never balloon.
+ * selects rows in the synthesis's A4 priority order (goal, next, decisions, gotchas,
+ * in-progress, done) until the body fits `budget` — the SAME budget stateBlock injects,
+ * so the next session reads back exactly what was written.
  * @param {string} root
  * @param {{done?:string[]|string, next?:string[]|string, gotchas?:string[]|string,
  *          criteria?:string[]|string, goal?:string, phase?:string}} fields
+ * @param {{t?: number, budget?: number}} [opts]
  */
-export function writeState(root, fields = {}, { t = Date.now(), maxLines = 150 } = {}) {
+export function writeState(
+  root,
+  fields = {},
+  { t = Date.now(), budget = STATE_BUDGET_BYTES } = {},
+) {
   const done = arr(fields.done);
   const next = arr(fields.next);
   const gotchas = arr(fields.gotchas);
@@ -104,30 +167,33 @@ export function writeState(root, fields = {}, { t = Date.now(), maxLines = 150 }
   const progress = facts.status.length
     ? [...facts.status, ...(facts.overflow ? [`(+${facts.overflow} more dirty files)`] : [])]
     : [];
-  const lines = [
-    "# Session state",
-    "",
-    ...section("Goal / Phase", [`${goal}${fields.phase ? ` — phase: ${fields.phase}` : ""}`]),
-    ...section("Acceptance criteria", criteria),
-    ...section("Done this session", done),
-    ...section("Next steps", next),
-    ...section("Gotchas", gotchas),
-    ...section("Open assumptions", assumptions),
-    ...section("In-progress files (git, at handoff)", progress, "- (clean tree)"),
-    "## Decisions",
-    `- append-only log: \`.forge/decisions.md\` (\`${BRAND.cli} decide\`)`,
-    "",
-  ];
+  // A4 priority: goal (with its acceptance criteria), next, decisions, gotchas (with the
+  // open assumptions — both are "what could bite the next session"), in-progress, done.
+  const kept = selectSnapshot(
+    [
+      {
+        title: "Goal / Phase",
+        rows: [`${goal}${fields.phase ? ` — phase: ${fields.phase}` : ""}`],
+      },
+      { title: "Acceptance criteria", rows: criteria },
+      { title: "Next steps", rows: next },
+      {
+        title: "Decisions",
+        rows: [`append-only log: \`.forge/decisions.md\` (\`${BRAND.cli} decide\`)`],
+      },
+      { title: "Gotchas", rows: gotchas },
+      { title: "Open assumptions", rows: assumptions },
+      { title: "In-progress files (git, at handoff)", rows: progress, fallback: "- (clean tree)" },
+      { title: "Done this session", rows: done },
+    ],
+    budget,
+  );
   const provenance = `<!-- written ${new Date(t).toISOString()} — ${BRAND.cli} handoff${
     facts.branch ? ` on ${facts.branch}` : ""
   } -->`;
-  const kept =
-    lines.length + 1 > maxLines
-      ? [...lines.slice(0, maxLines - 2), "- (truncated to stay bounded)"]
-      : lines;
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(statePath(root), [...kept, provenance, ""].join("\n"));
-  return { ok: true, path: statePath(root), lines: kept.length + 1 };
+  return { ok: true, path: statePath(root), lines: kept.length + 1, bytes: bodyBytes(kept) };
 }
 
 // Only the EXACT provenance line is stripped — a naive slice at the first "<!--" would
@@ -151,14 +217,33 @@ export function readState(root) {
   }
 }
 
-/** SessionStart injection block — empty string when no snapshot exists (low-nag). */
-export function stateBlock(root, { maxLines = 80 } = {}) {
+/**
+ * SessionStart injection block — empty string when no snapshot exists (low-nag). Applies
+ * the same STATE_BUDGET_BYTES the writer selects against, so a snapshot `forge handoff`
+ * wrote always arrives whole; only a hand-edited (or pre-budget) file can overflow, and
+ * then the cut is explicit and points at the file.
+ * @param {string} root
+ * @param {{budget?: number}} [opts]
+ */
+export function stateBlock(root, { budget = STATE_BUDGET_BYTES } = {}) {
   const text = readState(root);
   if (!text) return "";
-  const body = text.split("\n").filter((l) => l.trim() !== "# Session state");
+  const all = text.split("\n");
+  /** @type {string[]} */
+  let kept = all;
+  if (byteLen(text) > budget) {
+    kept = [];
+    let used = 0;
+    for (const l of all) {
+      used += byteLen(l) + 1;
+      if (used > budget) break;
+      kept.push(l);
+    }
+  }
+  const body = kept.filter((l) => l.trim() !== "# Session state");
   const capped =
-    body.length > maxLines
-      ? [...body.slice(0, maxLines), `_(truncated — read \`.forge/state.md\` for the rest)_`]
+    kept.length < all.length
+      ? [...body, `_(truncated at ${budget} bytes — read \`.forge/state.md\` for the rest)_`]
       : body;
   return [
     `## Session state (${BRAND.brand} Handoff)`,

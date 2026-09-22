@@ -410,9 +410,13 @@ Thursday's session — no more each-session re-assumption of what you're working
 ### `forge handoff "<done>"` — the bounded session snapshot
 
 Session memory is volatile; `.forge/state.md` is the checkpoint that survives. One
-command rewrites it (never appends — it stays ≤150 lines forever) with what got done,
-what comes next, the gotchas, and any assumptions this session proceeded under (gathered
-automatically from the session log, along with in-progress git files):
+command rewrites it (never appends) with what got done, what comes next, the gotchas, and
+any assumptions this session proceeded under (gathered automatically from the session log,
+along with in-progress git files). It stays within one 8 KB budget forever — the same budget
+the session-start loader injects, so the next session reads back everything the handoff
+wrote. When the rows do not fit, they are kept in priority order (goal and acceptance
+criteria, next steps, decisions, gotchas and assumptions, in-progress files, then done) and
+each cut section says how many rows it dropped:
 
 ```bash
 forge handoff "built the export endpoint" \

@@ -229,7 +229,10 @@ injects: learned lessons, the anchored goal, the handoff snapshot, recent commit
 uncommitted changes — a fresh session orients on evidence, not priors.
 
 **The state/decision stores (`src/handoff.js`, `src/decide.js`).** `state.md` is a
-bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever);
+bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever). Writer and
+loader share ONE budget in one unit (`STATE_BUDGET_BYTES`, 8 KB): the writer keeps rows in
+priority order (goal, next, decisions, gotchas, in-progress, done) until the body fits, so
+the SessionStart loader never cuts what the handoff wrote;
 `decisions.md` is append-only ADR-lite with a machine-readable `decision` ledger twin
 (log semantics — supersede, never edit). Both refuse secrets at write.
 

@@ -18,6 +18,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entropy leg everywhere, like lockfile integrity digests. A `ghp_…` token inside a binary is
   still refused, and an unreadable diff still fails closed.
 
+- **A handoff snapshot is read back whole at session start.** `forge handoff` wrote up to
+  150 lines to `.forge/state.md` but the SessionStart loader injected only the first 80, so
+  rows 81–150 of a valid handoff were silently dropped (the budget mismatch the formal
+  synthesis's T4 correction names). Writer and loader now share one budget in one unit,
+  `STATE_BUDGET_BYTES` (8 KB of snapshot body), and the writer keeps rows in priority order
+  (goal and acceptance criteria, next steps, decisions, gotchas and open assumptions,
+  in-progress files, then done) until the body fits. A section that lost rows ends with
+  "(+N more not kept …)". Sections are now written in that priority order. Only a hand-edited
+  or pre-budget file can still overflow the loader, and then the cut names the file.
+
 ### Changed
 
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
