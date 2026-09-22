@@ -76,7 +76,7 @@ Every ordered cascade of up to 3 candidates is evaluated; `--depth` bounds the s
   - MiniMax: M2.5
   - DeepSeek: V3.2
   - Z-AI: GLM-5
-- **Selection:** cross-validation chose k = 1 at prior scale 2.
+- **Selection:** cross-validation chose k = 1 at prior scale 4. Scale 2 had been the edge of the first grid, so the grid kept expanding until the held-out likelihood stopped improving.
 
 ## Measured
 
