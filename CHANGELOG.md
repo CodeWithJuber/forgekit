@@ -95,6 +95,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Sonnet 5 by 50%. `src/model_tiers.json` is re-verified against the pricing page
   (`pricingVerified` 2026-09-22), and the universal router's registry entry matches.
 
+- **The release job no longer fails while npm catches up.** The post-publish check gave npm
+  60 s. v1.0.0's packument was last modified 159 s after publish, and the registry serves
+  packuments with `max-age=300`, so a retry could re-read the copy cached by the pre-publish
+  `npm view`. The check now waits up to 5 minutes and passes `--prefer-online`.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch
