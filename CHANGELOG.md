@@ -27,6 +27,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Sonnet 5 by 50%. `src/model_tiers.json` is re-verified against the pricing page
   (`pricingVerified` 2026-09-22), and the universal router's registry entry matches.
 
+- **The release job no longer fails while npm catches up.** v1.0.0 and v1.1.0 both shipped
+  but went red: the post-publish check gave npm 60 s, and each packument's `Last-Modified`
+  came 159 s and 252 s after publish, respectively. The registry also serves packuments with
+  `max-age=300`, so a retry could re-read the copy cached by the pre-publish `npm view`. The
+  check now waits up to 10 minutes and passes `--prefer-online`.
+
 ## [1.1.0] - 2026-09-22
 
 ### Added
