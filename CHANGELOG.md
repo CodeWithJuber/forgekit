@@ -6,6 +6,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The session learner works on macOS.** `session-learner.sh` wrapped its model call in GNU
+  `timeout`, which stock macOS does not ship. The missing command failed silently (only
+  `.learn.log` saw it), so the opt-in learner never recorded a lesson on a Mac. It now calls a
+  shared `forge_timeout` in `_guardlib.sh`: `timeout`, else Homebrew's `gtimeout`, else a
+  bash watchdog that keeps the 90 s cap the learner's re-entrancy lock relies on.
+  `learn-consolidate.sh --llm`, which 1.1.0 fixed on macOS by dropping the limit when
+  `timeout` is missing, uses the same helper and so keeps its 180 s cap everywhere.
+
+- **Lesson consolidation reads the folder the session learner writes to on Windows.** The
+  learner (a bash hook) writes under `$HOME`, but node's `homedir()` reads `USERPROFILE` on
+  Windows, so a Git Bash `HOME` that differed from it made `learn-consolidate` look in the
+  wrong place. `learnedDir()` now follows `HOME` when it is set.
+
+- **Sonnet 5 is priced at $2/$10 per million tokens again.** Anthropic made the launch price
+  the standard price and cancelled the $3/$15 increase scheduled for 2026-09-01, so from
+  that date the tier table (and the cost report, which reads its flat price) overstated
+  Sonnet 5 by 50%. `src/model_tiers.json` is re-verified against the pricing page
+  (`pricingVerified` 2026-09-22), and the universal router's registry entry matches.
+
+- **The release job no longer fails while npm catches up.** v1.0.0 and v1.1.0 both shipped
+  but went red: the post-publish check gave npm 60 s, and each packument's `Last-Modified`
+  came 159 s and 252 s after publish, respectively. The registry also serves packuments with
+  `max-age=300`, so a retry could re-read the copy cached by the pre-publish `npm view`. The
+  check now waits up to 10 minutes and passes `--prefer-online`.
+
 ## [1.1.0] - 2026-09-22
 
 ### Added

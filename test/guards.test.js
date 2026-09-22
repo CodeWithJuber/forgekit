@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -396,4 +404,91 @@ test("protect-paths fails CLOSED on an unparsable payload (B6)", () => {
   });
   assert.equal(r.status, 2, "an unparsable payload blocks");
   assert.match(r.stderr, /fail closed/i);
+});
+
+// ── forge_timeout: `timeout` is GNU coreutils and stock macOS has none, so the session
+// learner's bare `timeout 90 claude …` never ran the model there. These tests build a PATH
+// with no `timeout`/`gtimeout` (symlinks to the tools the scripts need), which reproduces
+// stock macOS on any POSIX runner. Windows Git Bash ships `timeout`, and symlinks need
+// elevation there, so both tests skip on win32.
+const noTimeoutSkip = process.platform === "win32" && "symlinked PATH (Git Bash ships timeout)";
+
+/** @param {string[]} tools */
+function pathWithoutTimeout(tools) {
+  const bin = mkdtempSync(join(tmpdir(), "forge-notimeout-"));
+  for (const t of tools) {
+    const real = execFileSync("bash", ["-c", `command -v ${t}`], { encoding: "utf8" }).trim();
+    symlinkSync(real, join(bin, t));
+  }
+  symlinkSync(process.execPath, join(bin, "node"));
+  return bin;
+}
+
+test("forge_timeout without timeout/gtimeout: stdin, exit status and the time limit hold", {
+  skip: noTimeoutSkip,
+}, () => {
+  const bin = pathWithoutTimeout(["bash", "sh", "cat", "sleep", "dirname"]);
+  const script = [
+    `. "${join(guards, "_guardlib.sh")}"`,
+    'if command -v timeout >/dev/null || command -v gtimeout >/dev/null; then echo "HAS-TIMEOUT"; fi',
+    "printf 'hello' | forge_timeout 5 cat; echo",
+    "forge_timeout 5 sh -c 'exit 3'; echo \"rc=$?\"",
+    's=$SECONDS; out="$(forge_timeout 1 sleep 8)"; echo "overrun=$? secs=$((SECONDS - s))"',
+  ].join("\n");
+  const r = spawnSync(join(bin, "bash"), ["-c", script], {
+    env: { PATH: bin, HOME: tmpdir() },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /HAS-TIMEOUT/, "the PATH really has no timeout");
+  assert.match(r.stdout, /^hello$/m, "stdin reaches the command (a bare `&` would read /dev/null)");
+  assert.match(r.stdout, /rc=3/, "the command's exit status passes through");
+  const m = /overrun=(\d+) secs=(\d+)/.exec(r.stdout);
+  assert.ok(m, r.stdout);
+  assert.notEqual(Number(m[1]), 0, "an overrun is reported as a failure");
+  assert.ok(
+    Number(m[2]) <= 4,
+    `killed at the limit, and $(…) does not wait on the watchdog (${m[2]}s)`,
+  );
+});
+
+test("session-learner calls the model on a PATH with no timeout (stock macOS)", {
+  skip: noTimeoutSkip,
+}, async () => {
+  const bin = pathWithoutTimeout([
+    ...["bash", "cat", "grep", "wc", "tail", "sed", "date", "mkdir", "touch"],
+    ...["basename", "dirname", "find", "rmdir", "sleep"],
+  ]);
+  const home = mkdtempSync(join(tmpdir(), "forge-learner-home-"));
+  const calls = join(home, "calls.log");
+  writeFileSync(
+    join(bin, "claude"),
+    `#!/bin/sh\necho called >> "${calls}"\necho "- Rebuild the atlas after renaming a module."\n`,
+  );
+  chmodSync(join(bin, "claude"), 0o755);
+  const transcript = join(home, "t.jsonl");
+  writeFileSync(transcript, '{"type":"user","message":"rename the module"}\n');
+  const lockDir = mkdtempSync(join(tmpdir(), "forge-learner-lock-"));
+  const r = spawnSync(join(bin, "bash"), [join(guards, "session-learner.sh")], {
+    input: JSON.stringify({ transcript_path: transcript, cwd: join(home, "shop") }),
+    env: {
+      PATH: bin,
+      HOME: home,
+      TMPDIR: lockDir,
+      ENABLE_SESSION_LEARNING: "1",
+      SESSION_LEARN_MIN: "1",
+    },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  // The model call runs detached, so wait (up to 10s) for the lesson it appends.
+  const learned = join(home, ".claude", "skills", "learned");
+  const lessons = () => {
+    const f = existsSync(learned) && readdirSync(learned).find((n) => /^lessons-.*\.md$/.test(n));
+    return f ? readFileSync(join(learned, f), "utf8") : "";
+  };
+  for (let i = 0; i < 100 && !/Rebuild the atlas/.test(lessons()); i++)
+    await new Promise((ok) => setTimeout(ok, 100));
+  assert.ok(existsSync(calls), "the model stub was called");
+  assert.match(lessons(), /Rebuild the atlas/, "the lesson was appended");
 });

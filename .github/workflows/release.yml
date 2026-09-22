@@ -113,10 +113,15 @@ jobs:
           if [ "$HAS_NPM_TOKEN" = "true" ]; then
             PKG=$(node -p "require('./package.json').name")
             VER=$(node -p "require('./package.json').version")
+            # Up to 10 minutes, revalidating every time. v1.0.0 and v1.1.0 both shipped yet
+            # failed here after 60 s: their packuments' Last-Modified came 159 s and 252 s
+            # after the publish finished. The registry also serves packuments with
+            # max-age=300, and the publish step's `npm view` has just cached the pre-publish
+            # one, so without --prefer-online a retry can re-read it.
             ok=0
-            for _ in 1 2 3 4 5 6; do
-              if npm view "$PKG@$VER" version >/dev/null 2>&1; then ok=1; break; fi
-              sleep 10 # let the registry reflect a just-published version
+            for _ in $(seq 1 40); do
+              if npm view "$PKG@$VER" version --prefer-online >/dev/null 2>&1; then ok=1; break; fi
+              sleep 15
             done
             if [ "$ok" = "1" ]; then
               echo "npm $PKG@$VER: present."

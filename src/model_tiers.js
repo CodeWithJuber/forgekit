@@ -26,10 +26,11 @@ const today = () => new Date().toISOString().slice(0, 10);
  * (steady-state). This is why a single `pricingVerified` date is no longer enough (P0-12).
  * @param {string} key model key (haiku/sonnet/opus/fable)
  * @param {string} [date] ISO date; defaults to today
+ * @param {Record<string, any>} [models] the tier table; defaults to model_tiers.json
  * @returns {{inCost:number, outCost:number}|null}
  */
-export function priceOf(key, date = today()) {
-  const m = MODELS[key];
+export function priceOf(key, date = today(), models = MODELS) {
+  const m = models[key];
   if (!m) return null;
   for (const w of m.prices || []) {
     if (date >= w.effectiveFrom && (!w.effectiveUntil || date <= w.effectiveUntil)) {
@@ -40,10 +41,11 @@ export function priceOf(key, date = today()) {
 }
 
 /** Every distinct price pair across flat + scheduled windows — used by the docs check so a
- *  documented introductory/standard price isn't flagged as stale. */
-export function allPricePairs() {
+ *  documented introductory/standard price isn't flagged as stale.
+ *  @param {Record<string, any>} [models] the tier table; defaults to model_tiers.json */
+export function allPricePairs(models = MODELS) {
   const pairs = [];
-  for (const m of Object.values(MODELS)) {
+  for (const m of Object.values(models)) {
     pairs.push({ inCost: m.inCost, outCost: m.outCost });
     for (const w of m.prices || []) pairs.push({ inCost: w.inCost, outCost: w.outCost });
   }

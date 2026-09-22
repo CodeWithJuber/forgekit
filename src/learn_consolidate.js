@@ -36,7 +36,11 @@ import { epochDay } from "./util.js";
 /** Same τ as ledger.clusters — "these two say the same thing". */
 export const CONSOLIDATE_TAU = 0.7;
 export const GENERAL = "General";
-export const learnedDir = () => join(homedir(), ".claude", "skills", "learned");
+/** Where the session learner writes: `$HOME/.claude/skills/learned` (it is a bash hook, and
+ *  the `--llm` path is bash too). On POSIX `homedir()` already follows HOME; on Windows it
+ *  reads USERPROFILE instead, so a Git Bash HOME that differs from USERPROFILE made this
+ *  path read a different folder than the one the lessons were written to. */
+export const learnedDir = () => join(process.env.HOME || homedir(), ".claude", "skills", "learned");
 
 const norm = (s) =>
   String(s)
