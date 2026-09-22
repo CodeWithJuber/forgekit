@@ -121,6 +121,22 @@ export function perMillion(perToken) {
  * @typedef {{id:string, displayName?:string, createdAt?:string, inCost?:number, outCost?:number}} CatalogModel
  */
 
+/** What a model id may look like: vendor namespaces, versions, snapshot dates, `:variant`
+ *  suffixes — but no whitespace, no control characters, and nothing that could end a YAML
+ *  scalar or a shell word. Catalogs are network data; ids reach generated config and model
+ *  calls. */
+export const SAFE_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,199}$/;
+
+/** One printable line: control characters and line separators collapse to a space. */
+export function printableLine(s) {
+  let out = "";
+  for (const ch of String(s)) {
+    const n = ch.charCodeAt(0);
+    out += (n < 32 && n !== 9) || n === 127 || n === 0x2028 || n === 0x2029 ? " " : ch;
+  }
+  return out.replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
 /**
  * Normalize one catalog page — Anthropic (`data[]{id,display_name,created_at}` + `has_more`/
  * `last_id`), OpenAI-style (`data[]{id,created}`), OpenRouter (`data[]{id,name,created,pricing}`)
@@ -135,11 +151,15 @@ export function normalizeCatalogPage(json) {
   const models = [];
   for (const r of rows) {
     const id = typeof r === "string" ? r : typeof r?.id === "string" ? r.id : "";
-    if (!id) continue;
+    // A resolved id is written into generated config and passed to a model call, so it must
+    // look like a model id: no whitespace, no control characters, nothing exotic. A row that
+    // fails this is dropped here, at the boundary, rather than sanitized at each consumer.
+    if (!id || !SAFE_MODEL_ID.test(id)) continue;
     /** @type {CatalogModel} */
     const m = { id };
     const name = r?.display_name ?? r?.name;
-    if (typeof name === "string" && name) m.displayName = name;
+    // A display name is shown to a person, never used as an id: keep it to one printable line.
+    if (typeof name === "string" && name) m.displayName = printableLine(name);
     const created = createdMs(r?.created_at ?? r?.created);
     if (created != null) m.createdAt = new Date(created).toISOString();
     const inCost = perMillion(r?.pricing?.prompt);
@@ -341,7 +361,8 @@ const CACHE_RANK = { fresh: 0, revalidated: 1, network: 2, stale: 3 };
  * @param {CatalogSource} source
  * @param {{root?: string|null, fetchImpl?: Function, timeoutMs?: number, now?: number}} [opts]
  *   root → persist under `<root>/.forge/cache/`; null → memory only.
- * @returns {{models: CatalogModel[], url: string, cache: "fresh"|"revalidated"|"network"|"stale", pages: number}|null}
+ * @returns {{models: CatalogModel[], url: string, cache: "fresh"|"revalidated"|"network"|"stale",
+ *   pages: number, freshUntil: number}|null}
  *   null when the catalog is unavailable (no response and nothing cached, or a page missing)
  */
 export function fetchCatalog(
@@ -350,16 +371,26 @@ export function fetchCatalog(
 ) {
   if (!source?.url) return null;
   const transport = typeof fetchImpl === "function" ? fetchImpl : httpGet;
+  const at = now ?? Date.now();
+  // One lookup per catalog per process keeps `forge models` from asking once per tier. The entry
+  // expires when the RESPONSE says it does (freshUntil), so a long-running dashboard or MCP
+  // server picks up a new model instead of holding its first answer until restart. An
+  // unavailable catalog is remembered until the same moment, so a broken network is not retried
+  // on every call either.
   const memoKey = transport === httpGet ? `${root ?? ""}\n${source.url}` : null;
-  if (memoKey && _memo.has(memoKey)) return _memo.get(memoKey);
+  if (memoKey) {
+    const hit = _memo.get(memoKey);
+    if (hit && at < hit.until) return hit.result;
+  }
   const dir = root ? join(root, ".forge", "cache") : null;
   let result = null;
   try {
-    result = fetchPages(source, { dir, transport, timeoutMs, now: now ?? Date.now() });
+    result = fetchPages(source, { dir, transport, timeoutMs, now: at });
   } catch {
     result = null;
   }
-  if (memoKey) _memo.set(memoKey, result);
+  // No freshness at all (freshUntil === at) still memoizes for this call only.
+  if (memoKey) _memo.set(memoKey, { result, until: result?.freshUntil ?? at });
   return result;
 }
 
@@ -370,6 +401,8 @@ function fetchPages(source, { dir, transport, timeoutMs, now }) {
   /** @type {"fresh"|"revalidated"|"network"|"stale"} */
   let cache = "fresh";
   let pages = 0;
+  // The catalog is only as fresh as its least fresh page.
+  let freshUntil = Number.POSITIVE_INFINITY;
   for (let url = source.url; url && !visited.has(url) && pages < MAX_PAGES; ) {
     visited.add(url);
     const page = cachedGetJson(url, {
@@ -383,6 +416,7 @@ function fetchPages(source, { dir, transport, timeoutMs, now }) {
     if (!page) return null; // a missing page makes the catalog incomplete — i.e. unavailable
     pages++;
     if (CACHE_RANK[page.cache] > CACHE_RANK[cache]) cache = page.cache;
+    freshUntil = Math.min(freshUntil, page.freshUntil ?? now);
     for (const m of page.value.models) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
@@ -390,7 +424,13 @@ function fetchPages(source, { dir, transport, timeoutMs, now }) {
     }
     url = page.value.next ? withQuery(source.url, "after_id", page.value.next) : null;
   }
-  return { models, url: source.url, cache, pages };
+  return {
+    models,
+    url: source.url,
+    cache,
+    pages,
+    freshUntil: Number.isFinite(freshUntil) ? freshUntil : now,
+  };
 }
 
 function withQuery(url, key, value) {

@@ -237,3 +237,39 @@ test("fetchCatalog follows has_more/last_id with after_id and persists each page
   assert.equal(looped.models.length, 2);
   assert.ok(loop.calls.length <= 2);
 });
+
+test("normalizeCatalogPage drops rows whose id is not a plausible model id", () => {
+  // Catalog ids reach generated routing config and model calls, so an id that is not
+  // id-shaped (whitespace, control characters) is dropped at the boundary, not sanitized later.
+  const page = anthropicPage([
+    ["claude-opus-5", "2026-08-01T00:00:00Z", "Claude Opus 5"],
+    ["claude opus with spaces", "2026-08-02T00:00:00Z", "spaces"],
+    ["anthropic/claude-opus-5:batch", "2026-08-01T00:00:00Z", "a :variant id is fine"],
+  ]);
+  page.data.push({ type: "model", id: `x${String.fromCharCode(10)}y`, created_at: "2026-08-03" });
+  const { models } = /** @type {{models: any[]}} */ (normalizeCatalogPage(page));
+  assert.deepEqual(
+    models.map((m) => m.id),
+    ["claude-opus-5", "anthropic/claude-opus-5:batch"],
+  );
+  // A display name is shown to a person, so it is kept — as one printable line.
+  const noisy = `Two${String.fromCharCode(10)}lines${String.fromCharCode(7)}here`;
+  const named = normalizeCatalogPage(anthropicPage([["m-1", "2026-08-01T00:00:00Z", noisy]]));
+  assert.equal(named?.models[0].displayName, "Two lines here");
+});
+
+test("fetchCatalog reports when its answer expires (the memo uses it, no invented TTL)", () => {
+  const T = 1_800_000_000_000;
+  const withMaxAge = stubTransport({
+    "api.anthropic.com": ok(anthropicPage([["claude-opus-5", "2026-08-01T00:00:00Z"]]), {
+      "cache-control": "max-age=120",
+    }),
+  });
+  const a = fetchCatalog(anthropicSource("sk-a"), { fetchImpl: withMaxAge.fetchImpl, now: T });
+  assert.equal(a?.freshUntil, T + 120_000, "expiry comes from the response's own max-age");
+  const noHeaders = stubTransport({
+    "api.anthropic.com": ok(anthropicPage([["claude-opus-5", "2026-08-01T00:00:00Z"]])),
+  });
+  const b = fetchCatalog(anthropicSource("sk-a"), { fetchImpl: noHeaders.fetchImpl, now: T });
+  assert.equal(b?.freshUntil, T, "no freshness stated → revalidate on the next use");
+});

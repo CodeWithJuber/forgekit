@@ -11,6 +11,7 @@ import { recordRoute, routeRef } from "./cost_report.js";
 import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
+import { printableLine } from "./model_catalog.js";
 import { describeResolution, MODELS, resolveTierModel } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { promotionGate } from "./promote.js";
@@ -747,11 +748,29 @@ export function emitGatewayConfig(root = process.cwd(), { fetchImpl, env } = {})
     r: resolveTierModel(tier, { root, provider: upstream, fetchImpl, env }),
   }));
   const bare = (id) => String(id).split("/").pop();
+  // Ids and display names come from a LIVE catalog (a gateway's or OpenRouter's /v1/models) and
+  // land in a file the user feeds to LiteLLM as routing config. A display name carrying a
+  // newline would otherwise splice in a SECOND entry for a tier alias, and LiteLLM's
+  // simple-shuffle would then send a share of that tier's prompts to the spliced model. So every
+  // catalog-sourced value is a double-quoted YAML scalar with control characters escaped, and
+  // every comment is collapsed to one line.
+  const yamlStr = (s) => {
+    let out = '"';
+    for (const ch of String(s)) {
+      const n = ch.charCodeAt(0);
+      if (ch === "\\" || ch === '"') out += `\\${ch}`;
+      else if (n < 32 || n === 127) out += `\\x${n.toString(16).padStart(2, "0")}`;
+      else out += ch;
+    }
+    return `${out}"`;
+  };
+  // One printable line for a comment: the same rule the catalog applies to display names.
+  const comment = printableLine;
   const aliases = resolved.map(({ m, r }) =>
     [
-      `  - model_name: forge-${m.tier.padEnd(8)} # ${r.displayName ?? m.name} — ${m.use}`,
-      `    # id: ${describeResolution(r)}`,
-      `    litellm_params: { model: ${prefix}${r.id} }`,
+      `  - model_name: forge-${m.tier.padEnd(8)} # ${comment(r.displayName ?? m.name)} — ${comment(m.use)}`,
+      `    # id: ${comment(describeResolution(r))}`,
+      `    litellm_params: { model: ${yamlStr(prefix + r.id)} }`,
     ].join("\n"),
   );
   // Passthrough: each resolved id, plus the snapshot id when it differs and the upstream is
@@ -761,7 +780,8 @@ export function emitGatewayConfig(root = process.cwd(), { fetchImpl, env } = {})
     for (const id of [r.id, openrouter ? null : m.id])
       if (id && !passIds.includes(id)) passIds.push(id);
   const passthrough = passIds.map(
-    (id) => `  - model_name: ${bare(id)}\n    litellm_params: { model: ${prefix}${id} }`,
+    (id) =>
+      `  - model_name: ${yamlStr(bare(id))}\n    litellm_params: { model: ${yamlStr(prefix + id)} }`,
   );
   const path = join(root, "litellm.config.yaml");
   const body = `# Forge Preflight — LiteLLM routing config (complexity tier -> model).
