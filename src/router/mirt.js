@@ -128,7 +128,9 @@ function fullPrior(M, D, k, prior = {}) {
     w: prior.w ?? new Array(D).fill(0),
     // Default loading prior mean: a common positive first factor (models agree on which tasks
     // are hard), zero on further factors. It only centres the prior; the data moves it.
-    L: prior.L ?? Array.from({ length: M }, () => Array.from({ length: k }, (_, d) => (d === 0 ? 1 : 0))),
+    L:
+      prior.L ??
+      Array.from({ length: M }, () => Array.from({ length: k }, (_, d) => (d === 0 ? 1 : 0))),
     scaleA: prior.scaleA ?? 2,
     scaleW: prior.scaleW ?? 1,
     scaleL: prior.scaleL ?? 1,
@@ -176,9 +178,12 @@ export function heldOutLogLik(params, data, taskIdx) {
  * Choose k and the prior scale by K-fold cross-validated held-out likelihood, then refit on all
  * tasks with the winner. Folds are assigned deterministically.
  * @param {MirtData} data
- * @param {{ks?: number[], scales?: number[], folds?: number, prior?: MirtPrior}} [opts]
+ * @param {{ks?: number[], scales?: number[], folds?: number, prior?: MirtPrior, maxExpand?: number}} [opts]
  */
-export function selectAndFit(data, { ks = [1, 2, 3], scales = [0.5, 1, 2], folds = 3, prior = {}, maxExpand = 4 } = {}) {
+export function selectAndFit(
+  data,
+  { ks = [1, 2, 3], scales = [0.5, 1, 2], folds = 3, prior = {}, maxExpand = 4 } = {},
+) {
   const J = data.tasks.length;
   const order = data.tasks.map((_, j) => j).sort((x, y) => hash32(x) - hash32(y));
   const foldOf = new Array(J);
@@ -186,6 +191,7 @@ export function selectAndFit(data, { ks = [1, 2, 3], scales = [0.5, 1, 2], folds
     foldOf[j] = i % folds;
   });
   const table = [];
+  /** @type {{k: number, scale: number, heldOutLogLik: number} | null} */
   let best = null;
   const cv = (k, s) => {
     let ll = 0;
@@ -221,8 +227,15 @@ export function selectAndFit(data, { ks = [1, 2, 3], scales = [0.5, 1, 2], folds
       if (ll <= lls[low ? 1 : lls.length - 2]) break;
     }
   }
-  const fit = fitMirt(data, best.k, { ...prior, scaleA: 2 * best.scale, scaleW: best.scale, scaleL: best.scale });
-  return { ...fit, selection: { chosen: best, table, folds } };
+  if (!best) throw new Error("selectAndFit: no candidate configuration");
+  const chosen = /** @type {{k: number, scale: number, heldOutLogLik: number}} */ (best);
+  const fit = fitMirt(data, chosen.k, {
+    ...prior,
+    scaleA: 2 * chosen.scale,
+    scaleW: chosen.scale,
+    scaleL: chosen.scale,
+  });
+  return { ...fit, selection: { chosen, table, folds } };
 }
 
 function hash32(n) {

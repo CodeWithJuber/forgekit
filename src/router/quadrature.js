@@ -14,6 +14,7 @@ function tridiagEigen(diag, off) {
   const d = diag.slice();
   const e = [...off, 0];
   // z holds the first row of the accumulated rotation matrix (= first eigenvector components).
+  /** @type {number[]} */
   const z = Array.from({ length: n }, (_, i) => (i === 0 ? 1 : 0));
   for (let l = 0; l < n; l++) {
     for (let iter = 0; iter < 200; iter++) {

@@ -23,16 +23,22 @@ export function fitCost(obs, nModels, nFeatures, prices = []) {
   const X = used.map((o) => [...models.map((m) => (m === o.model ? 1 : 0)), ...o.x]);
   const y = used.map((o) => Math.log(o.cost));
   // A tiny ridge on the slopes only keeps the system well-posed with few observations.
-  const ridge = [...models.map(() => 0), ...new Array(nFeatures).fill(1e-6 * Math.max(1, used.length))];
-  const coef = used.length > models.length ? leastSquares(X, y, ridge) : [...models.map(() => 0), ...new Array(nFeatures).fill(0)];
+  const ridge = [
+    ...models.map(() => 0),
+    ...new Array(nFeatures).fill(1e-6 * Math.max(1, used.length)),
+  ];
+  const coef =
+    used.length > models.length
+      ? leastSquares(X, y, ridge)
+      : [...models.map(() => 0), ...new Array(nFeatures).fill(0)];
   const alpha = new Array(nModels).fill(null);
   for (const m of models) alpha[m] = coef[col.get(m)];
   const beta = coef.slice(models.length);
   let rss = 0;
-  used.forEach((o, i) => {
+  for (let i = 0; i < used.length; i++) {
     const pred = X[i].reduce((s, v, c) => s + v * coef[c], 0);
     rss += (y[i] - pred) ** 2;
-  });
+  }
   const dof = Math.max(1, used.length - models.length - nFeatures);
   const s2 = used.length ? rss / dof : 0;
 
@@ -42,7 +48,9 @@ export function fitCost(obs, nModels, nFeatures, prices = []) {
   let kappa = null;
   if (priced.length >= 1) {
     const spread = (r) => {
-      const d = priced.map((m) => alpha[m] - Math.log(r * prices[m].priceIn + (1 - r) * prices[m].priceOut));
+      const d = priced.map(
+        (m) => alpha[m] - Math.log(r * prices[m].priceIn + (1 - r) * prices[m].priceOut),
+      );
       const mean = d.reduce((s, v) => s + v, 0) / d.length;
       return { mean, var: d.reduce((s, v) => s + (v - mean) ** 2, 0) / d.length };
     };

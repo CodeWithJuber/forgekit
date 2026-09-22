@@ -11,31 +11,37 @@ import { loadRegistry } from "./registry.js";
  * @param {Set<string>|null} [only] restrict to these task ids
  * @param {{registry?: {models: object[]}, root?: string|null}} [opts]
  */
-export function buildPrior(input, only = null, { registry = loadRegistry(null), root = null } = {}) {
-  const models = Object.keys(input.outcomes).filter((id) => registry.models.some((m) => m.id === id));
+export function buildPrior(
+  input,
+  only = null,
+  { registry = loadRegistry(null), root = null } = {},
+) {
+  const models = Object.keys(input.outcomes).filter((id) =>
+    registry.models.some((m) => m.id === id),
+  );
   const tasks = input.tasks.filter((t) => !only || only.has(t.id));
   const raw = tasks.map((t) => t.features ?? rawFeatures(root, t.text));
   const scaler = fitScaler(raw);
   const X = raw.map((r) => standardise(scaler, r));
-  const data = {
-    nModels: models.length,
-    nFeatures: scaler.mean.length,
-    tasks: tasks.map((t, j) => ({
-      x: X[j],
-      obs: models
-        .map((id, m) => [m, input.outcomes[id][t.id]])
-        .filter(([, o]) => o)
-        .map(([m, o]) => [m, o.resolved ? 1 : 0]),
-    })),
-  };
+  /** @type {import("./mirt.js").MirtData} */
+  const data = { nModels: models.length, nFeatures: scaler.mean.length, tasks: [] };
+  tasks.forEach((t, j) => {
+    /** @type {[number, 0|1][]} */
+    const obs = [];
+    models.forEach((id, m) => {
+      const o = input.outcomes[id][t.id];
+      if (o) obs.push([m, o.resolved ? 1 : 0]);
+    });
+    data.tasks.push({ x: X[j], obs });
+  });
   const fit = selectAndFit(data);
   const costObs = [];
-  tasks.forEach((t, j) =>
+  tasks.forEach((t, j) => {
     models.forEach((id, m) => {
       const o = input.outcomes[id][t.id];
       if (o?.cost > 0) costObs.push({ model: m, x: X[j], cost: o.cost });
-    }),
-  );
+    });
+  });
   const prices = models.map((id) => {
     const r = registry.models.find((m) => m.id === id);
     return { priceIn: r?.price_in ?? null, priceOut: r?.price_out ?? null };
@@ -56,4 +62,3 @@ export function buildPrior(input, only = null, { registry = loadRegistry(null), 
     },
   };
 }
-

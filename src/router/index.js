@@ -51,12 +51,18 @@ export function alignModels(fitted, registry) {
   const idx = new Map(fitted.models.map((id, i) => [id, i]));
   const k = fitted.mirt.k;
   const meanA = fitted.mirt.a.reduce((s, v) => s + v, 0) / fitted.mirt.a.length;
-  const meanL = Array.from({ length: k }, (_, d) => fitted.mirt.L.reduce((s, r) => s + r[d], 0) / fitted.mirt.L.length);
+  const meanL = Array.from(
+    { length: k },
+    (_, d) => fitted.mirt.L.reduce((s, r) => s + r[d], 0) / fitted.mirt.L.length,
+  );
   const a = [];
   const L = [];
   const alpha = [];
   const status = [];
-  const prices = registry.models.map((m) => ({ priceIn: m.price_in ?? null, priceOut: m.price_out ?? null }));
+  const prices = registry.models.map((m) => ({
+    priceIn: m.price_in ?? null,
+    priceOut: m.price_out ?? null,
+  }));
   for (let i = 0; i < ids.length; i++) {
     const j = idx.get(ids[i]);
     if (j !== undefined) {
@@ -89,11 +95,13 @@ export function alignModels(fitted, registry) {
  * Recommend a model or cascade for a task.
  * @param {string|null} root
  * @param {string} task
- * @param {{objective?: string, maxDepth?: number, provider?: string, candidates?: string[], features?: number[]}} [opts]
+ * @param {{objective?: string, maxDepth?: number, provider?: string, candidates?: string[], features?: number[],
+ *          model?: any, registry?: {models: any[], sources?: string[]}}} [opts]
  */
 export function routeUniversal(root, task, opts = {}) {
   const fitted = opts.model ?? loadRouterModel(root);
-  if (!fitted) return { ok: false, reason: "no fitted router model (data/router_prior.json missing)" };
+  if (!fitted)
+    return { ok: false, reason: "no fitted router model (data/router_prior.json missing)" };
   const registry = opts.registry ?? loadRegistry(root);
   const aligned = alignModels(fitted, registry);
   const raw = opts.features ?? rawFeatures(root, task);
@@ -120,7 +128,11 @@ export function routeUniversal(root, task, opts = {}) {
     objective,
     target: pick.target,
     targetMet: pick.targetMet,
-    bestSingle: { model: aligned.ids[pick.bestSingle.model], pSuccess: pick.bestSingle.p, expectedCost: pick.bestSingle.cost },
+    bestSingle: {
+      model: aligned.ids[pick.bestSingle.model],
+      pSuccess: pick.bestSingle.p,
+      expectedCost: pick.bestSingle.cost,
+    },
     candidates: candidates.length,
     cascadesEvaluated: pick.evaluated,
     fit: { origin: fitted.origin, k: fitted.mirt.k, provenance: fitted.provenance ?? null },
@@ -134,14 +146,16 @@ function readConfigObjective(root) {
   return cfg?.route?.objective;
 }
 
-export const taskRef = (task) => createHash("sha256").update(String(task)).digest("hex").slice(0, 16);
+export const taskRef = (task) =>
+  createHash("sha256").update(String(task)).digest("hex").slice(0, 16);
 
 /**
  * Record a verified outcome of one attempt (the only evidence the router learns from). The task
  * text is not stored: only its hash and features.
  */
 export function recordOutcome(root, { task, model, passed, cost = null, features = null }) {
-  if (!model || typeof passed !== "boolean") throw new Error("recordOutcome needs model and passed (boolean)");
+  if (!model || typeof passed !== "boolean")
+    throw new Error("recordOutcome needs model and passed (boolean)");
   const dir = join(root, ".forge");
   mkdirSync(dir, { recursive: true });
   const row = {
@@ -176,7 +190,10 @@ export function readOutcomes(root) {
  * update: few local outcomes barely move it, many outcomes dominate). Writes
  * .forge/router_model.json and returns it.
  */
-export function fitRouter(root, { outcomes = readOutcomes(root), registry = loadRegistry(root) } = {}) {
+export function fitRouter(
+  root,
+  { outcomes = readOutcomes(root), registry = loadRegistry(root) } = {},
+) {
   const shipped = readJson(SHIPPED_PRIOR);
   if (!shipped?.mirt) throw new Error("data/router_prior.json missing: cannot fit without a prior");
   const base = alignModels(shipped, registry);
@@ -195,7 +212,11 @@ export function fitRouter(root, { outcomes = readOutcomes(root), registry = load
     byTask.get(o.task).obs.push([m, o.passed ? 1 : 0]);
     if (o.cost > 0) costObs.push({ model: m, x, cost: o.cost });
   }
-  const data = { nModels: base.ids.length, nFeatures: shipped.features.mean.length, tasks: [...byTask.values()] };
+  const data = {
+    nModels: base.ids.length,
+    nFeatures: shipped.features.mean.length,
+    tasks: [...byTask.values()],
+  };
   const scale = shipped.selection?.chosen?.scale ?? 1;
   const { params } = fitMirt(data, base.mirt.k, {
     a: base.mirt.a,
@@ -210,7 +231,9 @@ export function fitRouter(root, { outcomes = readOutcomes(root), registry = load
   for (let m = 0; m < alpha.length; m++) {
     const mine = costObs.filter((c) => c.model === m);
     if (!mine.length) continue;
-    const resid = mine.map((c) => Math.log(c.cost) - base.cost.beta.reduce((s, b, d) => s + b * c.x[d], 0));
+    const resid = mine.map(
+      (c) => Math.log(c.cost) - base.cost.beta.reduce((s, b, d) => s + b * c.x[d], 0),
+    );
     const prior = alpha[m] ?? resid.reduce((s, v) => s + v, 0) / resid.length;
     alpha[m] = (prior + resid.reduce((s, v) => s + v, 0)) / (1 + resid.length);
   }
@@ -223,7 +246,12 @@ export function fitRouter(root, { outcomes = readOutcomes(root), registry = load
     selection: shipped.selection,
     provenance: {
       prior: shipped.provenance,
-      local: { outcomes: outcomes.length - skipped, skipped, tasks: data.tasks.length, fittedAt: new Date().toISOString() },
+      local: {
+        outcomes: outcomes.length - skipped,
+        skipped,
+        tasks: data.tasks.length,
+        fittedAt: new Date().toISOString(),
+      },
     },
   };
   mkdirSync(join(root, ".forge"), { recursive: true });

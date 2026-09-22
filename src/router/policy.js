@@ -47,13 +47,16 @@ export function* cascades(candidates, maxDepth) {
  * @param {string|undefined} spec
  */
 export function parseObjective(spec) {
-  if (!spec || spec === "match-best-single" || spec === "match") return { kind: "match-best-single" };
+  if (!spec || spec === "match-best-single" || spec === "match")
+    return { kind: "match-best-single" };
   const [kind, raw] = String(spec).split(":");
   const v = Number(raw);
   if (kind === "target" && v > 0 && v < 1) return { kind, target: v };
   if (kind === "value" && v > 0) return { kind, value: v };
   if (kind === "budget" && v > 0) return { kind, budget: v };
-  throw new Error(`unknown objective "${spec}" (use match-best-single, target:<0..1>, value:<$>, budget:<$>)`);
+  throw new Error(
+    `unknown objective "${spec}" (use match-best-single, target:<0..1>, value:<$>, budget:<$>)`,
+  );
 }
 
 /**
@@ -70,7 +73,11 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
   const single = usable.map((m) => ({ m, ...cascadeStats(P, weights, costs, [m]) }));
   const bestSingle = single.reduce((a, b) => (b.p > a.p ? b : a));
   const target =
-    objective.kind === "match-best-single" ? bestSingle.p : objective.kind === "target" ? objective.target : null;
+    objective.kind === "match-best-single"
+      ? bestSingle.p
+      : objective.kind === "target"
+        ? objective.target
+        : null;
   let best = null;
   let bestKey = null;
   let evaluated = 0;
@@ -79,9 +86,15 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
     const st = cascadeStats(P, weights, costs, seq);
     evaluated++;
     let key;
-    if (target !== null) key = st.p >= target - eps ? [0, st.cost, -st.p, seq.length] : [1, -st.p, st.cost, seq.length];
+    if (target !== null)
+      key =
+        st.p >= target - eps ? [0, st.cost, -st.p, seq.length] : [1, -st.p, st.cost, seq.length];
     else if (objective.kind === "value") key = [0, -(objective.value * st.p - st.cost), seq.length];
-    else key = st.cost <= objective.budget + eps ? [0, -st.p, st.cost, seq.length] : [1, st.cost, -st.p, seq.length];
+    else
+      key =
+        st.cost <= objective.budget + eps
+          ? [0, -st.p, st.cost, seq.length]
+          : [1, st.cost, -st.p, seq.length];
     if (!bestKey || lexLess(key, bestKey)) {
       bestKey = key;
       best = { seq, ...st };

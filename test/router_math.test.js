@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { expectedCosts, fitCost } from "../src/router/cost.js";
 import { minimize } from "../src/router/lbfgs.js";
-import { fitMirt, heldOutLogLik, marginals, nodeProbabilities, objective, sigmoid } from "../src/router/mirt.js";
+import {
+  fitMirt,
+  heldOutLogLik,
+  marginals,
+  nodeProbabilities,
+  objective,
+  sigmoid,
+} from "../src/router/mirt.js";
 import { cascadeStats, cascades, choose, parseObjective } from "../src/router/policy.js";
 import { normalGrid, normalNodes } from "../src/router/quadrature.js";
 
@@ -62,8 +69,23 @@ function synthetic(seed, { M = 5, J = 600, missing = 0.3 } = {}) {
 test("mirt: analytic gradient matches finite differences (sparse observations)", () => {
   const { data } = synthetic(3, { J: 60 });
   const grid = normalGrid(2, 5);
-  const prior = { a: [0, 0, 0, 0, 0], w: [0, 0], L: [[1, 0], [1, 0], [1, 0], [1, 0], [1, 0]], scaleA: 2, scaleW: 1, scaleL: 1 };
-  const v = [0.5, 0.1, -0.2, 0.3, 0.9, 0.4, -0.3, 1.1, 0.2, 0.9, -0.1, 1.2, 0.3, 0.8, 0.1, 1.0, -0.2];
+  const prior = {
+    a: [0, 0, 0, 0, 0],
+    w: [0, 0],
+    L: [
+      [1, 0],
+      [1, 0],
+      [1, 0],
+      [1, 0],
+      [1, 0],
+    ],
+    scaleA: 2,
+    scaleW: 1,
+    scaleL: 1,
+  };
+  const v = [
+    0.5, 0.1, -0.2, 0.3, 0.9, 0.4, -0.3, 1.1, 0.2, 0.9, -0.1, 1.2, 0.3, 0.8, 0.1, 1.0, -0.2,
+  ];
   const { grad } = objective(v, data, 2, grid, prior);
   for (let i = 0; i < v.length; i++) {
     const h = 1e-5;
@@ -71,8 +93,13 @@ test("mirt: analytic gradient matches finite differences (sparse observations)",
     const dn = v.slice();
     up[i] += h;
     dn[i] -= h;
-    const num = (objective(up, data, 2, grid, prior).value - objective(dn, data, 2, grid, prior).value) / (2 * h);
-    assert.ok(Math.abs(num - grad[i]) < 1e-5 * Math.max(1, Math.abs(num)), `param ${i}: ${num} vs ${grad[i]}`);
+    const num =
+      (objective(up, data, 2, grid, prior).value - objective(dn, data, 2, grid, prior).value) /
+      (2 * h);
+    assert.ok(
+      Math.abs(num - grad[i]) < 1e-5 * Math.max(1, Math.abs(num)),
+      `param ${i}: ${num} vs ${grad[i]}`,
+    );
   }
 });
 
@@ -80,7 +107,11 @@ test("mirt: recovers abilities and difficulty weights from synthetic outcomes", 
   const { truth, data } = synthetic(11);
   const { params } = fitMirt(data, 1);
   // Order of abilities is what routing depends on.
-  const order = (v) => v.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]).map(([, i]) => i);
+  const order = (v) =>
+    v
+      .map((x, i) => [x, i])
+      .sort((p, q) => p[0] - q[0])
+      .map(([, i]) => i);
   assert.deepEqual(order(params.a), order(truth.a));
   assert.ok(Math.sign(params.w[0]) === 1 && Math.sign(params.w[1]) === -1);
   // Predicted marginal success at x = 0 is close to the true marginal.

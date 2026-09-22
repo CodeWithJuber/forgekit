@@ -31,7 +31,11 @@ export function loadRegistry(root) {
       for (const m of local.models) {
         if (!m?.id) continue;
         const prev = byId.get(m.id) ?? {};
-        byId.set(m.id, { ...prev, ...m, providers: { ...(prev.providers ?? {}), ...(m.providers ?? {}) } });
+        byId.set(m.id, {
+          ...prev,
+          ...m,
+          providers: { ...(prev.providers ?? {}), ...(m.providers ?? {}) },
+        });
       }
     }
   }

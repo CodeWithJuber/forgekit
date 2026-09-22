@@ -12,7 +12,11 @@ const dot = (a, b) => {
  * @param {number[]} x0
  * @param {{maxIter?: number, memory?: number, gradTol?: number, relTol?: number}} [opts]
  */
-export function minimize(f, x0, { maxIter = 500, memory = 10, gradTol = 1e-6, relTol = 1e-10 } = {}) {
+export function minimize(
+  f,
+  x0,
+  { maxIter = 500, memory = 10, gradTol = 1e-6, relTol = 1e-10 } = {},
+) {
   let x = x0.slice();
   let { value: fx, grad: g } = f(x);
   const S = [];

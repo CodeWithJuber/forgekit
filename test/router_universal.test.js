@@ -4,7 +4,13 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fitRouter, loadRouterModel, readOutcomes, recordOutcome, routeUniversal } from "../src/router/index.js";
+import {
+  fitRouter,
+  loadRouterModel,
+  readOutcomes,
+  recordOutcome,
+  routeUniversal,
+} from "../src/router/index.js";
 import { loadRegistry, servableBy } from "../src/router/registry.js";
 
 const project = () => {
@@ -15,7 +21,15 @@ const project = () => {
 const TASK = "Fix the off-by-one error in the pagination helper so the last page is included.";
 
 test("router code names no vendor, model or tier: they all come from data", () => {
-  for (const f of ["index.js", "policy.js", "mirt.js", "cost.js", "features.js", "registry.js", "prior.js"]) {
+  for (const f of [
+    "index.js",
+    "policy.js",
+    "mirt.js",
+    "cost.js",
+    "features.js",
+    "registry.js",
+    "prior.js",
+  ]) {
     const src = readFileSync(new URL(`../src/router/${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(src, /claude|haiku|sonnet|opus|gpt-|gemini|kimi|minimax|deepseek|glm/i, f);
   }
@@ -30,7 +44,13 @@ test("registry: shipped models load; .forge/models.json adds, overrides and disa
     join(d, ".forge", "models.json"),
     JSON.stringify({
       models: [
-        { id: "local-model", label: "Local", price_in: 0.1, price_out: 0.2, providers: { mygw: "local/x" } },
+        {
+          id: "local-model",
+          label: "Local",
+          price_in: 0.1,
+          price_out: 0.2,
+          providers: { mygw: "local/x" },
+        },
         { id: first.id, providers: { mygw: "gw/first" } },
         { id: second.id, enabled: false },
       ],
@@ -57,14 +77,22 @@ test("routeUniversal: returns a cascade within the provider's models, with proba
   assert.equal(any.ok, true);
   assert.ok(any.cascade.length <= 3);
   // A model the fit has never seen enters cold, at the population mean.
-  const cold = routeUniversal(d, TASK, { candidates: reg.models.filter((m) => !m.evidence).map((m) => m.id) });
+  const cold = routeUniversal(d, TASK, {
+    candidates: reg.models.filter((m) => !m.evidence).map((m) => m.id),
+  });
   assert.ok(!cold.ok || cold.cascade.every((c) => c.status === "cold"));
 });
 
 test("recordOutcome stores features and a hash, never the task text", () => {
   const d = project();
   const model = loadRegistry(d).models[0].id;
-  recordOutcome(d, { task: "secret project name zeta", model, passed: true, cost: 0.12, features: new Array(12).fill(0) });
+  recordOutcome(d, {
+    task: "secret project name zeta",
+    model,
+    passed: true,
+    cost: 0.12,
+    features: new Array(12).fill(0),
+  });
   const raw = readFileSync(join(d, ".forge", "route_outcomes.jsonl"), "utf8");
   assert.doesNotMatch(raw, /zeta/);
   assert.equal(readOutcomes(d).length, 1);
@@ -78,10 +106,19 @@ test("fitRouter: local outcomes move a model's ability in their direction (Bayes
   const before = prior.mirt.a[0];
   const feats = new Array(prior.features.mean.length).fill(0).map((_, i) => prior.features.mean[i]);
   for (let i = 0; i < 40; i++)
-    recordOutcome(d, { task: `task ${i}`, model: target, passed: false, cost: 0.2, features: feats });
+    recordOutcome(d, {
+      task: `task ${i}`,
+      model: target,
+      passed: false,
+      cost: 0.2,
+      features: feats,
+    });
   const fitted = fitRouter(d);
   const after = fitted.mirt.a[fitted.models.indexOf(target)];
-  assert.ok(after < before - 0.3, `ability should fall after 40 verified failures: ${before} -> ${after}`);
+  assert.ok(
+    after < before - 0.3,
+    `ability should fall after 40 verified failures: ${before} -> ${after}`,
+  );
   assert.equal(loadRouterModel(d).origin, ".forge/router_model.json");
   assert.equal(fitted.provenance.local.outcomes, 40);
 });
