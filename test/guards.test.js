@@ -397,3 +397,30 @@ test("protect-paths fails CLOSED on an unparsable payload (B6)", () => {
   assert.equal(r.status, 2, "an unparsable payload blocks");
   assert.match(r.stderr, /fail closed/i);
 });
+
+// ── B8 residual: the permissions allowlist is PREFIX-matched, so `Bash(git diff:*)` covers
+// `git diff HEAD --output=.env`. These flags write a file with no shell redirection, so the
+// `>` rule never sees them either. The hook is where the write is actually stopped.
+test("protect-paths blocks a secret-path write via --output/-o, which prefix rules miss (B8)", () => {
+  for (const command of [
+    "git diff HEAD --output=.env",
+    "git diff --output .env.prod",
+    "git -C /repo diff --output=secrets/prod.key",
+    "git format-patch -o /home/u/.ssh/ HEAD~1",
+    "git format-patch --output-directory=/root/.ssh HEAD~1",
+  ]) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, true, `blocked: ${command}`);
+  }
+  // Ordinary uses of the same flags stay allowed — a guard that blocks them is a guard
+  // people switch off. `.envoy.js` is not `.env` (the \b anchor earns its keep here).
+  for (const command of [
+    "git diff HEAD --output=out.patch",
+    "git format-patch -o patches/ HEAD~1",
+    "npm run build -- --output=dist/.envoy.js",
+    "git diff --stat",
+  ]) {
+    const d = protectPathsDecision({ toolName: "Bash", command });
+    assert.equal(d.block, false, `allowed: ${command} (${d.reason ?? ""})`);
+  }
+});

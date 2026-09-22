@@ -32,6 +32,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A secret-path write through `git diff --output` / `format-patch -o` is blocked** (B8
+  residual). Claude Code's permission rules are PREFIX-matched, so `Bash(git diff:*)` also
+  covers `git diff HEAD --output=.env`, and those flags write a file with no shell
+  redirection, so the guard's `>` rule never saw them either. protect-paths now treats an
+  `--output`/`--output-directory`/`-o` target like any other write target. The protected-path
+  token also matches `/secrets` and `/.ssh` WITHOUT a trailing slash, since a directory is a
+  legitimate `-o` target and `… -o /root/.ssh` writes into it just as surely; `` keeps
+  `/secretstore` and `.sshconfig` out of it. Ordinary `--output=out.patch` stays allowed.
+
 - **A claim minted before the CRLF fold is migrated, not deleted.** Folding `
 ` into
   `

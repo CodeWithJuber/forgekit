@@ -46,7 +46,10 @@ const READER = `(^|[;&|])\\s*((cat|less|more|head|tail|nl|xxd|od|strings|base64|
 // \b anchors the extensions so `.key` matches a real key file but NOT `Object.keys`, and
 // `.env` matches `.env`/`.env.prod` but NOT `.environment`.
 const SECRET_TOKEN =
-  "(\\.env(\\.[A-Za-z0-9_-]+)?\\b|id_rsa\\b|id_ed25519\\b|\\.pem\\b|\\.key\\b|/secrets/|/\\.ssh/|\\.netrc\\b|_netrc\\b|\\.npmrc\\b|\\.git-credentials\\b|\\.aws/credentials\\b)";
+  // `/secrets` and `/.ssh` match with OR without a trailing slash: a directory is a legitimate
+  // target for `-o`/`--output-directory`, and `… -o /root/.ssh` writes into it just as surely
+  // as `/root/.ssh/` does. `\b` keeps `/secretstore` and `.sshconfig` out of it.
+  "(\\.env(\\.[A-Za-z0-9_-]+)?\\b|id_rsa\\b|id_ed25519\\b|\\.pem\\b|\\.key\\b|/secrets(/|\\b)|/\\.ssh(/|\\b)|\\.netrc\\b|_netrc\\b|\\.npmrc\\b|\\.git-credentials\\b|\\.aws/credentials\\b)";
 // A protected path as a redirection target, or as an argument to a mutating command. Each
 // alternative embeds the token, so a bare `echo hi > out.txt` is never blocked.
 const WRITE = [
@@ -54,6 +57,12 @@ const WRITE = [
   `(^|[;&|])\\s*(${gitpfx})?(tee(\\s+-a)?|cp|mv|install)\\s+[^;&|]*${SECRET_TOKEN}`,
   `(^|[;&|])\\s*sed\\s+[^;&|]*-i[^;&|]*${SECRET_TOKEN}`,
   `(^|[;&|])\\s*dd\\s+([^;&|]*\\s)?of=\\S*${SECRET_TOKEN}`,
+  // `git diff --output=<path>` / `git format-patch -o <dir>` write a file without any shell
+  // redirection, so the `>` rule above never sees them. The permissions allowlist cannot
+  // catch this either: its rules are PREFIX-matched, so `Bash(git diff:*)` covers
+  // `git diff HEAD --output=.env` (review B8). The hook is where the write is actually
+  // stopped, so it is stopped here.
+  `${gitpfx}${gitopt}\\S*[^;&|]*(--output(-directory)?[=\\s]|\\s-o[=\\s])["']?[^\\s;&|]*${SECRET_TOKEN}`,
 ].join("|");
 
 /** @type {{all: RegExp[], reason: string}[]} — first match wins; protected paths first, so
