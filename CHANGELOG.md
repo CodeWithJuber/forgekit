@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Binary files no longer trip the commit gate's secret scan.** The staged scan reads every
+  file with `git diff --text`, and the entropy leg flagged the XMP packet id
+  (`W5M0MpCehiHzreSzNTczkc9d`, a constant fixed by Adobe's XMP spec) that the XMP packet
+  wrapper carries inside PDFs, JPEGs and PNGs, so ordinary binary commits were refused. A staged file that git
+  reports as binary (`--numstat` prints `-`/`-`) and that contains a NUL byte now gets the
+  credential-format grammars only; a `binary` attribute on a text file does not qualify, so
+  `.gitattributes` cannot switch the entropy leg off. The XMP packet id is also exempt from the
+  entropy leg everywhere, like lockfile integrity digests. A `ghp_…` token inside a binary is
+  still refused, and an unreadable diff still fails closed.
+
 ## [1.0.0] - 2026-09-22
 
 ### Added

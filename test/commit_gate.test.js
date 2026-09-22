@@ -11,6 +11,7 @@ import {
   gateMode,
   renderCommitGate,
   stagedAddedLines,
+  stagedBinaryFiles,
   stagedFiles,
 } from "../src/commit_gate.js";
 import { fakeGithubPat } from "./_fixtures.js";
@@ -297,4 +298,79 @@ test("a lockfile integrity line passes the commit gate (B4)", () => {
   const r = commitGate(root, { env: env() });
   assert.equal(r.allow, true, renderCommitGate(r));
   assert.equal(r.findings.filter((f) => f.kind.startsWith("secret")).length, 0);
+});
+
+// ── Binary files: the staged scan reads every file with `--text`, and the entropy leg
+// flagged the XMP packet id that every PDF/JPEG/PNG with XMP metadata carries, so ordinary
+// binary commits were refused. Binary files now get the format grammars only.
+const XMP_ID = "W5M0MpCehiHzreSzNTczkc9d";
+/** A small PDF-shaped binary: an XMP packet plus a compressed stream holding NUL bytes. */
+const binaryPdf = (extra = "") => {
+  const xmp = `<?xpacket begin="﻿" id="${XMP_ID}"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF/></x:xmpmeta>\n<?xpacket end="w"?>`;
+  return Buffer.concat([
+    Buffer.from(
+      `%PDF-1.7\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<< /Type /Metadata /Subtype /XML >>\nstream\n${xmp}\nendstream\nendobj\n2 0 obj\n<< /Length 8 /Filter /FlateDecode >>\nstream\n`,
+      "latin1",
+    ),
+    Buffer.from([0x78, 0x9c, 0x00, 0x01, 0xff, 0x00, 0x10, 0x0a]),
+    Buffer.from(`${extra}\nendstream\nendobj\n%%EOF\n`, "latin1"),
+  ]);
+};
+
+test("a staged XMP-bearing binary PDF is allowed (git reports it binary)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "report.pdf"), binaryPdf());
+  git("add", "report.pdf");
+  assert.ok(stagedBinaryFiles(root).has("report.pdf"), "git's numstat marks the PDF binary");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, true, renderCommitGate(r));
+  assert.equal(r.findings.filter((f) => f.kind.startsWith("secret")).length, 0);
+  assert.equal(cli(root).status, 0);
+});
+
+test("a binary file holding a credential format is still refused", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "leak.pdf"), binaryPdf(`/Token (${fakeGithubPat()})`));
+  git("add", "leak.pdf");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, false, "format grammars still apply to binary content");
+  assert.ok(r.findings.some((f) => f.kind === "secret" && f.files.includes("leak.pdf")));
+  assert.equal(cli(root).status, 1);
+});
+
+test("binary scope: the entropy leg is skipped for binaries, kept for text files", () => {
+  const unknown = ["Zq7Rt2", "Xk9Lp4", "Vm1Nc8", "Yb5Ws3", "Hd6Fg0"].join("");
+  // A random-looking run inside binary bytes is not refused (it is what compression looks
+  // like); the same run in a text file is.
+  const bin = gitFixture();
+  writeFileSync(join(bin.root, "blob.pdf"), binaryPdf(unknown));
+  bin.git("add", "blob.pdf");
+  assert.equal(commitGate(bin.root, { env: env() }).allow, true);
+  const txt = gitFixture();
+  writeFileSync(join(txt.root, "cfg.txt"), `key ${unknown}\n`);
+  txt.git("add", "cfg.txt");
+  assert.equal(commitGate(txt.root, { env: env() }).allow, false);
+});
+
+test("a `binary` attribute on a text file does not switch the entropy leg off", () => {
+  const unknown = ["Zq7Rt2", "Xk9Lp4", "Vm1Nc8", "Yb5Ws3", "Hd6Fg0"].join("");
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, ".gitattributes"), "*.txt binary\n");
+  writeFileSync(join(root, "cfg.txt"), `key ${unknown}\n`);
+  git("add", "-A");
+  assert.ok(stagedBinaryFiles(root).has("cfg.txt"), "git reports it binary by attribute");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, false, "no NUL byte, so it is scanned as text");
+  assert.ok(r.findings.some((f) => f.kind === "secret" && f.files.includes("cfg.txt")));
+});
+
+test("an XMP packet in a text sidecar passes too (public constant)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(
+    join(root, "photo.xmp"),
+    `<?xpacket begin="" id="${XMP_ID}"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/"/>\n<?xpacket end="w"?>\n`,
+  );
+  git("add", "photo.xmp");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, true, renderCommitGate(r));
 });
