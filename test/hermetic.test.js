@@ -23,11 +23,20 @@ test("_setup ran: $HOME is a sandbox, not the developer's home", () => {
 // deliberately kept: only TERM=dumb is meaningful in src/fmt.js and it forces colour off,
 // which already matches a non-TTY test process.
 const NOT_SCRUBBED = new Set(["TERM", "TOKEN", "X"]);
+// Sandboxed rather than scrubbed: _setup points these at an empty test home (pinned by the
+// test above), so a src read of them sees that home, never the developer's. They count as a
+// leak again the moment one holds the real home.
+const SANDBOXED = new Set(["HOME", "USERPROFILE"]);
 
 test("every env var src reads is scrubbed (the denylist cannot drift from envVarsRead)", () => {
+  const realHome = userInfo().homedir;
   const leaked = [...envVarsRead()].filter(
     // FORGE_LLM_HTTP is set BY _setup on purpose: it forces the keyless HTTP runner.
-    (v) => !NOT_SCRUBBED.has(v) && v !== "FORGE_LLM_HTTP" && process.env[v] !== undefined,
+    (v) =>
+      !NOT_SCRUBBED.has(v) &&
+      v !== "FORGE_LLM_HTTP" &&
+      !(SANDBOXED.has(v) && process.env[v] !== realHome) &&
+      process.env[v] !== undefined,
   );
   assert.deepEqual(leaked, [], `not scrubbed by test/_setup.js: ${leaked.join(", ")}`);
 });

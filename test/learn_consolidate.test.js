@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import {
   consolidateDir,
   consolidateLearned,
+  learnedDir,
   ledgerClaimsFor,
   parseLearned,
   renderConsolidated,
@@ -166,6 +167,20 @@ test("consolidateDir archives originals, rewrites CONSOLIDATED.md, removes month
   assert.ok(!existsSync(join(dir, "lessons-2026-09.md")));
   assert.equal(readdirSync(join(dir, "archive")).length, 1, "the original is archived");
   assert.equal(consolidateDir({ dir: tmp() }).row, "nothing");
+});
+
+// The bash learner writes under $HOME; on Windows node's homedir() reads USERPROFILE, so the
+// consolidator read a different folder whenever Git Bash's HOME differed from it.
+test("learnedDir follows HOME, the folder the bash session learner writes to", () => {
+  const saved = process.env.HOME;
+  const home = tmp("forge-learn-homevar-");
+  try {
+    process.env.HOME = home;
+    assert.equal(learnedDir(), join(home, ".claude", "skills", "learned"));
+  } finally {
+    if (saved === undefined) delete process.env.HOME;
+    else process.env.HOME = saved;
+  }
 });
 
 // A STUB `claude` sits first on PATH, so no real model is ever called from the suite: the

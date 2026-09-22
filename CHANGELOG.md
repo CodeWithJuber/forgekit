@@ -16,6 +16,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `learn-consolidate.sh --llm`, which 1.1.0 fixed on macOS by dropping the limit when
   `timeout` is missing, uses the same helper and so keeps its 180 s cap everywhere.
 
+- **Lesson consolidation reads the folder the session learner writes to on Windows.** The
+  learner (a bash hook) writes under `$HOME`, but node's `homedir()` reads `USERPROFILE` on
+  Windows, so a Git Bash `HOME` that differed from it made `learn-consolidate` look in the
+  wrong place. `learnedDir()` now follows `HOME` when it is set.
+
 ## [1.1.0] - 2026-09-22
 
 ### Added
