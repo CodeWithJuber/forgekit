@@ -6,6 +6,53 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Model tiers resolve to the newest live model instead of pinned ids.** A tier now names a
+  model family (haiku / sonnet / opus / fable), and wherever a concrete id or price is needed
+  (the LLM runner, `forge route gateway`, the cost estimate, `forge route`, `forge models`) it
+  is resolved at that moment:
+  - **Model id:** the newest model of the family in the active provider's live catalog: the
+    Anthropic Models API (`GET /v1/models` with `ANTHROPIC_API_KEY`, all pages), a custom
+    gateway's `/v1/models`, or OpenRouter's list. Family membership is the family word as a
+    whole token of the id or display name, and "newest" is the catalog's own `created_at`.
+    No model id is written in the code. Direct-API users were never resolved before: the
+    gateway remap skipped `api.anthropic.com`.
+  - **Price:** OpenRouter's public catalog, converted from USD per token to per million and
+    matched to the resolved id by its tokens (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
+  - **Fallback:** each step runs only when the previous one is unavailable (no key, offline,
+    timeout, non-2xx, no family match). Next comes the last cached catalog response, then the
+    snapshot in `src/model_tiers.json`, which keeps its `pricingVerified` date and the
+    `forge doctor` staleness warning. Explicit ids in `.forge/providers.json` and
+    `ANTHROPIC_MODEL` still win.
+  - **Caching:** catalogs are cached under `.forge/cache/`, which ignores itself in git and is
+    listed in `.forge/.gitignore`. Freshness comes only from the response (`Cache-Control`,
+    `Expires`, `Age`); otherwise the next use revalidates with `If-None-Match` /
+    `If-Modified-Since`. Lookups time out after 3 s and never throw. The per-prompt hooks never
+    resolve anything, and the runner resolves on its first call, not when it is built.
+    `FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline.
+  - New exports from `model-tiers`: `resolveTierModel`, `resolveTierPrice`,
+    `resolveModelPrice`, `resolveTiers` and `describeResolution`. The existing exports are
+    unchanged.
+- **`forge models`** prints what every tier resolves to right now: family, model id, created
+  date, price, and where the id and the price came from (`--json` for the full resolution).
+
+### Changed
+
+- **`forge route` shows the resolved model id** and where it came from, under the
+  recommendation. The price reads `live price` when OpenRouter lists that id.
+- **`forge route gateway` / `forge config gateway`** write the resolved ids. They drop the
+  hard-coded "Models verified 2026-07-05" line: each tier alias carries an `# id:` comment
+  naming its source. The passthrough list keeps the snapshot id when it differs, so a
+  client pinned to it still works. An OpenRouter provider now gets real OpenRouter ids
+  behind `openrouter/`.
+- **The custom-gateway remap picks the newest model of each family** the gateway advertises
+  (its creation time, then the version), not the one closest to the snapshot's version. The
+  gateway fetch shares the new catalog code; the old separate fetch child is gone.
+- **The session-log cost estimate no longer bills unknown models at $3/$15.** Each logged
+  model is priced from the live catalog, else the snapshot row, the router registry, or its
+  family's tier. A model nothing prices is listed as unpriced and left out of the total.
+
 ## [1.1.1] - 2026-09-22
 
 ### Fixed

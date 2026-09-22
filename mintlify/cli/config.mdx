@@ -1,6 +1,6 @@
 ---
 title: "Config commands"
-description: "Providers, cost, dashboards, brand, atlas, stack, and opt-in MCP integrations: config, cost, dash, brand, atlas, stack, report, tools, integrations."
+description: "Providers, cost, model resolution, dashboards, brand, atlas, stack, and opt-in MCP integrations: config, cost, models, dash, brand, atlas, stack, report, tools, integrations."
 ---
 
 The Config group covers providers, observability, the code graph, and stack detection.
@@ -27,6 +27,25 @@ forge cost --stages        # measured per-stage cost factors
 <Note>
   Reports **measured stages only** — a stage with no events says "no data", never a
   default.
+</Note>
+
+## `forge models`
+
+Each tier's model family resolved to a concrete model right now: the newest model of the
+family in the active provider's live catalog (the Anthropic Models API with
+`ANTHROPIC_API_KEY`, a gateway's `/v1/models`, or OpenRouter's list), priced from
+OpenRouter's public catalog — else the cached copy, else the shipped snapshot. Every row says
+where its id and price came from.
+
+```bash
+forge models               # tier, family, resolved id, created, price, source
+forge models --json        # the full resolution
+```
+
+<Note>
+  Catalogs are cached under `.forge/cache/` and refreshed by the response's own
+  `Cache-Control` / `Expires` / `ETag` — forge has no TTL of its own.
+  `FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline.
 </Note>
 
 ## `forge dash`

@@ -32,7 +32,7 @@ Every command is real and wired. Grouped by what it does:
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge verify` · `forge precommit`                                                        |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                         |
-| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost`                                                                                                                  |
+| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge models`                                                                                                 |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide` |
 <!-- forge:render:command-groups:end -->
 
@@ -199,15 +199,23 @@ churn, past-mistake density, ambiguity). Whichever facet detects difficulty sets
 
 ```console
 $ forge route "write an is_prime function"
-  → Haiku 4.5  (simple, $1/$5 per M tok)
+  → Haiku 4.5  (simple, $1/$5 per M tok, current effective)
+    model: claude-haiku-4-5-20251001 — shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
     lint, formatting, docs, stubs, trivial well-defined edits
     driven by: similar to "check if a number is prime" (sim 1.00, complexity 0.08)
 
 $ forge route "design and implement a distributed rate limiter with sliding windows across 3 services"
-  → Opus 4.8  (complex, $5/$25 per M tok)
+  → Opus 4.8  (complex, $5/$25 per M tok, current effective)
+    model: claude-opus-4-8 — shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
     architecture, cross-module refactor, novel algorithms, multi-layer debugging
     complexity 0.73 · driven by: similar to "implement a rate limiter with a token bucket" (sim 0.43, complexity 0.78)
 ```
+
+The recommendation is a **tier**, and a tier names a model **family** (haiku / sonnet / opus /
+fable). The `model:` line is that family resolved to a concrete id at the moment you ask —
+`forge models` (below) explains how. With `ANTHROPIC_API_KEY` set it reads
+`newest opus in the api.anthropic.com catalog, created …`, and the price says `live price`
+when OpenRouter lists that id.
 
 Unseen phrasings route by resemblance — "two threads deadlock when the queue is full"
 lands in the concurrency neighborhood without any keyword list needing the literal
@@ -215,6 +223,53 @@ token "race condition". To tune routing, add labeled rows to `EXEMPLARS` (data, 
 weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
+Its tier aliases point at the same resolved ids, and each alias carries an `# id:` comment
+saying where its id came from (the live catalog, or the shipped snapshot and why).
+
+### `forge models` — what each tier resolves to
+
+Forge ships no model id it depends on. `src/model_tiers.json` names each tier's **family**
+and keeps a snapshot of ids and prices (with its `pricingVerified` date) as data of last
+resort. Wherever a concrete id or price is actually needed — the LLM runner, the gateway
+config, the cost estimate, `forge route`, `forge models` — it is resolved at that moment:
+
+1. **Model id** — the newest model of the family in the active provider's **live catalog**:
+   the Anthropic Models API (`GET /v1/models`, all pages; needs `ANTHROPIC_API_KEY`), a custom
+   gateway's `/v1/models`, or OpenRouter's list for an OpenRouter provider. "Of the family"
+   means the family word is a whole token of the id or display name; "newest" is the
+   catalog's own `created_at` (then the parsed version, for catalogs without dates). No model
+   id is listed anywhere in the code.
+2. **Price** — OpenRouter's public catalog (`GET https://openrouter.ai/api/v1/models`, no key),
+   converted from USD per token to per million and matched to the resolved id by its tokens
+   (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
+3. **Fallback**, each step only when the previous one is unavailable (no key, offline, timeout,
+   non-2xx, no family match): the last cached catalog response, then the shipped snapshot.
+   An id configured explicitly (`.forge/providers.json`, a gateway alias) is used as-is, and
+   `ANTHROPIC_MODEL` / `FORGE_MODEL` still pin every call.
+
+```console
+$ forge models
+  provider  anthropic (Anthropic (direct))
+
+  tier     family  model                        created     $/M tok    id from   price from
+  simple   haiku   claude-haiku-4-5-20251001    —           $1/$5      snapshot  snapshot
+  medium   sonnet  claude-sonnet-5              —           $2/$10     snapshot  snapshot
+  complex  opus    claude-opus-4-8              —           $5/$25     snapshot  snapshot
+  extreme  fable   claude-fable-5               —           $10/$50    snapshot  snapshot
+
+  haiku   shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
+  …
+```
+
+With a key, `id from` reads `catalog`, `created` is the catalog's date, and the provenance
+line names the catalog (`newest opus in the api.anthropic.com catalog, created …`). `--json`
+prints the full resolution. Catalog responses are cached under `.forge/cache/` (git-ignored),
+and **freshness comes from the response itself**: a cached response is reused without a
+request only while its `Cache-Control: max-age` / `Expires` says it is fresh; otherwise the
+next use revalidates it with `If-None-Match` / `If-Modified-Since`, and when that request
+fails the cached copy is used (reported as the last cached copy). Forge has no TTL of its own.
+Lookups time out after 3 s and never throw, and the per-prompt hooks never resolve anything.
+`FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline (the cache, then the snapshot).
 
 **`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
 affine correction of the rubric's score toward a held-out split of a labelled fixture and
@@ -273,17 +328,17 @@ Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
 `ANTHROPIC_AUTH_TOKEN` set (LiteLLM-style gateways), detection classifies the gateway,
 auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
 
-**Custom gateways that rename models.** The tier table ships public Anthropic IDs
+**Custom gateways that rename models.** The tier snapshot carries public Anthropic IDs
 (`claude-haiku-4-5-…`, `claude-sonnet-5`, …), but a self-hosted gateway often serves its
 own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway base URL is
-set, Forge asks it once per process (`GET /v1/models`) and scores each advertised model
-against every tier's family — the family word (haiku/sonnet/opus/fable) gates the match, the
-overlap score picks the best id — then remaps each tier onto a real gateway model. It is a
-silent, low-configuration fallback: no gateway, an unreachable `/v1/models`, or no family match and
-the stock IDs are used unchanged; direct `api.anthropic.com` sessions never probe. An explicit
-model in `.forge/providers.json` (or `ANTHROPIC_MODEL`) always wins over the remap. `forge
-doctor` prints the resolved `tier→model` mapping under **gateway models** so you can verify it
-and pin explicit IDs if a family scored wrong.
+set, Forge asks it (`GET /v1/models`) and maps each tier onto the **newest** model of that
+tier's family the gateway advertises — the rule `forge models` applies to the Anthropic
+Models API: the family word (haiku/sonnet/opus/fable) gates the match, then the gateway's
+creation time, the parsed version and the plainest id decide. It is a silent,
+low-configuration fallback: an unreachable `/v1/models` or no family match and the snapshot
+IDs are used unchanged. An explicit model in `.forge/providers.json` (or `ANTHROPIC_MODEL`)
+always wins over the remap. `forge doctor` prints the resolved `tier→model` mapping under
+**gateway models** so you can verify it and pin explicit IDs if a family matched wrong.
 
 ### `forge impact <symbol|file>` — what will this edit break?
 
@@ -1495,7 +1550,7 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | how often it asks                               | `source/substrate.json` → `defaults.askThreshold` (0.6)                                                                               |
 | blast-radius sensitivity                        | `source/substrate.json` → `defaults.impactThreshold` (0.1)                                                                            |
 | a routing outcome                               | `src/route.js` → add a labeled row to `EXEMPLARS` (data, not weights); constants in `RUBRIC`                                          |
-| model tiers / prices                            | `src/model_tiers.js`                                                                                                                  |
+| model tiers / prices                            | `src/model_tiers.json` (tier → family, plus the snapshot of last resort); runtime resolution in `src/model_catalog.js` — `forge models` shows it |
 | an assumption question                          | `src/preflight.js` → `DIMENSIONS[]`                                                                                                   |
 | the verify checklist                            | `src/substrate.js` → `verificationChecklist()`                                                                                        |
 | when the ambient hook speaks                    | `src/substrate.js` → `substrateContext()`                                                                                             |
@@ -1604,6 +1659,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
 | `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
 | `FORGE_NO_UPDATE_CHECK` | `1` silences the `forge doctor` update notice |
+| `FORGE_NO_CATALOG_FETCH` | `1` never fetches a model catalog (Anthropic Models API, gateway `/v1/models`, OpenRouter prices): ids and prices come from the `.forge/cache/` copy, else the shipped snapshot — for air-gapped machines |
 | `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 
 ---
