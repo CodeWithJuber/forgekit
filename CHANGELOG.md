@@ -84,6 +84,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `_guardlib.sh` uses `timeout`, else Homebrew's `gtimeout`, else a bash watchdog, so the
   90 s cap the learner's re-entrancy lock relies on still holds.
 
+- **Lesson consolidation reads the folder the session learner writes to on Windows.** The
+  learner (a bash hook) writes under `$HOME`, but node's `homedir()` reads `USERPROFILE` on
+  Windows, so a Git Bash `HOME` that differed from it made `learn-consolidate` look in the
+  wrong place. `learnedDir()` now follows `HOME` when it is set.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch
