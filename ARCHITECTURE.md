@@ -330,8 +330,11 @@ completeness score `s(x)` is a **logistic** over its features (concreteness, nam
 vagueness, a smooth `tanh` length term) instead of an additive rubric with magic coefficients and
 discontinuous word-count steps — the `sigmoid` bounds it to (0,1) with no clamp, every feature's
 pull stays attributable, and a labeled bank could refine the weights via `predictor.js`'s
-`trainLogistic`. The calibrated prior still lands the paper's own examples where they were
-(a bare "make the auth better" ≈ 0.23 → ask; a concrete verifyToken edit ≈ 0.63 → proceed).
+`trainLogistic`. The hand-set prior (not fit to data) puts the paper's own examples on the
+right side of the 0.6 threshold: a bare "make the auth better" ≈ 0.23 → ask; the concrete
+verifyToken edit ≈ 0.88 → proceed. That edit scored ≈ 0.63 when the weights were set, with one
+concrete anchor (the filename); since a named code identifier became a second anchor it scores
+≈ 0.88, and the weights were not re-fit.
 
 **The evidence trail (preflight).** Once a goal is anchored, every prompt appends its
 graded `driftScore` to the session log; `cusum` (until now test-only math) accumulates

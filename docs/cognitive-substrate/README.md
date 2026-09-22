@@ -80,7 +80,7 @@ $ forge substrate "make the auth better"
 $ forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
 
   proceed: yes
-  assumption: medium risk · completeness 0.63
+  assumption: low risk · completeness 0.88
   route: Haiku 4.5 (simple)
   impact: 3 file(s) predicted — 3 reverse
     - src/auth.js (reverse)

@@ -116,7 +116,7 @@ $ forge substrate "Change verifyToken in src/auth.js to require length > 20; upd
 Forge substrate — pre-action check
 
   proceed: yes
-  assumption: medium risk · completeness 0.63
+  assumption: low risk · completeness 0.88
 
   route: Haiku 4.5 (simple) · complexity 0.15
     driven by: base cost of any task

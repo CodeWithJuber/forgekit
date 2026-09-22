@@ -28,6 +28,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "(+N more not kept …)". Sections are now written in that priority order. Only a hand-edited
   or pre-budget file can still overflow the loader, and then the cut names the file.
 
+- **The verifyToken example's completeness score matches the code again.** The docs
+  (ARCHITECTURE.md, GUIDE, the cognitive-substrate README) and the `src/preflight.js` comment
+  said "Change verifyToken in src/auth.js to require length > 20; update tests" scores ≈ 0.63
+  (medium risk), but the code gives 0.878 (low risk). The prior was hand-set when that task
+  had one concrete anchor (the filename, 0.63); since 2026-09-21 a named code identifier is a
+  second anchor. The docs now show 0.88 and say why; the weights are unchanged. A test pins the
+  value and checks that the two example outputs print it.
+
 ### Changed
 
 - **The everyday blast-radius checks walk sibling and forward relations, tagged.** The
