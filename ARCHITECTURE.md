@@ -544,6 +544,7 @@ forgekit/
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
     ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
     ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
+    learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge duplicates, drop only ledger-refuted (dormant/retracted/attic) lessons; no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
@@ -619,8 +620,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>114 files"]
-  src["src<br/>98 files"]
+  test["test<br/>115 files"]
+  src["src<br/>99 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   global["global<br/>5 files"]
@@ -628,7 +629,7 @@ flowchart LR
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 230 --> src
+  test -- 233 --> src
   bench -- 7 --> src
   examples -- 4 --> src
   test -- 2 --> bench

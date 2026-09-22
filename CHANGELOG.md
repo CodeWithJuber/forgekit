@@ -58,6 +58,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `operational-v2-recall`, with a guarantee that says the frozen parameters were tuned on a
   different graph builder and are not held-out validated here.
 
+- **`bin/learn-consolidate.sh` no longer lets a model prune memory.** It sent every learned
+  lesson to Haiku with "DROP anything … contradicted" and rewrote `~/.claude/skills/learned`
+  from the answer, which is pruning by the model's own judgment (the research requires pruning
+  by ground truth). Consolidation is now deterministic (`src/learn_consolidate.js`): exact and
+  near-duplicate lessons within a project merge (MinHash Jaccard ≥ 0.7, the ledger's own
+  consolidation threshold), and a lesson is dropped only when its matching ledger claim in
+  that project is dormant, retracted or pruned to the attic; a lesson the ledger knows nothing
+  about is kept. `--repo <root>` names the ledger (default: the current directory), and
+  `--dry-run` / `--json` report without writing. Originals are archived first, as before. The
+  model rewrite remains behind an explicit `--llm` first argument, with "contradicted" removed
+  from its prompt.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch

@@ -17,7 +17,7 @@ graphify install --project        # optional: adds a code-graph skill to this re
 Then in Claude Code, once per big repo: `/graphify .` (builds the graph) and
 `graphify hook install` (keeps it current on every commit).
 
-Housekeeping: run `claude-learn-consolidate` weekly to dedupe/prune learned lessons.
+Housekeeping: run `claude-learn-consolidate` weekly to merge duplicate learned lessons; it drops a lesson only when the forge ledger refutes it (`--repo <project>` supplies the ledger).
 Minimalism enforcer is always on via Ponytail (`/ponytail`, `/ponytail-review`).
 
 ---

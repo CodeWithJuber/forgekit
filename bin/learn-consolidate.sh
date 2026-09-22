@@ -1,9 +1,37 @@
 #!/usr/bin/env bash
-# Consolidate accumulated learned lessons: merge duplicates, prune trivia,
-# keep only durable rules. Run weekly (manually or via cron). Uses Haiku.
-# Fixes the append-only bloat of the session-learning hook.
+# Consolidate the learned lessons the opt-in session-learner appends to
+# ~/.claude/skills/learned: merge duplicates, and drop a lesson ONLY when the forge
+# ledger refutes it (its matching claim is dormant, retracted or pruned to the attic).
+# Deterministic, no model call — src/learn_consolidate.js does the work. Run weekly.
+#
+#   learn-consolidate.sh [--dir <learned dir>] [--repo <project root>]... [--dry-run] [--json]
+#
+# `--repo` names a project whose .forge/ledger supplies the evidence (default: the current
+# directory, when it has a ledger). A lesson with no matching ledger claim is always kept.
+#
+# `--llm` (explicit opt-in, first argument) runs the old Haiku rewrite instead. It prunes
+# by the model's own judgment, which the research this project follows rejects for
+# memory (prune by ground truth, not by the model's say-so), so it is never the default.
 set -uo pipefail
 
+# Resolve symlinks (the script is usually linked onto PATH) to find the package root.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  link="$(readlink "$SELF")"
+  case "$link" in
+    /*) SELF="$link" ;;
+    *) SELF="$(dirname "$SELF")/$link" ;;
+  esac
+done
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+if [ "${1:-}" != "--llm" ]; then
+  command -v node >/dev/null 2>&1 || { echo "node not found on PATH"; exit 1; }
+  exec node "$ROOT/src/learn_consolidate.js" "$@"
+fi
+shift
+
+echo "! --llm: consolidating by model judgment (not ledger evidence); originals are archived first"
 DIR="$HOME/.claude/skills/learned"
 command -v claude >/dev/null 2>&1 || { echo "claude CLI not found on PATH"; exit 1; }
 
@@ -18,9 +46,11 @@ mkdir -p "$DIR/archive"
 ts="$(date +%Y%m%d-%H%M%S)"
 for f in $inputs; do cp "$f" "$DIR/archive/$(basename "$f").$ts.bak"; done
 
+# Contradiction is deliberately NOT a model decision even here: only ledger evidence
+# (the default path) may refute a lesson.
 prompt="You are consolidating a developer's accumulated learned lessons from AI
 coding sessions. MERGE duplicates and near-duplicates into one rule. DROP anything
-trivial, one-off, session-specific, or contradicted. KEEP only durable, reusable
+trivial, one-off, or session-specific. KEEP only durable, reusable
 rules (project gotchas, error->fix patterns, workflow rules). Group under
 '## <project>' headers (use '## General' for cross-project). Each rule = one
 markdown bullet. Do NOT invent anything — only compress what is given. NEVER
