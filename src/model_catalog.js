@@ -89,12 +89,14 @@ export function dateStampOf(modelId) {
   return hit ? Number(hit) : 0;
 }
 
-/** Epoch ms from a catalog timestamp: RFC 3339 string, or unix seconds/ms number. null if absent. */
+/** Epoch ms from a catalog timestamp: RFC 3339 string, or unix seconds/ms number. null if absent
+ *  or unknown: the Models API sets `created_at` to the epoch when a release date is unknown, so an
+ *  epoch value (≤ 0) means "no date", never "the oldest model". */
 export function createdMs(v) {
   if (typeof v === "number" && Number.isFinite(v) && v > 0) return v < 1e12 ? v * 1000 : v;
   if (typeof v === "string" && v) {
     const t = Date.parse(v);
-    return Number.isFinite(t) ? t : null;
+    return Number.isFinite(t) && t > 0 ? t : null;
   }
   return null;
 }
@@ -164,14 +166,17 @@ export function inFamily(model, family) {
   return words(model?.id).includes(f) || words(model?.displayName).includes(f);
 }
 
-// Newest first: catalog creation time (a dated row beats an undated one), then the parsed version,
-// then the snapshot date stamp, then the least-decorated id (fewest tokens), then lexicographic.
+// Newest first: catalog creation time when BOTH rows are dated; otherwise the parsed version
+// decides first (a new model listed with an unknown release date must not sink below every dated
+// one), then a dated row beats an undated one of the same version, then the snapshot date stamp,
+// then the least-decorated id (fewest tokens), then lexicographic.
 function newerFirst(a, b) {
-  const ca = createdMs(a.createdAt) ?? Number.NEGATIVE_INFINITY;
-  const cb = createdMs(b.createdAt) ?? Number.NEGATIVE_INFINITY;
-  if (ca !== cb) return cb > ca ? 1 : -1;
+  const ca = createdMs(a.createdAt);
+  const cb = createdMs(b.createdAt);
+  if (ca != null && cb != null && ca !== cb) return cb > ca ? 1 : -1;
   const byVersion = compareVersions(versionOf(a.id), versionOf(b.id));
   if (byVersion) return byVersion;
+  if ((ca == null) !== (cb == null)) return ca == null ? 1 : -1;
   const byStamp = dateStampOf(b.id) - dateStampOf(a.id);
   if (byStamp) return byStamp;
   const bySize = tokenize(a.id).size - tokenize(b.id).size;

@@ -82,6 +82,22 @@ test("newest is the catalog's created_at — not list order, not the version num
   assert.equal(newestInFamily(models, "haiku"), null);
 });
 
+test("an epoch created_at means 'release date unknown', not 'oldest model'", () => {
+  // The Models API docs: created_at "may be set to an epoch value if the release date is
+  // unknown". A new model listed that way must still win on version against older dated ones.
+  const models = [
+    { id: "claude-opus-5", createdAt: "2026-07-24T00:00:00Z" },
+    { id: "claude-opus-5-5", createdAt: "1970-01-01T00:00:00Z" },
+  ];
+  assert.equal(newestInFamily(models, "opus").id, "claude-opus-5-5");
+  // Same version: the dated row beats the undated one.
+  const sameVersion = [
+    { id: "claude-opus-5", createdAt: "1970-01-01T00:00:00Z" },
+    { id: "claude-opus-5-20260724", createdAt: "2026-07-24T00:00:00Z" },
+  ];
+  assert.equal(newestInFamily(sameVersion, "opus").id, "claude-opus-5-20260724");
+});
+
 test("undated catalogs (gateways) fall back to version, then snapshot date, then the plainest id", () => {
   assert.equal(
     newestInFamily([{ id: "claude-3-5-sonnet-20241022" }, { id: "claude-sonnet-4-5" }], "sonnet")
