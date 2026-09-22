@@ -60,7 +60,7 @@
 //   (test/dash.test.js:69 mentions the name only inside an assertion message — a string,
 //    not a reference — so it is NOT labeled as a dependent.)
 //
-// contentHash (src/util.js) — 10 files. The widest fan-out in the set, and the case that
+// contentHash (src/util.js) — 11 files. The widest fan-out in the set, and the case that
 // used to carry a documented FALSE NEGATIVE: src/atlas.js binds it to an alias,
 // `const hash = contentHash;` at :187, with no call parentheses, and the old import regex
 // captured module paths rather than named bindings, so no edge reached atlas.js. That is
@@ -73,6 +73,7 @@
 //   - src/cost_report.js  imports it (:14); routeRef() calls it (:212)
 //   - src/diagnose.js     imports it (:15); failureSignature() calls it (:57)
 //   - src/embed.js        imports it (:35) and calls it (:202)
+//   - src/http_cache.js   imports it (:18); cacheFile() calls it (:124)
 //   - src/ledger.js       imports it (:18) and calls it (:136, :141, :947, :962, :963)
 //   - src/ledger_store.js imports it (:43) and calls it (:414, :598)
 //   - src/reuse.js        imports it (:15) and calls it (:94, :116, :400)
@@ -132,6 +133,7 @@ export const IMPACT_CASES = [
       "src/cost_report.js",
       "src/diagnose.js",
       "src/embed.js",
+      "src/http_cache.js",
       "src/ledger.js",
       "src/ledger_store.js",
       "src/reuse.js",

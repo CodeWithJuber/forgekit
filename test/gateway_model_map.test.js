@@ -64,6 +64,17 @@ test("buildGatewayMap maps each tier to the best family-matching advertised id",
   assert.ok(!map.fable, "no fable model advertised → tier omitted (caller keeps the stock id)");
 });
 
+test("buildGatewayMap takes the NEWEST family member, not the snapshot's version", () => {
+  // The snapshot pins Sonnet 5; a gateway that already serves a Sonnet 6 gets Sonnet 6.
+  assert.equal(buildGatewayMap(["claude-sonnet-5", "prod-sonnet-6"]).sonnet.id, "prod-sonnet-6");
+  // A gateway that reports creation times is ordered by them (Anthropic-shaped rows).
+  const map = buildGatewayMap([
+    { id: "team-opus-a", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "team-opus-b", createdAt: "2026-03-01T00:00:00Z" },
+  ]);
+  assert.equal(map.opus.id, "team-opus-b");
+});
+
 test("buildGatewayMap breaks ties toward the id closest to the canonical name", () => {
   // Both contain "sonnet" + "5" → equal overlap score; the shorter, less-noisy id wins.
   const map = buildGatewayMap(["vendor-region-prod-sonnet-5-preview", "claude-sonnet-5"]);

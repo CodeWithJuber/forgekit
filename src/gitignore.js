@@ -82,10 +82,11 @@ export function removeGitignoreBlock(root) {
 }
 
 // Per-session hook logs (raw prompts and shell commands) under .forge/sessions/ are local
-// runtime state that must never reach git. A repo may deliberately commit OTHER .forge/
+// runtime state that must never reach git, and .forge/cache/ holds derived HTTP responses
+// (model catalogs) that are re-fetched on demand. A repo may deliberately commit OTHER .forge/
 // content (the ledger, decisions.md), so rather than rewrite the user's root .gitignore
 // the tool owns a nested .forge/.gitignore listing only its private runtime dirs.
-export const FORGE_PRIVATE_DIRS = ["sessions/"];
+export const FORGE_PRIVATE_DIRS = ["sessions/", "cache/"];
 
 /**
  * Ensure `<root>/.forge/.gitignore` ignores every FORGE_PRIVATE_DIRS entry. Appends only
