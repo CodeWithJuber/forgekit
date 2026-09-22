@@ -61,7 +61,7 @@ Format each lesson as one markdown bullet starting with '- '.
 TRANSCRIPT:
 $transcript"
 
-  out="$(printf '%s' "$prompt" | timeout 90 claude -p --model "$MODEL" 2>>"$LOG")"
+  out="$(printf '%s' "$prompt" | forge_timeout 90 claude -p --model "$MODEL" 2>>"$LOG")"
   out="$(printf '%s' "$out" | sed '/^[[:space:]]*$/d')"
   if [ -n "$out" ] && ! printf '%s' "$out" | grep -qix 'none'; then
     {

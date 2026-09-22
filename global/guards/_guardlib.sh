@@ -62,6 +62,33 @@ forge_field() {
   esac
 }
 
+# forge_timeout <secs> <cmd> [args…] — run a command for at most <secs> seconds, stdin and
+# exit status passed through. `timeout` is GNU coreutils and stock macOS has none (Homebrew
+# installs it as `gtimeout`); calling it bare there fails with "command not found", and with
+# stderr discarded the model call silently never ran. Neither found → a bash watchdog.
+forge_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout > /dev/null 2>&1; then
+    timeout "$secs" "$@"
+    return
+  fi
+  if command -v gtimeout > /dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+    return
+  fi
+  # `<&0` keeps stdin: without job control a background job otherwise reads /dev/null.
+  "$@" <&0 &
+  local pid=$!
+  # The watchdog's output goes to /dev/null so a caller's `$(…)` never waits on its sleep.
+  (sleep "$secs" && kill -TERM "$pid" 2> /dev/null) > /dev/null 2>&1 &
+  local dog=$!
+  local rc=0
+  wait "$pid" || rc=$?
+  kill "$dog" 2> /dev/null || true
+  return "$rc"
+}
+
 # forge_lock <key> — return 0 if the lock was acquired, 1 if already held.
 # Atomic via mkdir; auto-released on process exit; reclaims locks older than 60s.
 forge_lock() {

@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The session learner works on macOS.** `session-learner.sh` wrapped its model call in GNU
+  `timeout`, which stock macOS does not ship. The missing command failed silently (only
+  `.learn.log` saw it), so the opt-in learner never recorded a lesson on a Mac. It now calls a
+  shared `forge_timeout` in `_guardlib.sh`: `timeout`, else Homebrew's `gtimeout`, else a
+  bash watchdog that keeps the 90 s cap the learner's re-entrancy lock relies on.
+  `learn-consolidate.sh --llm`, which 1.1.0 fixed on macOS by dropping the limit when
+  `timeout` is missing, uses the same helper and so keeps its 180 s cap everywhere.
+
 ## [1.1.0] - 2026-09-22
 
 ### Added
