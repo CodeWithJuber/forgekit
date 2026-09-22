@@ -158,7 +158,9 @@ function writeRecord(dir, file, record) {
  * @param {{headers?:Record<string,string>, dir?:string|null, fetchImpl?:(req:{url:string,headers:Record<string,string>,timeoutMs:number})=>({status:number,headers?:Record<string,string>,body?:string}|null),
  *          timeoutMs?:number, now?:number, transform?:(json:any)=>any}} [opts]
  *   `dir` null → memory only (nothing persisted). `fetchImpl` is the injectable transport.
- * @returns {{value:any, cache:"fresh"|"revalidated"|"network"|"stale", url:string}|null}
+ * @returns {{value:any, cache:"fresh"|"revalidated"|"network"|"stale", url:string,
+ *   freshUntil:number}|null} `freshUntil` is the epoch ms this answer stops being fresh by its
+ *   own headers — for a caller holding it in memory. A stale copy is already expired.
  */
 export function cachedGetJson(
   url,
@@ -171,9 +173,20 @@ export function cachedGetJson(
     transform = (x) => x,
   } = {},
 ) {
+  // When this answer stops being fresh, in epoch ms. A caller that holds a response in memory
+  // (a long-running server) uses it so its copy expires when the response says it does, rather
+  // than living for the life of the process.
+  const expiry = (h, receivedAt) =>
+    receivedAt + Math.max(0, freshnessLifetime(h, receivedAt) * 1000);
   const file = dir ? cacheFile(dir, url) : null;
   const stored = readRecord(file, url);
-  if (stored && isFresh(stored, now)) return { value: stored.value, cache: "fresh", url };
+  if (stored && isFresh(stored, now))
+    return {
+      value: stored.value,
+      cache: "fresh",
+      url,
+      freshUntil: expiry(stored.headers, stored.receivedAt),
+    };
 
   const reqHeaders = { ...headers };
   if (stored?.headers.etag) reqHeaders["if-none-match"] = stored.headers.etag;
@@ -195,7 +208,7 @@ export function cachedGetJson(
     const record = { ...stored, receivedAt: now, headers: merged };
     if (file && !parseCacheControl(merged["cache-control"])["no-store"])
       writeRecord(dir, file, record);
-    return { value: stored.value, cache: "revalidated", url };
+    return { value: stored.value, cache: "revalidated", url, freshUntil: expiry(merged, now) };
   }
 
   if (res && res.status >= 200 && res.status < 300) {
@@ -209,9 +222,11 @@ export function cachedGetJson(
       const h = pickCacheHeaders(lowerHeaders(res.headers));
       if (file && !parseCacheControl(h["cache-control"])["no-store"])
         writeRecord(dir, file, { v: 1, url, receivedAt: now, headers: h, value });
-      return { value, cache: "network", url };
+      return { value, cache: "network", url, freshUntil: expiry(h, now) };
     }
   }
 
-  return stored ? { value: stored.value, cache: "stale", url } : null;
+  // A stale copy beats nothing, but it is already expired: a caller holding it in memory must
+  // try again on its next use rather than keep it.
+  return stored ? { value: stored.value, cache: "stale", url, freshUntil: now } : null;
 }

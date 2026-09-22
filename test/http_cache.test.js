@@ -70,14 +70,21 @@ test("a fresh response is reused without any request; expiry triggers a conditio
     { status: 304, headers: { "cache-control": "max-age=60" }, body: "" },
   );
   const first = cachedGetJson(URL_, { dir, fetchImpl: t.fetchImpl, now: T0 });
-  assert.deepEqual(first, { value: [1], cache: "network", url: URL_ });
+  // freshUntil is when this answer stops being fresh — max-age from when it arrived.
+  assert.deepEqual(first, { value: [1], cache: "network", url: URL_, freshUntil: T0 + 60_000 });
 
   const reused = cachedGetJson(URL_, { dir, fetchImpl: t.fetchImpl, now: T0 + 59_000 });
   assert.equal(reused.cache, "fresh");
+  assert.equal(reused.freshUntil, T0 + 60_000, "a reused copy keeps the original expiry");
   assert.equal(t.calls.length, 1, "inside max-age: no request at all");
 
   const later = cachedGetJson(URL_, { dir, fetchImpl: t.fetchImpl, now: T0 + 61_000 });
-  assert.deepEqual(later, { value: [1], cache: "revalidated", url: URL_ });
+  assert.deepEqual(later, {
+    value: [1],
+    cache: "revalidated",
+    url: URL_,
+    freshUntil: T0 + 61_000 + 60_000,
+  });
   assert.equal(t.calls.length, 2);
   assert.equal(t.calls[1].headers["if-none-match"], '"v1"', "revalidation is conditional");
 
@@ -117,7 +124,12 @@ test("a failed request serves the stored copy as stale; nothing stored → null"
   cachedGetJson(URL_, { dir, fetchImpl: t.fetchImpl, now: T0 });
   for (let i = 1; i <= 4; i++) {
     const r = cachedGetJson(URL_, { dir, fetchImpl: t.fetchImpl, now: T0 + i });
-    assert.deepEqual(r, { value: ["cached"], cache: "stale", url: URL_ }, `failure #${i}`);
+    // A stale copy is already expired: freshUntil is now, so a caller holding it retries.
+    assert.deepEqual(
+      r,
+      { value: ["cached"], cache: "stale", url: URL_, freshUntil: T0 + i },
+      `failure #${i}`,
+    );
   }
   assert.equal(cachedGetJson(URL_, { dir: tmpDir(), fetchImpl: () => null, now: T0 }), null);
 });
