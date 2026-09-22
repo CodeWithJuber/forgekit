@@ -10,7 +10,12 @@
 //           stop            (Stop)                        — distill the session into lessons
 //           stop-gate       (Stop, synchronous)           — completion gate: block once if code moved but no doc/state did
 //           session-start   (SessionStart)               — inject learned lessons as context
-import { applyDistillation, lessonsForContext, startupBlock } from "./cortex.js";
+import {
+  applyDistillation,
+  lessonsForContext,
+  recordServedLessons,
+  startupBlock,
+} from "./cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -130,7 +135,7 @@ async function main() {
     const { stateBlock } = await import("./handoff.js");
     const { rehydrationBlock } = await import("./session.js");
     const block = [
-      startupBlock(root, today),
+      startupBlock(root, today, undefined, { record: true }),
       goalBlock(root),
       stateBlock(root),
       rehydrationBlock(root),
@@ -254,7 +259,10 @@ async function preEditAdvisory(root, input, today) {
     { files: [file], symbols: [], keywords: [file] },
     { nowDay: today, budget: 3 },
   );
-  if (selected.length) return block; // learned lessons for this file win
+  if (selected.length) {
+    recordServedLessons(root, selected, { via: "pre-edit", t: today });
+    return block; // learned lessons for this file win
+  }
   const { riskFor } = await import("./predictor.js");
   const features = await liveEditFeatures(root, file, input, today);
   const { band } = riskFor(features, { mode: "heuristic" });

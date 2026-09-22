@@ -22,6 +22,7 @@ import {
   loadClaims,
   pruneLedger,
   putClaim,
+  recordUse,
   reindex,
   repoLedger,
 } from "./ledger_store.js";
@@ -124,9 +125,10 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
       });
       if (o.ok) appendEvidence(dir, minted.claim.id, o.outcome);
     }
-    // Session-end housekeeping (the murāja'a job): archive what the protocol says is
-    // forgotten — tombstoned or dormant with nothing new for 2·T — so the ledger the next
-    // prompt reads stays bounded. Nothing is deleted; new evidence un-archives a claim.
+    // Session-end housekeeping (the murāja'a job): archive what this ledger's own history
+    // says will not be served again (ledger_retention.js — never-served claims, and live ones
+    // idle past the longest comeback), so the ledger the next prompt reads stays bounded.
+    // Nothing is deleted; new evidence un-archives a claim.
     pruneLedger(dir, nowDay);
     reindex(dir, nowDay);
     return { ok: true, id: minted.claim.id, tested: s.tested };
@@ -194,7 +196,10 @@ export function dejaAdvisory(root, task, nowDay = epochDay()) {
   if (!task || !String(task).trim()) return "";
   try {
     const hits = dejaFromLedger(root, task, { nowDay, budget: 3 });
-    return dejaLine(hits[0], nowDay);
+    const line = dejaLine(hits[0], nowDay);
+    // Only a surfaced hit counts as use; a hit below the relevance floor was never shown.
+    if (line) recordUse(repoLedger(root), [hits[0].claim.id], { via: "deja", t: nowDay });
+    return line;
   } catch {
     return "";
   }

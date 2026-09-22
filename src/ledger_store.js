@@ -29,7 +29,6 @@ import {
   DORMANT_VAL,
   emptyState,
   hasSecret,
-  isDormant,
   legacyClaimId,
   liveClaims,
   mergeStates,
@@ -41,6 +40,7 @@ import {
   validateRef,
   validOutcome,
 } from "./ledger.js";
+import { retentionPlan } from "./ledger_retention.js";
 import { redactSecrets } from "./secrets.js";
 import { contentHash, epochDay, readJsonSafe } from "./util.js";
 
@@ -429,16 +429,91 @@ function readStateCache(dir, sig) {
   return cached.state;
 }
 
+/** Keep a machine-local file out of git: add `name` to the ledger's .gitignore if absent. */
+function ensureLocalIgnored(dir, name, comment) {
+  const path = join(dir, GITIGNORE_FILE);
+  let current = "";
+  try {
+    current = readFileSync(path, "utf8");
+  } catch {} // no file yet
+  if (current.split(/\r?\n/).includes(name)) return;
+  // APPEND, never rewrite: two processes (a hook and a CLI) can reach this at once, and a
+  // read-modify-write would drop the other's line. Appending can at worst duplicate a
+  // comment, which git ignores.
+  appendLine(path, `# ${comment} (forge)\n${name}`);
+}
+
 function writeStateCache(dir, sig, state) {
   try {
     mkdirSync(dir, { recursive: true });
-    if (!existsSync(join(dir, GITIGNORE_FILE)))
-      writeFileSync(
-        join(dir, GITIGNORE_FILE),
-        `# derived read cache — rebuilt from the claim files whenever they change (forge)\n${CACHE_FILE}\n`,
-      );
+    ensureLocalIgnored(
+      dir,
+      CACHE_FILE,
+      "derived read cache — rebuilt from the claim files whenever they change",
+    );
     writeFileSync(join(dir, CACHE_FILE), JSON.stringify({ sig, state }));
   } catch {} // a read-only checkout just pays the full read every time
+}
+
+// ---------------------------------------------------------------------------
+// Usage log. Retention learns from which claims actually get served (ledger_retention.js),
+// and nothing recorded that: retrieve() is pure and every caller discarded the ids. Each
+// place that SERVES claims to an agent or a person now appends one line here: the session
+// lesson block, pre-edit lessons, the déjà-vu advisory, `forge ledger query` and the MCP
+// query. It is machine-local (gitignored) and outside ledgerSignature, so appending never
+// invalidates the snapshot cache.
+// ---------------------------------------------------------------------------
+
+export const USAGE_FILE = ".usage.jsonl";
+
+/**
+ * Record that these claims were served. Best-effort: never throws (hooks call it), and a
+ * missing ledger directory records nothing.
+ * @param {string} dir
+ * @param {string[]} ids
+ * @param {{via?: string, t?: number}} [opts]
+ */
+export function recordUse(dir, ids, { via = "", t = epochDay() } = {}) {
+  try {
+    const list = [...new Set((ids ?? []).filter((x) => typeof x === "string" && x))];
+    if (!list.length || !existsSync(dir)) return;
+    ensureLocalIgnored(dir, USAGE_FILE, "which claims were served, and when — local use log");
+    // appendLine terminates a line a killed process left torn, so the next record never
+    // glues onto it and both are lost (the same guard the claim logs use).
+    appendLine(join(dir, USAGE_FILE), JSON.stringify({ t, via, ids: list }));
+  } catch {}
+}
+
+/**
+ * Claim id → the days it was served. Malformed lines are skipped.
+ * @param {string} dir
+ * @returns {Map<string, number[]>}
+ */
+export function readUses(dir) {
+  /** @type {Map<string, number[]>} */
+  const out = new Map();
+  let text = "";
+  try {
+    text = readFileSync(join(dir, USAGE_FILE), "utf8");
+  } catch {
+    return out;
+  }
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(rec?.t) || !Array.isArray(rec?.ids)) continue;
+    for (const id of rec.ids) {
+      if (typeof id !== "string") continue;
+      if (!out.has(id)) out.set(id, []);
+      out.get(id)?.push(rec.t);
+    }
+  }
+  return out;
 }
 
 function readStateFromDisk(dir, verifyHashes) {
@@ -480,21 +555,40 @@ export function loadClaims(dir) {
 /** Find one claim by id prefix without scanning the whole ledger (ids are sharded by
  *  their first two hex chars, so any prefix ≥ 2 chars pins the shard). An AMBIGUOUS prefix
  *  (≥2 claims match) returns null — silently picking the first sorted match let a short
- *  prefix ratify or retract a claim nobody named. */
-export function getClaimByPrefix(dir, prefix) {
+ *  prefix ratify or retract a claim nobody named.
+ *  @param {string} dir
+ *  @param {string} prefix
+ *  @param {{attic?: boolean}} [opts] also look in the attic (read-only callers only); an
+ *    archived hit carries `archived: true` */
+export function getClaimByPrefix(dir, prefix, { attic = false } = {}) {
   if (!prefix || prefix.length < 2) return null;
   const shardDir = join(dir, "claims", prefix.slice(0, 2));
-  if (!existsSync(shardDir)) return null;
-  const matches = readdirSync(shardDir).filter((f) => f.endsWith(".json") && f.startsWith(prefix));
+  const live = existsSync(shardDir)
+    ? readdirSync(shardDir)
+        .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
+        .map((f) => join(shardDir, f))
+    : [];
+  // Read-only callers (show, blame) may also look in the attic: pruning archives a
+  // tombstoned claim at once, and the attic is its audit trail. Writers never do — new
+  // evidence on an archived claim goes through appendEvidence, which restores it.
+  const atticDir = join(dir, "attic");
+  const archived =
+    attic && !live.length && existsSync(atticDir)
+      ? readdirSync(atticDir)
+          .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
+          .map((f) => join(atticDir, f))
+      : [];
+  const matches = live.length ? live : archived;
   if (matches.length !== 1) return null;
-  const f = matches[0];
-  const id = f.replace(/\.json$/, "");
-  const claim = readJsonSafe(join(shardDir, f));
+  const path = matches[0];
+  const id = path.replace(/^.*[\\/]/, "").replace(/\.json$/, "");
+  const claim = readJsonSafe(path);
   if (!claim || claimId(claim.kind, claim.body, claim.scope) !== id) return null;
   const state = emptyState();
   state.claims[id] = { ...claim, id };
   for (const log of LOGS) state[log][id] = readLog(dir, log, id);
-  return liveClaims(state)[0];
+  const view = liveClaims(state)[0];
+  return live.length ? view : { ...view, archived: true };
 }
 
 /** Try to import one raw source log line into `dir`; returns {ok, deduped} on success or
@@ -564,7 +658,7 @@ export function mergeDirs(dstDir, srcDir, { nowDay = epochDay() } = {}) {
  * trail: every channel the agent used can be questioned).
  */
 export function blame(dir, prefix, nowDay = 0) {
-  const claim = getClaimByPrefix(dir, prefix);
+  const claim = getClaimByPrefix(dir, prefix, { attic: true });
   if (!claim) return null;
   const trust = authorTrust(loadClaims(dir));
   return {
@@ -787,30 +881,52 @@ export function verify(dir) {
 }
 
 /**
- * Prune to the attic — the spec's forgetting rule (01-pcm-protocol.md §3) made real: a claim
- * is archived once it is tombstoned, or dormant, AND nothing new has landed on it for more
- * than 2·T. (The spec prunes a tombstone immediately; waiting the same 2·T keeps
- * `forge ledger show/blame` able to answer for a recent retraction — the attic is the audit
- * trail, not a deletion.) Nothing is lost: the claim bytes move to attic/, every log stays,
- * and new evidence un-archives the claim. Idempotent.
+ * Prune to the attic, by the retention plan LEARNED from this ledger (ledger_retention.js):
+ * a tombstoned or dormant claim is archived at once (retrieve() never serves it), and a live
+ * claim is archived once its idle time passes the cut-off the ledger's own history supports
+ * (none until the usage log covers a full learned horizon). This replaced a fixed 2 × 45-day
+ * window. Nothing is lost: the claim bytes move to attic/, every log stays, `forge ledger
+ * show/blame` still read the attic, and new evidence un-archives the claim. Idempotent.
+ * Near-duplicates are only grouped by `compactLedger` (an explicit command): the pairwise
+ * pass is too slow for the Stop hook that calls this.
  * @param {string} dir
  * @param {number} [nowDay]
- * @param {{halfLife?:number}} [opts]
- * @returns {{pruned:string[]}} ids archived by this pass
+ * @param {{halfLife?:number}} [opts] only feeds isDormant
+ * @returns {{pruned:string[], retention: ReturnType<typeof retentionPlan>["retention"]}}
  */
 export function pruneLedger(dir, nowDay = epochDay(), { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
+  const plan = retentionPlan(loadClaims(dir), readUses(dir), nowDay, { halfLife });
   const pruned = [];
-  for (const c of loadClaims(dir)) {
-    const last = Math.max(
-      c.provenance?.t ?? 0,
-      c.tombstone?.t ?? 0,
-      ...(c.evidence ?? []).map((e) => e.t ?? 0),
-    );
-    if (nowDay - last <= 2 * halfLife) continue; // still within the review window
-    if (!c.tombstone && !isDormant(c, nowDay, { halfLife })) continue;
-    if (pruneToAttic(dir, c.id).ok) pruned.push(c.id);
-  }
-  return { pruned };
+  for (const { id } of plan.archive) if (pruneToAttic(dir, id).ok) pruned.push(id);
+  return { pruned, retention: plan.retention };
+}
+
+/**
+ * `forge ledger compact`: the prune plan plus near-duplicate grouping, with every learned
+ * number reported so a person can see why each claim was archived. `dryRun` plans only.
+ * @param {string} dir
+ * @param {number} [nowDay]
+ * @param {{dryRun?: boolean, halfLife?: number}} [opts]
+ */
+export function compactLedger(
+  dir,
+  nowDay = epochDay(),
+  { dryRun = false, halfLife = DEFAULT_HALF_LIFE_DAYS } = {},
+) {
+  const claims = loadClaims(dir);
+  const uses = readUses(dir);
+  const plan = retentionPlan(claims, uses, nowDay, { halfLife, duplicates: true });
+  const archived = [];
+  if (!dryRun) for (const a of plan.archive) if (pruneToAttic(dir, a.id).ok) archived.push(a.id);
+  return {
+    dryRun,
+    claims: claims.length,
+    servedClaims: uses.size,
+    retention: plan.retention,
+    duplicates: plan.duplicates,
+    archive: plan.archive,
+    archived,
+  };
 }
 
 /** Move one dormant/tombstoned claim file to the attic (audit trail, never retrieved). */

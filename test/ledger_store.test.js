@@ -627,7 +627,7 @@ test("mergeDirs: imported forged/unresolvable evidence is quarantined and cannot
   assert.equal(val(loadClaims(dst)[0], 5), before, "val still untouched after re-merge");
 });
 
-test("pruneLedger (C7): tombstoned and long-dormant claims go to the attic, new evidence brings them back", () => {
+test("pruneLedger (C7): never-served claims go to the attic at once, new evidence brings them back", () => {
   // A real repo: a human.revert must cite a git object that resolves here (review C2).
   const root = mkdtempSync(join(tmpdir(), "forge-prune-"));
   const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
@@ -652,12 +652,21 @@ test("pruneLedger (C7): tombstoned and long-dormant claims go to the attic, new 
   assert.equal(appendEvidence(dir, recent.id, revert(now - 1)).ok, true);
   tombstone(dir, retracted.id, { author: "alice", reason: "superseded", t: 0 });
 
-  const { pruned } = pruneLedger(dir, now);
-  assert.deepEqual(pruned.sort(), [refuted.id, retracted.id].sort());
+  // Tombstoned and dormant claims are never served (retrieve() skips them), so they go now —
+  // the recently refuted one included; the old fixed 2 × 45-day window is gone. The live
+  // claim stays: no use has been logged, so no idle cut-off could be learned.
+  const { pruned, retention } = pruneLedger(dir, now);
+  assert.deepEqual(pruned.sort(), [refuted.id, retracted.id, recent.id].sort());
+  assert.equal(retention.learned, false, "no usage log → nothing learned about live claims");
   const ids = loadClaims(dir).map((c) => c.id);
-  assert.ok(!ids.includes(refuted.id) && !ids.includes(retracted.id), "archived, not retrieved");
-  assert.ok(ids.includes(live.id) && ids.includes(recent.id), "live and recently-refuted stay");
+  assert.deepEqual(ids, [live.id], "only the live claim is still retrieved");
   assert.ok(existsSync(join(dir, "attic", `${refuted.id}.json`)), "the bytes are kept for audit");
+  // show/blame still answer for an archived claim: the attic is its audit trail.
+  const audit = blame(dir, recent.id.slice(0, 10), now);
+  assert.ok(audit, "blame reads the attic");
+  assert.equal(audit.evidence.length, 1, "with its evidence");
+  assert.equal(getClaimByPrefix(dir, recent.id.slice(0, 10)), null, "writers never see the attic");
+  assert.equal(getClaimByPrefix(dir, recent.id.slice(0, 10), { attic: true })?.archived, true);
   assert.deepEqual(pruneLedger(dir, now).pruned, [], "idempotent");
   // Re-importing the same state must not resurrect a pruned claim…
   importState(dir, loadState(dir), { nowDay: now });
