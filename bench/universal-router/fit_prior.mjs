@@ -6,12 +6,14 @@
 //
 //   node bench/universal-router/fit_prior.mjs <input.json> [--out data/router_prior.json] [--only <task ids json>]
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { buildPrior } from "../../src/router/prior.js";
 
 const args = process.argv.slice(2);
 const opt = (n, d) => (args.includes(n) ? args[args.indexOf(n) + 1] : d);
 const input = JSON.parse(readFileSync(args[0], "utf8"));
-const out = opt("--out", new URL("../../data/router_prior.json", import.meta.url).pathname);
+// fileURLToPath, not `.pathname`: on Windows `.pathname` is `/C:/…`, which is not a path.
+const out = opt("--out", fileURLToPath(new URL("../../data/router_prior.json", import.meta.url)));
 const only = opt("--only") ? new Set(JSON.parse(readFileSync(opt("--only"), "utf8"))) : null;
 const t0 = Date.now();
 const prior = buildPrior(input, only);
