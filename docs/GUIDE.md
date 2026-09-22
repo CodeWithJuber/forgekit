@@ -843,6 +843,38 @@ freshly minted copy of the same fact stay two entries until you run it. It moves
 evidence and provenance logs with it, unions them into an existing twin rather than
 overwriting, and is idempotent.
 
+`forge ledger compact [--dry-run]` archives what this ledger's own history says will not be
+used again. It prints every number it learned, and nothing in it is a fixed threshold:
+
+```console
+$ forge ledger compact --dry-run
+Forge ledger — compact (every cut-off learned from this ledger)  [dry run]
+
+  claims: 11 · claims with logged use: 10
+  retention: idle cut-off 4 d = the longest idle stretch any claim came back from (199 comebacks, typical gap 4 d; usage log spans 90 d)
+  duplicates: boundary 0.28 (two components beat one: BIC -72.6 < 3.5) · 1 group(s)
+
+  archive: 3
+    34a49b8d036e  idle 86 d > learned cut-off 4 d
+    a5e218fd1814  tombstoned (never served)
+    d3a5a1c9941e  near-duplicate of c70ee7d4f505 (similarity 0.55 ≥ learned 0.28)
+
+  dry run: nothing written
+```
+
+**The three archive rules:**
+- **Never served:** a tombstoned or dormant claim goes at once, because retrieval never serves it.
+- **Idle too long:** a live claim goes once it has been idle longer than any claim here has ever been idle and then used again. Until the usage log covers that long, no live claim is archived.
+- **Near-duplicates:** each claim's similarity to its closest claim of the same kind is modelled as one group or two, and BIC decides which fits. Only two groups produce a duplicate boundary. The claim kept from each group is the one with the highest val.
+
+**Where use comes from:** forge writes `.forge/ledger/.usage.jsonl`, a gitignored local log. It records each claim that the session lesson block, pre-edit lessons, the déjà-vu advisory, `ledger query` or the MCP query served.
+
+**What happens to archived claims:**
+- They move to `.forge/ledger/attic/`, and their logs stay where they are.
+- `forge ledger show` and `blame` still read them.
+- New evidence brings one back.
+- The Stop hook applies the first two rules on its own; duplicates are grouped only by this command.
+
 `forge ledger blame <id-prefix>` is the accountability view — every mint, every oracle
 outcome, every retraction, and per-author trust:
 

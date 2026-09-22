@@ -6,6 +6,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge ledger compact [--dry-run]`: ledger retention learned from the ledger's own
+  history.** It prints every learned number and archives three kinds of claim to the
+  attic. The attic is reversible: new evidence restores a claim, and `show`/`blame` still
+  read it.
+  - **Never-served claims:** tombstoned or dormant claims, which retrieval skips.
+  - **Idle claims:** idle longer than the longest stretch any claim of this ledger came back
+    from.
+  - **Near-duplicates:** a boundary exists only when BIC prefers two groups of
+    nearest-neighbour similarities to one.
+- **A local usage log** (`.forge/ledger/.usage.jsonl`, gitignored) records which claims were
+  served: the session lesson block, pre-edit lessons, the déjà-vu advisory,
+  `forge ledger query` and the MCP query. Retention learns from it. Before this, nothing
+  recorded use.
+
+### Changed
+
+- **The Stop hook's ledger pruning no longer uses a fixed 2 × 45-day window.** Tombstoned and
+  dormant claims are archived at once. Live claims are archived by the learned idle cut-off,
+  and only once the usage log spans longer than that cut-off.
+  - This bounds the per-session summary claims, which were never contradicted and so grew
+    forever: one is archived once it has been idle past the cut-off. The bound is the ledger's
+    longest comeback, so a single claim that came back after a long silence raises it for
+    every claim — deliberately, because an archived claim is no longer served and so cannot
+    prove itself useful again.
+  - `forge ledger show` and `forge ledger blame` read the attic, so a fresh retraction stays
+    inspectable.
+
 ## [1.1.1] - 2026-09-22
 
 ### Fixed
