@@ -1,9 +1,16 @@
 // forge precommit — the commit-level rung of the gate lattice (turn ⊂ commit ⊂ PR).
 // The Stop hook gates the TURN and CI's docs check gates the PR; this module runs the
 // same F1 classifier at the commit boundary so a commit that ships code without its
-// doc/state artifact is caught while the fix is still one `git add` away. Same math as
-// the paper's Theorem D: each rung is an independent cⱼ layer over the identical
-// structural signal, so P(silent miss) falls multiplicatively, not by hope.
+// doc/state artifact is caught while the fix is still one `git add` away.
+// What this rung does NOT buy (formal synthesis §5.3, corrected 2026-09-21): the rungs
+// are not independent. On the same diff the copies of one classifier fire together or
+// not at all, so they are nested checks and the residual is (1−p)(1−c_max), not
+// (1−p)·∏(1−cⱼ) — repeating a check does not multiply its catch rate. The rung adds
+// catches only where it sees what the Stop hook could not: edits made after the turn
+// ended, a host or session where the Stop hook never ran (no hook support,
+// FORGE_STOPGATE=0, a human committing), or a session whose one Stop block was already
+// spent. That is also the portability argument: without hooks, the same check re-binds
+// at pre-commit without changing the math.
 //
 // Two detectors, both reused — never reimplemented:
 //  (i) COMPLETENESS — classifyPath (gate.js), the same registry-derived total function
@@ -11,6 +18,8 @@
 //      the same commit is a finding.
 //  (ii) SECRETS — hasSecret (secrets.js) over the staged ADDED lines only (context
 //      lines predate the commit), as the built-in fallback when gitleaks is absent.
+//      A BINARY file gets the format grammars only: its bytes are compressed or random
+//      by nature, so the entropy leg would measure the encoding, not a credential.
 //
 // Modes via FORGE_COMMIT_GATE: "warn" (default — print findings, allow), "block"
 // (completeness findings refuse the commit), "0"/"off" (kill switch). A secret finding
@@ -36,7 +45,11 @@ import { IGNORE_DIRS } from "./util.js";
 // So detection is confirmed by the same module's NARROWER redaction rules (format
 // grammars, PEM, entropy tokens, opaque assigned literals — never a code expression):
 // one source of truth (secrets.js), calibrated to the verb (mizan).
-const lineBlockSecret = (text) => hasSecret(text) && redactSecrets(text) !== text;
+/**
+ * @param {string} text
+ * @param {{entropy?: boolean}} [opts]
+ */
+const lineBlockSecret = (text, opts) => hasSecret(text, opts) && redactSecrets(text, opts) !== text;
 
 // Exact bytes, no trim — same discipline as gate.js's gitRaw. `gitStrict` THROWS on a git
 // error or an over-large output (ENOBUFS) — the secret scan turns that into an unscanned
@@ -69,7 +82,11 @@ function gitRaw(root, args) {
 // `--text` defeats a `.gitattributes` `-diff`/`binary` marking (which printed "Binary
 // files differ" and hid every added line), `--no-textconv` a `diff=<driver>` textconv
 // that rewrites what is shown, `--no-ext-diff` a configured external diff tool.
+// `core.quotePath=false` keeps non-ASCII header paths raw, so they match the `-z` paths of
+// the binary probe below (a path that still differs only loses the binary relaxation).
 const DIFF_ARGS = [
+  "-c",
+  "core.quotePath=false",
   "--literal-pathspecs",
   "diff",
   "--cached",
@@ -148,6 +165,39 @@ export function scanStagedAdded(root) {
     }
   }
   return { byFile, unscanned };
+}
+
+/**
+ * Staged paths git itself treats as BINARY (`--numstat` prints `-\t-` for them). A repo can
+ * mark a text file binary with `.gitattributes`, so the caller also requires content
+ * evidence (a NUL byte, git's own binary test) before relaxing the scan. Best effort: if
+ * git fails the set is empty and every file gets the full scan — the strict direction.
+ * @param {string} root
+ * @returns {Set<string>}
+ */
+export function stagedBinaryFiles(root) {
+  const out = new Set();
+  const tokens = gitRaw(root, [
+    "--literal-pathspecs",
+    "diff",
+    "--cached",
+    "--numstat",
+    "-z",
+    "--no-ext-diff",
+    "--no-textconv",
+  ]).split("\0");
+  for (let i = 0; i < tokens.length; i++) {
+    const m = /^(-|\d+)\t(-|\d+)\t(.*)$/s.exec(tokens[i]);
+    if (!m) continue;
+    // `-z` rename/copy record: `added\tdeleted\t` NUL old NUL new — the new path is staged.
+    let path = m[3];
+    if (path === "") {
+      path = tokens[i + 2] ?? "";
+      i += 2;
+    }
+    if (m[1] === "-" && m[2] === "-" && path) out.add(path);
+  }
+  return out;
 }
 
 /**
@@ -278,8 +328,13 @@ export function commitGate(root, { env = process.env } = {}) {
       };
     const secretFiles = [];
     const { byFile, unscanned } = scanStagedAdded(root);
+    const binary = stagedBinaryFiles(root);
     for (const [file, lines] of byFile) {
-      if (lineBlockSecret(lines.join("\n"))) secretFiles.push(file);
+      const text = lines.join("\n");
+      // Binary per git AND per content: a `binary` attribute on a text file (no NUL)
+      // keeps the entropy leg, so .gitattributes cannot switch it off.
+      const isBinary = binary.has(file) && text.includes("\0");
+      if (lineBlockSecret(text, { entropy: !isBinary })) secretFiles.push(file);
     }
     return {
       ...commitGateDecision({ staged, secretFiles, unscanned, mode }),

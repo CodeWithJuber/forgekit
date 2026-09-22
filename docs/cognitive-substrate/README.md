@@ -44,7 +44,7 @@ Forge substrate — pre-action advisory (advisory, never blocks):
 - Under-specified (high risk). Ask before editing:
     • What constraints must be respected: performance, dependencies, style, or compatibility?
 - Suggested model: Haiku 4.5 (simple); escalate only on a verifier failure.
-- Predicted blast radius (2): invoice.js, math.js. Review these before editing.
+- Predicted blast radius (2: 2 reverse): invoice.js (reverse), math.js (reverse). Review these before editing.
 - Verify with: review impacted files before editing · run the narrowest affected test first
 ```
 
@@ -80,18 +80,23 @@ $ forge substrate "make the auth better"
 $ forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
 
   proceed: yes
-  assumption: medium risk · completeness 0.63
+  assumption: low risk · completeness 0.88
   route: Haiku 4.5 (simple)
-  impact: 3 file(s) predicted
-    - src/auth.js
-    - src/login.js        (imports verifyToken — you didn't mention it)
-    - src/session.js      (imports verifyToken — you didn't mention it)
+  impact: 3 file(s) predicted — 3 reverse
+    - src/auth.js (reverse)
+    - src/login.js (reverse)      ← imports verifyToken; you didn't mention it
+    - src/session.js (reverse)    ← imports verifyToken; you didn't mention it
   verify:
     - run the narrowest affected test first, then the broader suite
 ```
 
 The second run found the two files that import `verifyToken` but you never named — the
-"forgot the coupled file" bug, caught _before_ the edit. Add `--json` for machine-readable
+"forgot the coupled file" bug, caught _before_ the edit. Each file is tagged with the
+relation that reached it: `reverse` (depends on the change), `sibling` (shares a dependency
+with it) or `forward` (the change depends on it). The check walks all three by default
+because the reverse-only walk missed the sibling files that were 94.7% of the empirical
+refutation's misses; siblings and forward files are co-change candidates, lower precision
+than dependents, and the enforce gate counts dependents only. Add `--json` for machine-readable
 output (see [Use it in a script](#use-it-in-a-script)).
 
 ---

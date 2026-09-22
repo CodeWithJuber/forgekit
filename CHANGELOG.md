@@ -6,6 +6,91 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Universal router** (`src/router`, `forge route universal|outcome|fit|models`). It recommends a model or a cascade across any provider's models, with no vendor, tier or threshold in code.
+  - **Model:** multidimensional IRT for who solves what, with correlated failures integrated by Gauss–Hermite quadrature; a log-linear cost model; and a cascade policy with a parameter-free default objective (`match-best-single`) plus `target`, `value` and `budget`.
+  - **Data:** the models live in `data/models.json` and `.forge/models.json`. A shipped prior is fitted on public SWE-bench Verified runs of 11 models from 7 providers. `route outcome` and `route fit` perform a Bayesian update on the project's own outcomes.
+  - **Measured** (harness-bench run 4, pre-registered, 350 held-out issues): 76.3% solved at $0.093 per task, against 75.1% at $0.364 for the best single model chosen on dev (non-inferior, 74% cheaper). See docs/UNIVERSAL_ROUTING.md for the limits.
+
+### Fixed
+
+- **Binary files no longer trip the commit gate's secret scan.** The staged scan reads every
+  file with `git diff --text`, and the entropy leg flagged the XMP packet id
+  (`W5M0MpCehiHzreSzNTczkc9d`, a constant fixed by Adobe's XMP spec) that the XMP packet
+  wrapper carries inside PDFs, JPEGs and PNGs, so ordinary binary commits were refused. A staged file that git
+  reports as binary (`--numstat` prints `-`/`-`) and that contains a NUL byte now gets the
+  credential-format grammars only; a `binary` attribute on a text file does not qualify, so
+  `.gitattributes` cannot switch the entropy leg off. The XMP packet id is also exempt from the
+  entropy leg everywhere, like lockfile integrity digests. A `ghp_…` token inside a binary is
+  still refused, and an unreadable diff still fails closed.
+
+- **A handoff snapshot is read back whole at session start.** `forge handoff` wrote up to
+  150 lines to `.forge/state.md` but the SessionStart loader injected only the first 80, so
+  rows 81–150 of a valid handoff were silently dropped (the budget mismatch the formal
+  synthesis's T4 correction names). Writer and loader now share one budget in one unit,
+  `STATE_BUDGET_BYTES` (8 KB of snapshot body), and the writer keeps rows in priority order
+  (goal and acceptance criteria, next steps, decisions, gotchas and open assumptions,
+  in-progress files, then done) until the body fits. A section that lost rows ends with
+  "(+N more not kept …)". Sections are now written in that priority order. Only a hand-edited
+  or pre-budget file can still overflow the loader, and then the cut names the file.
+
+- **The verifyToken example's completeness score matches the code again.** The docs
+  (ARCHITECTURE.md, GUIDE, the cognitive-substrate README) and the `src/preflight.js` comment
+  said "Change verifyToken in src/auth.js to require length > 20; update tests" scores ≈ 0.63
+  (medium risk), but the code gives 0.878 (low risk). The prior was hand-set when that task
+  had one concrete anchor (the filename, 0.63); since 2026-09-21 a named code identifier is a
+  second anchor. The docs now show 0.88 and say why; the weights are unchanged. A test pins the
+  value and checks that the two example outputs print it.
+
+### Changed
+
+- **The everyday blast-radius checks walk sibling and forward relations, tagged.** The
+  substrate pre-action check (so also the ambient prompt hook and the `FORGE_ENFORCE` gate)
+  and the Stop gate's repair checklist ran the reverse-only walk that the empirical
+  refutation measured at recall 0.022, where 94.7% of the misses were sibling files. They now
+  walk reverse + the paper's repaired sibling and forward relations at the frozen parameters
+  already in `src/atlas.js`, and every file is tagged with the relation that reached it:
+  `forge substrate` and the ambient advisory print `path (reverse|sibling|forward)` with a
+  per-relation count, `--json` adds `impact.fileRelations` and `impact.relationCounts`, and the
+  Stop gate's block reason lists the untouched co-change candidates. The enforce gate still
+  counts only dependents toward its 25-file block (the wide walk would put 79 of this repo's
+  98 source files over it, against 35 today, at precision about 0.09) and names the other
+  candidates in its reason; `blastRelations` changes what it counts. A wide walk never relabels
+  a reverse dependent, so its reverse-tagged set equals the reverse-only answer. Scope
+  decomposition and lesson matching keep using dependents only. `relations: ["reverse"]`
+  (`substrateCheck`, `repairReason`) is the explicit reverse-only option; `forge impact` and
+  `predict_impact` are unchanged (reverse-only unless `--all-relations`). The
+  `source/substrate.json` impact faculties move from `operational-v1` to
+  `operational-v2-recall`, with a guarantee that says the frozen parameters were tuned on a
+  different graph builder and are not held-out validated here.
+
+- **`bin/learn-consolidate.sh` no longer lets a model prune memory.** It sent every learned
+  lesson to Haiku with "DROP anything … contradicted" and rewrote `~/.claude/skills/learned`
+  from the answer, which is pruning by the model's own judgment (the research requires pruning
+  by ground truth). Consolidation is now deterministic (`src/learn_consolidate.js`): exact and
+  near-duplicate lessons within a project merge (MinHash Jaccard ≥ 0.7, the ledger's own
+  consolidation threshold), and a lesson is dropped only when its matching ledger claim in
+  that project is dormant, retracted or pruned to the attic; a lesson the ledger knows nothing
+  about is kept. `--repo <root>` names the ledger (default: the current directory), and
+  `--dry-run` / `--json` report without writing. Originals are archived first, as before. The
+  model rewrite remains behind an explicit `--llm` first argument, with "contradicted" removed
+  from its prompt.
+
+- **`learn-consolidate.sh --llm` works on macOS.** It wrapped the model call in GNU `timeout`,
+  which stock macOS does not ship; with stderr discarded the missing command failed silently,
+  the model was never called, and every run ended in "response too short". The call now uses
+  `timeout`, else Homebrew's `gtimeout`, else runs unwrapped.
+
+- **The gate docs no longer claim that repeated gates multiply their catch rates.** The
+  headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
+  verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch
+  layer, so the silent-miss probability fell multiplicatively. The formal synthesis withdrew
+  that (§5.3, corrected 2026-09-21): the same classifier run on the same diff fires together,
+  so the residual is `(1−p)(1−c_max)`, and a later rung adds catches only where it sees what
+  the earlier one could not (edits after the turn, a host where the Stop hook never ran).
+  Comments and docs only; no behaviour change.
+
 ## [1.0.0] - 2026-09-22
 
 ### Added

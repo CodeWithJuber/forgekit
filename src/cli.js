@@ -1988,6 +1988,9 @@ HANDLERS.route = async (argv) => {
     console.log("  and calibrating on real routing outcomes needs data forge does not record");
     return;
   }
+  if (["universal", "outcome", "fit", "models"].includes(argv[1]) || argv.includes("--universal")) {
+    return routeUniversalCli(argv);
+  }
   const json = argv.includes("--json");
   const apply = argv.includes("--apply");
   const providerIdx = argv.indexOf("--provider");
@@ -2051,6 +2054,113 @@ HANDLERS.route = async (argv) => {
   }
   return;
 };
+// Universal router (src/router): any provider's models, chosen by expected cost for the success
+// probability asked for. Models come from data/models.json and .forge/models.json.
+async function routeUniversalCli(argv) {
+  const U = await import("./router/index.js");
+  const { loadRegistry } = await import("./router/registry.js");
+  const json = argv.includes("--json");
+  const val = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
+  const VALUED = new Set(["--objective", "--provider", "--model", "--cost", "--depth"]);
+  const words = argv
+    .slice(1)
+    .filter((a, i, arr) => !a.startsWith("--") && !VALUED.has(arr[i - 1] ?? ""));
+  const sub = ["outcome", "fit", "models", "universal"].includes(words[0])
+    ? words.shift()
+    : "universal";
+  const root = process.cwd();
+  if (sub === "models") {
+    const reg = loadRegistry(root);
+    const fit = U.loadRouterModel(root);
+    const rows = reg.models.map((m) => ({
+      id: m.id,
+      org: m.org ?? null,
+      status: fit?.models.includes(m.id) ? "fitted" : "cold",
+      providers: Object.keys(m.providers ?? {}),
+      price: m.price_in != null ? `${m.price_in}/${m.price_out}` : null,
+    }));
+    if (json)
+      return console.log(
+        JSON.stringify({ sources: reg.sources, fit: fit?.origin ?? null, models: rows }, null, 2),
+      );
+    heading(`${BRAND.brand} route models — registry (${reg.sources.join(" + ")})\n`);
+    for (const r of rows)
+      console.log(
+        `  ${r.id.padEnd(22)} ${String(r.org ?? "").padEnd(16)} ${r.status.padEnd(7)} ${r.price ? `$${r.price}/Mtok`.padEnd(14) : "".padEnd(14)} ${r.providers.join(", ") || "(no provider id: advice only)"}`,
+      );
+    console.log(`\n  fit in use: ${fit?.origin ?? "none"}`);
+    return;
+  }
+  if (sub === "fit") {
+    const model = U.fitRouter(root);
+    if (json) return console.log(JSON.stringify(model.provenance, null, 2));
+    console.log(
+      `  refit on ${model.provenance.local.outcomes} recorded outcome(s) over ${model.provenance.local.tasks} task(s); wrote .forge/router_model.json`,
+    );
+    return;
+  }
+  const task = words.join(" ");
+  if (!task) {
+    console.error(
+      'usage: forge route universal "<task>" [--objective match-best-single|target:<p>|value:<$>|budget:<$>] [--provider <name>|any] [--depth <n>] [--json]\n' +
+        '       forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>]\n' +
+        "       forge route fit | forge route models",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (sub === "outcome") {
+    const passed = argv.includes("--pass") ? true : argv.includes("--fail") ? false : undefined;
+    const cost = val("--cost") !== undefined ? Number(val("--cost")) : null;
+    try {
+      const row = U.recordOutcome(root, { task, model: val("--model"), passed, cost });
+      if (json) return console.log(JSON.stringify(row, null, 2));
+      console.log(
+        `  recorded ${row.model} ${row.passed ? "pass" : "fail"} for task ${row.task} (.forge/route_outcomes.jsonl)`,
+      );
+    } catch (e) {
+      console.error(`  ${e.message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  let rec;
+  try {
+    rec = U.routeUniversal(root, task, {
+      objective: val("--objective"),
+      provider: val("--provider") ?? "any",
+      maxDepth: val("--depth") ? Number(val("--depth")) : undefined,
+    });
+  } catch (e) {
+    console.error(`  ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (json) return console.log(JSON.stringify(rec, null, 2));
+  if (!rec.ok) {
+    console.error(`  ${rec.reason}`);
+    process.exitCode = 1;
+    return;
+  }
+  heading(
+    `${BRAND.brand} route universal — ${rec.objective.kind}${rec.target != null ? ` (target ${rec.target.toFixed(2)})` : ""}\n`,
+  );
+  rec.cascade.forEach((c, i) => {
+    console.log(
+      `  ${i === 0 ? "→" : "then, if a check fails →"} ${paint(c.model, "accent")}  P(solve alone) ${c.pSolveAlone.toFixed(2)} · ~$${c.expectedAttemptCost.toFixed(3)}/attempt${c.status === "cold" ? " · cold (no outcomes yet)" : ""}`,
+    );
+  });
+  console.log(
+    `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
+  );
+  console.log(
+    `  ${rec.candidates} candidate model(s), ${rec.cascadesEvaluated} cascade(s) compared · fit: ${rec.fit.origin}`,
+  );
+  console.log(
+    `  learn from results: \`${BRAND.cli} route outcome "<task>" --model <id> --pass|--fail --cost <usd>\`, then \`${BRAND.cli} route fit\``,
+  );
+}
+
 HANDLERS.anchor = async (argv) => {
   const { goalDrift, renderAnchor } = await import("./anchor.js");
   const { clearGoal, getGoal, setGoal } = await import("./goal.js");

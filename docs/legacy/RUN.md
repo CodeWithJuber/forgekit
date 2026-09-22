@@ -44,7 +44,7 @@ echo 'export ENABLE_SESSION_LEARNING=1' >> ~/.zshrc && source ~/.zshrc   # alrea
 claude-init                  # in a repo: write AGENTS.md + thin CLAUDE.md (auto-detect stack)
 claude-taste                 # list per-repo UI taste skills
 claude-taste minimalist-ui   # enable one taste for the current repo
-claude-learn-consolidate     # merge/dedupe/prune learned lessons (weekly; ~1-2 min)
+claude-learn-consolidate     # merge duplicate learned lessons; drop only ledger-refuted ones (weekly; no model call; --llm for the old Haiku rewrite)
 ```
 
 ## 5. Skills / agents (auto-fire, or force with /name)

@@ -11,8 +11,13 @@ import {
   isStale as atlasIsStale,
   build as buildAtlas,
   buildSccIndex,
+  byRelation,
+  DEPENDENT_RELATIONS,
+  fileRelations,
+  IMPACT_RELATIONS,
   impact as impactGraph,
   load as loadAtlas,
+  relationRank,
 } from "./atlas.js";
 import { assemble as assembleContext } from "./context.js";
 import { matchingLessons } from "./cortex.js";
@@ -103,17 +108,27 @@ function siblingTestCandidates(file) {
   return out;
 }
 
-/** Predict the tests likely to fail if the impacted files change (impacted tests + siblings). */
-export function predictFailingTests(root, impactedFiles) {
+/**
+ * Predict the tests likely to fail if the impacted files change (impacted tests + siblings).
+ * @param {string} root
+ * @param {string[]} impactedFiles
+ * @param {Record<string, string>} [rels] file → relation (atlas fileRelations)
+ * @returns {string[]}
+ */
+export function predictFailingTests(root, impactedFiles, rels) {
   const out = new Set();
-  for (const f of impactedFiles) {
+  // With relation tags, tests predicted by a DEPENDENT come before a sibling's or forward
+  // file's (a Set keeps first insertion), so the capped "run these first" list leads with
+  // them; untagged input keeps the plain sorted order.
+  const files = rels ? byRelation(impactedFiles, rels) : impactedFiles;
+  for (const f of files) {
     if (isTestFile(f)) {
       out.add(f);
       continue;
     }
     for (const c of siblingTestCandidates(f)) if (existsSync(join(root, c))) out.add(c);
   }
-  return [...out].sort();
+  return rels ? [...out] : [...out].sort();
 }
 
 // Grep-style verify for the LLM impact pass: a proposed dependent is only kept if the target
@@ -201,6 +216,9 @@ export function predictImpact(
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {boolean} [opts.bidirectional]
+ * @param {readonly string[]} [opts.relations] impact relations to walk — default
+ *   IMPACT_RELATIONS (reverse + the paper's sibling/forward repair, each file tagged);
+ *   pass DEFAULT_IMPACT_RELATIONS (["reverse"]) for the reverse-only walk.
  */
 export function substrateCheck(
   root,
@@ -213,6 +231,7 @@ export function substrateCheck(
     model,
     timeoutMs,
     bidirectional,
+    relations = IMPACT_RELATIONS,
   } = {},
 ) {
   const text = String(task || "");
@@ -285,10 +304,15 @@ export function substrateCheck(
   const impactTargets = [...new Set([...entities.symbols, ...entities.files])].slice(0, 8);
   const impactRun = useLLM ? buildRunner({ model, timeoutMs }) : undefined;
   const impactVerify = makeImpactVerify(root);
+  // Recall-critical: the reverse-only walk the empirical refutation measured at recall 0.022
+  // (94.7% of its misses were sibling files) is not the default here. Every file is tagged
+  // with the relation that reached it, so a reader can tell a dependent from a co-change
+  // candidate, and the enforce gate can count dependents only.
   const impacts = atlas
     ? impactTargets.map((target) =>
         impactGraph(atlas, target, {
           threshold,
+          relations,
           llm: useLLM,
           run: impactRun,
           verify: impactVerify,
@@ -296,12 +320,26 @@ export function substrateCheck(
       )
     : [];
   const impactedFiles = [...new Set(impacts.flatMap((r) => r.impactedFiles || []))].sort();
+  const impactRelations = fileRelations(impacts);
+  /** @type {Record<string, number>} */
+  const relationCounts = {};
+  for (const f of impactedFiles) {
+    const r = impactRelations[f] ?? "reverse";
+    relationCounts[r] = (relationCounts[r] ?? 0) + 1;
+  }
+  // Scope decomposition and lesson matching keep the DEPENDENT set they always used: they
+  // describe the work itself, and co-change candidates are for review, not for scoping.
+  const dependentFiles = impactedFiles.filter((f) =>
+    DEPENDENT_RELATIONS.includes(impactRelations[f] ?? "reverse"),
+  );
   // Consequence simulation (Eq 4), class "failing tests": which tests likely break if the
   // impacted files change — the impacted files that ARE tests, plus each impacted source file's
   // sibling test. Cheap, exact-ish, and surfaced BEFORE the edit (not after, like verify).
   // Gated on atlas freshness (belt and braces with the null atlas above): predictions from a
   // stale graph are not trustworthy and must not be presented as consequence evidence.
-  const predictedTests = atlasFresh ? predictFailingTests(root, impactedFiles) : [];
+  const predictedTests = atlasFresh
+    ? predictFailingTests(root, impactedFiles, impactRelations)
+    : [];
   // P3 reuse stage: has this team already built (and verified) this? The explicit gate
   // meters + writes evidence (reuseQuery); the ambient hook path stays read-only
   // (reusePeek) so a per-prompt hook never appends to the ledger or metrics.
@@ -336,7 +374,7 @@ export function substrateCheck(
         }
       })()
     : null;
-  const scopedFiles = [...new Set([...entities.files, ...impactedFiles])];
+  const scopedFiles = [...new Set([...entities.files, ...dependentFiles])];
   const scope = scopedFiles.length
     ? decompose(root, scopedFiles)
     : { clusters: [], independentGroups: 0 };
@@ -365,6 +403,11 @@ export function substrateCheck(
       targets: impactTargets,
       reports: impacts,
       impactedFiles,
+      // Which relations were walked, the relation each impacted file was reached by
+      // (strongest claim wins: reverse > llm-verified > sibling > forward), and the counts.
+      relations: [...relations],
+      fileRelations: impactRelations,
+      relationCounts,
       predictedTests,
       // Truthful freshness: false when the atlas is missing/stale and couldn't be rebuilt.
       // Consumers must not present impactedFiles as trustworthy when this is false.
@@ -447,12 +490,21 @@ export function substrateCheck(
  * so it halts a vacuous prompt ("fix it", "make it better") or an edit into a very large blast
  * radius, and never a specified task. Off unless `FORGE_ENFORCE=1` (or `enforce:true`); default
  * behaviour is unchanged. `reason` is written to be shown to the agent.
+ * The blast-radius count is taken over DEPENDENTS (reverse / llm-verified files) by default:
+ * the 25-file threshold was set on that walk, and the sibling/forward relations are a recall
+ * instrument (precision 0.093 on this repo) — counting them would block most edits here,
+ * against this gate's "strongest, lowest-false-positive signals only" contract. The block
+ * reason still names them, and `blastRelations` counts other relations when wanted.
  * @param {object} result - substrateCheck() result
  * @param {object} [opts]
  * @param {boolean} [opts.enforce]
  * @param {number} [opts.blastThreshold]
+ * @param {readonly string[]} [opts.blastRelations] relations counted toward blastThreshold
  */
-export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
+export function enforceDecision(
+  result,
+  { enforce, blastThreshold = 25, blastRelations = DEPENDENT_RELATIONS } = {},
+) {
   const on = typeof enforce === "boolean" ? enforce : process.env.FORGE_ENFORCE === "1";
   if (!on || !result) return { block: false };
   const tail = "\n(Set FORGE_ENFORCE=0 to make Forge advisory again.)";
@@ -476,16 +528,46 @@ export function enforceDecision(result, { enforce, blastThreshold = 25 } = {}) {
   // untrustworthy) impacted set, and stale predictions must never hard-block an edit —
   // the explicit guard documents the intent even though a stale atlas now yields blast 0.
   if (result.impact?.atlasFresh !== false) {
-    const blast = result.impact?.impactedFiles?.length ?? 0;
+    const files = result.impact?.impactedFiles ?? [];
+    const rels = result.impact?.fileRelations ?? {};
+    // An untagged file (a result built without relation tags) counts, as it always did.
+    const counted = files.filter((f) => !rels[f] || blastRelations.includes(rels[f]));
+    const blast = counted.length;
     if (blast >= blastThreshold) {
+      const others = files.length - blast;
       return {
         block: true,
-        reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted). Review the impacted files (or narrow the change) before editing.${tail}`,
+        reason: `Forge gate (enforcing): this touches a large blast radius (${blast} files predicted${
+          others ? `, plus ${others} co-change candidate(s): ${relationSummary(result.impact)}` : ""
+        }). Review the impacted files (or narrow the change) before editing.${tail}`,
       };
     }
   }
   return { block: false };
 }
+
+/** "2 reverse, 3 sibling, 1 forward" — counts in RELATION_ORDER; "" when untagged. */
+function relationSummary(impact) {
+  const counts = impact?.relationCounts ?? {};
+  return Object.keys(counts)
+    .sort((a, b) => relationRank(a) - relationRank(b))
+    .map((r) => `${counts[r]} ${r}`)
+    .join(", ");
+}
+
+/** What each relation tag claims — printed once, only when a non-reverse tag is shown. */
+const RELATION_LEGEND =
+  "reverse = depends on the change · sibling = shares a dependency with it · forward = the change depends on it";
+
+/** Impacted files strongest relation first, each with its tag when tags exist. */
+function taggedFiles(impact) {
+  const rels = impact?.fileRelations ?? {};
+  return byRelation(impact?.impactedFiles ?? [], rels).map((f) =>
+    rels[f] ? `${f} (${rels[f]})` : f,
+  );
+}
+const hasCoChange = (impact) =>
+  Object.values(impact?.fileRelations ?? {}).some((r) => !DEPENDENT_RELATIONS.includes(r));
 
 export function renderSubstrate(result) {
   const lines = ["Forge substrate — pre-action check", ""];
@@ -519,10 +601,15 @@ export function renderSubstrate(result) {
   if (result.impact.atlasFresh === false) {
     lines.push("", "  impact: unavailable — atlas missing or stale (predictions not trustworthy)");
   } else {
-    lines.push("", `  impact: ${result.impact.impactedFiles.length} file(s) predicted`);
-    for (const file of result.impact.impactedFiles.slice(0, 10)) lines.push(`    - ${file}`);
-    if (result.impact.impactedFiles.length > 10)
-      lines.push(`    … ${result.impact.impactedFiles.length - 10} more`);
+    const summary = relationSummary(result.impact);
+    lines.push(
+      "",
+      `  impact: ${result.impact.impactedFiles.length} file(s) predicted${summary ? ` — ${summary}` : ""}`,
+    );
+    const shown = taggedFiles(result.impact);
+    for (const file of shown.slice(0, 10)) lines.push(`    - ${file}`);
+    if (shown.length > 10) lines.push(`    … ${shown.length - 10} more`);
+    if (hasCoChange(result.impact)) lines.push(`    (${RELATION_LEGEND})`);
   }
   // Predicted tests only speak for a FRESH atlas — right after an "impact: unavailable"
   // notice, a likely-affected-tests list would contradict it with stale data (RA-07).
@@ -575,10 +662,12 @@ export function substrateContext(result) {
       "- Impact unavailable: atlas missing or stale — predicted blast radius is not trustworthy (rebuild the atlas to get it).",
     );
   } else if (result.impact.impactedFiles.length) {
-    const files = result.impact.impactedFiles;
+    const files = taggedFiles(result.impact);
+    const summary = relationSummary(result.impact);
     lines.push(
-      `- Predicted blast radius (${files.length}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
+      `- Predicted blast radius (${files.length}${summary ? `: ${summary}` : ""}): ${files.slice(0, 8).join(", ")}${files.length > 8 ? " …" : ""}. Review these before editing.`,
     );
+    if (hasCoChange(result.impact)) lines.push(`  (${RELATION_LEGEND})`);
   }
   // Same freshness rule as the renderer: never advise stale test predictions (RA-07).
   const predTests = result.impact.atlasFresh === false ? [] : result.impact.predictedTests || [];

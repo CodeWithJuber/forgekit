@@ -68,7 +68,7 @@ Two stores keep knowledge across sessions:
 
 | Store               | Semantics                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------ |
-| `.forge/state.md`   | A bounded **rewrite** (snapshot) — loader cost stays `O(bound)` forever.             |
+| `.forge/state.md`   | A bounded **rewrite** (snapshot); writer and loader share one 8 KB budget, so it is read back whole. |
 | `.forge/decisions.md` | Append-only **ADR-lite** (`D-####`) with a machine-readable decision ledger twin.  |
 
 Both refuse secrets at write. `state.md` is re-injected each session start;

@@ -232,9 +232,12 @@ from a fresh repository graph.
 - **Git-native team merge.** Claims and append-only logs merge by set union. The join is
   property-tested for commutativity, associativity, and idempotence.
 - **Heuristic impact prediction.** Forgekit builds a regex-derived code graph and walks
-  reverse dependencies to estimate affected files and tests. It is not conservative: it can
-  miss affected files (including constructs its parser does not recognize) as well as produce
-  false positives.
+  reverse dependencies to estimate affected files and tests; the pre-action check and the
+  Stop gate's repair checklist also walk the empirical refutation's sibling and forward
+  relations and tag each file with the relation that reached it. It is not conservative: it
+  can miss affected files (including constructs its parser does not recognize) as well as
+  produce false positives, and the sibling/forward files are lower-precision co-change
+  candidates.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context.
@@ -407,7 +410,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge impact`       | hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history                                                                                              |
 |                         | `forge scope`        | decompose files into independent clusters (+ coupled files you didn't name)                                                                                                                                                 |
 |                         | `forge context`      | budgeted context assembly + completeness gate — what an edit NEEDS known                                                                                                                                                    |
-|                         | `forge route`        | recommend the cheapest capable model for a task (+ gateway config)                                                                                                                                                          |
+|                         | `forge route`        | recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes                                         |
 |                         | `forge verify`       | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                     |
 |                         | `forge precommit`    | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                     |
 | **Memory**              | `forge cortex`       | self-correcting project memory — status / why <symbol>                                                                                                                                                                      |

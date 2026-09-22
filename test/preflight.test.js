@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   ambiguityMarkers,
   assessTask,
@@ -198,6 +199,29 @@ test("assessTask: reproduces the paper's calibrated anchor examples", () => {
   assert.ok(clear.completeness >= 0.6 && !clear.shouldAsk, "a concrete task clears the gate");
   // features are inspectable
   assert.equal(completenessFeatures("make the auth better").concreteness, 0);
+});
+
+// The docs quoted the verifyToken example at ≈ 0.63 while the code gave 0.878: the prior was
+// set when the task had one concrete anchor, and a named identifier became a second one. Pin
+// what the code computes and that the docs' example output says the same.
+test("assessTask: the documented examples score what the docs say (0.23 and 0.88)", () => {
+  const task = "Change verifyToken in src/auth.js to require length > 20; update tests";
+  const clear = assessTask(task);
+  assert.equal(clear.completeness.toFixed(2), "0.88");
+  assert.equal(clear.risk, "low");
+  assert.equal(assessTask("make the auth better").completeness.toFixed(2), "0.23");
+  const f = completenessFeatures(task);
+  assert.equal(f.concreteness, 2, "the filename plus the named identifier");
+  assert.equal(
+    completenessScore({ ...f, concreteness: 1 }).toFixed(2),
+    "0.63",
+    "one anchor — the value the prior was hand-set against",
+  );
+  const line = `assumption: ${clear.risk} risk · completeness ${clear.completeness.toFixed(2)}`;
+  for (const doc of ["docs/GUIDE.md", "docs/cognitive-substrate/README.md"]) {
+    const text = readFileSync(fileURLToPath(new URL(`../${doc}`, import.meta.url)), "utf8");
+    assert.ok(text.includes(line), `${doc} shows "${line}"`);
+  }
 });
 
 test("assessTaskLLM: parses a completeness reading, rejects junk", () => {

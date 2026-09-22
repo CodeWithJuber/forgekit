@@ -115,14 +115,19 @@ anything. The analysis is **hazard-aware**: SCC-aware propagation (a change to a
 in a circular-dependency cluster impacts all co-members, via Tarjan from `forge rank`)
 and a data-driven threshold derived from PageRank centrality and ledger incident history
 (`effectiveThreshold = base / (1 + hazard)`). `--basic` reverts to the fixed-threshold
-mode.
+mode. `forge impact` walks reverse dependents; the pre-action check, the ambient prompt hook
+and the Stop gate's repair checklist also walk the empirical refutation's repaired sibling
+and forward relations (frozen parameters, `SIBLING`/`FORWARD` in `src/atlas.js`) and tag
+every file `reverse`, `sibling` or `forward`, because the reverse-only walk missed the
+sibling files that were 94.7% of the refutation's misses.
 
 The verdict is **advisory by default** — it reports, it does not block. Set
 `FORGE_ENFORCE=1` to turn the strongest signals into a hard block:
 
 - a **vacuous or underspecified** prompt (preflight finds no actionable intent),
 - **un-assemblable required context** (the completeness gate cannot cover the edit set),
-- a **blast radius over threshold** (default ~25 files).
+- a **blast radius over threshold** (default ~25 dependent files; sibling/forward
+  co-change candidates are named in the reason but not counted).
 
 Everything else stays a warning the human can override.
 
@@ -200,8 +205,12 @@ to decide whether an edit is safe to start. Surface: `forge reuse query | mint |
 Two failure modes this layer exists to kill: **partial work** (code changes without the
 artifacts that depend on it) and **session amnesia** (the next session re-assumes what
 this one knew). Instructions raise the _probability_ of correct behavior; deterministic
-hooks guarantee a _floor_ — with per-task miss rate `1−p` and gate catch rate `c`,
-silent misses fall to `(1−p)(1−c)`, and every layer here is one more `c`.
+hooks guarantee a _floor_ — with per-task miss rate `1−p`, silent misses fall to
+`(1−p)·P(no check fires | miss)`: `(1−p)(1−c)` for one check with catch rate `c`. A second
+check lowers that only where it catches what the first cannot; the product `∏(1−cⱼ)` holds
+only if the checks fire independently. The same check repeated at another point (Stop,
+pre-commit, CI on the same diff) is nested, so the residual is `(1−p)(1−c_max)` (formal
+synthesis §5.3, corrected 2026-09-21).
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
 `completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
@@ -225,7 +234,10 @@ injects: learned lessons, the anchored goal, the handoff snapshot, recent commit
 uncommitted changes — a fresh session orients on evidence, not priors.
 
 **The state/decision stores (`src/handoff.js`, `src/decide.js`).** `state.md` is a
-bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever);
+bounded REWRITE (snapshot semantics — loader cost stays O(bound) forever). Writer and
+loader share ONE budget in one unit (`STATE_BUDGET_BYTES`, 8 KB): the writer keeps rows in
+priority order (goal, next, decisions, gotchas, in-progress, done) until the body fits, so
+the SessionStart loader never cuts what the handoff wrote;
 `decisions.md` is append-only ADR-lite with a machine-readable `decision` ledger twin
 (log semantics — supersede, never edit). Both refuse secrets at write.
 
@@ -318,8 +330,11 @@ completeness score `s(x)` is a **logistic** over its features (concreteness, nam
 vagueness, a smooth `tanh` length term) instead of an additive rubric with magic coefficients and
 discontinuous word-count steps — the `sigmoid` bounds it to (0,1) with no clamp, every feature's
 pull stays attributable, and a labeled bank could refine the weights via `predictor.js`'s
-`trainLogistic`. The calibrated prior still lands the paper's own examples where they were
-(a bare "make the auth better" ≈ 0.23 → ask; a concrete verifyToken edit ≈ 0.63 → proceed).
+`trainLogistic`. The hand-set prior (not fit to data) puts the paper's own examples on the
+right side of the 0.6 threshold: a bare "make the auth better" ≈ 0.23 → ask; the concrete
+verifyToken edit ≈ 0.88 → proceed. That edit scored ≈ 0.63 when the weights were set, with one
+concrete anchor (the filename); since a named code identifier became a second anchor it scores
+≈ 0.88, and the weights were not re-fit.
 
 **The evidence trail (preflight).** Once a goal is anchored, every prompt appends its
 graded `driftScore` to the session log; `cusum` (until now test-only math) accumulates
@@ -332,8 +347,11 @@ the gate lattice (turn ⊂ commit ⊂ PR): the Stop hook gates the turn and CI's
 gates the PR, so this runs the SAME registry-derived completeness classifier
 (`classifyPath` from `gate.js`) plus `hasSecret` over staged added lines at the commit
 boundary — code staged without its doc/state artifact, or a staged secret, is caught
-while the fix is still one `git add` away. Each rung is an independent catch layer, so
-the silent-miss probability falls multiplicatively.
+while the fix is still one `git add` away. The rungs are **not** independent catch
+layers: on the same diff the copies fire together, so they do not multiply the catch rate
+and the residual stays `(1−p)(1−c_max)`. This rung adds catches only where it sees what the
+Stop hook could not — edits made after the turn ended, a host or session where the Stop
+hook never ran, or a session whose one Stop block was already spent.
 
 **Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
 asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
@@ -526,6 +544,7 @@ forgekit/
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
     ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
     ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
+    learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge duplicates, drop only ledger-refuted (dormant/retracted/attic) lessons; no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
@@ -601,17 +620,17 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>113 files"]
-  src["src<br/>98 files"]
+  test["test<br/>117 files"]
+  src["src<br/>109 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   global["global<br/>5 files"]
-  bench["bench<br/>2 files"]
+  bench["bench<br/>3 files"]
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 227 --> src
-  bench -- 7 --> src
+  test -- 240 --> src
+  bench -- 8 --> src
   examples -- 4 --> src
   test -- 2 --> bench
   test -- 2 --> global

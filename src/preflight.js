@@ -225,10 +225,13 @@ export function ambiguityMarkers(text) {
 // the audit flagged as "graded-but-uncalibrated". Each feature contributes a signed amount to the
 // log-odds and the sigmoid maps the sum to [0,1] — so the estimate is smooth (no step jumps),
 // self-bounding (no ad-hoc clamp), and every feature's pull stays attributable (transparent rubric,
-// the substrate's core commitment). Weights are a documented PRIOR calibrated so the paper's own
-// examples land where they should (a bare "make the auth better" ≈ 0.23 → ask; a concrete
-// "Change verifyToken … length > 20; update tests" ≈ 0.63 → proceed); a labeled task bank could
-// refine them via predictor.js's trainLogistic without changing this call site.
+// the substrate's core commitment). Weights are a documented PRIOR, hand-set so the paper's own
+// examples land on the right side of τ = 0.6: a bare "make the auth better" scores 0.23 → ask.
+// "Change verifyToken … length > 20; update tests" scored 0.63 when the prior was set, with one
+// concrete anchor (the filename); since 2026-09-21 a named code identifier is a second anchor
+// (countAnchors), so it now scores 0.88 → proceed, low risk. The weights were not re-fit, and
+// they are not calibrated on data; a labeled task bank could refine them via predictor.js's
+// trainLogistic without changing this call site.
 export const COMPLETENESS_WEIGHTS = {
   bias: -0.858,
   concreteness: 1.44, // each concrete anchor (example, call signature, quoted literal, filename)

@@ -294,3 +294,25 @@ test("hasSecret/redactSecrets: lockfile / SRI / go.sum integrity digests are not
   // The exemption is shape-bound: a real token beside a digest is still caught.
   assert.ok(hasSecret(`${leftPad} ${fakeGithubPat()}`));
 });
+
+// ── The XMP packet id is a published constant (Adobe XMP spec), present in every
+// PDF/JPEG/PNG with XMP metadata; the entropy leg flagged it, refusing binary commits.
+test("hasSecret/redactSecrets: the XMP packet id is a public constant, not a secret", () => {
+  const xmp = "W5M0MpCehiHzreSzNTczkc9d";
+  assert.ok(isHighEntropyToken(xmp), "it clears the entropy bar on its own — hence the exemption");
+  const packet = `<?xpacket begin="" id="${xmp}"?>`;
+  assert.equal(hasSecret(packet), false);
+  assert.equal(redactSecrets(packet), packet);
+  // Whole-token only: a longer run that merely contains the constant is still scored.
+  assert.ok(hasSecret(`x ${xmp}Qx7Lp2`));
+  assert.ok(hasSecret(`${packet} ${fakeGithubPat()}`), "a real token beside it is still caught");
+});
+
+test("hasSecret/redactSecrets {entropy:false}: format grammars only", () => {
+  const tok = fakeUnknownVendor();
+  assert.equal(hasSecret(tok, { entropy: false }), false, "entropy-only token passes");
+  assert.equal(redactSecrets(tok, { entropy: false }), tok);
+  assert.ok(hasSecret(fakeGithubPat(), { entropy: false }), "format grammar still applies");
+  assert.notEqual(redactSecrets(fakeGithubPat(), { entropy: false }), fakeGithubPat());
+  assert.ok(hasSecret(tok), "the default keeps the entropy leg");
+});

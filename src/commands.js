@@ -92,7 +92,8 @@ export const COMMANDS = {
   context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
   preflight: "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
-  route: "recommend the cheapest capable model for a task (+ gateway config)",
+  route:
+    "recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes",
   impact: {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",

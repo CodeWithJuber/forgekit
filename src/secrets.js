@@ -89,7 +89,13 @@ const TOKEN_RE = /[A-Za-z0-9+=_-]{20,}/g;
 // leg flagged 90-100% of them, so every lockfile commit was refused. Such a digest is
 // consumed whole (group 1) and never scored; format grammars still apply to it.
 const INTEGRITY = "\\b(?:sha(?:1|256|384|512)-[A-Za-z0-9+/]{16,}={0,2}|h1:[A-Za-z0-9+/]{43}=)";
-const ENTROPY_SCAN_G = new RegExp(`(${INTEGRITY})|${TOKEN_RE.source}`, "g");
+// Published constants that clear the entropy bar by accident. The XMP packet wrapper id
+// `W5M0MpCehiHzreSzNTczkc9d` is fixed by Adobe's XMP specification and written verbatim
+// into every XMP packet wrapper (PDF, JPEG, PNG, TIFF metadata), so it is no more a secret
+// than a lockfile digest. Matched as a WHOLE token only (the lookarounds use TOKEN_RE's class):
+// a longer run that merely contains it is still scored as one token.
+const PUBLIC_CONSTANT = "(?<![A-Za-z0-9+=_-])W5M0MpCehiHzreSzNTczkc9d(?![A-Za-z0-9+=_-])";
+const ENTROPY_SCAN_G = new RegExp(`(${INTEGRITY}|${PUBLIC_CONSTANT})|${TOKEN_RE.source}`, "g");
 
 /**
  * Is this bare token secret-shaped by math alone? Requires all of: length, mixed
@@ -109,11 +115,16 @@ export function isHighEntropyToken(tok) {
 /**
  * Does this text contain a secret? Format grammar OR entropy-detected token.
  * This is the detection entry point every refusal site should use.
+ * `entropy: false` applies the format grammars (SECRET_RE / CASE_RE) only — for content
+ * that is random bytes by nature (a binary file), where the entropy leg measures the
+ * compression, not a credential.
  * @param {string} text
+ * @param {{entropy?: boolean}} [opts]
  */
-export function hasSecret(text) {
+export function hasSecret(text, { entropy = true } = {}) {
   const s = String(text);
   if (SECRET_RE.test(s) || CASE_RE.test(s)) return true;
+  if (!entropy) return false;
   for (const m of s.matchAll(ENTROPY_SCAN_G)) {
     if (!m[1] && isHighEntropyToken(m[0])) return true;
   }
@@ -158,10 +169,11 @@ const AUTH_HEADER_G =
 
 /**
  * Replace every detected secret with [REDACTED], preserving surrounding text.
- * Same detectors as hasSecret — one truth, two verbs.
+ * Same detectors as hasSecret — one truth, two verbs (and the same `entropy` switch).
  * @param {string} text
+ * @param {{entropy?: boolean}} [opts]
  */
-export function redactSecrets(text) {
+export function redactSecrets(text, { entropy = true } = {}) {
   let s = String(text);
   s = s.replace(PEM_BLOCK_G, "[REDACTED]");
   // URL userinfo before the key rules: `https://x-access-token:PW@host` must mask PW,
@@ -174,8 +186,9 @@ export function redactSecrets(text) {
   s = s.replace(ASSIGNED_G, (m, key, val) =>
     val.startsWith("/") && !isHighEntropyToken(val.replaceAll("/", "")) ? m : `${key}[REDACTED]`,
   );
-  s = s.replace(ENTROPY_SCAN_G, (t, integrity) =>
-    !integrity && isHighEntropyToken(t) ? "[REDACTED]" : t,
+  if (!entropy) return s;
+  s = s.replace(ENTROPY_SCAN_G, (t, exempt) =>
+    !exempt && isHighEntropyToken(t) ? "[REDACTED]" : t,
   );
   return s;
 }

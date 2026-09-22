@@ -4,9 +4,9 @@
   "faculties": [
     { "id": "memory", "forge": "recall + cortex", "status": "partial", "guarantee": "facts and lessons are persisted as auditable files; relevance is advisory" },
     { "id": "learning", "forge": "cortex lessons", "status": "partial", "guarantee": "external outcomes update lesson confidence; no model weights are changed" },
-    { "id": "imagination", "forge": "impact graph", "status": "operational-v1", "guarantee": "reverse dependency traversal predicts possible blast radius" },
+    { "id": "imagination", "forge": "impact graph", "status": "operational-v2-recall", "guarantee": "the pre-action check walks reverse dependents plus the empirical refutation's repaired sibling and forward relations (frozen parameters) and tags each file with its relation; a recall instrument (precision about 0.09 on this repo), with parameters frozen on a different graph builder, so not held-out validated here" },
     { "id": "self-correction", "forge": "verify + doom-loop guard", "status": "partial", "guarantee": "tests/builds are trusted over model claims" },
-    { "id": "impact-awareness", "forge": "atlas + impact", "status": "operational-v1", "guarantee": "known symbols/files and likely dependents are surfaced before edits" }
+    { "id": "impact-awareness", "forge": "atlas + impact", "status": "operational-v2-recall", "guarantee": "known symbols/files, their dependents, and sibling/forward co-change candidates are surfaced before edits, each tagged by relation; the enforce gate counts dependents only, and `forge impact` stays reverse-only unless --all-relations" }
   ],
   "mechanisms": [
     { "id": "M1", "name": "complexity-aware routing", "command": "forge route", "status": "solved-with-transparency-layer" },
