@@ -77,6 +77,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model rewrite remains behind an explicit `--llm` first argument, with "contradicted" removed
   from its prompt.
 
+- **`learn-consolidate.sh --llm` works on macOS.** It wrapped the model call in GNU `timeout`,
+  which stock macOS does not ship; with stderr discarded the missing command failed silently,
+  the model was never called, and every run ended in "response too short". The call now uses
+  `timeout`, else Homebrew's `gtimeout`, else runs unwrapped.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch

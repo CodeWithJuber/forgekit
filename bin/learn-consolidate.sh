@@ -59,8 +59,17 @@ include secrets/tokens/PII. Output only the markdown, no preamble.
 LESSONS:
 $all"
 
+# `timeout` is GNU coreutils: stock macOS has none (Homebrew coreutils installs it as
+# `gtimeout`). Calling a missing `timeout` failed silently here (stderr is discarded), so
+# claude never ran and every --llm run on a Mac ended in "response too short".
+limited() {
+  if command -v timeout >/dev/null 2>&1; then timeout 180 "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then gtimeout 180 "$@"
+  else "$@"; fi
+}
+
 # Uses your logged-in session (slower startup, but authed). Weekly/cron task.
-out="$(printf '%s' "$prompt" | timeout 180 claude -p --model haiku 2>/dev/null)"
+out="$(printf '%s' "$prompt" | limited claude -p --model haiku 2>/dev/null)"
 out="$(printf '%s' "$out" | sed '/^[[:space:]]*$/d')"
 
 # Guard: never overwrite/delete on an error or empty/too-short response.
