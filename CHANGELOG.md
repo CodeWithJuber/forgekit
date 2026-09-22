@@ -18,6 +18,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entropy leg everywhere, like lockfile integrity digests. A `ghp_…` token inside a binary is
   still refused, and an unreadable diff still fails closed.
 
+### Changed
+
+- **The gate docs no longer claim that repeated gates multiply their catch rates.** The
+  headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
+  verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch
+  layer, so the silent-miss probability fell multiplicatively. The formal synthesis withdrew
+  that (§5.3, corrected 2026-09-21): the same classifier run on the same diff fires together,
+  so the residual is `(1−p)(1−c_max)`, and a later rung adds catches only where it sees what
+  the earlier one could not (edits after the turn, a host where the Stop hook never ran).
+  Comments and docs only; no behaviour change.
+
 ## [1.0.0] - 2026-09-22
 
 ### Added

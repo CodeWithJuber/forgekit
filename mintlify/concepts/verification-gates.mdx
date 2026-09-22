@@ -4,9 +4,11 @@ description: "Independent verification, the hallucinated-symbol flag, spec-as-co
 ---
 
 Nothing is "done" without a check you can run — a test, a build exit code, a screenshot.
-Forge's verification gates each add one more catch. With per-task miss rate `1 − p` and a
-gate catch rate `c`, silent misses fall to `(1 − p)(1 − c)`, and every gate here is one
-more `c`.
+With per-task miss rate `1 − p`, silent misses fall to `(1 − p)` times the chance that no
+check fires on the miss: `(1 − p)(1 − c)` for one gate with catch rate `c`. A further gate
+lowers that only where it catches something the others cannot. The same check repeated at
+another point (Stop hook, pre-commit, CI on the same diff) fires together with the first,
+so the residual stays `(1 − p)(1 − c_max)` rather than a product.
 
 <Warning>
   **Verification reduces, does not certify.** Crew verifiers and the hallucinated-symbol

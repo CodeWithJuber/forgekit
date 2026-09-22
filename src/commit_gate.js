@@ -1,9 +1,16 @@
 // forge precommit — the commit-level rung of the gate lattice (turn ⊂ commit ⊂ PR).
 // The Stop hook gates the TURN and CI's docs check gates the PR; this module runs the
 // same F1 classifier at the commit boundary so a commit that ships code without its
-// doc/state artifact is caught while the fix is still one `git add` away. Same math as
-// the paper's Theorem D: each rung is an independent cⱼ layer over the identical
-// structural signal, so P(silent miss) falls multiplicatively, not by hope.
+// doc/state artifact is caught while the fix is still one `git add` away.
+// What this rung does NOT buy (formal synthesis §5.3, corrected 2026-09-21): the rungs
+// are not independent. On the same diff the copies of one classifier fire together or
+// not at all, so they are nested checks and the residual is (1−p)(1−c_max), not
+// (1−p)·∏(1−cⱼ) — repeating a check does not multiply its catch rate. The rung adds
+// catches only where it sees what the Stop hook could not: edits made after the turn
+// ended, a host or session where the Stop hook never ran (no hook support,
+// FORGE_STOPGATE=0, a human committing), or a session whose one Stop block was already
+// spent. That is also the portability argument: without hooks, the same check re-binds
+// at pre-commit without changing the math.
 //
 // Two detectors, both reused — never reimplemented:
 //  (i) COMPLETENESS — classifyPath (gate.js), the same registry-derived total function

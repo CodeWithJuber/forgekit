@@ -200,8 +200,12 @@ to decide whether an edit is safe to start. Surface: `forge reuse query | mint |
 Two failure modes this layer exists to kill: **partial work** (code changes without the
 artifacts that depend on it) and **session amnesia** (the next session re-assumes what
 this one knew). Instructions raise the _probability_ of correct behavior; deterministic
-hooks guarantee a _floor_ — with per-task miss rate `1−p` and gate catch rate `c`,
-silent misses fall to `(1−p)(1−c)`, and every layer here is one more `c`.
+hooks guarantee a _floor_ — with per-task miss rate `1−p`, silent misses fall to
+`(1−p)·P(no check fires | miss)`: `(1−p)(1−c)` for one check with catch rate `c`. A second
+check lowers that only where it catches what the first cannot; the product `∏(1−cⱼ)` holds
+only if the checks fire independently. The same check repeated at another point (Stop,
+pre-commit, CI on the same diff) is nested, so the residual is `(1−p)(1−c_max)` (formal
+synthesis §5.3, corrected 2026-09-21).
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
 `completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
@@ -332,8 +336,11 @@ the gate lattice (turn ⊂ commit ⊂ PR): the Stop hook gates the turn and CI's
 gates the PR, so this runs the SAME registry-derived completeness classifier
 (`classifyPath` from `gate.js`) plus `hasSecret` over staged added lines at the commit
 boundary — code staged without its doc/state artifact, or a staged secret, is caught
-while the fix is still one `git add` away. Each rung is an independent catch layer, so
-the silent-miss probability falls multiplicatively.
+while the fix is still one `git add` away. The rungs are **not** independent catch
+layers: on the same diff the copies fire together, so they do not multiply the catch rate
+and the residual stays `(1−p)(1−c_max)`. This rung adds catches only where it sees what the
+Stop hook could not — edits made after the turn ended, a host or session where the Stop
+hook never ran, or a session whose one Stop block was already spent.
 
 **Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
 asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses

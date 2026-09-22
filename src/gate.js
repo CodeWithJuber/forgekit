@@ -3,9 +3,13 @@
 // guarantees a floor: a session that changed code but produced no TEST EVIDENCE (a test
 // file moved, or a fresh passing `verify` provenance stamp) or moved no doc/state
 // artifact is blocked ONCE, with the exact repair procedure as the reason. P(silent miss) =
-// (1−p)·∏(1−cⱼ) — the gate is the cⱼ≈1 layer for the structural signal "code moved,
-// nothing followed". Loop-safe (stop_hook_active + once-per-session marker), fail-open
-// on every error path, kill switch FORGE_STOPGATE=0.
+// (1−p)·P(no check fires | miss) (formal synthesis Theorem D, corrected 2026-09-21). On
+// its proxy, "code moved, nothing followed", the first stop fires exactly (T3). Its catch
+// rate on real misses depends on the agent (touching state.md satisfies the docs leg, and
+// the block fires once per session) and has not been measured. The same classifier re-run
+// at pre-commit or in CI is a NESTED check on the same diff: (1−p)(1−c_max), not a
+// product. Loop-safe (stop_hook_active + once-per-session marker), fail-open on every
+// error path, kill switch FORGE_STOPGATE=0.
 //
 // Classification derives from the SAME registries the atlas is built from (CODE_EXTS/
 // DOC_EXTS/config rules) + the shared test-file predicate — no parallel regex lists that
