@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Universal router** (`src/router`, `forge route universal|outcome|fit|models`). It recommends a model or a cascade across any provider's models, with no vendor, tier or threshold in code.
+  - **Model:** multidimensional IRT for who solves what, with correlated failures integrated by Gauss–Hermite quadrature; a log-linear cost model; and a cascade policy with a parameter-free default objective (`match-best-single`) plus `target`, `value` and `budget`.
+  - **Data:** the models live in `data/models.json` and `.forge/models.json`. A shipped prior is fitted on public SWE-bench Verified runs of 11 models from 7 providers. `route outcome` and `route fit` perform a Bayesian update on the project's own outcomes.
+  - **Measured** (harness-bench run 4, pre-registered, 350 held-out issues): 76.3% solved at $0.093 per task, against 75.1% at $0.364 for the best single model chosen on dev (non-inferior, 74% cheaper). See docs/UNIVERSAL_ROUTING.md for the limits.
+
 ### Fixed
 
 - **Binary files no longer trip the commit gate's secret scan.** The staged scan reads every
