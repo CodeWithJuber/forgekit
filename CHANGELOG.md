@@ -89,6 +89,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Windows, so a Git Bash `HOME` that differed from it made `learn-consolidate` look in the
   wrong place. `learnedDir()` now follows `HOME` when it is set.
 
+- **Sonnet 5 is priced at $2/$10 per million tokens again.** Anthropic made the launch price
+  the standard price and cancelled the $3/$15 increase scheduled for 2026-09-01, so from
+  that date the tier table (and the cost report, which reads its flat price) overstated
+  Sonnet 5 by 50%. `src/model_tiers.json` is re-verified against the pricing page
+  (`pricingVerified` 2026-09-22), and the universal router's registry entry matches.
+
 - **The gate docs no longer claim that repeated gates multiply their catch rates.** The
   headers of `src/commit_gate.js` and `src/gate.js`, ARCHITECTURE.md §5 and the Mintlify
   verification-gates page said each rung (Stop, pre-commit, CI) was an independent catch
