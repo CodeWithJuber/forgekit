@@ -66,19 +66,34 @@ export function getProvider() {
   return provider;
 }
 
-/** Cosine similarity in [-1,1]; zero-norm or empty vectors → 0 (never NaN). */
+/** Cosine similarity in [-1,1]; zero-norm, empty or non-finite vectors → 0 (never NaN).
+ *  Each vector is scaled by its largest |component| first — cosine is scale-invariant, and
+ *  unscaled squares overflow to Infinity (components ≳ 1e154 gave Infinity/Infinity = NaN)
+ *  or underflow to 0 (≲ 1e-162 read as a zero vector). */
 export function cosine(a, b) {
   const n = Math.min(a?.length ?? 0, b?.length ?? 0);
   if (!n) return 0;
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i++) {
+    const x = Math.abs(a[i]);
+    const y = Math.abs(b[i]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return 0; // NaN / ±Infinity component
+    if (x > ma) ma = x;
+    if (y > mb) mb = y;
+  }
+  if (!ma || !mb) return 0;
   let dot = 0;
   let na = 0;
   let nb = 0;
   for (let i = 0; i < n; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
+    const x = a[i] / ma;
+    const y = b[i] / mb;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
   }
-  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+  return Math.max(-1, Math.min(1, dot / Math.sqrt(na * nb))); // rounding can overshoot ±1
 }
 
 const isVec = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => Number.isFinite(x));

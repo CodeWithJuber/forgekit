@@ -9,6 +9,17 @@ import { classifyIntent, intentCard, PROTOCOL_CARDS } from "../src/intent.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 
+test("classifyIntent: confidence belongs to the winning intent (deep review D9)", () => {
+  // Two release rows outvote one closer question row; the reported confidence used to be the
+  // question row's similarity — evidence for an intent that lost.
+  const r = classifyIntent("what does the release script do");
+  const best = Math.max(...r.neighbors.filter((n) => n.intent === r.intent).map((n) => n.sim));
+  assert.ok(Math.abs(r.confidence - best) < 1e-3, `confidence ${r.confidence} vs best ${best}`);
+  const top = r.neighbors[0];
+  if (top.intent !== r.intent)
+    assert.ok(r.confidence < top.sim, "and it is not the losing neighbor's similarity");
+});
+
 test("classifyIntent: each intent recognized from unseen phrasings (English)", () => {
   assert.equal(classifyIntent("fix the crash on the settings page").intent, "bugfix");
   assert.equal(classifyIntent("add a page to export invoices as csv").intent, "feature");

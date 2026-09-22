@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { computeCodeState } from "../src/verify.js";
+import { computeCodeState, signProvenance } from "../src/verify.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 const GUARD = join(
@@ -60,7 +61,9 @@ function writeProvenance(root, status, { offsetMs = 5000, codeState = true } = {
   const p = join(root, ".forge", "provenance.json");
   const stamp = { tests: { status } };
   if (codeState) stamp.codeState = computeCodeState(root);
-  writeFileSync(p, JSON.stringify(stamp));
+  // Signed exactly as `forge verify` signs it (B7) — an UNSIGNED stamp is what an agent can
+  // hand-write, and its own test below pins that the gate refuses it.
+  writeFileSync(p, JSON.stringify(signProvenance(stamp)));
   const t = new Date(Date.now() + offsetMs);
   utimesSync(p, t, t);
 }
@@ -262,6 +265,27 @@ test("HI-02: a verify PASS goes stale once code changes after it (dirtyHash mism
   assert.match(out.reason, /test evidence/i);
 });
 
+test("HI-02: a stale PASS is caught even when the pending diff exceeds 1 MiB (B3)", () => {
+  // computeCodeState read `git diff HEAD` with the 1 MiB default buffer: past it the diff
+  // hashed as "", so every state with a big pending change looked identical and the stale
+  // PASS survived a post-verify edit.
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "data.txt"), "seed\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "data");
+  start(root, "b3big");
+  let big = "";
+  for (let i = 0; i < 40000; i++) big += `row ${i} lorem ipsum dolor sit amet\n`;
+  writeFileSync(join(root, "data.txt"), big); // ~1.5 MB tracked diff
+  writeFileSync(join(root, "a.js"), "export const one = 24;\n");
+  writeFileSync(join(root, ".forge", "state.md"), "# state\n");
+  writeProvenance(root, "PASS");
+  writeFileSync(join(root, "a.js"), "export const one = () => { throw new Error('x'); };\n");
+  const out = JSON.parse(stopGate(root, "b3big").stdout || "{}");
+  assert.equal(out.decision, "block", "the edit after verify must invalidate the stamp");
+  assert.notEqual(computeCodeState(root).dirtyHash, null, "a big diff still binds");
+});
+
 test("HI-02: a verify PASS bound to the FINAL code state + handoff → allow", () => {
   const { root } = gitFixture();
   start(root, "hi2b");
@@ -356,4 +380,71 @@ test("unwritable marker → stand down instead of blocking every turn", () => {
   const r = stopGate(root, "ro1");
   assert.equal(r.status, 0);
   assert.equal(r.stdout.trim(), "", "block-once cannot be promised → fail open");
+});
+
+// ── B7: the evidence the gate trusts lives in files the agent can write. Both are now MAC'd
+// with a machine-local key kept outside the repo, so a hand-written one is not evidence.
+test("B7: a hand-written provenance stamp is not test evidence", () => {
+  const { root } = gitFixture();
+  start(root, "b7a");
+  writeFileSync(join(root, "a.js"), "export const one = 71;\n");
+  writeFileSync(join(root, ".forge", "state.md"), "# state\n"); // docs leg present
+  // Exactly what an agent can produce on its own: the right shape, the right code state,
+  // no MAC (forge verify never ran).
+  const forged = { tests: { status: "PASS" }, codeState: computeCodeState(root) };
+  const p = join(root, ".forge", "provenance.json");
+  writeFileSync(p, JSON.stringify(forged));
+  const t = new Date(Date.now() + 5000);
+  utimesSync(p, t, t);
+  const out = JSON.parse(stopGate(root, "b7a").stdout || "{}");
+  assert.equal(out.decision, "block", "an unsigned stamp does not satisfy the strong leg");
+
+  // …and the same stamp, signed the way `forge verify` signs it, passes. (A fresh repo and
+  // session: the first gate call above already spent this session's block-once marker.)
+  const second = gitFixture().root;
+  start(second, "b7a2");
+  writeFileSync(join(second, "a.js"), "export const one = 71;\n");
+  writeFileSync(join(second, ".forge", "state.md"), "# state\n");
+  const signed = signProvenance({ tests: { status: "PASS" }, codeState: computeCodeState(second) });
+  const p2 = join(second, ".forge", "provenance.json");
+  writeFileSync(p2, JSON.stringify(signed));
+  utimesSync(p2, t, t);
+  assert.equal(
+    stopGate(second, "b7a2").stdout.trim(),
+    "",
+    "a signed, code-state-bound PASS passes",
+  );
+});
+
+test("B7: a pre-written block-once marker does not switch the gate off", () => {
+  const { root } = gitFixture();
+  start(root, "b7b");
+  writeFileSync(join(root, "a.js"), "export const one = 72;\n");
+  // The agent drops the marker in before stopping — the gate used to read it as
+  // "already blocked once" and wave the session through.
+  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+  writeFileSync(join(root, ".forge", "sessions", "b7b.blocked"), `${new Date().toISOString()}\n`);
+  const out = JSON.parse(stopGate(root, "b7b").stdout || "{}");
+  assert.equal(out.decision, "block", "a forged marker is ignored");
+  // The gate's OWN marker (written by that block) still ends the loop at the next stop.
+  assert.equal(stopGate(root, "b7b").stdout.trim(), "", "block once, then proceed");
+});
+
+test("B7: a comment-only touch to a test file is not test evidence", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(
+    join(root, "a.test.js"),
+    "import { test } from 'node:test';\ntest('x', () => {});\n",
+  );
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "add test");
+  start(root, "b7c");
+  writeFileSync(join(root, "a.js"), "export const one = 73;\n"); // code changed
+  writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n"); // docs leg
+  appendFileSync(join(root, "a.test.js"), "// touched\n"); // a comment, not a test
+  const out = JSON.parse(stopGate(root, "b7c").stdout || "{}");
+  assert.equal(out.decision, "block", "a comment line is not a test");
+  // A real added assertion IS evidence.
+  appendFileSync(join(root, "a.test.js"), "test('two', () => {});\n");
+  assert.equal(stopGate(root, "b7c2").stdout.trim(), "", "real added test code counts");
 });

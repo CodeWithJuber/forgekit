@@ -35,3 +35,29 @@ test("ledger at accepts a real date and a bare epoch-day equally", () => {
   assert.equal(run(["ledger", "at", "2026-08-01"], root).status, 0);
   assert.equal(run(["ledger", "at", "20666"], root).status, 0);
 });
+
+test("ledger retract (C2): a prefix is refused; the full id tombstones under the human's identity", async () => {
+  const { mintClaim } = await import("../src/ledger.js");
+  const { loadClaims, putClaim, repoLedger } = await import("../src/ledger_store.js");
+  const root = mkdtempSync(join(tmpdir(), "forge-cliledger-"));
+  const dir = repoLedger(root);
+  const c = mintClaim({ kind: "fact", body: { name: "port", text: "api listens on 8080" } }).claim;
+  putClaim(dir, c);
+  const retract = (id) =>
+    spawnSync("node", [CLI, "ledger", "retract", id, "--reason", "stale"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, FORGE_NO_HINT: "1", FORGE_AUTHOR: "Alice <alice@corp>" },
+    });
+  for (const prefix of [c.id.slice(0, 2), c.id.slice(0, 12), c.id.slice(0, 63)]) {
+    const r = retract(prefix);
+    assert.equal(r.status, 1, `prefix ${prefix.length} chars refused`);
+    assert.match(r.stderr, /full 64-character claim id/);
+  }
+  assert.equal(loadClaims(dir)[0].tombstone, undefined, "no prefix ever tombstones");
+  const ok = retract(c.id);
+  assert.equal(ok.status, 0, ok.stderr);
+  const t = loadClaims(dir)[0].tombstone;
+  assert.equal(t.author, "Alice <alice@corp>");
+  assert.equal(t.reason, "stale");
+});

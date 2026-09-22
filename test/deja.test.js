@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   buildSummary,
-  DEJA_FLOOR,
+  DEJA_REL_FLOOR,
   dejaAdvisory,
   dejaFromLedger,
   dejaLine,
   dejaLookup,
   recordSessionSummary,
 } from "../src/deja.js";
-import { val } from "../src/ledger.js";
-import { loadClaims, repoLedger } from "../src/ledger_store.js";
+import { mintClaim, val } from "../src/ledger.js";
+import { loadClaims, putClaim, repoLedger } from "../src/ledger_store.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-deja-"));
 
@@ -79,8 +79,8 @@ test("dejaLookup only ranks task-shaped kinds (summary/lesson/diagnosis)", () =>
 });
 
 test("dejaLine: floor gate silences noise; verified marker rides evidence", () => {
-  const strong = { claim: claim("summary", "x"), score: DEJA_FLOOR + 0.1 };
-  const weak = { claim: claim("summary", "x"), score: DEJA_FLOOR - 0.01 };
+  const strong = { claim: claim("summary", "x"), score: 0.6, rel: DEJA_REL_FLOOR + 0.1 };
+  const weak = { claim: claim("summary", "x"), score: 0.9, rel: DEJA_REL_FLOOR - 0.01 };
   assert.equal(dejaLine(weak, 100), "", "below floor → silent");
   assert.ok(dejaLine(strong, 100).includes("déjà vu"));
   assert.ok(!dejaLine(strong, 100).includes("verified"), "no evidence → not verified");
@@ -97,7 +97,7 @@ test("dejaLine: floor gate silences noise; verified marker rides evidence", () =
     ],
   });
   assert.ok(val(confirmed, 100) > 0.5);
-  assert.ok(dejaLine({ claim: confirmed, score: 0.9 }, 100).includes("(verified)"));
+  assert.ok(dejaLine({ claim: confirmed, score: 0.9, rel: 1 }, 100).includes("(verified)"));
 });
 
 test("dejaAdvisory: kill switch and empty task both yield silence", () => {
@@ -131,9 +131,9 @@ test("recordSessionSummary mints a retrievable summary; passing tests make it ve
   assert.equal(hits[0].claim.id, r.id, "the fresh summary is retrievable next session");
 });
 
-test("dejaAdvisory actually fires for a repeated task (DEJA_FLOOR is inside the real range)", () => {
-  // Regression guard: DEJA_FLOOR must sit below the achievable score() ceiling for a
-  // repo-scoped summary (~0.42), or the whole anti-repetition feature is a silent no-op.
+test("dejaAdvisory actually fires for a repeated task (DEJA_REL_FLOOR is inside the real range)", () => {
+  // Regression guard: the gate must fire for a repeat and stay silent otherwise, or the
+  // anti-repetition feature is either a silent no-op or a permanent false positive.
   const root = fixture();
   recordSessionSummary(
     root,
@@ -158,4 +158,51 @@ test("recordSessionSummary is best-effort and returns cleanly on an empty sessio
   const r = recordSessionSummary(root, "sess-empty", [], 200);
   assert.equal(r.ok, false);
   assert.deepEqual(dejaFromLedger(root, "anything", { nowDay: 200 }), []);
+});
+
+test("déjà vu is gated on RELEVANCE (C8): an unrelated prompt never surfaces a symbol lesson", () => {
+  const root = fixture();
+  const dir = repoLedger(root);
+  // The exact shape that used to fire on every prompt: a symbol-scoped lesson (scope 1.0)
+  // whose total score cleared the old 0.39 floor regardless of the query.
+  const lesson = mintClaim({
+    kind: "lesson",
+    body: {
+      whatWentWrong: "broke parseConfig callers",
+      correctedBehavior: "update callers of parseConfig",
+      trigger: { symbols: ["parseConfig"], keywords: [], files: ["src/config.js"], action: "edit" },
+    },
+    scope: { level: "symbol" },
+    t: 100,
+  }).claim;
+  putClaim(dir, lesson);
+  recordSessionSummary(
+    root,
+    "sess-dark",
+    [{ type: "prompt", text: "add dark mode toggle to the settings page" }],
+    100,
+  );
+  for (const day of [100, 400]) {
+    assert.equal(
+      dejaAdvisory(root, "translate the README into French", day),
+      "",
+      `day ${day}: an unrelated task is silent`,
+    );
+    const hit = dejaAdvisory(root, "add dark mode toggle to the settings page", day);
+    assert.match(hit, /déjà vu/, `day ${day}: the real repeat still fires`);
+    assert.match(hit, /dark mode/);
+  }
+});
+
+test("buildSummary: only a REAL test run counts as verification", () => {
+  const tested = (command) =>
+    buildSummary([
+      { type: "prompt", text: "refactor billing" },
+      { type: "bash", command, exitCode: 0 },
+    ]).tested;
+  assert.equal(tested("npm test"), true);
+  assert.equal(tested("cd api && npx vitest run"), true);
+  assert.equal(tested("echo 'run npm test later'"), false, "mentioning a test is not running one");
+  assert.equal(tested("grep -r 'jest' package.json"), false);
+  assert.equal(tested("npm test || true"), false, "a swallowed exit code proves nothing");
 });

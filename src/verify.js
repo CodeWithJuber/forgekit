@@ -4,9 +4,10 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { detectStack } from "./stack.js";
 
@@ -20,14 +21,96 @@ export function findUnknownSymbols(atlas, symbols) {
   return symbols.filter((s) => !has(atlas, s));
 }
 
+// git output can be large (a lockfile regen, a generated asset): the 1 MiB execFileSync
+// default turned an over-size diff into "" — for computeCodeState that made every state
+// with a big pending change hash identically, so a stale PASS survived later edits.
+const GIT_MAX_BUFFER = 256 * 1024 * 1024;
+/** @param {string[]} args @param {string} cwd — THROWS on any git error / overflow. */
+function gitStrict(args, cwd) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: GIT_MAX_BUFFER,
+  });
+}
+
 function git(args, cwd) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8" });
+    return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: GIT_MAX_BUFFER });
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge verify git: ${err?.message ?? err}\n`);
     return "";
   }
+}
+
+// ── Evidence authenticity (review B7). The provenance stamp and the Stop gate's
+// block-once marker are plain files under `.forge/`, which the agent can write: a
+// hand-written `{"tests":{"status":"PASS"}}` satisfied the gate's strong leg. They are now
+// MAC'd with a machine-local key kept OUTSIDE the repo (the XDG state dir, mode 0600,
+// created on first use), so a file written by hand — or copied from another checkout —
+// does not verify.
+//
+// NOT a security boundary, and deliberately not sold as one: an agent with shell access can
+// read the key. What it buys is that forging evidence is no longer a side effect of writing
+// one JSON file in the project; it takes a deliberate, visible step outside the repo. Real
+// unforgeability needs a signer the agent cannot reach (CI, or a helper process holding the
+// key) — see the review's B7 note.
+function evidenceKeyPath() {
+  if (process.env.FORGE_HOME) return join(process.env.FORGE_HOME, "evidence.key");
+  const xdg = process.env.XDG_STATE_HOME;
+  const base = xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
+  return join(base, "evidence.key");
+}
+
+/**
+ * The machine-local evidence key, created on first use. `null` only when the state dir is
+ * unwritable AND no key exists — callers then degrade to unsigned evidence rather than
+ * bricking the gate (a missing key cannot be an agent's doing: the gate creates it too).
+ * @returns {string|null}
+ */
+export function evidenceKey() {
+  const p = evidenceKeyPath();
+  try {
+    const k = readFileSync(p, "utf8").trim();
+    if (k) return k;
+  } catch {}
+  try {
+    mkdirSync(dirname(p), { recursive: true });
+    const k = randomBytes(32).toString("hex");
+    writeFileSync(p, `${k}\n`, { mode: 0o600 });
+    try {
+      chmodSync(p, 0o600);
+    } catch {}
+    return k;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * MAC over the claim an evidence file makes. `null` when no key is available.
+ * @param {(string|null|undefined)[]} parts
+ * @returns {string|null}
+ */
+export function evidenceMac(parts) {
+  const key = evidenceKey();
+  if (!key) return null;
+  return createHmac("sha256", key)
+    .update(parts.map((p) => String(p ?? "")).join("\u0000"))
+    .digest("hex");
+}
+
+/** The MAC a `verify` provenance stamp must carry to count as test evidence. */
+export const provenanceMac = (prov) =>
+  evidenceMac(["verify", prov?.tests?.status, prov?.codeState?.dirtyHash, prov?.codeState?.head]);
+
+/** Sign a provenance object in place (no-op when no key is available). */
+export function signProvenance(prov) {
+  const mac = provenanceMac(prov);
+  if (mac) prov.signature = mac;
+  return prov;
 }
 
 /**
@@ -37,7 +120,10 @@ function git(args, cwd) {
  * `verify` stamp can be BOUND to the exact code state it validated (HI-02): at Stop the
  * gate recomputes this and only trusts the PASS when the hash still matches. Never throws;
  * `gitAvailable:false` / `dirtyHash:null` is the honest "cannot bind" signal (the gate then
- * refuses to count the stamp). Pure w.r.t. the tree — reads git + files, writes nothing.
+ * refuses to count the stamp) — including when git cannot produce a diff (an error or an
+ * over-size output hashes as "cannot bind", never as the empty diff). Diffs are taken with
+ * `--binary --no-ext-diff --no-textconv`, so repo attributes/drivers cannot hide a change.
+ * Pure w.r.t. the tree — reads git + files, writes nothing.
  * @param {string} [cwd]
  * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean}}
  */
@@ -54,8 +140,10 @@ export function computeCodeState(cwd = process.cwd()) {
       .filter((f) => f && !f.startsWith(".forge/"))
       .sort();
     const h = createHash("sha256");
-    h.update(git(["diff", "HEAD"], cwd));
-    h.update(git(["diff", "--cached"], cwd));
+    const raw = ["--binary", "--no-ext-diff", "--no-textconv", "--no-color"];
+    // Unborn HEAD (no commit yet): index-vs-worktree + staged covers the whole change.
+    h.update(gitStrict(head ? ["diff", "HEAD", ...raw] : ["diff", ...raw], cwd));
+    h.update(gitStrict(["diff", "--cached", ...raw], cwd));
     for (const f of untracked) {
       try {
         h.update(readFileSync(join(cwd, f)));
@@ -116,6 +204,23 @@ function parseRunnerStrings(cmds) {
     return { label: cmd };
   });
 }
+// A `test` script that can never fail is not a verifier (review B7): `node --test || true`
+// exits 0 whatever the tests do, so `forge verify` reported PASS and the Stop gate accepted
+// it as evidence. Detect the failure-masking shapes and report INCOMPLETE — "the runner
+// cannot produce a verdict" — instead of a PASS that proves nothing.
+const MASKS_FAILURE = /(\|\||;)\s*(true\b|:\s*$|:\s|exit\s+0\b)|\|\|\s*echo\b|--passWithNoTests\b/;
+
+/** The repo's `scripts.test` when it masks failure, else null. Pure w.r.t. the tree.
+ *  @param {string} cwd @returns {string|null} */
+export function maskedTestScript(cwd) {
+  try {
+    const script = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"))?.scripts?.test;
+    return typeof script === "string" && MASKS_FAILURE.test(script) ? script : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Is this descriptor one forge can execute directly (whitelisted bin, and a
  *  package.json present for the package-manager runners)? Pure. */
 function isExecutable(r, cwd) {
@@ -124,6 +229,59 @@ function isExecutable(r, cwd) {
     EXECUTORS.has(r.bin) &&
     (r.bin === "pytest" || existsSync(join(cwd, "package.json")))
   );
+}
+
+/**
+ * Classify ONE suite's spawn failure — pure, so every branch is testable without a real
+ * signal (POSIX-only fixtures made the ME-02 case untestable on Windows, where a shebang
+ * script cannot self-kill and simply exits with a real code). Only a completed run with a
+ * real exit code is a FAIL; anything that never reached a verdict is INCOMPLETE.
+ * @param {{code?: string, status?: number|null, signal?: string|null, stdout?: unknown, message?: string}} e
+ * @param {{label: string, bin?: string, timeout: number}} ctx
+ * @returns {SuiteResult}
+ */
+export function classifySuiteFailure(e, { label, bin, timeout }) {
+  if (e.code === "ENOENT") {
+    // The detected runner's binary isn't installed here — nothing ran, and silently
+    // substituting another package manager would verify the wrong thing.
+    return {
+      label,
+      status: "INCOMPLETE",
+      exitCode: null,
+      code: "ENOENT",
+      output: `executor unavailable (${bin ?? label} not on PATH)`,
+    };
+  }
+  if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
+    // Killed for running too long — it started but never reached a verdict.
+    return {
+      label,
+      status: "INCOMPLETE",
+      exitCode: null,
+      timedOut: true,
+      signal: e.signal ?? undefined,
+      output: `exceeded ${timeout}ms`,
+    };
+  }
+  if (typeof e.status === "number") {
+    // A real, completed run that exited non-zero — the ONLY true FAIL.
+    return {
+      label,
+      status: "FAIL",
+      exitCode: e.status,
+      output: String(e.stdout || e.message || "").slice(-600),
+    };
+  }
+  // EACCES / ENOEXEC / other spawn failure / signal termination: the suite did NOT
+  // execute, so this is INCOMPLETE, never FAIL (ME-02).
+  return {
+    label,
+    status: "INCOMPLETE",
+    exitCode: null,
+    code: e.code,
+    signal: e.signal ?? undefined,
+    output: `did not execute (${e.code || e.signal || "spawn error"})`,
+  };
 }
 
 /**
@@ -156,8 +314,20 @@ function runTests(cwd) {
   const executed = [];
   /** @type {string[]} */
   const notExecuted = [];
+  const masked = maskedTestScript(cwd);
   for (const r of runners) {
     const label = r?.label ?? String(r?.bin ?? "unknown");
+    if (masked && r?.bin && r.bin !== "pytest") {
+      // The package script swallows its own failures — running it can only produce a
+      // meaningless 0. Say so instead of minting evidence out of it.
+      executed.push({
+        label,
+        status: "INCOMPLETE",
+        exitCode: null,
+        output: `the package.json test script masks failures (\`${masked.slice(0, 80)}\`) — its exit code cannot be a verdict`,
+      });
+      continue;
+    }
     if (!isExecutable(r, cwd)) {
       // No built-in executor (go/cargo/mvn/gradle/dotnet/rspec/phpunit/npx-runners) —
       // report-only. Its absence means a PASS can't be claimed for the whole repo.
@@ -173,46 +343,7 @@ function runTests(cwd) {
       });
       executed.push({ label, status: "PASS", exitCode: 0 });
     } catch (e) {
-      if (e.code === "ENOENT") {
-        // The detected runner's binary isn't installed here — nothing ran, and silently
-        // substituting another package manager would verify the wrong thing.
-        executed.push({
-          label,
-          status: "INCOMPLETE",
-          exitCode: null,
-          code: "ENOENT",
-          output: `executor unavailable (${r.bin} not on PATH)`,
-        });
-      } else if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
-        // Killed for running too long — it started but never reached a verdict.
-        executed.push({
-          label,
-          status: "INCOMPLETE",
-          exitCode: null,
-          timedOut: true,
-          signal: e.signal,
-          output: `exceeded ${timeout}ms`,
-        });
-      } else if (typeof e.status === "number") {
-        // A real, completed run that exited non-zero — the ONLY true FAIL.
-        executed.push({
-          label,
-          status: "FAIL",
-          exitCode: e.status,
-          output: String(e.stdout || e.message || "").slice(-600),
-        });
-      } else {
-        // EACCES / ENOEXEC / other spawn failure / signal termination: the suite did NOT
-        // execute, so this is INCOMPLETE, never FAIL (ME-02).
-        executed.push({
-          label,
-          status: "INCOMPLETE",
-          exitCode: null,
-          code: e.code,
-          signal: e.signal,
-          output: `did not execute (${e.code || e.signal || "spawn error"})`,
-        });
-      }
+      executed.push(classifySuiteFailure(e, { label, bin: r.bin, timeout }));
     }
   }
 
@@ -340,6 +471,8 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     symbolsChecked: symbols.length,
     unknownSymbols: unknown,
   };
+  // MAC the claim (B7): a hand-written stamp in `.forge/` is not test evidence.
+  signProvenance(provenance);
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
   writeFileSync(join(targetRoot, ".forge", "provenance.json"), JSON.stringify(provenance, null, 2));
 

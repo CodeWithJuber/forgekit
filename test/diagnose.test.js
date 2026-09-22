@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { lastRouteEscalation } from "../src/cost_report.js";
 import {
   diagnose,
   failureSignature,
@@ -16,6 +17,7 @@ import {
   THRASH_K,
 } from "../src/diagnose.js";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
+import { meterRoute } from "../src/route.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-diagnose-"));
 
@@ -187,6 +189,90 @@ test("diagnose prefers the caller's root-cause note over the error head", () => 
   const [claim] = loadClaims(repoLedger(root));
   assert.equal(claim.body.note, f.note);
   assert.equal(claim.id, r.claimId);
+});
+
+// ---------------------------------------------------------------------------
+// Escalation TARGET: whitepaper §5.1 — a model's vote never escalates on its own, but
+// once an EXTERNAL check has failed THRASH_K times the routing record may name the tier.
+// ---------------------------------------------------------------------------
+
+const TASK = "make the worker pool stop deadlocking under load";
+/** A routed task whose proposer voted higher — the advisory target routing did NOT apply. */
+const routedWithEscalation = (root, task = TASK, escalateTo = "opus") =>
+  meterRoute(root, task, { tier: "sonnet", llm: { band: "complex", escalateTo } });
+
+test("diagnose names the tier routing flagged — and only after the failure earns it", () => {
+  const root = fixture();
+  routedWithEscalation(root);
+  const f = { errorText: "TypeError: boom", file: "src/pool.js", symbol: "run", task: TASK };
+  // Below the threshold the recorded vote buys nothing: no escalation has been earned yet.
+  for (let i = 1; i < THRASH_K; i++) {
+    const early = diagnose(root, { ...f, t: i, nowDay: 10 });
+    assert.equal(early.thrash, false);
+    assert.equal(early.escalateTo, undefined, "a model vote escalates nothing on its own");
+    assert.equal(early.escalate, undefined);
+  }
+  const r = diagnose(root, { ...f, t: THRASH_K, nowDay: 10 });
+  assert.equal(r.thrash, true);
+  assert.equal(r.escalateTo, "opus", "the tier routing parked as advisory, now earned");
+  assert.match(r.escalate, /escalate to opus \(the tier routing already flagged for this task\)/);
+  assert.match(r.escalate, /STOP retrying/i);
+  assert.match(r.escalate, /diagnosis as the head/i);
+  assert.doesNotMatch(r.escalate, /ONE model tier/i);
+});
+
+test("diagnose escalation target is fail-safe: no task, no record, or another task", () => {
+  const root = fixture();
+  routedWithEscalation(root);
+  const f = { errorText: "TypeError: boom", file: "src/pool.js", symbol: "run" };
+  const thrash = (extra) => {
+    const r2 = fixture();
+    meterRoute(r2, TASK, { tier: "sonnet", llm: { escalateTo: "opus" } });
+    let out;
+    for (let i = 1; i <= THRASH_K; i++) out = diagnose(r2, { ...f, ...extra, t: i, nowDay: 10 });
+    return out;
+  };
+  for (const [label, extra] of [
+    ["no task at all", {}],
+    ["a task nobody routed", { task: "a completely different task" }],
+    ["an empty task", { task: "" }],
+  ]) {
+    const r = thrash(extra);
+    assert.equal(r.thrash, true, label);
+    assert.equal(r.escalateTo, undefined, `${label} → no target`);
+    assert.match(r.escalate, /escalate ONE model tier/i, `${label} → the old directive, verbatim`);
+  }
+  // A routed task whose proposer did NOT vote higher records no target either.
+  const plain = fixture();
+  meterRoute(plain, TASK, { tier: "sonnet", llm: null });
+  let r;
+  for (let i = 1; i <= THRASH_K; i++) r = diagnose(plain, { ...f, task: TASK, t: i, nowDay: 10 });
+  assert.equal(r.escalateTo, undefined, "no higher vote → nothing to consume");
+  assert.match(r.escalate, /escalate ONE model tier/i);
+});
+
+test("meterRoute/lastRouteEscalation join on the task, and the latest decision wins", () => {
+  const root = fixture();
+  meterRoute(root, TASK, { tier: "sonnet", llm: { escalateTo: "opus" } });
+  assert.equal(lastRouteEscalation(root, TASK), "opus");
+  assert.equal(lastRouteEscalation(root, `${TASK} `), "", "the key is the exact task text");
+  assert.equal(lastRouteEscalation(root, ""), "");
+  assert.equal(lastRouteEscalation(fixture(), TASK), "", "no metrics file → no target");
+  meterRoute(root, TASK, { tier: "opus", llm: { escalateTo: "fable" } });
+  assert.equal(lastRouteEscalation(root, TASK), "fable", "re-routed → the newer target");
+});
+
+test("forge diagnose --task names the routed escalation tier", () => {
+  const cwd = fixture();
+  meterRoute(cwd, TASK, { tier: "sonnet", llm: { escalateTo: "opus" } });
+  const args = ["diagnose", "TypeError: boom", "--file", "src/pool.js", "--task", TASK];
+  let out;
+  for (let i = 0; i < THRASH_K; i++) out = runCli(args, cwd);
+  assert.equal(out.status, 0);
+  assert.match(out.stdout, /escalate to opus/);
+  const j = JSON.parse(runCli([...args, "--json"], cwd).stdout);
+  assert.equal(j.escalateTo, "opus");
+  assert.equal(j.file, undefined, "--task's value is never swallowed as error text");
 });
 
 // ---------------------------------------------------------------------------

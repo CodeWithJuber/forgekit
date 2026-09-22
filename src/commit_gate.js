@@ -17,9 +17,13 @@
 // blocks in BOTH warn and block modes — evidence-proportional (mizan): a missing doc is
 // repairable in the next commit, a credential in history is not; the kill switch and
 // `git commit --no-verify` remain the explicit overrides. Fail-open like stopGate:
-// any internal error resolves to allow — the gate must never brick a commit.
+// any internal error resolves to allow — the gate must never brick a commit. The ONE
+// exception is the secret scan itself: if git cannot produce the staged lines (an error,
+// or a diff past the buffer), those files are UNSCANNED and the commit is refused —
+// "couldn't look" must never read as "nothing there" (the old 1 MiB default buffer
+// turned any leak + one big file into a silent pass).
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { BRAND } from "./brand.js";
 import { CLASSES, classifyPath } from "./gate.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
@@ -34,18 +38,47 @@ import { IGNORE_DIRS } from "./util.js";
 // one source of truth (secrets.js), calibrated to the verb (mizan).
 const lineBlockSecret = (text) => hasSecret(text) && redactSecrets(text) !== text;
 
-// Exact bytes, no trim — same discipline as gate.js's gitRaw.
+// Exact bytes, no trim — same discipline as gate.js's gitRaw. `gitStrict` THROWS on a git
+// error or an over-large output (ENOBUFS) — the secret scan turns that into an unscanned
+// file, never into an empty diff.
+const MAX_DIFF_BYTES = 256 * 1024 * 1024;
+function gitStrict(root, args) {
+  const r = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES });
+  if (r.error) throw r.error; // spawn failure or ENOBUFS — the caller falls back per file
+  if (r.status !== 0) throw new Error(`git exited ${r.status}`);
+  // git can report a hard error on stderr and STILL exit 0 — a staged blob whose object is
+  // missing or unreadable prints `error: unable to read …` and yields an EMPTY diff, which
+  // would read as "this file added no lines" and let a credential through unscanned. Which
+  // git versions exit non-zero for this differs by platform, so trust the message, not the
+  // status. Warnings are routine (CRLF conversion on a Windows checkout) and never fatal.
+  const bad = String(r.stderr || "")
+    .split("\n")
+    .find((l) => /^(error|fatal):/i.test(l.trim()));
+  if (bad) throw new Error(`git reported: ${bad.trim()}`);
+  return r.stdout;
+}
 function gitRaw(root, args) {
   try {
-    return execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    return gitStrict(root, args);
   } catch {
     return "";
   }
 }
+
+// The staged diff exactly as it will be COMMITTED, immune to repo-controlled rendering:
+// `--text` defeats a `.gitattributes` `-diff`/`binary` marking (which printed "Binary
+// files differ" and hid every added line), `--no-textconv` a `diff=<driver>` textconv
+// that rewrites what is shown, `--no-ext-diff` a configured external diff tool.
+const DIFF_ARGS = [
+  "--literal-pathspecs",
+  "diff",
+  "--cached",
+  "--unified=0",
+  "--no-color",
+  "--text",
+  "--no-ext-diff",
+  "--no-textconv",
+];
 
 // Vendor/build trees force-staged past .gitignore are never pinned on the committer —
 // but .forge/ stays IN scope: the ledger/decisions are deliberately git-committable
@@ -63,10 +96,15 @@ const vendorPrefixed = (p) => {
  * @returns {string[]}
  */
 export function stagedFiles(root) {
-  return gitRaw(root, ["diff", "--cached", "--name-only", "-z"])
+  return stagedPaths(root).filter((p) => !vendorPrefixed(p));
+}
+
+/** Every staged path, vendor trees included (a credential there still leaks). `strict`
+ *  throws on a git error instead of reading it as "nothing staged". */
+function stagedPaths(root, strict = false) {
+  return (strict ? gitStrict : gitRaw)(root, ["diff", "--cached", "--name-only", "-z"])
     .split("\0")
-    .filter(Boolean)
-    .filter((p) => !vendorPrefixed(p));
+    .filter(Boolean);
 }
 
 /**
@@ -77,7 +115,47 @@ export function stagedFiles(root) {
  * @returns {Map<string, string[]>}
  */
 export function stagedAddedLines(root) {
-  const raw = gitRaw(root, ["diff", "--cached", "--unified=0", "--no-color"]);
+  return scanStagedAdded(root).byFile;
+}
+
+/**
+ * The secret scan's input, FAIL-CLOSED: one whole-index diff on the fast path; if git
+ * fails or the diff outgrows the buffer, fall back to one diff PER FILE so a single huge
+ * or broken file cannot hide the others — and any file git still cannot diff lands in
+ * `unscanned`, which the decision table refuses.
+ * @param {string} root
+ * @returns {{byFile: Map<string, string[]>, unscanned: string[]}}
+ */
+export function scanStagedAdded(root) {
+  try {
+    return { byFile: parseAddedLines(gitStrict(root, DIFF_ARGS)), unscanned: [] };
+  } catch {}
+  /** @type {string[]} */
+  let paths;
+  try {
+    paths = stagedPaths(root, true);
+  } catch {
+    return { byFile: new Map(), unscanned: ["(staged file list: git diff --cached failed)"] };
+  }
+  const byFile = new Map();
+  const unscanned = [];
+  for (const p of paths) {
+    try {
+      const lines = [...parseAddedLines(gitStrict(root, [...DIFF_ARGS, "--", p])).values()].flat();
+      if (lines.length) byFile.set(p, lines);
+    } catch {
+      unscanned.push(p);
+    }
+  }
+  return { byFile, unscanned };
+}
+
+/**
+ * Parse a `--unified=0` diff into the added lines of each file.
+ * @param {string} raw
+ * @returns {Map<string, string[]>}
+ */
+function parseAddedLines(raw) {
   const byFile = new Map();
   let file = null;
   // A `+++ ` line is the file header ONLY between `diff --git` and the first `@@`; once
@@ -121,14 +199,28 @@ export function gateMode(v = process.env.FORGE_COMMIT_GATE) {
 
 /**
  * PURE decision table over already-gathered facts — the testable core, no git.
- * @param {{staged?: string[], secretFiles?: string[], mode?: "warn"|"block"|"off"}} [opts]
+ * `unscanned` = staged files the secret scan could not read: refused like a secret.
+ * @param {{staged?: string[], secretFiles?: string[], unscanned?: string[], mode?: "warn"|"block"|"off"}} [opts]
  * @returns {{allow: boolean, row: string, findings: {kind: string, severity: string, detail: string, files: string[]}[], classes?: Record<string, string[]>}}
  */
-export function commitGateDecision({ staged = [], secretFiles = [], mode = "warn" } = {}) {
+export function commitGateDecision({
+  staged = [],
+  secretFiles = [],
+  unscanned = [],
+  mode = "warn",
+} = {}) {
   if (mode === "off") return { allow: true, row: "kill-switch", findings: [] };
   const classes = Object.fromEntries(CLASSES.map((c) => [c, []]));
   for (const f of staged) classes[classifyPath(f)].push(f);
   const findings = [];
+  if (unscanned.length) {
+    findings.push({
+      kind: "secret-scan",
+      severity: "block", // fail closed: an unread diff is not a clean diff
+      detail: `could not read the staged lines of: ${unscanned.join(", ")} — refusing rather than committing unscanned content`,
+      files: unscanned,
+    });
+  }
   if (secretFiles.length) {
     findings.push({
       kind: "secret",
@@ -185,11 +277,12 @@ export function commitGate(root, { env = process.env } = {}) {
         staged: [],
       };
     const secretFiles = [];
-    for (const [file, lines] of stagedAddedLines(root)) {
+    const { byFile, unscanned } = scanStagedAdded(root);
+    for (const [file, lines] of byFile) {
       if (lineBlockSecret(lines.join("\n"))) secretFiles.push(file);
     }
     return {
-      ...commitGateDecision({ staged, secretFiles, mode }),
+      ...commitGateDecision({ staged, secretFiles, unscanned, mode }),
       mode,
       staged,
     };
@@ -226,6 +319,11 @@ export function renderCommitGate(r) {
     if (f.kind === "secret") {
       lines.push(
         "      fix: remove the credential from the staged lines (use an env var), then re-stage.",
+      );
+    }
+    if (f.kind === "secret-scan") {
+      lines.push(
+        "      fix: make `git diff --cached --text -- <file>` work (or unstage the file); if it is intentionally huge, commit it with FORGE_COMMIT_GATE=0.",
       );
     }
   }

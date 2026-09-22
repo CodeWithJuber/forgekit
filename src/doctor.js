@@ -145,9 +145,10 @@ function checkSettings(out, settingsPath) {
   out.push({ ...warn("settings", note), fix });
 }
 
-// External tools the guards/commands depend on. secret-redact now runs in Node (no jq),
-// so node is the security-critical dependency; jq only helps protect-paths parse more
-// precisely (it has a grep fallback either way).
+// External tools the guards/commands depend on. Every guard reads its hook payload through
+// node (guards/hookfield.mjs), so node is the security-critical dependency and jq is not
+// needed at all — the grep fallback that used to stand in for it silently mis-parsed
+// commands containing an escaped quote, which is why it is gone.
 function checkTooling(out) {
   // node powers secret redaction — its absence means tool output is NOT scanned for secrets.
   out.push(
@@ -169,8 +170,8 @@ function checkTooling(out) {
   );
   out.push(
     hasBin("jq")
-      ? ok("jq", "found — protect-paths parses hook JSON precisely")
-      : warn("jq", "not found — protect-paths falls back to grep parsing (still enforced)"),
+      ? ok("jq", "found — optional; the guards read hook JSON with node")
+      : na("jq", "not needed — the guards parse hook JSON with node"),
   );
   out.push(
     hasBin("git") ? ok("git", "found") : warn("git", "not found — churn/impact/anchor need it"),

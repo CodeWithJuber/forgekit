@@ -12,7 +12,11 @@ test("harden writes a mergeable sandbox block and reports gitleaks status", () =
   const report = harden({ targetRoot: root });
   const sandbox = JSON.parse(readFileSync(join(root, ".forge", "sandbox.json"), "utf8"));
   assert.equal(sandbox.sandbox.enabled, true);
-  assert.ok(sandbox.credentials.deny.includes("~/.ssh"));
+  // B8: the deny list must use the key Claude Code actually reads (permissions.deny with
+  // Read(<glob>) rules) — the old `credentials.deny` key denied nothing.
+  assert.equal(sandbox.credentials, undefined, "no invented credentials.deny key");
+  assert.ok(sandbox.permissions.deny.includes("Read(~/.ssh/**)"));
+  assert.ok(sandbox.permissions.deny.includes("Read(~/.aws/**)"));
   assert.ok(typeof report.gitleaks === "string");
 });
 

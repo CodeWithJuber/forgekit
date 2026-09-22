@@ -4,6 +4,8 @@
 // touched, lines added, and NEW abstractions introduced — against what the task NAMED, and flags
 // the excess. Deterministic, git/diff-based, zero-dep. Advisory (never blocks); tests always win.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { referencedEntities } from "./preflight.js";
 
 // A new top-level definition introduced on an added (+) diff line — the over-abstraction signal.
@@ -94,21 +96,43 @@ export function assessFootprint(task, actual, { maxLinesForShortTask = 120 } = {
   };
 }
 
+// A brand-new file is INVISIBLE to `git diff HEAD` until it is staged — and a new file is
+// exactly where over-engineering lives (review C10: a 6-class, 212-line "framework" next to
+// a one-line fix measured as 1 file, +1 line, 0 warnings). Untracked files are rendered as
+// what they are: an all-added diff. Binary and very large files are counted as touched files
+// without inventing added lines.
+const UNTRACKED_LINE_CAP = 20000;
+
+function untrackedDiff(root, run) {
+  const listed = run(["ls-files", "--others", "--exclude-standard"])
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const parts = [];
+  for (const rel of listed) {
+    let text = "";
+    try {
+      text = readFileSync(join(root, rel), "utf8");
+    } catch {
+      text = "";
+    }
+    const lines = text.includes("\0") ? [] : text.split(/\r?\n/).slice(0, UNTRACKED_LINE_CAP);
+    if (lines.length && lines.at(-1) === "") lines.pop();
+    parts.push(`--- /dev/null\n+++ b/${rel}\n${lines.map((l) => `+${l}`).join("\n")}`);
+  }
+  return parts.length ? `${parts.join("\n")}\n` : "";
+}
+
 function gitDiff(root, base) {
-  try {
-    const staged = execFileSync("git", ["diff", "--unified=0", base], {
+  const run = (args) =>
+    execFileSync("git", args, {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return (
-      staged ||
-      execFileSync("git", ["diff", "--unified=0", "--cached"], {
-        cwd: root,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      })
-    );
+  try {
+    const tracked = run(["diff", "--unified=0", base]) || run(["diff", "--unified=0", "--cached"]);
+    return tracked + untrackedDiff(root, run);
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge lean gitDiff: ${err?.message ?? err}\n`);

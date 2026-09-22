@@ -6,6 +6,9 @@
 \pagestyle{plain}
 \usepackage{booktabs}
 \usepackage{graphicx}
+% Passages changed by the 2026-09-21 corrections are marked with a dagger; see the
+% Corrections section at the end.
+\newcommand{\corr}{\textsuperscript{\dag}}
 
 \begin{document}
 
@@ -34,13 +37,17 @@ F1 falls from $1.00$ to $0.37$, and the cost saving does not merely shrink but i
 pipeline's actual total spend, routing costs $20.2\%$ \emph{more} than always using the premium tier.
 
 We report three things beyond the refutation. First, a structural decomposition of all
-$18{,}221$ false negatives showing that $96.8\%$ are \emph{not} a ground-truth ceiling
-but an artifact of reverse-only graph traversal, together with a construction defect whose safe
+$18{,}221$ false negatives showing that $96.8\%$ have a static path in the oracle's own graph
+that its reverse-only traversal cannot take --- a bound on what static analysis could reach, not
+evidence that those misses are fixable\corr{} --- together with a construction defect whose safe
 repair alone recovers an $11.0\times$ recall gap. Second, a repair of both defects evaluated
 under the same frozen protocol with a declared tuning/held-out repository split. Third,
 the observation that our central composition law is decades-old layer-of-protection
 algebra, and was independently and more generally derived weeks before our own write-up.
 We argue the transferable contribution is the protocol, not the mechanisms.
+Corrections made on 2026-09-21 after an external review (listed at the end) tighten several
+inferences --- the confidence intervals, the repaired oracle's comparison with grep, the labels,
+and the ceiling --- and leave the refutation itself unchanged.
 \end{abstract}
 
 \begin{CCSXML}
@@ -102,8 +109,8 @@ data collection and an audited append-only amendment trail (\S\ref{sec:protocol}
 \item A \textbf{refutation} of both mechanisms' headline results on real data: oracle recall
 $1.000 \rightarrow 0.022$, gate F1 $1.00 \rightarrow 0.37$, and a cost saving that
 inverts to $-20.2\%$ once escalation retries are counted (\S\ref{sec:eval1}, \S\ref{sec:eval2}).
-\item A \textbf{structural failure-mode taxonomy} attributing $96.8\%$ of missed impact to
-a traversal-direction blind spot rather than to a limit of the ground truth, and isolating a
+\item A \textbf{structural failure-mode taxonomy} showing that $96.8\%$ of missed impact has a
+static path the traversal cannot take, which bounds what a static method could reach\corr{}, and isolating a
 graph-construction defect whose safe repair recovers an $11.0\times$ recall gap
 (\S\ref{sec:failure}, \S\ref{sec:repair}).
 \item A \textbf{repair and re-evaluation} of both defects under the same frozen protocol,
@@ -147,7 +154,8 @@ exact commit SHA recorded in the corpus artifact.
 Python files appearing in the same non-merge commit as $f$, aggregated over history. Merges,
 mega-commits above the pre-declared size threshold (formatting sweeps, vendored dependency
 bumps, mass renames), and excluded paths were dropped by the frozen filters. This yields
-801 labelled files, of which 759 met the evaluation's inclusion condition.
+801 labelled files, of which 759 were evaluated: the pre-registered cap of 200 files per
+repository cut \texttt{pytest} from 242 to 200\corr{}.
 
 \paragraph{Ground truth is a proxy, and its ceiling is measurable.} Co-change is not
 semantic impact. Files co-change for reasons no static analysis can see (release chores,
@@ -171,7 +179,8 @@ identified and disclosed \emph{before} any metric was computed.
 \begin{table}[t]
 \caption{Pooled, micro-averaged over 759 files in 9 repositories, with 95\% bootstrap CIs
 ($B=2000$, file-resampled). The oracle is shown at $t=0.02$, the most favourable point of
-the pre-registered grid for its recall.}
+the pre-registered grid for its recall. File-resampled intervals are too narrow for this
+design; repository-cluster intervals are given in the Corrections\protect\corr{}.}
 \label{tab:eval1}
 \small
 \begin{tabular}{lccc}
@@ -189,7 +198,8 @@ Edited-file-only & 0.000 & 0.000 & 0.000 \\
 \end{table}
 
 Table~\ref{tab:eval1} states the result. The oracle's pooled recall is 0.0220, 95\% CI
-[0.012, 0.033]. The claim under test was $1.000$. The oracle reaches 2.27\% of its own
+[0.012, 0.033] when files are resampled, and [0.0005, 0.052] when the nine repositories are
+resampled instead\corr{}. The claim under test was $1.000$. The oracle reaches 2.27\% of its own
 static ceiling.
 
 The per-file distribution shows this is not a uniform shortfall but close to a step
@@ -225,9 +235,9 @@ negatives structurally, by testing reachability in the oracle's own graph.
 \toprule
 Category & Share & Interpretation \\
 \midrule
-Sibling (common dependency) & 94.68\% & Fixable: both files depend on a shared module;
+Sibling (common dependency) & 94.68\% & Static path exists\corr{}: both files depend on a shared module;
 reachable only by a mixed-direction path \\
-Forward-only dependency & 2.13\% & Fixable: excluded by design \\
+Forward-only dependency & 2.13\% & Static path exists\corr{}: excluded by design \\
 No static path at all & 3.19\% & True ceiling: ground-truth limit \\
 \bottomrule
 \end{tabular}
@@ -240,6 +250,12 @@ traversal cannot reach: 94.7\% are \emph{sibling} pairs, where $A$ and $B$ both 
 common module $C$ and co-change when $C$'s contract shifts, yet neither is reverse-reachable
 from the other. The mechanism was not defeated by the messiness of real code; it was defeated
 by answering a narrower question than the one that matters.
+
+Two cautions apply to this decomposition\corr{}. Co-change is symmetric while impact is
+directional, so a pair with a static path in either direction is not thereby a pair whose impact a
+static method should predict. And we ran no control measuring how many \emph{random} file pairs
+are connected in the same dense graph, so the $96.8\%$ bounds what static analysis could reach; it
+does not show that those misses are fixable.
 
 \paragraph{A construction defect.} Separately, and reported as a labelled diagnostic rather
 than substituted into the numbers above, we found a bug. The world-model's module-qualified-name
@@ -258,9 +274,12 @@ We scored the router and gate on 80 tasks drawn from real GitHub issues and pull
 with independent gold labels for cost tier and for whether the request is under-specified
 enough that an agent should halt. \textbf{No threshold, weight, or pattern was modified.}
 
-\paragraph{Label noise first.} Agreement between two independent labelling passes was
+\paragraph{Label noise first.} Agreement between two labelling passes was
 $\kappa = 0.952$ (quadratic-weighted) for tier and $\kappa = 0.516$ for the halt
-decision. Tier labels are near-perfect; halt labels are moderate. We report this before the
+decision. Tier labels are near-perfect; halt labels are moderate. Both passes were produced by
+the same model (\texttt{claude-sonnet-5}) with differently worded prompts, on a 30-task subset,
+and that model is also the correctness judge and the mid-tier executor, so $\kappa$ measures how
+robust the labels are to prompt wording, not whether they are valid\corr{}. We report this before the
 accuracy numbers because it bounds how much of the degradation below can be attributed to
 label ambiguity rather than to the mechanism --- and for the halt decision, some of it can.
 
@@ -320,11 +339,21 @@ The honest summary is not that the saving shrank but that it inverted. On this t
 complexity router is a net cost \emph{increase} once its retries are counted, and the single headline
 number the demonstration produced ($62.1\%$) turns out to be the most favourable of four available cells.
 
+The inversion is also largely mechanical\corr{}. On 58 of the 64 tasks no tier produced an output
+the judge accepted, and always-premium was accepted on only 3 of 64, so on almost every task the
+pipeline paid for every tier it tried. Measured per accepted output, the pipeline cost \$1.06
+against always-premium's \$1.76, about 40\% less --- but from 6 and 3 accepted outputs, so neither
+figure is stable, and we report it beside the $-20.2\%$ rather than instead of it.
+
 \paragraph{The gate's confidence score is non-monotonic.} Binned calibration is not monotone in
 the score: decision accuracy is $0.93$ in the middle bin ($n{=}28$) and $0.94$ in the highest
-($n{=}16$), but dips to $0.50$ in the second-highest bin ($n{=}4$). We flag this as a caution
-rather than a finding: with four tasks in the affected bin the dip is well within sampling noise,
-and the top bin is in fact well calibrated. What it does establish is that the score is not
+($n{=}16$), but dips to $0.50$ in the second-highest bin ($n{=}4$). The bins were meant to be
+equal-frequency, but scores tie at 0.63, 0.90 and 1.00, so they hold 27, 5, 28, 4 and 16 tasks;
+the expected calibration error is 0.103 with half-open $(lo, hi]$ bins and 0.078 with $[lo, hi)$
+bins. We earlier called the dip ``well within sampling noise''. It is not, at the nominal level: if
+the bin's accuracy matched the middle bin's $0.93$, two or fewer correct of four has probability
+$0.028$\corr{}. With four tasks and no correction for the bins we looked at, it is weak evidence
+either way. What it does establish is that the score is not
 reliably ordered across its range, so choosing an operating point from it requires more evidence
 than this sample provides.
 
@@ -387,8 +416,9 @@ seen during parameter selection. Rows (a)--(b) are pooled over all nine.}
 
 \paragraph{Result.} We headline row (d) at the canonical $t{=}0.02$ used for the as-shipped baseline, so the
 comparison is like-for-like. On repositories never seen during parameter selection the repaired oracle reaches
-$\mathrm{F1}=0.416$ (95\% CI $[0.382, 0.446]$) against grep's 0.371 (CI $[0.332, 0.405]$). This reverses the
-as-shipped ordering, in which grep won by roughly an order of magnitude. Recall rises from 0.022 to 0.653,
+$\mathrm{F1}=0.416$ (95\% CI $[0.382, 0.446]$) against grep's 0.371 (CI $[0.332, 0.405]$). The point
+estimate reverses the as-shipped ordering, in which grep won by roughly an order of magnitude; whether
+the repaired oracle actually beats grep is not established (below)\corr{}. Recall rises from 0.022 to 0.653,
 reaching $66.8\%$ of the held-out repositories' own static ceiling ($0.977$), and the share of files with
 exactly zero recall falls from $91.0\%$ to $19.3\%$. Row (d$'$) reports the same configuration at
 $t{=}0.10$, the F1-peak of the tuning grid; it scores marginally higher, and we decline to headline it
@@ -397,9 +427,15 @@ rather than a pre-registered one. All 49/49 tests pass, including 13 new tests c
 both fixes and the stdlib-collision safety case. Both fixes are necessary: neither alone crosses the
 baseline.
 
-\paragraph{The win is narrow, and precision generalised worse than recall.} The two confidence
-intervals are close, and the honest reading is a real but modest advantage, not a decisive one. More
-instructive is the asymmetry: recall transferred almost perfectly from tuning to held-out repositories
+\paragraph{The advantage is not established, and precision generalised worse than recall.} We
+earlier read the comparison as a real but modest win\corr{}. The evidence does not support that.
+The two file-level intervals overlap. The paired difference in F1 is $+0.044$ at $t{=}0.02$, and
+$+0.057$ at $t{=}0.10$, where per-repository counts exist; there all three held-out repositories
+favour the oracle ($+0.114$ \texttt{loguru}, $+0.131$ \texttt{requests}, $+0.033$ \texttt{pytest}),
+but three out of three gives a one-sided sign-test $p$ of $0.125$, and \texttt{pytest} supplies
+71\% of the held-out pairs. The split was also clean only for the eight numeric parameters: the
+choice of which relations to add came from the failure analysis of \S\ref{sec:failure}, pooled
+over all nine repositories, held-out ones included. More instructive is the asymmetry: recall transferred almost perfectly from tuning to held-out repositories
 ($-0.021$), while precision fell by $-0.141$. Some overfitting to the tuning set occurred during
 parameter selection --- visible \emph{only} because the split was declared in advance. Had we tuned on
 all nine repositories we would have reported the better number and never known the gap existed.
@@ -439,7 +475,8 @@ a deviation rather than silently patched, and no escalation cost is attributed t
 self-administered within one continuous working session, with no external timestamping authority: a reader
 must take the ordering on trust, evidenced only by the artifact store's own version timestamps and the
 append-only amendment trail. We consider this the central weakness of a self-evaluation and state it plainly
-rather than resting on the protocol's authority. The held-out task labels come from a single labelling pair; halt-decision
+rather than resting on the protocol's authority. The held-out task labels come from a single model,
+queried twice with differently worded prompts\corr{}; halt-decision
 agreement is only moderate ($\kappa = 0.52$), so part of the gate's measured degradation is
 label ambiguity rather than mechanism failure. Tier agreement is near-perfect ($\kappa = 0.95$),
 so the routing result is on firmer ground. No held-out task admitted execution-based
@@ -452,6 +489,9 @@ proprietary codebases with different commit conventions. GitHub issue text is a 
 prompts a developer actually gives an agent.
 
 \paragraph{Conclusion.} All intervals are 95\% file- or task-resampled bootstrap intervals.
+Files are not independent units here --- every ground-truth pair is counted from both of its
+files, and files cluster in nine repositories --- so the file-resampled intervals are too narrow;
+repository-cluster intervals are in the Corrections\corr{}.
 We report them for every headline number and make no claim that survives only at a point
 estimate. We apply no multiple-comparison correction and claim no significance test; the
 comparisons are descriptive.
@@ -466,8 +506,10 @@ human-factors vocabulary~\cite{reason1990}; and reliable-computation-from-unreli
 back to von Neumann and to N-version programming~\cite{avizienis1985}. The literature also supplies
 the caveat any layered argument must confront: Knight and Leveson showed experimentally that
 independently written versions do \emph{not} fail independently~\cite{knight1986}, so an
-independence assumption between layers must be defended rather than asserted. We claim no novelty
-for the arithmetic.
+independence assumption between layers must be defended rather than asserted. Our own formal
+synthesis asserted it: it multiplied the catch probabilities of one classifier run at three
+lifecycle points on the same diff, which understates the residual 400-fold in its own worked
+example\corr{}. We claim no novelty for the arithmetic.
 
 \paragraph{And it was independently derived, more generally, before ours.} More consequentially,
 two concurrent preprints derive a strictly more general Bayesian form of the same law weeks before
@@ -525,8 +567,9 @@ from $1.00$ to $0.85$; it fell to $0.37$, and its confidence score is non-monoto
 where an operating point would be chosen. The failure is qualitative, not a matter of degree.
 
 \textbf{Report the ceiling, not just the score.} Decomposing false negatives structurally was what
-turned an uninterpretable $2.2\%$ into an actionable finding: $96.8\%$ fixable, $3.2\%$ a genuine
-proxy limit. Without the ceiling, the number is merely discouraging; with it, it is a specification
+turned an uninterpretable $2.2\%$ into an actionable finding: $96.8\%$ with a static path the
+traversal could not take, $3.2\%$ with none. The first figure bounds what a repair could reach; it
+does not show those misses are fixable\corr{}. Without the ceiling, the number is merely discouraging; with it, it is a specification
 for the repair.
 
 \section{Conclusion}\label{sec:conclusion}
@@ -539,8 +582,51 @@ outperformed the graph-based oracle. We diagnosed the causes structurally, repai
 and re-evaluated under the same frozen protocol with a declared held-out split.
 
 We think the protocol is the transferable contribution. The mechanisms may yet be made to work ---
-$96.8\%$ of the missed impact is reachable in a graph the tool already builds --- but the evidence
+$96.8\%$ of the missed impact has a static path in a graph the tool already builds\corr{} --- but the evidence
 standard that told us they already worked was the thing most in need of repair.
+
+\section*{Corrections (2026-09-21)}
+
+An external deep review of the repository that hosts this paper (2026-09-21) recomputed its
+statistics from the replication package. Every reported count reproduced exactly. Some inferences
+drawn from them were too strong. The passages marked \dag{} above were changed; this list gives
+each change. All figures were recomputed with \texttt{research/recompute\_corrections.py}
+(standard-library Python, fixed seeds).
+
+\begin{enumerate}
+\item \textbf{Confidence intervals.} Every ground-truth pair is mirrored --- all 20,144 pairs among
+the 801 labelled files have both ends labelled and are counted from both sides --- and files
+cluster in nine repositories, so file-level resampling understates uncertainty. Resampling
+repositories (seed 1234, 20,000 resamples), the oracle's pooled precision interval is
+$[0.15, 0.91]$ (file-level $[0.27, 0.57]$) and its recall interval $[0.0005, 0.052]$ (file-level
+$[0.012, 0.033]$). The refutation survives: oracle F1 $[0.001, 0.093]$ against grep's
+$[0.381, 0.539]$, and the paired difference (grep minus oracle) is $[0.342, 0.517]$. With nine
+clusters the interval ends move in the third decimal from seed to seed.
+\item \textbf{801 and 759.} 801 files were labelled; 759 were evaluated, because the pre-registered
+cap of 200 files per repository cut \texttt{pytest} from 242 to 200. The text had said 759 ``met
+the evaluation's inclusion condition''.
+\item \textbf{The repaired oracle does not demonstrably beat grep.} The original text read the
+held-out comparison as ``a real but modest advantage''. See \S\ref{sec:repair} for the paired
+differences, the sign test ($p = 0.125$), the 71\% \texttt{pytest} share, and the structural
+choice that was made on all nine repositories.
+\item \textbf{Labels.} The gold labels and the ``independent'' second pass were the same model with
+two prompts, on $n = 30$; the same model is the judge and the mid-tier executor. $\kappa$ measures
+prompt robustness, not label validity.
+\item \textbf{Cost per accepted output.} The paper reported the $-20.2\%$ inversion without the cost
+per output the judge accepted: \$1.06 for the pipeline against \$1.76 for always-premium, from 6
+and 3 accepted outputs of 64. 58 of 64 tasks failed at every tier.
+\item \textbf{The ceiling.} ``$96.8\%$ fixable'' treated symmetric co-change as directional impact
+and had no random-pair control. It now reads as a bound on what static analysis could reach.
+\item \textbf{Calibration.} The bins held 27, 5, 28, 4 and 16 tasks, not equal numbers; ECE is
+0.103 or 0.078 depending on how ties at the bin edges are assigned; and the dip in the
+second-highest bin is not ``well within sampling noise'' ($p = 0.028$ against the middle bin's
+accuracy).
+\item \textbf{The composition law.} Related work now notes that our own synthesis asserted the
+independence between layers that Knight and Leveson warn against.
+\end{enumerate}
+
+The compiled PDF and the copy of this source inside \texttt{replication\_package.tar.gz} predate
+these corrections.
 
 \section*{Artifact availability}
 

@@ -11,6 +11,7 @@ import {
   renderImagine,
   selectTests,
   selectTestsReport,
+  tapSummary,
 } from "../src/imagine.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-imagine-"));
@@ -219,4 +220,26 @@ test("dryRun refuses gracefully outside a git repo and on an empty suite", () =>
   assert.equal(dryRun(root, { tests: [] }).ok, false);
   assert.equal(dryRun(root).ok, false, "missing opts is a precondition failure, not a throw");
   assert.ok(!existsSync(join(root, ".forge")), "refusal writes nothing into the repo");
+});
+
+// B7: the verdict came from the FIRST `# pass`/`# fail` pair in the stream, so anything
+// earlier that looked like a summary decided the run. The runner's own summary is the LAST.
+test("tapSummary takes the runner's OWN (last) summary, and dryRun cross-checks the exit code", () => {
+  const spoofed = [
+    "TAP version 13",
+    "# pass 99",
+    "# fail 0",
+    "not ok 1 - boom",
+    "# pass 0",
+    "# fail 1",
+    "",
+  ].join("\n");
+  assert.deepEqual(tapSummary(spoofed), { passed: 0, failed: 1 }, "the last summary wins");
+  assert.deepEqual(tapSummary("TAP version 13\n# pass 3\n# fail 0\n"), { passed: 3, failed: 0 });
+  assert.equal(tapSummary("crashed before any summary"), null);
+  // A real run still reports honestly (and a failing suite is still ok:true — see above).
+  const { root } = gitFixture();
+  const red = dryRun(root, { tests: ["test/fail.test.js"] });
+  assert.equal(red.failed, 1);
+  assert.equal(red.passed, 0);
 });

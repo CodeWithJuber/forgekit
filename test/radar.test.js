@@ -147,6 +147,53 @@ test("classifyDep: score bounded [0,1] and monotone in staleness", () => {
   assert.ok(stale.score > fresh.score, "older publish → higher staleness → higher score");
 });
 
+test("classifyDep: clean signals don't dilute real risk — 4 majors behind + 3y stale ≠ adopt", () => {
+  // Regression (review E3): the weighted mean averaged deprecated:false (w 1.0) and "no
+  // advisories" (w 0.9) in as zeros, scoring this dep 0.22 → "adopt".
+  const c = classifyDep(
+    {
+      installed: "1.0.0",
+      latest: "5.0.0",
+      publishedAt: (NOW_DAY - 1095) * DAY,
+      deprecated: false,
+      advisories: [],
+    },
+    NOW_DAY,
+  );
+  assert.equal(c.evidenceKinds, 4);
+  assert.notEqual(c.ring, "adopt");
+  assert.ok(c.score > 0.4, `score ${c.score}`);
+  // a clean signal is a factor of 1: dropping the two clean kinds changes nothing
+  const bare = classifyDep(
+    { installed: "1.0.0", latest: "5.0.0", publishedAt: (NOW_DAY - 1095) * DAY },
+    NOW_DAY,
+  );
+  assert.ok(Math.abs(bare.score - c.score) < 1e-12);
+});
+
+test("classifyDep: every ring is reachable, and 'assess' is reachable from the score", () => {
+  const ev = (over) => ({
+    installed: "3.0.0",
+    latest: "3.0.0",
+    publishedAt: NOW_DAY * DAY,
+    deprecated: false,
+    advisories: [],
+    ...over,
+  });
+  const ring = (over) => classifyDep(ev(over), NOW_DAY);
+  assert.equal(ring({}).ring, "adopt");
+  assert.equal(ring({ advisories: [{ severity: "moderate", title: "x" }] }).ring, "trial");
+  // score-driven assess (≥2 evidence kinds, no hard gate): a high advisory — it used to
+  // score 0.25 and rate "adopt"
+  const high = ring({ advisories: [{ severity: "high", title: "prototype pollution" }] });
+  assert.equal(high.ring, "assess");
+  assert.ok(high.score >= 0.5);
+  // and pure currency risk at its maximum (it was capped at 0.255 → "trial")
+  const ancient = ring({ installed: "1.0.0", latest: "9.0.0", publishedAt: 0 });
+  assert.equal(ancient.ring, "assess");
+  assert.equal(ring({ deprecated: true }).ring, "hold");
+});
+
 // --- depsFromManifests -----------------------------------------------------
 
 test("depsFromManifests: package.json + lock v3 → names/ranges/installed", () => {

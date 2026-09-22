@@ -165,11 +165,13 @@ export function loadRankData(root) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {boolean} [opts.basic] skip hazard-aware enhancements
+ * @param {readonly string[]} [opts.relations] which relations to walk; omitted means
+ *   impact()'s own default (reverse only). Pass IMPACT_RELATIONS for the wide walk.
  */
 export function predictImpact(
   root,
   target,
-  { threshold = 0.1, llm, model, timeoutMs, basic } = {},
+  { threshold = 0.1, llm, model, timeoutMs, basic, relations } = {},
 ) {
   const cached = loadAtlas(root);
   const atlas = cached && !atlasIsStale(root, cached) ? cached : buildAtlas({ root });
@@ -177,6 +179,9 @@ export function predictImpact(
   const rankData = basic ? {} : loadRankData(root);
   return impactGraph(atlas, target, {
     threshold,
+    // undefined → impact()'s own default (reverse only). `forge impact --all-relations`
+    // passes IMPACT_RELATIONS to add the paper's sibling/forward walk.
+    ...(relations ? { relations } : {}),
     llm: useLLM,
     run: useLLM ? buildRunner({ model, timeoutMs }) : undefined,
     verify: makeImpactVerify(root),
@@ -230,8 +235,7 @@ export function substrateCheck(
     model,
     timeoutMs,
     bidirectional: bi,
-    band: spec?.llm?.band,
-    routingBand: spec?.llm?.routingBand,
+    minConfidence: spec?.llm?.minConfidence,
     signalFloor: spec?.llm?.signalFloor,
   };
   const entities = referencedEntities(text);
@@ -393,8 +397,9 @@ export function substrateCheck(
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
     // Which faculties, if any, had a model proposal survive external verification this run, and
-    // which direction it moved (…-cleared / …-tightened for the gate, …-raised / …-lowered for
-    // routing). Every non-deterministic value was checked before it counted.
+    // which direction it moved (…-cleared / …-tightened for the gate, …-lowered for routing; a
+    // routing …-raise-deferred is recorded as advisory only and never applied). Every non-deterministic value was
+    // checked before it counted.
     llm: {
       enabled: useLLM,
       bidirectional: bi,
@@ -418,8 +423,8 @@ export function substrateCheck(
       // Proposed by a model, then checked against the repo/graph/tests before it could move a
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
-        "assumption refinement (bounded ±band; clears a false ask only past the no-anchor + repo-grounding floors)",
-        "routing (free raise; bounded lower, never below strong-signal floor)",
+        "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
+        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only recorded as an advisory escalateTo that names the tier IF an external check later fails — the doom-loop diagnosis is its only consumer)",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],

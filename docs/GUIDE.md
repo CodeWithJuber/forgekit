@@ -206,23 +206,29 @@ weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
 Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
 
 **`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
-affine correction of the rubric's score toward a held-out labeled fixture and reports
-whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
+affine correction of the rubric's score toward a held-out split of a labelled fixture and
+reports whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
 margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
 generalized in `src/promote.js` so any advisory signal (routing weights here;
 consolidation and hazard next) can only become active by measurement, never by assertion.
-It is advisory: routing keeps the rubric until a promoted calibration is explicitly
-adopted.
+
+Read the name literally: it calibrates **the rubric against hand-written labels**, not against
+outcomes. The fixture is 24 hand-written task phrases with hand-assigned complexities, and forge
+records nothing that could replace them — a `route` metrics event carries the tier and a task
+hash, a `verify` event carries pass/fail with no task reference — so there is no
+(task, tier, outcome) triple to calibrate on. It is advisory twice over: routing keeps the raw
+rubric, and nothing in `src/` adopts a promoted calibration.
 
 ```console
 $ forge route calibrate
-Forge route calibrate — outcome-calibrated routing (measured gate)
+Forge route calibrate — rubric calibration check (measured gate)
 
-  samples: 24 labeled task(s)
-  held-out MAE: rubric 0.152 · calibrated 0.226
+  samples: 24 hand-labelled task phrase(s) — no routing outcomes exist
+  held-out MAE: rubric 0.191 · calibrated 0.266
   → keep the rubric — baseline retained — candidate did not beat it by the margin
 
-  advisory — routing stays on the rubric until a promoted calibration is adopted
+  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,
+  and calibrating on real routing outcomes needs data forge does not record
 ```
 
 Here the gate does exactly its job: the rubric already generalizes well, the affine
@@ -276,6 +282,14 @@ impacts all co-members) and a data-driven threshold from PageRank centrality
 and ledger incident history. `--basic` reverts to the fixed-threshold mode.
 Run `forge atlas build` first.
 
+By default the walk follows **reverse dependencies only** — the files that actually
+reference the target. `--all-relations` additionally walks the empirical refutation's
+repaired **sibling** and **forward** rules at their frozen parameters (a file that shares
+a dependency with the target, and what the target itself depends on). That is a recall
+instrument, not an everyday view: on forgekit itself the median answer goes from 15 files
+to 78 of ~450 (recall 1.00, precision 0.09), so reach for it when you need "what could
+conceivably be affected", not "what references this".
+
 ```console
 $ forge impact verifyToken
 Forge impact — blast radius (hazard-aware)
@@ -320,9 +334,10 @@ rank answers "which X-es should I worry about at all". Weighted PageRank over th
 graph scores structural centrality (using the same edge weights the blast-radius search
 trusts), Tarjan SCC finds circular-import clusters, articulation points find chokepoint
 files whose removal would split the import graph — and the ledger join is the part
-nobody else has: each file's past-incident history (val()-weighted lesson and session
-claims that name it) multiplies into `hazard = centrality × (1 + history)`, so central
-code that has already bitten the team outranks equally central code that hasn't. Run
+nobody else has: each file's past-incident history (val()-weighted lesson claims —
+recorded mistakes — that name it; ordinary session records are not incidents) multiplies
+into `hazard = centrality × (1 + history)`, so central code that has already bitten the
+team outranks equally central code that hasn't. Run
 `forge atlas build` first. Also exposed to every MCP-capable agent as `rank_code`.
 
 ```console
@@ -570,10 +585,15 @@ the way the lesson miner scores mistakes: a noisy-OR **defect risk score (heuris
 `p = 1 − ∏(1 − wᵢsᵢ)` (shown as `P(defect)` in the CLI), with a **cross-family gate**, so
 any number of correlated structural signals stays advisory while a failing test suite or a
 leaked secret blocks on its own. `p` is a calibrated heuristic, not a measured probability
-of defect. Every run reports the `residual` `∏(1 − cⱼ)` over the lenses that actually ran
-— the **remaining unchecked weight**, i.e. how much silent-miss weight a PASS still leaves
-uncovered — and extends `.forge/provenance.json` with the per-lens evidence plus one
-`stage:"verify"` metrics record.
+of defect. Every run reports the `residual` — the **remaining unchecked weight**, i.e. how
+much silent-miss weight a PASS still leaves uncovered. It is dependence-aware: each lens
+targets one defect class (behavior, symbol, dependents, docs, secret) with an assumed catch
+probability `cⱼ` (its own column, not the precision weight `w`); lenses on the same class
+are treated as nested checks (`1 − c_max`, never a product), a lens that examined no input
+catches nothing, and the reported figure is the worst class (`residualByClass` has each).
+An empty diff with no test run therefore reports `1`, not a near-zero product. Each run
+extends `.forge/provenance.json` with the per-lens evidence plus one `stage:"verify"`
+metrics record.
 
 `--llm` (or `FORGE_LLM=1`) adds the reviewer lens: three independent model samples
 over the added lines, strict-majority vote, abstaining honestly when fewer than half
@@ -593,7 +613,7 @@ $ forge verify --deep
   ! dependents of the changed code are not in this diff: src/route.js
 
   P(defect):  █░░░░░░░░░ 0.07  (families: structural)
-  residual:   0.005 — Theorem-D silent-miss bound
+  residual:   0.700 — Theorem-D silent-miss bound
 
   PASS
 ```
@@ -657,7 +677,8 @@ $ forge radar
 
 Rings are a **formula over registry evidence** (_mizan_ — a philosophical/ethical framing of
 weighed judgment, not a technical authority; every ring ships the evidence that earned it): `staleness = 1 − 0.5^(daysSincePublish/540)` (a 540-day half-life), major-version
-lag, open security advisories (severity-weighted), and maintainer deprecation. Repo _usage_
+lag, open security advisories (severity-weighted), and maintainer deprecation, combined as a
+noisy-OR `score = 1 − ∏(1 − wₖ·sₖ)` — a clean signal adds no risk and dilutes nothing. Repo _usage_
 (import-sites from the atlas) is **stakes, not risk** — it only sorts output, never the score.
 Hard rules: **deprecated or a critical advisory → `hold`** regardless of freshness; fewer than
 two verified evidence kinds → **`assess` (never `adopt` on absence)** — missing evidence never
@@ -798,6 +819,14 @@ Forge ledger — proof-carrying memory
   stored in .forge/ledger/ (git-committable, conflict-free merge)
 ```
 
+`forge ledger verify` re-derives every claim's address and every log line's hash, and names
+what it had to skip. `forge ledger verify --fix` additionally re-addresses claims written
+before canonicalization folded CRLF into LF: those carry their pre-fold id in the filename,
+which reads still accept, so nothing is broken without it — but the old form and a teammate's
+freshly minted copy of the same fact stay two entries until you run it. It moves each claim's
+evidence and provenance logs with it, unions them into an existing twin rather than
+overwriting, and is idempotent.
+
 `forge ledger blame <id-prefix>` is the accountability view — every mint, every oracle
 outcome, every retraction, and per-author trust:
 
@@ -834,11 +863,15 @@ $ forge ledger diff 2026-07-01
 The rest of the surface, briefly: `forge ledger merge <path>` folds in any other ledger
 tree (a teammate's checkout, a worktree, a backup) — `merged: 3 new claim(s), 5 new
 record(s) — conflict-free`, in any order; `query "<text>"` ranks live claims by the
-paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id>` and
-`retract <id>` are the human oracle — a manual accept or revert that appends evidence and
-moves confidence; `verify` recomputes every content hash (CI-friendly, exit 1 on
-tampering); `import` back-fills legacy lessons/facts idempotently. Add `--personal` to
-target the per-user ledger beside the global recall store, `--json` for scripts.
+paper's Eq. 3; `show <id>` prints one claim with its computed `val`; `ratify <id>` records a
+human ratification (a `decision` claim under your git identity — it does not change the
+claim's `val`) and `retract <full id> --reason "<why>"` tombstones exactly one claim (a
+prefix is refused — a tombstone is permanent). The MCP twins only *propose*: they are
+stamped `agent:mcp`, change no confidence, and a retraction proposal stays pending (shown
+by `stats` and `show`) until a human runs `retract`; `verify` recomputes every content
+hash (CI-friendly, exit 1 on tampering); `import` back-fills legacy lessons/facts
+idempotently. Add `--personal` to target the per-user ledger beside the global recall store,
+`--json` for scripts.
 
 `forge ledger sync` is `merge` without a path argument — a transport that moves the CRDT
 state between machines. Target precedence: `--dir <path>` (a shared folder, bidirectional
@@ -962,6 +995,13 @@ Forge diagnose — doom-loop check
 Below the threshold it just records and says keep going. Advisory — halting the retry
 loop is the agent's move, not an exit code. Because the claim rides the team ledger, the
 same loop becomes a one-per-team event, not one-per-session.
+
+Pass `--task "<the task text>"` — the same text you gave `forge route` — and the directive
+names the tier instead of "ONE model tier", when routing recorded an advisory `escalateTo`
+for that task (a proposer voted for a higher band and was, correctly, not obeyed). This is
+the only place that target is ever consumed: three recurrences of one failure signature is
+an external check failing, which is the only thing that may buy a bigger model (§5.1). With
+no `--task`, or no routing record for it, the wording is unchanged.
 
 ### `forge imagine "<task>"` — consequence simulation
 
@@ -1122,8 +1162,9 @@ $ forge report
 ### `forge cost --stages` — the measured cost report
 
 Per-stage cost factors as pure arithmetic over `.forge/metrics.jsonl`. A stage with no
-events says **no data** — never a default; the composed figure is a lower bound over
-measured stages only.
+events says **no data** — never a default; the composed figure covers measured stages
+only and is not a bound (a stage can be negative — routing that priced above the
+always-premium baseline raises cost — so a newly measured stage can lower it).
 
 ```console
 $ forge cost --stages
@@ -1135,12 +1176,18 @@ Forge cost — measured stage factors (.forge/metrics.jsonl)
   route     no data    0
   context   no data    0
 
-  composed measured reduction: 6.2% (from: gate) — lower bound, measured stages only
+  composed measured reduction: 6.2% (from: gate) — measured stages only, not a bound (a stage can raise cost)
   totals: 16 metric event(s) · ~0 tokens saved (stage self-estimates)
 
-  context (not a local measurement): the paper measured a 62% routing saving on live tokens (paper §9)
+  context (not a local measurement): the paper's 62% routing saving (§9) is REFUTED — the held-out replication measured −20.2% on total spend: routing cost more than always-premium (research/empirical-refutation)
   target (unmet until measured): the plan's composed target is ~90% (docs/plans/substrate-v2/05-cost-model.md)
 ```
+
+Read the `context` line with care: that 62% is the white paper's 30-task routing
+demonstration, measured on the tasks its thresholds were tuned on. A pre-registered
+evaluation on 80 held-out tasks refuted it — counting every escalation, routing cost
+20.2% _more_ than always-premium ([research/empirical-refutation/](../research/empirical-refutation/)).
+The line is quoted here as the CLI currently prints it.
 
 Plain `forge cost` remains the per-day spend view via `ccusage`.
 
@@ -1300,10 +1347,10 @@ emitted `.mcp.json`):
 | `forge_doctor`          | Health check — verify installed tools, guards, MCP auth, config drift, and system state.                                                                                                                                                                          |
 | `forge_provider_status` | Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.                                                                                                                                                 |
 | `forge_remember`        | Store a durable fact in this repo's portable memory (.forge/brain/).                                                                                                                                                                                              |
-| `forge_ledger_ratify`   | Promote a ledger claim's confidence — record an independent oracle ratification (the claim held under test).                                                                                                                                                      |
+| `forge_ledger_ratify`   | Propose a ratification of a ledger claim as agent:mcp (never as the human) — mints a decision claim and does NOT change the claim's confidence.                                                                                                                   |
 | `collide_check`         | Parallel-session conflict radar — which recent teammate/agent sessions touched the files (or their import neighbors) you are about to edit, from the team-merged Forge ledger.                                                                                    |
 | `rank_code`             | Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph. |
-| `forge_ledger_retract`  | Tombstone a ledger claim with a reason — mark it as no longer valid so it stops influencing routing and memory.                                                                                                                                                   |
+| `forge_ledger_retract`  | Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`.                                                                  |
 <!-- forge:render:mcp-tools:end -->
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
@@ -1445,11 +1492,26 @@ model never decides: each proposal is verified against the rubric, the code grap
 before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
 a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
 but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
-routing floor). Impact edges must be real + grep-confirmed; goal-drift moves off→on only. Any
-failure falls back to the deterministic path, so the flag is safe to leave off or on. `--json`
-exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` / `llm-raised` /
-`llm-lowered` / …). Set `llm.bidirectional: false` in `source/substrate.json` for the
-conservative tighten-/raise-only mode. Each faculty pairs a pure `*LLM` proposer with a
+routing floor); the gate's floors only ever block a _clear_ — they never raise an ask the
+rubric didn't. The gate compares **verdicts, not scales**: the rubric's completeness and the
+proposer's are judged against their own thresholds, and the proposer flips the rubric's
+ask/proceed only when it holds its own verdict with p ≥ `llm.minConfidence`. Routing compares
+**bands, not points**: a vote for the band the deterministic
+score already sits in leaves it alone; a vote for a lower band moves the score to that band's
+ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
+fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless
+you set it to 0); a vote for a **higher** band is never applied, because the tier may escalate
+only when a verifier fails, never on the model's own assessment (whitepaper §5.1). The tier it
+would have picked is reported in `--json` as `llm.escalateTo` — an **advisory recommendation
+only**: nothing acts on it at routing time. It is recorded against the task, and the doom-loop
+diagnosis consumes it: `forge diagnose --task "<the same task text>"` names that tier once the
+same failure signature has recurred `THRASH_K` times, instead of saying "escalate one tier".
+Deciding to escalate is still a real failure's job, never the model's vote. Impact edges must be real + grep-confirmed; goal-drift moves
+off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
+or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
+`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in
+`source/substrate.json` for the conservative mode (the gate can only tighten, the tier never
+moves). Each faculty pairs a pure `*LLM` proposer with a
 `reconcile` step — extend by adding both, never by trusting the model's answer directly.
 
 **TypeSafe System One (Jev) is the preferred proposer when configured.** Where the judgment
@@ -1531,15 +1593,17 @@ code reads but this table misses fails CI on the forge repo):
 - **Guards reduce, don't eliminate** the "ignored my rules" problem — semantic rules
   still live in prose.
 - **`recall` / `cortex` are file + prompt memory**, not weight-level learning.
-- **The atlas graph is regex-approximate** — conservative, not a sound call graph;
-  dynamic dispatch and generated code can be missed.
+- **The atlas graph is regex-approximate** — not a sound call graph, and not conservative:
+  it can miss affected files (dynamic dispatch and generated code among them), so an empty
+  impact set means "unknown", not "safe".
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
   to too few shingles to rank reliably; write a sentence, not a keyword — or configure
   the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.
 - **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
   tokenized palette is partially invisible to the design gate.
 - **`forge cost --stages` reports measured stages only** — a stage with no events says
-  "no data", never a default; the composed figure is a lower bound and ~90 % is a
+  "no data", never a default; the composed figure is not a bound (a stage can raise
+  cost) and ~90 % is a
   labeled _target_, not a claim.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
   use. What's _asserted_ (safe to gate on): repo grounding, graph traversal, scope

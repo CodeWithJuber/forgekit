@@ -3,6 +3,8 @@
 // changed (git) against the area the goal named. Flags work that has wandered off it.
 // Advisory — a stated goal is re-read against real diffs, not trusted to stay in view.
 import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { load as loadAtlas, query as queryAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
@@ -257,6 +259,46 @@ export function goalDrift(root, goal, opts = {}) {
     driftScore,
     provenance,
   };
+}
+
+/**
+ * A cheap content stamp per changed file (size + mtime), so the next checkpoint can tell
+ * which files actually MOVED since this one. Missing/unreadable files stamp as "gone".
+ * @param {string} root
+ * @param {string[]} files repo-relative paths
+ * @returns {Record<string, string>}
+ */
+export function fileStamps(root, files = []) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const f of files) {
+    try {
+      const s = statSync(join(root, f));
+      out[f] = `${s.size}:${Math.round(s.mtimeMs)}`;
+    } catch {
+      out[f] = "gone";
+    }
+  }
+  return out;
+}
+
+/**
+ * The per-checkpoint drift INCREMENT Dₜ that cusum() expects — the off-goal fraction of the
+ * work done SINCE the previous checkpoint, not of the whole working diff. Feeding the
+ * cumulative ratio made one static off-goal file alarm by itself after three idle prompts
+ * (C = 0.32 → 0.63 → 0.95 → 1.27 > h), and made a D ≤ k series unable to alarm at all: a
+ * control chart needs increments. A checkpoint where nothing moved scores 0 and drains the
+ * chart, which is exactly what an idle prompt should do.
+ * @param {{changed?:string[], offGoal?:string[]}} drift a goalDrift() result
+ * @param {Record<string,string>} stamps this checkpoint's fileStamps()
+ * @param {Record<string,string>} [prev] the previous checkpoint's stamps
+ * @returns {{score:number, moved:string[]}}
+ */
+export function driftIncrement(drift, stamps, prev = {}) {
+  const off = new Set(drift.offGoal ?? []);
+  const moved = (drift.changed ?? []).filter((f) => stamps[f] !== prev[f]);
+  const offMoved = moved.filter((f) => off.has(f)).length;
+  return { score: moved.length ? offMoved / moved.length : 0, moved };
 }
 
 /**

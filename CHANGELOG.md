@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`forge ledger verify --fix` re-addresses pre-CRLF-fold claims.** Accepting the old
+  address on read keeps such a claim alive, but it and a teammate's freshly minted copy of
+  the same fact remain two entries until their bytes agree — the fork the fold exists to
+  prevent. The flag moves each claim to its current address and takes its evidence and
+  provenance logs with it, unioning into an existing twin instead of overwriting (the logs
+  are append-only sets deduped by content hash, so union IS the merge). Idempotent.
+
 - **TypeSafe System One (Jev) as the fast proposer.** Where forge's LLM layer asked a text
   model for a judgment that is really a classification or a yes/no — `route`'s complexity band
   and preflight's assumption gate — it can now ask Jev instead: typed `choice`/`noul` answers
@@ -25,6 +32,374 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A claim minted before the CRLF fold is migrated, not deleted.** Folding `
+` into
+  `
+` changes a claim's content address, so a claim written by an earlier version on a
+  Windows checkout carried the pre-fold address in its filename and failed its own address
+  check on load — `loadClaims` returned nothing for it, and `forge ledger verify` reported
+  it as an id mismatch. The read path now accepts the pre-fold address as well, so the
+  claim stays readable and its evidence log keeps resolving; every WRITE uses the current
+  rule, so the old form dies out as claims are rewritten. Content that matches neither
+  address is still refused, which is what the check is for.
+
+- **The impact benchmark's labels are ground truth again, and the numbers they feed are
+  re-measured.** Four of the six label sets in `bench/impact_cases.mjs` had gone stale against
+  the source — `isStale` was missing `src/substrate.js` (an aliased import) and
+  `test/atlas_resolve.test.js`, `mergeStates` was missing `src/ledger_sync.js`, `claimText`
+  three files, `contentHash` four — so the published precision/recall/F1 were scored against a
+  fixture that no longer described the repo. Every case is re-derived with
+  `git grep -n -w -F -e <symbol> -- 'src/*' 'test/*'` with each hit read, and the per-line
+  evidence (plus the deliberate comment/string-only omissions) is recorded in the fixture. A
+  new test re-runs that derivation and fails the moment labels and source disagree, so this
+  cannot rot silently again. `contentHash`'s documented false negative is gone: a named import
+  now resolves to the exact symbol node, so `src/atlas.js` is predicted at one hop despite the
+  `const hash = contentHash;` alias. **Re-measured with `npm run bench`: precision 0.17,
+  recall 1.00, F1 0.29** (edited-file-only baseline recall 0.27), replacing the
+  precision 0.90 / F1 0.92 this repo had published since commit `eb68ea9`. The precision is
+  the transitive closure being scored against direct-only labels — `impact()` walks reverse
+  dependencies transitively by default, and at one hop the six cases return their labeled
+  sets — not a graph that is wrong about who calls what; `reports/benchmarks.md` now says so
+  where the table is. The `TODO(impact-numbers)` markers in `README.md` and
+  `reports/benchmarks.md` are resolved and removed, and the other medians those two files and
+  the landing page quote are re-synced to the same run's environment block.
+- **`llm.escalateTo` is no longer advisory-and-inert — a real failure now consumes it.**
+  Routing recorded the tier a proposer's higher vote would have picked and deliberately did
+  not apply it (whitepaper §5.1: spend more only when an EXTERNAL check fails), but nothing
+  ever read it back, so the doom-loop directive told agents to "escalate ONE model tier"
+  without naming one. `meterRoute()` now stores that target alongside the task ref it
+  already wrote, and `diagnose()` — the one place an external check has demonstrably failed,
+  `THRASH_K` recurrences of a single failure signature — names it: "escalate to opus (the
+  tier routing already flagged for this task)", plus `escalateTo` in `--json`. The model's
+  vote still triggers nothing on its own; it only answers *which* tier once a real failure
+  has earned an escalation. Fail-safe and opt-in: `forge diagnose --task "<task>"` (and the
+  `task` argument on the `forge_diagnose` MCP tool) is what supplies the join key — without
+  it, or with no routing record for that exact task, the wording is unchanged.
+- **A CRLF checkout no longer forks a claim id.** `canonicalize()` NFC-normalized strings but
+  passed line endings through, so the same logical claim written on a Windows worktree
+  (`core.autocrlf` → `\r\n`) and on a Linux one (`\n`) produced different canonical bytes and
+  therefore different content addresses: one fact stored as two claims that could never merge,
+  with the evidence split between them forever. Every string in a canonical document — key and
+  value alike — now passes through one rule: NFC, and `\r\n` → `\n`. Deliberately left alone,
+  each documented at the call site: a LONE `\r` (in the captured terminal output a `diagnosis`
+  body carries, a bare carriage return is a progress-bar control character, not a line ending —
+  same conservative rule as `normalizeError()`), whitespace and indentation, blank lines, case,
+  and every Unicode fold beyond NFC (no NFKC: `ﬁ` stays distinct from `fi`). **Migration note:**
+  a claim minted before this change whose body contains `\r\n` re-addresses, so it no longer
+  matches its filename and `forge ledger verify` reports it. Such a claim was already the
+  duplicate half of a pair; re-mint it (or merge from a replica) to land on the shared address.
+- **`caller_fanout` is no longer dead for callers that only have a path.**
+  `featuresForEdit()` asked `grepFanout()` about `edit.symbol`, so every caller holding
+  only a file path — which is every hook fired on an edit event — got `grepFanout(root,
+  undefined) === 0`: a module with twenty importers scored exactly like one nobody
+  references. Without a symbol the feature now falls back to the FILE's own fan-out (how
+  many code modules name this one as a whole word), which is the honest answer such a
+  caller can have. The "who references this module" rule — module stem, directory for
+  `index`/`__init__`/`mod`/`main`, tests separated from callers — now lives once in
+  `cortex_features.referencingFiles()` and the pre-edit hook uses it instead of its own
+  copy, so the two can never drift.
+- **`forge impact` actually resolves imports.** JS/TS import specifiers were stored as raw
+  strings and matched against symbol names, so `"./util.js"` could only ever resolve by its
+  last dotted segment: on this repo, 3 of 502 relative import statements resolved and all
+  three were spurious (`"../scripts/build-pages.mjs"` → `mjs` → `const mjs` in `doctor.js`).
+  `export * from`, `export { x as y } from`, multi-line clauses, dynamic `import()` and
+  `require()` were not parsed at all, and the Python pattern crossed newlines (three stacked
+  `import` lines fused into a single edge to a module named `"os<newline>import
+  sys<newline>from pkg"`), dropped parenthesised lists, mapped `import pkg.core as c` to
+  `pkg`, and never resolved a relative import. Specifiers now resolve through one shared
+  resolver in `src/scope.js` — exact file, TypeScript NodeNext `./x.js`→`x.ts`,
+  extensionless, `<dir>/index.*`, and Python modules indexed by PACKAGE ROOT
+  (`src/mypkg/core.py` is `mypkg.core`, so a src layout answers exactly like a flat one) —
+  and an import that resolves to no file stays unresolved instead of being pinned to whatever
+  shares its name. **Measured on this repo: 1,196 → 1,392 import statements seen, 679 of 679
+  relative ones resolved to the exact file the specifier names, 0
+  wrong (was 3, all wrong).** On a ten-importer fixture the graph now finds 10 of 10 with no
+  false positives (grep finds 10 with 2), and on a seven-importer Python fixture 7 of 7 (was
+  4, plus a file whose only mention is a comment).
+- **The impact graph no longer reads comments and strings as code, and a call belongs to its
+  function.** A comment saying `class Parser` defined a second `Parser`, which made the name
+  ambiguous and silently erased the real edge from `main.js`; a string containing an import
+  was an import. Every structural regex now runs on a masked copy of the source (comments and
+  string/regex contents blanked, offsets and line numbers preserved), and a call is attributed
+  to the innermost enclosing function/class instead of the nearest preceding `const` — so
+  `const value = leaf()` inside `mid()` no longer hides `mid`'s own callers from
+  `impact(leaf)`. Bare names are never resolved across languages any more (a Python
+  `from impact_oracle.oracle import …` used to land on the JS `const oracle` in `eval.js`),
+  local definitions are not cross-file candidates, and names imported from a package are never
+  re-guessed locally, and `emit(ctx) {` inside an object is a method DEFINITION rather than
+  a call to whatever unique `emit` exists elsewhere: ambiguous references dropped on this
+  repo fell from 3,136 to 862, and they are now COUNTED and reported instead of vanishing
+  (`impact()` returns `ambiguousRefs`, `unresolvedImports`, `capped` and `skippedFiles`, and
+  `forge impact` prints them).
+- **Building the graph is linear again, and the file cap counts source files.** Line numbers
+  came from a `slice(0, i).split()` over the whole file per match, and every call scanned
+  every node, so a 16k-line file took seconds; extraction now uses a line index and scope
+  intervals: a 16k-line JavaScript file plus a 16k-line Python file build in **0.3 s, down
+  from 4.9 s** on the same machine (`test/atlas_resolve.test.js` keeps it under 2.5 s). The
+  20,000-file cap counted JSON and Markdown against code and was never reported; it now
+  bounds source files only, docs/configs have their own bound, and a capped graph says so
+  in `forge atlas build`, in `impact()` and in `forge impact`.
+- **Blast radius is no longer reverse-only — the refutation's sibling and forward relations
+  are ported.** `research/empirical-refutation/` diagnosed that 94.7% of real misses were
+  *siblings* (A and B both depend on module C, so C's contract shift co-changes both) and
+  2.1% were forward-only, but only the Python prototype was repaired; the shipped JS graph
+  still walked reverse edges exclusively, so `impact(serializer.js)` reported `app.js` and not
+  the `deserializer.js` that shares `wire_format.js` with it. `impact()` now runs the two
+  ported relations at the replication package's FROZEN parameters (sibling: 1 forward + 1
+  reverse hop, weight 0.7, bridge in-degree cap 100; forward: ≤2 hops, weight 0.5), both
+  terminal — a node they reach is reported, never expanded. Every result carries its
+  `relation`, `relations: ["reverse"]` reproduces the old answer exactly, and
+  `analyzeDiffImpact` (MergeField) receives the same two relations as terminal edges.
+- **The impact-quality numbers are re-measured, and they are not the README's.** The
+  README's precision 0.90 / F1 0.92 did not reproduce at HEAD (`evalImpact` over the
+  committed `bench/impact_cases.mjs` gave precision 0.341, recall 0.972, F1 0.500 there).
+  With the repaired graph it gives **precision 0.094, recall 1.000, F1 0.170** with all three
+  relations and **0.146 / 1.000 / 0.248** reverse-only. The labels name only DIRECT
+  referencers, so every transitive dependent, every doc that mentions the symbol and every
+  sibling now counts against precision — restricted to code files the reverse-only precision
+  is 0.346, and restricted to one hop it is 0.830 at recall 1.000. Four of the six label sets
+  are also stale (`contentHash` has nine importers in `src/` today, six are labelled), so
+  these numbers under-report precision; the fixture needs relabelling before any claim rests
+  on it. What the repair fixes outright: nine `src/` files (every `src/emit/*.js`, plus
+  `src/taste.js`) reported **"✓ found · impacted files: 0"** while being imported —
+  **now none do**. The median blast radius of a `src/` file goes from 8 files to 16
+  reverse-only and 70 with the sibling relation on, which is the frozen parameters working
+  as measured, not a bug: `impact(…, { relations: ["reverse"] })` is the dependents-only
+  view.
+- **The in-repo Python prototype is the repaired v2, not the refuted v1.**
+  `research/python-prototypes/impact_oracle/oracle.py` was byte-identical to the as-shipped
+  version whose claims the refutation demolished. It now carries both repairs — the src-layout
+  phantom-node merge (pooled recall 0.0220 → 0.2424) and the sibling/forward traversal
+  (held-out precision 0.320, recall 0.647, **F1 0.428 vs grep's 0.371**, reversing 0.042 vs
+  0.437) — with the frozen parameters as module defaults, 13 new regression tests, and
+  `ImpactOracle(wm, sibling_enabled=False, forward_enabled=False)` for the old behaviour.
+- **`forge atlas query` shows the definition you asked for.** Results were unranked, and a
+  qualified name carries the file path, so `query build` returned 30 symbols from
+  `scripts/build-pages.mjs` before `function build` itself. Matches are now ranked: exact
+  name, case-insensitive exact, name prefix, name substring, then path-only matches.
+- **Fan-out and churn stop lying.** `grepFanout` was a substring `git grep`, so "get" counted
+  every file containing "target"; it now matches whole words (`-w -F`). `gitChurn` counted the
+  last 50 commits of ALL history, so a file untouched since 2015 still scored 1.0; it now
+  counts commits inside a 90-day window.
+- **Non-finite weights are zero, not certainty.** The MergeField `clamp01` helpers disagreed:
+  `merge_impact.js` mapped any non-number to 0 while `merge_impact_adapter.js` used
+  `Number(value) || 0`, which turned `Infinity` into a maximal 1.0 criticality. One shared
+  helper now maps every non-finite value to 0 and still accepts numeric strings.
+- **`recommend()` no longer sends a non-finite score to the most expensive tier.** Every
+  comparison is false for NaN, so `recommend(NaN)` — and `±Infinity`/`undefined` — fell
+  through to fable. A non-finite score now routes to the default tier (sonnet) with an
+  `unknown-score` reason, logged under `FORGE_DEBUG=1`.
+- **`extractJson` reads the first balanced JSON object, not everything between the first brace
+  and the last.** The greedy `/\{[\s\S]*\}/` meant any reply carrying two objects, or a stray
+  brace in the prose around one ("Considering the {config} object: {…}"), parsed as nothing and
+  the proposal was silently dropped — for every faculty that adjudicates (routing band,
+  assumption gate, impact, distill). Brace counting is now string-aware, and a candidate that
+  does not parse is skipped rather than grown.
+- **The gateway model map parses versions instead of matching loose digits.** A tier's reference
+  tokens were `{haiku, 4, 5}`, so "claude-3-5-sonnet-20241022" scored exactly as well as
+  "claude-sonnet-4-5-20250929" for the Sonnet tier — the "5" of "3-5" matched the "5" of Sonnet
+  5 — and won the lexicographic tie, pointing a self-hosted gateway at a two-generation-old
+  model. Consecutive version numbers collapse into one token ("3.5"), a date stamp is not a
+  version, and equal scores break toward the newest model of the family.
+- **`classifyIntent` reports the winning intent's confidence, not a losing neighbor's.** When two
+  runner-up rows outvoted one closer row, the reported confidence was the closer row's
+  similarity — evidence for the intent that lost ("what does the release script do" → `release`
+  at 0.571, the `question` neighbor's score; now 0.333).
+- **`knowledge_router` keeps the first-person signal it routes on.** It tokenized facts with
+  intent.js's stop-set, which drops `i/my/we/our/your/their` as function words — the one thing
+  separating a personal preference (recall) from a project convention. "i prefer short commit
+  messages" and "the team prefers short commit messages in this repo" both scored 1.00 against
+  the same recall row; now 1.00 and 0.78.
+- **A null `noul` from Jev is "no answer", not a confident zero, and a choice matches the offered
+  option case-insensitively.** `Number(null)` is 0, so a dimension the API returned as null read
+  as "definitely unspecified" and dragged the assumption gate's completeness down; it now fails
+  safe like any other garble. A `"Mid"` answer to a `{cheap, mid, premium}` choice was thrown
+  away entirely; it now resolves back to the `mid` we offered (an option we never offered still
+  fails safe).
+- **The preflight scanners no longer read addresses, code fences and prose as code.** On the
+  80-task held-out set (diagnostic only — those tasks are spent for tuning), the entities a task
+  was said to reference fell from 210 files and 1,414 symbols to 42 and 388 across the 64
+  well-specified tasks. Four misfires:
+  - a code fence's third backtick paired with the next inline backtick, so **every word inside a
+    fence became an identifier** — a broker-URL log line yielded "Setting", "up", "delayed",
+    "for", "broker" — and each one then went to the substring `git grep` that feeds routing
+    fan-out. Fenced blocks are stripped before the inline-code scan, and an inline span now needs
+    a closing backtick run of the same length, so RST ``double`` spans stop pairing across prose;
+  - URLs, markdown links and images, `N/A` and `and/or` counted as **files**
+    (`example.com/issue/12`). Addresses are removed before every scan (`stripUrls`), and a bare
+    slash token must look like a path — an extension, a `./ ../ ~/ /` prefix, or a trailing `/`;
+  - the concreteness anchors fired on URLs, image links, contractions (`'t break it, it'`) and
+    versions (`since v2.3:`). The quoted-literal anchor now refuses apostrophes inside words, the
+    filename anchor needs a letter-initial extension, and the worked-value anchor needs a number
+    beside an arrow, an equality or a `key: 42` colon — the filename anchor's firing rate on
+    gold-ask tasks falls from 0.69 to 0.31. `e.g.` and `example:` also fire at last: their
+    trailing `\b` had made them unmatchable before a space;
+  - **a named code identifier was not an anchor**, so "Rename getUser to fetchUser everywhere"
+    was hard-flagged as having nothing concrete to act on. It now counts as one anchor (that task
+    is no longer hard-flagged; with a file path it clears the gate outright), and the
+    success-criteria cue matches `\btest` rather than the "test" inside "latest".
+- **With the LLM layer on, the assumption gate no longer asks just because a task names
+  something the repo lacks.** In bidirectional mode `reconcileAssumption` put `hasUnresolved` in
+  the ask condition itself, so it forced an ask even when the rubric proceeded and the model
+  judged the task complete — a grounded rename (`clamp01` → `clampUnit`) with a background URL:
+  rubric proceeds, model 0.99 → asked, path `llm-tightened` — while tighten-only mode ignored it
+  entirely. The reviewer measured 63 of 64 well-specified held-out tasks tripping it. Unresolved
+  entities are now a floor on _clearing_ a rubric ask only, identically in both modes (a
+  rename's new name is unresolved by definition).
+- **A torn ledger line no longer swallows the next record.** A process killed mid-append (or a
+  union merge that dropped the trailing newline) left a final line without `\n`; the next
+  `appendEvidence` was glued onto it, became one unparseable line, and vanished from every read
+  while the append still returned `ok:true` — the repro showed `[run-1]` visible after
+  appending `run-3`. Every ledger log append (evidence, provenance, tombstones, quarantine) now
+  terminates a torn final line first: `[run-1, run-3]`, and a re-append dedupes.
+- **Claim canonicalization normalizes keys before sorting them.** Keys were sorted by their raw
+  spelling and NFC-normalized afterwards, so an NFD key (`e` + combining accent) sorted before
+  `f` while its NFC twin sorts after it. A claim minted with such a key was written with one
+  byte order and re-hashed with another on reload: `loadClaims` saw 0 claims and `verify`
+  reported an id mismatch. Keys are now normalized first; the pinned ASCII fixture ids are
+  unchanged.
+- **An MCP tool that throws now answers with a JSON-RPC error.** `serve()` swallowed handler
+  exceptions (`.catch(() => {})`), so a request whose handler threw — e.g. `forge_remember` with
+  an unwritable `.forge` — never got a reply and the client waited for its own timeout. The
+  server now returns `-32603` with the tool name and message, and keeps serving (the repro
+  received replies for ids `[2]` before, `[2, 1]` after).
+- **`forge ledger sync` no longer erases teammates' evidence from the shared ref.** A push
+  wrote the pushing replica's *verified* state, so any record it had to quarantine (a `file:`
+  proof only a teammate's tree has, a commit it had not fetched) vanished from
+  `refs/forge/ledger` for everyone — the review's alice/bob/carol run ended with the remote
+  holding 0 of alice's 1 record. A push now writes the raw remote state joined with the local
+  verified state (the same semilattice merge) and verification happens only on read: the
+  remote keeps the record (1), bob and carol still quarantine it locally, and a re-run is
+  still a byte-level no-op.
+- **Restoring a superseded fact leaves it live.** Fact claims are content-addressed and
+  tombstones are permanent, so `forge remember api-base v1` → `v2` → `v1` put the restored
+  value back on v1's retired id: the ledger held no live `api-base` fact at all (`list`
+  went from `["api-base"]` to `[]`). A retired value is now re-asserted as the next revision
+  (the lowest `rev` whose claim is not tombstoned — deterministic, so teammates converge),
+  and `reconcileFacts` matches store and ledger by content instead of by rev-0 id.
+- **Eq. 3 retrieval ranks by relevance again.** Five defects compounded into "the ledger
+  answers the wrong question":
+  - *Scope was a strict priority.* The scope weight multiplied σ from outside, and with
+    a+b+g = 1 the sigmoid only spans [0.5, 0.731] — so scope decided every ranking: an
+    unrelated, 400-day-old, contradicted **symbol** claim scored 0.5375 against a
+    perfect-match **repo** claim's 0.3853. Scope is now a bounded term inside σ
+    (`s = 0.10`, symbol−global = 0.06): the same pair now ranks 0.6815 (repo) over 0.5622.
+  - *Short queries found nothing.* `rel` was MinHash over 4-token shingles, so a 2–3 word
+    query was one shingle no claim contained: "auth token refresh" scored `rel` 0 against
+    the auth fact and ranked it **below** an unrelated CSS fact. `rel` is now
+    `max(shingle Jaccard, query-term coverage)`; the same query ranks auth first (0.713 vs
+    0.589).
+  - *Any two non-ASCII texts were "identical".* The tokenizer split on `[^a-z0-9]`, so
+    Arabic, Chinese or Greek text became the empty token set and two empty sketches agreed
+    on all 128 lanes — Jaccard 1. Tokens are now Unicode-aware (`\p{L}\p{N}\p{M}`) and an
+    empty set shares nothing with anything: Arabic vs Chinese is 0, and a real Arabic
+    query retrieves its Arabic fact.
+  - *Contradictions counted as recent evidence.* `rec` keyed on the newest evidence of any
+    polarity, so a fresh refutation RAISED a stale claim's score (0.3280 → 0.3384). `rec`
+    now keys on confirmations (or the mint), and the same contradiction lowers the score.
+  - *Two similarity scales in one ranking.* With a partially embedded ledger, cosine
+    (0.4–0.6 for unrelated same-domain text) competed with Jaccard (≈0), so every embedded
+    claim outranked every lexical one. The backend is chosen once per ranking: cosine only
+    when every candidate is embedded.
+  `EQ3_WEIGHTS` no longer claims to be "calibrated in P8" — P8 shipped cost evaluation, not
+  a retrieval calibration; the spec (01-pcm-protocol.md §4) is updated to match the code.
+- **Déjà vu is gated on relevance, not on the total score.** `DEJA_FLOOR` (0.39) was tuned on
+  repo-scoped summaries, but a symbol-scoped lesson scored ≥ 0.5 for any prompt, so an
+  unrelated `parseConfig` lesson surfaced on EVERY prompt — including "translate the README
+  into French" (0.538). The gate is now `DEJA_REL_FLOOR` on the `rel` term (0.5: at least half
+  the prompt's content words appear in the remembered task): the unrelated prompt is silent at
+  day 100 and day 400, while a genuine repeat still fires.
+- **Future-dated evidence no longer counts at full weight for years.** A record dated 10 years
+  ahead (a skewed clock, a hand-written `t`) pinned `rec` at 1.000 and kept full val weight
+  until the calendar caught up. Age is now the distance from now, so that record's `rec` is
+  0.000 two years later and its val weight ≈ 0, while a one-day skew stays negligible.
+- **A learned lesson stops flapping out of the injection set the next day.** One Stop-hook
+  confirm put a lesson's val at exactly 0.6 against an `active` bar of 0.6, so a single day of
+  decay (0.5988) demoted it: a lesson was injected on the day it was learned and never again
+  (with three confirms it dropped out around day 75). Activation is now hysteretic — on at
+  0.6, off below 0.55 — so one confirm keeps a lesson active for ~52 days, three for ~124, and
+  a contradiction still demotes it immediately. The test that only read on the confirm day now
+  reads at days 101, 130, 150 and 160.
+- **Dormancy latches, and pruning is wired.** A claim refuted by a human revert (val 0.333)
+  drifted back above the 0.35 dormancy floor 11 days later — with no new evidence — and
+  re-entered retrieval. Dormancy now latches at the evidence event and only a later
+  *confirmation* clears it; decay alone never does. `pruneToAttic` had no callers at all, so
+  the spec's forgetting rule (01-pcm-protocol.md §3) was unimplemented: the new `pruneLedger`
+  archives tombstoned or dormant claims that have had nothing new for 2·T, and runs at
+  session end (the déjà-vu Stop write), on `ledger merge` and on `ledger sync` import.
+  Nothing is deleted — the bytes move to `attic/`, every log stays, a re-import never
+  un-prunes, and new evidence brings a claim back with its whole history.
+- **The reuse cache's "exact" tier means the same task again.** The exact and near tiers
+  compared the SHAPE-normalized spec, in which every identifier is `⟨ident⟩` — so
+  "add pagination to listOrders" was served the **listUsers** artifact at tier exact,
+  similarity 1, and (because the tokenizer's `\w` is ASCII-only, which erased every Arabic
+  word) two unrelated Arabic specs were exact matches of each other. Artifacts now carry an
+  identity key — Unicode-aware tokens, case and punctuation normalized, identifiers kept —
+  which the exact and near tiers compare; the shape form still keys the adapt tier, so the
+  listUsers artifact can still be offered as a starting point for listOrders, never as the
+  answer. The three collision cases from the review are now misses.
+- **The LSH prefilter stopped dropping three of every four adapt candidates.** The comment
+  claimed "≈0.96 at J=0.8 and ≈0.17 at J=0.5" for 16 bands × 8 rows; the real figures are
+  0.95 and 0.06, and at the adapt threshold J=0.6 recall was 0.24 — so once a ledger passed
+  32 artifacts, most adapt-tier hits silently became misses. Banding is now 32 × 4 (0.99 at
+  J=0.6, ≈1.00 at J=0.8): in the review's own harness, 67 of 67 adapt-band pairs are found
+  with the prefilter active, against 39 of 67 before.
+- **Goal anchoring measures the right thing, per checkpoint.** Three separate defects:
+  - The per-prompt advisory compared the working diff against the **current prompt**, so
+    "ok, now run the tests please" reported every changed file as goal drift. The hook now
+    re-runs the check against the persisted goal (`.forge/goal.md`), and with no goal set it
+    makes no drift claim at all — a prompt is not a goal.
+  - The CUSUM chart was fed the **cumulative** off-goal ratio every prompt, so one static
+    off-goal file alarmed by itself after three idle prompts (C = 0.32 → 0.63 → 0.95 → 1.27
+    > h = 1.0). It now gets the per-checkpoint increment — the off-goal fraction of what
+    actually moved since the last prompt — so idle prompts score 0 and drain the chart,
+    while a file edited again scores 1 again.
+  - M5 minimality ignored untracked files, which is where over-engineering lives: a 6-class,
+    212-line "framework" dropped next to a one-line fix measured as 1 file, +1 line, 0
+    warnings. Untracked files are now part of the measured footprint (2 files, +213 lines,
+    13 new abstractions, 2 warnings) whether or not they have been `git add`ed.
+- **The doom-loop signature sees the whole failure.** It hashed `tool_response.stdout` only
+  and just its first 800 characters, so a stderr-only failure (jest, mocha, tsc) was never
+  seen at all, and three different failures behind one long passing header shared a signature
+  and were reported as a loop. It now covers stdout and stderr and the whole normalized
+  output (head + tail above 64 KB). The advisory also stops claiming "different edits aren't
+  fixing it" when nothing was edited between the runs.
+- **`LEDGER.md` stopped conflicting in the conflict-free store.** The generated index is
+  rewritten on every ledger write and each row carried `val 0.50` — a number that changes
+  with the clock and with each replica's evidence — so two teammates adding one fact each got
+  a merge CONFLICT in `.forge/ledger/LEDGER.md`. Rows are now stable (id, kind, the claim's
+  own text), and the ledger ships its own nested `.gitattributes` marking the index
+  `merge=union linguist-generated`: the review's alice/bob merge is clean.
+- **The per-prompt hook stopped re-reading the whole ledger, three times.** A ledger is one
+  small file per claim plus its logs (300 claims = 900 files), nothing compacted it, and the
+  hooks ask for it three times per prompt (lessons, déjà vu, reuse peek). `loadState` now
+  keeps a derived snapshot beside the ledger, validated by a stat-only fingerprint of every
+  file's (path, size, mtime) — any external edit, git merge or prune rebuilds it from the
+  files, and the cache is gitignored. Measured on a 300-claim ledger (Windows, the review's
+  own harness): one `loadClaims` 619 ms → 112 ms, and the per-prompt hook path
+  (ambient substrate check + déjà vu) 3026 ms → 517 ms.
+- **A recorded UI interaction verdict is dated today.** `recordInteraction` defaulted to
+  `t = 0` and the CLI passed no day, so every verdict landed 56 years in the past and decayed
+  to nothing on arrival: five failing UI runs left the design fingerprint's val at exactly
+  0.5000. They now move it to 0.3636.
+- **A refuted fact stops being broadcast to every tool.** `.forge/brain`'s index is inlined
+  into the emitted `AGENTS.md`, and it never asked the ledger what a fact was worth: a fact
+  three CI runs had contradicted (val 0.23, dormant) was still shipped verbatim to Codex,
+  Cursor, Gemini and everything else that reads `AGENTS.md`. The index now withholds facts the
+  ledger has sunk below the dormancy floor, and — like the overflow pointer — says how many
+  and why rather than dropping them silently. `forge_remember` also reports a refusal
+  ("Not remembered — refused: looks like a secret…") instead of answering "Remembered" for a
+  write the store rejected.
+- **Only a real test run counts as one.** The test-command grammar matched anywhere in a
+  command, so `echo "run npm test later"` and `grep -r 'jest' package.json` marked a session
+  "tested" — minting a `test.run` confirm for a session that ran no tests — and `npm test ||
+  true` counted as a pass because the `|| true` swallowed the exit code. A command now has to
+  BE a test run (start of the command or after a shell separator) and keep its exit code.
+- **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
+  executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
+  hook names) reported `warn` on Linux and failed `test/doctor.test.js` on Node 20 and 22 for
+  every push since #140. Windows ignores `X_OK`, which is why the Windows job stayed green.
+  The file now carries mode `100755`, like its sibling `secret-redact.mjs`.
 - **The test suite is hermetic.** It inherited the developer's environment, so it was green
   in CI and red on any machine where forge was actually installed and enabled — the two
   things a maintainer does. An exported `FORGE_LLM=1` both flipped the "llm off by default"
@@ -39,9 +414,266 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were corrected: `doctor` asserted a global `failed === 0` to prove a local property about
   `na` rows, and a comment in `substrate` claimed no runner reaches the real CLI — the
   opposite of the truth, and the reason that file spent 85s on live calls.
+- **`verify --deep` no longer claims coverage it never had.** The `residual` silent-miss
+  bound multiplied `∏(1 − wⱼ)` over every lens that "ran": it used the precision-style lens
+  weights as catch probabilities, multiplied checks aimed at disjoint defect classes as if
+  they were independent tries at one defect, and counted lenses that ran over nothing. With
+  the tests never run and an empty diff it reported **0.042** — 96% coverage from zero
+  checks. Each lens now names its target class and an assumed catch probability in its own
+  `catch` column; same-class lenses combine as nested checks (`1 − c_max`, review F2), a lens
+  that examined no input catches nothing, and the figure is the worst class, with
+  `residualByClass` in the provenance. The same case now reports **1**; a typical clean run
+  reports 0.7 instead of 0.005.
+- **The pre-edit risk advisory can fire.** The hook passed the predictor only the file path,
+  so four of its seven features were pinned to 0 and the heuristic topped out at
+  σ(−1.0) = **0.27**, below the 0.66 "high" band: the high-risk advisory could never appear.
+  The hook now computes them from the repo and the edit itself — callers and tests from one
+  bounded `git grep` of the module name, whether the edit rewrites an existing declaration,
+  and whether any caller is in the working diff — and the advisory names the reasons. A
+  hot file with ten importers, no test, and a rewritten exported signature now scores 0.91
+  ("high"); the same file with a covering test and a body-only edit stays quiet. In
+  `src/predictor.js`, `aucPr` now ranks tied scores as one threshold (the same data gave
+  **1.0 or 0.333** depending on input order; now 0.333 either way), and the kill criteria
+  no longer decide on a held-out split under 10 samples or 2 of each class (a 4-sample split
+  with no positive used to disable a perfectly predictive feature) and compare AUC-PR with
+  the exact chance baseline of a random ranking instead of a fixed 0.6 (pure noise at 80%
+  positives passed 0.6 and let the learned model take over; a real 10%-prevalence signal
+  at AP 0.33 was disabled).
+- **`forge radar` rings reflect the risk they find.** The ring score was a weighted mean in
+  which clean signals counted as zeros with the heaviest weights (`deprecated: false` 1.0,
+  "no advisories" 0.9), so they diluted everything else: a dependency 4 majors behind with
+  a 3-year-stale latest release scored **0.221 → adopt**, currency risk could never exceed
+  0.255 (so "assess" was unreachable from the score), and a high-severity advisory alone
+  scored 0.247 → adopt. The score is now a noisy-OR, `1 − ∏(1 − wₖ·sₖ)`, like the lesson
+  and consensus scores: the same dependency scores 0.485 (trial), maximal currency risk
+  0.545 and a high advisory 0.630 (both assess). Absent evidence still lands in "assess"
+  through the evidence-count gate, never through the score.
+- **`forge cost` counts what a session actually cost.** Without `ccusage`, the fallback
+  estimate from Claude's session logs priced only `input_tokens` and `output_tokens`,
+  ignoring `cache_creation_input_tokens` and `cache_read_input_tokens` (most of Claude
+  Code's input), and summed every log line although Claude Code writes one response on
+  several lines with the same message id. A one-message fixture logged three times
+  estimated **$0.038 against $0.228**. Cache writes are now priced at 1.25× the model's
+  input rate (2× for 1-hour writes) and reads at 0.1× (Anthropic's caching multipliers;
+  the price table carries base rates only), and each message id counts once across all
+  log files; the fixture now estimates $0.228. `forge cost --stages` stopped calling its
+  composed figure a "lower bound" that "can only grow": the route factor goes negative
+  when routing prices above the always-premium baseline (measuring one such stage took the
+  composition from 50% to 0%). It is now labeled "measured stages only, not a bound". And it
+  no longer prints "the paper measured a 62% routing saving" as context: the line marks
+  the figure as refuted next to the measured −20.2% on total spend
+  (`research/empirical-refutation`).
+- **`forge rank` hazard counts incidents, not sessions.** The history overlay summed
+  `val()` over lesson claims AND every deja session summary naming a file, but a summary
+  is minted for every session, first-try successes included, and a session whose own
+  tests passed carries a confirm outcome: every edit became an "incident", five ordinary
+  sessions added 2.5 to a file's history, and a tested, passing session added **0.64**
+  against an untested one's **0.5**. Only lesson claims (recorded mistakes) count now;
+  session summaries add 0.
+- **Context assembly stops a source at its 3rd optional item, and only that source.** The
+  per-source diminishing-returns cut (`δ^(j−1)`, δ = 0.7, "fourth+ item from one source:
+  value has decayed away") was checked after taking the item with a 0.2 floor, so it took
+  **6** items before stopping, and it used `break`, which ended the fill for every source.
+  The cut is now checked before taking an item, at the floor the comment describes (the
+  4th item's δ³ ≈ 0.34), and skips only that source: 10 candidate facts now yield 3.
+- **Non-ASCII names no longer collide, and NaN no longer propagates.** `slug()` kept only
+  `[a-z0-9]`, so every non-Latin name ("مفتاح الواجهة", "数据库地址") slugged to `""` and fell
+  back to the same literal — two facts with different names overwrote each other under one
+  `fact` slug. It is Unicode-aware now (NFKC, letters/marks/digits of any script), with a
+  short content hash for names that carry no letter or digit at all; ASCII slugs are
+  unchanged. `clamp01(NaN)` returned NaN (`Math.max(0, Math.min(1, NaN))`) and poisoned
+  every score it fed; it fails to 0, along with any non-numeric input. `cosine()` promised
+  "never NaN" but squared components before dividing, so vectors with components ≳ 1e154
+  overflowed to Infinity/Infinity = **NaN** and components ≲ 1e-162 underflowed to a false
+  zero vector; it now scales each vector by its largest component, rejects non-finite
+  components, and clamps the result to [-1, 1].
+- **The learning loop runs in real installs again.** `cortex.sh` runs the Stop hook detached,
+  as `(node … stop &)`, and a background job in a non-interactive shell gets `/dev/null` as
+  stdin. So every Stop payload arrived empty, the session id fell back to `"default"`, and
+  the real session was never processed. No correction episodes, lessons, contradictions or
+  deja summaries were written, and `.forge/sessions/<id>.jsonl` was never cleared. The tests
+  missed it because they piped into `cortex_hook_main.js` directly. The shim now reads the
+  payload before detaching and pipes it into the background node. A new shim-level test
+  drives `node run.mjs cortex.sh …` the way Claude Code does: before the fix the session log
+  was still there 30 s after Stop; now it is consumed and `episodes.jsonl` is written in
+  about 3 s, on Linux and under Git Bash on Windows.
+- **Completion-gate evidence can no longer be produced by the agent alone.** The `verify`
+  provenance stamp and the gate's once-per-session marker are files under `.forge/`, so a
+  hand-written `{"tests":{"status":"PASS"},"codeState":…}` satisfied the gate's strong leg and
+  a pre-written `<sid>.blocked` switched the gate off entirely. Both are now MAC'd with a
+  machine-local key kept outside the repo (`$XDG_STATE_HOME/forgekit/evidence.key`, mode
+  0600, created on first use), and an unsigned one is ignored. This is a raise, not a
+  boundary: an agent with shell access can still read the key — real unforgeability needs a
+  signer it cannot reach (CI, or a helper process). Three more evidence holes closed: a
+  comment-only touch to a test file (`// touched`) no longer counts as test evidence (the
+  added lines must contain real code), a `package.json` test script that masks its own
+  failures (`node --test || true`, `|| exit 0`, `--passWithNoTests`) reports INCOMPLETE
+  instead of PASS, and `forge scan`'s external scanner now ADDS to the built-in heuristic
+  instead of replacing it — a clean `snyk-agent-scan` exit used to return early, so the
+  signatures for `curl … | sh`, prompt injection and credential exfil never ran. `imagine`'s
+  dry-run reads the runner's OWN (last) TAP summary and cross-checks the exit code.
+- **The cost governor now governs.** It only wrote to stderr and exited 0, which a PreToolUse
+  hook shows to nobody, so it neither capped nor informed. Past the real-spend ceiling
+  (`FORGE_COST_CEILING`) it now emits `permissionDecision: "ask"` with the reason — the human
+  decides — and the volume/broad-command nudges ride along as `additionalContext` instead of
+  invisible stderr.
+- **`forge harden` writes a deny list Claude Code actually reads.** Its sandbox block emitted
+  a `credentials.deny` key that exists nowhere in Claude Code's settings schema, so the
+  credential paths it "denied" were never denied. It now writes `permissions.deny` with real
+  `Read(<glob>)` rules for `~/.aws`, `~/.ssh`, `~/.config/gcloud`, `~/.netrc`, `~/.npmrc` and
+  `~/.git-credentials`.
+- **The settings allowlist no longer auto-approves three dangerous commands.** `Bash(fd:*)`
+  covered `fd -x <anything>` (arbitrary execution) and is gone; `Bash(git branch:*)` covered
+  `git branch -D` and is replaced by the read-only spellings; `git branch -d/-D` and
+  `git diff --output` are denied outright. (A deny rule is prefix-matched, so
+  `git diff HEAD --output=…` still relies on the permission prompt — noted in the review
+  follow-ups.)
+- **Lockfile commits are no longer refused as leaking a secret.** The entropy leg flagged
+  content-integrity digests as secrets: 100% of package-lock and yarn.lock `sha512-` hashes,
+  99% of SRI `sha384-` and 88% of go.sum `h1:` hashes. The real `left-pad@1.3.0` integrity
+  line was refused by the commit gate, which pushed users to `--no-verify` and switched off
+  the whole scan. These digest shapes are now exempt from the entropy leg only, so format
+  rules still apply. All four rows now score 0%.
+
+### Security
+
+- **The secret filter can no longer be made to hang.** The key-assigned branch of
+  `hasSecret`/`redactSecrets` (`\b[\w-]*KEY[\w-]*…`) backtracked cubically on long runs of
+  key-ish words: 6 KB of `token-token-…` took 5 s and 12 KB took 40 s. It runs on every tool
+  output via the secret-redact hook, so a large output outlived the hook timeout and passed
+  through unredacted. Every quantifier that could re-scan a run is now bounded; 40 KB of each
+  pathological shape (`token-`, `secret_`, `password=`, `auth=`, `x://a:`, …) now takes
+  under 5 ms, pinned by a timing regression test.
+- **Credentials in URLs, STS keys and short or slash-bearing values are now caught and masked
+  whole.** URL userinfo (`postgres://`, `mongodb+srv://`, `amqp://`, `redis://:pw@`,
+  `https://oauth2:glpat-…@`), AWS `ASIA…` STS key ids, `AUTH=`/`CREDENTIALS=` env values,
+  `Authorization: <scheme> <credential>` headers, GitLab `glpat-` tokens and TypeSafe
+  `apikey_<40hex>_<64hex>` keys went from 0% to 100% detected and redacted in the review's
+  matrix. `DB_PASSWORD=hunter2` (under 8 chars) was detected but never masked; unquoted values
+  were masked only up to their first `/`, which left about 16 chars of 30% of AWS secrets
+  visible. Of 2,000 random `AWS_SECRET_ACCESS_KEY=<40 base64>` lines, 1,995 are now masked
+  whole, up from 1,038. The rest (about 0.2%) start with `/`, so they are read as a path. Ordinary URLs,
+  `$VAR` references, kwargs like `f(password=pw)` and counters like `MAX_TOKENS=4096` are
+  still left alone. `secret-redact.sh`'s shell prefilter — which decides whether the Node
+  redactor runs at all — was widened to match: a short URL password has no 20-char token
+  run, so the guard used to skip the scan entirely and the credential reached the
+  transcript.
+- **The guards parse their payload with a real JSON parser, and fail closed.** Without `jq`
+  — stock Git for Windows, most minimal images — every guard fell back to a regex that cut
+  the value at the first escaped quote: `echo "x"; cat .env` arrived as `echo \`, so the
+  secret-read deny never fired, and `git diff -- ".env"` slipped through too (2 of this
+  repo's own tests only passed on machines with jq). `printf … | grep -q` under `pipefail`
+  also lost its match to SIGPIPE whenever grep exited early, so a large command silently
+  stopped being checked. `protect-paths` is now a thin launcher over `protect-paths.mjs`
+  (the split `secret-redact.sh` already uses): one parser, no pipelines, and an unparsable
+  payload or an internal error DENIES (exit 2) instead of exiting 1, which Claude Code reads
+  as a non-blocking hook error. `_guardlib.sh` and the status line read fields through the
+  same parser (`guards/hookfield.mjs`), so the status line no longer collapses to
+  `<dir> · <branch> · ?` without jq. The rule set also grew what the literal, case-sensitive
+  substrings missed — `git reset --hard`, `git clean -f…`, `find … -delete`/`-exec rm`,
+  `chmod -R`, `dd … of=`, lowercase SQL `drop table` — while the SAFE `git push
+  --force-with-lease`, which the old `git push --force` substring blocked, is allowed again.
+  `.aws/credentials`, `.netrc`, `.npmrc` and `.git-credentials` join the protected list, and
+  protect-paths now also runs on **Read** in both hook manifests: a plugin install ships no
+  `permissions.deny` block, so nothing stood between the agent and `.env` there.
+  `resolveBash` no longer selects `…\Microsoft\WindowsApps\bash.exe` — the Store alias for
+  the same WSL launcher, which cannot run a `C:\…` guard path, so every guard exited 127
+  (fail open).
+- **Session hook logs no longer store raw secrets, and `init` keeps them out of git.** The
+  `prompt` and `capture` hooks appended the user's prompt and every Bash command verbatim to
+  `<repo>/.forge/sessions/<id>.jsonl`. A pasted `GITHUB_TOKEN=ghp_…` or an `Authorization:
+  Bearer ghp_…` curl landed on disk in the repo, and `forge init` did not gitignore the
+  directory. Every string in a session event is now passed through `redactSecrets` before
+  it is written (the file now holds `GITHUB_TOKEN=[REDACTED]`). `init` also writes a nested
+  `.forge/.gitignore` that ignores `sessions/` without touching the user's root
+  `.gitignore`, so a deliberately committed ledger or `decisions.md` stays committable.
+- **The commit gate's secret scan now fails closed.** It read `git diff --cached` with the
+  default 1 MiB `execFileSync` buffer. On overflow the diff became `""`, so a `ghp_` leak
+  alone was refused (exit 1), but the same leak staged next to a 1.5 MB file was "allowed"
+  (exit 0). A repo-controlled `.gitattributes` `-diff`/`binary` marking or a `textconv`
+  driver also hid the added lines. The scan now diffs with `--text --no-ext-diff
+  --no-textconv` and a 256 MiB buffer. If that fails, it retries one file at a time, and any
+  file git still cannot diff is refused as unscanned instead of passed. All three bypasses
+  are refused now. The Stop gate's code-state fingerprint (`computeCodeState`) had the same
+  1 MiB blind spot: a stale `verify` PASS survived a later code edit whenever the pending
+  diff was over 1 MiB. It now hashes a `--binary` diff with the same buffer, and it reports
+  "cannot bind" rather than hashing `""` when git fails.
+
+### Security
+
+- **Only evidence forge actually resolved can lift a claim into the trusted band.** Any
+  untyped or unknown-prefix ref counted as fully resolved: `lgtm`, `session:x`, `ci:1`,
+  `human:claude@yes` and `git:HEAD` each took one confirm to val 0.643, and
+  `forge reuse mint --ref lgtm` was served at tier exact. "Resolved" now means forge
+  re-derived the pointer — a `git:` object id, resolved at every append/import gate and
+  re-resolved by `verify` — plus the two bridge pointers on their own bridge oracle
+  (`episode:` ↔ `cortex.episode`, `legacy:` ↔ `legacy.import`). Everything else, including
+  `ci:`/`human:` locators and symbolic `git:HEAD`, counts at format strength and is capped at
+  0.55, below the 0.6 serving floor; an `agent:` identity never supplies human-family evidence
+  at full strength. The review's three hand-written `human.accept` lines now reach 0.55
+  instead of 0.787. What remains: a hand-written line citing a real commit sha still counts —
+  closing that needs signed evidence (key infrastructure), which this release does not add.
+- **Serving a cached artifact no longer confirms it.** Every `forge reuse` hit appended a
+  passing `graph.reval` confirm, so ten daily serves moved val from 0.643 to 0.864 and an
+  artifact stayed served (0.710, tier exact) after two failing test runs. Only a failed
+  revalidation is written back (as a contradiction); ten serves now append nothing, and the
+  same two failing runs drop it to 0.427 — a miss. `mintArtifact` reports `serves` from the
+  confidence the proof actually earns instead of "some evidence was passed".
+- **The MCP ledger write tools act as the agent and only propose.** `forge_ledger_ratify` and
+  `forge_ledger_retract` ran under the human's `gitAuthor()`; retract accepted any 2-character
+  prefix and permanently tombstoned the first sorted match, and ratify's description promised a
+  confidence change it never made. Both are now stamped `agent:mcp`. Ratify mints a distinct
+  agent-proposed decision (never deduped into, or counted as, a human ratification) and says it
+  changes no confidence. Retract requires one exact 64-character id and records a
+  pending-retraction proposal — the claim stays live, val unchanged — shown by `forge_ledger_query`,
+  `forge ledger stats` and `forge ledger show` until a human runs `forge ledger retract`, which
+  now also requires the full id. `getClaimByPrefix` refuses an ambiguous prefix instead of
+  returning the first sorted match.
 
 ### Documentation
 
+- **The formal synthesis's Theorem D is restated as a bound, and its definitions are fixed.**
+  An external deep review (2026-09-21) found the theorem circular as stated (its criterion,
+  `P(≥1 miss) → 1`, also condemns the composed system) and its Eq. 5 dependent on an
+  independence the design contradicts — the same classifier at Stop, pre-commit and CI fires
+  together, so the product understates the residual 400× in the paper's own example. The
+  synthesis and the extended preprint now state the residual as `(1 − p)·P(no check fires |
+  miss)` with Fréchet bounds, bound it by `ε` over an explicit `(p, q)` region, show that the
+  gate's catch rate depends on agent behaviour (a STATE.md touch passes it), and fix the `lfp`
+  definition, the oracle-vs-`Δ*` "identity", T4, T5, T6 (A7 gains the catch-all arm
+  `src/knowledge_router.js` already has), A1's type error, A3's definitional I1, the use of
+  Rice's theorem, the faculty table (now matching the whitepaper), Eq. 1 vs the amnesia
+  equation, the Appendix A tally (9 confirmed, not 8), and the "independent" convergence.
+  Priority is conceded in both, as the refutation paper already did. Each paper ends with a
+  dated Corrections section quoting the original wording; `crosswalk.json`/`.md` and the
+  formal-synthesis README follow.
+- **The refutation paper's statistics are tightened without changing the refutation.** The
+  LaTeX source and the extended preprint now report repository-cluster bootstrap intervals
+  (every ground-truth pair is mirrored and files cluster in nine repositories: oracle
+  precision [0.15, 0.91], recall [0.0005, 0.052], seed 1234), no longer claim the repaired
+  oracle beats grep (3/3 repositories, sign-test p = 0.125, pytest 71% of pairs, relation
+  choice made on all nine repositories), say that the gold labels and the "independent" second
+  pass are one model, add cost per judged-correct output ($1.06 vs $1.76, from 6 and 3 of 64),
+  qualify the "96.8% fixable" ceiling, correct the calibration paragraph (bins 27/5/28/4/16,
+  ECE 0.103 or 0.078, p = 0.028), and explain 801 labelled vs 759 evaluated files.
+- **The whitepaper marks its refuted prototype claims in place.** A status banner, inline
+  markers and a Corrections section cover the impact oracle's "never misses an affected file"
+  (recall 0.022 on real repositories), the 62.1% routing saving (−20.2% held out), M1's
+  worst-case cost (the sum over every tier, not cheap + premium), Eq. 1 vs M2, and a misquoted
+  Faros figure ("31.3% _more_ PRs merged with no review"). The docs copy and
+  `docs/cognitive-substrate/deliverable-package.md` (which had no refutation banner) match.
+- **The README and docs stop calling the impact graph conservative and stop presenting 62% as
+  a saving.** The graph can miss affected files, so it is now described as approximate and
+  an empty impact set as "unknown". The README's impact-quality row (precision 0.90, F1 0.92)
+  did not reproduce — `evalImpact` gives precision 0.34, recall 0.97, F1 0.50 at `1a82388` —
+  and is marked for re-measurement after the impact-graph fix; the prototype rows now sit
+  beside their real-data refutations (recall 0.022; −20.2%). `docs/GUIDE.md`,
+  `reports/cost-eval.md`, `reports/benchmarks.md`, the substrate-v2 plan, the Mintlify intro,
+  the capability map and `source/substrate.json`'s limits say the same.
+- **`research/recompute_corrections.py` re-derives every corrected number.** Standard-library
+  Python (it includes a minimal Parquet reader), fixed seeds printed beside each result, run
+  against the extracted replication package. PDFs built from the corrected sources could not
+  be rebuilt here and are flagged as predating the corrections.
 - `CLAUDE.md`: Biome 2.5.2 → 2.5.5 (matching the pin), "600+ tests" → "1000+", and the lint
   command `npx biome check` → `npm run check` — the documented command fails outright, since
   the npx package is `@biomejs/biome`, not `biome`.
@@ -64,6 +696,89 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`forge impact` stays focused by default; the wide walk is `--all-relations`.** The
+  sibling and forward relations ported from the empirical refutation's repaired oracle are
+  a recall instrument: on this repo they take the median answer from 15 files to 78 of ~450
+  (max 196) — recall 1.00, precision 0.09 — and the substrate's 25-file blast threshold
+  would trip on almost every edit. `impact()` now walks reverse dependencies only unless a
+  caller passes `relations` (`IMPACT_RELATIONS` for all three), and `forge impact
+  --all-relations` asks for the wide walk. The relations themselves are unchanged, at their
+  frozen parameters; only which ones run by default changed.
+
+- **`forge route calibrate` stops calling itself "outcome-calibrated routing".** Nothing in it
+  comes from an outcome: the fixture is 24 hand-written task phrases with hand-assigned
+  complexities, and forge records nothing that could replace them — a `route` metrics event
+  carries the chosen tier and a task hash, a `verify` event carries pass/fail with no task
+  reference, so no (task, tier, outcome) triple exists to calibrate on. `calibratedComplexity`
+  has no caller in `src/` either: routing keeps the raw rubric. The command heading and closing
+  note, the module comment, GUIDE and ROADMAP now say so plainly, and joining a routed task's
+  tier to its verification result is named as open work rather than implied to be done.
+- **The routing rubric stops counting a task's length twice and stops matching on one shared
+  word.** Both defects pushed every real task into the middle: on the reviewer's 80-task
+  held-out set the router sent 54 of 64 well-specified tasks to mid and reached premium once.
+  - **Length was weighted twice** — by the repo facet's `size` signal and again by the rubric's
+    `struct.length` — and both saturate on real issue prose, so every long task was floored near
+    the cheap/mid line whatever it was about. The later of the two (`struct.length`, added with
+    the k-NN rubric) is gone; `rubricSignals().lengthTokens` stays as an informational field.
+  - **One shared word counted as a match.** 146 of 167 top-3 matches rested on a single token,
+    and against an exemplar whose whole footprint is that token (`fix a typo` → `{typo}`) the
+    overlap coefficient reads 1.00 — full confidence in a coincidence, which is how "resolve the
+    deadlock between the comment writer and the comment indexer threads" matched "add a comment"
+    at 1.00 and routed mid. A neighbor now has to share `RUBRIC.minShared` (2) grams, or the
+    task's whole footprint when the task is shorter than that, so "fix the deadlock" still
+    matches its exemplar.
+  - `rubric.band` now uses recommend()'s own cutoffs (0.25 / 0.55) instead of a second, different
+    pair (0.3 / 0.6) that disagreed with the tier actually routed.
+  - **No exemplar labels into the fable band any more.** The architectural rows carried y = 0.85,
+    at or above the 0.8 fable cutoff, while `model_tiers` puts "architecture, cross-module
+    refactor, novel algorithms" on Opus and keeps Fable for research-grade reasoning; they are
+    0.78 now (the held-out calibration fixture too).
+  - Diagnostic on the spent 80-task set (**not** an evaluation — those tasks are burnt for
+    tuning, and routing was measured in an empty repo): exact tier accuracy 0.344 → 0.453, the
+    predicted distribution 9/54/1 → 38/25/1 (cheap/mid/premium), and premium-vs-rest AUROC
+    0.652 → 0.753. Premium recall is still 0 of 17: the toy exemplar bank has no vocabulary for
+    real premium issue prose, which needs a real-issue bank and a **new** held-out set.
+- **Model routing reconciles the proposer's band with the deterministic band, not a point
+  score.** `routeTask` compared the proposer's band floor (cheap 0.15 / mid 0.40 / premium 0.65)
+  against the deterministic point score, so even a vote that _agreed_ moved the score: a
+  fable-level task (0.887) with a Jev "premium" vote dropped to 0.688 (opus) and was logged
+  `llm-lowered`; a sonnet-level 0.431 with a "mid" vote became 0.400, also "lowered"; a 0.087
+  prime-finder with a "cheap" vote was "raised" to 0.150; and a premium vote could never yield
+  fable. The new pure `reconcileRoute` maps the score to its band first (recommend()'s 0.25 /
+  0.55 cutoffs): the same band keeps the score (`llm-agreed`), a lower band moves it to that
+  band's ceiling. The old one-band point bound (`routingBand`, removed from
+  `source/substrate.json`) also blocked correct down-routes from the top of a band — a 0.508
+  task with a 0.95 "cheap" vote stayed on sonnet; it now lands on haiku. The strong-signal floor
+  (`signalFloor`) still holds a confidently-hard topic at mid.
+- **A proposer vote moves the tier only when the proposer is confident.** Jev's confidence was
+  logged but ignored — a 0.34 and a 1.00 "cheap" vote routed identically. A vote now needs
+  p(band) (Jev's probability on the voted band, else its confidence) ≥ `minConfidence`:
+  `ROUTE_MIN_CONFIDENCE` = 0.8, configurable per call and as `llm.minConfidence` in
+  `source/substrate.json`. 0.8 is an a-priori conservative default, **not fit to data** — it
+  has to be chosen on fresh labelled tasks (the frozen 80-task held-out set is spent). The
+  text-LLM proposer reports no probability, so by default it can no longer move the tier
+  (`llm-overruled`, `overruledBy: "confidence"`); `minConfidence: 0` switches the gate off.
+- **The proposer can no longer raise the tier.** The "free raise" escalated on the model's own
+  assessment, which whitepaper §5.1 rules out (escalate "only if an external check on the
+  output fails … never by the model's self-assessment"). A higher-band vote is now recorded,
+  not applied: path `llm-raise-deferred` — a prime finder with a 0.99 "premium" vote stays on
+  haiku instead of jumping to opus. The would-be tier is reported as `llm.escalateTo`, an
+  **advisory recommendation only**: nothing in forge acts on it automatically (no
+  verifier-failure path consumes it yet). Route provenance is now `deterministic` / `llm-agreed` / `llm-lowered` /
+  `llm-raise-deferred` / `llm-overruled` (+ `overruledBy`); `llm-raised` is gone.
+- **The assumption gate compares the proposer's verdict with the rubric's instead of clipping
+  one scale onto the other.** The rubric's logistic saturates on real issues (median
+  completeness 0.983 on the 80 held-out tasks) while Jev's mean noul is a probability centred on
+  0.5, and the reconcile bounded Jev to det ± 0.25 — so Jev almost never had a say: with a stub
+  proposer at Jev's reported median (0.29), 74 of 80 reconciled values sat exactly at det − 0.25
+  (the reviewer measured 71 of 79 with real Jev answers, which are not in the repo). Each reading
+  is now judged against its own threshold (the rubric's `askThreshold`, the proposer's 0.5); the
+  proposer flips the verdict only when it holds its own with probability ≥ `minConfidence`
+  (`GATE_MIN_CONFIDENCE` = 0.8 — a-priori, not fit to data; same `llm.minConfidence` key as
+  routing); tightening is always allowed, and clearing still stops at the no-anchor and
+  repo-grounding floors. The reported `completeness`/`risk` stay the rubric's, the proposer's
+  reading is `provenance.proposalCompleteness`, and a blocked flip is `llm-overruled` with
+  `overruledBy`. The `band` key is gone from `source/substrate.json`.
 - **MCP targets address their server bucket by dotted key path.** `emit/mcp.js` resolved a
   single top-level key (`mcpServers`, `servers`, `context_servers`); OpenClaw nests its
   registry under `mcp.servers`. The resolver now walks a path, creating missing objects only

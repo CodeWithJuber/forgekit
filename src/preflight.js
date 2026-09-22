@@ -65,8 +65,9 @@ const DIMENSIONS = [
     applies: rx(
       "\\b(fix|optimi[sz]e|make it (faster|work|better)|improve|ensure|feature|behavior)\\b",
     ),
+    // \btest: an unanchored "test" matched "latest"/"contest" and marked criteria as present.
     cues: rx(
-      "(->|=>|test|passes|acceptance|criteria|expected|should return|should equal|should match|verify|assert|benchmark|correct when|e\\.g\\.|example|```)",
+      "(->|=>|\\btest|passes|acceptance|criteria|expected|should return|should equal|should match|verify|assert|benchmark|correct when|e\\.g\\.|example|```)",
     ),
   },
   {
@@ -89,14 +90,24 @@ const DIMENSIONS = [
 const VAGUE = rx(
   "\\b(some|somehow|etc|and so on|things?|stuff|appropriate(ly)?|as needed|handle (it|everything)|make it (work|better|nice|good)|clean it up|cleaner|the usual|standard way|properly|correctly|the way we (discussed|talked)|like before|as before)\\b",
 );
+// Concrete anchors. Scanned with URLs and markdown links removed (stripUrls), because an
+// address is not a specification: a URL's host read as a filename and its port as a worked
+// example. A named code identifier is one more anchor (countAnchors).
 const ANCHORS = [
   /```/,
   /->|=>/,
   /\b\w+\([^)]*\)/,
-  /'[^']+'|"[^"]+"/,
-  /\b\w+\.\w{1,5}\b/,
-  /\b\d+\b.*(->|=>|=|:)|\(\d/,
-  /\b(e\.g\.|for example|such as|example:)\b/i,
+  // A quoted literal. The opening quote may not follow a letter and the closing one may not
+  // precede one, so contractions ("don't break it, it's") are not literals.
+  /(?<![\w'])'[^'\n]+'(?![\w'])|"[^"\n]+"/,
+  // A filename: a stem of 2+ chars and a letter-initial extension, so a version ("v2.3") or an
+  // abbreviation ("e.g.") is not one.
+  /\b[\w-]{2,}\.[A-Za-z][A-Za-z0-9]{0,4}\b/,
+  // A worked value: a number beside an arrow or (in)equality, a `key: 42`-style value, or a
+  // numeric call argument — not any number followed anywhere later by a colon ("since v2.3:").
+  /\b\d+(?:\.\d+)?\s*(?:->|=>|==?)\s*\S|[\w)\]]\s*(?:->|=>|==?|:)\s*-?\d+(?:\.\d+)?\b|\(\d/,
+  // "e.g." / "example:" end in punctuation, so a trailing \b made them unmatchable before a space.
+  /\be\.g\.|\bfor example\b|\bsuch as\b|\bexample:/i,
 ];
 const SPECIFIC =
   /\b(python|javascript|typescript|java|rust|golang|react|django|flask|node|redis|sql|postgres|asyncio|dijkstra|lru|adjacency|owasp|regex)\b|token-?bucket|binary heap|condition[- ]variable|recursive-?descent|in-?order|standard library|o\(\s*\d|o\(n|o\(1/gi;
@@ -110,8 +121,53 @@ const isCodeIdent = (p, backticked) => {
   );
 };
 
+// Any scheme://… URL (http, amqp, postgres, …) and bare www. hosts.
+const URL_RX = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>()[\]"'`]+|\bwww\.[^\s<>()[\]"'`]+/gi;
+
+/**
+ * Remove addresses from task text before scanning it: markdown images entirely, markdown links
+ * down to their text, and bare URLs. A URL is not a code reference — its path read as a file
+ * ("example.com/issue/12"), its host as a filename anchor, its port as a worked example.
+ * @param {string} text
+ */
+export function stripUrls(text) {
+  return String(text)
+    .replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, " ")
+    .replace(/\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")
+    .replace(URL_RX, " ");
+}
+
+// Fenced code blocks (``` or ~~~, closed or running to the end). Removed before the INLINE
+// code scan: a single-backtick pairing would otherwise match a fence's third backtick with the
+// next backtick and turn every word of the block ("for", "in", "return") into an identifier.
+const FENCE_RX = /(```|~~~)[\s\S]*?(?:\1|$)/g;
+// Inline code: a run of N backticks closed by a run of the same length on the same line, so
+// RST/markdown ``double`` spans don't pair their inner backticks across the prose between them.
+const INLINE_CODE_RX = /(`+)([^`\n]+)\1(?!`)/g;
+
+// A host as the first path segment ("github.com/org/repo") means an address, not a path.
+const HOST_RX = /^[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}$/i;
+
+/** Does a slash- or extension-bearing token name a file? Backticked tokens are trusted as paths
+ *  (the author marked them as code); a bare one must look like a path — a file extension, a
+ *  ./ ../ ~/ or / prefix, or a trailing / — so "N/A", "and/or", "input/output" are not files. */
+function isFileRef(tok, backticked) {
+  if (!/[A-Za-z0-9]/.test(tok)) return false;
+  if (tok.includes("/")) {
+    const segs = tok.split("/");
+    if (HOST_RX.test(segs[0])) return false;
+    if (backticked || CODE_EXT.test(tok)) return true;
+    return (
+      /\.[A-Za-z0-9]{1,8}$/.test(segs[segs.length - 1]) ||
+      /^(?:\.{1,2}|~)?\//.test(tok) ||
+      tok.endsWith("/")
+    );
+  }
+  return CODE_EXT.test(tok);
+}
+
 export function referencedEntities(text) {
-  const s = String(text);
+  const s = stripUrls(text);
   const symbols = new Set();
   const files = new Set();
   const consider = (raw, backticked) => {
@@ -121,15 +177,18 @@ export function referencedEntities(text) {
       .replace(/[.,;:]+$/, "");
     if (!tok) return;
     if (tok.includes("/") || CODE_EXT.test(tok)) {
-      files.add(tok);
+      if (isFileRef(tok, backticked)) files.add(tok);
       return;
     }
     for (const part of tok.split(".").filter(Boolean)) {
       if (isCodeIdent(part, backticked)) symbols.add(part);
     }
   };
-  for (const m of s.matchAll(/`([^`]+)`/g)) for (const t of m[1].split(/\s+/)) consider(t, true);
-  for (const m of s.matchAll(/[A-Za-z_$][\w$./-]*/g)) {
+  for (const m of s.replace(FENCE_RX, " ").matchAll(INLINE_CODE_RX))
+    for (const t of m[2].split(/\s+/)) consider(t, true);
+  // A bare token may carry a ./ ../ ~/ or / prefix — that prefix is what marks it as a path
+  // (but not the "/" of an HTML closing tag like </summary>, nor one glued to a word).
+  for (const m of s.matchAll(/(?:\.{1,2}\/|~\/|(?<![<\w])\/)?[A-Za-z_$][\w$./-]*/g)) {
     const t = m[0];
     if (t.includes("/") || CODE_EXT.test(t) || /[a-z][A-Z]/.test(t) || t.includes("_"))
       consider(t, false);
@@ -184,11 +243,12 @@ export const COMPLETENESS_WEIGHTS = {
  * @param {string} task
  */
 export function completenessFeatures(task) {
-  const t = String(task || "");
-  const words = t.trim().split(/\s+/).filter(Boolean).length;
+  const raw = String(task || "");
+  const words = raw.trim().split(/\s+/).filter(Boolean).length;
+  const t = stripUrls(raw);
   return {
     words,
-    concreteness: ANCHORS.filter((a) => a.test(t)).length,
+    concreteness: countAnchors(t),
     specifics: new Set([...t.matchAll(SPECIFIC)].map((m) => m[0].toLowerCase())).size,
     vagueness: new Set(
       [...t.matchAll(new RegExp(VAGUE.source, "gi"))].map((m) => m[0].toLowerCase()),
@@ -215,10 +275,20 @@ export function completenessScore(features, weights = COMPLETENESS_WEIGHTS) {
   return sigmoid(z);
 }
 
+/** Concrete anchors in (URL-stripped) text: each ANCHORS kind that fires, plus one when the task
+ *  names a code identifier ("Rename getUser to fetchUser" is concrete, not underspecified). */
+function countAnchors(text) {
+  return (
+    ANCHORS.filter((a) => a.test(text)).length + (referencedEntities(text).symbols.length ? 1 : 0)
+  );
+}
+
 export function assessTask(text, { askThreshold = 0.6 } = {}) {
-  const task = String(text || "");
-  const words = task.trim().split(/\s+/).filter(Boolean).length;
-  const concreteness = ANCHORS.filter((a) => a.test(task)).length;
+  const raw = String(text || "");
+  const words = raw.trim().split(/\s+/).filter(Boolean).length;
+  // Every feature below scans the task with its URLs/links removed (stripUrls).
+  const task = stripUrls(raw);
+  const concreteness = countAnchors(task);
   const specifics = [...new Set([...task.matchAll(SPECIFIC)].map((m) => m[0].toLowerCase()))];
   const vagueHits = [
     ...new Set([...task.matchAll(new RegExp(VAGUE.source, "gi"))].map((m) => m[0].toLowerCase())),
@@ -345,62 +415,72 @@ export function assessTaskJev(task, { llm, call } = {}) {
 }
 
 /**
- * Verify-don't-trust reconcile for M2. The model may only move completeness within ±band of the
- * deterministic score, so a clearly-specified or clearly-vague task can never be flipped — only a
- * borderline reading shifts. In `bidirectional` mode (default) the ask is recomputed purely from
- * that bounded completeness, so a verified reading can also CLEAR a false ask — but two hard
- * floors the model can never override still force the ask: a task with no concrete anchor
- * (`hardUnderspecified`), or one naming symbols/files the repo doesn't define (`hasUnresolved`).
- * With `bidirectional:false` the gate only ever tightens (the conservative pre-bidirectional
- * behaviour). Extra questions survive only if they map to a rubric-flagged dimension or (via
+ * Minimum probability a proposer must put on its OWN verdict (ask vs proceed) before it may flip
+ * the rubric's. An a-priori conservative default, NOT fit to any data: the right value has to be
+ * chosen on fresh labelled tasks (the frozen held-out set is spent). Configurable per call and via
+ * `llm.minConfidence` in source/substrate.json (0 disables the gate).
+ */
+export const GATE_MIN_CONFIDENCE = 0.8;
+
+/**
+ * Verify-don't-trust reconcile for M2, band to band. The rubric's completeness and a proposer's
+ * are on different scales — the rubric's logistic saturates on real issues (median ≈ 0.98) while a
+ * proposer's reading is a probability that the task is specified, centred on 0.5 — so each is
+ * judged against its OWN threshold and only the two verdicts are compared (the old ±band clamp of
+ * one onto the other pinned the proposer to the edge of the band and left it no say). When they
+ * disagree, the proposer's verdict wins only if it holds it with probability ≥ `minConfidence`:
+ *   - TIGHTEN (rubric proceeds, proposer asks) — always allowed; caution can only grow.
+ *   - CLEAR (rubric asks, proposer proceeds) — only in `bidirectional` mode, and never past two
+ *     floors: a task with no concrete anchor (`hardUnderspecified`), or one naming symbols/files
+ *     the repo doesn't define (`hasUnresolved`). The floors guard clearing ONLY — they never force
+ *     an ask the rubric didn't raise (a rename's new name is unresolved by definition).
+ * The reported `completeness`/`risk` stay the rubric's; the proposer's reading rides along in
+ * provenance. Extra questions survive only if they map to a rubric-flagged dimension or (via
  * `grounded`) reference a real repo entity.
  * @param {object} det - assessTask() result
  * @param {{completeness:number, missing:string[], questions:string[], provider?:string}|null} proposal
  * @param {object} [opts]
- * @param {number} [opts.askThreshold]
- * @param {number} [opts.band]
  * @param {(q:string)=>boolean} [opts.grounded]
  * @param {boolean} [opts.bidirectional]
  * @param {boolean} [opts.hasUnresolved]
+ * @param {number} [opts.minConfidence]
  */
 export function reconcileAssumption(
   det,
   proposal,
   {
-    askThreshold = 0.6,
-    band = 0.25,
     grounded = () => false,
     bidirectional = true,
     hasUnresolved = false,
+    minConfidence = GATE_MIN_CONFIDENCE,
   } = {},
 ) {
   if (!proposal) return { ...det, provenance: { path: "deterministic" } };
-  const bounded = Math.max(
-    det.completeness - band,
-    Math.min(det.completeness + band, proposal.completeness),
-  );
-  const completeness = Math.max(0, Math.min(1, bounded));
+  const p = proposal.completeness; // P(specified) on the proposer's own scale
+  const modelAsk = p < 0.5;
+  const confidence = modelAsk ? 1 - p : p;
   const flaggedDims = new Set(det.missing.map((m) => m.key));
   const extraQuestions = proposal.questions.filter(
     (q) => proposal.missing.some((m) => flaggedDims.has(m)) || grounded(q),
   );
   const questions = [...new Set([...det.questions, ...extraQuestions])].slice(0, 3);
-  // Bidirectional (default): the ask follows the bounded completeness, guarded by two floors the
-  // model can't override. Tighten-only: the rubric's ask always stands, the model can only add one.
-  const shouldAsk = bidirectional
-    ? det.hardUnderspecified || hasUnresolved || completeness < askThreshold
-    : det.shouldAsk || det.hardUnderspecified || completeness < askThreshold;
-  const risk = completeness < 0.45 ? "high" : completeness < 0.7 ? "medium" : "low";
-  const moved =
-    Math.abs(completeness - det.completeness) > 1e-9 || questions.length !== det.questions.length;
+  let shouldAsk = det.shouldAsk;
+  let overruledBy = null;
+  if (modelAsk !== det.shouldAsk) {
+    if (minConfidence > 0 && confidence < minConfidence) overruledBy = "confidence";
+    else if (modelAsk) shouldAsk = true;
+    else if (!bidirectional) overruledBy = "bidirectional-off";
+    else if (det.hardUnderspecified) overruledBy = "no-anchor";
+    else if (hasUnresolved) overruledBy = "unresolved-entities";
+    else shouldAsk = false;
+  }
   let path;
   if (shouldAsk && !det.shouldAsk) path = "llm-tightened";
   else if (!shouldAsk && det.shouldAsk) path = "llm-cleared";
-  else path = moved ? "llm-verified" : "llm-agreed";
+  else if (overruledBy) path = "llm-overruled";
+  else path = questions.length !== det.questions.length ? "llm-verified" : "llm-agreed";
   return {
     ...det,
-    completeness,
-    risk,
     shouldAsk,
     questions:
       shouldAsk && !questions.length
@@ -409,6 +489,8 @@ export function reconcileAssumption(
     provenance: {
       path,
       detCompleteness: det.completeness,
+      proposalCompleteness: p,
+      ...(overruledBy ? { overruledBy } : {}),
       ...(proposal.provider ? { provider: proposal.provider } : {}),
     },
   };
@@ -465,7 +547,7 @@ export function clarifyBlock(result, { threshold = 0.5 } = {}) {
  * @param {(p:string)=>string} [opts.run]
  * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
  * @param {boolean} [opts.bidirectional]
- * @param {number} [opts.band]
+ * @param {number} [opts.minConfidence] probability a proposer needs on its verdict to flip the rubric's
  */
 export function preflightRepo(
   root,
@@ -479,7 +561,7 @@ export function preflightRepo(
     run,
     jevCall,
     bidirectional = true,
-    band,
+    minConfidence,
   } = {},
 ) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
@@ -507,17 +589,17 @@ export function preflightRepo(
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));
   };
-  // Repo grounding is a hard floor on clearing: if the task names entities the repo lacks, the
-  // model can never wave the gate through no matter how "complete" it judges the prose.
+  // Repo grounding is a hard floor on CLEARING: if the task names entities the repo lacks, the
+  // model can never wave a rubric ask through no matter how "complete" it judges the prose. It is
+  // not a reason to ask by itself — the rubric already weighed the task without it.
   const hasUnresolved = gap.unresolved.symbols.length + gap.unresolved.files.length > 0;
   return {
     ...gap,
     assumption: reconcileAssumption(det, proposal, {
-      askThreshold,
       grounded,
       bidirectional,
       hasUnresolved,
-      ...(typeof band === "number" ? { band } : {}),
+      ...(typeof minConfidence === "number" ? { minConfidence } : {}),
     }),
   };
 }

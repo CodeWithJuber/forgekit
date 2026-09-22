@@ -705,6 +705,13 @@ HANDLERS.ledger = async (argv) => {
     heading(`${BRAND.brand} ledger — proof-carrying memory\n`);
     console.log(`  claims: ${s.total}  (tombstoned ${s.tombstoned})`);
     for (const [kind, n] of Object.entries(s.byKind)) console.log(`    ${kind}: ${n}`);
+    if (s.pendingRetractions)
+      console.log(
+        paint(
+          `  ${s.pendingRetractions} claim(s) with an agent-proposed retraction — review, then \`forge ledger retract <full id> --reason …\``,
+          "warn",
+        ),
+      );
     console.log(
       `  val: ${paint(`trusted ${s.val.trusted}`, "ok")} · ${paint(`uncertain ${s.val.uncertain}`, "warn")} · ${paint(`dormant ${s.val.dormant}`, "dim")}`,
     );
@@ -714,8 +721,18 @@ HANDLERS.ledger = async (argv) => {
     return;
   }
   if (sub === "verify") {
+    // --fix re-addresses claims still stored under their pre-CRLF-fold id. Reads accept
+    // that address either way, so this is not a repair — it is what stops one fact living
+    // at two addresses once a teammate on another platform mints its current form.
+    const migration = args.includes("--fix") ? ls.migrateAddresses(dir) : null;
     const r = ls.verify(dir);
-    if (json) return console.log(JSON.stringify(r, null, 2));
+    if (json) return console.log(JSON.stringify(migration ? { ...r, migration } : r, null, 2));
+    if (migration) {
+      const { migrated, merged, failed } = migration;
+      console.log(
+        `  migrated ${migrated.length} claim(s) to their current address, merged ${merged.length} into an existing twin${failed.length ? `, ${failed.length} failed` : ""}`,
+      );
+    }
     console.log(`  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`);
     for (const i of r.issues) console.log(`    - ${i}`);
     if (!r.ok) process.exitCode = 1;
@@ -732,7 +749,14 @@ HANDLERS.ledger = async (argv) => {
       return;
     }
     const { val } = await import("./ledger.js");
-    return console.log(JSON.stringify({ ...hit, val: val(hit, nowDay) }, null, 2));
+    const pending = ls.retractionProposals(ls.loadClaims(dir)).get(hit.id);
+    return console.log(
+      JSON.stringify(
+        { ...hit, val: val(hit, nowDay), ...(pending ? { pendingRetractions: pending } : {}) },
+        null,
+        2,
+      ),
+    );
   }
   if (sub === "merge") {
     const src = args[2];
@@ -814,8 +838,17 @@ HANDLERS.ledger = async (argv) => {
     const id = args[2];
     const ri = args.indexOf("--reason");
     const reason = ri >= 0 ? (args[ri + 1] ?? "") : "";
-    if (!id || id.length < 2 || id === "--reason" || !reason) {
-      console.error('usage: forge ledger retract <id-prefix> --reason "<why>"');
+    if (!id || id === "--reason" || !reason) {
+      console.error('usage: forge ledger retract <full claim id> --reason "<why>"');
+      process.exitCode = 1;
+      return;
+    }
+    // A tombstone is permanent, so it must name exactly one claim: the full 64-char id,
+    // never a prefix (a short prefix used to retract the first sorted match).
+    if (!ls.FULL_ID_RE.test(id)) {
+      console.error(
+        `  refused: retract needs the full 64-character claim id (got "${id}") — see \`forge ledger query\` or \`forge ledger show <prefix>\``,
+      );
       process.exitCode = 1;
       return;
     }
@@ -1204,13 +1237,14 @@ HANDLERS.atlas = async (argv) => {
   } else if (sub === "query") {
     const at = need();
     if (!at) return;
+    // Ranked: exact definitions first, path-only (qname) matches last.
     const hits = a.query(at, argv.slice(2).join(" "));
     console.log(
       hits.length
         ? hits
             .slice(0, 30)
             .map((s) => `  ${s.file}:${s.line}  ${s.kind} ${s.name}`)
-            .join("\n")
+            .join("\n") + (hits.length > 30 ? `\n  … ${hits.length - 30} more` : "")
         : "  no match",
     );
   } else if (sub === "has") {
@@ -1687,25 +1721,61 @@ HANDLERS.impact = async (argv) => {
   const { predictImpact } = await import("./substrate.js");
   const json = argv.includes("--json");
   const basic = argv.includes("--basic");
+  // Default is the focused reverse walk. --all-relations adds the paper's sibling/forward
+  // rules: recall 1.00, but on this repo the median answer goes from 15 files to 78.
+  const all = argv.includes("--all-relations");
+  const FLAGS = new Set(["--json", "--basic", "--all-relations"]);
   const target = argv
     .slice(1)
-    .filter((a) => a !== "--json" && a !== "--basic")
+    .filter((a) => !FLAGS.has(a))
     .join(" ");
   if (!target) {
-    console.error("usage: forge impact <symbol|file> [--json] [--basic]");
+    console.error("usage: forge impact <symbol|file> [--json] [--basic] [--all-relations]");
     process.exitCode = 1;
     return;
   }
-  const r = predictImpact(process.cwd(), target, { basic });
+  const { IMPACT_RELATIONS } = await import("./atlas.js");
+  const r = predictImpact(process.cwd(), target, {
+    basic,
+    ...(all ? { relations: IMPACT_RELATIONS } : {}),
+  });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
   }
   heading(`${BRAND.brand} impact — blast radius${basic ? "" : " (hazard-aware)"}\n`);
   console.log(`  target: ${target}  ${r.found ? "✓ found" : "not found"}`);
-  console.log(`  impacted files: ${r.impactedFiles.length}`);
+  const rel = r.relations || {};
+  const parts = ["reverse", "sibling", "forward", "llm-verified"]
+    .filter((k) => rel[k])
+    .map((k) => `${k} ${rel[k]}`);
+  console.log(
+    `  impacted files: ${r.impactedFiles.length}${parts.length ? `  (nodes: ${parts.join(" · ")})` : ""}`,
+  );
   for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
   if (r.impactedFiles.length > 20) console.log(`    … ${r.impactedFiles.length - 20} more`);
+  // Completeness: a blast radius is only as good as the graph under it — say when it isn't.
+  if (r.capped)
+    console.log(
+      paint(
+        `  ! graph capped: ${r.skippedFiles} file(s) not indexed — this list may be incomplete`,
+        "warn",
+      ),
+    );
+  if (r.ambiguousRefs)
+    console.log(
+      paint(
+        `  ! ${r.ambiguousRefs} reference(s) to this target's name(s) matched more than one definition and were not linked`,
+        "warn",
+      ),
+    );
+  if (r.unresolvedImports)
+    console.log(
+      paint(
+        `  · ${r.unresolvedImports} local import(s) in the repo did not resolve to a file`,
+        "dim",
+      ),
+    );
   return;
 };
 HANDLERS.substrate = async (argv) => {
@@ -1896,12 +1966,13 @@ HANDLERS.route = async (argv) => {
   }
   if (argv[1] === "calibrate") {
     // Advisory → gated promotion (ROADMAP): measure whether an affine calibration of the
-    // routing rubric beats the raw rubric on the held-out fixture. Advisory — routing
-    // keeps the rubric unless the gate promotes AND a caller adopts the calibration.
+    // routing rubric beats the raw rubric on a held-out split of the HAND-LABELLED fixture
+    // (there is no outcome data). Advisory — routing keeps the rubric unless the gate
+    // promotes AND a caller adopts the calibration, which nothing in src/ does.
     const res = r.calibrateRouting();
     if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
-    heading(`${BRAND.brand} route calibrate — outcome-calibrated routing (measured gate)\n`);
-    console.log(`  samples: ${res.n} labeled task(s)`);
+    heading(`${BRAND.brand} route calibrate — rubric calibration check (measured gate)\n`);
+    console.log(`  samples: ${res.n} hand-labelled task phrase(s) — no routing outcomes exist`);
     if (res.baselineMetric !== undefined)
       console.log(
         `  held-out MAE: rubric ${res.baselineMetric} · calibrated ${res.candidateMetric}`,
@@ -1912,8 +1983,9 @@ HANDLERS.route = async (argv) => {
         : `  → keep the rubric — ${res.reason}`,
     );
     console.log(
-      "\n  advisory — routing stays on the rubric until a promoted calibration is adopted",
+      "\n  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,",
     );
+    console.log("  and calibrating on real routing outcomes needs data forge does not record");
     return;
   }
   const json = argv.includes("--json");
@@ -2131,12 +2203,13 @@ HANDLERS.diagnose = async (argv) => {
     const i = argv.indexOf(name);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  const args = argv.filter(
-    (a, i) => !a.startsWith("--") && argv[i - 1] !== "--file" && argv[i - 1] !== "--symbol",
-  );
+  const VALUE_FLAGS = ["--file", "--symbol", "--task"];
+  const args = argv.filter((a, i) => !a.startsWith("--") && !VALUE_FLAGS.includes(argv[i - 1]));
   const errorText = args.slice(1).join(" ");
   if (!errorText) {
-    console.error('usage: forge diagnose "<error text>" [--file f] [--symbol s] [--json]');
+    console.error(
+      'usage: forge diagnose "<error text>" [--file f] [--symbol s] [--task "<task>"] [--json]',
+    );
     process.exitCode = 1;
     return;
   }
@@ -2144,6 +2217,10 @@ HANDLERS.diagnose = async (argv) => {
     errorText,
     file: flagVal("--file"),
     symbol: flagVal("--symbol"),
+    // The task this failure came out of — the same text `forge route` was given. When a
+    // routing decision for it is on record, the escalation directive names that decision's
+    // tier instead of "one tier". Omitted → unchanged behaviour.
+    task: flagVal("--task"),
   });
   if (json) return console.log(JSON.stringify(r, null, 2));
   heading(`${BRAND.brand} diagnose — doom-loop check\n`);

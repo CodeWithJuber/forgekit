@@ -120,20 +120,32 @@ when tombstoned. Nothing is silently deleted — the attic is the audit trail (p
 ## 4. Retrieval — paper Eq. 3, implemented
 
 ```
-score(x, c) = σ( a·rel(x,c) + b·rec(c) + g·val(c) )        // paper §7.1 Eq. 3
+score(x, c) = σ( a·rel(x,c) + b·rec(c) + g·val(c) + s·scope(c) )   // paper §7.1 Eq. 3
 ```
 
-- `rel(x,c)` — cheap path: Jaccard similarity of MinHash sketches (k = 128 hashes,
-  4-token shingles over normalized text; sketches stored on the claim, so comparison is
-  O(k)). Optional dep path (ADR-0005): pluggable embedding backend behind the same
-  interface; falls back to MinHash offline.
-- `rec(c) = λ^(Δt/T)` — same decay clock as confidence.
+- `rel(x,c)` — cheap path: `max` of (a) Jaccard similarity of MinHash sketches (k = 128
+  hashes, 4-token shingles over Unicode-aware normalized text; sketches memoized on the
+  claim, so comparison is O(k)) and (b) query-term coverage — the fraction of the query's
+  content words (stopwords removed) the claim mentions. Shingles alone made `rel` ≈ 0 for
+  any query shorter than four tokens, which is most of them; coverage is the unigram
+  backstop. Optional dep path (ADR-0005): pluggable embedding backend behind the same
+  interface, chosen per RANKING (never per claim — cosine and Jaccard have different noise
+  floors and must not be mixed in one ordering); falls back to MinHash offline.
+- `rec(c) = λ^(Δt/T)` since the last CONFIRMATION (or the mint) — same decay clock as
+  confidence. A contradiction is not recent evidence FOR a claim, and Δt is the distance
+  from now, so a future-dated record cannot pin `rec` at 1.
 - `val(c)` — §3 above. **This term is the paper's load-bearing addition** — memories
   pruned by ground truth, not by the model's say-so.
-- Default weights `a = 0.55, b = 0.15, g = 0.30`; stored in `source/substrate.json`,
-  calibrated in P8 by logistic regression on retrieval-outcome pairs (did an injected
-  claim get confirmed or contradicted downstream?).
-- Scope multiplier: reuse `SCOPE_WEIGHT` (symbol 1.0 > dir 0.8 > repo 0.6 > global 0.4).
+- Default weights `a = 0.55, b = 0.15, g = 0.30, s = 0.10`, defined in `src/ledger.js`
+  (`EQ3_WEIGHTS`). They are the design defaults, NOT calibrated: the planned
+  logistic regression on retrieval-outcome pairs (did an injected claim get confirmed or
+  contradicted downstream?) has not been run, and nothing may describe them as calibrated
+  until it is.
+- Scope is a term INSIDE σ (`s·SCOPE_WEIGHT`: symbol 1.0 > dir 0.8 > repo 0.6 > global 0.4),
+  not a multiplier on σ. With a+b+g = 1 the sigmoid only spans [0.5, 0.731], so an outside
+  multiplier made scope a strict priority over relevance — an unrelated, stale, contradicted
+  symbol claim outranked a perfect-match repo claim. As a bounded prior it breaks ties
+  between comparably relevant claims and nothing more.
 
 ## 5. The three layers (ʿilm → fahm → ḥikma, paper §5 & §7.2)
 

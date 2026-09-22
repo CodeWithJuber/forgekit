@@ -9,6 +9,7 @@
 // so the same doom loop is a one-per-team event instead of one-per-session.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { lastRouteEscalation } from "./cost_report.js";
 import { hasSecret, mintClaim } from "./ledger.js";
 import { putClaim, repoLedger } from "./ledger_store.js";
 import { contentHash, epochDay, gitAuthor } from "./util.js";
@@ -99,14 +100,20 @@ export function recordFailure(root, { errorText, file = "", symbol = "", t = Dat
  * escalation directive. Idempotent by construction: the claim is content-addressed,
  * so the 4th/5th hit re-resolves to the SAME claim instead of minting duplicates.
  * @param {string} root
- * @param {{errorText: string, file?: string, symbol?: string, note?: string,
+ * @param {{errorText: string, file?: string, symbol?: string, note?: string, task?: string,
  *          t?: number, nowDay?: number}} opts
  *   `note` is the human root-cause statement if the caller has one; defaults to the
- *   normalized error head. `nowDay` (epoch days) is the claim's mint day.
+ *   normalized error head. `task` is the task text this failure came out of — when it
+ *   matches a routing decision this repo recorded, the directive names that decision's
+ *   escalation tier instead of saying "one tier" (see `escalationTier` below).
+ *   `nowDay` (epoch days) is the claim's mint day.
  * @returns {{thrash: boolean, signature: string, count: number, claimId?: string,
- *            escalate?: string, reason?: string}}
+ *            escalate?: string, escalateTo?: string, reason?: string}}
  */
-export function diagnose(root, { errorText, file = "", symbol = "", note = "", t, nowDay }) {
+export function diagnose(
+  root,
+  { errorText, file = "", symbol = "", note = "", task = "", t, nowDay },
+) {
   const rec = recordFailure(root, { errorText, file, symbol, ...(t !== undefined && { t }) });
   const { signature, count, head } = rec;
   if (count < THRASH_K) return { thrash: false, signature, count };
@@ -124,15 +131,45 @@ export function diagnose(root, { errorText, file = "", symbol = "", note = "", t
   const put = putClaim(repoLedger(root), minted.claim);
   if (!put.ok) return { thrash: true, signature, count, reason: put.reason };
   const short = minted.claim.id.slice(0, 8);
+  const tier = escalationTier(root, task);
   return {
     thrash: true,
     signature,
     count,
     claimId: minted.claim.id,
+    ...(tier ? { escalateTo: tier } : {}),
     escalate:
       `Same failure signature ${signature.slice(0, 12)} hit ${count}× — this is thrash, not progress. ` +
       `STOP retrying this fix. State the diagnosis out loud (claim ${short} — \`forge ledger show ${short}\`, ` +
-      `add what you already tried to its triedFixes), then escalate ONE model tier with the diagnosis as ` +
+      `add what you already tried to its triedFixes), then escalate ${
+        tier ? `to ${tier} (the tier routing already flagged for this task)` : "ONE model tier"
+      } with the diagnosis as ` +
       `the head of the new prompt. The escalation must carry the diagnosis — never just "try again, but more expensive".`,
   };
+}
+
+/**
+ * Which tier to escalate to, when routing already answered that question for this task.
+ *
+ * Whitepaper §5.1: spend more only when an EXTERNAL check on the output fails, never on a
+ * model's self-assessment. `reconcileRoute()` enforces the first half — a proposer that
+ * votes for a higher band does NOT get it; the tier that vote would have picked is parked
+ * as an advisory `escalateTo` and metered with the task's `ref` (`meterRoute`). This is
+ * the second half, and the only consumer: THRASH_K recurrences of one failure signature IS
+ * an external check failing, repeatedly, so an escalation has been earned HERE, by the
+ * failure — the vote never triggers one, it only answers "to which tier" once the failure
+ * has. Without that record the directive says "ONE model tier", exactly as before.
+ *
+ * Fail-safe and non-widening: no task text, no matching route record, or any read error →
+ * "" → today's behaviour byte for byte.
+ * @param {string} root
+ * @param {string} task
+ * @returns {string} a tier key, or "" for "the caller decides, as before"
+ */
+function escalationTier(root, task) {
+  try {
+    return lastRouteEscalation(root, task);
+  } catch {
+    return "";
+  }
 }

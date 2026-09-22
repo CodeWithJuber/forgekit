@@ -63,3 +63,41 @@ test("leanRepo: no diff → quiet; injected diff → measured", () => {
   assert.equal(measured.hasDiff, true);
   assert.ok(measured.warnings.length >= 1);
 });
+
+test("leanRepo (C10): a brand-new UNTRACKED file counts — that is where over-building lives", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "forge-lean-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "login.js"), "export function login(){}\n");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  writeFileSync(join(root, "login.js"), "export function login(){ return 1 }\n");
+  const framework = `${Array.from(
+    { length: 6 },
+    (_, i) => `export class Factory${i} {}\nexport function make${i}(){}\n`,
+  ).join("")}${"x\n".repeat(200)}`;
+  writeFileSync(join(root, "framework.js"), framework); // never `git add`ed
+
+  const r = leanRepo(root, "fix login return value");
+  assert.equal(r.footprint.files, 2, "the untracked file is part of the footprint");
+  assert.ok(r.footprint.linesAdded > 200, `linesAdded ${r.footprint.linesAdded}`);
+  assert.ok(
+    r.footprint.unrequestedAbstractions.includes("Factory0"),
+    "its new abstractions are counted",
+  );
+  assert.ok(r.warnings.length >= 2, "and the over-engineering warnings actually fire");
+  g("add", "framework.js");
+  const staged = leanRepo(root, "fix login return value");
+  const shape = (x) => ({
+    files: x.files,
+    linesAdded: x.linesAdded,
+    abstractions: [...x.newAbstractions].sort(),
+  });
+  assert.deepEqual(shape(staged.footprint), shape(r.footprint), "staging it changes nothing");
+});

@@ -161,8 +161,9 @@ Mechanically: evidence and tombstones are append-only, hash-deduped logs; confid
 (`val`) is a decayed Beta posterior moved only by oracles; merge is a join-semilattice
 (property-tested: commutative, associative, idempotent), so ledgers converge in any
 order. `forge init` emits the union-merge `.gitattributes` rule; `forge ledger merge`
-folds in any other ledger tree. The legacy stores remain the read path — the ledger is
-where their events converge. Surface: `forge ledger stats | verify | show | blame |
+folds in any other ledger tree. The ledger is now the default and only store — legacy
+files are no longer written or read (`FORGE_LEDGER_ONLY=0` is the one-release escape
+hatch back to them). Surface: `forge ledger stats | verify | show | blame |
 query | ratify | retract | merge | import` (`--personal` for the per-user ledger).
 Decision recorded in
 [`docs/adr/0006-proof-carrying-memory.md`](docs/adr/0006-proof-carrying-memory.md).
@@ -290,10 +291,13 @@ of text plus JSON parsing. The module reuses the adjudicate contract verbatim: o
 (null → text-LLM fallback → deterministic rubric; a null never moves a verdict), zero-dependency
 (the `llm.js` spawned-child pattern, key in child env as `_FORGE_JEV_KEY`), and secret-refusing
 on the outgoing state. Jev answers are validated against the questions asked — a choice naming
-an option we never offered is garble and fails safe. The reconciles are untouched: `BAND_FLOOR`
-still floors the routing band, the assumption gate still bounds completeness to ±band, and
-clarifying free-text questions stay with the deterministic rubric, because a System One model
-judges but does not author prose. Provenance records which proposer answered
+an option we never offered is garble and fails safe. The reconciles judge Jev like any proposer:
+`reconcileRoute` compares its band with the deterministic score's band and gates on p(band);
+`reconcileAssumption` compares Jev's ask/proceed verdict (mean noul vs 0.5) with the rubric's
+and lets it flip the gate only at p ≥ `minConfidence` — the two completeness scales are never
+blended; and clarifying free-text questions stay with the deterministic rubric, because a
+System One model judges but does not author prose.
+Provenance records which proposer answered
 (`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
 
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
@@ -520,8 +524,8 @@ forgekit/
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify
-    ledger_bridge.js      # legacy-store bridge: cortex/recall/brain shadow-writes + idempotent `ledger import`
-    ledger_read.js        # merged legacy∪ledger read path: cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
+    ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
+    ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
@@ -597,24 +601,22 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>105 files"]
-  test["test<br/>106 files"]
-  src["src<br/>97 files"]
+  test["test<br/>113 files"]
+  src["src<br/>98 files"]
   landing["landing<br/>61 files"]
-  research["research<br/>35 files"]
-  global["global<br/>3 files"]
+  research["research<br/>37 files"]
+  global["global<br/>5 files"]
   bench["bench<br/>2 files"]
   scripts["scripts<br/>2 files"]
-  _remember[".remember<br/>1 file"]
   docs["docs<br/>1 file"]
-  test -- 201 --> src
   examples["examples<br/>1 file"]
-  test -- 206 --> src
+  test -- 227 --> src
   bench -- 7 --> src
+  examples -- 4 --> src
+  test -- 2 --> bench
+  test -- 2 --> global
   test -- 2 --> scripts
   scripts --> src
   src --> global
-  test --> bench
-  test --> global
 ```
 <!-- forge:render:repo-map:end -->

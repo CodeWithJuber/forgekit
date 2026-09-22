@@ -142,7 +142,7 @@ async function main() {
     // A doom loop (the same failure recurring) is the loudest thing to say — it means "stop",
     // so it takes precedence over lesson/risk advice.
     const loop = doomLoopAdvisory(readSession(root, sid));
-    const advice = loop || (await preEditAdvisory(root, hook.tool_input?.file_path, today));
+    const advice = loop || (await preEditAdvisory(root, hook.tool_input, today));
     const docs = await staleDocsAdvisory(root, hook.tool_input?.file_path);
     const currency = await currencyAdvisory(root, hook.tool_input?.file_path);
     const combined = [advice, docs, currency].filter(Boolean).join("\n\n");
@@ -181,11 +181,30 @@ async function main() {
         const { getGoal } = await import("./goal.js");
         const goal = getGoal(root);
         if (goal) {
-          const { goalDrift } = await import("./anchor.js");
+          const { driftIncrement, fileStamps, goalDrift } = await import("./anchor.js");
           const d = goalDrift(root, goal, {
             changed: result.goalAnchor?.changed,
           });
-          appendSessionEvent(root, sid, { type: "drift", score: d.driftScore });
+          // The advisory must be measured against the PERSISTED goal, not against this
+          // prompt: substrateCheck() compares the working diff to the prompt text, so
+          // "ok, now run the tests please" flagged every changed file as drift.
+          result.goalAnchor = d;
+          // …and the CUSUM series gets the per-checkpoint INCREMENT (what moved since the
+          // last prompt), not the cumulative off-goal ratio, which alarmed on one static
+          // off-goal file after three idle prompts.
+          const stamps = fileStamps(root, d.changed);
+          const prev =
+            readSession(root, sid)
+              .filter((e) => e.type === "drift")
+              .at(-1)?.stamps ?? {};
+          appendSessionEvent(root, sid, {
+            type: "drift",
+            score: driftIncrement(d, stamps, prev).score,
+            stamps,
+          });
+        } else if (result.goalAnchor?.drift) {
+          // No goal is set, so there is nothing to have drifted FROM.
+          result.goalAnchor = { ...result.goalAnchor, drift: false, offGoal: [] };
         }
         const a = result.assumption;
         if (!a.shouldAsk && ((a.missing?.length ?? 0) > 0 || (a.questions?.length ?? 0) > 0))
@@ -227,7 +246,8 @@ function emit(hookEventName, additionalContext) {
 // Advisory before an edit: surface matching lessons (cheap), and — only if none matched —
 // a one-line high-risk note from the predictor. Advisory only, never blocks. Low-nag by
 // design: nothing is emitted unless there's a real lesson or genuinely high risk.
-async function preEditAdvisory(root, file, today) {
+async function preEditAdvisory(root, input, today) {
+  const file = input?.file_path;
   if (!file) return "";
   const { block, selected } = lessonsForContext(
     root,
@@ -235,14 +255,112 @@ async function preEditAdvisory(root, file, today) {
     { nowDay: today, budget: 3 },
   );
   if (selected.length) return block; // learned lessons for this file win
-  const { featuresForEdit } = await import("./cortex_features.js");
   const { riskFor } = await import("./predictor.js");
-  const { band } = riskFor(featuresForEdit(root, { file }, { nowDay: today }), {
-    mode: "heuristic",
-  });
+  const features = await liveEditFeatures(root, file, input, today);
+  const { band } = riskFor(features, { mode: "heuristic" });
   return band === "high"
-    ? `Forge Cortex — ${file} looks high-risk (churn / prior mistakes here). Re-read and check impact before editing.`
+    ? `Forge Cortex — ${file} looks high-risk (${riskReasons(features).join("; ")}). Re-read and check impact before editing.`
     : "";
+}
+
+// The predictor's features for a REAL edit (review E2). The hook used to pass only the
+// path, so caller_fanout / test_coverage_gap / signature_change / no_caller_update sat at
+// 0 and the heuristic topped out at σ(−1.5 + 0.5) = 0.27 — the "high" band (≥ 0.66) could
+// never fire. Each signal is cheap and bounded (1.5s per git call, like cortex_features'
+// tryExec): one `git grep` for the files that name this module, one `git diff` for the
+// working set, and the edit payload itself for the signature check. Outside a git work
+// tree nothing is inferred (no test gap, no fan-out): absent evidence never raises risk.
+async function liveEditFeatures(root, file, input, today) {
+  const { computeFeatures, gitChurn, referencingFiles } = await import("./cortex_features.js");
+  const { toPosix } = await import("./util.js");
+  const { execFileSync } = await import("node:child_process");
+  const { readFileSync } = await import("node:fs");
+  const { isAbsolute, join } = await import("node:path");
+  const git = (args) => {
+    try {
+      return execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 1500,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      return "";
+    }
+  };
+  const lines = (out) =>
+    out
+      .split("\n")
+      .map((f) => toPosix(f.trim()))
+      .filter(Boolean);
+  const abs = isAbsolute(file) ? file : join(root, file);
+  const inRepo = git(["rev-parse", "--is-inside-work-tree"]).trim() === "true";
+  // One shared rule for "who references this module" (cortex_features.referencingFiles),
+  // so the hook and featuresForEdit can never drift on what counts as a caller.
+  const { callers, tests } = inRepo ? referencingFiles(root, abs) : { callers: [], tests: [] };
+  const inDiff = new Set(lines(git(["diff", "--name-only", "--relative", "HEAD"])));
+  const before = () => {
+    try {
+      return readFileSync(abs, "utf8");
+    } catch {
+      return ""; // a new file rewrites no declaration
+    }
+  };
+  return computeFeatures(
+    { file },
+    {
+      activeLessons: mergedLessons(root, today).filter((l) => l.status === "active"),
+      nowDay: today,
+      churnCommits: gitChurn(root, file),
+      callerCount: callers.length,
+      hasTest: !inRepo || tests.length > 0,
+      signatureChange: signatureChanged(input, before),
+      callersInDiff: callers.length === 0 || callers.some((f) => inDiff.has(f)),
+    },
+  );
+}
+
+// A declaration header (function / class / def / fn / func, or a const-bound function).
+// Rough on purpose — one line, no parser — and only used to ask "does this edit remove or
+// rewrite an existing declaration?" (adding a new one breaks no caller).
+const DECL_RE =
+  /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?\s*\w+|class\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>))|^\s*(?:async\s+)?def\s+\w+|^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+\w+|^\s*func\s+/;
+const declarations = (text) =>
+  new Set(
+    String(text ?? "")
+      .split("\n")
+      .filter((l) => DECL_RE.test(l))
+      .map((l) =>
+        l
+          .replace(/\s+/g, " ")
+          .replace(/\s*\{\s*$/, "")
+          .trim(),
+      ),
+  );
+
+/** Does this Edit / MultiEdit / Write remove or rewrite an existing declaration line? */
+function signatureChanged(input, before) {
+  const pairs = Array.isArray(input?.edits)
+    ? input.edits.map((e) => [e?.old_string, e?.new_string])
+    : typeof input?.content === "string"
+      ? [[before(), input.content]]
+      : [[input?.old_string, input?.new_string]];
+  return pairs.some(([was, now]) => {
+    const kept = declarations(now);
+    return [...declarations(was)].some((d) => !kept.has(d));
+  });
+}
+
+/** Which features pushed the risk up — the advisory says why, not just "high". */
+function riskReasons(f) {
+  const out = [];
+  if (f.signature_change) out.push("this edit rewrites an existing declaration");
+  if (f.no_caller_update) out.push("no file that references it is in the working diff yet");
+  if (f.caller_fanout > 0) out.push(`${Math.round(f.caller_fanout * 10)}+ files reference it`);
+  if (f.test_coverage_gap) out.push("no test references it");
+  if (f.churn >= 0.5) out.push("frequently changed");
+  if (f.lesson_match || f.past_mistake_here) out.push("a past mistake matched here");
+  return out.length ? out : ["churn / prior mistakes here"];
 }
 
 // Docs that reference the file about to change (atlas doc edges, CACHED graph only —

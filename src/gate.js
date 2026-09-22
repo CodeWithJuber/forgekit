@@ -25,7 +25,7 @@ import { statePath } from "./handoff.js";
 import { fingerprintFile, readBaseline, readDirtySnapshot } from "./session.js";
 import { isTestFile } from "./substrate.js";
 import { IGNORE_DIRS } from "./util.js";
-import { computeCodeState } from "./verify.js";
+import { computeCodeState, evidenceMac, provenanceMac } from "./verify.js";
 
 // gitRaw keeps the exact bytes — porcelain's first column is a SPACE for unstaged
 // entries, and a trim() would eat it and shift the path slice by one.
@@ -130,6 +130,64 @@ export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
   return [...out].filter((p) => !IGNORED_PREFIX(p)).sort();
 }
 
+// Blank lines and comment-only lines are not test code — a `// touched` line appended to an
+// existing test file is a touch, not a test (B7). Deliberately language-agnostic: `//`, `#`,
+// `*`, `/*`, `--`, `<!--` cover every stack the atlas classifies.
+const COMMENT_LINE = /^\s*($|\/\/|#|\*|\/\*|--|<!--)/;
+
+/**
+ * Was this block-once marker written by the gate itself? It carries the MAC of its session
+ * id; a marker the agent dropped in ahead of time does not, and is ignored (B7). With no key
+ * available at all (unwritable state dir) every marker counts, as before.
+ * @param {string} sid @param {string} marker
+ */
+function markerIsAuthentic(sid, marker) {
+  const mac = evidenceMac(["block", sid]);
+  if (mac == null) return true;
+  try {
+    return readFileSync(marker, "utf8").includes(mac);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The lines this session ADDED to `file`: the diff against the session baseline (or HEAD),
+ * falling back to the whole file for a brand-new untracked one. Comment/blank lines are
+ * dropped, so the caller sees real code only.
+ * @param {string} root @param {string} file @param {string|null} [baseHead]
+ * @returns {string[]}
+ */
+function addedCodeLines(root, file, baseHead) {
+  const args = [
+    "--literal-pathspecs",
+    "diff",
+    "--unified=0",
+    "--no-color",
+    "--text",
+    "--no-ext-diff",
+    "--no-textconv",
+  ];
+  const raw =
+    gitRaw(root, [...args, ...(baseHead ? [baseHead] : []), "--", file]) ||
+    gitRaw(root, [...args, "HEAD", "--", file]);
+  let lines;
+  if (raw.trim()) {
+    lines = raw
+      .split("\n")
+      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+      .map((l) => l.slice(1));
+  } else {
+    // Untracked (new) file: every line is added. Unreadable → no evidence.
+    try {
+      lines = readFileSync(join(root, file), "utf8").split("\n");
+    } catch {
+      return [];
+    }
+  }
+  return lines.filter((l) => !COMMENT_LINE.test(l));
+}
+
 /**
  * PURE decision table (first match wins; returns {allow, row, classes}). The teeth
  * (RA-10): a code change owes TEST EVIDENCE — a test-class file moved with it, or a
@@ -139,10 +197,12 @@ export function changedSet(root, baseHead, { sinceMs, preDirty } = {}) {
  * a config-only change keeps that lighter bar.
  * @param {{stopHookActive?: boolean, isRepo?: boolean, markerExists?: boolean,
  *   killSwitch?: boolean, changed?: string[], stateTouched?: boolean,
- *   verifyEvidence?: {fresh: boolean, status: string, codeStateMatches?: boolean} | null,
+ *   verifyEvidence?: {fresh: boolean, status: string, codeStateMatches?: boolean, authentic?: boolean} | null,
  *   substantiveTests?: string[] | null}} [input]
  *   verifyEvidence.codeStateMatches — the stamp's stored code-state fingerprint still
  *     equals the code as it stands now (HI-02); a fresh PASS only counts when this is true.
+ *   verifyEvidence.authentic — the stamp carries the MAC `forge verify` writes (B7);
+ *     `false` means it was hand-written. Absent (pure-table callers) counts as authentic.
  *   substantiveTests — the FS-filtered subset of changed test files that still exist and
  *     are non-empty (HI-04); null (pure-table callers) falls back to raw classification.
  */
@@ -173,7 +233,8 @@ export function gateDecision({
   const strongVerify =
     verifyEvidence?.fresh === true &&
     verifyEvidence?.status === "PASS" &&
-    verifyEvidence?.codeStateMatches === true;
+    verifyEvidence?.codeStateMatches === true &&
+    verifyEvidence?.authentic !== false; // B7: a hand-written stamp carries no valid MAC
   const hasTestFile =
     substantiveTests == null ? classes.test.length > 0 : substantiveTests.length > 0;
   const testEvidence = strongVerify || hasTestFile;
@@ -300,8 +361,11 @@ export function stopGate(root, sid, hook = {}) {
     if (process.env.FORGE_STOPGATE === "0") return { allow: true, row: "kill-switch" };
     if (git(root, ["rev-parse", "--is-inside-work-tree"]) !== "true")
       return { allow: true, row: "not-a-repo" };
+    // The block-once marker is a file in `.forge/` too, so it is MAC'd like the stamp: a
+    // marker the agent writes ahead of time must not switch the gate off (B7).
     const marker = sessionPath(root, sid, "blocked");
-    if (existsSync(marker)) return { allow: true, row: "already-blocked" };
+    if (existsSync(marker) && markerIsAuthentic(sid, marker))
+      return { allow: true, row: "already-blocked" };
     const base = readBaseline(root, sid);
     // Session-start timestamp: the baseline file's mtime; degraded fallback = the event
     // log's birth time (hooks installed mid-session). Without either, mtime signals
@@ -352,23 +416,29 @@ export function stopGate(root, sid, hook = {}) {
             typeof now.dirtyHash === "string" &&
             stored.dirtyHash === now.dirtyHash;
         } catch {}
+        const mac = provenanceMac(prov);
         verifyEvidence = {
           fresh: startedAt != null && mtime > startedAt,
           status,
           codeStateMatches,
+          // No key available anywhere (unwritable state dir) → degrade to unsigned rather
+          // than blocking a session that can never produce a signed stamp.
+          authentic: mac == null || prov?.signature === mac,
         };
       }
     } catch {}
-    // HI-04: a changed test file is an OBLIGATION signal, not proof. Only test files that
-    // still EXIST and are NON-EMPTY (added or modified, not deleted/emptied) may count
-    // toward the weaker evidence leg; the strong leg is the code-state-bound verify PASS.
+    // HI-04 + B7: a changed test file is an OBLIGATION signal, not proof. It counts toward
+    // the weaker evidence leg only if it still EXISTS, is NON-EMPTY, and this session added
+    // at least one line of real test CODE to it — a comment-only touch (`// touched`) used
+    // to satisfy the gate. The strong leg is the code-state-bound, MAC'd verify PASS.
     const substantiveTests = changed.filter((p) => {
       if (classifyPath(p) !== "test") return false;
       try {
-        return statSync(join(root, p)).size > 0;
+        if (statSync(join(root, p)).size <= 0) return false;
       } catch {
         return false;
       }
+      return addedCodeLines(root, p, base?.head).length > 0;
     });
     const decision = gateDecision({
       changed,
@@ -382,7 +452,7 @@ export function stopGate(root, sid, hook = {}) {
     // the honest move is to stand down (fail-open, review-found).
     try {
       mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-      writeFileSync(marker, `${new Date().toISOString()}\n`);
+      writeFileSync(marker, `${new Date().toISOString()} ${evidenceMac(["block", sid]) ?? ""}\n`);
     } catch {
       return { allow: true, row: "marker-unwritable" };
     }

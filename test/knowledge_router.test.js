@@ -21,6 +21,19 @@ process.env.FORGE_LEDGER_ONLY = "0";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
+test("routeFact: the first-person signal survives tokenization (deep review D9)", () => {
+  // intent.js drops pronouns as function words, but "i prefer …" vs "the team prefers …" is
+  // exactly what separates a personal preference from a project convention — both scored
+  // identically against the recall rows before.
+  const mine = routeFact("i prefer short commit messages");
+  const team = routeFact("the team prefers short commit messages in this repo");
+  assert.equal(mine.home, "recall");
+  assert.ok(
+    mine.confidence > team.confidence,
+    `first person is stronger evidence for recall (${mine.confidence} vs ${team.confidence})`,
+  );
+});
+
 test("routeFact: every home recognized from unseen phrasings (per-family routing)", () => {
   assert.equal(routeFact("always run the linter before committing changes").home, "claude-md");
   assert.equal(routeFact("never push directly to the release branch").home, "rule");
@@ -159,7 +172,12 @@ test("factName: short stable slug, never empty", () => {
     factName("The API rate limit is 100 requests per minute"),
     "the-api-rate-limit-is-100",
   );
-  assert.equal(factName("???"), "fact");
+  // No letter or digit at all → util's hash fallback: still short, stable and non-empty,
+  // and (unlike the old shared "fact") distinct per text, so two such facts can coexist.
+  const q = factName("???");
+  assert.ok(q.length > 0 && q.length <= 16);
+  assert.equal(q, factName("???"), "stable");
+  assert.notEqual(q, factName("!!!"));
 });
 
 test("cli: forge know --dry-run --json routes without writing", () => {

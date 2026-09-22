@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  appendSessionEvent,
   classifyEvent,
   detectDoomLoop,
   detectEpisodes,
   doomLoopAdvisory,
   processSession,
+  readSession,
+  sessionPath,
 } from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
+import { fakeGithubPat } from "./_fixtures.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -183,4 +187,66 @@ test("outputSignature normalizes line numbers/timings so the same error matches 
     tool_response: "FAILED test_x.py:57 in 1.1s — assert 1 == 2",
   });
   assert.equal(e1.outputSig, e2.outputSig, "line/timing noise is normalized out");
+});
+
+// B5: prompts and shell commands were appended to .forge/sessions/<sid>.jsonl verbatim, so a
+// pasted `GITHUB_TOKEN=ghp_…` or an `Authorization: Bearer …` curl sat on disk in the repo.
+test("session log never stores a raw secret from a prompt or a command (B5)", () => {
+  const root = fixture();
+  const tok = fakeGithubPat();
+  const log = (hook) => appendSessionEvent(root, "s-b5", classifyEvent(hook));
+  log({ hook_event_name: "UserPromptSubmit", prompt: `deploy with GITHUB_TOKEN=${tok} please` });
+  log({
+    tool_name: "Bash",
+    tool_input: { command: `curl -H 'Authorization: Bearer ${tok}' https://api.github.com` },
+  });
+  log({ tool_name: "Bash", tool_input: { command: "git revert HEAD" }, exitCode: 0 });
+  const raw = readFileSync(sessionPath(root, "s-b5"), "utf8");
+  assert.equal(raw.includes(tok), false, "the token never reaches disk");
+  assert.match(raw, /GITHUB_TOKEN=\[REDACTED\] please/, "the prompt stays readable");
+  // Redaction must not blind the signal detectors (verbs are never secrets).
+  const events = readSession(root, "s-b5");
+  assert.equal(events.length, 3);
+  assert.equal(events[2].command, "git revert HEAD");
+});
+
+test("classifyEvent (C10): the signature covers stderr and the WHOLE output, not the first 800 chars", () => {
+  const bash = (response) =>
+    classifyEvent({
+      tool_name: "Bash",
+      tool_input: { command: "npx jest" },
+      exitCode: 1,
+      tool_response: response,
+    });
+  // (a) a stderr-only failure (jest, mocha, tsc) used to carry no signature at all.
+  const e = bash({ stdout: "", stderr: "FAIL src/a.test.js\n  expected 3 received 4" });
+  assert.ok(e.outputSig, "a stderr-only failure is still a failure");
+  assert.equal(detectDoomLoop([e, e, e]).loop, true);
+  // (b) three DIFFERENT failures behind the same long passing header are not one loop.
+  const header = `> app@1.0.0 test\n> node --test\n${"▶ suite\n  ✔ passes (1.2ms)\n".repeat(40)}`;
+  const f1 = bash({ stdout: `${header}✖ auth: expected 3 got 4` });
+  const f2 = bash({ stdout: `${header}✖ billing: TypeError x is undefined` });
+  const f3 = bash({ stdout: `${header}✖ cache: timeout waiting for the queue` });
+  assert.equal(new Set([f1.outputSig, f2.outputSig, f3.outputSig]).size, 3, "distinct failures");
+  assert.equal(
+    detectDoomLoop([f1, { type: "edit", file: "a" }, f2, { type: "edit", file: "b" }, f3]).loop,
+    false,
+  );
+  // …while the same failure, header and all, still is one.
+  assert.equal(detectDoomLoop([f1, { type: "edit", file: "a" }, f1, f1]).loop, true);
+});
+
+test("doomLoopAdvisory (C10): with no edits between runs it does not claim edits were made", () => {
+  const same = {
+    type: "bash",
+    command: "npm test",
+    exitCode: 1,
+    outputSig: "aaaaaaaaaaaa",
+  };
+  const noEdits = doomLoopAdvisory([same, same, same]);
+  assert.match(noEdits, /doom loop/i);
+  assert.doesNotMatch(noEdits, /Different edits aren't fixing it/);
+  assert.match(noEdits, /without chang/i, noEdits);
+  const withEdits = doomLoopAdvisory([same, { type: "edit", file: "a.js" }, same, same]);
+  assert.match(withEdits, /Different edits aren't fixing it/);
 });

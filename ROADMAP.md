@@ -77,8 +77,10 @@ confidence only from independent oracles, and merges across teammates conflict-f
 - **Advisory → gated promotions** — the measured-promotion gate has shipped
   (`src/promote.js`, generalizing the risk predictor's kill-criteria): a candidate only
   replaces a baseline when it beats it on held-out data, never by assertion. First
-  application: outcome-calibrated routing (`forge route calibrate`). Remaining
-  applications of the same gate: consolidation promotion (ʿilm→fahm) and M6 hazard
+  application: the routing rubric's calibration check (`forge route calibrate`) — against a
+  hand-labelled fixture, since no routing outcome is recorded to calibrate on; wiring real
+  outcome data (a routed task's tier joined to its verification result) into it is still open.
+  Remaining applications of the same gate: consolidation promotion (ʿilm→fahm) and M6 hazard
   estimates.
 
 ## Later / exploring

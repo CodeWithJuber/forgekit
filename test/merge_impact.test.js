@@ -154,3 +154,63 @@ test("documentation relation creates docs risk without pretending runtime execut
   assert.ok(doc.dimensions.docs > 0.7);
   assert.equal(doc.dimensions.runtime, 0);
 });
+
+test("a terminal relation reports its target but never propagates through it", () => {
+  const changes = [{ artifact: "a.js", kind: "public_api", linesChanged: 8 }];
+  const artifacts = ["a.js", "b.js", "c.js"].map((id) => artifact(id));
+  const chain = [{ ...relation("b.js", "c.js", "imports") }];
+  const open = analyzeMergeImpact({
+    artifacts,
+    changes,
+    relations: [relation("a.js", "b.js", "imports"), ...chain],
+  });
+  assert.ok(
+    open.impacted.some((i) => i.id === "c.js"),
+    "an ordinary relation propagates on",
+  );
+  const terminal = analyzeMergeImpact({
+    artifacts,
+    changes,
+    relations: [{ ...relation("a.js", "b.js", "imports"), terminal: true }, ...chain],
+  });
+  assert.ok(
+    terminal.impacted.some((i) => i.id === "b.js"),
+    "the terminal target is reported",
+  );
+  assert.ok(
+    !terminal.impacted.some((i) => i.id === "c.js"),
+    "a sibling's own dependents are not dragged in",
+  );
+});
+
+test("a non-finite weight is zero, never certainty (clamp01)", () => {
+  const changes = [{ artifact: "a.js", kind: "public_api", linesChanged: 4 }];
+  const infinite = analyzeMergeImpact({
+    artifacts: [artifact("a.js"), artifact("b.js", "source", Number.POSITIVE_INFINITY)],
+    changes,
+    relations: [relation("a.js", "b.js", "imports", Number.POSITIVE_INFINITY)],
+  });
+  assert.ok(
+    !infinite.impacted.some((i) => i.id === "b.js"),
+    "an Infinity confidence carries 0 consequence, not full consequence",
+  );
+  const critical = analyzeMergeImpact({
+    artifacts: [artifact("a.js"), artifact("b.js", "source", Number.POSITIVE_INFINITY)],
+    changes,
+    relations: [relation("a.js", "b.js", "imports", 0.9)],
+  });
+  assert.equal(
+    critical.impacted.find((i) => i.id === "b.js")?.criticality,
+    0,
+    "Infinity criticality is not 1",
+  );
+  const stringy = analyzeMergeImpact({
+    artifacts: [artifact("a.js"), artifact("b.js")],
+    changes,
+    relations: [relation("a.js", "b.js", "imports", "0.9")],
+  });
+  assert.ok(
+    stringy.impacted.find((i) => i.id === "b.js")?.dimensions.runtime > 0,
+    "a numeric string is still a number",
+  );
+});

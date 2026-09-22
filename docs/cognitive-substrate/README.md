@@ -207,22 +207,32 @@ move a verdict, in the direction of the paper's _tabayyun_ gate (49:6). By defau
 is **bidirectional but rail-guarded** — a verified reading can lower caution as well as raise it,
 but never past a hard floor:
 
-- **routing** — a _raise_ is free (spotting hidden complexity costs at most a bigger model); a
-  _lower_ is bounded to one band and never drops below a strong-signal (algorithmic/architectural)
-  floor, so a "distributed rate-limiter" can't be talked down to the cheap tier;
+- **routing** — the proposer votes a band and the reconcile compares it with the band the
+  deterministic score is already in. A vote for a _lower_ band moves the score to that band's
+  ceiling only when the vote's p(band) reaches `llm.minConfidence`, and never below a
+  strong-signal (algorithmic/architectural) floor, so a "distributed rate-limiter" can't be
+  talked down to the cheap tier. A vote for a _higher_ band is **not applied** — escalation
+  follows a verifier failure, never the model's self-assessment (§5.1). The tier it would have
+  picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on at
+  routing time: it is recorded against the task, and `forge diagnose --task "<task>"` names it
+  once the same failure signature has recurred `THRASH_K` times — a real external check
+  failing, which is the only thing that may buy a bigger model (§5.1);
 - **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
-  with no concrete anchor, or one naming symbols/files the repo doesn't define;
+  with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
+  guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness
+  and the proposer's are on different scales, so only their ask/proceed verdicts are compared,
+  and the proposer flips the rubric only when it holds its verdict with p ≥ `llm.minConfidence`;
 - **impact edges** — kept only if the file is real _and_ a grep confirms the reference;
 - **goal-drift** — rescues an off-goal file only with a goal-referencing reason (off→on only).
 
 > **Note** — set `llm.bidirectional: false` in
-> [`source/substrate.json`](../../source/substrate.json) for the conservative tighten-/raise-only
-> mode (caution can only ever increase).
+> [`source/substrate.json`](../../source/substrate.json) for the conservative mode (caution can
+> only ever increase: the gate can only tighten, the tier never moves).
 
 It is **fail-safe**: any error, timeout, or unparseable reply falls back to the deterministic
 path (behaviour is byte-identical with the flag off), and it **never blocks**. `--json` output
 carries an `llm.provenance` map (`deterministic` / `llm-cleared` / `llm-tightened` /
-`llm-raised` / `llm-lowered` / `llm-verified`) per faculty so every model-touched decision is
+`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / `llm-verified`) per faculty so every model-touched decision is
 auditable. Off by default; the ambient Claude Code hook stays deterministic unless you also set
 `FORGE_LLM_AMBIENT=1`. Config lives in
 [`source/substrate.json`](../../source/substrate.json) → `llm`.
@@ -241,9 +251,12 @@ needs a hook surface. Tests and human corrections always win. The full, canonica
 
 ## Learn more
 
-- **White paper** — the full argument: [PDF](./cognitive_substrate_whitepaper.pdf) ·
-  [HTML](./cognitive_substrate_whitepaper.html)
-- **[Package overview](./deliverable-package.md)** — headline results and prototypes
+- **White paper** — the full argument: [HTML](./cognitive_substrate_whitepaper.html) (with the
+  2026-09-21 corrections) · [PDF](./cognitive_substrate_whitepaper.pdf) (predates them). Its two
+  prototype results were refuted on real data — see
+  [research/empirical-refutation/](../../research/empirical-refutation/).
+- **[Package overview](./deliverable-package.md)** — headline results (refuted; see its banner)
+  and prototypes
 - **[Evidence map](./evidence_map.md)** — every load-bearing statistic re-graded against
   primary sources (5 confirmed, 5 vendor-reported, 2 dropped)
 - **[Ecosystem map](./ecosystem_map.md)** — each capability vs. the real 2026 tool stack

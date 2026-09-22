@@ -5,6 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
+import { redactSecrets } from "./secrets.js";
 import { contentHash, slug } from "./util.js";
 
 // One naming rule for every per-session artifact (event log, git baseline, gate marker,
@@ -15,12 +16,26 @@ export const sessionPath = (root, sid, ext = "jsonl") =>
 
 const sessionFile = (root, sid) => sessionPath(root, sid);
 
-/** Append one normalized event to a session's log (called by capture hooks). */
+/** Every string leaf of an event, secret-redacted; structure and non-strings untouched. */
+const redactEvent = (v) =>
+  typeof v === "string"
+    ? redactSecrets(v)
+    : Array.isArray(v)
+      ? v.map(redactEvent)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redactEvent(x)]))
+        : v;
+
+/** Append one normalized event to a session's log (called by capture hooks). Prompts and
+ *  shell commands are the user's raw text — a pasted `GITHUB_TOKEN=…` or an
+ *  `Authorization: Bearer …` curl used to land verbatim on disk — so every string is
+ *  redacted BEFORE it is written (the signals read verbs like `npm test`/`git revert`,
+ *  which redaction never touches). */
 export function appendSessionEvent(root, sid, event) {
   if (!event) return;
   const path = sessionFile(root, sid);
   mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(event)}\n`);
+  appendFileSync(path, `${JSON.stringify(redactEvent(event))}\n`);
 }
 
 export function readSession(root, sid) {
@@ -42,15 +57,36 @@ export function clearSession(root, sid) {
 }
 
 const REVERT_RE = /\bgit\s+(revert|reset\s+--hard|checkout\s+--|restore)\b/;
-const TEST_RE = /\b(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+// One grammar with deja.js: the command must BE a test run (start of the command or after a
+// shell separator — `echo "run npm test later"` is not one) and keep its exit code (`npm test
+// || true` proves nothing).
+const TEST_RE =
+  /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
+const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
+const isTestRun = (command) => TEST_RE.test(String(command ?? "")) && !MASKED_RE.test(command);
 // Negation must be corrective, not incidental ("no problem"); require a corrective verb.
 const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
 
-// A cheap signature of a failing test's output. Line numbers, hex addresses,
-// timings, and temp paths are normalized out so "the same failure" hashes the same across runs
-// even as surrounding noise shifts — this is what lets us catch a same-error doom loop.
+// A cheap signature of a failing run's output. Line numbers, hex addresses, timings, and
+// temp paths are normalized out so "the same failure" hashes the same across runs even as
+// surrounding noise shifts — this is what lets us catch a same-error doom loop.
+//
+// It hashes the WHOLE normalized output (head + tail for very long runs), not the first 800
+// characters: a test runner prints a long, identical passing header before the failure, so a
+// head-only signature made three DIFFERENT failures one loop (review C10). Numbers are still
+// collapsed, which is what keeps a re-run of the same failure stable across timings and
+// counts — the documented cost is that two failures differing only in digits share a
+// signature.
+const SIG_HEAD = 8000;
+const SIG_TAIL = 56000;
+
 function outputSignature(text) {
-  const norm = String(text)
+  const raw = String(text);
+  const bounded =
+    raw.length > SIG_HEAD + SIG_TAIL
+      ? `${raw.slice(0, SIG_HEAD)}\n…\n${raw.slice(-SIG_TAIL)}`
+      : raw;
+  const norm = bounded
     .toLowerCase()
     .replace(/0x[0-9a-f]+/g, "0xADDR")
     .replace(/\b\d+(\.\d+)?(ms|s)\b/g, "T")
@@ -58,8 +94,7 @@ function outputSignature(text) {
     .replace(/\b\d+\b/g, "N")
     .replace(/\/tmp\/\S+/g, "/tmp/X")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 800);
+    .trim();
   return norm ? contentHash(norm).slice(0, 12) : "";
 }
 
@@ -73,7 +108,12 @@ export function classifyEvent(hook) {
   if (tool === "Bash") {
     const exitCode = hook.exitCode;
     const failed = typeof exitCode === "number" && exitCode !== 0;
-    const out = hook.tool_response?.stdout ?? hook.tool_response ?? hook.output ?? "";
+    // BOTH streams: jest, mocha and tsc print their failures on stderr, so a stdout-only
+    // signature never saw them and those loops were invisible (review C10).
+    const res = hook.tool_response;
+    const out = [typeof res === "string" ? res : "", res?.stdout, res?.stderr, hook.output]
+      .filter((x) => typeof x === "string" && x)
+      .join("\n");
     return {
       type: "bash",
       command: inp.command ?? "",
@@ -116,7 +156,7 @@ export function detectEpisodes(events, { nowDay = 0 } = {}) {
       recentEdits.push(e.file);
       if (sawTestFail) failFiles.add(e.file);
     } else if (e.type === "bash") {
-      if (TEST_RE.test(e.command)) {
+      if (isTestRun(e.command)) {
         if (typeof e.exitCode === "number" && e.exitCode !== 0) sawTestFail = true;
         else if (e.exitCode === 0 && sawTestFail) {
           for (const f of failFiles) add(f, "S1"); // fail → edit → pass, same files
@@ -189,7 +229,12 @@ export function doomLoopAdvisory(events, opts = {}) {
   const r = detectDoomLoop(events, opts);
   if (!r.loop) return "";
   const where = r.files.length ? ` around ${r.files.slice(0, 5).join(", ")}` : "";
-  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. Different edits aren't fixing it. Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.`;
+  // Only claim edits were made when some were: with nothing edited between the runs, the
+  // honest advice is "re-running is not a fix", not "different edits aren't fixing it".
+  const what = r.files.length
+    ? "Different edits aren't fixing it."
+    : "Nothing was edited between the runs — re-running without changing anything cannot fix it.";
+  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. ${what} Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.`;
 }
 
 /** Drive the orchestrator from a session's events (called by the Stop hook). */

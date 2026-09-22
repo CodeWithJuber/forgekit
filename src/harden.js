@@ -28,10 +28,22 @@ function gitHooksDir(targetRoot) {
   }
 }
 
-// The sandbox config to merge into settings — deny the credential dirs an agent should never read.
+// The settings block to merge — the sandbox plus deny rules for the credential stores an
+// agent should never read. The deny list is `permissions.deny` with real `Read(<glob>)`
+// rules: the earlier `credentials.deny` key was invented here and Claude Code reads no such
+// key, so the "denied" paths were never denied (review B8).
 const SANDBOX = {
   sandbox: { enabled: true, allowUnsandboxedCommands: false },
-  credentials: { deny: ["~/.aws", "~/.ssh", "GITHUB_TOKEN", "NPM_TOKEN"] },
+  permissions: {
+    deny: [
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.netrc)",
+      "Read(~/.npmrc)",
+      "Read(~/.git-credentials)",
+    ],
+  },
 };
 
 // The ownership marker: a hook containing this line is OURS to rewrite; anything else
@@ -97,6 +109,7 @@ export function harden({ targetRoot = process.cwd() } = {}) {
   // Sandbox settings (WIRE — Anthropic owns the sandbox; we write the block to merge).
   mkdirSync(join(targetRoot, ".forge"), { recursive: true });
   writeFileSync(join(targetRoot, ".forge", "sandbox.json"), JSON.stringify(SANDBOX, null, 2));
-  report.sandbox = "written to .forge/sandbox.json";
+  report.sandbox =
+    "written to .forge/sandbox.json (sandbox + permissions.deny — merge it into ~/.claude/settings.json)";
   return report;
 }

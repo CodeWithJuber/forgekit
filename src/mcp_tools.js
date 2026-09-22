@@ -148,6 +148,11 @@ export const TOOLS = [
         errorText: { type: "string", description: "the error message" },
         file: { type: "string", description: "file where the error occurred" },
         symbol: { type: "string", description: "symbol involved" },
+        task: {
+          type: "string",
+          description:
+            "the task this failure came out of (same text given to forge_route) — lets the escalation directive name the tier routing already flagged instead of 'one tier'",
+        },
       },
       required: ["errorText"],
     },
@@ -183,11 +188,15 @@ export const TOOLS = [
   {
     name: "forge_ledger_ratify",
     description:
-      "Promote a ledger claim's confidence — record an independent oracle ratification (the claim held under test).",
+      "Propose a ratification of a ledger claim as agent:mcp (never as the human) — mints a decision claim and does NOT change the claim's confidence. Only a human ratifies, with `forge ledger ratify <id>`.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "claim ID or unique prefix" },
+        id: {
+          type: "string",
+          description:
+            "claim ID or an unambiguous prefix (≥2 chars; an ambiguous prefix is refused)",
+        },
       },
       required: ["id"],
     },
@@ -224,14 +233,17 @@ export const TOOLS = [
   {
     name: "forge_ledger_retract",
     description:
-      "Tombstone a ledger claim with a reason — mark it as no longer valid so it stops influencing routing and memory.",
+      "Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`. Prefixes are refused; the pending proposal shows in ledger query/stats.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "claim ID or unique prefix" },
+        id: {
+          type: "string",
+          description: "the claim's full 64-character id (forge_ledger_query returns it)",
+        },
         reason: {
           type: "string",
-          description: "why the claim is being retracted",
+          description: "why the claim should be retracted",
         },
       },
       required: ["id", "reason"],

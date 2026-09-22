@@ -37,13 +37,15 @@ delivers them into every tool you use.
 >   package as a compatible Codex bundle loads its skills and bundle-scoped MCP server.
 >   Neither path provides ambient hooks (see
 >   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
-> - **Impact/blast-radius analysis is heuristic** — a regex-approximate, conservative code
->   graph, not a sound call graph. Treat its output as advisory.
+> - **Impact/blast-radius analysis is heuristic** — a regex-approximate code graph, not a sound
+>   call graph. It is not conservative: it can miss affected files as well as flag unaffected
+>   ones, so treat its output as advisory and an empty result as "unknown", not "safe".
 > - **"Proof-carrying memory" is a name, not a formal proof.** Claims are content-addressed and
 >   carry evidence references; confidence moves only when independent oracles (tests, CI, a
 >   human) raise it. There is no theorem-prover in the loop.
 > - Some integrations shell out — `forge harden`, `forge scan`, and the git-native ledger
->   assume **Bash, Git, and (for a few paths) `jq`** are available. Claude hooks on Windows do
+>   assume **Bash and Git** are available (`jq` is not required — the guards read hook JSON
+>   with node). Claude hooks on Windows do
 >   not require `bash` on `PATH`: their Node launcher finds Git Bash and preserves guard exits.
 
 ## Start in 60 seconds
@@ -175,8 +177,8 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
   evidence trail, not a formal proof). Wrong lessons decay out instead of ossifying.
 - **Foresight before you break things.** _[Heuristic]_ Ask "what does changing `verifyToken`
   break?" and get the _blast radius_ — the set of files an edit is predicted to impact, read
-  from a regex-approximate (conservative, not sound) code graph, including coupled files you
-  never named.
+  from a regex-approximate code graph (not sound, and it can miss affected files), including
+  coupled files you never named.
 - **Guardrails that can't be forgotten.** _[Implemented on Claude Code]_ Deterministic hooks
   check the rules a model shouldn't break (protected paths, cost budget, doom loops) — they
   survive a context compaction the way `CLAUDE.md` prose does not. They reduce risk as
@@ -197,15 +199,25 @@ Every number is a median from `npm run bench` on this repo, recorded with its en
 block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is _a number is
 an assumption until measured_.
 
-- **Blast radius in 0.43 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
-  real import graph: recall **0.97** vs **0.33** for looking at the edited file alone.
-- **A full pre-action gate in 118 ms** (median on this repo, warm) — assumption check, routing,
+- **Blast radius in 0.40 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
+  real import graph, recall is 1.00 against 0.27 for looking at the edited file alone, and
+  precision is 0.17 — `impact` walks reverse dependencies transitively by default, so it
+  returns everything downstream while the labels name only the direct referencers (restricted
+  to one hop the same cases return their labeled sets). The precision 0.90 this line used to
+  quote does not reproduce. On nine real Python repositories the research prototype's impact
+  oracle reached recall 0.022 ([refutation](research/empirical-refutation/)).
+- **A full pre-action gate in 886 ms** (median on this repo, warm, on a 4-core Windows VM — this
+  row is machine-bound; see the environment block) — assumption check, routing,
   reuse lookup, context assembly, blast radius, scope, and goal anchor in one deterministic
   pass, no LLM call. On Claude Code it runs on **every prompt, automatically**.
-- **62.1% cost saved vs always-premium** — from the white paper's live routing prototype on
-  real models (paper §9; that's the paper's measurement, not this repo's — `forge cost
---stages` reports only _your_ measured stages).
-- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **158 ms**; the
+- **The white paper's 62.1% routing saving is refuted.** It was measured on the 30 tasks the
+  prototype's thresholds were tuned on. On 80 held-out tasks from real issues, counting every
+  escalation, the pipeline spent **20.2% more** than always using the premium tier; per output a
+  judge accepted it cost $1.06 against $1.76, but only 6 and 3 of 64 outputs were accepted
+  ([refutation](research/empirical-refutation/)). `forge cost --stages` reports only _your_
+  measured stages.
+- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **4308 ms** on that
+  same VM (I/O-bound, 4–6x a Linux host); the
   merge is order-independent and property-tested, so teammate ledgers converge to the same state
   no matter who syncs first, over plain git.
 The substrate is advisory by default. Set `FORGE_ENFORCE=1` to block only its strongest
@@ -220,14 +232,18 @@ from a fresh repository graph.
 - **Git-native team merge.** Claims and append-only logs merge by set union. The join is
   property-tested for commutativity, associativity, and idempotence.
 - **Heuristic impact prediction.** Forgekit builds a regex-derived code graph and walks
-  reverse dependencies to estimate affected files and tests. It is conservative and may
-  produce false positives or miss language constructs its parser does not recognize.
+  reverse dependencies to estimate affected files and tests. It is not conservative: it can
+  miss affected files (including constructs its parser does not recognize) as well as produce
+  false positives.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
-  signals. An optional LLM proposal can raise the tier or lower it only inside bounded rails.
-  Forgekit advises which tier to request; it does not itself proxy or fail over model traffic.
+  signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
+  vote for a higher tier is never applied automatically — it is recorded as an advisory
+  `escalateTo` recommendation, which names the tier only once an external check has actually
+  failed (the doom-loop diagnosis at its thrash threshold). Forgekit advises which tier to
+  request; it does not itself proxy or fail over model traffic.
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
 - **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
@@ -315,20 +331,25 @@ methodology.
 
 Parser-stable snapshot labels used by the generated project pages are:
 
-- **A full pre-action gate in 118 ms median** — deterministic, warm repository graph, LLM disabled;
-- **Blast radius in 0.43 ms median** — warm impact query; and
-- **62.1% cost saved** — the 30-task Python routing demonstration.
+- **A full pre-action gate in 886 ms median** — deterministic, warm repository graph, LLM disabled;
+- **Blast radius in 0.40 ms median** — warm impact query; and
+- **20.2% more cost than always-premium** — the held-out routing result. The 62.1% saving the
+  white paper reported came from a 30-task demonstration with thresholds tuned on those same
+  tasks; on 80 pre-registered held-out tasks the same router spent 20.2% *more* (table below).
+  Per judged-correct output the pipeline cost $1.06 against always-premium's $1.76.
 
 The boundaries in the table below are part of each result.
 
 | Measurement | Recorded result | Boundary |
 | --- | ---: | --- |
-| Warm impact query | 0.43 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
-| Deterministic substrate check | 118 ms median | 3 runs on one repository, warm graph, LLM disabled |
-| Impact quality | precision 0.90, recall 0.97, F1 0.92 | 6 hand-labelled symbols in this repository; edited-file-only baseline recall 0.33 |
-| Ledger replica merge | 158 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared |
+| Warm impact query | 0.40 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
+| Deterministic substrate check | 886 ms median | 3 runs on one repository, warm graph, LLM disabled, on a 4-core Windows VM — wall-clock rows are machine-bound and were ~150 ms on the Linux host that produced the pre-2026-09-22 snapshot; re-run `npm run bench` on your own hardware |
+| Impact quality | precision 0.17, recall 1.00, F1 0.29 (the precision 0.90 / F1 0.92 reported before 2026-09-21 do not reproduce) | 6 hand-labelled symbols in this repository, scored by `evalImpact` against labels re-derived by `git grep`; `impact` walks reverse dependencies transitively by default, so precision measures the transitive closure against direct-only labels; edited-file-only baseline recall 0.27 |
+| Ledger replica merge | 4308 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared, on the same 4-core Windows VM (I/O-bound: 4–6x the Linux host's figure) |
 | Python router live demonstration | 62.1% calculated cost reduction versus always-premium | 30 hand-labelled tasks, thresholds tuned to the set, real measured LLM tokens, approximate public prices; demonstration, not field benchmark |
+| Python router, held-out evaluation | total spend 20.2% **higher** than always-premium; gate F1 0.37 | 80 tasks from real GitHub issues and PRs, thresholds frozen, pre-registered; refutes the row above |
 | Python impact oracle | precision 0.633, recall 1.000, F1 0.753 | 5 mutations in the bundled demo package; mutation-derived test failures as ground truth |
+| Python impact oracle, real repositories | precision 0.398, recall 0.022, F1 0.042 (grep baseline F1 0.437) | 759 files in 9 open-source repositories, co-change ground truth, pre-registered; refutes the row above |
 
 The current audited CI run at commit `3d9be37` completed successfully for Node 20, Node 22,
 and Windows Git Bash, plus the reusable quality gate. The quality gate ran the Node unit suite,

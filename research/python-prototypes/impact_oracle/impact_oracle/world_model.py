@@ -249,6 +249,24 @@ class WorldModel:
         node in the graph, the edge target is already correct.  When the
         target is a module but the actual use is 'mod.func', we try to
         find the function inside the module.
+
+        NOTE (investigated during defect-1 repair, kept AS-SHIPPED): this
+        method's own resolution loop is permanently dead code as written --
+        `existing = set(self.graph.nodes)` includes every edge target,
+        because `graph.add_edge(u, v, ...)` auto-vivifies `v` as a bare
+        placeholder node the instant the edge is added, so `v in existing`
+        is true unconditionally and the candidate search below never runs.
+        Fixing that guard was considered and rejected as the defect-1 fix:
+        doing so does resolve the src-layout phantom-node defect (see
+        `_merge_phantom_nodes` below, where the fix actually lives), but it
+        ALSO silently activates this method's second, much weaker fallback
+        arm (`n.endswith(f".{v.split('.')[-1]}")` -- match on the last
+        identifier alone, e.g. any node ending in `.Pytester`), which is a
+        materially different, untested, and unrequested heuristic change
+        with its own false-positive risk. `_merge_phantom_nodes` gives a
+        clean, symmetric, purpose-built fix without waking that second
+        heuristic, so this method is left byte-identical to the shipped
+        version and its dead branch is untouched.
         """
         existing = set(self.graph.nodes)
         edges_to_add: list[tuple[str, str, dict]] = []
@@ -296,29 +314,97 @@ class WorldModel:
         self._merge_phantom_nodes()
 
     def _merge_phantom_nodes(self):
-        """Merge nodes whose qualified_name is a suffix of another existing node.
+        """Merge nodes whose qualified_name is a dotted-prefix mismatch of a
+        real, already-parsed node, in EITHER direction.
 
-        Import targets like 'demo_package.utils.validation.validate_positive'
-        are phantom duplicates of parsed nodes like 'utils.validation.validate_positive'
-        when the codebase root IS 'demo_package/'.  We redirect all edges
-        from the phantom to the real node.
+        Two distinct import-prefix mismatches create phantom duplicates of a
+        real node -- both stem from the same root cause (parser.py derives a
+        module's qualified_name from its file path relative to WorldModel's
+        `root`, but an import elsewhere in the SAME codebase may spell the
+        same target with a different, also-legitimate root offset):
+
+        1. PHANTOM LONGER (shipped, unchanged): import target
+           'demo_package.utils.validation.validate_positive' is a phantom of
+           the real parsed node 'utils.validation.validate_positive' when
+           the codebase root IS 'demo_package/' -- the import spells out a
+           leading component the parser's root already absorbed.
+
+        2. PHANTOM SHORTER (defect-1 fix): in a **src-layout** package
+           (`src/pkg/...`), the parser's root is the REPO root, so the real
+           parsed node is 'src.pkg.mod.func'.  Code elsewhere in the repo
+           legitimately writes an absolute import WITHOUT the 'src.' prefix
+           (`from pkg.mod import func` -- correct at runtime, since `src/`
+           is put on `sys.path` by the package's build config), which parses
+           to edge target 'pkg.mod.func': a phantom missing the leading
+           'src.' the real node carries. This directionality was previously
+           never checked at all, which is why recall was ~0.000 in every
+           src-layout repo of the evaluation corpus and non-negligible only
+           in flat-layout ones (where package IS the repo root, so no
+           prefix mismatch is structurally possible).
+
+        SAFETY (why this isn't a blind suffix search): naively checking "is
+        `n` a dotted suffix of ANY real node" is unsound -- e.g. a plain
+        `import json` (stdlib) parses to phantom target 'json', which IS a
+        dotted suffix of a real, uniquely-named LOCAL submodule in more than
+        one corpus repo (e.g. flask's own 'src.flask.json' re-export
+        module -- the exact sibling-pattern example in this evaluation's own
+        failure-mode analysis). Blindly merging that pair would fabricate a
+        false dependency edge between every `import json` call site in the
+        codebase and flask's unrelated local json submodule, inflating false
+        positives. Instead, direction 2 only strips a prefix that is a
+        **top-level path segment this parser actually used** for some real
+        node's file in THIS build (e.g. 'src', because some real node's
+        `file` metadata starts with 'src/') -- i.e. only reconstructs a
+        root-offset the parser is independently known to use, rather than
+        pattern-matching arbitrary name collisions. A match is only made
+        when exactly one such prefix yields a real node (ambiguous cases
+        are left unmerged rather than guessed, matching direction 1's own
+        conservative precedent of exact-string membership tests only).
         """
         # "Real" nodes are those explicitly added by the parser with metadata
         real_nodes = {n for n, d in self.graph.nodes(data=True) if d.get("kind")}
         all_nodes = set(self.graph.nodes)
         phantoms_to_merge: dict[str, str] = {}  # phantom -> real
 
+        # Layout prefixes actually observed: the first path component of
+        # every real node's file, when that file lives more than one
+        # directory level deep (a bare top-level file like 'setup.py'
+        # contributes no prefix -- there's nothing to strip).
+        layout_prefixes: set[str] = set()
+        for _, d in self.graph.nodes(data=True):
+            f = d.get("file", "")
+            if not f:
+                continue
+            parts = Path(f).parts
+            if len(parts) > 1:
+                layout_prefixes.add(parts[0])
+
         for n in all_nodes:
             if n in real_nodes:
                 continue
-            # Check if this is a prefixed version of a real node
+            # Direction 1 (shipped): n is a prefixed version of a real node
             # e.g. 'demo_package.utils.validation.validate_positive' -> 'utils.validation.validate_positive'
             parts = n.split(".")
+            matched = None
             for i in range(1, len(parts)):
                 suffix = ".".join(parts[i:])
                 if suffix in real_nodes:
-                    phantoms_to_merge[n] = suffix
+                    matched = suffix
                     break
+            if matched:
+                phantoms_to_merge[n] = matched
+                continue
+
+            # Direction 2 (defect-1 fix): n is an UNprefixed version of a
+            # real node -- try prepending each observed layout prefix and
+            # require a unique hit.
+            candidates = {
+                cand for prefix in layout_prefixes
+                if (cand := f"{prefix}.{n}") in real_nodes
+            }
+            if len(candidates) == 1:
+                phantoms_to_merge[n] = next(iter(candidates))
+            # len(candidates) > 1 (or 0): ambiguous or no match -- left unmerged.
 
         for phantom, real in phantoms_to_merge.items():
             # Transfer all incoming edges to the real node

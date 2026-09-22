@@ -166,7 +166,9 @@ export async function collect({ live = process.env.BUILD_PAGES_LIVE === "1" } = 
     github,
     speed: mustMatch(readme, /\*\*A full pre-action gate in ([^*]+)\*\*/m, "speed"),
     impact: mustMatch(readme, /\*\*Blast radius in ([^*]+)\*\*/m, "impact"),
-    saved: mustMatch(readme, /\*\*([\d.]+% cost saved)/m, "saved"),
+    // The held-out routing result, not the refuted 30-task demonstration (the tuned 62.1%
+    // "cost saved" this used to lift from the README was the headline the refutation killed).
+    saved: mustMatch(readme, /\*\*([\d.]+% more cost than always-premium)\*\*/m, "saved"),
     benchUpdated: statSync(join(root, "reports/benchmarks.md")).mtime.toISOString().slice(0, 10),
     latest: latestChanges(),
     benchMentions: (benchmarks.match(/^## /gm) ?? []).length,

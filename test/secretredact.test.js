@@ -172,3 +172,22 @@ test("secret-redact catches an unknown-vendor high-entropy token (beyond the old
   assert.match(r.out, /REDACTED/);
   assert.doesNotMatch(r.out, new RegExp(tok));
 });
+
+// The shell prefilter decides whether node runs at all, so it has to be a SUPERSET of the
+// JS detectors: a URL credential has no 20+ char token run, so before B2 it skipped the
+// redactor entirely and the password reached the transcript.
+test("secret-redact's prefilter lets every detector's shape through to node (B2)", async () => {
+  const { redactSecrets } = await import("../src/secrets.js");
+  for (const stdout of [
+    "psql postgres://app:Tr0ub4dor3@db.example.com:5432/app",
+    "redis-cli -u redis://:hunter2pw@cache:6379/0",
+    "DB_PASSWORD=hunter2",
+    "AUTH=Basic dXNlcjpwYXNzd29yZA==",
+  ]) {
+    const r = run({ tool_name: "Bash", tool_response: { stdout } });
+    assert.equal(r.code, 0);
+    assert.match(r.out, /updatedToolOutput/, `prefilter skipped: ${stdout}`);
+    const emitted = JSON.parse(r.out).hookSpecificOutput.updatedToolOutput;
+    assert.deepEqual(emitted, { stdout: redactSecrets(stdout) });
+  }
+});

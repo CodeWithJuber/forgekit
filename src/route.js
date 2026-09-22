@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
-import { recordRoute } from "./cost_report.js";
+import { recordRoute, routeRef } from "./cost_report.js";
 import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
@@ -15,7 +15,7 @@ import { MODELS } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { promotionGate } from "./promote.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { clamp01, contentHash, epochDay } from "./util.js";
+import { clamp01, epochDay } from "./util.js";
 
 // ---------------------------------------------------------------------------
 // Text-complexity rubric: similarity-weighted k-NN regression over a labeled
@@ -30,7 +30,10 @@ import { clamp01, contentHash, epochDay } from "./util.js";
 /**
  * Labeled exemplars. `y` = target complexity in [0,1], calibrated to the tier
  * cutoffs in recommend(): ~0.08 trivial, ~0.42 data-structure/library level,
- * ~0.78 algorithmic/systems, ~0.85 architectural. Add rows freely — coverage
+ * ~0.78 algorithmic/systems AND architectural/cross-module. No label may reach
+ * the fable cutoff (0.8): model_tiers puts "architecture, cross-module refactor,
+ * novel algorithms" on Opus and keeps Fable for research-grade reasoning, so a
+ * label at 0.85 contradicted the table it routes into. Add rows freely — coverage
  * improves routing without touching any weight.
  */
 export const EXEMPLARS = [
@@ -87,14 +90,14 @@ export const EXEMPLARS = [
   { text: "compiler pass over an abstract syntax tree", y: 0.78 },
   { text: "idempotent retry with exactly-once delivery semantics", y: 0.78 },
   // architectural / cross-module
-  { text: "design the architecture of a new service", y: 0.85 },
-  { text: "refactor module boundaries across the codebase", y: 0.85 },
-  { text: "design a schema migration for the database", y: 0.85 },
-  { text: "api design with consistency guarantees and trade-offs", y: 0.85 },
-  { text: "migrate a multi-module system end to end", y: 0.85 },
-  { text: "design a locking strategy across services", y: 0.85 },
-  { text: "plan scalability for a growing distributed system", y: 0.85 },
-  { text: "cross-module refactor of shared interfaces", y: 0.85 },
+  { text: "design the architecture of a new service", y: 0.78 },
+  { text: "refactor module boundaries across the codebase", y: 0.78 },
+  { text: "design a schema migration for the database", y: 0.78 },
+  { text: "api design with consistency guarantees and trade-offs", y: 0.78 },
+  { text: "migrate a multi-module system end to end", y: 0.78 },
+  { text: "design a locking strategy across services", y: 0.78 },
+  { text: "plan scalability for a growing distributed system", y: 0.78 },
+  { text: "cross-module refactor of shared interfaces", y: 0.78 },
 ];
 
 // Excluded from the lexical footprint: function words AND generic task verbs
@@ -127,6 +130,14 @@ export function contentGrams(text) {
   return grams;
 }
 
+/** How many grams two footprints have in common. */
+const sharedGrams = (a, b) => {
+  let n = 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  for (const x of small) if (large.has(x)) n++;
+  return n;
+};
+
 /** Every rubric constant in one inspectable table (same transparency rule as WEIGHTS). */
 export const RUBRIC = {
   k: 3, // neighbors in the k-NN estimate
@@ -137,8 +148,10 @@ export const RUBRIC = {
   // overlaps its exemplar at ~0.43 (extra scope words dilute the coefficient), and
   // the floor MUST hold there — 0.5 let a bad LLM vote talk concurrency work down.
   strongConf: 0.35,
-  bands: { cheap: 0.3, mid: 0.6 }, // score < cheap → cheap; ≤ mid → mid; else premium
-  struct: { codeContext: 0.05, length: 0.1, constraints: 0.05, steps: 0.05 },
+  minShared: 2, // grams a neighbor must share before it counts as a match at all
+  // Bands are recommend()'s own cutoffs (bandOf) — a second, different pair of band edges here
+  // meant `rubric.band` and the routed tier disagreed on what "mid" was.
+  struct: { codeContext: 0.05, constraints: 0.05, steps: 0.05 },
 };
 
 // Exemplar footprints are static — compute once, not per routeTask call (the ambient
@@ -149,6 +162,9 @@ const EXEMPLAR_GRAMS = EXEMPLARS.map((e) => ({ ...e, grams: contentGrams(e.text)
 export function rubricSignals(task = "") {
   const text = String(task);
   return {
+    // Informational only: task size is weighted ONCE, by the repo facet's `size` signal. It used
+    // to be weighted here as well, and both terms saturate on real issue prose (a 600-char body
+    // maxes this one out), which floored every long task near the cheap/mid boundary.
     lengthTokens: Math.max(1, Math.floor(text.length / 4)),
     hasCodeContext: /```/.test(text),
     // Explicit requirement markers: bullet/numbered lines and modal verbs. A count
@@ -171,10 +187,18 @@ export function rubricSignals(task = "") {
 export function rubricComplexity(task = "") {
   const sig = rubricSignals(task);
   const grams = contentGrams(task);
+  // One shared word is a coincidence, not a match: on a real issue corpus 146 of 167 top-3
+  // matches rested on a single token, and against an exemplar whose whole footprint is that
+  // token ("fix a typo" → {typo}) the overlap coefficient reads 1.0 — full confidence in the
+  // coincidence. A neighbor must share `minShared` grams, or the task's whole footprint when
+  // the task itself is shorter than that ("fix the deadlock" still matches its exemplar).
+  const need = Math.min(RUBRIC.minShared, grams.size);
   const neighbors = EXEMPLAR_GRAMS.map(({ grams: eg, ...e }) => ({
     ...e,
+    shared: sharedGrams(grams, eg),
     sim: setOverlap(grams, eg),
   }))
+    .filter((n) => n.shared >= need)
     .sort((a, b) => b.sim - a.sim)
     .slice(0, RUBRIC.k)
     .filter((n) => n.sim > 0);
@@ -186,13 +210,12 @@ export function rubricComplexity(task = "") {
   const s = RUBRIC.struct;
   const struct =
     s.codeContext * (sig.hasCodeContext ? 1 : 0) +
-    s.length * clamp01(sig.lengthTokens / 150) +
     s.constraints * clamp01(sig.nConstraints / 5) +
     s.steps * clamp01(sig.nSteps / 3);
   // Structure adds complexity on top of topic, saturating — it can never flip a
-  // trivial topic into premium on its own (struct is bounded by Σ weights = 0.25).
+  // trivial topic into premium on its own (struct is bounded by Σ weights = 0.15).
   const score = clamp01(topic + struct * (1 - topic));
-  const band = score < RUBRIC.bands.cheap ? "cheap" : score <= RUBRIC.bands.mid ? "mid" : "premium";
+  const band = bandOf(score);
   const strongTopicSignal = knn >= RUBRIC.strongScore && confidence >= RUBRIC.strongConf;
   const reasons = [
     ...neighbors
@@ -202,14 +225,6 @@ export function rubricComplexity(task = "") {
         reason: `similar to "${n.text}" (sim ${n.sim.toFixed(2)}, complexity ${n.y})`,
       })),
     ...(sig.hasCodeContext ? [{ weight: s.codeContext, reason: "carries code context" }] : []),
-    ...(sig.lengthTokens > 55
-      ? [
-          {
-            weight: s.length * clamp01(sig.lengthTokens / 150),
-            reason: `long spec (~${sig.lengthTokens} tok)`,
-          },
-        ]
-      : []),
     ...(sig.nConstraints >= 5
       ? [{ weight: s.constraints, reason: `${sig.nConstraints} explicit constraints` }]
       : []),
@@ -219,45 +234,50 @@ export function rubricComplexity(task = "") {
 }
 
 // ---------------------------------------------------------------------------
-// Outcome-calibrated routing (ROADMAP: advisory → gated promotion). The rubric above
-// is the advisory baseline. Below: fit an affine correction of its score toward labeled
-// complexities and PROMOTE it over the raw rubric ONLY if it beats the rubric on a
-// held-out fixture (promote.js measured gate) — never on assertion. recommend() keeps
-// the raw rubric unless a caller opts into the returned calibration, so this stays
-// advisory until the measurement earns the promotion (overview §4 honesty register).
+// Rubric calibration check (ROADMAP: advisory → gated promotion). Fit an affine correction of
+// the rubric's score toward labeled complexities and PROMOTE it over the raw rubric ONLY if it
+// beats the rubric on a held-out split (promote.js measured gate) — never on assertion.
+//
+// HONESTY, since this was once described as "outcome-calibrated routing": there are NO outcomes
+// in it. The labels below are 24 hand-written phrases with hand-assigned complexities, and forge
+// records nothing that could replace them — `stage:"route"` metrics carry the chosen tier and a
+// task hash, `stage:"verify"` metrics carry a pass/fail with no task reference, so no
+// (task, tier, outcome) triple exists to calibrate on. Nothing here is wired into routeTask
+// either: `calibratedComplexity` has no caller in src/, by design (the gate has never promoted),
+// and outcome-labelled routing data remains open work.
 // ---------------------------------------------------------------------------
 
 /**
  * Held-out labeled complexities, DISTINCT from EXEMPLARS (the k-NN bank), so the gate
  * measures generalization, not memorization. Interleaved by tier so any strided split is
- * balanced. y matches the recommend() cutoffs: ~0.08 trivial · ~0.42 library-level ·
- * ~0.78 algorithmic/systems · ~0.85 architectural.
+ * balanced. y matches the recommend() cutoffs: ~0.08 trivial · ~0.42 library-level · ~0.78
+ * algorithmic/systems and architectural (Opus; no label reaches the fable band).
  */
 export const CALIBRATION_SAMPLES = [
   { text: "print numbers from 1 to 100", y: 0.08 },
   { text: "implement a fixed-size ring buffer", y: 0.42 },
   { text: "detect a cycle in a directed graph", y: 0.78 },
-  { text: "design a multi-tenant billing subsystem", y: 0.85 },
+  { text: "design a multi-tenant billing subsystem", y: 0.78 },
   { text: "trim whitespace from a string", y: 0.08 },
   { text: "group a list of records by a key", y: 0.42 },
   { text: "implement quicksort in place", y: 0.78 },
-  { text: "plan a migration from a monolith to services", y: 0.85 },
+  { text: "plan a migration from a monolith to services", y: 0.78 },
   { text: "swap two variables", y: 0.08 },
   { text: "flatten a deeply nested array", y: 0.42 },
   { text: "build a thread-safe bounded blocking queue", y: 0.78 },
-  { text: "architect an event-sourced order pipeline", y: 0.85 },
+  { text: "architect an event-sourced order pipeline", y: 0.78 },
   { text: "return the length of an array", y: 0.08 },
   { text: "add pagination to a list query", y: 0.42 },
   { text: "write an lru eviction policy with o(1) operations", y: 0.78 },
-  { text: "design cross-region data replication", y: 0.85 },
+  { text: "design cross-region data replication", y: 0.78 },
   { text: "convert a string to uppercase", y: 0.08 },
   { text: "build a simple event emitter class", y: 0.42 },
   { text: "parse arithmetic expressions with operator precedence", y: 0.78 },
-  { text: "define the module boundaries for a new platform", y: 0.85 },
+  { text: "define the module boundaries for a new platform", y: 0.78 },
   { text: "add two integers", y: 0.08 },
   { text: "validate an email address format", y: 0.42 },
   { text: "coordinate leader election across nodes", y: 0.78 },
-  { text: "design an auth system with roles and sessions", y: 0.85 },
+  { text: "design an auth system with roles and sessions", y: 0.78 },
 ];
 
 /** Least-squares affine calibration a·x + b mapping a rubric score x to the label y. Pure. */
@@ -293,8 +313,10 @@ const stridedSplit = (samples) => {
 
 /**
  * Run the measured-promotion gate on the routing rubric: fit an affine correction on the
- * training split and promote it only if it lowers held-out MAE past the margin.
- * @param {{text:string,y:number}[]} [samples] labeled tasks (default: the held-out fixture)
+ * training split and promote it only if it lowers held-out MAE past the margin. The default
+ * fixture is hand-written phrases with hand-assigned labels — a generalization check for the
+ * rubric, not evidence from routed work.
+ * @param {{text:string,y:number}[]} [samples] labeled tasks (default: the hand-labelled fixture)
  * @param {{margin?:number, minSamples?:number}} [opts]
  */
 export function calibrateRouting(samples = CALIBRATION_SAMPLES, opts = {}) {
@@ -312,8 +334,9 @@ export function calibrateRouting(samples = CALIBRATION_SAMPLES, opts = {}) {
 }
 
 /**
- * The live complexity estimate: the calibrated mapping ONLY if the gate blessed it
- * (mirrors predictor.riskFor). Falls back to the raw rubric otherwise.
+ * The complexity estimate under a promotion: the calibrated mapping ONLY if the gate blessed it
+ * (mirrors predictor.riskFor), the raw rubric otherwise. NOT called by routeTask — routing keeps
+ * the raw rubric, and adopting a calibration is an explicit caller's choice.
  * @param {string} task
  * @param {{mode:string, model?:{a:number,b:number}}} [promotion] result of calibrateRouting
  */
@@ -352,21 +375,130 @@ export function complexity(s = {}) {
   return { score: clamp01(score), norm };
 }
 
+/** recommend()'s tier cutoffs — the ONE complexity scale every routing input is read on. */
+export const TIER_CUTOFFS = { haiku: 0.25, sonnet: 0.55, opus: 0.8 };
+
+/** Tier used when the score is not a finite number: unknown complexity is routed to the
+ *  default tier (model_tiers: sonnet is "the default"), never to the most expensive one. */
+const UNKNOWN_SCORE_KEY = "sonnet";
+
 /** Pure: score → recommended model + the reasons that drove it. */
 export function recommend(score, norm = {}) {
-  const key = score < 0.25 ? "haiku" : score < 0.55 ? "sonnet" : score < 0.8 ? "opus" : "fable";
   const reasons = Object.entries(norm)
     .filter(([, v]) => v >= 0.5)
     .map(([k]) => k)
     .sort();
+  // Fail safe on a non-finite score (NaN from a garbled signal, ±Infinity): every comparison
+  // below is false for NaN, which used to fall through to fable — the most expensive tier.
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    if (process.env.FORGE_DEBUG === "1")
+      process.stderr.write(`forge route: non-finite complexity score (${score}) → default tier\n`);
+    const key = UNKNOWN_SCORE_KEY;
+    return {
+      key,
+      model: MODELS[key],
+      tier: MODELS[key].tier,
+      reasons: [...reasons, "unknown-score"],
+    };
+  }
+  const key =
+    score < TIER_CUTOFFS.haiku
+      ? "haiku"
+      : score < TIER_CUTOFFS.sonnet
+        ? "sonnet"
+        : score < TIER_CUTOFFS.opus
+          ? "opus"
+          : "fable";
   return { key, model: MODELS[key], tier: MODELS[key].tier, reasons };
 }
 
 // M1 routing — LLM proposer. Estimates task complexity c(x) as a coarse band. PROPOSER ONLY:
-// the reconcile in routeTask() lets a RAISE through freely but bounds any LOWER (within one band
-// and never below a strong-signal floor), so the model can escalate on hidden complexity yet can
-// never under-provision a genuinely hard task; escalation still gates on a verified failure.
-const BAND_FLOOR = { cheap: 0.15, mid: 0.4, premium: 0.65 };
+// reconcileRoute() compares the proposer's band with the band the deterministic score already
+// sits in — band to band, never band floor against point score. The three bands are intervals
+// on recommend()'s scale (cheap = haiku, mid = sonnet, premium = opus/fable); each ceiling sits
+// just under the next band's floor so a score moved onto it stays inside the band.
+const BAND_ORDER = ["cheap", "mid", "premium"];
+export const BANDS = {
+  cheap: { floor: 0, ceiling: TIER_CUTOFFS.haiku - 0.01 },
+  mid: { floor: TIER_CUTOFFS.haiku, ceiling: TIER_CUTOFFS.sonnet - 0.01 },
+  premium: { floor: TIER_CUTOFFS.sonnet, ceiling: 1 },
+};
+
+/** The band a complexity score falls in (same cutoffs as recommend()). */
+export const bandOf = (score) =>
+  score < TIER_CUTOFFS.haiku ? "cheap" : score < TIER_CUTOFFS.sonnet ? "mid" : "premium";
+
+/**
+ * Minimum probability a proposer must put on its band before the vote may move the tier.
+ * An a-priori conservative default, NOT fit to any data: the right value has to be chosen on
+ * fresh labelled tasks (the frozen held-out set is spent). A proposal that reports no
+ * probability at all (the text-LLM proposer) cannot clear it; configurable per call and via
+ * `llm.minConfidence` in source/substrate.json (0 disables the gate).
+ */
+export const ROUTE_MIN_CONFIDENCE = 0.8;
+
+/** p(band) for a proposal: Jev's probability on the voted band, else its confidence, else null. */
+function proposalConfidence(proposal) {
+  const p = proposal?.probabilities?.[proposal.band];
+  if (typeof p === "number" && Number.isFinite(p)) return p;
+  return typeof proposal?.confidence === "number" && Number.isFinite(proposal.confidence)
+    ? proposal.confidence
+    : null;
+}
+
+/**
+ * Pure: reconcile the deterministic complexity score with a proposer's band vote.
+ *   - same band        → the deterministic score stands ("llm-agreed");
+ *   - higher band      → NOT applied (whitepaper §5.1: spend more only when an external check
+ *                        on the output fails, never on a model's self-assessment). The tier the
+ *                        vote would have picked is returned as `escalateTo` — an ADVISORY
+ *                        recommendation: nothing acts on it at routing time. `meterRoute`
+ *                        records it against the task, and the ONE consumer is `diagnose()` at
+ *                        its thrash threshold — an external check that has failed THRASH_K
+ *                        times. The vote never triggers an escalation; it only names the tier
+ *                        once a real failure has earned one ("llm-raise-deferred");
+ *   - lower band       → lowered to that band's ceiling — only when bidirectional, only when
+ *                        the vote clears `minConfidence`, and never below `signalFloor` when
+ *                        the rubric has a strong topic signal ("llm-lowered"); otherwise the
+ *                        deterministic score stands and `overruledBy` says why ("llm-overruled").
+ * @param {number} detScore
+ * @param {{band:string, confidence?:number|null, probabilities?:Record<string,number>|null}|null} proposal
+ * @param {{bidirectional?:boolean, minConfidence?:number, strongSignal?:boolean, signalFloor?:number}} [opts]
+ * @returns {{score:number, path:string, escalateTo?:string, overruledBy?:string, floored?:boolean}}
+ */
+export function reconcileRoute(
+  detScore,
+  proposal,
+  {
+    bidirectional = true,
+    minConfidence = ROUTE_MIN_CONFIDENCE,
+    strongSignal = false,
+    signalFloor = 0.4,
+  } = {},
+) {
+  if (!proposal || !(proposal.band in BANDS)) return { score: detScore, path: "deterministic" };
+  const detBand = bandOf(detScore);
+  const vote = proposal.band;
+  if (vote === detBand) return { score: detScore, path: "llm-agreed" };
+  if (BAND_ORDER.indexOf(vote) > BAND_ORDER.indexOf(detBand)) {
+    return {
+      score: detScore,
+      path: "llm-raise-deferred",
+      escalateTo: recommend(BANDS[vote].floor).key,
+    };
+  }
+  if (!bidirectional)
+    return { score: detScore, path: "llm-overruled", overruledBy: "bidirectional-off" };
+  const p = proposalConfidence(proposal);
+  if (minConfidence > 0 && (p == null || p < minConfidence))
+    return { score: detScore, path: "llm-overruled", overruledBy: "confidence" };
+  const ceiling = BANDS[vote].ceiling;
+  const floored = strongSignal && signalFloor > ceiling;
+  const target = floored ? signalFloor : ceiling;
+  if (bandOf(target) === detBand)
+    return { score: detScore, path: "llm-overruled", overruledBy: "signal-floor" };
+  return { score: target, path: "llm-lowered", ...(floored ? { floored: true } : {}) };
+}
 
 export function buildComplexityPrompt(task) {
   return `Judge the intrinsic complexity of this coding task for model selection (not how to do it).
@@ -381,8 +513,8 @@ export function parseComplexityProposal(obj) {
   const band = String(obj.band ?? "")
     .trim()
     .toLowerCase();
-  if (!(band in BAND_FLOOR)) return null;
-  return { band, score: BAND_FLOOR[band], reason: asText(obj.reason) };
+  if (!(band in BANDS)) return null;
+  return { band, score: BANDS[band].floor, reason: asText(obj.reason) };
 }
 
 /** Ask the model for a complexity band (proposer). Returns null when off/unavailable. */
@@ -409,9 +541,10 @@ export function buildComplexityChoice(task) {
 
 /**
  * Ask Jev (TypeSafe System One) for a complexity band. Same proposal contract as
- * complexityLLM — the band still floors at BAND_FLOOR and the deterministic rubric still
- * judges — but the answer is typed and carries the probability distribution Jev computed,
- * in ~150ms instead of a text round-trip. Returns null when off/unavailable.
+ * complexityLLM — reconcileRoute() still judges the band against the deterministic score —
+ * but the answer is typed and carries the probability distribution Jev computed (which the
+ * reconcile's confidence gate reads), in ~150ms instead of a text round-trip. Returns null
+ * when off/unavailable.
  * @param {string} task
  * @param {object} [opts]
  * @param {boolean} [opts.llm]
@@ -424,10 +557,10 @@ export function complexityJev(task, { llm, call } = {}) {
   const ans = res?.answers?.band;
   if (!ans) return null;
   const band = ans.choice.toLowerCase();
-  if (!(band in BAND_FLOOR)) return null;
+  if (!(band in BANDS)) return null;
   return {
     band,
-    score: BAND_FLOOR[band],
+    score: BANDS[band].floor,
     reason: ans.confidence != null ? `jev confidence ${ans.confidence.toFixed(2)}` : "jev choice",
     provider: "jev",
     confidence: ans.confidence ?? null,
@@ -445,8 +578,8 @@ export function complexityJev(task, { llm, call } = {}) {
  * @param {number} [opts.timeoutMs]
  * @param {(p:string)=>string} [opts.run]
  * @param {(payload:object)=>object} [opts.jevCall] injectable Jev transport (tests)
- * @param {boolean} [opts.bidirectional]
- * @param {number} [opts.routingBand]
+ * @param {boolean} [opts.bidirectional] may a proposer LOWER the tier (false: it never moves it)
+ * @param {number} [opts.minConfidence] p(band) a vote needs before it may move the tier
  * @param {number} [opts.signalFloor]
  * @param {number} [opts.ambiguity] precomputed information-gap (skips a duplicate preflight pass)
  */
@@ -460,7 +593,7 @@ export function routeTask(
     run,
     jevCall,
     bidirectional = true,
-    routingBand = 0.2,
+    minConfidence = ROUTE_MIN_CONFIDENCE,
     signalFloor = 0.4,
     ambiguity,
   } = {},
@@ -494,36 +627,23 @@ export function routeTask(
   // Upper envelope, not an average: text and repo signals measure DIFFERENT facets
   // of complexity, and under-provisioning is the expensive failure (an escalation
   // retry costs more than a one-tier overshoot). Whichever facet detects difficulty
-  // sets the tier — same philosophy as the LLM proposer's "free raise" below.
+  // sets the tier.
   const detScore = Math.max(repoScore, rubric.score);
-  // M1 proposer (opt-in): the model PROPOSES a complexity band. A RAISE is free (spotting hidden
-  // complexity costs at most a bigger model). A LOWER is bounded — never more than one `band`
-  // below the rubric, and never below `signalFloor` when the rubric confidently matched an
-  // algorithmic/architectural exemplar, so a "distributed rate-limiter" can't be talked down
-  // to the cheap tier.
-  // Jev (typed, ~150ms) is the preferred proposer when its key is configured; the text-LLM
-  // runner is the fallback, and a null from either is ignored (fail-safe).
-  // With `bidirectional:false` it stays raise-only.
+  // M1 proposer (opt-in): the model PROPOSES a complexity band; reconcileRoute() decides what it
+  // may change (band-to-band, confidence-gated, lower-only — see its doc). Jev (typed, ~150ms)
+  // is the preferred proposer when its key is configured; the text-LLM runner is the fallback,
+  // and a null from either is ignored (fail-safe).
   const proposal = llmEnabled({ llm })
     ? (complexityJev(task, { llm, call: jevCall }) ??
       complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) }))
     : null;
-  const strongSignal = rubric.strongTopicSignal;
-  let score = detScore;
-  let path = proposal ? "llm-agreed" : "deterministic";
-  if (proposal) {
-    if (proposal.score > detScore) {
-      score = proposal.score; // free raise
-      path = "llm-raised";
-    } else if (bidirectional && proposal.score < detScore) {
-      const floor = Math.max(detScore - routingBand, strongSignal ? signalFloor : 0);
-      const lowered = Math.max(floor, proposal.score);
-      if (lowered < detScore) {
-        score = lowered; // bounded lower
-        path = "llm-lowered";
-      }
-    }
-  }
+  const verdict = reconcileRoute(detScore, proposal, {
+    bidirectional,
+    minConfidence,
+    strongSignal: rubric.strongTopicSignal,
+    signalFloor,
+  });
+  const { score, path } = verdict;
   const recommended = recommend(score, norm);
   const modelOvr = envModelOverride();
   return {
@@ -538,6 +658,9 @@ export function routeTask(
           direction: path.replace("llm-", ""),
           provider: proposal.provider ?? "text",
           ...(proposal.confidence != null ? { confidence: proposal.confidence } : {}),
+          ...(verdict.escalateTo ? { escalateTo: verdict.escalateTo } : {}),
+          ...(verdict.overruledBy ? { overruledBy: verdict.overruledBy } : {}),
+          ...(verdict.floored ? { floored: true } : {}),
         }
       : null,
     provenance: { path },
@@ -547,8 +670,13 @@ export function routeTask(
       ...new Set([
         ...(recommended.reasons || []),
         ...rubric.reasons.filter((r) => r.weight > 0).map((r) => r.reason),
-        ...(path === "llm-raised" || path === "llm-lowered"
-          ? [`model judged ${proposal.band} (${path.replace("llm-", "")}): ${proposal.reason}`]
+        ...(path === "llm-lowered"
+          ? [`model judged ${proposal.band} (lowered): ${proposal.reason}`]
+          : []),
+        ...(path === "llm-raise-deferred"
+          ? [
+              `model judged ${proposal.band} — not applied; advisory only: ${verdict.escalateTo} is the target if a check on the output fails (nothing escalates automatically; \`forge diagnose --task\` uses it at the thrash threshold)`,
+            ]
           : []),
       ]),
     ],
@@ -564,13 +692,21 @@ export function routeTask(
  * telemetry, not a prompt log). No token counts here — this is an advisory routing
  * decision, not a priced generation, and the cost report excludes unpriced events
  * rather than estimating them.
+ * The verdict's advisory `llm.escalateTo` rides along when there is one: it is the tier a
+ * proposer's higher vote WOULD have picked and that routing deliberately did not apply
+ * (§5.1). Recording it is what lets a later external failure — `diagnose()` at its thrash
+ * threshold — name that tier instead of guessing one. Nothing reads it before then.
  * @param {string} root
  * @param {string} task
- * @param {{tier?: string}} rec the routeTask result (only .tier is read)
+ * @param {{tier?: string, llm?: {escalateTo?: string}|null}} rec the routeTask result
  */
 export function meterRoute(root, task, rec) {
   try {
-    recordRoute(root, { tier: rec?.tier, ref: contentHash(String(task)).slice(0, 12) });
+    recordRoute(root, {
+      tier: rec?.tier,
+      ref: routeRef(task),
+      ...(rec?.llm?.escalateTo ? { escalateTo: rec.llm.escalateTo } : {}),
+    });
   } catch {}
 }
 

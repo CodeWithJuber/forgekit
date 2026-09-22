@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -202,4 +202,99 @@ test("pure decision table: vendor-free classes, block only on the stated rows", 
     mode: "off",
   });
   assert.equal(off.allow, true);
+});
+
+// ── B3: the secret scan must fail CLOSED. It used to read `git diff --cached` with
+// execFileSync's default 1 MiB buffer (overflow → "" → "nothing to scan") and through the
+// repo's own diff rendering (a `-diff` attribute or a textconv driver hid added lines).
+const leak = () => `export const t = "${fakeGithubPat()}";\n`;
+
+test("a staged secret still blocks when another staged file makes the diff > 1 MiB (B3)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "cfg.js"), leak());
+  writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n");
+  let big = "";
+  for (let i = 0; i < 40000; i++) big += `row ${i} lorem ipsum dolor sit amet\n`;
+  writeFileSync(join(root, "data.txt"), big); // ~1.5 MB of added lines
+  git("add", "-A");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, false, "the leak must not hide behind a big file");
+  assert.ok(r.findings.some((f) => f.kind === "secret" && f.files.includes("cfg.js")));
+  assert.equal(cli(root).status, 1);
+});
+
+test("a repo's .gitattributes / textconv cannot hide staged secret lines (B3)", () => {
+  for (const [attrs, cfg] of [
+    ["*.js -diff\n", null],
+    ["*.js binary\n", null],
+    ["*.js diff=hide\n", ["diff.hide.textconv", "sed d"]],
+  ]) {
+    const { root, git } = gitFixture();
+    writeFileSync(join(root, ".gitattributes"), attrs);
+    if (cfg) git("config", ...cfg);
+    writeFileSync(join(root, "cfg.js"), leak());
+    writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n");
+    git("add", "-A");
+    const r = commitGate(root, { env: env() });
+    assert.equal(r.allow, false, `hidden by ${attrs.trim()}`);
+    assert.ok(r.findings.some((f) => f.kind === "secret" && f.files.includes("cfg.js")));
+  }
+});
+
+test("a staged file git cannot diff is refused as unscanned, never passed (B3 fail-closed)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "cfg.js"), leak());
+  writeFileSync(join(root, "README.md"), "# app\n\ndocumented\n");
+  git("add", "-A");
+  // Corrupt the object store under the staged blob: every diff of it now errors. The
+  // worktree copy goes too — with it in place and its stat matching the index, git can
+  // answer `diff --cached` from the file and never touch the missing object (it does on
+  // the Linux/macOS runners: status 0, empty stderr, a full diff), which would make this
+  // test pass for the wrong reason on one platform and fail on another.
+  const sha = String(git("ls-files", "-s", "cfg.js")).split(/\s+/)[1];
+  rmSync(join(root, ".git", "objects", sha.slice(0, 2), sha.slice(2)), { force: true });
+  rmSync(join(root, "cfg.js"), { force: true });
+  const r = commitGate(root, { env: env() });
+  // Diagnostics in the message: which git behaviour this platform actually shows, so a
+  // failure here says WHY (git's status/stderr for the corrupted blob) instead of "false".
+  const probe = spawnSync(
+    "git",
+    ["diff", "--cached", "--unified=0", "--no-color", "--text", "--no-ext-diff", "--no-textconv"],
+    { cwd: root, encoding: "utf8" },
+  );
+  const why = `git status=${probe.status} stderr=${JSON.stringify(String(probe.stderr).slice(0, 200))} stdoutLen=${String(probe.stdout).length} findings=${JSON.stringify(r.findings)}`;
+  assert.equal(r.allow, false, `an unreadable diff is not a clean diff — ${why}`);
+  const f = r.findings.find((x) => x.kind === "secret-scan");
+  assert.ok(f, `reported as an unscanned file — ${why}`);
+  assert.deepEqual(f.files, ["cfg.js"], "only the unreadable file is unscanned");
+  assert.match(renderCommitGate(r), /could not read the staged lines of: cfg\.js/);
+  assert.equal(cli(root).status, 1);
+  const pure = commitGateDecision({ staged: ["x.md"], unscanned: ["x.md"], mode: "warn" });
+  assert.equal(pure.allow, false, "the pure table refuses unscanned files in every mode");
+});
+
+// ── B4 at the gate: the real left-pad@1.3.0 package-lock line was refused as a secret.
+test("a lockfile integrity line passes the commit gate (B4)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(
+    join(root, "package-lock.json"),
+    `${JSON.stringify(
+      {
+        packages: {
+          "node_modules/left-pad": {
+            version: "1.3.0",
+            resolved: "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+            integrity:
+              "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  git("add", "-A");
+  const r = commitGate(root, { env: env() });
+  assert.equal(r.allow, true, renderCommitGate(r));
+  assert.equal(r.findings.filter((f) => f.kind.startsWith("secret")).length, 0);
 });

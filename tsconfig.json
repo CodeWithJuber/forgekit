@@ -13,5 +13,11 @@
     "noUnusedLocals": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.js", "scripts/**/*.mjs", "global/guards/run.mjs"]
+  "include": [
+    "src/**/*.js",
+    "scripts/**/*.mjs",
+    "global/guards/run.mjs",
+    "global/guards/hookfield.mjs",
+    "global/guards/protect-paths.mjs"
+  ]
 }

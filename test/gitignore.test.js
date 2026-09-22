@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
   BEGIN,
   END,
+  ensureForgePrivateIgnored,
   ensureGitignoreBlock,
   readGitignoreBlock,
   removeGitignoreBlock,
@@ -101,4 +103,32 @@ test("removeGitignoreBlock on a missing / block-free file is a no-op", () => {
   writeFileSync(giPath(root), "just-user\n");
   assert.equal(removeGitignoreBlock(root).action, "unchanged");
   assert.equal(read(root), "just-user\n");
+});
+
+// B5: session hook logs (raw prompts/commands) under .forge/sessions/ must never be
+// committable, without touching the user's own root .gitignore.
+test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
+  const root = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+  writeFileSync(join(root, ".forge", "sessions", "s1.jsonl"), "{}\n");
+  writeFileSync(join(root, ".forge", "decisions.md"), "# decisions\n");
+  assert.equal(ensureForgePrivateIgnored(root).action, "written");
+  const ignored = (p) => {
+    try {
+      execFileSync("git", ["check-ignore", "-q", p], { cwd: root });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.equal(ignored(".forge/sessions/s1.jsonl"), true, "session logs are ignored");
+  assert.equal(ignored(".forge/decisions.md"), false, "committable .forge content is not");
+  assert.equal(ensureForgePrivateIgnored(root).action, "unchanged", "idempotent");
+  // An existing .forge/.gitignore keeps its lines; only the missing entry is appended.
+  const other = tmp();
+  mkdirSync(join(other, ".forge"), { recursive: true });
+  writeFileSync(join(other, ".forge", ".gitignore"), "cache/");
+  ensureForgePrivateIgnored(other);
+  assert.equal(readFileSync(join(other, ".forge", ".gitignore"), "utf8"), "cache/\nsessions/\n");
 });
