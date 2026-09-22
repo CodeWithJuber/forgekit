@@ -2080,19 +2080,21 @@ HANDLERS.route = async (argv) => {
   }
   const rec = r.routeTask(process.cwd(), task);
   r.meterRoute(process.cwd(), task, rec);
+  // The recommendation is a tier (a model family); its concrete id and price are resolved here,
+  // in the command — routeTask stays network-free because the hooks run it. BOTH output modes
+  // resolve, so a script reading --json never sees a different model than the text prints.
+  const { describeResolution, resolveTierModel, resolveTierPrice } = await import(
+    "./model_tiers.js"
+  );
+  const { activeProvider } = await import("./providers.js");
+  const opts = { root: process.cwd(), provider: activeProvider(process.cwd()) };
+  const resolved = resolveTierModel(rec.key, opts);
+  const price = resolveTierPrice(rec.key, { ...opts, resolved });
   if (json) {
-    console.log(JSON.stringify(rec, null, 2));
+    // `model` stays the snapshot row (its shape is public); `resolved` is what would be called.
+    console.log(JSON.stringify({ ...rec, resolved, price }, null, 2));
   } else {
     heading(`${BRAND.brand} route — cheapest capable model\n`);
-    // The recommendation is a tier (a model family). Its concrete id and price are resolved here,
-    // for display only — routeTask itself stays network-free because the hooks run it.
-    const { describeResolution, resolveTierModel, resolveTierPrice } = await import(
-      "./model_tiers.js"
-    );
-    const { activeProvider } = await import("./providers.js");
-    const opts = { root: process.cwd(), provider: activeProvider(process.cwd()) };
-    const resolved = resolveTierModel(rec.key, opts);
-    const price = resolveTierPrice(rec.key, { ...opts, resolved });
     const name =
       resolved?.source === "catalog" && resolved.displayName
         ? resolved.displayName

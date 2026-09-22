@@ -37,10 +37,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`forge models`** prints what every tier resolves to right now: family, model id, created
   date, price, and where the id and the price came from (`--json` for the full resolution).
 
+### Security
+
+- **A catalog can no longer write anything but a model id into the generated gateway config.**
+  Ids and display names come from a live catalog, and `forge route gateway` writes a file the
+  user feeds to LiteLLM as routing config. Two layers now stand between them:
+  - **At the boundary:** a catalog row whose id is not id-shaped (whitespace, control
+    characters, over 200 characters) is dropped in `normalizeCatalogPage`, so it is never
+    resolved, written to config, or passed to a model call. A display name is kept as one
+    printable line.
+  - **At the emitter:** every catalog-sourced value is a quoted YAML scalar with control
+    characters escaped, and comments are collapsed to one line.
+
+  Without this, a display name carrying a newline could add a second entry for a tier alias,
+  and LiteLLM's `simple-shuffle` would then send a share of that tier's prompts to the spliced
+  model. `test/route.test.js` pins it with a crafted catalog.
+
 ### Changed
 
 - **`forge route` shows the resolved model id** and where it came from, under the
-  recommendation. The price reads `live price` when OpenRouter lists that id.
+  recommendation. The price reads `live price` when OpenRouter lists that id. `--json` carries
+  the same resolution as `resolved` and `price` beside the unchanged `model` row, and the MCP
+  `route_task` names the resolved id too, so no surface reports a different model than another.
+- **A catalog held in memory expires when the response says it does.** One lookup per catalog
+  per process keeps `forge models` from asking once per tier, but the entry now carries the
+  response's own freshness, so a long-running dashboard or MCP server picks up a new model
+  instead of holding its first answer until restart.
 - **`forge route gateway` / `forge config gateway`** write the resolved ids. They drop the
   hard-coded "Models verified 2026-07-05" line: each tier alias carries an `# id:` comment
   naming its source. The passthrough list keeps the snapshot id when it differs, so a
