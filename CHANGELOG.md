@@ -13,6 +13,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--large` applies the 3:1 large-text / UI bar and `--json` prints the full report. Colors
   may be `rgb()`, `hsl()`, `oklch()`, `oklab()` or hex with an alpha pair, not only
   `#rrggbb`. A translucent foreground is composited over the background before measuring.
+- **`forge uicheck design` no longer passes token-based Tailwind by seeing nothing.**
+  `fingerprint` and `design` now read theme tokens:
+  - Tailwind v4 `@theme { --color-* --radius-* --shadow-* }` stylesheets and
+    `tailwind.config.*` files. Configs are parsed statically, never executed.
+  - Sources are discovered under the working directory, or named with `--theme <file>`.
+  - `rounded-*`, `shadow-*` and `bg|text|border|ring|fill|stroke-*` utilities resolve
+    through those tokens. Arbitrary values (`rounded-[13px]`, `shadow-[…]`, `p-[…]`,
+    `text-[#…]`) are parsed too.
+
+  A file with no measurable feature now gets the verdict `insufficient-signal` and exits 1.
+  Before, an empty `<div/>` printed PASS. `uicheck visual` applies the same rule. Because
+  the vector now includes resolved tokens, re-mint the project fingerprint
+  (`forge uicheck fingerprint <files> --mint`) if your UI uses theme tokens.
 
 ## [1.3.0] - 2026-09-23
 

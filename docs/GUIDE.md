@@ -1161,9 +1161,10 @@ $ forge uicheck contrast "rgb(0 0 0 / 50%)" "#fff"
   note: foreground rgb(0 0 0 / 50%) has alpha 0.5 — composited over the background to #808080
 ```
 
-**`fingerprint <file...> [--mint]`** — the design feature vector of your UI files:
-palette (hue histogram), spacing base + on-scale fraction, fonts, radius/shadow levels.
-`--mint` stores it as a shared `fingerprint` ledger claim — the design gate's "home":
+**`fingerprint <file...> [--theme <file>]... [--mint]`** — the design feature vector of
+your UI files: palette (hue histogram), spacing base + on-scale fraction, fonts,
+radius/shadow levels. `--mint` stores it as a shared `fingerprint` ledger claim — the
+design gate's "home":
 
 ```console
 $ forge uicheck fingerprint src/components/*.jsx --mint
@@ -1173,22 +1174,57 @@ Forge uicheck fingerprint — the design feature vector
   spacing:  4, 8, 16, 24 px — base 4, 96% on-scale
   type:     Inter, ui-monospace
   shape:    radii 6, 12 (2 level(s)) · 1 shadow level(s)
+  theme:    src/app/globals.css (38 color · 3 radius · 3 shadow token(s))
 
   minted fingerprint claim e7a90b12cd34 — the gate's "home"
 ```
 
-**`design <file...>`** — the two-sided gate for generated UI (exit 1 on fail): slop
-distance to known generic templates must stay HIGH, conformance to your minted project
-fingerprint must stay LOW, plus scale-conformance checks (spacing on base, level caps).
-Failures are actionable per-feature edits, never a bare score. Honest limit: the
-fingerprint doesn't resolve CSS `var()` indirection yet — fully tokenized palettes are
-partially invisible to it.
+**Token-based Tailwind.** A component written as `rounded-card shadow-lift bg-brand-fill`
+carries its values in the _theme_, not in the file. `fingerprint` and `design` read the
+project's theme tokens and resolve those utilities through them:
+
+- **Tailwind v4:** `--color-*`, `--radius-*` and `--shadow-*` declarations inside
+  `@theme { … }` blocks (`@theme inline` too). `var()` references are resolved through
+  every custom property in the theme stylesheets, including shadcn-style `hsl(var(--x))`.
+  `calc()` radii are evaluated.
+- **Tailwind v3:** the `colors`, `borderRadius` and `boxShadow` objects of a
+  `tailwind.config.*`, nested families included (`brand: { DEFAULT, 500 }` becomes
+  `bg-brand` and `bg-brand-500`). The config is **parsed, never executed**. Spreads,
+  function calls and computed keys are skipped.
+- **Matching:** `rounded-*` / `shadow-*` / `(bg|text|border|ring|fill|stroke|…)-*`
+  utilities match those keys (an `/opacity` modifier is ignored). A theme key that
+  redefines a default (`--color-blue-500`, `--radius-md`) wins over Tailwind's default.
+- **Arbitrary values** are parsed in place: `rounded-[13px]`, `shadow-[0_1px_2px_#000]`,
+  `p-[13px]`, `text-[#abc]`, `bg-[oklch(0.6_0.1_250)]`.
+- **Discovery:** theme sources are found under the working directory. That means every
+  `tailwind.config.*` and every stylesheet with `@theme`, `@tailwind` or
+  `@import "tailwindcss"`. `node_modules`, build output and dot-directories (`.git`,
+  `.next`, `.claude` worktrees) are skipped. `--theme <file>` (repeatable) names the
+  sources explicitly instead. The `theme:` line shows what was read. If you upgrade with a
+  token-based UI, re-mint the project fingerprint so it includes the resolved tokens.
+
+**`design <file...> [--theme <file>]... [--taste <name>] [--json]`** — the two-sided gate
+for generated UI: slop distance to known generic templates must stay HIGH, conformance to
+your minted project fingerprint must stay LOW, plus scale-conformance checks (spacing on
+base, level caps). Failures are actionable per-feature edits, never a bare score. The
+verdict (`verdict` under `--json`) is one of three:
+
+- `pass`: exit 0.
+- `fail`: exit 1.
+- `insufficient-signal`: exit 1. No color, spacing, font, radius or shadow was found, as
+  with a markup-only file or token utilities with no theme to resolve them. Nothing was
+  measured, so it is never reported as PASS.
+
+`var()` indirection resolves within the gated files and through the theme stylesheets'
+custom properties. Values set only at runtime stay invisible to the static gate; use
+`visual` for those.
 
 **`visual <file-or-url> [--taste <name>] [--json] [--remote]`** — the Playwright
 visual loop: renders the page headless at two viewports (1280×800, 390×844),
 fingerprints the **computed** styles of every visible element — what the cascade,
 `var()` resolution, and runtime theming actually produced — and runs the exact same
-design gate as `design` (exit 1 on fail). Screenshots land in `.forge/ui/` for human
+design gate as `design` (exit 1 on fail, or on `insufficient-signal` when the page
+paints nothing measurable). Screenshots land in `.forge/ui/` for human
 review. Playwright is an _optional tier_ (ADR-0005): `package.json` stays
 dependency-free; without a browser runtime the command prints a "skipped (no browser
 runtime)" note and exits 0 — enable it with `npm i -D playwright-core` or point

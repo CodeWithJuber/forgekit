@@ -154,8 +154,37 @@ export const COMMANDS = {
     "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
   imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
   lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
-  uicheck:
-    "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
+  uicheck: {
+    summary:
+      "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
+    usage:
+      "forge uicheck contrast <fg> <bg> [--large] [--json] | fingerprint <file...> [--theme <file>]... [--mint] [--json] | design <file...> [--theme <file>]... [--taste <name>] [--json] | visual <file-or-url> | interact <file-or-url>",
+    flags: [
+      {
+        flag: "--large",
+        desc: "contrast: grade against the large-text / UI-component bar (AA 3:1) instead of normal text (AA 4.5:1); exit 1 when AA fails either way",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable result (contrast: ratio, level, the composited hexes compared, notes; design: verdict pass | fail | insufficient-signal)",
+      },
+      {
+        flag: "--theme <file>",
+        desc: "fingerprint/design: the Tailwind theme source(s) — a v4 @theme stylesheet or a tailwind.config — that resolve token utilities (rounded-card, shadow-lift, bg-brand); repeatable; replaces auto-discovery",
+      },
+      {
+        flag: "--taste <name>",
+        desc: "design/visual: gate thresholds + checks from a taste profile (default: the style pinned by a forge-taste DESIGN.md)",
+      },
+      { flag: "--mint", desc: "fingerprint: store the vector as the project's design claim" },
+    ],
+    examples: [
+      'forge uicheck contrast "#777" "#fff"',
+      'forge uicheck contrast "oklch(0.55 0.1 250)" "#fff" --large --json',
+      "forge uicheck design src/components/Card.tsx",
+      "forge uicheck design src/components/*.tsx --theme src/app/globals.css",
+    ],
+  },
   dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
   report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",

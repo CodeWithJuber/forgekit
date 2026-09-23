@@ -10,11 +10,12 @@
 // Good output is far from generic and close to home; both are geometry once UI is a
 // feature vector. The subjective residue (beauty) stays with the human reviewer —
 // the gate's job is to stop the template from ever reaching them.
-import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { BRAND } from "./brand.js";
 import { mintClaim } from "./ledger.js";
 import { loadClaims, putClaim, reindex, repoLedger } from "./ledger_store.js";
+import { parseColor } from "./uicheck.js";
 import { gitAuthor } from "./util.js";
 
 // ---------------------------------------------------------------------------
@@ -80,8 +81,39 @@ const TW_COLOR_RE = new RegExp(
   "g",
 );
 const TW_BW_RE = /\b(?:bg|text|border|from|via|to|ring|fill|stroke)-(white|black)\b/g;
+// oklch()/oklab() — Tailwind v4's default palette syntax (and what browsers report
+// for colors authored that way). `_` is a space inside Tailwind arbitrary values.
+const OKLAB_FN_RE = /\boklch\([^()]*\)|\boklab\([^()]*\)/gi;
 
-function parseColors(text) {
+// A Tailwind utility's value: a theme key (`card`, `brand-fill`, `primary-500`) or
+// an arbitrary `[...]` value. Shared by the rounded/shadow/color matchers below.
+const TW_KEY = String.raw`(?:[\w.]+(?:-[\w.]+)*|\[[^\]\s]+\])`;
+// Color utilities matched against theme keys (default families stay on TW_COLOR_RE);
+// an optional `/opacity` modifier is accepted and ignored — hue identity only.
+const TW_TOKEN_COLOR_RE = new RegExp(
+  String.raw`(?<![\w-])(?:bg|text|border(?:-[xytrblse])?|from|via|to|ring|outline|fill|stroke|accent|caret|decoration|divide|shadow|placeholder)-(${TW_KEY})(?:\/[\w.%\[\]]+)?(?![\w-])`,
+  "g",
+);
+
+/** The inside of a Tailwind arbitrary value: `[0_1px_2px_#000]` → `0 1px 2px #000`. */
+const arbitrary = (key) => key.slice(1, -1).replace(/_/g, " ");
+
+const hslOf = (/** @type {{r:number,g:number,b:number}} */ c) => rgbToHsl(c.r, c.g, c.b);
+
+/** parseColor, but null instead of a throw — for scanning free text. */
+function tryHsl(value) {
+  try {
+    return hslOf(parseColor(value));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} text
+ * @param {ThemeTokens|null} [theme] resolves `bg-brand`-style token utilities
+ */
+function parseColors(text, theme = null) {
   /** @type {{h:number,s:number,l:number}[]} */
   const out = [];
   for (const [, hex] of text.matchAll(HEX_RE)) {
@@ -100,14 +132,31 @@ function parseColors(text) {
   for (const [, r, g, b] of text.matchAll(RGB_RE)) out.push(rgbToHsl(+r, +g, +b));
   for (const [, h, s, l] of text.matchAll(HSL_RE))
     out.push({ h: Math.round(+h) % 360, s: Math.round(+s), l: Math.round(+l) });
+  for (const [fn] of text.matchAll(OKLAB_FN_RE)) {
+    const c = tryHsl(fn.replace(/_/g, " "));
+    if (c) out.push(c);
+  }
   for (const [, family, shade] of text.matchAll(TW_COLOR_RE)) {
+    // A theme that redefines a default family key wins — TW_TOKEN_COLOR_RE reads it.
+    if (theme?.colors.has(`${family}-${shade}`)) continue;
     const [h, s] = TW_FAMILY_HS[family];
     // Lightness from the shade number: 50→95, 500→50, 950→5 — coarse but monotone,
     // and hue (what the slop signatures key on) is exact.
     out.push({ h, s, l: Math.min(96, Math.max(4, Math.round(100 - +shade / 10))) });
   }
-  for (const [, bw] of text.matchAll(TW_BW_RE))
+  for (const [, bw] of text.matchAll(TW_BW_RE)) {
+    if (theme?.colors.has(bw)) continue;
     out.push({ h: 0, s: 0, l: bw === "white" ? 100 : 0 });
+  }
+  // Token + arbitrary color utilities: `bg-brand-fill`, `text-on-band/80` resolve
+  // through the theme; `text-[#abc]`, `bg-[oklch(0.6_0.1_250)]` parse in place.
+  // Anything else (`text-sm`, `border-t`, `text-[13px]`) is not a color — skipped.
+  for (const [, key] of text.matchAll(TW_TOKEN_COLOR_RE)) {
+    const c = key.startsWith("[")
+      ? tryHsl(arbitrary(key).replace(/^color:/, ""))
+      : (theme?.colors.get(key) ?? null);
+    if (c) out.push(c);
+  }
   return out;
 }
 
@@ -124,6 +173,42 @@ const VAR_DECL_RE = /(--[\w-]+)\s*:\s*([^;}]+)/g;
 // (rgba(...), nested var(...)) — deeper nesting stays unmatched and thus untouched.
 const VAR_USE_RE = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\s*\)/g;
 
+/** One substitution pass of `var(--name[, fallback])` against `decls`. */
+const substituteVars = (/** @type {string} */ s, /** @type {Map<string,string>} */ decls) =>
+  s.replace(VAR_USE_RE, (whole, name, fallback) => {
+    const v = decls.get(name);
+    if (v !== undefined) return v;
+    return fallback !== undefined ? String(fallback).trim() : whole;
+  });
+
+/**
+ * Every `--name: value` declaration in `text` (last wins), each resolved through the
+ * others. `seed` declarations (a theme stylesheet's) are visible too but lose to the
+ * text's own.
+ * @param {string} text @param {Map<string,string>|null} [seed]
+ * @returns {Map<string,string>}
+ */
+function cssVarDecls(text, seed = null) {
+  /** @type {Map<string,string>} */
+  const decls = new Map(seed ?? []);
+  for (const [, name, value] of String(text).matchAll(VAR_DECL_RE)) decls.set(name, value.trim());
+  // Resolve the declarations themselves first (--a: var(--b)); 4 passes covers the
+  // sane nesting depths and bounds a --a↔--b cycle to a fixed cost.
+  for (let i = 0; i < 4; i++) {
+    let changed = false;
+    for (const [name, value] of decls) {
+      if (!value.includes("var(")) continue;
+      const next = substituteVars(value, decls);
+      if (next !== value) {
+        decls.set(name, next);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return decls;
+}
+
 /**
  * Substitute `var(--name[, fallback])` with the declared custom-property value
  * (fallback when undeclared; left as-is when neither exists — the extractors ignore
@@ -132,38 +217,23 @@ const VAR_USE_RE = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\
  * terminate instead of recursing: cyclic values simply keep their `var(` text and
  * stay invisible to the extractors.
  * @param {string} text
+ * @param {{vars?:Map<string,string>|null}} [opts] `vars`: declarations from outside
+ *   the text (the project theme) — a component's `var(--brand)` resolves through them
+ *   without the theme's own values counting as the component's features.
  * @returns {string}
  */
-export function resolveCssVars(text) {
+export function resolveCssVars(text, opts = {}) {
   const t = String(text);
-  /** @type {Map<string,string>} */
-  const decls = new Map();
-  for (const [, name, value] of t.matchAll(VAR_DECL_RE)) decls.set(name, value.trim());
+  return substituteAll(t, cssVarDecls(t, opts.vars));
+}
+
+/** Substitute `decls` through the whole text; extra passes let a fallback that is
+ *  itself a var() land. */
+function substituteAll(/** @type {string} */ t, /** @type {Map<string,string>} */ decls) {
   if (!decls.size && !t.includes("var(")) return t;
-  const substitute = (/** @type {string} */ s) =>
-    s.replace(VAR_USE_RE, (whole, name, fallback) => {
-      const v = decls.get(name);
-      if (v !== undefined) return v;
-      return fallback !== undefined ? String(fallback).trim() : whole;
-    });
-  // Resolve the declarations themselves first (--a: var(--b)); 4 passes covers the
-  // sane nesting depths and bounds a --a↔--b cycle to a fixed cost.
-  for (let i = 0; i < 4; i++) {
-    let changed = false;
-    for (const [name, value] of decls) {
-      if (!value.includes("var(")) continue;
-      const next = substitute(value);
-      if (next !== value) {
-        decls.set(name, next);
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-  // Then the whole text; extra passes let a fallback that is itself a var() land.
   let out = t;
   for (let i = 0; i < 3 && out.includes("var("); i++) {
-    const next = substitute(out);
+    const next = substituteVars(out, decls);
     if (next === out) break;
     out = next;
   }
@@ -187,6 +257,87 @@ function parseLengths(value) {
   return out;
 }
 
+const CALC_TOKEN_RE = /\s*(?:(infinity|\d*\.?\d+)(px|rem|em)?|([-+*/()]))/iy;
+
+/**
+ * Evaluate a `calc()` body over px/rem/em lengths and unitless numbers (+ − × ÷,
+ * parentheses, `infinity`). Null for anything else (%, vw, min()/max()/clamp()).
+ * @param {string} expr
+ * @returns {number|null} px
+ */
+function evalCalc(expr) {
+  /** @type {({n:number, len:boolean}|string)[]} */
+  const toks = [];
+  CALC_TOKEN_RE.lastIndex = 0;
+  const src = expr.trim();
+  while (CALC_TOKEN_RE.lastIndex < src.length) {
+    const m = CALC_TOKEN_RE.exec(src);
+    if (!m) return null;
+    if (m[3]) toks.push(m[3]);
+    else {
+      const n = m[1].toLowerCase() === "infinity" ? Number.POSITIVE_INFINITY : +m[1];
+      toks.push({ n: m[2] && m[2].toLowerCase() !== "px" ? n * 16 : n, len: !!m[2] });
+    }
+  }
+  let i = 0;
+  /** @returns {{n:number, len:boolean}|null} */
+  const atom = () => {
+    const t = toks[i++];
+    if (t === "(") {
+      const v = sum();
+      return toks[i++] === ")" ? v : null;
+    }
+    if (t === "-") {
+      const v = atom();
+      return v && { n: -v.n, len: v.len };
+    }
+    return typeof t === "object" ? t : null;
+  };
+  const product = () => {
+    let a = atom();
+    while (a && (toks[i] === "*" || toks[i] === "/")) {
+      const op = toks[i++];
+      const b = atom();
+      if (!b || (a.len && b.len) || (op === "/" && b.len)) return null;
+      a = { n: op === "*" ? a.n * b.n : a.n / b.n, len: a.len || b.len };
+    }
+    return a;
+  };
+  function sum() {
+    let a = product();
+    while (a && (toks[i] === "+" || toks[i] === "-")) {
+      const op = toks[i++];
+      const b = product();
+      if (!b || a.len !== b.len) return null;
+      a = { n: op === "+" ? a.n + b.n : a.n - b.n, len: a.len };
+    }
+    return a;
+  }
+  const v = sum();
+  return v && i === toks.length && v.len && !Number.isNaN(v.n) ? v.n : null;
+}
+
+/**
+ * ONE length in px — a theme token or arbitrary value (`0.625rem`, `13px`,
+ * `calc(1rem - 2px)`, `calc(infinity * 1px)`). Null when it isn't exactly one
+ * absolute length; ≥999px pills normalize to 9999 like everywhere else.
+ * @param {string} value
+ * @returns {number|null}
+ */
+function lengthPx(value) {
+  const v = String(value).trim();
+  const calc = /^calc\((.*)\)$/is.exec(v);
+  let px;
+  if (calc) px = evalCalc(calc[1]);
+  else if (/^0+(?:\.0+)?$/.test(v)) px = 0;
+  else {
+    const m = /^(\d*\.?\d+)(px|rem|em)$/i.exec(v);
+    px = m ? +m[1] * (m[2].toLowerCase() === "px" ? 1 : 16) : null;
+  }
+  if (px === null || !(px >= 0)) return null;
+  return px >= 999 ? 9999 : Math.round(px * 100) / 100;
+}
+
 const cssValues = (text, propRe) => [...text.matchAll(propRe)].map((m) => m[1]);
 
 // The leading class keeps `scroll-padding`, `--m-4` etc. from matching.
@@ -201,12 +352,58 @@ const FONT_PROP_RE = /(?:^|[;{\s"'])font-family\s*:\s*([^;}]+)/gi;
 // lookbehind stops `top-4` matching as `p-4`.
 const TW_SPACE_RE =
   /(?<![\w-])-?(?:[pm][trblxyse]?|gap(?:-[xy])?|space-[xy])-(\d+(?:\.\d+)?|px)(?![\w-])/g;
-// rounded[-side][-size]; side alternatives are ordered two-letter-first so `-tl`
-// never half-matches as `-t`+garbage.
-const TW_ROUNDED_RE =
-  /(?<![\w-])rounded(?:-(?:ss|se|ee|es|tl|tr|br|bl|t|r|b|l|s|e))?(?:-(none|sm|md|lg|xl|2xl|3xl|full))?(?![\w-])/g;
-const TW_ROUNDED_PX = { none: 0, sm: 2, md: 6, lg: 8, xl: 12, "2xl": 16, "3xl": 24, full: 9999 };
-const TW_SHADOW_RE = /(?<![\w-])shadow(?:-(sm|md|lg|xl|2xl|inner|none))?(?![\w-])/g;
+// Arbitrary spacing: p-[13px], mt-[0.5rem], gap-[9px], px-[13px_7px].
+const TW_SPACE_ARB_RE =
+  /(?<![\w-])-?(?:[pm][trblxyse]?|gap(?:-[xy])?|space-[xy])-\[([^\]\s]+)\](?![\w-])/g;
+// rounded[-side][-key]; side alternatives are ordered two-letter-first so `-tl`
+// never half-matches as `-t`+garbage. The key is a default size, a theme key
+// (`rounded-card` ← `--radius-card`) or an arbitrary `[13px]`; unknown keys are
+// not measurable and are skipped (never mistaken for the bare 4px `rounded`).
+const TW_ROUNDED_RE = new RegExp(
+  String.raw`(?<![\w-])rounded(?:-(?:ss|se|ee|es|tl|tr|br|bl|t|r|b|l|s|e))?(?:-(${TW_KEY}))?(?![\w-])`,
+  "g",
+);
+const TW_ROUNDED_PX = {
+  none: 0,
+  xs: 2,
+  sm: 2,
+  md: 6,
+  lg: 8,
+  xl: 12,
+  "2xl": 16,
+  "3xl": 24,
+  "4xl": 32,
+  full: 9999,
+};
+const TW_SHADOW_RE = new RegExp(String.raw`(?<![\w-])shadow(?:-(${TW_KEY}))?(?![\w-])`, "g");
+const TW_SHADOW_KEYS = new Set(["2xs", "xs", "sm", "md", "lg", "xl", "2xl", "inner"]);
+
+const normShadow = (/** @type {string} */ v) => v.trim().replace(/\s+/g, " ");
+
+/**
+ * px radius of one `rounded-*` utility, or null when it isn't measurable.
+ * @param {string|undefined} key @param {ThemeTokens|null} theme
+ */
+function twRadius(key, theme) {
+  if (key === undefined) return theme?.radius.get("") ?? 4; // bare `rounded`
+  if (key.startsWith("[")) return lengthPx(arbitrary(key));
+  if (theme?.radius.has(key)) return theme.radius.get(key) ?? null;
+  return Object.hasOwn(TW_ROUNDED_PX, key) ? TW_ROUNDED_PX[key] : null;
+}
+
+/**
+ * The elevation level one `shadow-*` utility names, or null (none / not a shadow —
+ * `shadow-brand` is a shadow COLOR). Theme and arbitrary shadows key on their value,
+ * so `shadow-lift` and a CSS `box-shadow` with the same value are ONE level.
+ * @param {string|undefined} key @param {ThemeTokens|null} theme
+ */
+function twShadow(key, theme) {
+  if (key === undefined) return theme?.shadow.get("") ?? "tw:base";
+  if (key === "none") return null;
+  if (key.startsWith("[")) return normShadow(arbitrary(key));
+  if (theme?.shadow.has(key)) return theme.shadow.get(key) ?? null;
+  return TW_SHADOW_KEYS.has(key) ? `tw:${key}` : null;
+}
 const TW_FONT_RE = /(?<![\w-])font-(sans|serif|mono)(?![\w-])/g;
 const TW_FONT_STACK = { sans: "sans-serif", serif: "serif", mono: "monospace" };
 
@@ -261,18 +458,22 @@ const uniqSorted = (arr) => [...new Set(arr)].sort(sortNum);
 
 /**
  * Extract the design fingerprint from raw CSS / JSX / Tailwind-class text. Pure and
- * deterministic — the same text always yields the same vector (it becomes a
- * content-addressed ledger claim, so this is a protocol requirement, not a nicety).
+ * deterministic — the same text (and theme) always yields the same vector (it becomes
+ * a content-addressed ledger claim, so this is a protocol requirement, not a nicety).
  * @param {string} text
+ * @param {{theme?:ThemeTokens|null}} [opts] `theme`: the project's Tailwind tokens
+ *   (loadThemeTokens) — without it, token utilities like `rounded-card`,
+ *   `shadow-lift` and `bg-brand` carry no measurable value and are skipped.
  * @returns {Fingerprint}
  */
-export function fingerprintText(text) {
-  const t = resolveCssVars(String(text));
+export function fingerprintText(text, opts = {}) {
+  const theme = opts.theme ?? null;
+  const t = resolveCssVars(String(text), { vars: theme?.vars });
 
   const seen = new Set();
   /** @type {Hsl[]} */
   const palette = [];
-  for (const c of parseColors(t)) {
+  for (const c of parseColors(t, theme)) {
     const key = `${c.h},${c.s},${c.l}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -287,6 +488,7 @@ export function fingerprintText(text) {
     ...cssValues(t, SPACING_PROP_RE).flatMap(parseLengths),
     ...cssValues(t, GAP_PROP_RE).flatMap(parseLengths),
     ...[...t.matchAll(TW_SPACE_RE)].map(([, n]) => (n === "px" ? 1 : +n * 4)).filter(Boolean),
+    ...[...t.matchAll(TW_SPACE_ARB_RE)].flatMap(([, v]) => parseLengths(v.replace(/_/g, " "))),
   ];
   const spacing = uniqSorted(spacingRaw);
   const spacingBase = inferSpacingBase(spacing);
@@ -313,17 +515,15 @@ export function fingerprintText(text) {
       .flatMap(parseLengths)
       .map((r) => (r >= 999 ? 9999 : r)),
     ...[...t.matchAll(TW_ROUNDED_RE)]
-      .map(([, size]) => (size === undefined ? 4 : TW_ROUNDED_PX[size]))
-      .filter((r) => r > 0),
+      .map(([, key]) => twRadius(key, theme))
+      .filter((r) => typeof r === "number" && r > 0),
   ]);
 
   const shadows = new Set([
     ...cssValues(t, SHADOW_PROP_RE)
-      .map((v) => v.trim().replace(/\s+/g, " "))
+      .map(normShadow)
       .filter((v) => v !== "none"),
-    ...[...t.matchAll(TW_SHADOW_RE)]
-      .map(([, size]) => `tw:${size ?? "base"}`)
-      .filter((s) => s !== "tw:none"),
+    ...[...t.matchAll(TW_SHADOW_RE)].map(([, key]) => twShadow(key, theme)).filter(Boolean),
   ]);
 
   return {
@@ -345,16 +545,335 @@ export function fingerprintText(text) {
  * whole surface, not any single file). Unreadable files are skipped; the file list
  * is sorted first so argument order can never change the vector.
  * @param {string} root @param {string[]} files
+ * @param {{theme?:ThemeTokens|null}} [opts] see fingerprintText
  * @returns {Fingerprint}
  */
-export function fingerprintFiles(root, files) {
+export function fingerprintFiles(root, files, opts = {}) {
   const texts = [];
   for (const f of [...files].sort()) {
     try {
       texts.push(readFileSync(isAbsolute(f) ? f : join(root, f), "utf8"));
     } catch {}
   }
-  return fingerprintText(texts.join("\n"));
+  return fingerprintText(texts.join("\n"), opts);
+}
+
+/**
+ * Does the vector carry ANY measurable design feature? An empty one (a markup-only
+ * file, or token utilities with no theme to resolve them) is not evidence of good
+ * design — the gate reports it as `insufficient-signal`, never PASS.
+ * @param {Fingerprint} fingerprint
+ */
+export function hasDesignSignal(fingerprint) {
+  const fp = asFp(fingerprint);
+  return (
+    fp.paletteSize > 0 ||
+    fp.spacing.length > 0 ||
+    fp.fontFamilies.length > 0 ||
+    fp.radii.length > 0 ||
+    fp.shadowLevels > 0
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Theme tokens — a token-based Tailwind UI (`rounded-card`, `shadow-lift`,
+// `bg-brand-fill`) carries its values in the THEME, not in the component. Read
+// them statically from Tailwind v4 `@theme { --radius-* --shadow-* --color-* }`
+// stylesheets and v3 `tailwind.config.*` objects so the fingerprint sees what the
+// utilities actually paint. The config is PARSED, never executed — it is project
+// code, and a lint must not run it.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {{colors:Map<string,Hsl>, radius:Map<string,number>, shadow:Map<string,string>,
+ *   vars:Map<string,string>, sources:string[]}} ThemeTokens
+ *   Keys are utility suffixes (`brand-fill` for `bg-brand-fill`; "" for a DEFAULT);
+ *   `vars` = the theme sources' custom properties, resolved.
+ */
+
+/** @returns {ThemeTokens} */
+const emptyTheme = () => ({
+  colors: new Map(),
+  radius: new Map(),
+  shadow: new Map(),
+  vars: new Map(),
+  sources: [],
+});
+
+/** @param {ThemeTokens} into @param {ThemeTokens} from */
+function mergeTheme(into, from) {
+  for (const [k, v] of from.colors) into.colors.set(k, v);
+  for (const [k, v] of from.radius) into.radius.set(k, v);
+  for (const [k, v] of from.shadow) into.shadow.set(k, v);
+  for (const [k, v] of from.vars) into.vars.set(k, v);
+  into.sources.push(...from.sources);
+  return into;
+}
+
+/** File one token value under its namespace; unparseable values are skipped. */
+function addToken(theme, ns, key, rawValue) {
+  const value = String(rawValue).trim();
+  if (ns === "color" || ns === "colors") {
+    const c = key ? tryHsl(value) : null;
+    if (c) theme.colors.set(key, c);
+  } else if (ns === "radius" || ns === "borderRadius") {
+    const px = lengthPx(value);
+    if (px !== null) theme.radius.set(key, px);
+  } else if (value && value !== "none") theme.shadow.set(key, normShadow(value));
+}
+
+const THEME_BLOCK_RE = /@theme\b[^{};]*\{/g;
+const THEME_DECL_RE = /--(color|radius|shadow)-([\w-]+)\s*:\s*([^;}]+)/g;
+
+/** The bodies of every `@theme [inline|static|…] { … }` block (brace-matched). */
+function atThemeBodies(text) {
+  const out = [];
+  for (const m of text.matchAll(THEME_BLOCK_RE)) {
+    const start = (m.index ?? 0) + m[0].length;
+    let depth = 1;
+    let i = start;
+    for (; i < text.length && depth; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") depth--;
+    }
+    out.push(text.slice(start, depth ? i : i - 1));
+  }
+  return out;
+}
+
+/**
+ * Theme tokens from Tailwind v4 CSS: `@theme { --color-brand: …; --radius-card: …;
+ * --shadow-lift: … }`, with var() resolved through every custom property in the
+ * text (so `--color-fg: var(--hl-fg)` or shadcn's `hsl(var(--border))` land).
+ * @param {string} text one or more stylesheets, concatenated
+ * @returns {ThemeTokens}
+ */
+export function themeFromCss(text) {
+  const t = String(text);
+  const theme = emptyTheme();
+  theme.vars = cssVarDecls(t);
+  for (const body of atThemeBodies(substituteAll(t, theme.vars)))
+    for (const [, ns, key, value] of body.matchAll(THEME_DECL_RE)) addToken(theme, ns, key, value);
+  return theme;
+}
+
+/**
+ * The string-valued leaves of ONE JS object literal starting at `src[open] === "{"`,
+ * as [keyPath, value]. Spreads, calls, references and computed keys are skipped —
+ * a static read, never an evaluation.
+ * @param {string} src @param {number} open
+ * @returns {[string[], string][]}
+ */
+function objectLiteralLeaves(src, open) {
+  /** @type {[string[], string][]} */
+  const leaves = [];
+  let i = open;
+  const ws = () => {
+    for (;;) {
+      while (i < src.length && /\s/.test(src[i])) i++;
+      if (src.startsWith("//", i)) {
+        const nl = src.indexOf("\n", i);
+        i = nl < 0 ? src.length : nl + 1;
+      } else if (src.startsWith("/*", i)) {
+        const end = src.indexOf("*/", i + 2);
+        i = end < 0 ? src.length : end + 2;
+      } else return;
+    }
+  };
+  // A quoted string at src[i]; null for a template literal with ${} (dynamic).
+  const str = () => {
+    const q = src[i++];
+    let out = "";
+    while (i < src.length && src[i] !== q) {
+      if (src[i] === "\\") {
+        out += src[i + 1] ?? "";
+        i += 2;
+      } else out += src[i++];
+    }
+    i++;
+    return q === "`" && out.includes("${") ? null : out;
+  };
+  // Skip an unreadable value: up to the next `,` or `}` at depth 0.
+  const skip = () => {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '"' || c === "'" || c === "`") {
+        str();
+        continue;
+      }
+      if (c === "(" || c === "[" || c === "{") depth++;
+      else if (c === ")" || c === "]" || c === "}") {
+        if (depth === 0) {
+          if (c !== "}") i = src.length; // unbalanced — stop reading
+          return;
+        }
+        depth--;
+      } else if (c === "," && depth === 0) return;
+      i++;
+    }
+  };
+  const obj = (/** @type {string[]} */ path) => {
+    i++; // past "{"
+    while (i < src.length) {
+      ws();
+      if (src[i] === "}") {
+        i++;
+        return;
+      }
+      if (src[i] === ",") {
+        i++;
+        continue;
+      }
+      let key = null;
+      if (src[i] === '"' || src[i] === "'") key = str();
+      else {
+        const m = /^[\w$]+/.exec(src.slice(i, i + 256));
+        if (m) {
+          key = m[0];
+          i += key.length;
+        }
+      }
+      ws();
+      if (key === null || src[i] !== ":") {
+        const at = i;
+        skip();
+        if (i === at && src[i] !== "}" && src[i] !== ",") return;
+        continue;
+      }
+      i++;
+      ws();
+      const c = src[i];
+      if (c === "{") obj([...path, key]);
+      else if (c === '"' || c === "'" || c === "`") {
+        const v = str();
+        if (v !== null) leaves.push([[...path, key], v]);
+      } else skip();
+    }
+  };
+  obj([]);
+  return leaves;
+}
+
+const CONFIG_KEY_RE = /\b(colors|borderRadius|boxShadow)\s*:\s*\{/g;
+
+/**
+ * Theme tokens from a Tailwind v3 `tailwind.config.*` (`theme` or `theme.extend`
+ * `colors` / `borderRadius` / `boxShadow` objects). Nested color families flatten
+ * to utility keys (`brand: { DEFAULT, 500 }` → `brand`, `brand-500`); values may
+ * use var() when `vars` (the stylesheets' custom properties) resolve them.
+ * @param {string} text @param {{vars?:Map<string,string>|null}} [opts]
+ * @returns {ThemeTokens}
+ */
+export function themeFromTailwindConfig(text, opts = {}) {
+  const src = String(text);
+  const theme = emptyTheme();
+  for (const m of src.matchAll(CONFIG_KEY_RE)) {
+    const open = (m.index ?? 0) + m[0].length - 1;
+    for (const [path, value] of objectLiteralLeaves(src, open)) {
+      const key = path.filter((p) => p !== "DEFAULT").join("-");
+      addToken(theme, m[1], key, resolveCssVars(value, { vars: opts.vars }));
+    }
+  }
+  return theme;
+}
+
+const THEME_CONFIG_RE = /^tailwind\.config\.[cm]?[jt]s$/;
+const THEME_CSS_MARK_RE = /@theme\b|@tailwind\b|@import\s+(?:url\(\s*)?["']tailwindcss/;
+const THEME_SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "vendor"]);
+const MAX_THEME_CSS_BYTES = 2 * 1024 * 1024;
+
+/** Is this file a Tailwind theme source (a config, or a stylesheet with Tailwind directives)? */
+function isThemeSource(path) {
+  if (THEME_CONFIG_RE.test(basename(path))) return true;
+  if (!path.endsWith(".css")) return false;
+  try {
+    if (statSync(path).size > MAX_THEME_CSS_BYTES) return false;
+    return THEME_CSS_MARK_RE.test(readFileSync(path, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Discover the project's Tailwind theme sources under `root`: every
+ * `tailwind.config.*` and every stylesheet carrying `@theme` / `@tailwind` /
+ * `@import "tailwindcss"`. Bounded walk (depth, entry cap); dot-directories
+ * (.git, .next, .claude worktrees …), node_modules and build output are skipped;
+ * symlinks are not followed. Sorted, root-relative.
+ * @param {string} root @param {{maxDepth?:number, maxEntries?:number}} [opts]
+ * @returns {string[]}
+ */
+export function findThemeSources(root, { maxDepth = 5, maxEntries = 20000 } = {}) {
+  /** @type {string[]} */
+  const found = [];
+  let seen = 0;
+  const walk = (/** @type {string} */ dir, /** @type {string} */ rel, depth) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const e of entries) {
+      if (++seen > maxEntries) return;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (depth < maxDepth && !e.name.startsWith(".") && !THEME_SKIP_DIRS.has(e.name))
+          walk(join(dir, e.name), r, depth + 1);
+      } else if (e.isFile() && isThemeSource(join(dir, e.name))) found.push(r);
+    }
+  };
+  walk(resolve(root), "", 0);
+  return found.sort();
+}
+
+/**
+ * The theme sources a `uicheck fingerprint|design` run should read: the explicit
+ * `--theme` list when given, else the discovered ones — plus any INPUT file that is
+ * itself a theme source (gating `globals.css` alongside the components). Root-relative,
+ * deduplicated, sorted.
+ * @param {string} root @param {string[]} files @param {string[]} [explicit]
+ * @returns {string[]}
+ */
+export function themeSourcesFor(root, files, explicit = []) {
+  // Forward slashes on every OS: these are shown to the user and compared in tests.
+  const rel = (/** @type {string} */ f) =>
+    (relative(resolve(root), resolve(root, f)) || f).split(sep).join("/");
+  const base = explicit.length ? explicit : findThemeSources(root);
+  const fromInputs = files.filter((f) => isThemeSource(resolve(root, f)));
+  return [...new Set([...base, ...fromInputs].map(rel))].sort();
+}
+
+/**
+ * Read theme tokens from the given sources (root-relative or absolute). Stylesheets
+ * are read together (a `@theme` may consume `:root` vars declared in another file);
+ * `tailwind.config.*` keys load first so a v4 `@theme` wins on conflict. Unreadable
+ * paths are skipped and left out of `sources`.
+ * @param {string} root @param {string[]} paths
+ * @returns {ThemeTokens}
+ */
+export function loadThemeTokens(root, paths) {
+  const css = [];
+  const configs = [];
+  const sources = [];
+  for (const p of [...new Set(paths)].sort()) {
+    let text;
+    try {
+      text = readFileSync(isAbsolute(p) ? p : join(root, p), "utf8");
+    } catch {
+      continue;
+    }
+    sources.push(p);
+    (THEME_CONFIG_RE.test(basename(p)) ? configs : css).push(text);
+  }
+  const fromCss = themeFromCss(css.join("\n"));
+  const theme = emptyTheme();
+  for (const c of configs) mergeTheme(theme, themeFromTailwindConfig(c, { vars: fromCss.vars }));
+  mergeTheme(theme, fromCss);
+  theme.sources = sources;
+  return theme;
 }
 
 // ---------------------------------------------------------------------------
@@ -596,14 +1115,31 @@ const CONFORM_HINTS = {
  * fingerprint exists) conform ≤ tauConform. Violations name the driving feature and
  * a concrete edit; because each per-feature distance is in [0,1], a failing mean
  * always has at least one failing feature — a FAIL can never arrive hint-less.
+ * An EMPTY vector is neither: nothing was measured, so the verdict is
+ * `insufficient-signal` (pass:false) — silence is not evidence of good design.
  * @param {Fingerprint} fingerprint
  * @param {{projectFp?:Fingerprint|null, tauSlop?:number, tauConform?:number}} [opts]
- * @returns {{pass:boolean, slop:number, conform:number|null,
- *   violations:{feature:string, detail:string, hint:string}[]}}
+ * @returns {{pass:boolean, verdict:"pass"|"fail"|"insufficient-signal", slop:number,
+ *   conform:number|null, violations:{feature:string, detail:string, hint:string}[]}}
  */
 export function uiGate(fingerprint, opts = {}) {
   const { projectFp = null, tauSlop, tauConform } = { ...UI_GATE_DEFAULTS, ...opts };
   const fp = asFp(fingerprint);
+  if (!hasDesignSignal(fp))
+    return {
+      pass: false,
+      verdict: "insufficient-signal",
+      slop: slopDistance(fp),
+      conform: null,
+      violations: [
+        {
+          feature: "signal",
+          detail:
+            "no measurable design feature — no color, spacing, font, radius or shadow was found, so there is nothing to gate",
+          hint: "gate the files that carry the UI's styles or classes (markup alone has nothing to measure); Tailwind token utilities (rounded-card, bg-brand) resolve through the project's @theme stylesheet or tailwind.config — name it with --theme <file> if discovery misses it",
+        },
+      ],
+    };
   const violations = [];
   const near = nearestGeneric(fp);
   const slop = near?.distance ?? 1;
@@ -631,7 +1167,20 @@ export function uiGate(fingerprint, opts = {}) {
           });
     }
   }
-  return { pass: violations.length === 0, slop, conform, violations };
+  const pass = violations.length === 0;
+  return { pass, verdict: pass ? "pass" : "fail", slop, conform, violations };
+}
+
+/**
+ * The run's overall verdict: the gate's, except a gate PASS with a failing check
+ * (scale / taste) is a FAIL. `insufficient-signal` always survives — it is not a
+ * PASS no matter what the (vacuous) checks say.
+ * @param {{pass:boolean, verdict?:string}} gate @param {{pass:boolean}[]} checks
+ * @returns {"pass"|"fail"|"insufficient-signal"}
+ */
+export function overallVerdict(gate, checks) {
+  if (gate.verdict === "insufficient-signal") return "insufficient-signal";
+  return gate.pass && checks.every((c) => c.pass) ? "pass" : "fail";
 }
 
 // ---------------------------------------------------------------------------
@@ -827,11 +1376,13 @@ export function profileChecks(fingerprint, profile) {
  * Extract the project fingerprint from `files` and store it as a `fingerprint`
  * claim. Content-addressed: the same UI surface mints the same id on every machine,
  * so teammates converge on one claim instead of duplicating.
- * @param {string} root @param {string[]} files @param {{t?:number}} [opts]
+ * @param {string} root @param {string[]} files
+ * @param {{t?:number, theme?:ThemeTokens|null}} [opts] `theme`: see fingerprintText —
+ *   mint with the same theme `design` gates with, or token utilities won't match.
  * @returns {{ok:true, id:string, existed:boolean, fingerprint:Fingerprint}|{ok:false, reason:string}}
  */
-export function mintProjectFingerprint(root, files, { t = 0 } = {}) {
-  const fingerprint = fingerprintFiles(root, files);
+export function mintProjectFingerprint(root, files, { t = 0, theme = null } = {}) {
+  const fingerprint = fingerprintFiles(root, files, { theme });
   const minted = mintClaim({
     kind: "fingerprint",
     body: fingerprint,
