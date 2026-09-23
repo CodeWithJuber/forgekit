@@ -155,3 +155,66 @@ export const ts1Files = {
   "src/y.ts": 'import { fx } from "./x.js";\nexport const fy = (n: number) => fx(n) + 1;\n',
   "src/z.ts": 'export * from "./x.js";\n',
 };
+
+// next — a Next.js-shaped repo whose code imports through the tsconfig `@/*` path alias
+// (as create-next-app scaffolds it), with one relative import mixed in. The tsconfig is
+// JSONC: comments, trailing commas, and an `include` whose "**/*.ts" contains `/*` and
+// `*/` — a naive comment regex would swallow the `"@/*"` key between them. Ground truth
+// below is every DIRECT importer, read off the sources. Traps: `@/lib/legacy-pricing` does
+// not exist (a broken LOCAL import: unresolved, not external), `next/link` and `clsx` are
+// packages (external), and the two stylesheets are assets.
+export const NEXT_IMPORTERS = {
+  "src/lib/utils.ts": [
+    "src/app/layout.tsx",
+    "src/app/pricing/page.tsx",
+    "src/components/header.tsx",
+    "src/components/ui/button.tsx",
+    "src/components/ui/card.tsx",
+  ],
+  "src/lib/whmcs.ts": [
+    "src/app/api/products/route.ts",
+    "src/app/page.tsx",
+    "src/app/pricing/page.tsx",
+  ],
+  "src/components/ui/button.tsx": ["src/components/header.tsx", "src/components/index.ts"],
+  "src/components/ui/card.tsx": ["src/app/page.tsx", "src/components/index.ts"],
+  "src/components/header.tsx": ["src/app/layout.tsx"],
+};
+export const nextFiles = {
+  "tsconfig.json": `{
+  // create-next-app defaults, plus the JSONC a hand-edited config accumulates
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "strict": true,
+    "jsx": "preserve", /* inline block comment */
+    "paths": {
+      "@/*": ["./src/*"],
+    },
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"],
+}
+`,
+  "package.json":
+    '{ "name": "next-like", "dependencies": { "next": "16.0.0", "clsx": "2.1.1" } }\n',
+  "src/lib/utils.ts":
+    'export function cn(...parts: string[]): string {\n  return parts.filter(Boolean).join(" ");\n}\n',
+  "src/lib/whmcs.ts": "export async function getProducts(): Promise<string[]> {\n  return [];\n}\n",
+  "src/components/ui/button.tsx":
+    'import { cn } from "@/lib/utils";\nexport function Button({ className }: { className?: string }) {\n  return <button className={cn("btn", className ?? "")} />;\n}\n',
+  "src/components/ui/card.tsx":
+    'import { cn } from "@/lib/utils";\nexport function Card() {\n  return <div className={cn("card")} />;\n}\n',
+  "src/components/header.tsx":
+    'import Link from "next/link";\nimport { Button } from "@/components/ui/button";\nimport { cn } from "../lib/utils";\nexport function Header() {\n  return (\n    <header className={cn("h")}>\n      <Link href="/">\n        <Button />\n      </Link>\n    </header>\n  );\n}\n',
+  "src/components/index.ts":
+    'export * from "@/components/ui/button";\nexport { Card } from "@/components/ui/card";\n',
+  "src/app/layout.tsx":
+    'import "./globals.css";\nimport "@/styles/theme.css";\nimport { cn } from "@/lib/utils";\nimport { Header } from "@/components/header";\nexport default function RootLayout({ children }: { children: unknown }) {\n  return (\n    <html className={cn("root")}>\n      <body>\n        <Header />\n        {children}\n      </body>\n    </html>\n  );\n}\n',
+  "src/app/page.tsx":
+    'import { Card } from "@/components/ui/card";\nimport { getProducts } from "@/lib/whmcs";\nexport default async function Page() {\n  const products = await getProducts();\n  return <Card key={products.length} />;\n}\n',
+  "src/app/pricing/page.tsx":
+    'import { clsx } from "clsx";\nimport { cn } from "@/lib/utils";\nimport { getProducts } from "@/lib/whmcs";\nimport { legacyTiers } from "@/lib/legacy-pricing";\nexport default async function Pricing() {\n  const products = await getProducts();\n  return <main className={cn(clsx("p"), legacyTiers(products))} />;\n}\n',
+  "src/app/api/products/route.ts":
+    'import * as whmcs from "@/lib/whmcs";\nexport async function GET() {\n  return Response.json(await whmcs.getProducts());\n}\n',
+};

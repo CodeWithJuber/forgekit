@@ -5,9 +5,9 @@
 // approximate (dynamic/DI edges missed) — a real call-graph MCP is the upgrade seam.
 //
 // This module is also the ONE import resolver: atlas.js imports maskCode / jsImports /
-// pyImports / resolveSpec / pyModuleIndex from here, so the file graph (scope, rank, the
-// repo map) and the symbol graph (atlas, impact) can never disagree on what a specifier
-// points at.
+// pyImports / resolveSpec / loadPathAliases / pyModuleIndex from here, so the file graph
+// (scope, rank, the repo map) and the symbol graph (atlas, impact) can never disagree on
+// what a specifier points at — tsconfig path aliases included.
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, posix, relative, resolve } from "node:path";
 import { IGNORE_DIRS, SRC_EXT, toPosix } from "./util.js";
@@ -403,19 +403,50 @@ const TS_TWIN = {
 };
 
 /**
- * Resolve a relative JS/TS specifier the way Node + TypeScript do: exact file, the
- * NodeNext `.js`→`.ts` twin, extensionless, then `<dir>/index.*`. Bare/package specifiers
- * return null (external — not a local edge).
+ * Resolve a JS/TS specifier the way Node + TypeScript do: exact file, the NodeNext
+ * `.js`→`.ts` twin, extensionless, then `<dir>/index.*`. A relative specifier resolves
+ * from the importing file; a bare one resolves only through the repo's tsconfig/jsconfig
+ * path aliases (loadPathAliases) — the best-matching `paths` pattern, then the `baseUrl`
+ * fallback. Anything else (a package) returns null: external, not a local edge.
  * @param {string} fromRel importing file, repo-relative POSIX
  * @param {string} spec
  * @param {Set<string>} fileSet repo-relative POSIX paths
+ * @param {PathAlias[]} [aliases] loadPathAliases(root) output
  * @returns {string|null}
  */
-export function resolveSpec(fromRel, spec, fileSet) {
-  if (!spec.startsWith("./") && !spec.startsWith("../") && spec !== "." && spec !== "..")
-    return null;
-  const raw = posix.normalize(posix.join(posix.dirname(fromRel), spec.split(/[?#]/)[0]));
-  if (raw.startsWith("../") || raw === "..") return null; // escapes the repo
+export function resolveSpec(fromRel, spec, fileSet, aliases = []) {
+  if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..")
+    return resolveFromRoot(posix.join(posix.dirname(fromRel), stripQuery(spec)), fileSet);
+  if (!aliases.length) return null;
+  // TypeScript's order: only the BEST `paths` pattern is tried (exact, else the longest
+  // prefix), each of its targets in turn; when none is on disk, the baseUrl lookup.
+  // Function replacers: a `$&` or `$'` in the captured text is literal, not a pattern.
+  const hit = matchPathAlias(spec, aliases);
+  const tries = hit
+    ? hit.alias.targets.map((t) => (hit.alias.star ? t.replace("*", () => hit.rest) : t))
+    : [];
+  for (const a of aliases)
+    if (a.fallback) for (const t of a.targets) tries.push(t.replace("*", () => stripQuery(spec)));
+  for (const t of tries) {
+    const file = resolveFromRoot(t, fileSet);
+    if (file) return file;
+  }
+  return null;
+}
+
+/** `x.svg?react` / `x.js#frag` → the path part. A LEADING `#` is an alias (`#lib/x`), kept. */
+const stripQuery = (spec) => spec.slice(0, 1) + spec.slice(1).split(/[?#]/)[0];
+
+/**
+ * The candidate expansion relative and aliased specifiers share: a repo-relative path →
+ * the file on disk it names, or null (missing, or outside the repo).
+ * @param {string} path
+ * @param {Set<string>} fileSet
+ * @returns {string|null}
+ */
+function resolveFromRoot(path, fileSet) {
+  const raw = posix.normalize(path);
+  if (raw.startsWith("../") || raw === ".." || posix.isAbsolute(raw)) return null; // escapes the repo
   const base = raw === "." ? "" : raw.replace(/\/$/, "");
   const ext = posix.extname(base);
   const cands = [base];
@@ -423,6 +454,180 @@ export function resolveSpec(fromRel, spec, fileSet) {
   for (const e of JS_RESOLVE_EXTS) cands.push(base + e);
   for (const e of JS_RESOLVE_EXTS) cands.push(base ? `${base}/index${e}` : `index${e}`);
   for (const c of cands) if (c && fileSet.has(c)) return c;
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------
+// Path aliases — tsconfig/jsconfig `compilerOptions.paths` + `baseUrl`. Next.js, Vite and
+// Remix scaffolds import through `@/…` / `~/…`; without these rules nearly every import in
+// such a repo resolved to nothing and was filed as an external package.
+// ---------------------------------------------------------------------------------------
+
+/**
+ * One alias rule, targets already repo-relative. `local`: a spec this rule matches names a
+ * repo file, so a miss is a broken local import (unresolved), not a package (external).
+ * The implicit baseUrl rule is `fallback` (tried last) and never `local` — it matches every
+ * bare specifier, `react` included.
+ * @typedef {{pattern:string, prefix:string, suffix:string, star:boolean, targets:string[],
+ *   local:boolean, fallback?:boolean}} PathAlias
+ */
+
+/**
+ * JSON with comments and trailing commas (tsconfig's dialect) → a value. String-aware:
+ * `"**\/*.ts"` in an `include` array holds a `/*` … `*\/` pair that is NOT a comment (a
+ * regex stripper deletes the `"@/*"` key sitting between two of them).
+ * @param {string} text
+ * @returns {any} throws SyntaxError like JSON.parse on anything else malformed
+ */
+export function parseJsonc(text) {
+  let out = "";
+  const n = text.length;
+  for (let i = text.charCodeAt(0) === 0xfeff ? 1 : 0; i < n; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < n && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i + 1 < n && text[i + 1] !== "\n") i++;
+    } else if (c === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? n : end + 1;
+      out += " ";
+    } else if (c === ",") {
+      // A trailing comma: the next significant character closes the container. Comments
+      // were not yet stripped from the lookahead, so skip them here too.
+      let j = i + 1;
+      for (;;) {
+        while (j < n && /\s/.test(text[j])) j++;
+        if (text[j] === "/" && text[j + 1] === "/") while (j < n && text[j] !== "\n") j++;
+        else if (text[j] === "/" && text[j + 1] === "*") {
+          const end = text.indexOf("*/", j + 2);
+          j = end < 0 ? n : end + 2;
+        } else break;
+      }
+      if (text[j] !== "}" && text[j] !== "]") out += c;
+    } else out += c;
+  }
+  return JSON.parse(out);
+}
+
+// How far a chain of relative `extends` is followed (a cycle just stops here).
+const MAX_EXTENDS_DEPTH = 5;
+
+/**
+ * The `baseUrl` / `paths` a config ends up with after its relative `extends` chain,
+ * resolved the way tsc does: a child's option replaces its base's; `baseUrl` is relative to
+ * the config that sets it; `paths` resolve against the effective baseUrl, else against the
+ * directory of the config that declared them. Package bases (`@tsconfig/next`) live in
+ * node_modules and are not read.
+ * @param {string} root
+ * @param {string} rel repo-relative POSIX config path
+ * @param {number} depth
+ * @returns {{baseUrl?:string, paths?:Record<string, unknown>, pathsBase?:string}|null}
+ */
+function readTsConfig(root, rel, depth) {
+  if (depth > MAX_EXTENDS_DEPTH) return null;
+  let cfg;
+  try {
+    cfg = parseJsonc(readFileSync(join(root, rel), "utf8"));
+  } catch {
+    return null;
+  }
+  if (!cfg || typeof cfg !== "object") return null;
+  const dir = posix.dirname(rel);
+  /** @type {{baseUrl?:string, paths?:Record<string, unknown>, pathsBase?:string}} */
+  let out = {};
+  // TS 5 accepts an array of bases; later entries override earlier ones.
+  for (const ext of [cfg.extends].flat()) {
+    if (typeof ext !== "string" || !/^\.\.?\//.test(ext)) continue;
+    let p = posix.normalize(posix.join(dir, toPosix(ext)));
+    if (p.startsWith("../")) continue; // outside the repo
+    if (!p.endsWith(".json")) p += ".json";
+    const base = readTsConfig(root, p, depth + 1);
+    if (base) out = { ...out, ...base };
+  }
+  const co = cfg.compilerOptions;
+  if (co && typeof co === "object") {
+    if (typeof co.baseUrl === "string")
+      out.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
+    if (co.paths && typeof co.paths === "object" && !Array.isArray(co.paths)) {
+      out.paths = co.paths;
+      out.pathsBase = dir;
+    }
+  }
+  return out;
+}
+
+/**
+ * The repo's module path aliases: `compilerOptions.paths` (+ `baseUrl`) from the root
+ * tsconfig.json, or jsconfig.json when there is no readable tsconfig (tsc's own order).
+ * JSONC-tolerant; follows relative `extends`. Rules come back in match order — exact
+ * patterns, then `*` patterns longest prefix first, then the implicit baseUrl rule.
+ * @param {string} root
+ * @returns {PathAlias[]}
+ */
+export function loadPathAliases(root) {
+  for (const name of ["tsconfig.json", "jsconfig.json"]) {
+    const opts = readTsConfig(root, name, 0);
+    if (!opts) continue;
+    const base = opts.baseUrl ?? opts.pathsBase ?? ".";
+    const inRepo = (t) =>
+      !t.startsWith("../") && t !== ".." && !t.split("/").some((seg) => IGNORE_DIRS.has(seg));
+    /** @type {PathAlias[]} */
+    const rules = [];
+    for (const [pattern, list] of Object.entries(opts.paths ?? {})) {
+      const star = pattern.indexOf("*");
+      if (!Array.isArray(list) || (star >= 0 && pattern.indexOf("*", star + 1) >= 0)) continue; // tsc: at most one `*`
+      const targets = list
+        .filter((t) => typeof t === "string" && !posix.isAbsolute(t) && !/^[A-Za-z]:/.test(t))
+        .map((t) => posix.normalize(posix.join(base, toPosix(t))));
+      const prefix = star >= 0 ? pattern.slice(0, star) : pattern;
+      const suffix = star >= 0 ? pattern.slice(star + 1) : "";
+      // A bare `*` catches packages too, and a rule whose targets all sit outside the walk
+      // (node_modules, dist, ../) cannot tell a miss from a package: neither is `local`.
+      const local = (star < 0 || prefix !== "" || suffix !== "") && targets.some(inRepo);
+      rules.push({ pattern, prefix, suffix, star: star >= 0, targets, local });
+    }
+    // Stable: equal-length prefixes keep their declaration order, as in tsc.
+    const rank = (a) => (a.star ? a.prefix.length : Number.MAX_SAFE_INTEGER);
+    rules.sort((a, b) => rank(b) - rank(a));
+    if (opts.baseUrl !== undefined)
+      rules.push({
+        pattern: "*",
+        prefix: "",
+        suffix: "",
+        star: true,
+        targets: [posix.join(opts.baseUrl, "*")],
+        local: false,
+        fallback: true,
+      });
+    return rules;
+  }
+  return [];
+}
+
+/**
+ * The `paths` rule a bare specifier falls under (the implicit baseUrl rule excluded), with
+ * what its `*` captured — or null when no pattern matches.
+ * @param {string} spec
+ * @param {PathAlias[]} aliases loadPathAliases order
+ * @returns {{alias: PathAlias, rest: string}|null}
+ */
+export function matchPathAlias(spec, aliases) {
+  const s = stripQuery(spec);
+  for (const a of aliases) {
+    if (a.fallback) continue;
+    if (!a.star) {
+      if (s === a.prefix) return { alias: a, rest: "" };
+    } else if (
+      s.length >= a.prefix.length + a.suffix.length &&
+      s.startsWith(a.prefix) &&
+      s.endsWith(a.suffix)
+    )
+      return { alias: a, rest: s.slice(a.prefix.length, s.length - a.suffix.length) };
+  }
   return null;
 }
 
@@ -566,9 +771,10 @@ export function resolvePyImport(fromRel, imp, index) {
  * @param {string} text its source
  * @param {Set<string>} fileSet
  * @param {ReturnType<typeof pyModuleIndex>} [pyIndex]
+ * @param {PathAlias[]} [aliases] loadPathAliases(root) output
  * @returns {Set<string>}
  */
-export function localImports(rel, text, fileSet, pyIndex) {
+export function localImports(rel, text, fileSet, pyIndex, aliases = []) {
   const ext = extname(rel);
   const code = maskCode(text, ext);
   const targets = new Set();
@@ -578,7 +784,7 @@ export function localImports(rel, text, fileSet, pyIndex) {
       for (const r of resolvePyImport(rel, imp, index)) targets.add(r.file);
   } else {
     for (const imp of jsImports(code, text)) {
-      const t = resolveSpec(rel, imp.spec, fileSet);
+      const t = resolveSpec(rel, imp.spec, fileSet, aliases);
       if (t) targets.add(t);
     }
   }
@@ -619,6 +825,7 @@ export function directedImportGraph(root) {
   walk(root, root, files);
   const fileSet = new Set(files);
   const pyIndex = pyModuleIndex(files);
+  const aliases = loadPathAliases(root);
   const edges = new Map(files.map((f) => [f, new Set()]));
   for (const f of files) {
     let text = "";
@@ -627,7 +834,7 @@ export function directedImportGraph(root) {
     } catch {
       continue;
     }
-    edges.set(f, localImports(f, text, fileSet, pyIndex));
+    edges.set(f, localImports(f, text, fileSet, pyIndex, aliases));
   }
   return { nodes: files, edges };
 }

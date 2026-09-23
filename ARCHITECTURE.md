@@ -472,6 +472,13 @@ as native skills through the plugin's `skills` directory.
 `atlas.json` is the single source the impact, reuse-revalidation, and hallucination-flag
 stages all read. There is no SQLite database and no `.forge/atlas.db`.
 
+Import specifiers resolve through **one** resolver, `src/scope.js` (`resolveSpec`), which
+the file graph (`scope`, `rank`, `collide`) and the symbol graph (`atlas`, `impact`) both
+call, so they never disagree about what a specifier points at. It follows relative paths
+and the repo-root tsconfig/jsconfig path aliases (`loadPathAliases`: `paths`, `baseUrl`,
+relative `extends`, JSONC). A spec under a local alias that misses is counted
+`unresolved`, not `external`.
+
 The `RULES` table (`src/atlas.js`) is the ONE language registry — JS/TS, Python, Go,
 Rust, Java, Ruby, C#, PHP, Kotlin, Swift, C/C++ as regex grammars (zero-dep; a real
 parser would need tree-sitter, which the no-runtime-deps rule forbids). `CODE_EXTS =

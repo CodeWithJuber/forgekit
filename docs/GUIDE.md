@@ -357,6 +357,16 @@ instrument, not an everyday view: on forgekit itself the median answer goes from
 to 78 of ~450 (recall 1.00, precision 0.09), so reach for it when you need "what could
 conceivably be affected", not "what references this".
 
+Imports resolve the way TypeScript resolves them: relative specifiers, and the path
+aliases in the repo-root `tsconfig.json` (or `jsconfig.json` when there is no tsconfig)
+— `compilerOptions.paths` such as `@/*` or `~/*`, the `baseUrl` lookup, and relative
+`extends`. So a Next.js or Vite app that imports through `@/lib/utils` gets the same edges
+as one that writes `../lib/utils`. An aliased import whose file does not exist counts as
+an unresolved local import (the `local import(s) … did not resolve` line, and
+`unresolvedImports` in `--json`), not as a package. Package bases (`@tsconfig/next`),
+nested per-package tsconfigs, package.json `imports` (`#…`) and workspace packages are
+not read.
+
 ```console
 $ forge impact verifyToken
 Forge impact — blast radius (hazard-aware)

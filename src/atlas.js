@@ -8,7 +8,9 @@ import { CALL_RE } from "./extract.js";
 import {
   jsImports,
   lexOf,
+  loadPathAliases,
   maskCode,
+  matchPathAlias,
   pyImports,
   pyModuleIndex,
   resolvePyImport,
@@ -17,8 +19,9 @@ import {
 import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 
 // Bumped whenever extraction or resolution changes shape: an atlas.json or per-file cache
-// from an older version is rebuilt, never trusted (v2 stored unresolved import specifiers).
-export const ATLAS_VERSION = 3;
+// from an older version is rebuilt, never trusted (v2 stored unresolved import specifiers;
+// v3 filed every tsconfig path-alias import as an external package).
+export const ATLAS_VERSION = 4;
 
 const JS_RULES = [
   {
@@ -779,9 +782,11 @@ function extractFile(path, root, preRead) {
 /**
  * Resolve raw edges against the whole graph.
  *  - imports: STRUCTURALLY — a JS/TS specifier through scope.resolveSpec (exact, NodeNext
- *    `.js`→`.ts`, extensionless, `index.*`), a Python module through package-root qnames
- *    (scope.pyModuleIndex). Never a bare-name guess: an import that does not resolve to a
- *    file stays unresolved (counted), it is not pinned to whatever shares its last segment.
+ *    `.js`→`.ts`, extensionless, `index.*`; relative, or through a tsconfig/jsconfig path
+ *    alias), a Python module through package-root qnames (scope.pyModuleIndex). Never a
+ *    bare-name guess: an import that does not resolve to a file stays unresolved (counted),
+ *    it is not pinned to whatever shares its last segment. A spec under a local alias
+ *    (`@/…`) that misses is unresolved, not external — it names a repo file that is absent.
  *  - calls/inherits: a definition in the same file, else a name this file imported, else a
  *    unique definition in the same LANGUAGE FAMILY. More than one candidate is ambiguous:
  *    the edge is dropped from traversal but marked and counted, never silently lost.
@@ -789,8 +794,9 @@ function extractFile(path, root, preRead) {
  * @param {any[]} nodes
  * @param {any[]} rawEdges
  * @param {string[]} files repo-relative POSIX paths of every walked file
+ * @param {import("./scope.js").PathAlias[]} [aliases] scope.loadPathAliases(root)
  */
-function resolveEdges(nodes, rawEdges, files) {
+function resolveEdges(nodes, rawEdges, files, aliases = []) {
   const fileSet = new Set(files);
   const pyIndex = pyModuleIndex(files);
   const localPyTops = new Set([...pyIndex.canonical.keys()].map((n) => n.split(".")[0]));
@@ -850,9 +856,10 @@ function resolveEdges(nodes, rawEdges, files) {
       );
       local = e.level > 0 || localPyTops.has(String(e.module).split(".")[0]);
     } else {
-      const file = resolveSpec(from, e.target, fileSet);
+      const file = resolveSpec(from, e.target, fileSet, aliases);
       if (file) hits = [{ file, names: e.names || [] }];
-      local = /^\.\.?(\/|$)/.test(e.target);
+      local =
+        /^\.\.?(\/|$)/.test(e.target) || Boolean(matchPathAlias(e.target, aliases)?.alias.local);
     }
     const base = {
       source: e.source,
@@ -993,7 +1000,7 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
     fileHashes[rel] = h;
     rels.push(rel);
   }
-  const { edges, stats } = resolveEdges(nodes, rawEdges, rels);
+  const { edges, stats } = resolveEdges(nodes, rawEdges, rels, loadPathAliases(root));
   const atlas = {
     version: ATLAS_VERSION,
     files: inv.files.length,
