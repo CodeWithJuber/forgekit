@@ -740,7 +740,7 @@ HANDLERS.ledger = async (argv) => {
   }
   if (sub === "show") {
     const id = args[2];
-    const hit = id && id.length >= 2 ? ls.getClaimByPrefix(dir, id) : null;
+    const hit = id && id.length >= 2 ? ls.getClaimByPrefix(dir, id, { attic: true }) : null;
     if (!hit) {
       console.error(
         id ? `  no claim matching ${id}` : "usage: forge ledger show <id-prefix (≥2 chars)>",
@@ -874,6 +874,37 @@ HANDLERS.ledger = async (argv) => {
     );
     return;
   }
+  // `compact` — archive what this ledger's own history says will not be used again, and
+  // near-duplicates, printing every learned number (ledger_retention.js). Reversible.
+  if (sub === "compact") {
+    const dryRun = argv.includes("--dry-run");
+    const r = ls.compactLedger(dir, nowDay, { dryRun });
+    if (json) return console.log(JSON.stringify(r, null, 2));
+    const rt = r.retention;
+    const d = r.duplicates;
+    const lines = [
+      `Forge ledger — compact (every cut-off learned from this ledger)${dryRun ? "  [dry run]" : ""}`,
+      "",
+      `  claims: ${r.claims} · claims with logged use: ${r.servedClaims}`,
+      rt.learned
+        ? `  retention: idle cut-off ${rt.cutoff} d = the longest idle stretch any claim came back from (${rt.comebacks} comebacks, typical gap ${rt.typicalGap} d; usage log spans ${rt.usageSpan} d)`
+        : `  retention: not learned — ${rt.reason}`,
+      d?.boundary != null
+        ? `  duplicates: boundary ${d.boundary.toFixed(2)} (two components beat one: BIC ${d.bic2?.toFixed(1)} < ${d.bic1?.toFixed(1)}) · ${d.groups.length} group(s)`
+        : `  duplicates: none — ${d?.compared ? `one component fits the ${d.compared} nearest-neighbour similarities better` : "fewer than two claims of one kind are still live to compare"}`,
+      "",
+      `  archive: ${r.archive.length}`,
+    ];
+    for (const a of r.archive.slice(0, 20)) lines.push(`    ${a.id.slice(0, 12)}  ${a.reason}`);
+    if (r.archive.length > 20) lines.push(`    … ${r.archive.length - 20} more (--json for all)`);
+    lines.push(
+      "",
+      dryRun
+        ? "  dry run: nothing written"
+        : `  archived ${r.archived.length} claim(s) to .forge/ledger/attic/ — new evidence brings one back; show/blame still read it`,
+    );
+    return console.log(lines.join("\n"));
+  }
   if (sub === "query") {
     const q = args.slice(2).join(" ");
     if (!q) {
@@ -889,6 +920,11 @@ HANDLERS.ledger = async (argv) => {
     const claims = ls.loadClaims(dir);
     const sim = claimSim(root, q, claims, claimText);
     const ranked = retrieve(q, claims, { nowDay, budget: 8, sim });
+    ls.recordUse(
+      dir,
+      ranked.map((r) => r.claim.id),
+      { via: "cli.query", t: nowDay },
+    );
     if (json)
       return console.log(
         JSON.stringify(

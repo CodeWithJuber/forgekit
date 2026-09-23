@@ -97,7 +97,9 @@ async function callTool(name, args = {}) {
   }
   if (name === "forge_ledger_query") {
     try {
-      const { loadClaims, repoLedger, retractionProposals } = await import("./ledger_store.js");
+      const { loadClaims, recordUse, repoLedger, retractionProposals } = await import(
+        "./ledger_store.js"
+      );
       const { retrieve, claimText } = await import("./ledger.js");
       const { claimSim, simLabel } = await import("./embed.js");
       const dir = repoLedger(root);
@@ -105,6 +107,11 @@ async function callTool(name, args = {}) {
       const claims = loadClaims(dir);
       const sim = claimSim(root, q, claims, claimText);
       const ranked = retrieve(q, claims, { nowDay: today(), budget: 8, sim });
+      recordUse(
+        dir,
+        ranked.map((r) => r.claim.id),
+        { via: "mcp.query", t: today() },
+      );
       const pending = retractionProposals(claims);
       return JSON.stringify(
         {

@@ -6,6 +6,7 @@
 
 import { recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
 import { ledgerLessons, mergedLessons } from "./ledger_read.js";
+import { recordUse, repoLedger } from "./ledger_store.js";
 import {
   confidenceOf,
   confirm,
@@ -188,15 +189,39 @@ export function lessonsForContext(root, context, opts = {}) {
   return selectForInjection(mergedLessons(root, opts.nowDay ?? 0), context, opts);
 }
 
+/** Log that these lessons were served (ledger retention learns from it). Only lessons
+ *  backed by a ledger claim have an id to log; best-effort, never throws.
+ *  @param {string} root
+ *  @param {{provenance?: {claim?: string}}[]} lessons
+ *  @param {{via: string, t: number}} opts */
+export function recordServedLessons(root, lessons, { via, t }) {
+  recordUse(
+    repoLedger(root),
+    lessons.map((l) => l?.provenance?.claim).filter((id) => typeof id === "string"),
+    { via, t },
+  );
+}
+
 /** Repo-wide top active lessons — what a SessionStart hook injects (no file context yet).
- *  Merged view: a teammate's outcome-confirmed lesson surfaces here too. */
-export function startupBlock(root, nowDay = 0, budget = 8) {
+ *  Merged view: a teammate's outcome-confirmed lesson surfaces here too. `record` logs the
+ *  shown lessons as served; only the hook sets it (AGENTS.md emission is not a use).
+ *  @param {string} root
+ *  @param {number} [nowDay]
+ *  @param {number} [budget]
+ *  @param {{record?: boolean}} [opts] */
+export function startupBlock(root, nowDay = 0, budget = 8, { record = false } = {}) {
   const active = mergedLessons(root, nowDay).filter((l) => l.status === "active");
   if (!active.length) return "";
   const ranked = active
     .map((l) => ({ lesson: l, conf: confidenceOf(l, nowDay) }))
     .sort((a, b) => b.conf - a.conf);
   const shown = ranked.slice(0, budget);
+  if (record)
+    recordServedLessons(
+      root,
+      shown.map((x) => x.lesson),
+      { via: "session-start", t: nowDay },
+    );
   const rows = shown.map((x) =>
     `- **${x.lesson.id}** — ${x.lesson.correctedBehavior}`.slice(0, 200),
   );

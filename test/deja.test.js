@@ -13,7 +13,7 @@ import {
   recordSessionSummary,
 } from "../src/deja.js";
 import { mintClaim, val } from "../src/ledger.js";
-import { loadClaims, putClaim, repoLedger } from "../src/ledger_store.js";
+import { loadClaims, putClaim, readUses, repoLedger } from "../src/ledger_store.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-deja-"));
 
@@ -149,8 +149,13 @@ test("dejaAdvisory actually fires for a repeated task (DEJA_REL_FLOOR is inside 
   );
   const hit = dejaAdvisory(root, "add oauth login flow with pkce to the auth module", 200);
   assert.ok(hit.includes("déjà vu"), "a repeated task surfaces the advisory");
-  const miss = dejaAdvisory(root, "optimize the image resizing pipeline for thumbnails", 200);
+  // A surfaced hit is a use of that claim (ledger retention learns from it)…
+  const [summary] = loadClaims(repoLedger(root));
+  assert.deepEqual(readUses(repoLedger(root)).get(summary.id), [200]);
+  const miss = dejaAdvisory(root, "optimize the image resizing pipeline for thumbnails", 201);
   assert.equal(miss, "", "an unrelated task stays silent (below the noise floor)");
+  // …and a silent miss is not.
+  assert.deepEqual(readUses(repoLedger(root)).get(summary.id), [200]);
 });
 
 test("recordSessionSummary is best-effort and returns cleanly on an empty session", () => {
