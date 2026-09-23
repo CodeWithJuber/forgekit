@@ -87,7 +87,8 @@ forgekit's controls map to the 2026 baselines:
 - Prompt injection / supply chain (LLM01/03/05): `forge scan` (skill-gate) blocks injection /
   RCE / exfil in a skill or MCP config **before** install.
 - Insecure output handling / sensitive-info disclosure (LLM02/06): the `secret-redact` guard
-  masks keys in tool output; `protect-paths` blocks secret-file reads/writes.
+  masks keys in tool output; `protect-paths` blocks secret-file reads/writes (Read, Grep,
+  Glob, NotebookRead, edits and Bash) and fails closed when it cannot reach a verdict.
 - Excessive agency (LLM08): guards enforce least privilege + human-in-the-loop
   (`permissionDecision` deny/ask); `forge harden` wires the OS sandbox.
 - Unbounded consumption / model DoS (LLM10): the cost governor + doom-loop breaker cap runaway

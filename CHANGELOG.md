@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`protect-paths` matches secret paths per path token, so read-only commands stop being
+  blocked.** `\.env(\.[\w-]+)?\b` matched `.env` anywhere in a Bash command, so
+  `grep -rn process.env src`, `rg 'import\.meta\.env'`, `git log --grep='.env handling'`,
+  `cat messages.key.ts` and Reads of `.env.example`, a plain project `.npmrc` and a Next.js
+  `app/docs/secrets/page.tsx` route were all refused. The command is now split into shell
+  words (quotes honoured) and only each command's file operands are tested; a grep/rg/sed/awk/jq
+  pattern, a commit message or a `--grep=` value is never a path. `.env.example`/`.sample`/
+  `.template`/`.dist` are templates, `*.key.ts` is code, a `secrets/` directory's source files
+  are code, and a project `.npmrc` is protected only when it holds a literal `_authToken`/
+  `_auth`/`_password` (an `${NPM_TOKEN}` reference is not a secret); `~/.npmrc` always is.
+  `.env`, `.env.local`, `.env.production`, `id_rsa`, `*.key` and `*.pem` stay blocked.
+- **`protect-paths` closes the reads it missed.** `sed`, `awk`, `tac`, `sort`, `uniq`, `cut`,
+  `paste`, `bat`, `jq`, `diff`, `cmp`, `fold`, `rev`, `hexdump` and `dd if=` now count as
+  readers; `… < .env` (input redirection), `cat .e*v` (globs), `$( … )`/backticks, `$'\x2eenv'`,
+  a command on a second line and a heredoc fed to a shell are checked; `rm -rf` of `.`, `..`,
+  `./` or `*`, `git checkout .` / `git restore .` (but not `git restore --staged .`), and
+  `curl … | sudo sh` / `| python3` are blocked. The protect-paths matcher now covers `Read`,
+  `Grep`, `Glob` and `NotebookRead` in all three hook manifests; the Grep tool's `glob` filter
+  is checked too.
+- **`protect-paths` fails closed and no longer needs bash.** With no bash on `PATH` the hook
+  launcher exited 1, which Claude Code treats as a non-blocking error, so the guard was silently
+  off (a signal-killed guard did the same). `run.mjs` now runs `protect-paths.mjs` on its own
+  node, and any failure to reach a verdict (no interpreter, a spawn error, a signal, an exit
+  other than 0/2) blocks with exit 2. `node run.mjs --fail-closed <guard>.sh` opts any other
+  guard in.
+- **`forge doctor` no longer asks a plugin user to register every guard twice.** It ignored
+  `enabledPlugins` and reported "forge hooks missing/stale (15/15 guard(s) absent) — run forge
+  doctor --fix", and that fix merged the same hooks into `settings.json` on top of the plugin's
+  `hooks/hooks.json`, so every guard ran twice. With `forgekit@…` enabled (user, project or
+  local settings), doctor reports "guards via the forgekit plugin", its fix merges permissions
+  only, and a settings copy of the guards is reported as a double registration. `mergeSettings`
+  (and so `forge init`) skips hook injection for a settings file that enables the plugin.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added
