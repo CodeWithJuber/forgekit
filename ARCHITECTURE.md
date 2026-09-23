@@ -279,19 +279,37 @@ runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commi
 when none exist, and exits `3` (a clean skip, not a failure) otherwise — so releases cut
 themselves without a chore/docs merge spamming the registry.
 
-**Custom-gateway model remap (`src/gateway_model_map.js`).** The tier table (`model_tiers.json`)
-pins public Anthropic IDs, but a self-hosted LiteLLM/proxy gateway serves its own model names, so a
-stock ID sent verbatim 404s. When a non-default gateway base URL is configured, the module fetches
-`GET /v1/models` **once per process** (a spawned-node child with the key in env, never argv — the
-`llm.js` pattern) and scores each advertised id against every tier's family: the family word
-(haiku/sonnet/opus/fable) is a hard gate, the `setOverlap` coefficient of the tier's name tokens
-picks the best match, ties break toward the id closest to the canonical name. `resolveModel`
-(providers) and `buildRunner` (adjudicate) consult it only when the resolved id is a _stock_ ID —
-an explicit `.forge/providers.json` alias or `ANTHROPIC_MODEL` override is never touched — and it
-fails safe to the stock ID on no gateway / unreachable `/v1/models` / no family match, so direct
-`api.anthropic.com` users are byte-identical. `forge doctor`'s **gateway models** row prints the
-resolved `tier→model` mapping for verification. The `MODELS` export shape is unchanged: this is a
-resolution-time layer, not a table edit.
+**Runtime model resolution (`src/model_catalog.js`, `src/http_cache.js`).** A tier names a
+model _family_; `model_tiers.json` keeps a snapshot of ids and prices only as data of last
+resort (its `pricingVerified` date still drives `forge doctor`'s staleness warning). The concrete
+id is resolved where one is needed — `buildRunner` (adjudicate, on the runner's first call, so
+building a runner stays free on the hook path), `emitGatewayConfig`, `estimateSpendFromLogs`,
+`forge route`, `forge models` — by `resolveTierModel`: the newest model of the family in the
+active provider's live catalog (the Anthropic Models API with `ANTHROPIC_API_KEY`, following
+`has_more`/`last_id` → `after_id`; a custom gateway's `/v1/models`; OpenRouter's list), where
+"of the family" is a whole-token match of the family word on id or display name and "newest"
+is the catalog's `created_at` (then the parsed version, the `YYYYMMDD` stamp, the plainest id).
+`resolveTierPrice` / `resolveModelPrice` price an id from OpenRouter's public catalog
+(per-token strings → per million, ids matched by canonical token set), then the snapshot row,
+the router registry, and the family's tier — an id nothing prices is reported, never billed at a
+guessed rate. Each step runs only when the previous is unavailable; an explicit
+`.forge/providers.json` id or `ANTHROPIC_MODEL` override is never replaced. Fetches go through a
+small private HTTP cache under `.forge/cache/` (self-gitignored, and listed in
+`.forge/.gitignore`): freshness comes only from the response (`Cache-Control: max-age`,
+`Expires`, `Age`, `Date`), everything else is revalidated with `If-None-Match` /
+`If-Modified-Since`, and a failed request serves the stored copy as stale — the snapshot is older
+still. The transport is a spawned-node child (the `llm.js` pattern: synchronous, headers on
+stdin, never argv), 3 s timeout, never throws; `FORGE_NO_CATALOG_FETCH=1` turns it off.
+
+**Custom-gateway model remap (`src/gateway_model_map.js`).** A self-hosted LiteLLM/proxy gateway
+serves its own model names, so a snapshot ID sent verbatim 404s. When a non-default gateway base
+URL is configured, the module reads its `GET /v1/models` through the same catalog fetcher (once
+per process) and maps each tier onto the newest advertised model of its family — the same
+`newestInFamily` rule; the `setOverlap` score against the tier's name tokens is still reported
+with each pick. It fails safe to the snapshot ID on an unreachable `/v1/models` / no family
+match. `forge doctor`'s **gateway models** row prints the resolved `tier→model` mapping for
+verification. The `MODELS` export shape is unchanged: resolution is a layer over the table, not
+an edit of it.
 
 **Typed proposers via TypeSafe System One (`src/jev.js`).** Two of the substrate's proposer
 judgments are not text-generation tasks at all: `route`'s complexity band is a classification
@@ -620,8 +638,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>117 files"]
-  src["src<br/>109 files"]
+  test["test<br/>121 files"]
+  src["src<br/>111 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   global["global<br/>5 files"]
@@ -629,7 +647,7 @@ flowchart LR
   scripts["scripts<br/>2 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 240 --> src
+  test -- 244 --> src
   bench -- 8 --> src
   examples -- 4 --> src
   test -- 2 --> bench

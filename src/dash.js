@@ -121,7 +121,7 @@ export function dashData(root, { nowDay = epochDay() } = {}) {
   } catch {}
   let spend = null;
   try {
-    spend = estimateSpendFromLogs();
+    spend = estimateSpendFromLogs({ root });
   } catch {}
   // First-run signal for the empty-state copy: a truly untouched .forge/ has no
   // ledger claims AND no metrics events. `metrics.recent` is capped but only ever
@@ -543,7 +543,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
         }),
       );
     if (url.pathname === "/api/spend") {
-      const spend = estimateSpendFromLogs();
+      const spend = estimateSpendFromLogs({ root });
       return sendJson(res, 200, spend || { totalCost: 0, sessions: 0, byModel: [] });
     }
     if (url.pathname === "/api/impact") {

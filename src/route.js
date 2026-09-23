@@ -11,7 +11,8 @@ import { recordRoute, routeRef } from "./cost_report.js";
 import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
-import { MODELS } from "./model_tiers.js";
+import { printableLine } from "./model_catalog.js";
+import { describeResolution, MODELS, resolveTierModel } from "./model_tiers.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { promotionGate } from "./promote.js";
 import { activeProvider, envModelOverride } from "./providers.js";
@@ -710,11 +711,23 @@ export function meterRoute(root, task, rec) {
   } catch {}
 }
 
+// The tiers the gateway exposes as request aliases (forge-<class>); fable is never a routing default.
+const GATEWAY_TIERS = ["haiku", "sonnet", "opus"];
+const ANTHROPIC_UPSTREAM = {
+  name: "anthropic",
+  type: "anthropic",
+  baseUrl: "https://api.anthropic.com",
+};
+
 /** Emit a LiteLLM config exposing the complexity tiers as aliases (request the one `forge route` picks).
- *  Provider-aware: uses the active provider's model IDs for the passthrough entries
- *  and the correct LiteLLM model prefix (anthropic/ for direct, openrouter/ for OR).
- *  Returns `{ ok: false, reason }` for hosted gateways the user cannot configure. */
-export function emitGatewayConfig(root = process.cwd()) {
+ *  Provider-aware: each tier's model id is RESOLVED (model_tiers.resolveTierModel) — the newest
+ *  model of the tier's family in the upstream's live catalog (OpenRouter's for an OpenRouter
+ *  provider, the Anthropic Models API otherwise), else the shipped snapshot — behind the LiteLLM
+ *  prefix for that upstream (anthropic/ or openrouter/). Each alias says where its id came from.
+ *  Returns `{ ok: false, reason }` for hosted gateways the user cannot configure.
+ *  @param {string} [root]
+ *  @param {{fetchImpl?: Function, env?: Record<string, string|undefined>}} [opts] catalog test seams */
+export function emitGatewayConfig(root = process.cwd(), { fetchImpl, env } = {}) {
   const prov = activeProvider(root);
   if (prov._autoDetected && prov._source === "LITELLM_BASE_URL") {
     return {
@@ -725,7 +738,51 @@ export function emitGatewayConfig(root = process.cwd()) {
         `Use standard model names (the gateway handles routing).`,
     };
   }
-  const prefix = prov.type === "openrouter" ? "openrouter/" : "anthropic/";
+  const openrouter = prov.type === "openrouter";
+  const prefix = openrouter ? "openrouter/" : "anthropic/";
+  // The config's upstream: OpenRouter for an OpenRouter provider; otherwise LiteLLM's anthropic/
+  // provider, i.e. the Anthropic API itself (even when the active provider is this gateway).
+  const upstream = openrouter ? prov : ANTHROPIC_UPSTREAM;
+  const resolved = GATEWAY_TIERS.map((tier) => ({
+    m: MODELS[tier],
+    r: resolveTierModel(tier, { root, provider: upstream, fetchImpl, env }),
+  }));
+  const bare = (id) => String(id).split("/").pop();
+  // Ids and display names come from a LIVE catalog (a gateway's or OpenRouter's /v1/models) and
+  // land in a file the user feeds to LiteLLM as routing config. A display name carrying a
+  // newline would otherwise splice in a SECOND entry for a tier alias, and LiteLLM's
+  // simple-shuffle would then send a share of that tier's prompts to the spliced model. So every
+  // catalog-sourced value is a double-quoted YAML scalar with control characters escaped, and
+  // every comment is collapsed to one line.
+  const yamlStr = (s) => {
+    let out = '"';
+    for (const ch of String(s)) {
+      const n = ch.charCodeAt(0);
+      if (ch === "\\" || ch === '"') out += `\\${ch}`;
+      else if (n < 32 || n === 127) out += `\\x${n.toString(16).padStart(2, "0")}`;
+      else out += ch;
+    }
+    return `${out}"`;
+  };
+  // One printable line for a comment: the same rule the catalog applies to display names.
+  const comment = printableLine;
+  const aliases = resolved.map(({ m, r }) =>
+    [
+      `  - model_name: forge-${m.tier.padEnd(8)} # ${comment(r.displayName ?? m.name)} — ${comment(m.use)}`,
+      `    # id: ${comment(describeResolution(r))}`,
+      `    litellm_params: { model: ${yamlStr(prefix + r.id)} }`,
+    ].join("\n"),
+  );
+  // Passthrough: each resolved id, plus the snapshot id when it differs and the upstream is
+  // Anthropic — a client still pinned to the older id keeps working through the gateway.
+  const passIds = [];
+  for (const { m, r } of resolved)
+    for (const id of [r.id, openrouter ? null : m.id])
+      if (id && !passIds.includes(id)) passIds.push(id);
+  const passthrough = passIds.map(
+    (id) =>
+      `  - model_name: ${yamlStr(bare(id))}\n    litellm_params: { model: ${yamlStr(prefix + id)} }`,
+  );
   const path = join(root, "litellm.config.yaml");
   const body = `# Forge Preflight — LiteLLM routing config (complexity tier -> model).
 # HOW ROUTING WORKS: LiteLLM routes by the REQUESTED model name; it cannot infer task
@@ -735,22 +792,13 @@ export function emitGatewayConfig(root = process.cwd()) {
 #   pip install "litellm[proxy]==<pin an exact verified version>"   # supply-chain: pin exact, no floating tag
 #   litellm --config litellm.config.yaml       # then export ANTHROPIC_BASE_URL=http://localhost:4000
 # Provider: ${prov.label || prov.name} (${prov.type})
-# Models verified 2026-07-05; re-verify via dev-radar.
+# Model ids were resolved when this file was written (each "# id:" line says from where);
+# re-run 'forge route gateway' to pick up newer models, 'forge models' to preview them.
 model_list:
   # Tier aliases — request one of these (per 'forge route') to pick a model by complexity.
-  - model_name: forge-simple   # ${MODELS.haiku.name} — ${MODELS.haiku.use}
-    litellm_params: { model: ${prefix}${MODELS.haiku.id} }
-  - model_name: forge-medium   # ${MODELS.sonnet.name} — default
-    litellm_params: { model: ${prefix}${MODELS.sonnet.id} }
-  - model_name: forge-complex  # ${MODELS.opus.name}
-    litellm_params: { model: ${prefix}${MODELS.opus.id} }
+${aliases.join("\n")}
   # Passthrough — a normal claude-* request still works when pointed at the gateway.
-  - model_name: ${MODELS.haiku.id}
-    litellm_params: { model: ${prefix}${MODELS.haiku.id} }
-  - model_name: ${MODELS.sonnet.id}
-    litellm_params: { model: ${prefix}${MODELS.sonnet.id} }
-  - model_name: ${MODELS.opus.id}
-    litellm_params: { model: ${prefix}${MODELS.opus.id} }
+${passthrough.join("\n")}
 ${prov.envKey ? `litellm_settings:\n  drop_params: true\n  set_verbose: false` : ""}
 router_settings:
   routing_strategy: simple-shuffle

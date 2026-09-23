@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { EOL, homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../src/cost_report.js";
 import { read as readMetrics } from "../src/metrics.js";
 import { substrateCheck } from "../src/substrate.js";
+import { ok, openRouterBody, stubTransport } from "./_catalog_stub.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-cost-"));
 
@@ -252,6 +253,39 @@ test("estimateSpendFromLogs: prices cache tokens and counts a repeated response 
     1e6;
   assert.ok(Math.abs(opus.cost - expected) < 1e-12, `${opus.cost} vs ${expected}`);
   assert.ok(Math.abs(opus.cost - 0.23755) < 1e-9, "was $0.038 before (input+output only)");
+});
+
+test("estimateSpendFromLogs: live catalog price by id, family fallback, unknown models unpriced", () => {
+  const dir = join(homedir(), ".claude", "projects", "cost-pricing-fixture");
+  mkdirSync(dir, { recursive: true });
+  const line = (id, model, input, output) =>
+    JSON.stringify({
+      message: { id, model, usage: { input_tokens: input, output_tokens: output } },
+    });
+  writeFileSync(
+    join(dir, "s.jsonl"),
+    [
+      line("p1", "claude-3-opus-20240229", 1_000_000, 0),
+      line("p2", "claude-opus-9-20300101", 1_000_000, 0),
+      line("p3", "<synthetic>", 1_000_000, 0),
+      "",
+    ].join(EOL),
+  );
+  const t = stubTransport({
+    "openrouter.ai": ok(openRouterBody([["anthropic/claude-3-opus", "0.000015", "0.000075"]])),
+  });
+  const est = estimateSpendFromLogs({ root: null, fetchImpl: t.fetchImpl });
+  const by = Object.fromEntries(est.byModel.map((m) => [m.model, m]));
+  assert.equal(by["claude-3-opus-20240229"].cost, 15, "OpenRouter's live $15/M input");
+  assert.equal(by["claude-3-opus-20240229"].priceSource, "catalog");
+  assert.equal(
+    by["claude-opus-9-20300101"].priceSource,
+    "snapshot:family",
+    "an unknown Opus is priced as the Opus tier",
+  );
+  assert.equal(by["<synthetic>"].priced, false);
+  assert.deepEqual(est.unpriced, ["<synthetic>"], "never billed at a guessed $3/$15");
+  assert.equal(t.calls.length, 1, "one catalog request per estimate, not one per model");
 });
 
 test("renderCostReport: measured factors print as percentages with event counts", () => {
