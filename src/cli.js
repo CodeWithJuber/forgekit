@@ -175,6 +175,10 @@ HANDLERS.init = async (argv) => {
       console.error(`  settings: FAILED — ${settings.path}: ${settings.reason}`);
       process.exitCode = 1;
     }
+    if (settings && "hooksVia" in settings && settings.hooksVia === "plugin")
+      console.log(
+        `            hooks: wired by the ${BRAND.pkg} plugin — not duplicated in settings.json`,
+      );
     return;
   }
   const profileIdx = argv.indexOf("--profile");
@@ -243,6 +247,10 @@ HANDLERS.init = async (argv) => {
     console.error(`  settings: FAILED — ${settings.reason} (repo files were still emitted)`);
     process.exitCode = 1;
   }
+  if (settings && "hooksVia" in settings && settings.hooksVia === "plugin")
+    console.log(
+      `            hooks: wired by the ${BRAND.pkg} plugin — not duplicated in settings.json`,
+    );
   if (detected) {
     console.log(`  provider: auto-detected ${detected.name} from ${detected.source}`);
   } else {

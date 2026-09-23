@@ -21,7 +21,13 @@ import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
 import { hashContent, mdHeader } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
-import { ensureLedgerGitattributes, guardKey, isStaleManagedHook, mergeSettings } from "./init.js";
+import {
+  ensureLedgerGitattributes,
+  forgePluginEnabled,
+  guardKey,
+  isStaleManagedHook,
+  mergeSettings,
+} from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
@@ -95,9 +101,14 @@ function installedGuardKeys(hooks) {
 // template is present AND permissions are installed — not just that the marker exists. Fixable
 // by re-running the same idempotent merge init uses (`mergeSettings`), marker-guarded so it
 // never clobbers hand-written entries.
-function checkSettings(out, settingsPath) {
+function checkSettings(out, settingsPath, targetRoot) {
   const path = settingsPath || join(homedir(), ".claude", "settings.json");
   const data = readJsonSafe(path);
+  const plugin = forgePluginEnabled({ settingsPath, targetRoot });
+  if (plugin.enabled) {
+    checkPluginSettings(out, data, plugin.source, settingsPath);
+    return;
+  }
   const fix = {
     id: "settings",
     label: "merge forge hooks + permissions into settings.json",
@@ -143,6 +154,41 @@ function checkSettings(out, settingsPath) {
       ? "forge permissions missing — run `forge doctor --fix` or `forge init`"
       : "not forge-managed — run `forge doctor --fix` or `forge init`";
   out.push({ ...warn("settings", note), fix });
+}
+
+// Forge enabled as a Claude Code PLUGIN: its hooks/hooks.json already wires every guard, so
+// settings.json must NOT carry them too — each guard (the Stop gate included) would run twice.
+// The settings row therefore never asks for hooks here; its repair merges permissions only, and
+// guards found in BOTH places are reported for manual cleanup rather than "fixed" by adding more.
+function checkPluginSettings(out, data, source, settingsPath) {
+  const via = `guards via the ${BRAND.pkg} plugin (enabled in ${source})`;
+  const installed = installedGuardKeys(data?.hooks);
+  const doubled = templateGuardKeys().filter((k) => installed.has(k));
+  if (doubled.length) {
+    out.push(
+      warn(
+        "settings",
+        `${via}, AND ${doubled.length} of the same guard(s) are wired in settings.json — each runs twice. Remove the settings copy (\`${BRAND.cli} init --remove-settings\`, then \`${BRAND.cli} doctor --fix\` restores permissions only) or disable the plugin`,
+      ),
+    );
+    return;
+  }
+  const perms = data?.permissions;
+  if (perms && (perms.allow?.length || perms.deny?.length || perms.ask?.length)) {
+    out.push(ok("settings", `${via}; permissions wired — hooks not duplicated in settings.json`));
+    return;
+  }
+  out.push({
+    ...warn(
+      "settings",
+      `${via}; ${BRAND.cli} permissions missing — run \`${BRAND.cli} doctor --fix\` (permissions only; the plugin supplies the hooks)`,
+    ),
+    fix: {
+      id: "settings",
+      label: "merge forge permissions into settings.json (hooks come from the plugin)",
+      run: () => mergeSettings({ settingsPath, hooks: false }),
+    },
+  });
 }
 
 // External tools the guards/commands depend on. Every guard reads its hook payload through
@@ -756,7 +802,7 @@ export function subsystemHealth(results) {
 function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   const results = [];
   checkNode(results);
-  checkSettings(results, settingsPath);
+  checkSettings(results, settingsPath, targetRoot);
   checkProvider(results, targetRoot);
   checkGateway(results);
   checkBrandConsistency(results);
