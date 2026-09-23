@@ -451,8 +451,8 @@ config), and flags work that wandered off-goal. Quiet on a clean tree — it onl
 once there's a diff to compare, so it's a mid-session "am I still on track?" check.
 Inside an agent session (`FORGE_SESSION_ID`, or the `CLAUDE_CODE_SESSION_ID` Claude Code
 exports to its tools) `forge anchor`, `forge lean` and `forge substrate` measure only what
-THAT session changed since its SessionStart baseline — not other agents' uncommitted work
-or older dirt. Before the session has changed anything, the minimality check reports
+THAT session changed since its SessionStart baseline: older dirt is left out, and so is a
+file another live session's trail claims (the completion gate's attribution rule). Before the session has changed anything, the minimality check reports
 "pre-existing diff (not measured)" instead of critiquing someone else's diff.
 
 ```console
@@ -1402,7 +1402,12 @@ update stale docs, `forge handoff`, `forge decide`; plus a CUSUM goal-drift alar
 session's recorded drift series sustained). Test evidence is a substantive test file that
 moved with the change, a fresh `forge verify` PASS, or a passing e2e run (`npm run e2e`,
 `playwright test`, `cypress run`, recorded by the capture hook), each bound to the code
-as it stands at Stop. The decision table, first match wins:
+as it stands at Stop. An e2e run only counts when the command's exit status is the
+suite's: the run is the last thing the command does, followed by nothing but arguments and
+redirections (`npm run e2e > e2e.log 2>&1` counts; `npm run e2e; echo "exit=$?"`,
+`npm run e2e || echo failed`, `npm run e2e | tail`, `npm run e2e &`, `x || npm run e2e`
+and `--list`/`--help` runs do not, since each exits 0 whatever the suite did). The
+decision table, first match wins:
 
 | #   | Condition                                                                                                                  | Decision                   |
 | --- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -1420,30 +1425,42 @@ as it stands at Stop. The decision table, first match wins:
 | 12  | any internal error in the gate itself                                                                                      | allow (fail-open)          |
 
 **UI-only changes** are their own class: a stylesheet (`.css`/`.scss`/`.sass`/`.less`), or
-a JS/TS file whose every change only touches `className=`/`class=`/`style=` values,
-cva-style variant strings (`cva`, `tv`, `cn`, `clsx`, …), or JSX text. A unit test cannot
-see those, so they owe ONE of: a design/state record (a doc, or `forge handoff`), a UI
-check (`forge uicheck design <files>` or `forge uicheck visual <url>` — a PASS after the
-final edit writes `.forge/uicheck.json`, signed and bound to the code state; a `design`
-PASS covers only the files it checked, a `visual` PASS covers the rendered page), or test
-evidence as above. A logic change in the same file (a new handler, prop, import, element
-or variant key) keeps it code.
+a JS/TS file whose every change only touches `className=`/`class=`/`style=` JSX attribute
+values, cva-style variant strings (`cva`, `tv`, `cn`, `clsx`, …), or JSX text (in
+`.jsx`/`.tsx`, also a `className:` key or a `style: {…}` object in a props table). The same
+names anywhere else are code: `static className = …`, `let style = …`, Intl's
+`{ style: "currency" }`, a `{ class: … }` key. Inside a blanked attribute expression a call,
+`new`/`delete`/`await`, an assignment or `++`/`--` still counts as code
+(`className={(reset(), "a")}`). A unit test cannot see a UI-only change, so it owes ONE of:
+a design/state record (a doc, or `forge handoff`), a UI check (`forge uicheck design
+<files>` or `forge uicheck visual <url>`: a PASS after the final edit writes
+`.forge/uicheck.json` at the git toplevel, signed and bound to the code state; a `design`
+PASS covers only the files it checked, while a `visual` PASS covers every UI file in the
+change, whatever URL it rendered, because the gate cannot map a page to its source files),
+or test evidence as above. A logic change in the same file (a new handler, prop, import,
+element or variant key) keeps it code.
 
 "Changed" is **session-scoped**, not repo-scoped: files from commits made _during_ the
 session (committer time ≥ session start) plus working-tree changes _minus_ whatever was
 already dirty when the session began (snapshotted at SessionStart). Pre-existing dirt,
 commits reached by a branch switch or `git pull`, and vendor trees (`node_modules/`…)
 are never attributed to the agent — near-zero false blocks is the gate's credibility.
-When several agents share one checkout, the gate also narrows that set to the files
-**this session touched**: the capture hook keeps a per-session trail
-(`.forge/sessions/<sid>.trail`) of Edit/Write targets and the file paths its Bash commands
-name, so another agent's concurrent edit or commit is named in the reason but never
-blamed. Without a trail (hooks installed mid-session, a host with no capture hook, or a
-session that made no tool call yet) the gate keeps the tree-wide view. A file written only
-by a script the session ran, whose path the command never names, is not attributed.
+When several agents share one checkout, each session's capture hook keeps a trail
+(`.forge/sessions/<sid>.trail`) of its Edit/Write targets and the file paths its Bash
+commands name (after a `cd`, and globs as patterns). A changed file is set aside as
+another agent's work only on positive evidence: another session's trail, written to while
+this session ran, names it, and this session's trail does not. It is then named in the
+reason but not weighed. Everything no trail accounts for stays with the stopping session:
+an edit through a glob, a heredoc script, `node -e`, codegen or an MCP tool, and a
+concurrent edit by an agent or person without forge's hooks. A single-agent checkout gets
+exactly the tree-wide view. The gate also keeps the tree-wide view when this session's
+trail is not authoritative (hooks installed mid-session, a host with no capture hook, or no
+tool call captured yet). The remaining gap needs two sessions on the same file: if both
+touched it and this session's write was one its trail cannot see, the other session's
+claim sets it aside.
 Test-only sessions pass on purpose (a regression test owes no prose), and the state
 snapshot counts via its mtime against the baseline because `.forge/` is gitignored. The
-gate can never loop (rows 1+4) and never brick a session (rows 3+10) — it costs at most
+gate can never loop (rows 1+4) and never brick a session (rows 3+12) — it costs at most
 one extra turn, exactly when that turn was owed.
 
 ### Every other tool — a rule + MCP tools

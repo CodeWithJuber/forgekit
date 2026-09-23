@@ -22,10 +22,18 @@
 // change is presentational (className/class/style values, cva-style variant strings, JSX
 // text — see uidiff.js), owes a design/state record OR a UI check (a fresh `forge uicheck
 // design|visual` PASS, a passing e2e run, or a fresh `forge verify`), not a unit test.
-// In a checkout several agents share, the gate only weighs the files THIS session touched
-// (its trail, session.js); without a trail it falls back to the tree-wide diff.
+// In a checkout several agents share, a changed file another live session's trail claims
+// (and this session's does not) is named but not weighed (session.js attributeChanges);
+// every change no trail accounts for is weighed, exactly as the tree-wide diff always was.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { cusum } from "./anchor.js";
 import {
@@ -43,7 +51,7 @@ import { readSession, sessionPath } from "./cortex_hook.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
 import {
-  attributeChanged,
+  attributeChanges,
   changedSet,
   readBaseline,
   readDirtySnapshot,
@@ -182,7 +190,13 @@ function presentationalFiles(root, files, baseHead) {
         stdio: ["ignore", "pipe", "ignore"],
         maxBuffer: UI_DIFF_MAX_BYTES * 2,
       });
-      return presentationalOnly(before, readFileSync(abs, "utf8"));
+      // A .ts file cannot hold JSX (`<T>` there is a type); object keys count as props only
+      // in .jsx/.tsx, where `className:`/`style: {…}` is a props table, not `Intl`'s `style`.
+      const ext = extname(f);
+      return presentationalOnly(before, readFileSync(abs, "utf8"), {
+        tags: ext !== ".ts",
+        keys: ext === ".jsx" || ext === ".tsx",
+      });
     } catch {
       return false;
     }
@@ -201,22 +215,29 @@ const uiCheckMac = (stamp) =>
 
 /**
  * Record a `forge uicheck design|visual` verdict as UI evidence for the completion gate:
- * the status, the files a `design` check read (repo-relative), the code state it ran
- * against, and a MAC (a hand-written stamp is not evidence, B7). A FAIL is recorded too,
- * so it replaces an earlier PASS. Outside a git work tree there is no code state to bind
- * to (and no gate to feed): nothing is written.
- * @param {string} root
+ * the status, the files a `design` check read, the code state it ran against, and a MAC (a
+ * hand-written stamp is not evidence, B7). A FAIL is recorded too, so it replaces an
+ * earlier PASS. `cwd` is where the command ran: `files` resolve against it, and the stamp
+ * lands at the git toplevel with toplevel-relative paths (the gate reads it there and
+ * compares it with `git status` paths), even when the check ran from a subdirectory.
+ * Outside a git work tree there is no code state to bind to (and no gate to feed):
+ * nothing is written.
+ * @param {string} cwd
  * @param {{check: string, pass: boolean, files?: string[]}} verdict
  * @returns {boolean} whether the stamp was written
  */
-export function recordUiCheck(root, { check, pass, files = [] }) {
+export function recordUiCheck(cwd, { check, pass, files = [] }) {
   try {
+    const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+    if (!root) return false;
     const codeState = computeCodeState(root);
     if (!codeState.gitAvailable || !codeState.dirtyHash) return false;
+    // git prints the toplevel with symlinks resolved; resolve cwd the same way.
+    const here = realpathSync(cwd);
     const stamp = {
       check: String(check),
       status: pass ? "PASS" : "FAIL",
-      files: files.map((f) => relative(root, resolve(root, f)).replace(/\\/g, "/")).sort(),
+      files: files.map((f) => relative(root, resolve(here, f)).replace(/\\/g, "/")).sort(),
       codeState,
     };
     const mac = uiCheckMac(stamp);
@@ -352,7 +373,8 @@ export function obligationsFor(classes = {}) {
  *  default walks IMPACT_RELATIONS; `relations: ["reverse"]` is the reverse-only option.
  *  A UI-only block cites the UI files and leads with the UI check; its graph walk looks
  *  for docs only (a className tweak owes no co-change sweep). `unattributed` counts the
- *  changed files the session's trail says another agent touched — named, never blamed.
+ *  changed files another live session's trail claims and this one's does not — named, not
+ *  weighed.
  *  @param {string} root
  *  @param {{codeFiles?: string[], driftAlarm?: boolean,
  *    classes?: {code?: string[], ui?: string[], config?: string[], test?: string[], docs?: string[]},
@@ -451,7 +473,7 @@ export function repairReason(
     ...(shown ? [`Changed ${citedKind}: ${shown}${more}`] : []),
     ...(unattributed > 0
       ? [
-          `(${unattributed} other changed file(s) in the tree were not touched by this session — another agent's work — and are not counted.)`,
+          `(${unattributed} other changed file(s) in the tree are another agent's work — another live session's trail names them and this session's does not — and are not counted.)`,
         ]
       : []),
     ...(obligations.length
@@ -507,11 +529,15 @@ export function stopGate(root, sid, hook = {}) {
       sinceMs: startedAt ?? undefined,
       preDirty: readDirtySnapshot(root, sid) ?? undefined,
     });
-    // Multi-agent checkouts: weigh only what THIS session touched (its trail). Without an
-    // authoritative trail (hooks installed mid-session, a host with no capture hook, a
-    // session that made no tool call) the tree-wide view stands, as before.
+    // Multi-agent checkouts: a file another live session's trail claims, and this session's
+    // trail does not, is that agent's work. Only positive evidence sets a file aside, so a
+    // write no trail saw (a glob, a heredoc script, an MCP tool) stays with this session,
+    // and without an authoritative trail (hooks installed mid-session, no tool call yet)
+    // the tree-wide view stands, as before.
     const trail = readTrail(root, sid);
-    const changed = trail?.authoritative ? attributeChanged(root, all, trail.paths) : all;
+    const { mine: changed, others } = attributeChanges(root, sid, all, {
+      sinceMs: startedAt,
+    });
     // Every evidence stamp is bound to the code state it ran against (HI-02); compute the
     // state NOW once, and only if some stamp needs it.
     /** @type {{head: string|null, dirtyHash: string|null, gitAvailable: boolean} | null} */
@@ -624,7 +650,7 @@ export function stopGate(root, sid, hook = {}) {
       const uiOnly = presentationalFiles(root, codeFiles, base?.head);
       if (uiOnly.length) decision = decide(uiOnly);
     }
-    const unattributed = all.length - changed.length;
+    const unattributed = others.length;
     if (decision.allow) return { ...decision, unattributed };
     // Marker FIRST: if it can't be persisted, the block-once promise can't be kept —
     // on a read-only checkout that would mean an unsatisfiable block every turn, so

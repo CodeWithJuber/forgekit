@@ -98,6 +98,127 @@ const CODE = [
   ],
 ];
 
+// Review: the attribute names are only presentational in JSX attribute position (or, in
+// .jsx/.tsx, as a `className:` / `style: {…}` props key). Each is a logic change.
+const JS = { tags: true, keys: false };
+const TS = { tags: false, keys: false };
+const TSX = { tags: true, keys: true };
+const NOT_ATTRIBUTES = [
+  [
+    "Intl's `style` option",
+    'new Intl.NumberFormat("en", { style: "currency" })',
+    'new Intl.NumberFormat("en", { style: "percent" })',
+    TSX,
+  ],
+  [
+    "a static className field",
+    "class P { static className = 'PaymentService' }",
+    "class P { static className = 'RefundService' }",
+    TS,
+  ],
+  [
+    "a `style` variable a comparison reads",
+    "let style = 'compact'; if (style === 'compact') go();",
+    "let style = 'wide'; if (style === 'compact') go();",
+    TSX,
+  ],
+  ["a `class:` data key", "const u = { class: 'admin' };", "const u = { class: 'guest' };", TSX],
+  [
+    "a className key outside .jsx/.tsx",
+    'const o = { className: "X" };',
+    'const o = { className: "Y" };',
+    JS,
+  ],
+  ["a member assignment", "this.className = 'a';", "this.className = 'b';", TSX],
+  [
+    "a call hidden in a className expression",
+    "<div className={'a'} />",
+    "<div className={(deleteAll(), 'a')} />",
+    TSX,
+  ],
+  [
+    "an assignment hidden in a style object",
+    "<div style={{ w: 1 }} />",
+    "<div style={{ w: (x = 2) }} />",
+    TSX,
+  ],
+  [
+    "a TSX generic arrow is not a tag",
+    "const f = <T,>(x: T) => { className = 'a' }",
+    "const f = <T,>(x: T) => { className = 'b' }",
+    TSX,
+  ],
+];
+
+// JSX the attribute-position rule must still see as presentation.
+const JSX_CONTEXTS = [
+  [
+    "an inline element after JSX text",
+    '<p>Starting at <span className="font-bold">$2</span></p>',
+    '<p>Starting at <span className="font-semibold text-lg">$2</span></p>',
+    TSX,
+  ],
+  [
+    "an apostrophe in JSX text",
+    '<p>Don\'t click <b className="x">here</b></p>',
+    '<p>Don\'t click <b className="y">here</b></p>',
+    TSX,
+  ],
+  [
+    "multi-line attributes",
+    '<div\n  id="a"\n  className="p-2"\n  onClick={go}\n>x</div>',
+    '<div\n  id="a"\n  className="p-4 m-1"\n  onClick={go}\n>x</div>',
+    TSX,
+  ],
+  [
+    "an element returned from a map callback",
+    '<ul>{items.map((it) => <li key={it} className="a">{it}</li>)}</ul>',
+    '<ul>{items.map((it) => <li key={it} className="b c">{it}</li>)}</ul>',
+    TSX,
+  ],
+  [
+    "an element inside an attribute",
+    '<A icon={<I className="h-4" />} />',
+    '<A icon={<I className="h-5" />} />',
+    TSX,
+  ],
+  [
+    "a new key in a style object",
+    "<div style={{ width: 20 }} />",
+    "<div style={{ width: 20, padding: 4 }} />",
+    TSX,
+  ],
+  ["a CSS-module class", "<div className={styles.a} />", "<div className={styles.b} />", TSX],
+  [
+    "a URL in JSX text",
+    '<a href="/x">https://x.com/old</a>',
+    '<a href="/x">https://x.com/new</a>',
+    TSX,
+  ],
+  [
+    "JSX in a .js file",
+    'export default () => <h1 className="a">Hi</h1>;',
+    'export default () => <h1 className="b">Hi</h1>;',
+    JS,
+  ],
+  [
+    "cva variant strings in a .ts file",
+    'export const b = cva("inline-flex", { variants: { size: { sm: "h-8" } } });',
+    'export const b = cva("inline-flex gap-2", { variants: { size: { sm: "h-9" } } });',
+    TS,
+  ],
+];
+
+test("presentationalOnly: className/style outside JSX attribute position is code", () => {
+  for (const [name, before, after, opts] of NOT_ATTRIBUTES)
+    assert.equal(presentationalOnly(before, after, opts), false, name);
+});
+
+test("presentationalOnly: JSX attribute position is found across real component shapes", () => {
+  for (const [name, before, after, opts] of JSX_CONTEXTS)
+    assert.equal(presentationalOnly(before, after, opts), true, name);
+});
+
 test("presentationalOnly: className/class/style values, variant strings and JSX text", () => {
   for (const [name, before, after] of PRESENTATIONAL)
     assert.equal(presentationalOnly(before, after), true, name);

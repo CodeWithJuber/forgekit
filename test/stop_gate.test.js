@@ -561,20 +561,25 @@ test("UI-only: a stylesheet now owes the same as a className edit (a handoff cov
 });
 
 // ── Multi-agent checkouts (review: the gate blamed a session for other agents' edits) ──────
+// The other agent is a real session in the same checkout: its own SessionStart, and its tool
+// calls captured into its own trail. Its trail is the positive evidence that sets a file aside.
 
 test("concurrency: another agent's concurrent edit is not blamed on this session", () => {
   const { root } = gitFixture();
   start(root, "ma1");
+  start(root, "ma1-other");
   write(root, "ma1", "README.md", "# app\n\nma1 documented something\n");
-  writeFileSync(join(root, "a.js"), "export const one = 2; // another agent\n");
+  write(root, "ma1-other", "a.js", "export const one = 2; // another agent\n");
   assert.equal(stopGate(root, "ma1").stdout.trim(), "", "only README.md is this session's");
 });
 
 test("concurrency: this session's own code is still gated, and the other file is named, not blamed", () => {
   const { root } = gitFixture();
+  writeFileSync(join(root, "b.js"), "export const two = 1;\n");
   start(root, "ma2");
+  start(root, "ma2-other");
   write(root, "ma2", "a.js", "export const one = 3;\n");
-  writeFileSync(join(root, "b.js"), "export const two = 2; // another agent\n");
+  write(root, "ma2-other", "b.js", "export const two = 2; // another agent\n");
   const out = JSON.parse(stopGate(root, "ma2").stdout);
   assert.equal(out.decision, "block");
   assert.match(out.reason, /Changed code: a\.js\n/, "only this session's file is cited");
@@ -585,11 +590,34 @@ test("concurrency: this session's own code is still gated, and the other file is
 test("concurrency: another agent's COMMIT mid-session is not this session's either", () => {
   const { root, git } = gitFixture();
   start(root, "ma3");
-  capture(root, "ma3", { tool_name: "Bash", tool_input: { command: "git status" } });
-  writeFileSync(join(root, "a.js"), "export const one = 4;\n");
+  start(root, "ma3-other");
+  capture(root, "ma3", { tool_name: "Bash", tool_input: { command: "git log --oneline -3" } });
+  write(root, "ma3-other", "a.js", "export const one = 4;\n");
   git("add", "a.js");
   git("-c", "commit.gpgsign=false", "commit", "-qm", "another agent's commit");
+  capture(root, "ma3-other", { tool_name: "Bash", tool_input: { command: "git commit -qm x" } });
   assert.equal(stopGate(root, "ma3").stdout.trim(), "", "a commit this session never touched");
+});
+
+test("concurrency: a session that only READ is not blamed for another agent's edit", () => {
+  const { root } = gitFixture();
+  start(root, "ma5");
+  start(root, "ma5-other");
+  capture(root, "ma5", { tool_name: "Read", tool_input: { file_path: join(root, "a.js") } });
+  write(root, "ma5-other", "a.js", "export const one = 9;\n");
+  assert.equal(stopGate(root, "ma5").stdout.trim(), "");
+});
+
+test("concurrency: a file both sessions touched stays with this session (a glob counts)", () => {
+  const { root } = gitFixture();
+  start(root, "ma6");
+  start(root, "ma6-other");
+  execFileSync("sh", ["-c", "sed -i 's/1/6/' *.js"], { cwd: root });
+  capture(root, "ma6", { tool_name: "Bash", tool_input: { command: "sed -i 's/1/6/' *.js" } });
+  write(root, "ma6-other", "a.js", "export const one = 66;\n");
+  const out = JSON.parse(stopGate(root, "ma6").stdout);
+  assert.equal(out.decision, "block", "this session's glob covers a.js");
+  assert.match(out.reason, /Changed code: a\.js/);
 });
 
 test("concurrency: a file a Bash command named is attributed to the session", () => {
@@ -609,13 +637,121 @@ test("concurrency fallback: no trail (or a trail with no tool call) keeps the tr
   // Trail deleted (hooks upgraded mid-session): today's behaviour, the tree decides.
   const { root } = gitFixture();
   start(root, "fb1");
+  start(root, "fb1-other");
   capture(root, "fb1", { tool_name: "Bash", tool_input: { command: "git status" } });
   rmSync(join(root, ".forge", "sessions", "fb1.trail"));
-  writeFileSync(join(root, "a.js"), "export const one = 6;\n");
+  write(root, "fb1-other", "a.js", "export const one = 6;\n");
   assert.equal(JSON.parse(stopGate(root, "fb1").stdout).decision, "block", "no log → fallback");
-  // Trail opened but no tool call captured: capture may not be live, so nothing is narrowed.
+  // Trail opened but no tool call captured: capture may not be live, so nothing is set aside.
   const r2 = gitFixture().root;
   start(r2, "fb2");
-  writeFileSync(join(r2, "a.js"), "export const one = 7;\n");
+  start(r2, "fb2-other");
+  write(r2, "fb2-other", "a.js", "export const one = 7;\n");
   assert.equal(JSON.parse(stopGate(r2, "fb2").stdout).decision, "block", "no activity → fallback");
+});
+
+// ── Writes no trail sees stay with the session (review: each of these used to pass) ────────
+// Single agent, one captured tool call (so the trail is authoritative), then a logic edit
+// with no test and no doc, made in a way the trail cannot attribute. Nobody else claims the
+// file, so it is this session's: the gate blocks exactly as it always did.
+
+const blocksAsCode = (root, sid) => {
+  const out = JSON.parse(stopGate(root, sid).stdout || "{}");
+  assert.equal(out.decision, "block", sid);
+  assert.match(out.reason, /NO test evidence/, sid);
+  assert.match(out.reason, /Changed code: .*a\.js/, sid);
+};
+
+test("unattributed writes: a glob, a heredoc script, a cd-relative path, an MCP tool", () => {
+  const edit = (root, sh) => execFileSync("sh", ["-c", sh], { cwd: root });
+  const cases = {
+    glob: "sed -i 's/1/42/' *.js",
+    heredoc: "python3 - <<'EOF'\nopen('a.js','w').write('export const one = () => 99;\\n')\nEOF",
+    cdRelative: "mkdir -p sub && cd sub && sed -i 's/1/42/' ../a.js",
+  };
+  for (const [sid, command] of Object.entries(cases)) {
+    const { root } = gitFixture();
+    start(root, sid);
+    capture(root, sid, { tool_name: "Bash", tool_input: { command: "ls" } });
+    try {
+      edit(root, command);
+    } catch {
+      edit(root, "sed -i 's/1/42/' a.js"); // no python3 on this host: same unattributed edit
+    }
+    capture(root, sid, { tool_name: "Bash", tool_input: { command } });
+    blocksAsCode(root, sid);
+  }
+  const { root } = gitFixture();
+  start(root, "mcp");
+  capture(root, "mcp", { tool_name: "Bash", tool_input: { command: "ls" } });
+  writeFileSync(join(root, "a.js"), "export const one = () => 3;\n");
+  capture(root, "mcp", {
+    tool_name: "mcp__filesystem__write_file",
+    tool_input: { path: join(root, "a.js") },
+  });
+  blocksAsCode(root, "mcp");
+});
+
+test("unattributed writes: an Edit captured while the hook ran from a subdirectory", () => {
+  const { root } = gitFixture();
+  mkdirSync(join(root, "src"));
+  start(root, "sub1");
+  capture(root, "sub1", { tool_name: "Bash", tool_input: { command: "cd src" } });
+  writeFileSync(join(root, "a.js"), "export const one = () => 2;\n");
+  feed("capture", {
+    session_id: "sub1",
+    cwd: join(root, "src"),
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: join(root, "a.js") },
+  });
+  assert.match(
+    readFileSync(join(root, ".forge", "sessions", "sub1.trail"), "utf8"),
+    /"k":"edit"/,
+    "the edit reached the trail SessionStart opened",
+  );
+  blocksAsCode(root, "sub1");
+});
+
+test("masked e2e runs are not test evidence; the plain run is", () => {
+  const masked = [
+    'npm run e2e; echo "exit=$?"',
+    "npm run e2e || echo failed",
+    "npm run e2e > out.log 2>&1; cat out.log",
+    "npm run e2e &",
+    "npx playwright test --list",
+  ];
+  for (const [n, command] of masked.entries()) {
+    const { root } = gitFixture();
+    const sid = `mk${n}`;
+    start(root, sid);
+    write(root, sid, "a.js", "export const one = () => 2;\n");
+    write(root, sid, "README.md", "# app\n\none is a function now\n");
+    capture(root, sid, { tool_name: "Bash", tool_input: { command } });
+    blocksAsCode(root, sid);
+  }
+  const { root } = gitFixture();
+  start(root, "mk-ok");
+  write(root, "mk-ok", "a.js", "export const one = () => 2;\n");
+  write(root, "mk-ok", "README.md", "# app\n\none is a function now\n");
+  capture(root, "mk-ok", {
+    tool_name: "Bash",
+    tool_input: { command: "npm run e2e > e2e.log 2>&1" },
+  });
+  assert.equal(stopGate(root, "mk-ok").stdout.trim(), "", "redirected, unmasked: evidence");
+});
+
+test("UI-only: an Intl `style` option change in a .js file is logic, not styling", () => {
+  const { root, git } = gitFixture();
+  const fmt = (s) =>
+    `export const fmt = (n) => new Intl.NumberFormat("en", { style: "${s}" }).format(n);\n`;
+  writeFileSync(join(root, "fmt.js"), fmt("currency"));
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "fmt");
+  start(root, "intl");
+  write(root, "intl", "fmt.js", fmt("percent"));
+  write(root, "intl", "README.md", "# app\n\nformats percents\n");
+  const out = JSON.parse(stopGate(root, "intl").stdout);
+  assert.equal(out.decision, "block");
+  assert.match(out.reason, /NO test evidence/, "code, where the review saw it pass as ui");
 });

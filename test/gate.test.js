@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -305,4 +305,16 @@ test("recordUiCheck: a signed, code-state-bound stamp inside a repo; nothing out
   const bare = mkdtempSync(join(tmpdir(), "forge-uicheck-"));
   assert.equal(recordUiCheck(bare, { check: "design", pass: true }), false);
   assert.equal(existsSync(join(bare, ".forge")), false, "no stray .forge outside a repo");
+});
+
+test("recordUiCheck: run from a subdirectory, the stamp lands at the toplevel, toplevel-relative", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-uicheck-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  mkdirSync(join(root, "web", "src"), { recursive: true });
+  writeFileSync(join(root, "web", "src", "a.css"), "a{}\n");
+  const sub = join(root, "web");
+  assert.equal(recordUiCheck(sub, { check: "design", pass: true, files: ["src/a.css"] }), true);
+  assert.equal(existsSync(join(sub, ".forge")), false, "not in the subdirectory");
+  const stamp = JSON.parse(readFileSync(join(root, ".forge", "uicheck.json"), "utf8"));
+  assert.deepEqual(stamp.files, ["web/src/a.css"], "the path `git status` reports");
 });

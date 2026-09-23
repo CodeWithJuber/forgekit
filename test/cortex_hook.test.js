@@ -262,6 +262,12 @@ test("isE2eRun: real, unmasked end-to-end suite runs only", () => {
     "pnpm exec playwright test",
     "npx cypress run",
     "cd /repo && E2E_BASE_URL=http://localhost:3100 npm run e2e",
+    // Redirections keep the suite's exit status; quoted arguments are data.
+    "npm run e2e > e2e.log 2>&1",
+    "npm run e2e &> e2e.log",
+    'npx playwright test --grep "checkout|pay; now"',
+    // A server backgrounded BEFORE the run: the run itself is still the last command.
+    "npx next start -p 3100 & sleep 5 && npm run e2e",
   ])
     assert.equal(isE2eRun(c), true, c);
   for (const c of [
@@ -271,6 +277,23 @@ test("isE2eRun: real, unmasked end-to-end suite runs only", () => {
     "npm run e2e; exit 0",
     "npm run e2e 2>&1 | tail -20",
     "playwright install chromium",
+    // Review: each of these exits 0 whatever the suite did (the gate sees only that status).
+    'npm run e2e; echo "exit=$?"',
+    "npm run e2e || echo failed",
+    "npm run e2e > out.log 2>&1; cat out.log",
+    "cd web && npx playwright test; cd ..",
+    "npm run e2e &",
+    "npm run e2e & sleep 1",
+    "npm run e2e && echo done",
+    "npm run e2e\necho done",
+    "(npm run e2e)",
+    // The run may never have happened.
+    "npm run build || npm run e2e",
+    // Listing, help and empty runs execute no test.
+    "npx playwright test --list",
+    "npx playwright test --help",
+    "npm run e2e -- --list",
+    "npx playwright test --pass-with-no-tests",
   ])
     assert.equal(isE2eRun(c), false, c);
 });

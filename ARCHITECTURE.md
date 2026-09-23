@@ -220,13 +220,15 @@ snapshotted at SessionStart — so pre-existing edits, branch switches, and `git
 are never pinned on the agent (adversarial review demonstrated all three false-block
 classes). Paths are classified by ONE total function derived from the atlas registries
 (`CODE_EXTS`/`DOC_EXTS`/config rules) plus the shared test-file predicate, parsed from
-`-z` NUL-separated git output (C-quoted unicode paths classify correctly). When the
-session has a trail (`.forge/sessions/<sid>.trail`, appended by the PostToolUse capture:
-edit targets and the paths its Bash commands name), the set is narrowed to the files the
-session itself touched, so a concurrent agent's edits are never pinned on it; no trail →
-the tree-wide set. A stylesheet, or a JS/TS file whose diff only touches
-`className`/`class`/`style` values, variant strings or JSX text (`src/uidiff.js`), is a
-UI-only change: it owes a doc/state artifact OR a fresh `forge uicheck design|visual`
+`-z` NUL-separated git output (C-quoted unicode paths classify correctly). Each
+session keeps a trail (`.forge/sessions/<sid>.trail`, appended by the PostToolUse capture:
+edit targets and the paths its Bash commands name). A changed file is set aside as a
+concurrent agent's only on positive evidence (another live session's authoritative trail
+names it and this session's does not); every write no trail saw stays with the stopping
+session, so attribution fails toward blame, and without an authoritative trail the set is
+the tree-wide one. A stylesheet, or a JS/TS file whose diff only touches
+`className`/`class`/`style` JSX attribute values, variant strings or JSX text
+(`src/uidiff.js`), is a UI-only change: it owes a doc/state artifact OR a fresh `forge uicheck design|visual`
 PASS OR test evidence (a verify PASS, a substantive test, or a passing e2e run, each bound
 to the current code state), never a unit test by itself. Code moved without test
 evidence or a doc/state artifact → block once with the repair checklist as the reason; every
