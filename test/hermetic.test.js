@@ -27,14 +27,17 @@ const NOT_SCRUBBED = new Set(["TERM", "TOKEN", "X"]);
 // test above), so a src read of them sees that home, never the developer's. They count as a
 // leak again the moment one holds the real home.
 const SANDBOXED = new Set(["HOME", "USERPROFILE"]);
+// Set (not scrubbed) by _setup: each forces a network-free path, pinned by the test below.
+const SET_BY_SETUP = new Set(["FORGE_LLM_HTTP", "FORGE_NO_CATALOG_FETCH"]);
 
 test("every env var src reads is scrubbed (the denylist cannot drift from envVarsRead)", () => {
   const realHome = userInfo().homedir;
   const leaked = [...envVarsRead()].filter(
-    // FORGE_LLM_HTTP is set BY _setup on purpose: it forces the keyless HTTP runner.
+    // FORGE_LLM_HTTP and FORGE_NO_CATALOG_FETCH are set BY _setup on purpose: they force the
+    // keyless HTTP runner and keep the model catalogs off the network.
     (v) =>
       !NOT_SCRUBBED.has(v) &&
-      v !== "FORGE_LLM_HTTP" &&
+      !SET_BY_SETUP.has(v) &&
       !(SANDBOXED.has(v) && process.env[v] !== realHome) &&
       process.env[v] !== undefined,
   );

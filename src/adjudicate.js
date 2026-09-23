@@ -11,9 +11,8 @@
 //   - ZERO-DEP. Access is a `claude -p` CLI shell-out; the runner is injectable so the pure
 //     prompt/parse/verify logic is fully testable without the CLI or the network.
 import { execFileSync, spawnSync } from "node:child_process";
-import { gatewayModelId } from "./gateway_model_map.js";
 import { buildHttpRunner as httpRunner } from "./llm.js";
-import { MODELS } from "./model_tiers.js";
+import { MODELS, resolveTierModel } from "./model_tiers.js";
 import { envModelOverride } from "./providers.js";
 import { hasSecret } from "./secrets.js";
 
@@ -45,19 +44,36 @@ function hasClaude() {
   return _claudeAvail;
 }
 
-/** Build an injectable LLM runner. Tries direct HTTP when `claude` CLI is unavailable
- *  or when FORGE_LLM_HTTP=1. Falls back to `claude -p` otherwise. */
-export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
+/**
+ * The concrete model id a runner sends for `model`. An ANTHROPIC_MODEL/FORGE_MODEL override is
+ * honored verbatim, and so is a literal id; a tier key resolves to the newest model of its family
+ * in the catalog the environment reaches (a custom gateway's /v1/models, else the Anthropic Models
+ * API with ANTHROPIC_API_KEY), falling back to the shipped snapshot id (model_tiers).
+ * @param {string} model tier key (haiku/sonnet/opus/fable) or a literal model id
+ * @param {{root?: string|null, fetchImpl?: Function, env?: Record<string, string|undefined>}} [opts]
+ *   test seams for the catalog lookup
+ * @returns {string}
+ */
+export function runnerModel(model, { root = process.cwd(), fetchImpl, env } = {}) {
   const override = envModelOverride();
-  const stock = override || MODELS[model]?.id || model;
-  // A forced override is honored verbatim; otherwise remap the tier's stock id onto a custom
-  // gateway's real model when one is advertised (no-op for direct Anthropic — see gateway_model_map).
-  const resolvedModel = override ? stock : gatewayModelId(model, stock);
+  if (override) return override;
+  if (!MODELS[model]) return model;
+  return resolveTierModel(model, { root, fetchImpl, env })?.id ?? MODELS[model].id;
+}
+
+/** Build an injectable LLM runner. Tries direct HTTP when `claude` CLI is unavailable
+ *  or when FORGE_LLM_HTTP=1. Falls back to `claude -p` otherwise. The model id is resolved on
+ *  the FIRST call, not here: building a runner stays free on the hook path, and the catalog
+ *  lookup rides along with the (much slower) model call it precedes. */
+export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
+  /** @type {string|null} */
+  let resolved = null;
+  const modelId = () => (resolved ??= runnerModel(model));
   if (process.env.FORGE_LLM_HTTP === "1" || !hasClaude()) {
-    return httpRunner({ model: resolvedModel, timeoutMs });
+    return (prompt) => httpRunner({ model: modelId(), timeoutMs })(prompt);
   }
   return (prompt) =>
-    execFileSync("claude", ["-p", "--model", resolvedModel], {
+    execFileSync("claude", ["-p", "--model", modelId()], {
       input: prompt,
       encoding: "utf8",
       timeout: timeoutMs,

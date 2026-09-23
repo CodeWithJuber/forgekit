@@ -10,7 +10,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { read, record } from "./metrics.js";
-import { MODELS } from "./model_tiers.js";
+import { fetchPriceCatalog } from "./model_catalog.js";
+import { MODELS, resolveModelPrice } from "./model_tiers.js";
 import { contentHash } from "./util.js";
 
 /** Saving weight per cache-hit tier — must stay consistent with reuse.js savedEstimate
@@ -272,20 +273,21 @@ function usageTokens(usage) {
 /**
  * Fallback spend estimation from Claude's native JSONL session logs when ccusage
  * is unavailable. Scans ~/.claude/projects/ for session files and computes cost
- * from token counts x model_tiers pricing — uncached input and output at the model's
- * rates, cache writes and reads at CACHE_PRICE_RATIO of its input rate. Claude Code
- * writes one API response on several lines (one per content block), each repeating the
- * same message id and usage, and a resumed session re-logs its history into a new file,
+ * from token counts x each logged model's price — uncached input and output at the model's
+ * rates, cache writes and reads at CACHE_PRICE_RATIO of its input rate. A model is priced by
+ * model_tiers.resolveModelPrice: OpenRouter's live catalog for that exact id, else the shipped
+ * snapshot (its own row, the router registry's row, then its family's tier). A model nothing
+ * prices is reported in `unpriced` and left out of the total — never billed at a guessed rate.
+ * Claude Code writes one API response on several lines (one per content block), each repeating
+ * the same message id and usage, and a resumed session re-logs its history into a new file,
  * so each message id is counted once across every file. Best-effort, never throws.
+ * @param {{root?: string|null, fetchImpl?: Function, date?: string}} [opts] catalog cache root
+ *   (default cwd) and test seams, passed to resolveModelPrice
  */
-export function estimateSpendFromLogs() {
+export function estimateSpendFromLogs({ root = process.cwd(), fetchImpl, date } = {}) {
   try {
     const projectsDir = join(homedir(), ".claude", "projects");
     if (!existsSync(projectsDir)) return null;
-    const pricingPerM = {};
-    for (const [, m] of Object.entries(MODELS)) {
-      pricingPerM[m.id] = { inCost: m.inCost, outCost: m.outCost };
-    }
     const byModel = {};
     const seen = new Set();
     let sessions = 0;
@@ -330,19 +332,30 @@ export function estimateSpendFromLogs() {
     }
     let totalCost = 0;
     const modelBreakdown = [];
+    const unpriced = [];
+    // One price-catalog lookup for the whole estimate, however many models the logs name.
+    const priceCatalog = Object.keys(byModel).length
+      ? fetchPriceCatalog({ root, fetchImpl })
+      : null;
     for (const [model, u] of Object.entries(byModel)) {
-      const pricing = pricingPerM[model] || { inCost: 3, outCost: 15 };
-      const cost =
-        (u.inTokens * pricing.inCost +
-          u.outTokens * pricing.outCost +
-          u.cacheWrite5mTokens * pricing.inCost * CACHE_PRICE_RATIO.write5m +
-          u.cacheWrite1hTokens * pricing.inCost * CACHE_PRICE_RATIO.write1h +
-          u.cacheReadTokens * pricing.inCost * CACHE_PRICE_RATIO.read) /
-        1_000_000;
-      totalCost += cost;
+      const pricing = resolveModelPrice(model, { root, date, priceCatalog });
+      const cost = pricing
+        ? (u.inTokens * pricing.inCost +
+            u.outTokens * pricing.outCost +
+            u.cacheWrite5mTokens * pricing.inCost * CACHE_PRICE_RATIO.write5m +
+            u.cacheWrite1hTokens * pricing.inCost * CACHE_PRICE_RATIO.write1h +
+            u.cacheReadTokens * pricing.inCost * CACHE_PRICE_RATIO.read) /
+          1_000_000
+        : 0;
+      if (pricing) totalCost += cost;
+      else unpriced.push(model);
       modelBreakdown.push({
         model,
         cost,
+        priced: Boolean(pricing),
+        priceSource: pricing
+          ? `${pricing.source}${pricing.basis ? `:${pricing.basis}` : ""}`
+          : null,
         inTokens: u.inTokens,
         outTokens: u.outTokens,
         cacheWriteTokens: u.cacheWrite5mTokens + u.cacheWrite1hTokens,
@@ -350,7 +363,7 @@ export function estimateSpendFromLogs() {
       });
     }
     modelBreakdown.sort((a, b) => b.cost - a.cost);
-    return { totalCost, sessions, byModel: modelBreakdown };
+    return { totalCost, sessions, byModel: modelBreakdown, unpriced };
   } catch {
     return null;
   }

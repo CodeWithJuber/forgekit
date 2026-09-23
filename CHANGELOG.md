@@ -34,6 +34,92 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     prove itself useful again.
   - `forge ledger show` and `forge ledger blame` read the attic, so a fresh retraction stays
     inspectable.
+- **Model tiers resolve to the newest live model instead of pinned ids.** A tier now names a
+  model family (haiku / sonnet / opus / fable), and wherever a concrete id or price is needed
+  (the LLM runner, `forge route gateway`, the cost estimate, `forge route`, `forge models`) it
+  is resolved at that moment:
+  - **Model id:** the newest model of the family in the active provider's live catalog: the
+    Anthropic Models API (`GET /v1/models` with `ANTHROPIC_API_KEY`, all pages), a custom
+    gateway's `/v1/models`, or OpenRouter's list. Family membership is the family word as a
+    whole token of the id or display name, and "newest" is the catalog's own `created_at`.
+    No model id is written in the code. Direct-API users were never resolved before: the
+    gateway remap skipped `api.anthropic.com`.
+  - **Price:** OpenRouter's public catalog, converted from USD per token to per million and
+    matched to the resolved id by its tokens (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
+  - **Fallback:** each step runs only when the previous one is unavailable (no key, offline,
+    timeout, non-2xx, no family match). Next comes the last cached catalog response, then the
+    snapshot in `src/model_tiers.json`, which keeps its `pricingVerified` date and the
+    `forge doctor` staleness warning. Explicit ids in `.forge/providers.json` and
+    `ANTHROPIC_MODEL` still win.
+  - **Caching:** catalogs are cached under `.forge/cache/`, which ignores itself in git and is
+    listed in `.forge/.gitignore`. Freshness comes only from the response (`Cache-Control`,
+    `Expires`, `Age`); otherwise the next use revalidates with `If-None-Match` /
+    `If-Modified-Since`. Lookups time out after 3 s and never throw. The per-prompt hooks never
+    resolve anything, and the runner resolves on its first call, not when it is built.
+    `FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline.
+  - New exports from `model-tiers`: `resolveTierModel`, `resolveTierPrice`,
+    `resolveModelPrice`, `resolveTiers` and `describeResolution`. The existing exports are
+    unchanged.
+- **`forge models`** prints what every tier resolves to right now: family, model id, created
+  date, price, and where the id and the price came from (`--json` for the full resolution).
+
+### Security
+
+- **A catalog can no longer write anything but a model id into the generated gateway config.**
+  Ids and display names come from a live catalog, and `forge route gateway` writes a file the
+  user feeds to LiteLLM as routing config. Two layers now stand between them:
+  - **At the boundary:** a catalog row whose id is not id-shaped (whitespace, control
+    characters, over 200 characters) is dropped in `normalizeCatalogPage`, so it is never
+    resolved, written to config, or passed to a model call. A display name is kept as one
+    printable line.
+  - **At the emitter:** every catalog-sourced value is a quoted YAML scalar with control
+    characters escaped, and comments are collapsed to one line.
+
+  Without this, a display name carrying a newline could add a second entry for a tier alias,
+  and LiteLLM's `simple-shuffle` would then send a share of that tier's prompts to the spliced
+  model. `test/route.test.js` pins it with a crafted catalog.
+
+### Changed
+
+- **`forge route` shows the resolved model id** and where it came from, under the
+  recommendation. The price reads `live price` when OpenRouter lists that id. `--json` carries
+  the same resolution as `resolved` and `price` beside the unchanged `model` row, and the MCP
+  `route_task` names the resolved id too, so no surface reports a different model than another.
+- **A catalog held in memory expires when the response says it does.** One lookup per catalog
+  per process keeps `forge models` from asking once per tier, but the entry now carries the
+  response's own freshness, so a long-running dashboard or MCP server picks up a new model
+  instead of holding its first answer until restart.
+- **`forge route gateway` / `forge config gateway`** write the resolved ids. They drop the
+  hard-coded "Models verified 2026-07-05" line: each tier alias carries an `# id:` comment
+  naming its source. The passthrough list keeps the snapshot id when it differs, so a
+  client pinned to it still works. An OpenRouter provider now gets real OpenRouter ids
+  behind `openrouter/`.
+- **The custom-gateway remap picks the newest model of each family** the gateway advertises
+  (its creation time, then the version), not the one closest to the snapshot's version. The
+  gateway fetch shares the new catalog code; the old separate fetch child is gone.
+- **The session-log cost estimate no longer bills unknown models at $3/$15.** Each logged
+  model is priced from the live catalog, else the snapshot row, the router registry, or its
+  family's tier. A model nothing prices is listed as unpriced and left out of the total.
+## [1.1.2] - 2026-09-22
+
+### Added
+
+- **The universal router's benchmark is independently replicated.** harness-bench run 4 was
+  re-run from the pinned public data (SWE-bench Verified `78f471b`, SWE-bench/experiments
+  `40f164d`) on a second machine. Results:
+  - **Split:** the same 150/350 split.
+  - **Held-out test:** 217 of 218 metrics identical, with only wall-clock fit time differing.
+    The headline reproduces: 76.3% solved at $0.093 per task against 75.1% at $0.364.
+  - **Shipped prior:** refits bit for bit (176 of 176 values).
+
+  `bench/universal-router/README.md` records the commands, including the sub-1 MB sparse fetch
+  of the experiments data.
+
+### Fixed
+
+- **`fit_prior.mjs` writes its default output on Windows.** The default `--out` used
+  `new URL(…).pathname`, which is `/C:/…` on Windows and not a usable path; it now uses
+  `fileURLToPath`.
 
 ## [1.1.1] - 2026-09-22
 
@@ -2652,7 +2738,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.1...v1.0.0

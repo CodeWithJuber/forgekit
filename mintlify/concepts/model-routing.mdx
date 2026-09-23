@@ -1,10 +1,10 @@
 ---
 title: "Model routing"
-description: "A deterministic, diffable rubric picks the cheapest capable model tier before dispatch — with a fail-safe remap for self-hosted gateways."
+description: "A deterministic, diffable rubric picks the cheapest capable model tier before dispatch — each tier a model family, resolved to the newest live model with a fail-safe fallback."
 ---
 
 Forge recommends the cheapest capable model for a task **before** dispatch, from a
-deterministic rubric you can read in the repo (`src/model_tiers.json`). Unlike a gateway
+deterministic rubric you can read in the repo (`src/route.js`). Unlike a gateway
 that decides inside the proxy at request time, the routing decision is visible and
 diffable in git.
 
@@ -47,37 +47,47 @@ intent by the same exemplar k-NN estimator. Note the two use different stop-sets
 treats generic verbs (`fix` / `add` / `build`) as complexity noise, but those verbs are
 exactly the intent signal.
 
-## The tier table
+## Tiers name families; ids are resolved
 
-The tier table (`src/model_tiers.json`) pins public Anthropic model IDs by family
-(haiku / sonnet / opus / fable). Doc prices are reconciled against this file by the docs
-check, so prose and the table can't drift.
-
-## Self-hosted gateway remap
-
-A self-hosted LiteLLM or proxy gateway serves its own model names, so a stock ID sent
-verbatim would 404. When a non-default gateway base URL is configured, Forge
-(`src/gateway_model_map.js`) fetches `GET /v1/models` **once per process** and scores
-each advertised id against every tier's family:
+Each tier names a model **family** (haiku / sonnet / opus / fable). The concrete id and price
+are resolved where they are needed — the LLM runner, the gateway config, the cost estimate,
+`forge route`, `forge models` — never on the per-prompt hook path:
 
 <Steps>
-  <Step title="Hard family gate">
-    The family word (haiku / sonnet / opus / fable) must match — it is a hard gate.
+  <Step title="Newest of the family in the live catalog">
+    The active provider's own model list — the Anthropic Models API (`GET /v1/models`, with
+    `ANTHROPIC_API_KEY`), a custom gateway's `/v1/models`, or OpenRouter's list. The family
+    word must be a whole token of the id or display name; "newest" is the catalog's
+    `created_at`. No model id is listed in the code.
   </Step>
-  <Step title="Best overlap wins">
-    Among the family, the `setOverlap` coefficient of the tier's name tokens picks the
-    best match.
+  <Step title="Live price">
+    OpenRouter's public catalog, per-token prices converted to per million, matched to the
+    resolved id by its tokens (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
   </Step>
-  <Step title="Tie-break to canonical">
-    Ties break toward the id closest to the canonical name.
+  <Step title="Fallback">
+    Only when the previous step is unavailable: the last cached catalog response, then the
+    shipped snapshot in `src/model_tiers.json` (with its `pricingVerified` date). Doc prices
+    are reconciled against that snapshot by the docs check.
   </Step>
 </Steps>
 
+`forge models` prints what every tier resolves to and where each id and price came from.
+Catalogs are cached under `.forge/cache/`, refreshed only by what the response's own
+`Cache-Control` / `Expires` / `ETag` allow; `FORGE_NO_CATALOG_FETCH=1` keeps it offline.
+
+## Self-hosted gateway remap
+
+A self-hosted LiteLLM or proxy gateway serves its own model names, so a snapshot ID sent
+verbatim would 404. When a non-default gateway base URL is configured, Forge
+(`src/gateway_model_map.js`) reads its `GET /v1/models` and maps each tier onto the newest
+advertised model of its family — the same rule as above: the family word is a hard gate,
+then the gateway's creation time, the parsed version, and the id closest to the canonical
+name decide.
+
 <Warning>
-  The remap consults the gateway **only** when the resolved id is a _stock_ ID — an
-  explicit `.forge/providers.json` alias or an `ANTHROPIC_MODEL` override is never
-  touched. It fails safe to the stock ID on no gateway, an unreachable `/v1/models`, or
-  no family match, so direct `api.anthropic.com` users are byte-identical.
+  An explicit `.forge/providers.json` alias or an `ANTHROPIC_MODEL` override is never
+  touched. The remap fails safe to the snapshot ID on an unreachable `/v1/models` or no
+  family match.
 </Warning>
 
 `forge doctor`'s **gateway models** row prints the resolved `tier → model` mapping for

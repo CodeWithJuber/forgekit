@@ -49,3 +49,9 @@ process.env.USERPROFILE = home;
 // now-keyless provider resolution returns null and the runner throws synchronously — the
 // exact fail-safe path CI already takes. No subprocess, no socket, no timeout.
 process.env.FORGE_LLM_HTTP = "1";
+
+// The model catalogs (src/model_catalog.js) need NO key for OpenRouter's public price list, so a
+// scrubbed env alone does not keep `forge route`/`forge cost`/`forge models` off the network.
+// FORGE_NO_CATALOG_FETCH=1 turns the default transport off: every catalog lookup falls back to
+// the shipped snapshot. Tests that exercise the live path inject a stub fetchImpl instead.
+process.env.FORGE_NO_CATALOG_FETCH = "1";
