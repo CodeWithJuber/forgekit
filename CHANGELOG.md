@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`forge uicheck contrast` exits 1 when a pair fails WCAG AA.** Before, it printed
+  `FAILS AA` and still exited 0. The bare `forge uicheck <fg> <bg>` form gates the same way.
+  `--large` applies the 3:1 large-text / UI bar and `--json` prints the full report. Colors
+  may be `rgb()`, `hsl()`, `oklch()`, `oklab()` or hex with an alpha pair, not only
+  `#rrggbb`. A translucent foreground is composited over the background before measuring.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added

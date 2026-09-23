@@ -2827,24 +2827,46 @@ HANDLERS.uicheck = async (argv) => {
     if (fail) process.exitCode = 1;
     return;
   }
-  const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
-    "./uicheck.js"
-  );
+  const { contrastReport, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import("./uicheck.js");
   // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
-  // supported (it predates the subcommands and hooks already call it).
-  const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
-  heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
+  // supported (it predates the subcommands and hooks already call it). Both exit 1
+  // when the pair fails AA — a failing contrast must fail the script that asked.
+  const args = argv.slice(sub === "contrast" ? 2 : 1);
+  const json = args.includes("--json");
+  const large = args.includes("--large");
+  const colors = args.filter((a) => !a.startsWith("--"));
+  if (sub === "contrast" && colors.length !== 2) {
+    console.error(
+      `usage: ${BRAND.cli} uicheck contrast <fg> <bg> [--large] [--json]   (colors: #hex[alpha], rgb(), hsl(), oklch(), oklab())`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const [fg, bg] = colors;
+  /** @type {ReturnType<typeof contrastReport>|null} */
+  let r = null;
   if (fg && bg) {
     try {
-      const g = wcagLevel(contrastRatio(fg, bg));
-      console.log(
-        `  contrast ${fg} on ${bg}: ${g.ratio}:1  →  ${g.level}${g.passesAA ? " (passes AA)" : " (FAILS AA)"}`,
-      );
+      r = contrastReport(fg, bg, { large });
     } catch (e) {
-      console.error(`  ${e.message}`);
+      if (json) console.log(JSON.stringify({ error: e.message }, null, 2));
+      else console.error(`  ${e.message}`);
       process.exitCode = 1;
       return;
     }
+    if (!r.passesAA) process.exitCode = 1;
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+  }
+  heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
+  if (r) {
+    const kind = large ? "large text / UI" : "normal text";
+    console.log(
+      `  contrast ${fg} on ${bg}: ${r.ratio}:1  →  ${r.level}${r.passesAA ? ` (passes AA for ${kind})` : ` (FAILS AA — ${kind} needs ${r.required.aa}:1)`}`,
+    );
+    for (const n of r.notes) console.log(`  note: ${n}`);
   }
   console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
   console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);

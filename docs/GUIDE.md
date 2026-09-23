@@ -1140,12 +1140,25 @@ tree (your uncommitted changes wouldn't be in the run); commit/stash first or pa
 Five subcommands: three are static parsing — no LLM, no screenshots — and `visual`
 and `interact` optionally drive a real browser.
 
-**`contrast <fg> <bg>`** — exact WCAG math, asserted, never guessed (bare
-`forge uicheck <fg> <bg>` still works):
+**`contrast <fg> <bg> [--large] [--json]`** — exact WCAG math, asserted, never guessed
+(bare `forge uicheck <fg> <bg>` still works). It **exits 1 when the pair fails AA**, so a
+script or CI step can gate on it. `--large` grades against the large-text / UI-component
+bar (AA 3:1) instead of normal text (AA 4.5:1); `--json` prints the ratio, level, both
+thresholds and the colors actually compared. Colors may be `#rgb`/`#rrggbb` with or
+without an alpha digit pair, `rgb()`, `hsl()`, `oklch()` (Tailwind v4's default palette
+syntax), `oklab()`, or `black`/`white`/`transparent`. A translucent foreground is
+composited over the background before measuring (a 50% black text paints grey, not black);
+a translucent background is composited over white, and the output says so. Quote colors
+in the shell: an unquoted `#777` is a comment.
 
 ```console
 $ forge uicheck contrast "#777" "#fff"
-  contrast #777 on #fff: 4.48:1  →  fail (FAILS AA)
+  contrast #777 on #fff: 4.48:1  →  fail (FAILS AA — normal text needs 4.5:1)
+$ echo $?
+1
+$ forge uicheck contrast "rgb(0 0 0 / 50%)" "#fff"
+  contrast rgb(0 0 0 / 50%) on #fff: 3.95:1  →  fail (FAILS AA — normal text needs 4.5:1)
+  note: foreground rgb(0 0 0 / 50%) has alpha 0.5 — composited over the background to #808080
 ```
 
 **`fingerprint <file...> [--mint]`** — the design feature vector of your UI files:
