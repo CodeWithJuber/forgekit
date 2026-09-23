@@ -75,6 +75,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model is priced from the live catalog, else the snapshot row, the router registry, or its
   family's tier. A model nothing prices is listed as unpriced and left out of the total.
 
+## [1.1.2] - 2026-09-22
+
+### Added
+
+- **The universal router's benchmark is independently replicated.** harness-bench run 4 was
+  re-run from the pinned public data (SWE-bench Verified `78f471b`, SWE-bench/experiments
+  `40f164d`) on a second machine. Results:
+  - **Split:** the same 150/350 split.
+  - **Held-out test:** 217 of 218 metrics identical, with only wall-clock fit time differing.
+    The headline reproduces: 76.3% solved at $0.093 per task against 75.1% at $0.364.
+  - **Shipped prior:** refits bit for bit (176 of 176 values).
+
+  `bench/universal-router/README.md` records the commands, including the sub-1 MB sparse fetch
+  of the experiments data.
+
+### Fixed
+
+- **`fit_prior.mjs` writes its default output on Windows.** The default `--out` used
+  `new URL(…).pathname`, which is `/C:/…` on Windows and not a usable path; it now uses
+  `fileURLToPath`.
+
 ## [1.1.1] - 2026-09-22
 
 ### Fixed
@@ -2692,7 +2713,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CodeWithJuber/forgekit/compare/v0.32.1...v1.0.0
