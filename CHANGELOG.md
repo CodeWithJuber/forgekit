@@ -17,13 +17,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pattern, a commit message or a `--grep=` value is never a path. `.env.example`/`.sample`/
   `.template`/`.dist` are templates, `*.key.ts` is code, a `secrets/` directory's source files
   are code, and a project `.npmrc` is protected only when it holds a literal `_authToken`/
-  `_auth`/`_password` (an `${NPM_TOKEN}` reference is not a secret); `~/.npmrc` always is.
-  `.env`, `.env.local`, `.env.production`, `id_rsa`, `*.key` and `*.pem` stay blocked.
+  `_auth`/`_password` (an `${NPM_TOKEN}` reference is not a secret); `~/.npmrc` always is, and
+  so is a relative `.npmrc` once the command has changed directory (`cd ~ && cat .npmrc`).
+  `.env`, `.env.local`, `.env-local`, `.env.production`, `id_rsa`, `*.key` and `*.pem` stay
+  blocked. For a `settings.json` install, `permissions.deny` still lists `Read(./.env.*)` and
+  `Read(./**/.npmrc)`, and deny wins, so the Read tool keeps refusing `.env.example` and a
+  token-less `.npmrc` there; the relaxation reaches Bash everywhere and the Read tool on a
+  plugin install.
 - **`protect-paths` closes the reads it missed.** `sed`, `awk`, `tac`, `sort`, `uniq`, `cut`,
   `paste`, `bat`, `jq`, `diff`, `cmp`, `fold`, `rev`, `hexdump` and `dd if=` now count as
-  readers; `… < .env` (input redirection), `cat .e*v` (globs), `$( … )`/backticks, `$'\x2eenv'`,
-  a command on a second line and a heredoc fed to a shell are checked; `rm -rf` of `.`, `..`,
-  `./` or `*`, `git checkout .` / `git restore .` (but not `git restore --staged .`), and
+  readers; `… < .env` (input redirection), `cat .e*v` (globs), `cat .{env,x}` and
+  `--include '*.{env,pem}'` (brace alternation), `$( … )`/backticks, `$(echo .env)`,
+  `$'\x2eenv'`, `bash -c '…'`/`eval …` strings, a command on a second line (also after
+  `$((1<<2))`, which is a shift and not a heredoc) and a heredoc fed to a shell, wrapped or not
+  (`sudo bash <<EOF`), are checked. A flag between a reader or writer and its file no longer
+  hides the file (`cat -n .env`, `sort -n .env`, `cp -n .env x`), a pattern glued to its option
+  is read as the pattern (`grep -eKEY .env`), index paths are checked (`git show :.env`), and a
+  recursive read of a `secrets/` directory is blocked (`rg KEY secrets/`, `git diff -- secrets/`,
+  the Grep tool unless its `glob`/`type` keeps it to source files). `rm -rf` of `.`, `..`, `./` or `*`,
+  `git checkout .` / `git restore .` (but not `git restore --staged .`), and
   `curl … | sudo sh` / `| python3` are blocked. The protect-paths matcher now covers `Read`,
   `Grep`, `Glob` and `NotebookRead` in all three hook manifests; the Grep tool's `glob` filter
   is checked too.

@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  expandBraces,
   globMatchesSecret,
   npmrcHasToken,
   protectPathsDecision,
@@ -26,6 +27,8 @@ import {
 
 const guards = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
 const noFile = () => null;
+/** `${HOME}` spelled without a template-looking string literal (Biome noTemplateCurlyInString). */
+const HOME_VAR = ["$", "{HOME}"].join("");
 /** @param {string} command */
 const bash = (command, extra = {}) =>
   protectPathsDecision({ toolName: "Bash", command, readText: noFile, ...extra });
@@ -70,10 +73,20 @@ test("false positives from the review are allowed: env accessors, templates, cod
     ["Read", "/p/src/config.env.ts"],
     ["Read", "/p/.env/lib/python3.12/site.py"], // a virtualenv named `.env`
     ["Edit", "/p/src/app/docs/secrets/page.tsx"],
-    ["Grep", "/p/src/app/docs/secrets"],
+    ["Grep", "/p/src/app/docs/secrets/page.tsx"],
   ]) {
     const d = protectPathsDecision({ toolName: tool, filePath: file_path, readText: noFile });
     assert.equal(d.block, false, `must not block ${tool} of ${file_path} (${d.reason})`);
+  }
+  // Grep of the route DIRECTORY passes when its filter keeps the search to source files.
+  for (const filter of [{ glob: "*.tsx" }, { glob: "*.{ts,tsx}" }, { type: "ts" }]) {
+    const d = protectPathsDecision({
+      toolName: "Grep",
+      filePath: "/p/src/app/docs/secrets",
+      readText: noFile,
+      ...filter,
+    });
+    assert.equal(d.block, false, `must not block Grep ${JSON.stringify(filter)} (${d.reason})`);
   }
 });
 
@@ -259,6 +272,236 @@ test("rm of the working tree, whole-tree checkout/restore and pipe-to-shell behi
   }
 });
 
+// ── Review round 2: every bypass the independent review confirmed on this branch.
+
+test("a flag between a plain reader or writer and the secret never hides it", () => {
+  // One option table serves every plain reader/writer, so a value it wrongly lists (`cat -n`)
+  // used to swallow the file after it. Every option value is now checked as a path too.
+  for (const command of [
+    "cat -n .env",
+    "cat -T .env",
+    "cat -t .env",
+    "cat -vn .env",
+    "od -c .env",
+    "less -S .env",
+    "more -d .env",
+    "base64 -d .env",
+    "strings -d .env",
+    "xxd -d .env",
+    "sort -n .env",
+    "sort -rn .env",
+    "uniq -c .env",
+    "uniq -d .env",
+    "bat -n .env",
+    "diff -w .env /dev/null",
+    "diff -c .env x",
+    "diff --from-file=.env x",
+    "hexdump -c .env",
+    "head -n 5 .env",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, true, `must block: ${command}`);
+    assert.match(String(d.reason), /reading a protected secret path/);
+  }
+  for (const command of [
+    "cp -n .env /tmp/x",
+    "cp -d .env /tmp/x",
+    "cp -T .env /tmp/x",
+    "mv -n .env /tmp/x",
+    "cp -t ~/.ssh id_ed25519.pub",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, true, `must block: ${command}`);
+    assert.match(String(d.reason), /writing to a protected secret path/);
+  }
+  for (const command of [
+    "cat -n src/a.ts",
+    "sort -t, -k2 data.csv",
+    "cut -d. -f1 a.txt",
+    "head -c 100 a.bin",
+    "uniq -c words.txt",
+    "cp -t dist a b",
+    "mv -n a.ts b.ts",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+});
+
+test("a pattern or file glued to its option (-eKEY, -rnwe, -fFILE) is read getopt style", () => {
+  for (const command of [
+    "grep -eKEY .env",
+    "grep -rnweKEY .env",
+    "grep -rnf .env src", // -f FILE in a cluster
+    "rg -eKEY .env",
+    "git grep -eKEY -- .env",
+    "sed -ep .env",
+    "sed -nep .env",
+    "awk -fprog.awk .env",
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  }
+  for (const command of [
+    "grep -eKEY src",
+    "grep -rnwe .env src", // the glued pattern `.env` is a pattern, not a file
+    "sed -i.bak -e 's/a/b/' src/a.ts",
+    "git log -pS .env", // a pickaxe string
+    "rg -tpy KEY src",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+});
+
+test("git index paths (`:.env`, `:0:.env`) and `log -L` ranges are checked like `REV:path`", () => {
+  for (const command of [
+    "git show :.env",
+    "git show :0:.env",
+    "git cat-file -p :.env",
+    "git log -L1,5:.env",
+    "git log -L 1,5:.env",
+  ])
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  for (const command of [
+    "git show :src/a.ts",
+    "git show HEAD:src/a.ts",
+    "git show :0:README.md",
+    "git log -L :main:src/a.ts",
+  ])
+    assert.equal(bash(command).block, false, `must not block: ${command}`);
+});
+
+test("a recursive search of a secrets/ directory is blocked; its code files stay readable", () => {
+  for (const command of [
+    "grep -r password ./secrets/",
+    "rg KEY config/secrets/",
+    "rg KEY secrets",
+    "git grep KEY -- secrets",
+    "git diff -- secrets/", // diff/log/show print every file under a directory pathspec
+    "git log -p secrets",
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  }
+  for (const filePath of ["/run/secrets/", "/p/src/app/docs/secrets"]) {
+    const d = protectPathsDecision({ toolName: "Grep", filePath, readText: noFile });
+    assert.equal(d.block, true, `must block Grep of ${filePath}`);
+  }
+  // A glob that is not source-only does not unlock the store.
+  assert.equal(
+    protectPathsDecision({ toolName: "Grep", filePath: "/run/secrets", glob: "*" }).block,
+    true,
+  );
+  for (const command of [
+    "rg KEY src/app/docs/secrets/page.tsx",
+    "git diff -- src/app/docs/secrets/page.tsx",
+    "ls secrets", // lists names, reads nothing
+    "grep -rn x src/app/docs",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+  // Glob only lists names, so a secrets/ directory path stays allowed there.
+  assert.equal(
+    hook({ tool_name: "Glob", tool_input: { pattern: "*", path: "/run/secrets" } }).code,
+    0,
+  );
+});
+
+test("`<<` inside arithmetic is a shift, not a heredoc that hides the next line", () => {
+  for (const command of [
+    "echo $((1<<2))\ncat .env",
+    "((x=1<<3))\ncat .env",
+    'echo "$((1<<2))"\ncat .env',
+    "for ((i=0; i<<2; i++)); do :; done\ncat .env",
+    "sudo bash <<EOF\ncat .env\nEOF", // a heredoc fed to a WRAPPED shell is still code
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${JSON.stringify(command)}`);
+  }
+  for (const command of [
+    "echo $((1<<2))",
+    "if ((x > 2)); then echo y; fi",
+    "for ((i=0; i<3; i++)); do echo $i; done",
+    "x=$(( (a+b) * 2 ))",
+    "cat <<EOF > notes.md\ncat .env\nEOF",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${JSON.stringify(command)} (${d.reason})`);
+  }
+  assert.deepEqual(
+    shellSegments("echo $((1<<2))\nls").map((s) => s.words[0].text),
+    ["1<<2", "echo", "ls"],
+  );
+});
+
+test("`sh -c` / `eval` strings and `$(echo …)` output are checked as commands and words", () => {
+  for (const command of [
+    'bash -c "true; cat .env"',
+    "sh -c 'cat .env'",
+    'bash -lc "cat .env"',
+    "bash -o pipefail -c 'cat .env'",
+    'sudo sh -c "cat .env"',
+    'eval "cat .env"',
+    "eval cat .env",
+    'cat "$(echo .env)"',
+    "cat $(printf .env)",
+    "cat `echo .env`",
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  }
+  for (const command of [
+    "bash -c 'npm test'",
+    'eval "$(ssh-agent -s)"',
+    'echo "$(echo .env)"',
+    "bash script.sh",
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+  // Nesting beyond the bound is not unpicked: it fails closed.
+  assert.match(String(secretShellAccess(`${"eval ".repeat(12)}true`)), /fail closed/);
+});
+
+test("brace alternation and dash-separated env names select a secret", () => {
+  for (const command of [
+    "grep -r KEY --include '*.{env,pem}' .",
+    "rg -g '{.env,x}' KEY",
+    "cat .{env,x}",
+    "cat .env-local",
+    "echo x > .env-prod",
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  }
+  for (const [glob, want] of [
+    ["*.{env,pem}", true],
+    ["{.env,x}", true],
+    ["*.{ts,tsx}", false],
+  ]) {
+    const d = protectPathsDecision({ toolName: "Grep", filePath: "/p", glob, readText: noFile });
+    assert.equal(d.block, want, `Grep glob ${glob}`);
+  }
+  assert.equal(protectPathsDecision({ toolName: "Read", filePath: "/p/.env-prod" }).block, true);
+  for (const command of [
+    "cat .env-example",
+    "rg -g '*.{ts,tsx}' KEY",
+    "cat src/{a,b}.ts",
+    "echo '{.env,x}'",
+    `cat ${HOME_VAR}/notes.txt`,
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+});
+
+test("expandBraces: alternation, nesting, literals and the fail-closed cap", () => {
+  assert.deepEqual(expandBraces("*.{env,pem}"), ["*.env", "*.pem"]);
+  assert.deepEqual(new Set(expandBraces("{a,{b,c}}")), new Set(["a", "b", "c"]));
+  assert.deepEqual(expandBraces(`${HOME_VAR}/x`), [`${HOME_VAR}/x`], "no comma: literal");
+  assert.deepEqual(expandBraces("find -exec {} ;"), ["find -exec {} ;"]);
+  assert.deepEqual(expandBraces("{a,b"), ["{a,b"], "unbalanced: literal");
+  assert.equal(expandBraces("{a,b}".repeat(8)).length, 64, "capped");
+  assert.equal(globMatchesSecret("{a,b}".repeat(8)), true, "an over-cap glob fails closed");
+});
+
 // ── .npmrc: a project npmrc is config; only a literal token makes it a credential store.
 
 test("npmrcHasToken: a literal token counts, an env reference and plain config do not", () => {
@@ -298,6 +541,33 @@ test("a project .npmrc is readable unless it holds a token; the user-level one n
     const r = hook({ tool_name: "Bash", cwd: repo, tool_input: { command: "cat .npmrc" } });
     assert.equal(r.code, 2);
     assert.match(r.err, /protected secret path/);
+
+    // Once the command changes directory, a relative `.npmrc` is not the project's: `cd ~`
+    // reaches the user-level token, so it is judged without the payload cwd (fail closed).
+    writeFileSync(npmrc, "registry=https://registry.npmjs.org/\n");
+    for (const command of [
+      "cd ~ && cat .npmrc",
+      "cd && cat .npmrc",
+      "(cd ~; cat .npmrc)",
+      "pushd ~ >/dev/null; cat .npmrc",
+      "env -C ~ cat .npmrc",
+      "sudo -i cat .npmrc",
+      "cd ~ && bash -c 'cat .npmrc'",
+    ]) {
+      assert.equal(
+        protectPathsDecision({ toolName: "Bash", command, ...ctx }).block,
+        true,
+        command,
+      );
+    }
+    assert.equal(
+      hook({ tool_name: "Bash", cwd: repo, tool_input: { command: "cd ~ && cat .npmrc" } }).code,
+      2,
+    );
+    assert.equal(
+      protectPathsDecision({ toolName: "Bash", command: "cd src && cat README.md", ...ctx }).block,
+      false,
+    );
 
     // The user-level npmrc is protected whatever it holds, even when absent.
     const user = join(home, ".npmrc");
@@ -363,6 +633,11 @@ test("secretKind: one path predicate for tool paths and Bash words", () => {
   assert.equal(secretKind("/p/foo.key"), "credential/key file");
   assert.equal(secretKind("/p/secrets/page.tsx"), null);
   assert.equal(secretKind("/p/secrets/db.yaml"), "path under secrets/ or .ssh/");
+  assert.equal(secretKind("/p/secrets"), null, "a directory by itself is not read");
+  assert.equal(secretKind("/p/secrets/", { dir: true }), "path under secrets/ or .ssh/");
+  assert.equal(secretKind("/p/.env-local"), "env file");
+  assert.equal(secretKind("/p/.env-prod.local"), "env file");
+  assert.equal(secretKind("/p/.env-example"), null);
   assert.equal(secretKind("C:\\Users\\u\\.aws\\credentials"), "credential store");
   assert.equal(secretKind("/x/.npmrc", { home: "/h", readText: noFile }), null);
   assert.equal(secretKind("/h/.npmrc", { home: "/h", readText: noFile }), "credential store");
@@ -371,7 +646,9 @@ test("secretKind: one path predicate for tool paths and Bash words", () => {
 test("globMatchesSecret: dotfiles need a dot-led glob; wildcard-only globs are not targeted", () => {
   for (const g of [".e*v", ".env*", ".*", "*.pem", "**/*.key", "id_*", ".[e]nv", "*.env"])
     assert.equal(globMatchesSecret(g), true, g);
-  for (const g of ["*", "*.*", "*.ts", "src/**/*.tsx", "!.env*", ".env", "*.md"])
+  for (const g of ["*.{env,pem}", "{.env,x}", ".env-*", "src/{a,.env}"])
+    assert.equal(globMatchesSecret(g), true, g);
+  for (const g of ["*", "*.*", "*.ts", "src/**/*.tsx", "!.env*", ".env", "*.md", "*.{ts,tsx}"])
     assert.equal(globMatchesSecret(g), false, g);
 });
 

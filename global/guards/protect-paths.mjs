@@ -16,18 +16,27 @@
 // and `messages.key.ts` pass, while `.env`, `.env.local`, `id_rsa`, `*.pem` and `*.key` stay
 // blocked.
 //
+// The string of `sh -c …` / `eval …` is checked as a command line of its own, brace alternation
+// (`.{env,x}`) is expanded, and the literal output of `$(echo …)` counts as part of its word.
+//
 // SCOPE: pattern matching, not a sandbox. A word splitter cannot evaluate shell, so indirection
-// (`f=.env; cat $f`, brace expansion, `find … -exec cat {}`) and interpreter-driven access
-// (`python -c 'open(".env")…'`, `node -e …`) are DELIBERATELY out of scope. This layer sits
-// behind the permission system and secret-redact.sh: best-effort hardening, never a boundary.
+// (`f=.env; cat $f`, `find … -exec cat {}`, `xargs -a .env`, any other command substitution)
+// and interpreter-driven access (`python -c 'open(".env")…'`, `node -e …`) are DELIBERATELY out
+// of scope. This layer sits behind the permission system and secret-redact.sh: best-effort
+// hardening, never a boundary.
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 /**
  * @typedef {{cwd?: string, home?: string, readText?: (absPath: string) => string | null}} FsCtx
- * @typedef {FsCtx & {bash?: boolean}} PathCtx
- * @typedef {{text: string, glob: boolean, quoted: boolean}} Word
+ * `bash`: the path is a Bash word. `dir`: it is searched RECURSIVELY (grep -r, rg, the Grep
+ * tool), so a `secrets` directory itself is a secret store. `cwdUnknown`: the command changes
+ * directory first, so a relative path cannot be resolved against the payload's cwd.
+ * @typedef {FsCtx & {bash?: boolean, dir?: boolean, cwdUnknown?: boolean}} PathCtx
+ * `brace`: an unquoted `{` (bash brace expansion). `subst`: the literal output of a
+ * `$(echo …)`/`$(printf …)` inside the word.
+ * @typedef {{text: string, glob: boolean, quoted: boolean, brace?: boolean, subst?: string[]}} Word
  * @typedef {{op: string, target: Word}} Redirect
  * @typedef {{words: Word[], redirs: Redirect[]}} Segment
  */
@@ -67,9 +76,10 @@ export function secretKind(raw, ctx = {}) {
   const segs = p.split("/");
   const base = segs[segs.length - 1];
   const lower = segs.map((s) => s.toLowerCase());
-  const env = /^\.env((?:\.[\w-]+)*)~?$/i.exec(base);
+  // `.env`, `.env.local`, `.env-local`, `.env-prod.local` — but not the `.env.example` template.
+  const env = /^\.env((?:[.-][\w-]+)*)~?$/i.exec(base);
   if (env) {
-    if (!ENV_TEMPLATE.has(env[1].split(".").pop()?.toLowerCase() ?? "")) return "env file";
+    if (!ENV_TEMPLATE.has(env[1].split(/[.-]/).pop()?.toLowerCase() ?? "")) return "env file";
   } else if (/.\.env$/i.test(base) && (!ctx.bash || segs.length > 1)) {
     return "env file"; // `prod.env`, `docker/app.env`
   }
@@ -80,6 +90,9 @@ export function secretKind(raw, ctx = {}) {
     return "credential/key file";
   if (lower.includes(".ssh")) return SECRET_DIR;
   if (lower.slice(0, -1).includes("secrets") && !CODE_FILE.test(base)) return SECRET_DIR;
+  // A recursive search of the store itself (`grep -r KEY ./secrets/`, Grep on /run/secrets)
+  // reads every file in it; the code-file exemption above is for single files like page.tsx.
+  if (ctx.dir && lower.at(-1) === "secrets") return SECRET_DIR;
   if (
     /^(?:\.netrc|_netrc|\.git-credentials)$/i.test(base) ||
     (lower.at(-2) === ".aws" && lower.at(-1) === "credentials")
@@ -107,13 +120,15 @@ export function npmrcHasToken(text) {
  * A project `.npmrc` is ordinary config (`registry=`, `engine-strict=`) and reading it is
  * routine; only one holding a literal token is a credential store. The user-level npmrc is where
  * `npm login` writes the token, so it is always protected, and so is any spelling this guard
- * cannot resolve (`$DIR/.npmrc`): fail closed.
+ * cannot resolve (`$DIR/.npmrc`, or a relative one after `cd`): fail closed.
  * @param {string} p forward-slashed path
- * @param {FsCtx} ctx
+ * @param {PathCtx} ctx
  */
 function npmrcIsSecret(p, ctx) {
   if (/^~[^/]*\//.test(p) || /^\$\{?HOME\}?\//.test(p)) return true;
   if (/[$`]/.test(p)) return true;
+  // `cd ~ && cat .npmrc`: the payload cwd is no longer where a relative path points.
+  if (ctx.cwdUnknown && !/^(?:[A-Za-z]:)?\//.test(p)) return true;
   const home = slashes(ctx.home ?? homedir()).toLowerCase();
   const abs = slashes(/^(?:[A-Za-z]:)?\//.test(p) ? p : resolve(ctx.cwd ?? process.cwd(), p));
   if (abs.slice(0, abs.lastIndexOf("/")).toLowerCase() === home) return true;
@@ -147,6 +162,7 @@ const GLOB_SAMPLES = [
   ".env",
   ".env.local",
   ".env.production",
+  ".env-local",
   "prod.env",
   "id_rsa",
   "id_ed25519",
@@ -174,25 +190,75 @@ function globRegExp(glob) {
   return new RegExp(`^${re}$`, "i");
 }
 
+/** More alternatives than this and the expansion is not trusted (callers fail closed). */
+const BRACE_LIMIT = 64;
+
+/**
+ * Brace alternation, as bash and ripgrep/the Grep tool expand it: `*.{env,pem}` →
+ * [`*.env`, `*.pem`]. A `{…}` with no top-level comma (`${HOME}`, `{}`) is literal. At most
+ * BRACE_LIMIT results; a caller that gets that many treats the word as matching (fail closed).
+ * @param {string} s
+ * @returns {string[]}
+ */
+export function expandBraces(s) {
+  /** @type {string[]} */
+  const out = [];
+  /** @param {string} str */
+  const walk = (str) => {
+    if (out.length >= BRACE_LIMIT) return;
+    // One pass, innermost group first (`{a,{b,c}}` → `{a,b}`, `{a,c}` → …): linear per call.
+    /** @type {{at: number, cuts: number[]}[]} */
+    const open = [];
+    for (let k = 0; k < str.length; k++) {
+      const ch = str[k];
+      if (ch === "{") open.push({ at: k, cuts: [] });
+      else if (ch === "," && open.length) open[open.length - 1].cuts.push(k);
+      else if (ch === "}" && open.length) {
+        const g = /** @type {{at: number, cuts: number[]}} */ (open.pop());
+        if (!g.cuts.length) continue;
+        let from = g.at + 1;
+        for (const cut of [...g.cuts, k]) {
+          walk(str.slice(0, g.at) + str.slice(from, cut) + str.slice(k + 1));
+          from = cut + 1;
+        }
+        return;
+      }
+    }
+    out.push(str);
+  };
+  walk(String(s));
+  return out;
+}
+
 /**
  * True iff the wildcard pattern `glob` (a shell glob, an `rg -g` glob, the Grep tool's `glob`)
- * can select a protected secret file by name.
+ * can select a protected secret file by name. Brace alternatives are tested one by one, and a
+ * literal alternative (`{.env,x}`) is tested as a path.
  * @param {string} glob
+ * @param {PathCtx} [ctx]
  */
-export function globMatchesSecret(glob) {
+export function globMatchesSecret(glob, ctx = {}) {
   const g = slashes(glob);
   if (g.startsWith("!")) return false; // an exclusion (`rg -g '!.env'`) never selects a file
-  const base = g.split("/").pop() ?? "";
-  if (!/[*?[]/.test(base)) return false; // no wildcard in the name: the literal check covers it
-  let re;
-  try {
-    re = globRegExp(base);
-  } catch {
-    return true; // an unparsable class: fail closed
-  }
-  const dotted = base.startsWith(".");
-  const literal = base.replace(/\[[^\]]*\]|[*?.]/g, "");
-  return GLOB_SAMPLES.some((s) => (s.startsWith(".") ? dotted : literal.length > 0) && re.test(s));
+  const alts = expandBraces(g);
+  if (alts.length >= BRACE_LIMIT) return true;
+  return alts.some((alt) => {
+    const base = alt.split("/").pop() ?? "";
+    // No wildcard in the name: the caller's literal check covers the word itself; an
+    // alternative the braces produced gets that check here.
+    if (!/[*?[]/.test(base)) return alt !== g && secretKind(alt, ctx) !== null;
+    let re;
+    try {
+      re = globRegExp(base);
+    } catch {
+      return true; // an unparsable class: fail closed
+    }
+    const dotted = base.startsWith(".");
+    const literal = base.replace(/\[[^\]]*\]|[*?.]/g, "");
+    return GLOB_SAMPLES.some(
+      (s) => (s.startsWith(".") ? dotted : literal.length > 0) && re.test(s),
+    );
+  });
 }
 
 // ── Shell words. Enough of POSIX sh to find each simple command, its operands and its
@@ -238,7 +304,8 @@ const cmdName = (t) =>
 /**
  * Split a Bash command into simple-command segments. `;` `&` `|` newlines and `( )` end a
  * segment; `$( … )`, backticks and `<( … )` are scanned as nested segments; a heredoc body is
- * skipped as data unless it is fed to a shell.
+ * skipped as data unless it is fed to a shell. Inside `$(( … ))` / `(( … ))` arithmetic, `<`
+ * and `>` are operators (`1<<2` is a shift, not a heredoc) and a newline is not a command end.
  * @param {string} cmd
  * @returns {Segment[]}
  */
@@ -248,9 +315,10 @@ export function shellSegments(cmd) {
   /** @returns {{words: Word[], redirs: Redirect[], cur: Word | null, redir: string | null}} */
   const fresh = () => ({ words: [], redirs: [], cur: null, redir: null });
   let ctx = fresh();
-  /** @type {{ctx: ReturnType<typeof fresh>, kind: string, dq: boolean}[]} */
+  /** @type {{ctx: ReturnType<typeof fresh>, kind: string, dq: boolean, arith: number, start: number}[]} */
   const stack = [];
   let dq = false; // inside "…"
+  let arith = -1; // ≥ 0 inside arithmetic: the count of `(` open within it
   /** @type {{delim: string, strip: boolean, exec: boolean}[]} */
   const heredocs = [];
   /** @param {string} s @param {boolean} [glob] @param {boolean} [quoted] */
@@ -271,11 +339,11 @@ export function shellSegments(cmd) {
     }
     ctx.redir = null;
     if (op === "<<" || op === "<<-") {
-      const first = ctx.words.find((x) => !/^[A-Za-z_]\w*=/.test(x.text));
       heredocs.push({
         delim: w.text,
         strip: op === "<<-",
-        exec: SHELLS.has(cmdName(first?.text ?? "")),
+        // `sudo bash <<EOF`: the command past its wrappers, not the literal first word.
+        exec: SHELLS.has(commandOf(ctx.words)?.name ?? ""),
       });
     } else ctx.redirs.push({ op, target: w });
   };
@@ -288,16 +356,27 @@ export function shellSegments(cmd) {
   };
   /** @param {string} kind */
   const open = (kind) => {
-    stack.push({ ctx, kind, dq });
+    stack.push({ ctx, kind, dq, arith, start: done.length });
     ctx = fresh();
     dq = false;
+    arith = kind === "$((" || kind === "((" ? 0 : -1;
   };
   const close = () => {
     endSeg();
     const f = /** @type {(typeof stack)[number]} */ (stack.pop());
+    const inner = done.slice(f.start);
     ctx = f.ctx;
     dq = f.dq;
-    if (f.kind !== "(") add("$()"); // an expansion inside a word: no longer a literal path
+    arith = f.arith;
+    if (f.kind === "(" || f.kind === "((") return;
+    add("$()"); // an expansion inside a word: no longer a literal path
+    // `cat "$(echo .env)"`: the literal words an echo/printf prints are what the word holds.
+    const c = inner.length === 1 && !inner[0].redirs.length ? commandOf(inner[0].words) : null;
+    if (c && (c.name === "echo" || c.name === "printf") && ctx.cur) {
+      const out = c.args.filter((a) => !/^-[neE]+$/.test(a.text)).map((a) => a.text);
+      ctx.cur.subst = [...(ctx.cur.subst ?? []), ...out];
+      if (c.args.some((a) => a.glob)) ctx.cur.glob = true;
+    }
   };
   /** @param {number} i index of the newline ending the line that owns the heredocs */
   const skipHeredocs = (i) => {
@@ -314,6 +393,10 @@ export function shellSegments(cmd) {
     heredocs.length = 0;
     return pos - 1;
   };
+  /** At a command's start (only keywords so far) or after `for`: `((` there opens arithmetic,
+   *  not two subshells. */
+  const atCommandStart = () =>
+    !ctx.cur && ctx.words.every((w) => KEYWORDS.has(w.text) || w.text === "for");
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i];
     const next = cmd[i + 1];
@@ -322,11 +405,26 @@ export function shellSegments(cmd) {
       else if (c === "\\" && next !== undefined && '"\\$`\n'.includes(next)) {
         if (next !== "\n") add(next, false, true);
         i++;
+      } else if (c === "$" && next === "(" && cmd[i + 2] === "(") {
+        open("$((");
+        i += 2;
       } else if (c === "$" && next === "(") {
         open("$(");
         i++;
       } else if (c === "`") open("`");
       else add(c, false, true);
+      continue;
+    }
+    if (arith >= 0 && "()<>#\n".includes(c)) {
+      if (c === "(") arith++;
+      else if (c === ")" && arith > 0) arith--;
+      else if (c === ")") {
+        if (next === ")") i++;
+        close();
+        continue;
+      }
+      if (c === "\n") endWord();
+      else add(c);
       continue;
     }
     if (c === "\\") {
@@ -344,12 +442,18 @@ export function shellSegments(cmd) {
       const { text, end } = ansiC(cmd, i);
       add(text, false, true);
       i = end;
+    } else if (c === "$" && next === "(" && cmd[i + 2] === "(") {
+      open("$((");
+      i += 2;
     } else if (c === "$" && next === "(") {
       open("$(");
       i++;
     } else if (c === "`") {
       if (stack.at(-1)?.kind === "`") close();
       else open("`");
+    } else if (c === "(" && next === "(" && atCommandStart()) {
+      open("((");
+      i++;
     } else if (c === "(") open("(");
     else if (c === ")") {
       if (stack.length && stack.at(-1)?.kind !== "`") close();
@@ -400,7 +504,10 @@ export function shellSegments(cmd) {
         i++;
       }
       ctx.redir = op;
-    } else add(c, c === "*" || c === "?" || c === "[");
+    } else {
+      add(c, c === "*" || c === "?" || c === "[");
+      if (c === "{") /** @type {Word} */ (ctx.cur).brace = true; // bash brace expansion
+    }
   }
   while (stack.length) close();
   endSeg();
@@ -414,7 +521,21 @@ const KEYWORDS = new Set(["if", "then", "else", "elif", "do", "while", "until", 
 /** Wrappers that run the next word as the command → their options that take a value.
  *  @type {Record<string, string[]>} */
 const WRAPPERS = {
-  sudo: ["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "--user", "--group"],
+  sudo: [
+    "-u",
+    "-g",
+    "-C",
+    "-D",
+    "-h",
+    "-p",
+    "-r",
+    "-t",
+    "-U",
+    "-T",
+    "--user",
+    "--group",
+    "--chdir",
+  ],
   doas: ["-u", "-C"],
   env: ["-u", "-C", "-S", "--unset", "--chdir", "--split-string"],
   command: [],
@@ -430,13 +551,24 @@ const WRAPPERS = {
   xargs: ["-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter"],
 };
 
+/** Commands that change the working directory for what follows them. */
+const CHDIR = new Set(["cd", "pushd", "popd", "chdir"]);
+/** A wrapper option that runs the command in another directory: `env -C DIR`, `sudo -D DIR`,
+ *  and sudo's login shell (`-i`, alone or in a cluster), which starts in the target's home.
+ *  @param {string} name @param {string} a */
+const wrapperChdir = (name, a) =>
+  (name === "env" && /^(?:-C|--chdir)(?:=|$)/.test(a)) ||
+  (name === "sudo" && (/^(?:-D|--chdir|--login)(?:=|$)/.test(a) || /^-[A-Za-z]*i/.test(a)));
+
 /**
- * The command a segment runs, past `VAR=val` prefixes, keywords and wrappers.
+ * The command a segment runs, past `VAR=val` prefixes, keywords and wrappers. `chdir`: a
+ * wrapper runs it in another directory.
  * @param {Word[]} words
- * @returns {{name: string, args: Word[]} | null}
+ * @returns {{name: string, args: Word[], chdir: boolean} | null}
  */
 function commandOf(words) {
   let i = 0;
+  let chdir = false;
   while (i < words.length) {
     const w = words[i];
     // `FOO="a b" cat .env`: an assignment even when its value is quoted.
@@ -446,7 +578,7 @@ function commandOf(words) {
     }
     const name = cmdName(w.text);
     const values = WRAPPERS[name];
-    if (!values) return { name, args: words.slice(i + 1) };
+    if (!values) return { name, args: words.slice(i + 1), chdir };
     let positional = name === "timeout" ? 1 : 0; // timeout DURATION cmd…
     for (i++; i < words.length; ) {
       const a = words[i].text;
@@ -454,8 +586,10 @@ function commandOf(words) {
         i++;
         break;
       }
-      if (a.length > 1 && a.startsWith("-")) i += values.includes(a) ? 2 : 1;
-      else if (positional-- > 0) i++;
+      if (a.length > 1 && a.startsWith("-")) {
+        if (wrapperChdir(name, a)) chdir = true;
+        i += values.includes(a) ? 2 : 1;
+      } else if (positional-- > 0) i++;
       else break;
     }
   }
@@ -464,14 +598,23 @@ function commandOf(words) {
 
 /**
  * How a command's arguments map to files. `patternFirst`: its first operand is a pattern or a
- * program (grep, sed, awk, jq), not a file. `opts` names the options that take a value:
+ * program (grep, sed, awk, jq), not a file. `dirs`: it searches a directory operand recursively
+ * (grep, rg, ag, git grep). `strict`: every option value is checked as a path, even the `=`
+ * value of an option not listed (`diff --from-file=.env`). `opts` names the options that take a
+ * value:
  *   file    — a path (checked); it also supplies the pattern/program (`grep -f`, `sed -f`)
  *   pattern — a pattern or program, not a path; it supplies the pattern (`grep -e`, `sed -e`)
  *   glob    — a file glob, checked as one (`rg -g`, `grep --include`)
- *   skip    — any other non-path value (`git log --grep`, `rg -t`, `head -n`)
+ *   value   — a count, size or delimiter, still checked as a path: FAIL CLOSED, because one
+ *             table serves many commands and a flag it wrongly lists (`cat -n`) must never
+ *             hide the file after it. A real count is never a secret name.
+ *   skip    — any other non-path value (`git log --grep`, `rg -t`, `grep -A`)
  *   skip2 / file2 — two-word options (`jq --arg k v` / `jq --rawfile k FILE`)
- * Any option not listed is a flag (or a glued `-Xvalue`).
- * @typedef {{patternFirst?: boolean, opts?: Record<string, string>}} ArgSpec
+ *   glued   — an optional value that is only ever glued (`sed -i[SUFFIX]`)
+ * Short options are read getopt style: in a cluster (`-rnwe KEY`, `-eKEY`, `-n5`) letters are
+ * flags up to the first one that takes a value, which is the rest of the word or else the next
+ * word. Any option not listed is a flag.
+ * @typedef {{patternFirst?: boolean, dirs?: boolean, strict?: boolean, opts?: Record<string, string>}} ArgSpec
  */
 /** @param {string} kind @param {string[]} names */
 const kinds = (kind, names) => Object.fromEntries(names.map((n) => [n, kind]));
@@ -479,6 +622,7 @@ const kinds = (kind, names) => Object.fromEntries(names.map((n) => [n, kind]));
 /** @type {ArgSpec} */
 const GREP = {
   patternFirst: true,
+  dirs: true,
   opts: {
     ...kinds("pattern", ["-e", "--regexp"]),
     ...kinds("file", ["-f", "--file"]),
@@ -491,6 +635,7 @@ const GREP = {
 /** @type {ArgSpec} */
 const RG = {
   patternFirst: true,
+  dirs: true,
   opts: {
     ...kinds("pattern", ["-e", "--regexp"]),
     ...kinds("file", ["-f", "--file"]),
@@ -506,6 +651,7 @@ const RG = {
 /** @type {ArgSpec} */
 const AG = {
   patternFirst: true,
+  dirs: true,
   opts: kinds("skip", ["-A", "-B", "-C", "-m", "-G", "-g", "--ignore", "--ignore-dir", "--depth"]),
 };
 /** @type {ArgSpec} */
@@ -515,6 +661,7 @@ const SED = {
     ...kinds("pattern", ["-e", "--expression"]),
     ...kinds("file", ["-f", "--file"]),
     ...kinds("skip", ["-l", "--line-length"]),
+    ...kinds("glued", ["-i", "-I"]), // `sed -i.bak`, and GNU reads `-ie` as suffix `e`
   },
 };
 /** @type {ArgSpec} */
@@ -536,9 +683,11 @@ const JQ = {
     ...kinds("file2", ["--slurpfile", "--rawfile"]),
   },
 };
+/** Plain readers and writers (cat, head, sort, cp, …): every non-flag word is checked. */
 /** @type {ArgSpec} */
 const PLAIN = {
-  opts: kinds("skip", ["-n", "-c", "--lines", "--bytes", "-k", "-t", "-S", "-T", "-w", "-d"]),
+  strict: true,
+  opts: kinds("value", ["-n", "-c", "--lines", "--bytes", "-k", "-t", "-S", "-T", "-w", "-d"]),
 };
 
 /** Commands that print file content → how to find their file operands.
@@ -565,9 +714,12 @@ const GIT_READERS = new Set([
   ...["show", "log", "diff", "stash", "cat-file", "archive", "grep", "blame", "annotate"],
   ...["show-index", "bundle", "whatchanged"],
 ]);
+/** show/log/diff print the content of every file under a directory pathspec, like grep -r. */
 /** @type {ArgSpec} */
 const GIT_LOG = {
+  dirs: true,
   opts: {
+    ...kinds("value", ["-L"]), // `-L1,5:.env` / `-L :fn:.env` read that file's history
     ...kinds("skip", ["--grep", "--author", "--committer", "--format", "--pretty", "-S", "-G"]),
     ...kinds("skip", ["-n", "--max-count", "--skip", "--since", "--until", "--date", "-U"]),
   },
@@ -575,6 +727,7 @@ const GIT_LOG = {
 /** @type {ArgSpec} */
 const GIT_GREP = {
   patternFirst: true,
+  dirs: true,
   opts: {
     ...kinds("pattern", ["-e"]),
     ...kinds("file", ["-f"]),
@@ -588,7 +741,8 @@ const WRITERS = new Set(["tee", "cp", "mv", "install", "ln", "truncate"]);
 
 /**
  * A word's candidate paths: itself, the value of `key=path` (`dd of=`), the path of `REV:path`
- * (`git show HEAD:.env`) and of `@file` (`curl -d @file`).
+ * (`git show HEAD:.env`, the index forms `:.env` and `:0:.env`) and of `@file`
+ * (`curl -d @file`).
  * @param {string} t
  */
 function pathCandidates(t) {
@@ -596,7 +750,11 @@ function pathCandidates(t) {
   const eq = /^[A-Za-z_][\w.-]*=([\s\S]*)$/.exec(t);
   if (eq) out.push(eq[1]);
   const colon = t.indexOf(":");
-  if (colon > 0 && !/^[A-Za-z]:[\\/]/.test(t)) out.push(t.slice(colon + 1));
+  if (colon >= 0 && !/^[A-Za-z]:[\\/]/.test(t)) {
+    out.push(t.slice(colon + 1));
+    const last = t.lastIndexOf(":");
+    if (last !== colon) out.push(t.slice(last + 1));
+  }
   if (t.startsWith("@")) out.push(t.slice(1));
   return out;
 }
@@ -619,7 +777,7 @@ function operands(args, spec) {
   const value = (kind, word) => {
     if (kind === "file" || kind === "pattern") patternGiven = true;
     if (kind === "glob") out.push({ word, glob: true });
-    else if (kind === "file" || kind === "file2") out.push({ word });
+    else if (kind === "file" || kind === "file2" || kind === "value") out.push({ word });
   };
   for (let i = 0; i < args.length; i++) {
     const w = args[i];
@@ -632,15 +790,26 @@ function operands(args, spec) {
       endOfOpts = true;
       continue;
     }
-    const eq = t.indexOf("=");
-    const name = eq > 0 ? t.slice(0, eq) : t;
-    const kind = opts[name];
-    if (!kind) continue;
-    if (eq > 0) value(kind, { ...w, text: t.slice(eq + 1) });
-    else if (kind === "skip2" || kind === "file2") {
-      if (kind === "file2" && args[i + 2]) value(kind, args[i + 2]);
-      i += 2;
-    } else if (args[i + 1]) value(kind, args[++i]);
+    if (t.startsWith("--")) {
+      const eq = t.indexOf("=");
+      const kind = opts[eq > 0 ? t.slice(0, eq) : t] ?? (spec.strict && eq > 0 ? "value" : "");
+      if (!kind) continue;
+      if (eq > 0) value(kind, { ...w, text: t.slice(eq + 1) });
+      else if (kind === "skip2" || kind === "file2") {
+        if (kind === "file2" && args[i + 2]) value(kind, args[i + 2]);
+        i += 2;
+      } else if (args[i + 1]) value(kind, args[++i]);
+      continue;
+    }
+    for (let j = 1; j < t.length; j++) {
+      const kind = opts[`-${t[j]}`];
+      if (!kind) continue; // a flag letter
+      if (kind === "glued") break;
+      const rest = t.slice(j + 1);
+      if (rest) value(kind, { ...w, text: rest });
+      else if (args[i + 1]) value(kind, args[++i]);
+      break;
+    }
   }
   if (spec.patternFirst && !patternGiven) positional.shift();
   return [...out, ...positional.map((word) => ({ word }))];
@@ -652,10 +821,38 @@ function operands(args, spec) {
  * @param {boolean} [asGlob]
  */
 function isSecretWord(word, ctx, asGlob = false) {
-  return pathCandidates(word.text).some(
-    (c) => secretKind(c, ctx) !== null || ((asGlob || word.glob) && globMatchesSecret(c)),
+  // `cat .{env,x}` is `cat .env .x`; an expansion too large to trust fails closed.
+  const texts = word.brace ? expandBraces(word.text) : [word.text];
+  if (texts.length >= BRACE_LIMIT) return true;
+  texts.push(...(word.subst ?? []));
+  return texts.some((t) =>
+    pathCandidates(t).some(
+      (c) => secretKind(c, ctx) !== null || ((asGlob || word.glob) && globMatchesSecret(c, ctx)),
+    ),
   );
 }
+
+/**
+ * The command string of `sh -c STRING` (`bash -lc …`, `bash -o pipefail -c …`), or null.
+ * @param {Word[]} args
+ */
+function shellCommandString(args) {
+  let c = false;
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i].text;
+    if (t.startsWith("--")) continue; // `--norc`, `--login`, `--`
+    if (/^[-+][A-Za-z]+$/.test(t)) {
+      if (t[0] === "-" && t.includes("c")) c = true;
+      if (/[oO]$/.test(t)) i++; // `-o pipefail`, `-euo pipefail`, `-O extglob`
+      continue;
+    }
+    return c ? t : null;
+  }
+  return null;
+}
+
+/** `sh -c` / `eval` nesting deeper than this is not unpicked: it fails closed. */
+const MAX_NEST = 8;
 
 const READ_REASON =
   "reading a protected secret path via Bash is blocked. Read it yourself if intended.";
@@ -663,21 +860,33 @@ const REDIRECT_REASON =
   "reading a protected secret path via input redirection is blocked. Read it yourself if intended.";
 const WRITE_REASON =
   "writing to a protected secret path via Bash is blocked. Edit it yourself if intended.";
+const NEST_REASON = `a command nested more than ${MAX_NEST} levels deep in sh -c / eval cannot be checked — blocking to fail closed.`;
 
 /**
  * The reason a Bash command reads or writes a protected secret path (P0-04, HI-06), or null.
  * Checked per simple command: redirection targets, a writer's operands and a reader's FILE
- * operands, never a grep pattern, a commit message or a `--grep=` value.
+ * operands, never a grep pattern, a commit message or a `--grep=` value. The string of
+ * `bash -c …` and `eval …` is checked as a command line of its own.
  * @param {string} cmd
- * @param {FsCtx} [fsCtx]
+ * @param {PathCtx} [fsCtx]
+ * @param {number} [depth] `sh -c` / `eval` nesting, for the fail-closed bound
  * @returns {string | null}
  */
-export function secretShellAccess(cmd, fsCtx = {}) {
+export function secretShellAccess(cmd, fsCtx = {}, depth = 0) {
+  if (depth > MAX_NEST) return NEST_REASON;
+  const segments = shellSegments(String(cmd));
+  // `cd ~ && cat .npmrc`: once the command changes directory, a relative path no longer
+  // resolves against the payload cwd, so `.npmrc` is judged without it (fail closed).
+  const moved = segments.some(({ words }) => {
+    const c = commandOf(words);
+    return c !== null && (CHDIR.has(c.name) || c.chdir);
+  });
   /** @type {PathCtx} */
-  const ctx = { ...fsCtx, bash: true };
-  /** @param {{word: Word, glob?: boolean}[]} ops */
-  const anySecret = (ops) => ops.some((o) => isSecretWord(o.word, ctx, o.glob));
-  for (const { words, redirs } of shellSegments(String(cmd))) {
+  const ctx = { ...fsCtx, bash: true, cwdUnknown: moved || Boolean(fsCtx.cwdUnknown) };
+  /** @param {{word: Word, glob?: boolean}[]} ops @param {ArgSpec} [spec] */
+  const anySecret = (ops, spec) =>
+    ops.some((o) => isSecretWord(o.word, spec?.dirs ? { ...ctx, dir: true } : ctx, o.glob));
+  for (const { words, redirs } of segments) {
     for (const { op, target } of redirs) {
       const fd = op.endsWith("&") && /^(\d+-?|-)$/.test(target.text); // `2>&1`: no file
       if (op === "<<<" || fd || !isSecretWord(target, ctx)) continue;
@@ -686,6 +895,16 @@ export function secretShellAccess(cmd, fsCtx = {}) {
     const c = commandOf(words);
     if (!c) continue;
     const { name, args } = c;
+    const nested =
+      name === "eval"
+        ? args.map((a) => a.text).join(" ")
+        : SHELLS.has(name)
+          ? shellCommandString(args)
+          : null;
+    if (nested) {
+      const inner = secretShellAccess(nested, { ...fsCtx, cwdUnknown: ctx.cwdUnknown }, depth + 1);
+      if (inner) return inner;
+    }
     if (WRITERS.has(name) && anySecret(operands(args, PLAIN))) return WRITE_REASON;
     const inPlace = args.some((a) => /^-[A-Za-z]*i|^--in-place/.test(a.text));
     if (name === "sed" && inPlace && anySecret(operands(args, SED))) return WRITE_REASON;
@@ -693,14 +912,14 @@ export function secretShellAccess(cmd, fsCtx = {}) {
     if (name === "dd" && target && isSecretWord({ ...target, text: target.text.slice(3) }, ctx))
       return WRITE_REASON;
     const spec = READERS[name];
-    if (spec && anySecret(operands(args, spec))) return READ_REASON;
+    if (spec && anySecret(operands(args, spec), spec)) return READ_REASON;
     if (name === "git") {
       let i = 0;
       while (i < args.length && args[i].text.startsWith("-"))
         i += GIT_GLOBAL_VALUES.has(args[i].text) ? 2 : 1;
       const sub = args[i]?.text ?? "";
-      const rest = args.slice(i + 1);
-      if (GIT_READERS.has(sub) && anySecret(operands(rest, sub === "grep" ? GIT_GREP : GIT_LOG)))
+      const gitSpec = sub === "grep" ? GIT_GREP : GIT_LOG;
+      if (GIT_READERS.has(sub) && anySecret(operands(args.slice(i + 1), gitSpec), gitSpec))
         return READ_REASON;
     }
   }
@@ -805,9 +1024,23 @@ const COMMAND_RULES = [
 ];
 
 /**
+ * True iff a Grep tool filter keeps the search to source files: every alternative of its glob
+ * ends in a code extension (`*.tsx`, `*.{ts,tsx}`), or, with no glob, its type names one (`ts`).
+ * @param {string} glob
+ * @param {string} type
+ */
+function codeOnlyFilter(glob, type) {
+  if (glob) {
+    const alts = expandBraces(glob);
+    return alts.length < BRACE_LIMIT && alts.every((a) => !a.startsWith("!") && CODE_FILE.test(a));
+  }
+  return Boolean(type) && CODE_FILE.test(`x.${type}`);
+}
+
+/**
  * PURE decision over one tool call — the testable core. Its one filesystem touch is reading a
  * project `.npmrc` to see whether it holds a token (`readText`, injectable).
- * @param {{toolName?: string, filePath?: string, command?: string, glob?: string} & FsCtx} [call]
+ * @param {{toolName?: string, filePath?: string, command?: string, glob?: string, type?: string} & FsCtx} [call]
  * @returns {{block: boolean, reason?: string}}
  */
 export function protectPathsDecision({
@@ -815,13 +1048,17 @@ export function protectPathsDecision({
   filePath = "",
   command = "",
   glob = "",
+  type = "",
   ...fsCtx
 } = {}) {
   // A plugin install carries no `permissions.deny` block, so for Read/Grep this guard is the
   // only thing between the agent and `.env`.
   const verb = /^(Read|Grep|Glob|NotebookRead)$/.test(String(toolName)) ? "read" : "modify";
   if (filePath) {
-    const what = secretKind(String(filePath), fsCtx);
+    // The Grep tool searches a directory recursively, so a `secrets` store itself is protected —
+    // unless its glob/type keeps the search to source files (a Next.js `app/…/secrets/` route).
+    const dir = toolName === "Grep" && !codeOnlyFilter(String(glob), String(type));
+    const what = secretKind(String(filePath), { ...fsCtx, dir });
     if (what)
       return {
         block: true,
@@ -830,7 +1067,7 @@ export function protectPathsDecision({
   }
   // A literal name (`.env`) or a wildcard that can select one; an exclusion (`!.env`) never does.
   const g = String(glob);
-  if (g && !g.startsWith("!") && (secretKind(g, fsCtx) || globMatchesSecret(g)))
+  if (g && !g.startsWith("!") && (secretKind(g, fsCtx) || globMatchesSecret(g, fsCtx)))
     return {
       block: true,
       reason: `refusing to ${verb} files matching ${glob}: it selects a protected secret path. Handle it yourself if intended.`,
@@ -879,8 +1116,9 @@ async function main() {
     toolName: data.tool_name,
     filePath: inp.file_path ?? inp.notebook_path ?? inp.path ?? "",
     command: inp.command ?? "",
-    // The Grep tool's `glob` filter selects the files it reads; Glob only lists names.
+    // The Grep tool's `glob`/`type` filters select the files it reads; Glob only lists names.
     glob: data.tool_name === "Grep" ? (inp.glob ?? "") : "",
+    type: data.tool_name === "Grep" ? (inp.type ?? "") : "",
     cwd: typeof data.cwd === "string" && data.cwd ? data.cwd : process.cwd(),
   });
   if (d.block) deny(String(d.reason));
