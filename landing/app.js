@@ -50,7 +50,7 @@ const installs = [
   {
     id: "npm",
     command: "npm install -g @codewithjuber/forgekit\nforge init",
-    note: "Emits every tool’s native config from one source",
+    note: "Emits native config for the tools your repo uses, from one source",
   },
   {
     id: "github",

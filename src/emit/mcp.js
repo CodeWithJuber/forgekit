@@ -50,6 +50,21 @@ export const CODEX_TARGET = ".codex/config.toml";
  *  and of the per-target adoption record. Continue files are owned by marker, not record. */
 export const MCP_TARGET_FILES = [...JSON_TARGETS.map((t) => t.file), CODEX_TARGET];
 
+/**
+ * The ownable targets (MCP_TARGET_FILES entries) emitMcp writes for a tool selection —
+ * canonical keys, null = every tool. An adoption must never name a target outside this list:
+ * forge wrote nothing there, so a same-name entry a person adds there later is theirs (ME-08).
+ * @param {string[]|null} [tools]
+ * @returns {string[]}
+ */
+export function mcpTargetFilesFor(tools = null) {
+  const emits = (id) => tools === null || tools.includes(id);
+  return [
+    ...JSON_TARGETS.filter((t) => emits(t.id)).map((t) => t.file),
+    ...(emits("codex") ? [CODEX_TARGET] : []),
+  ];
+}
+
 const adoptHint = (name) => `adopt with: ${BRAND.cli} integrations add ${name} --adopt`;
 
 // ---------------------------------------------------------------------------

@@ -16,15 +16,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { emitMcp } from "../src/emit/mcp.js";
+import { emitMcp, MCP_TARGET_FILES, mcpTargetFilesFor } from "../src/emit/mcp.js";
 import { init, resolveInitTools } from "../src/init.js";
-import { addIntegration } from "../src/integrations.js";
 import {
+  addIntegration,
+  claimEmittedIntegrations,
+  INTEGRATIONS,
+  planIntegration,
+  removeIntegration,
+} from "../src/integrations.js";
+import {
+  applyPrimaryTool,
   clearRepoConfig,
   detectTools,
   KNOWN_TOOLS,
   parseTools,
   readForgeConfig,
+  recordedTools,
   writeForgeConfig,
 } from "../src/repo_config.js";
 import { sync } from "../src/sync.js";
@@ -173,6 +181,134 @@ test("integrations add honours the recorded tool set (no config for unused tools
   const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
   assert.ok(mcp.mcpServers.context7, "written for Claude Code");
   for (const p of OTHER_TOOL_PATHS) assert.ok(!existsSync(join(root, p)), `${p} not created`);
+});
+
+// ---------------------------------------------------------------------------
+// Review follow-ups: ownership stays per written target; the set grows safely
+// ---------------------------------------------------------------------------
+
+const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const configBackups = (root) =>
+  readdirSync(join(root, ".forge")).filter((f) => f.includes("forge-bak")).length;
+
+test("recordedTools, mcpTargetFilesFor and planIntegration agree on the tool set", () => {
+  assert.equal(recordedTools({}), null, "nothing recorded = every tool");
+  assert.equal(recordedTools({ tools: "all" }), null);
+  assert.deepEqual(recordedTools({ tools: ["cursor", "claude", "nope"] }), ["claude", "cursor"]);
+  assert.deepEqual(recordedTools({ tools: "copilot" }), ["vscode"]);
+  assert.deepEqual(mcpTargetFilesFor(["claude", "codex", "aider"]), [
+    ".mcp.json",
+    ".codex/config.toml",
+  ]);
+  assert.deepEqual(mcpTargetFilesFor(null), MCP_TARGET_FILES);
+
+  const root = fixture();
+  writeForgeConfig(root, (c) => ({ ...c, tools: ["claude", "continue"] }));
+  assert.deepEqual(planIntegration("context7", { targetRoot: root }).writes, [
+    ".mcp.json",
+    ".continue/mcpServers/forge-context7.yaml",
+  ]);
+  const everyTool = planIntegration("context7", { targetRoot: fixture() }).writes;
+  assert.deepEqual(everyTool, [...MCP_TARGET_FILES, ".continue/mcpServers/forge-context7.yaml"]);
+});
+
+test("integrations add owns only the targets it wrote; a person's entry in a later tool stays theirs", () => {
+  const root = fixture();
+  init({ targetRoot: root, noSettings: true }); // records ["claude"]
+  assert.equal(addIntegration("context7", { targetRoot: root }).ok, true);
+  assert.deepEqual(readForgeConfig(root).mcp.adopted, [
+    { server: "context7", target: ".mcp.json" },
+  ]);
+
+  // Later the person configures their own context7 for Cursor, then enables Cursor.
+  const mine = { command: "my-context7", args: ["--local"] };
+  const cursorPath = join(root, ".cursor", "mcp.json");
+  mkdirSync(join(root, ".cursor"), { recursive: true });
+  writeFileSync(cursorPath, JSON.stringify({ mcpServers: { context7: mine } }));
+  init({ targetRoot: root, noSettings: true, tools: "claude,cursor" });
+  assert.deepEqual(readJson(cursorPath).mcpServers.context7, mine, "not overwritten");
+  assert.ok(readJson(cursorPath).mcpServers["forge-cortex"], "forge's own server sits beside it");
+  assert.ok(
+    !readForgeConfig(root).mcp.adopted.some((a) => a.target === ".cursor/mcp.json"),
+    "a divergent entry forge did not write is never claimed",
+  );
+
+  const rm = removeIntegration("context7", { targetRoot: root });
+  assert.equal(rm.ok && rm.removed, true);
+  assert.deepEqual(readJson(cursorPath).mcpServers.context7, mine, "remove leaves it in place");
+  assert.equal(
+    readJson(join(root, ".mcp.json")).mcpServers.context7,
+    undefined,
+    "forge's copy gone",
+  );
+});
+
+test("a tool that joins the set later gets the integration, owned like an add would own it", () => {
+  const root = fixture();
+  init({ targetRoot: root, noSettings: true });
+  addIntegration("context7", { targetRoot: root });
+  init({ targetRoot: root, noSettings: true, tools: "claude,cursor" });
+  const cursorPath = join(root, ".cursor", "mcp.json");
+  assert.deepEqual(readJson(cursorPath).mcpServers.context7, INTEGRATIONS.context7.server);
+  assert.ok(
+    readForgeConfig(root).mcp.adopted.some(
+      (a) => a.server === "context7" && a.target === ".cursor/mcp.json",
+    ),
+    "claimed: forge wrote it",
+  );
+
+  // Claiming again finds nothing new and writes no config (no backup churn).
+  const before = configBackups(root);
+  assert.deepEqual(claimEmittedIntegrations(root), { claimed: [] });
+  init({ targetRoot: root, noSettings: true });
+  assert.equal(configBackups(root), before);
+
+  // Owned, so a spec update reaches it and remove deletes it.
+  const stale = readJson(cursorPath);
+  stale.mcpServers.context7 = { command: "npx", args: ["-y", "@upstash/context7-mcp@3.0.0"] };
+  writeFileSync(cursorPath, JSON.stringify(stale));
+  sync({ targetRoot: root });
+  assert.deepEqual(readJson(cursorPath).mcpServers.context7, INTEGRATIONS.context7.server);
+  removeIntegration("context7", { targetRoot: root });
+  assert.equal(readJson(cursorPath).mcpServers.context7, undefined);
+});
+
+test("`forge tools <name>` adds the tool to the recorded set, so its config is emitted", async () => {
+  const root = fixture();
+  init({ targetRoot: root, noSettings: true }); // records ["claude"]
+  const syncFn = (dir) => sync({ targetRoot: dir });
+  const r = await applyPrimaryTool(root, "cursor", { syncFn });
+  assert.equal(r.addedTool, true);
+  assert.deepEqual(readForgeConfig(root).tools, ["claude", "cursor"]);
+  assert.equal(readForgeConfig(root).primaryTool, "cursor");
+  assert.ok(existsSync(join(root, ".cursor", "mcp.json")), "the primary tool has its MCP config");
+  assert.ok(!r.targets.includes(".cursor/mcp.json"), "and it stays tracked");
+  assert.equal((await applyPrimaryTool(root, "cursor", { syncFn })).addedTool, false);
+
+  // No recorded set means every tool is emitted already: nothing is added or recorded.
+  const open = fixture();
+  const o = await applyPrimaryTool(open, "cursor", { syncFn: () => ({ report: [] }) });
+  assert.equal(o.addedTool, false);
+  assert.equal(readForgeConfig(open).tools, undefined);
+});
+
+test("CLI: `forge tools <name>` after a default init emits the tool and owns its integration copy", () => {
+  const env = { ...process.env, FORGE_NO_HINT: "1" };
+  const root = fixture();
+  const run = (...args) => spawnSync("node", [CLI, ...args], { cwd: root, encoding: "utf8", env });
+  assert.equal(run("init", "--no-settings").status, 0);
+  assert.equal(addIntegration("context7", { targetRoot: root }).ok, true);
+  const dry = run("integrations", "add", "context7");
+  assert.match(dry.stdout, /writes: {2}\.mcp\.json\n/, "the dry run lists only the recorded tools");
+
+  const res = run("tools", "cursor");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /cursor added to the tools `forge init` recorded/);
+  assert.ok(readJson(join(root, ".cursor", "mcp.json")).mcpServers.context7);
+  assert.ok(
+    readForgeConfig(root).mcp.adopted.some((a) => a.target === ".cursor/mcp.json"),
+    "the new copy is forge's",
+  );
 });
 
 test("`forge tools --reset` keeps the recorded emit set (clearRepoConfig drops primaryTool only)", () => {

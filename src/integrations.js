@@ -11,7 +11,9 @@
 // tool's config never authorises overwriting another tool's same-name entry. Legacy bare
 // names (`adopted: ["context7"]`) are still honoured — treated as "adopted for every
 // target" — and migrated to per-target pairs on the next write. A fresh add that forge
-// itself creates owns exactly the targets where it wrote (auto-adopt); a pre-existing
+// itself creates owns exactly the targets where it wrote (auto-adopt), which are only the
+// recorded tool set's targets; a tool that joins the set later has the copies sync wrote
+// for it claimed by claimEmittedIntegrations under the same rule. A pre-existing
 // DIVERGENT same-name entry needs an explicit --adopt for THAT target. Registry names carry
 // no implicit ownership (ME-09): a divergent user entry named e.g. `forge-cortex` is
 // preserved and reported like any other collision. Add/remove are ordered so disk and the
@@ -21,13 +23,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import {
+  continueFileFor,
   emitMcp,
   foreignTargets,
   MCP_TARGET_FILES,
+  mcpTargetFilesFor,
   removeMcp,
   validateServerName,
 } from "./emit/mcp.js";
-import { parseTools, readForgeConfig, writeForgeConfig } from "./repo_config.js";
+import { readForgeConfig, recordedTools, writeForgeConfig } from "./repo_config.js";
 
 /** The catalog of known optional integrations. Keep each entry honest about what running it
  *  actually does (network, third-party code execution). */
@@ -49,11 +53,20 @@ export function listIntegrations() {
   }));
 }
 
-/** Describe what `add <name>` would do, without writing anything. */
-export function planIntegration(name) {
+/** Describe what `add <name>` would do, without writing anything. `writes` lists the files
+ *  it would touch: those of the tool set `forge init` recorded (every tool when none is). */
+export function planIntegration(name, { targetRoot = process.cwd() } = {}) {
   const m = INTEGRATIONS[name];
   if (!m) return { ok: false, reason: `unknown integration: ${name}` };
-  return { ok: true, name, pkg: m.pkg, network: m.network, why: m.why };
+  const cfg = readForgeConfig(targetRoot);
+  const tools = cfg.corrupt ? null : recordedTools(cfg);
+  const writes = [
+    ...mcpTargetFilesFor(tools),
+    ...(tools === null || tools.includes("continue")
+      ? [`.continue/mcpServers/${continueFileFor(name)}`]
+      : []),
+  ];
+  return { ok: true, name, pkg: m.pkg, network: m.network, why: m.why, writes };
 }
 
 /**
@@ -185,20 +198,22 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
     };
   const rec = mcpRecord(cfg);
   const servers = { ...managedServers(rec), [name]: m.server };
+  // Only the tools `forge init` recorded for this repo (every tool when none are), the same
+  // set `forge sync` emits for, so adding a server never creates an unused tool's config.
+  const tools = recordedTools(cfg);
   // Per-target ownership: forge owns the targets where it writes fresh (or byte-identical);
-  // a pre-existing divergent entry is owned only with --adopt.
+  // a pre-existing divergent entry is owned only with --adopt. A target outside the tool set
+  // gets nothing written, so it is never claimed: a same-name entry a person adds there later
+  // stays theirs, even once that tool joins the set (ME-08).
+  const targets = mcpTargetFilesFor(tools);
   const foreign = foreignTargets(targetRoot, name, m.server);
-  const anyForeign = foreign.size > 0;
+  const anyForeign = targets.some((t) => foreign.has(t));
   const newAdoptions = [];
-  for (const t of MCP_TARGET_FILES)
+  for (const t of targets)
     if (!foreign.has(t) || adopt) newAdoptions.push({ server: name, target: t });
   const owns = adoptionOwns([...rec.adopted, ...newAdoptions]);
-  // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row. Only into the
-  // tools `forge init` recorded for this repo (every tool when none are recorded), the same
-  // set `forge sync` emits for, so adding a server never creates an unused tool's config.
-  const recorded =
-    typeof cfg.tools === "string" || Array.isArray(cfg.tools) ? parseTools(cfg.tools).tools : null;
-  const rows = emitMcp({ targetRoot, servers, owns, tools: recorded });
+  // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row.
+  const rows = emitMcp({ targetRoot, servers, owns, tools });
   const failed = rows.filter((r) => r.action === "error");
   if (failed.length)
     return {
@@ -224,6 +239,48 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
   });
   if (w.ok === false) return { ok: false, reason: w.reason };
   return { ok: true, name, adopted: anyForeign ? adopt : true, rows };
+}
+
+/**
+ * After the tool set grows (`forge init --tools …`, `forge tools <name>`) and sync has emitted
+ * the recorded integrations into the new tools' configs, claim those copies by the rule `add`
+ * applies at install time: an entry that is absent or byte-identical to forge's spec is
+ * forge's, a divergent one stays the person's (ME-08). Later spec updates then refresh those
+ * copies and `remove` deletes them. Writes the config only when something new is claimed
+ * (every write leaves a backup), so re-running it is free. Never throws.
+ * @param {string} [targetRoot]
+ * @returns {{claimed: {server:string, target:string}[]}}
+ */
+export function claimEmittedIntegrations(targetRoot = process.cwd()) {
+  const cfg = readForgeConfig(targetRoot);
+  if (cfg.corrupt) return { claimed: [] };
+  const rec = mcpRecord(cfg);
+  const owns = adoptionOwns(rec.adopted);
+  const targets = mcpTargetFilesFor(recordedTools(cfg));
+  const claimed = [];
+  for (const name of rec.integrations) {
+    const m = INTEGRATIONS[name];
+    if (!m) continue;
+    let foreign;
+    try {
+      foreign = foreignTargets(targetRoot, name, m.server);
+    } catch {
+      continue; // an unreadable target: claim nothing for this server
+    }
+    for (const target of targets)
+      if (!owns(target, name) && !foreign.has(target)) claimed.push({ server: name, target });
+  }
+  if (!claimed.length) return { claimed };
+  const w = writeForgeConfig(targetRoot, (c) => {
+    const cur = mcpRecord(c);
+    c.mcp = {
+      ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
+      integrations: cur.integrations,
+      adopted: expandAdopted([...cur.adopted, ...claimed]),
+    };
+    return c;
+  });
+  return w.ok === false ? { claimed: [] } : { claimed };
 }
 
 /**

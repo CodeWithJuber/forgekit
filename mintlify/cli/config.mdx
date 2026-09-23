@@ -106,7 +106,9 @@ forge report
 ## `forge tools`
 
 Select this repo's primary AI coding tool and wire the matching `.gitignore` entries, so
-generated config and `.forge/` artifacts are ignored correctly for your setup.
+generated config and `.forge/` artifacts are ignored correctly for your setup. If
+`forge init` recorded a tool set without that tool, `forge tools <name>` adds it first, so
+the tool gets its own config.
 
 ```bash
 forge tools
@@ -115,8 +117,8 @@ forge tools
 ## `forge integrations`
 
 Opt-in third-party MCP servers (for example `context7`), managed non-destructively across
-every tool Forge emits config for — Claude Code, Codex, Cursor, Gemini, Continue, OpenClaw,
-and the rest.
+the tools Forge emits config for in this repo — the set `forge init` recorded (Claude plus
+detected tools, or `--tools`), or every tool when none is recorded.
 
 Third-party MCP servers are **not** installed by default. Nothing lands on disk until you
 run `forge integrations add <name> --yes`.
@@ -124,22 +126,26 @@ run `forge integrations add <name> --yes`.
 ```bash
 forge integrations                        # list opt-in servers with package + purpose
 forge integrations add <name>             # dry-run: prints package, network, files it would touch
-forge integrations add <name> --yes       # apply — write MCP config for every tool
+forge integrations add <name> --yes       # apply — write MCP config for this repo's tools
 forge integrations add <name> --yes --adopt   # also claim a same-name entry you already configured
 forge integrations remove <name>          # reverse the add — deletes only forge-owned entries
 ```
 
 ### What `add` writes
 
-`add --yes` writes the server into every tool's native MCP config from one canonical
-spec:
+`add --yes` writes the server from one canonical spec into the native MCP config of each
+tool in the recorded set (the dry run lists the exact files):
 
 - `.mcp.json` (Claude Code)
 - `.cursor/mcp.json` (Cursor)
 - `.gemini/settings.json` (Gemini)
 - `.codex/config.toml` — as a `# forge:managed:<name>` block, refreshed by byte-compare
 - `.continue/mcpServers/<name>.yaml` — one forge-marked YAML per managed server
-- and the rest of the tools Forge emits config for
+- and the other MCP targets (Roo Code, Zed, VS Code, OpenClaw) when those tools are selected
+
+Forge owns only the entries it wrote. A tool added to the set later (`forge init --tools …`
+or `forge tools <name>`) gets the recorded servers on that run, and Forge owns those copies
+too; a same-name entry you had already configured for that tool stays yours.
 
 The installed set is recorded in `.forge/forge.config.json` under `mcp.integrations`, so
 every subsequent `forge sync` re-emits the same servers and byte-compares each forge-owned
@@ -155,7 +161,7 @@ did not put it there, `add` **does not overwrite it**. Instead it reports the fi
 `mcp.adopted` in `.forge/forge.config.json` and will manage it from then on.
 
 Use `--adopt` when you configured a server by hand earlier and now want Forge to keep it
-in sync across every tool.
+in sync across this repo's tools.
 
 ### `remove`
 

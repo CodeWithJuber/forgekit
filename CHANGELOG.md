@@ -29,14 +29,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Notes added under a generated `CLAUDE.md` header survive later syncs.** Sync refreshes
   only the marker line instead of regenerating the file.
 
+### Added
+
+- **`forge init --tools <list|all>` chooses the agent tools a repo emits config for.** The
+  choice is recorded in `.forge/forge.config.json` (`tools`), and later `forge sync`,
+  `forge doctor --fix` and `forge integrations add` emit the same set.
+
 ### Changed
 
-- **`forge init` emits config only for the tools a repo uses:** Claude Code plus every tool
-  with a sign on disk (`.cursor/`, `.codex/`, `.github/copilot-instructions.md`, …), or an
-  explicit `--tools <list|all>`. The choice is recorded in `.forge/forge.config.json`
-  (`tools`) and later syncs and `forge integrations add` honour it; a repo with no recorded
-  set still gets every tool. `forge tools --reset` now clears only the primary tool and keeps
-  that set.
+- **`forge init` emits config only for the tools a repo uses by default:** Claude Code plus
+  every tool with a sign on disk (`.cursor/`, `.codex/`, `.github/copilot-instructions.md`,
+  …). A repo with no recorded set still gets every tool on sync; `--tools all` restores the
+  old init behaviour.
+- **`forge integrations add` writes to, and takes ownership in, only the recorded tools' MCP
+  config** (its dry run lists the files). A tool added to the set later gets the recorded
+  servers on that run and Forge owns those copies, while a same-name entry you configured
+  for that tool yourself stays yours: it is never overwritten or removed.
+- **`forge tools <name>` adds the tool to a recorded set that lacks it**, so the primary tool
+  gets its own config. `forge tools --reset` now clears only the primary tool and keeps the
+  set.
 
 ## [1.3.0] - 2026-09-23
 

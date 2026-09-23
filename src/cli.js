@@ -597,7 +597,7 @@ HANDLERS.integrations = async (argv) => {
   const sub = argv[1];
   if (sub === "add") {
     const name = argv[2];
-    const plan = planIntegration(name);
+    const plan = planIntegration(name, { targetRoot: process.cwd() });
     if (!plan.ok) {
       console.error(plan.reason);
       process.exitCode = 1;
@@ -605,11 +605,11 @@ HANDLERS.integrations = async (argv) => {
     }
     if (!argv.includes("--yes")) {
       heading(`${BRAND.brand} integrations — add ${name}\n`);
-      console.log(`  This adds a THIRD-PARTY MCP server to every detected tool's config:`);
+      console.log(`  This adds a THIRD-PARTY MCP server to the MCP config of this repo's tools:`);
       console.log(`    package: ${plan.pkg}`);
       console.log(`    network: ${plan.network}`);
       console.log(`    purpose: ${plan.why}`);
-      console.log(`    writes:  .mcp.json, .cursor/mcp.json, .gemini/…, .codex/…, .continue/…`);
+      console.log(`    writes:  ${plan.writes.join(", ")}`);
       console.log(`    records: .forge/forge.config.json (mcp.integrations — the managed set)`);
       console.log(
         `\n  Not installed. Re-run with --yes to apply:  ${BRAND.cli} integrations add ${name} --yes`,
@@ -2953,12 +2953,22 @@ HANDLERS.tools = async (argv) => {
     // Inject the sync runner from here (the orchestration layer) so repo_config —
     // a config-leaf module — no longer reaches back into the sync compiler.
     const { sync } = await import("./sync.js");
+    const { claimEmittedIntegrations } = await import("./integrations.js");
     const r = await applyPrimaryTool(root, name, {
-      syncFn: (r2) => sync({ targetRoot: r2 }),
+      syncFn: (r2) => {
+        const out = sync({ targetRoot: r2 });
+        // The tool may have just joined the recorded set: own its integration copies too.
+        claimEmittedIntegrations(r2);
+        return out;
+      },
     });
     if (json) return console.log(JSON.stringify(r, null, 2));
     heading(`${BRAND.brand} tools — primary set\n`);
     console.log(`  primary tool   ${paint(r.primaryTool, "ok")}`);
+    if (r.addedTool)
+      console.log(
+        `  tool set       ${name} added to the tools \`${BRAND.cli} init\` recorded, so sync now emits its config`,
+      );
     console.log(
       `  gitignored     ${r.targets.length ? r.targets.join(", ") : "none"}  (block ${r.gitignore})`,
     );

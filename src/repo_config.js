@@ -111,6 +111,18 @@ export function parseTools(value) {
   };
 }
 
+/**
+ * The tool set a repo config records (`tools`, written by `forge init`) as canonical keys, or
+ * null when it records none or `all`: every tool. The one reader shared by sync, integrations
+ * and `forge tools`, so they always emit for the same set. Pure.
+ * @param {Record<string, any>} cfg a parsed repo config (readForgeConfig)
+ * @returns {string[]|null}
+ */
+export function recordedTools(cfg) {
+  const value = cfg?.tools;
+  return typeof value === "string" || Array.isArray(value) ? parseTools(value).tools : null;
+}
+
 // Map a sync-report row's tool label to a canonical tool key. The shared source
 // (AGENTS.md) and any unmapped label return null and are never gitignored.
 /** @type {[string, RegExp][]} */
@@ -300,16 +312,27 @@ export function resolvePrimaryTool(root = process.cwd()) {
   return { tool: null, source: "none" };
 }
 
-/** Persist primaryTool into <root>/.forge/forge.config.json, preserving other keys.
- *  Throws (fail loudly) when the existing file is corrupt JSON — it is never replaced. */
+/** Persist primaryTool into <root>/.forge/forge.config.json, preserving other keys. When
+ *  `forge init` recorded a tool set that lacks the tool, the tool joins it in the same write:
+ *  sync emits only the recorded set, and a primary tool without its own config is a dead end.
+ *  Throws (fail loudly) when the existing file is corrupt JSON — it is never replaced.
+ *  @param {string} root
+ *  @param {string} tool canonical tool key
+ *  @returns {{path:string, addedTool:boolean}} */
 export function setPrimaryTool(root, tool) {
+  let addedTool = false;
   const res = writeForgeConfig(root, (cfg) => {
     cfg.primaryTool = tool;
+    const tools = recordedTools(cfg);
+    if (tools !== null && !tools.includes(tool)) {
+      cfg.tools = Array.isArray(cfg.tools) ? [...cfg.tools, tool] : [...tools, tool];
+      addedTool = true;
+    }
     return cfg;
   });
   // `=== false` (not `!res.ok`): tsc only narrows the discriminated union this way here.
   if (res.ok === false) throw new Error(res.reason);
-  return res.path;
+  return { path: res.path, addedTool };
 }
 
 /**
@@ -369,16 +392,18 @@ export function nonPrimaryTargets(report, primary) {
  * Set `name` as the repo's primary tool and gitignore every other tool's emitted
  * artifacts. The caller injects `syncFn` (the sync runner) so this config-leaf module
  * never imports the sync compiler; the gitignore block reflects what Forge actually emits.
+ * A tool missing from the set `forge init` recorded is added to it first (`addedTool`), so
+ * the sync emits the primary tool's config.
  * @param {string} root
  * @param {string} name canonical primary-tool key (must be in KNOWN_TOOLS)
  * @param {{syncFn?:(root:string)=>Promise<{report:any[]}>|{report:any[]}}} [opts] syncFn is required at runtime
- * @returns {Promise<{primaryTool:string, configPath:string, targets:string[],
- *   gitignore:string, gitignorePath:string}>}
+ * @returns {Promise<{primaryTool:string, configPath:string, addedTool:boolean,
+ *   targets:string[], gitignore:string, gitignorePath:string}>}
  */
 export async function applyPrimaryTool(root, name, { syncFn } = {}) {
   if (!KNOWN_TOOLS.includes(name))
     throw new Error(`unknown tool: ${name} (known: ${KNOWN_TOOLS.join(", ")})`);
-  const cfgFile = setPrimaryTool(root, name);
+  const { path: cfgFile, addedTool } = setPrimaryTool(root, name);
   // syncFn is injected by the caller (cli.js / tests). Required so this config-leaf
   // module never imports the sync compiler — keeping the layering acyclic.
   if (typeof syncFn !== "function")
@@ -389,6 +414,7 @@ export async function applyPrimaryTool(root, name, { syncFn } = {}) {
   return {
     primaryTool: name,
     configPath: cfgFile,
+    addedTool,
     targets,
     gitignore: gi.action,
     gitignorePath: gi.path,

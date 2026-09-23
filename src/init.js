@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { ensureForgePrivateIgnored } from "./gitignore.js";
+import { claimEmittedIntegrations } from "./integrations.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
 import {
@@ -852,6 +853,9 @@ export function init({
   // that later syncs fall back to every tool rather than failing the whole init.
   const unrecorded = profileResult ? null : recordTools(targetRoot, selection.tools);
   const r = sync({ targetRoot, tools: selection.tools ?? "all" });
+  // A tool that just joined the set got the recorded integrations too: own those copies the
+  // way `integrations add` would have, so spec updates and `remove` reach them (ME-08).
+  claimEmittedIntegrations(targetRoot);
   ensureLedgerGitattributes(targetRoot);
   // Session hook logs hold raw prompts/commands — never let them be committed.
   ensureForgePrivateIgnored(targetRoot);
