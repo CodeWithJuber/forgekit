@@ -167,7 +167,10 @@ async function main() {
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
-      const result = substrateCheck(root, hook.prompt, { allowBuild: false });
+      const result = substrateCheck(root, hook.prompt, {
+        allowBuild: false,
+        sessionId: hook.session_id || null,
+      });
       // Best-effort metrics recording — fills the cost dashboard pipeline without
       // blocking the hook. A failing write is silently swallowed.
       try {

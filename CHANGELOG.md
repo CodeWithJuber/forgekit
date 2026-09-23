@@ -19,6 +19,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps a per-session trail (`.forge/sessions/<sid>.trail`) of the files the session edited
   or named in a shell command, and the gate weighs only those; other changed files are
   named in the reason, not blamed. Without a trail it keeps the tree-wide view.
+- **`forge substrate`, `forge lean` and `forge anchor` measure only this session's changes**
+  inside an agent session (`FORGE_SESSION_ID` or Claude Code's `CLAUDE_CODE_SESSION_ID`),
+  instead of critiquing other agents' uncommitted work and older dirt. Before the session
+  has changed anything, minimality reports "pre-existing diff (not measured)".
 
 ## [1.3.0] - 2026-09-23
 

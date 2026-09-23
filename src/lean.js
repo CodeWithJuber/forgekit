@@ -103,11 +103,11 @@ export function assessFootprint(task, actual, { maxLinesForShortTask = 120 } = {
 // without inventing added lines.
 const UNTRACKED_LINE_CAP = 20000;
 
-function untrackedDiff(root, run) {
+function untrackedDiff(root, run, only) {
   const listed = run(["ls-files", "--others", "--exclude-standard"])
     .split(/\r?\n/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((f) => f && (!only || only.has(f)));
   const parts = [];
   for (const rel of listed) {
     let text = "";
@@ -123,16 +123,23 @@ function untrackedDiff(root, run) {
   return parts.length ? `${parts.join("\n")}\n` : "";
 }
 
-function gitDiff(root, base) {
+// `files` (optional) restricts the diff to those repo-relative paths — the session-scoped
+// footprint. Literal pathspecs: a file named `*.ts` or `:(glob)x` is a path, not a pattern.
+function gitDiff(root, base, files) {
   const run = (args) =>
     execFileSync("git", args, {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
+  if (files && !files.length) return "";
+  const pre = files ? ["--literal-pathspecs"] : [];
+  const spec = files ? ["--", ...files] : [];
   try {
-    const tracked = run(["diff", "--unified=0", base]) || run(["diff", "--unified=0", "--cached"]);
-    return tracked + untrackedDiff(root, run);
+    const tracked =
+      run([...pre, "diff", "--unified=0", base, ...spec]) ||
+      run([...pre, "diff", "--unified=0", "--cached", ...spec]);
+    return tracked + untrackedDiff(root, run, files ? new Set(files) : null);
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge lean gitDiff: ${err?.message ?? err}\n`);
@@ -142,22 +149,29 @@ function gitDiff(root, base) {
 
 /**
  * Repo wrapper: measure the working-tree footprint against a task. `diff` injectable for tests.
+ * With `files` (the session-scoped view, session.js sessionChanges) only those paths are
+ * measured, against `base` (the session baseline): other agents' uncommitted work and the
+ * dirt that predates the session are not this task's footprint. `scope` says which view.
  * @param {string} root
  * @param {string} task
  * @param {object} [opts]
  * @param {string} [opts.base]
  * @param {string} [opts.diff]
+ * @param {string[]} [opts.files]
  */
-export function leanRepo(root, task, { base = "HEAD", diff } = {}) {
-  const d = diff ?? gitDiff(root, base);
+export function leanRepo(root, task, { base = "HEAD", diff, files } = {}) {
+  const d = diff ?? gitDiff(root, base, files);
   return {
     ...assessFootprint(String(task || ""), parseDiffFootprint(d)),
     hasDiff: Boolean(d.trim()),
+    scope: files ? "session" : "worktree",
   };
 }
 
 export function renderLean(r) {
   const lines = ["Forge lean — scope minimality (M5)", ""];
+  if (!r.hasDiff && r.scope === "session")
+    return `${lines.join("\n")}  this session has not changed anything yet — any other working diff predates it or belongs to another agent (not measured).`;
   if (!r.hasDiff) return `${lines.join("\n")}  no diff vs HEAD yet — nothing to measure.`;
   const f = r.footprint;
   lines.push(

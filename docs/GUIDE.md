@@ -449,6 +449,11 @@ Goal-anchoring (the paper's M4): it re-reads your original objective against the
 you've _actually_ changed (`git diff HEAD` + untracked, minus forge's own generated
 config), and flags work that wandered off-goal. Quiet on a clean tree — it only speaks
 once there's a diff to compare, so it's a mid-session "am I still on track?" check.
+Inside an agent session (`FORGE_SESSION_ID`, or the `CLAUDE_CODE_SESSION_ID` Claude Code
+exports to its tools) `forge anchor`, `forge lean` and `forge substrate` measure only what
+THAT session changed since its SessionStart baseline — not other agents' uncommitted work
+or older dirt. Before the session has changed anything, the minimality check reports
+"pre-existing diff (not measured)" instead of critiquing someone else's diff.
 
 ```console
 $ forge anchor "harden verifyToken in src/auth.js"

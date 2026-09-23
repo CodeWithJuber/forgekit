@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,8 @@ import { test } from "node:test";
 import { build, impact } from "../src/atlas.js";
 import { assessTask, preflightRepo } from "../src/preflight.js";
 import { routeTask, rubricComplexity } from "../src/route.js";
-import { substrateCheck } from "../src/substrate.js";
+import { recordBaseline } from "../src/session.js";
+import { renderSubstrate, substrateCheck } from "../src/substrate.js";
 
 function repo() {
   const root = mkdtempSync(join(tmpdir(), "forge-substrate-"));
@@ -229,4 +231,37 @@ test("enforceDecision: a stale atlas never hard-blocks on blast radius (RA-07)",
     false,
     "stale predictions are not authority to block",
   );
+});
+
+test("substrateCheck sessionId: the pre-existing diff is not this task's footprint", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-sub-session-"));
+  const git = (...a) => execFileSync("git", a, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  git("init", "-q");
+  git("config", "user.email", "forge@test.invalid");
+  git("config", "user.name", "forge-test");
+  writeFileSync(join(root, "a.js"), "export const a = 1;\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "fixture");
+  // Uncommitted work that predates the session (another agent's, or yesterday's).
+  const big = Array.from({ length: 200 }, (_, i) => `export function f${i}() { return ${i}; }`);
+  writeFileSync(join(root, "reports.js"), `${big.join("\n")}\n`);
+  const task = "fix the login typo";
+  const whole = substrateCheck(root, task, { sessionId: null });
+  assert.equal(whole.minimality.scope, "worktree");
+  assert.ok(
+    whole.minimality.warnings.some((w) => /lines added/.test(w)),
+    "unscoped: the whole working diff is critiqued (today's behaviour)",
+  );
+  recordBaseline(root, "sub1");
+  const scoped = substrateCheck(root, task, { sessionId: "sub1" });
+  assert.equal(scoped.minimality.scope, "session");
+  assert.equal(scoped.minimality.note, "pre-existing diff (not measured)");
+  assert.ok(!scoped.minimality.warnings.some((w) => /lines added/.test(w)));
+  assert.deepEqual(scoped.goalAnchor.changed, [], "no drift over files this session never touched");
+  assert.match(renderSubstrate(scoped), /pre-existing diff \(not measured\)/);
+  // Once the session edits, only its own change is measured.
+  writeFileSync(join(root, "login.js"), "export const login = 1;\n");
+  const after = substrateCheck(root, task, { sessionId: "sub1" });
+  assert.deepEqual(after.goalAnchor.changed, ["login.js"]);
+  assert.equal(after.minimality.footprint?.files, 1);
 });
