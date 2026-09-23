@@ -141,6 +141,25 @@ test("PreToolUse protect-paths also covers Read in both manifests (B6)", () => {
   }
 });
 
+// The review: protectPathsDecision handled Grep/Glob/NotebookRead, but no manifest ever sent
+// them to it — the Grep tool could read `.env` (or everything under `~/.ssh`) unchecked.
+test("PreToolUse protect-paths also covers Grep, Glob and NotebookRead in all three manifests", () => {
+  const project = JSON.parse(
+    readFileSync(new URL("../.claude/settings.json", import.meta.url), "utf8"),
+  );
+  for (const [name, manifest] of [
+    ["settings.template.json", template],
+    ["hooks.json", pluginHooks],
+    [".claude/settings.json", project],
+  ]) {
+    const tools = (manifest.hooks?.PreToolUse ?? [])
+      .filter((g) => (g.hooks ?? []).some((h) => hookText(h).includes("protect-paths.sh")))
+      .flatMap((g) => (g.matcher ?? "").split("|"));
+    for (const tool of ["Read", "Grep", "Glob", "NotebookRead"])
+      assert.ok(tools.includes(tool), `${name}: protect-paths must run on ${tool} (got: ${tools})`);
+  }
+});
+
 test("the credential stores the guard protects are denied for Read too (B6)", () => {
   const deny = template.permissions?.deny ?? [];
   for (const rule of [

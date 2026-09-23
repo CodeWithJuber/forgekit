@@ -352,6 +352,9 @@ test("protect-paths rules: destructive commands the literal substrings missed (B
 });
 
 test("protect-paths protects the credential stores and Read itself (B6)", () => {
+  // `/home/u` is HOME for the guard, so `/home/u/.npmrc` is the USER-level npmrc — where
+  // `npm login` writes the token — and stays protected with no file on disk.
+  const env = { ...process.env, HOME: "/home/u", USERPROFILE: "/home/u" };
   for (const file_path of [
     "/home/u/.aws/credentials",
     "/home/u/.netrc",
@@ -361,14 +364,17 @@ test("protect-paths protects the credential stores and Read itself (B6)", () => 
     "C:\\proj\\.env",
   ]) {
     for (const tool_name of ["Write", "Read"]) {
-      const r = runGuard("protect-paths.sh", { tool_name, tool_input: { file_path } });
+      const r = runGuard("protect-paths.sh", { tool_name, tool_input: { file_path } }, { env });
       assert.equal(r.code, 2, `must block ${tool_name} of ${file_path}`);
       assert.match(r.err, tool_name === "Read" ? /refusing to read/ : /refusing to modify/);
     }
   }
-  // Bash readers/writers of the same stores are blocked too.
+  // Bash readers/writers of the same stores are blocked too — a project `.npmrc` when it
+  // holds a literal token.
+  const token = () => "//registry.npmjs.org/:_authToken=npm_abc123";
   for (const command of ["cat ~/.netrc", "cat .npmrc", "echo x > ~/.git-credentials"]) {
-    assert.equal(protectPathsDecision({ toolName: "Bash", command }).block, true, command);
+    const d = protectPathsDecision({ toolName: "Bash", command, readText: token });
+    assert.equal(d.block, true, command);
   }
   // …and an ordinary source file is still untouched.
   assert.equal(
