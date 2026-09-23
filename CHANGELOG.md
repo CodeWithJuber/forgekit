@@ -50,8 +50,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   doctor --fix", and that fix merged the same hooks into `settings.json` on top of the plugin's
   `hooks/hooks.json`, so every guard ran twice. With `forgekit@…` enabled (user, project or
   local settings), doctor reports "guards via the forgekit plugin", its fix merges permissions
-  only, and a settings copy of the guards is reported as a double registration. `mergeSettings`
-  (and so `forge init`) skips hook injection for a settings file that enables the plugin.
+  only, and a settings copy of the guards is reported as a double registration. `forge init`
+  reads the same user, project and local scopes and skips hook injection when the plugin is
+  enabled in any of them (`mergeSettings` alone skips it for a settings file that enables it).
 
 ## [1.3.0] - 2026-09-23
 

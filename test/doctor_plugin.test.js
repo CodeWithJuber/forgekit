@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BRAND } from "../src/brand.js";
 import { doctor } from "../src/doctor.js";
-import { forgePluginEnabled, mergeSettings } from "../src/init.js";
+import { forgePluginEnabled, init, mergeSettings } from "../src/init.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-plugin-"));
 const PLUGIN = `${BRAND.pkg}@forge`;
@@ -128,4 +128,26 @@ test("doctor: guards wired by the plugin AND settings.json are a double registra
   const hooksBefore = hookCount(s);
   doctor({ targetRoot: root, settingsPath, fix: true });
   assert.equal(hookCount(JSON.parse(readFileSync(settingsPath, "utf8"))), hooksBefore);
+});
+
+test("forge init with the plugin enabled only in the project merges no hooks at user scope", () => {
+  // Both init call sites: `--settings-only` (install.sh) and the full repo init. Before, init
+  // only looked at the file it merged into, so it wrote every guard into the user settings and
+  // doctor then reported the double registration init had just created.
+  for (const settingsOnly of [true, false]) {
+    const root = fixture();
+    mkdirSync(join(root, ".claude"));
+    const project = join(root, ".claude", "settings.json");
+    writeFileSync(project, JSON.stringify({ enabledPlugins: { [PLUGIN]: true } }));
+    const settingsPath = join(fixture(), "settings.json");
+    const r = /** @type {any} */ (init({ targetRoot: root, settingsPath, settingsOnly }));
+    assert.equal(r.settings.hooksVia, "plugin", `settingsOnly=${settingsOnly}`);
+    const s = JSON.parse(readFileSync(settingsPath, "utf8"));
+    assert.equal(hookCount(s), 0, `settingsOnly=${settingsOnly}: no guard registered twice`);
+    assert.ok(s.permissions?.deny?.length, "permissions are still merged");
+    assert.equal(forgePluginEnabled({ settingsPath, targetRoot: root }).enabled, true);
+    const row = settingsRow({ targetRoot: root, settingsPath });
+    assert.equal(row.status, "ok", row.note);
+    assert.doesNotMatch(row.note, /runs twice/);
+  }
 });

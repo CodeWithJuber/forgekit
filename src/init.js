@@ -816,12 +816,17 @@ export function init({
   settingsPath,
   onSettingsNotice,
 } = {}) {
+  // The plugin may be enabled in the project or local settings, not the file merged into: its
+  // hooks/hooks.json then wires every guard, so settings.json must not carry them too. Same
+  // scopes `forge doctor` reads, so init never creates the double registration doctor flags.
+  const hooks = forgePluginEnabled({ settingsPath, targetRoot }).enabled ? false : undefined;
   if (settingsOnly) {
     return {
       settings: mergeSettings({
         noSettings,
         settingsPath,
         onNotice: onSettingsNotice,
+        hooks,
       }),
       settingsOnly: true,
     };
@@ -845,6 +850,7 @@ export function init({
     noSettings,
     settingsPath,
     onNotice: onSettingsNotice,
+    hooks,
   });
   const detected = autoDetectProvider();
   return { ...r, settings, detected, profile: profileResult };
