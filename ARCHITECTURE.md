@@ -516,7 +516,17 @@ an **MCP server** for Roo Code and VS Code.
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
-(`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file.
+(`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
+only for tools the repo uses (detected, or `forge init --tools`); the set is recorded in
+`.forge/forge.config.json` so `forge sync` emits the same targets.
+
+`AGENTS.md` is shared with people, so forge owns only a marked block in it
+(`<!-- forge:begin -->` … `<!-- forge:end -->`). Sync appends that block to a hand-written
+file and afterwards compares and rewrites only the block; the Stop-hook auto-sync does the
+same and never adopts a file without one. A pre-block, fully generated `AGENTS.md` is
+recognised by the hash in its header and converted to a block keeping any text a person
+added around it; only one edited inside its generated text needs a full rewrite, which
+`forge sync` does after saving a timestamped `AGENTS.md.forge-bak-<time>`.
 
 ### OpenClaw: what is automatic and what is not
 

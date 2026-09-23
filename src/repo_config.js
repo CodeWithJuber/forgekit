@@ -1,6 +1,7 @@
 // forge repo config — THE single per-repo config module (RA-15). The unified file is
-// <root>/.forge/forge.config.json: profile / disableSections / rules (read by sync)
-// plus primaryTool / tools (read by `forge tools`), and any future keys — unknown keys
+// <root>/.forge/forge.config.json: profile / disableSections / rules / tools (read by
+// sync; `tools` is the set of agent tools this repo emits config for, recorded by
+// `forge init`) plus primaryTool (read by `forge tools`), and any future keys — unknown keys
 // always round-trip through writeForgeConfig. The legacy <root>/.forge/config.json
 // (primaryTool/tools only) is still migration-read; on key conflicts the unified
 // forge.config.json wins, and the legacy file is left in place.
@@ -57,6 +58,58 @@ export const KNOWN_TOOLS = [
   "roo",
   "openclaw",
 ];
+
+// Every on-disk sign that a repo already uses a tool — the evidence `forge init` needs to
+// emit that tool's config. Broader than DETECT (which only ranks a single primary tool):
+// a tool's legacy rules files count too, e.g. `.github/copilot-instructions.md` for Copilot.
+/** @type {Record<string, string[]>} */
+const TOOL_MARKERS = {
+  claude: ["CLAUDE.md", ".claude", ".mcp.json"],
+  cursor: [".cursor", ".cursorrules"],
+  gemini: [".gemini", "GEMINI.md"],
+  codex: [".codex"],
+  zed: [".zed", ".rules"],
+  vscode: [".vscode", ".github/copilot-instructions.md"],
+  aider: [".aider.conf.yml"],
+  continue: [".continue"],
+  windsurf: [".windsurf", ".windsurfrules", ".devin"],
+  roo: [".roo", ".roomodes"],
+  openclaw: [".openclaw"],
+};
+
+// Names people type for a tool whose canonical key differs.
+/** @type {Record<string, string>} */
+const TOOL_ALIASES = { copilot: "vscode", devin: "windsurf", "claude-code": "claude" };
+
+/**
+ * Every tool this repo already shows signs of using (KNOWN_TOOLS order). Pure read.
+ * @param {string} [root]
+ * @returns {string[]}
+ */
+export function detectTools(root = process.cwd()) {
+  return KNOWN_TOOLS.filter((t) => TOOL_MARKERS[t].some((m) => existsSync(join(root, m))));
+}
+
+/**
+ * Normalise a tool selection — a `--tools` value (`"claude,cursor"`, `"all"`) or the config's
+ * `tools` key (an array, or `"all"`) — into canonical keys in KNOWN_TOOLS order. `tools: null`
+ * means every tool. Unrecognised names come back in `unknown` so a caller can refuse them
+ * (init) or warn (sync). Pure.
+ * @param {unknown} value
+ * @returns {{tools: string[]|null, unknown: string[]}}
+ */
+export function parseTools(value) {
+  const list = typeof value === "string" ? value.split(",") : Array.isArray(value) ? value : [];
+  const names = list
+    .map((t) => String(t).trim().toLowerCase())
+    .filter(Boolean)
+    .map((t) => TOOL_ALIASES[t] ?? t);
+  if (names.includes("all")) return { tools: null, unknown: [] };
+  return {
+    tools: KNOWN_TOOLS.filter((t) => names.includes(t)),
+    unknown: [...new Set(names.filter((t) => !KNOWN_TOOLS.includes(t)))],
+  };
+}
 
 // Map a sync-report row's tool label to a canonical tool key. The shared source
 // (AGENTS.md) and any unmapped label return null and are never gitignored.
@@ -260,10 +313,11 @@ export function setPrimaryTool(root, tool) {
 }
 
 /**
- * Clear the primary-tool config: removes the `primaryTool`/`tools` keys from BOTH the
- * unified forge.config.json and the legacy config.json (else a legacy value would
- * resurface on the next migration read), preserving every other key. A file left empty
- * is deleted; a corrupt file is left untouched (never rewritten). Never throws.
+ * Clear the primary-tool config: removes the `primaryTool` key from BOTH the unified
+ * forge.config.json and the legacy config.json (else a legacy value would resurface on the
+ * next migration read), preserving every other key. `tools` (the emit set `forge init`
+ * recorded) stays: dropping it would make the next sync emit every tool again. A file left
+ * empty is deleted; a corrupt file is left untouched (never rewritten). Never throws.
  * @param {string} root
  * @returns {{cleared:boolean, path:string}}
  */
@@ -276,10 +330,9 @@ export function clearRepoConfig(root) {
       warnCorrupt(file);
       continue;
     }
-    if (!("primaryTool" in data) && !("tools" in data)) continue;
+    if (!("primaryTool" in data)) continue;
     had = true;
     delete data.primaryTool;
-    delete data.tools;
     if (Object.keys(data).length === 0) rmSync(file, { force: true });
     else writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
   }

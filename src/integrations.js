@@ -27,7 +27,7 @@ import {
   removeMcp,
   validateServerName,
 } from "./emit/mcp.js";
-import { readForgeConfig, writeForgeConfig } from "./repo_config.js";
+import { parseTools, readForgeConfig, writeForgeConfig } from "./repo_config.js";
 
 /** The catalog of known optional integrations. Keep each entry honest about what running it
  *  actually does (network, third-party code execution). */
@@ -193,8 +193,12 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
   for (const t of MCP_TARGET_FILES)
     if (!foreign.has(t) || adopt) newAdoptions.push({ server: name, target: t });
   const owns = adoptionOwns([...rec.adopted, ...newAdoptions]);
-  // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row.
-  const rows = emitMcp({ targetRoot, servers, owns });
+  // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row. Only into the
+  // tools `forge init` recorded for this repo (every tool when none are recorded), the same
+  // set `forge sync` emits for, so adding a server never creates an unused tool's config.
+  const recorded =
+    typeof cfg.tools === "string" || Array.isArray(cfg.tools) ? parseTools(cfg.tools).tools : null;
+  const rows = emitMcp({ targetRoot, servers, owns, tools: recorded });
   const failed = rows.filter((r) => r.action === "error");
   if (failed.length)
     return {

@@ -179,16 +179,27 @@ HANDLERS.init = async (argv) => {
   }
   const profileIdx = argv.indexOf("--profile");
   const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
+  // --tools <list> (or --tools=<list>): the agent tools to emit config for. Omitted = the set an
+  // earlier init recorded, else Claude plus the tools this repo already uses.
+  const toolsEq = argv.find((a) => a.startsWith("--tools="));
+  const toolsIdx = argv.indexOf("--tools");
+  const tools = toolsEq
+    ? toolsEq.slice("--tools=".length)
+    : toolsIdx >= 0
+      ? (argv[toolsIdx + 1] ?? "")
+      : undefined;
   // ME-22: emit the GLOBAL-settings disclosure BEFORE the merge mutates the file. init
   // forwards `onSettingsNotice` to mergeSettings, which fires it right before touching
   // ~/.claude/settings.json — so the notice always precedes the mutation it describes.
-  heading(`${BRAND.brand} init — this repo now speaks every AI tool from one source.\n`);
+  heading(`${BRAND.brand} init — one source for every AI tool this repo uses.\n`);
   const {
     report,
     bytes,
     settings,
     detected,
+    warnings,
     profile: profileResult,
+    tools: toolsResult,
   } = /** @type {any} */ (
     init({
       targetRoot: process.cwd(),
@@ -196,18 +207,29 @@ HANDLERS.init = async (argv) => {
       profile,
       settingsPath,
       onSettingsNotice: consentLine,
+      tools,
     })
   );
-  if (profileResult?.error) {
-    console.error(`  ${profileResult.error}`);
+  if (profileResult?.error || toolsResult?.error) {
+    console.error(`  ${profileResult?.error ?? toolsResult.error}`);
     process.exitCode = 1;
     return;
   }
   const wrote = report.filter((r) => r.action === "written").map((r) => r.target);
   console.log(`  emitted:  ${wrote.length ? wrote.join(", ") : "(all up to date)"}`);
+  const toolOrigin = {
+    "--tools": "from --tools",
+    config: "recorded in .forge/forge.config.json",
+    detected: "Claude + tools found in this repo",
+  }[toolsResult.source];
   console.log(
-    `  source:   AGENTS.md (${bytes} B) — edit rules in source/, re-run \`${BRAND.cli} sync\``,
+    `  tools:    ${toolsResult.tools === null ? "all" : toolsResult.tools.join(", ")} (${toolOrigin}) — change with \`${BRAND.cli} init --tools <list|all>\``,
   );
+  console.log(
+    `  source:   AGENTS.md (${bytes} B) — forge owns only the block between <!-- forge:begin --> and <!-- forge:end -->; edit rules in source/, re-run \`${BRAND.cli} sync\``,
+  );
+  for (const w of [...(warnings ?? []), ...(toolsResult.warning ? [toolsResult.warning] : [])])
+    console.warn(`  ! ${w}`);
   // ME-19: sync is non-transactional — if a target failed mid-emit, say so instead of
   // implying every tool is ready, and fail the command.
   const failedTargets = report.filter((r) => r.action === "error");
@@ -416,10 +438,14 @@ HANDLERS.taste = async (argv) => {
 };
 HANDLERS.sync = async () => {
   const { sync } = await import("./sync.js");
-  const { report, warnings, bytes, partial, status } = sync({
+  const { report, warnings, bytes, partial, status, tools } = sync({
     targetRoot: process.cwd(),
   });
   heading(`${BRAND.brand} sync — one source → every tool\n`);
+  if (tools !== null)
+    console.log(
+      `  tools: ${tools.length ? tools.join(", ") : "none"} + AGENTS.md (recorded by \`${BRAND.cli} init\`; change with \`${BRAND.cli} init --tools <list|all>\`)\n`,
+    );
   for (const r of report) {
     console.log(
       `  ${r.action.padEnd(16)} ${String(r.target).padEnd(22)} ${r.tool}${r.note ? `  · ${r.note}` : ""}`,

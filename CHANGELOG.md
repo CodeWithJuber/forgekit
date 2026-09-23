@@ -6,6 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`forge init` / `forge sync` no longer replace a hand-written `AGENTS.md`, and the Stop-hook
+  auto-sync no longer reverts human edits.** Forge now owns only a marked block
+  (`<!-- forge:begin -->` … `<!-- forge:end -->`): sync appends it to an existing file and
+  afterwards compares and rewrites only that block; auto-sync does the same and never adopts
+  a file without one. An `AGENTS.md` generated whole by an older version converts to a block
+  on the next sync, keeping any text added above or below the generated part (verified by
+  the hash in its header). If the generated text itself was edited, `forge sync` saves the
+  old file as a timestamped `AGENTS.md.forge-bak-<time>` first, instead of overwriting one
+  fixed `.forge-bak`. `forge doctor` reports a hand-written file as "no Forge block" and its
+  fix appends the block.
+- **Notes added under a generated `CLAUDE.md` header survive later syncs.** Sync refreshes
+  only the marker line instead of regenerating the file.
+
+### Changed
+
+- **`forge init` emits config only for the tools a repo uses:** Claude Code plus every tool
+  with a sign on disk (`.cursor/`, `.codex/`, `.github/copilot-instructions.md`, …), or an
+  explicit `--tools <list|all>`. The choice is recorded in `.forge/forge.config.json`
+  (`tools`) and later syncs and `forge integrations add` honour it; a repo with no recorded
+  set still gets every tool. `forge tools --reset` now clears only the primary tool and keeps
+  that set.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added

@@ -7,15 +7,23 @@ The Core group bootstraps a repo and keeps it healthy.
 
 ## `forge init`
 
-Scaffold this repo's config — emits every tool from one shared source.
+Scaffold this repo's config — emits the tools it uses (Claude + detected, or `--tools`) from
+one shared source.
 
 ```bash
 forge init
+forge init --tools claude,cursor        # choose the tools explicitly (or --tools all)
 ```
 
-Emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and the rest
-(plus MCP server config for Roo Code and VS Code), and the `.gitattributes` union-merge
-rule the ledger needs.
+Emits `AGENTS.md`, Claude Code's `CLAUDE.md` and `.mcp.json`, and the config of every tool
+the repo already shows signs of (`.cursor/`, `.codex/`, `.gemini/`,
+`.github/copilot-instructions.md`, …) — plus the `.gitattributes` union-merge rule the
+ledger needs. `--tools all` emits every tool (`.aider.conf.yml`, Roo Code and VS Code MCP
+config, and the rest). The selection is recorded in `.forge/forge.config.json` (`tools`) so
+later `forge sync` runs emit the same set; re-run `forge init --tools …` to change it.
+
+An existing `AGENTS.md` is never replaced: Forge appends its rules between
+`<!-- forge:begin -->` and `<!-- forge:end -->` and from then on rewrites only that block.
 
 `forge init` also merges Forge's hooks and permissions into the **global**
 `~/.claude/settings.json`, so it announces the merge before writing. The merge is
@@ -25,6 +33,7 @@ idempotent, marker-guarded, and never clobbers user entries.
 
 | Flag                  | What it does                                                                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--tools <list>`      | Agent tools to emit config for, comma-separated (`claude`, `cursor`, `gemini`, `codex`, `zed`, `vscode`, `aider`, `continue`, `windsurf`, `roo`, `openclaw`) or `all`. An unknown name aborts before anything is written. |
 | `--profile <name>`    | Pick the policy profile for this repo. Accepts `minimal` or `standard` (default). An invalid value aborts before any scaffold, `.forge/` write, or merge.  |
 | `--no-settings`       | Skip the global `~/.claude/settings.json` merge entirely — only the per-repo config is written.                                                            |
 | `--remove-settings`   | Reverse a past settings merge. Forge-shaped hooks, permissions, statusline, and the `_forge` marker are removed; a timestamped backup is written first, and your own entries are preserved. Also invoked by `install.sh --uninstall`. |
@@ -63,6 +72,14 @@ forge sync
 
 Idempotent — it only rewrites what changed. Run it after editing `source/rules.json` or a
 per-repo `.forge/rules.json`.
+
+In `AGENTS.md` sync compares and rewrites only the block between `<!-- forge:begin -->` and
+`<!-- forge:end -->`; text above or below it is yours and is never touched. The Stop hook
+runs the same block refresh after each session (disable with `FORGE_AUTOSYNC=0`). An
+`AGENTS.md` generated whole by an older Forge converts to a block on the next sync, keeping
+any text you added around the generated part; if you edited inside the generated text, sync
+first saves the old file as `AGENTS.md.forge-bak-<time>`. Sync emits for the tools recorded
+by `forge init` (all tools when none are recorded).
 
 ## `forge doctor`
 

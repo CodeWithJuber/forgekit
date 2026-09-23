@@ -29,14 +29,15 @@ export const OPENCLAW_TARGET = ".openclaw/mcp.json";
 
 // `key` is a DOTTED PATH into the document, not a single top-level key: OpenClaw nests its
 // registry under `mcp.servers`, every other tool uses one flat key. `bucketAt` resolves both.
+// `id` is the tool's canonical key (repo_config KNOWN_TOOLS), used to honour a tool selection.
 const JSON_TARGETS = [
-  { tool: "Claude Code", file: ".mcp.json", key: "mcpServers" },
-  { tool: "Cursor", file: ".cursor/mcp.json", key: "mcpServers" },
-  { tool: "Gemini CLI", file: ".gemini/settings.json", key: "mcpServers" },
-  { tool: "Roo Code", file: ".roo/mcp.json", key: "mcpServers" },
-  { tool: "Zed", file: ".zed/settings.json", key: "context_servers" },
-  { tool: "VS Code / Copilot", file: ".vscode/mcp.json", key: "servers" },
-  { tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
+  { id: "claude", tool: "Claude Code", file: ".mcp.json", key: "mcpServers" },
+  { id: "cursor", tool: "Cursor", file: ".cursor/mcp.json", key: "mcpServers" },
+  { id: "gemini", tool: "Gemini CLI", file: ".gemini/settings.json", key: "mcpServers" },
+  { id: "roo", tool: "Roo Code", file: ".roo/mcp.json", key: "mcpServers" },
+  { id: "zed", tool: "Zed", file: ".zed/settings.json", key: "context_servers" },
+  { id: "vscode", tool: "VS Code / Copilot", file: ".vscode/mcp.json", key: "servers" },
+  { id: "openclaw", tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
 ];
 
 const CONTINUE_DIR = join(".continue", "mcpServers");
@@ -400,13 +401,15 @@ function openclawEnableHint(servers) {
  * pre-existing divergent entry is preserved and reported unless that exact target adopted
  * the name. Every name is validated and Continue filenames checked for collisions before
  * any write (ME-11); a per-target write failure surfaces as an `error` row (never a throw)
- * so callers can keep disk and the managed-set record consistent (ME-10).
+ * so callers can keep disk and the managed-set record consistent (ME-10). `tools` limits the
+ * emit to those tools' targets (canonical keys); null/omitted = every target, as before.
  * @param {{targetRoot:string, servers:Record<string,{command:string,args?:string[]}>,
- *   owns?:(target:string, name:string)=>boolean}} opts
+ *   owns?:(target:string, name:string)=>boolean, tools?:string[]|null}} opts
  */
-export function emitMcp({ targetRoot, servers, owns = () => true }) {
+export function emitMcp({ targetRoot, servers, owns = () => true, tools = null }) {
   validateServers(servers);
-  const rows = JSON_TARGETS.map((t) => {
+  const emits = (id) => tools === null || tools.includes(id);
+  const rows = JSON_TARGETS.filter((t) => emits(t.id)).map((t) => {
     const r = mergeJson(join(targetRoot, t.file), t.key, servers, (name) => owns(t.file, name));
     return {
       tool: `${t.tool} MCP`,
@@ -418,15 +421,18 @@ export function emitMcp({ targetRoot, servers, owns = () => true }) {
       note: t.file === OPENCLAW_TARGET ? `${r.note}; ${openclawEnableHint(servers)}` : r.note,
     };
   });
-  const codex = emitCodexToml(join(targetRoot, CODEX_FILE), servers, (name) =>
-    owns(CODEX_TARGET, name),
-  );
-  rows.push({
-    tool: "Codex MCP",
-    target: CODEX_TARGET,
-    action: codex.action,
-    note: codex.note,
-  });
+  if (emits("codex")) {
+    const codex = emitCodexToml(join(targetRoot, CODEX_FILE), servers, (name) =>
+      owns(CODEX_TARGET, name),
+    );
+    rows.push({
+      tool: "Codex MCP",
+      target: CODEX_TARGET,
+      action: codex.action,
+      note: codex.note,
+    });
+  }
+  if (!emits("continue")) return rows;
   const dir = join(targetRoot, CONTINUE_DIR);
   for (const [name, def] of Object.entries(servers)) {
     const r = emitContinueServer(dir, name, def);

@@ -214,10 +214,17 @@ test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as 
   sync({ targetRoot: root });
   const p = join(root, "AGENTS.md");
   const lines = readFileSync(p, "utf8").split("\n");
-  // Keep line 0 (the GENERATED header with the forge:sync:<hash> marker), tamper the body.
+  // Keep the begin marker and the GENERATED header (forge:sync:<hash>) intact; tamper the
+  // body's title line right below them, inside the block.
+  const header = lines.findIndex((l) => l.includes("forge:sync:"));
+  assert.equal(header, 1, "the header sits right under <!-- forge:begin -->");
   writeFileSync(
     p,
-    [lines[0], "# AGENTS.md — quietly rewritten by hand", ...lines.slice(2)].join("\n"),
+    [
+      ...lines.slice(0, header + 1),
+      "# AGENTS.md — quietly rewritten by hand",
+      ...lines.slice(header + 2),
+    ].join("\n"),
   );
   const r = autoSyncIfDrifted(root);
   assert.equal(r.synced, true, "marker-only agreement must not pass as in-sync");

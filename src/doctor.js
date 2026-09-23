@@ -19,13 +19,13 @@ import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
-import { hashContent, mdHeader } from "./emit/_shared.js";
+import { extractHash, hashContent } from "./emit/_shared.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
 import { ensureLedgerGitattributes, guardKey, isStaleManagedHook, mergeSettings } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { canonical, sync } from "./sync.js";
+import { agentsMdStatus, canonical, sync } from "./sync.js";
 import { updateStatus } from "./update.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -539,27 +539,42 @@ function checkDrift(out, targetRoot) {
     label: "emit/refresh AGENTS.md (forge sync)",
     run: () => sync({ targetRoot }),
   };
-  const agents = join(targetRoot, "AGENTS.md");
-  if (!existsSync(agents)) {
-    out.push({
-      ...warn("AGENTS.md", "not emitted here — run `forge sync`"),
-      fix: syncFix,
-    });
-    return;
-  }
-  // Compare the actual file to the full expected content, not just the embedded marker —
-  // a hand-edited body with an intact marker would otherwise report "in sync" (P0-08).
+  // The same classifier sync and the Stop-hook auto-sync use, so doctor can never advise a
+  // write they would refuse. Forge owns only its marked block: the block is compared byte
+  // for byte (an edited block with an intact marker still counts as drift, P0-08), and text
+  // outside it is the person's, never "stale". Every fix below is sync, which only touches
+  // the block (a pre-block file edited inside its generated text is backed up first).
   const body = canonical(targetRoot);
-  const expected = `${mdHeader(hashContent(body))}\n${body}\n`;
-  const actual = readFileSync(agents, "utf8");
-  out.push(
-    actual === expected
-      ? ok("AGENTS.md", "in sync")
-      : {
-          ...warn("AGENTS.md", "stale or hand-edited — run `forge sync`"),
-          fix: syncFix,
-        },
-  );
+  const status = agentsMdStatus(targetRoot, body);
+  const fixable = (note) => ({ ...warn("AGENTS.md", note), fix: syncFix });
+  const rows = {
+    missing: () => fixable("not emitted here — run `forge sync`"),
+    "hand-written": () =>
+      fixable(
+        "hand-written AGENTS.md (no Forge block) — `forge sync` appends the Forge section and leaves your text as is",
+      ),
+    "in-sync": () => ok("AGENTS.md", "in sync (Forge block)"),
+    drifted: () =>
+      fixable(
+        "Forge block stale or edited inside its markers — run `forge sync` (text outside the block is kept)",
+      ),
+    legacy: () =>
+      extractHash(status.text) === hashContent(body)
+        ? ok("AGENTS.md", "in sync (pre-block format — the next sync converts it to a Forge block)")
+        : fixable(
+            "stale, pre-block format — `forge sync` converts it to a Forge block and keeps any text you added around it",
+          ),
+    "legacy-edited": () =>
+      fixable(
+        "pre-block format edited inside the generated text — `forge sync` converts it to a Forge block and saves the old file as AGENTS.md.forge-bak-<time>",
+      ),
+    damaged: () =>
+      warn(
+        "AGENTS.md",
+        "damaged Forge markers (forge:begin without forge:end, or the reverse) — fix them by hand",
+      ),
+  };
+  out.push(rows[status.state]());
 }
 
 // MCP hygiene: past ~6 servers, tool-selection accuracy drops and the context bloats.
