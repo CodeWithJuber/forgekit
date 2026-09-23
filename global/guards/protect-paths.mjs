@@ -77,7 +77,9 @@ export function secretKind(raw, ctx = {}) {
   const base = segs[segs.length - 1];
   const lower = segs.map((s) => s.toLowerCase());
   // `.env`, `.env.local`, `.env-local`, `.env-prod.local` — but not the `.env.example` template.
-  const env = /^\.env((?:[.-][\w-]+)*)~?$/i.exec(base);
+  // Segments are `\w+` so a separator can only be `.` or `-` between them: linear to match
+  // (`[\w-]+` let `--…` split exponentially many ways, CodeQL js/redos).
+  const env = /^\.env((?:[.-]\w+)*)~?$/i.exec(base);
   if (env) {
     if (!ENV_TEMPLATE.has(env[1].split(/[.-]/).pop()?.toLowerCase() ?? "")) return "env file";
   } else if (/.\.env$/i.test(base) && (!ctx.bash || segs.length > 1)) {
@@ -129,8 +131,14 @@ function npmrcIsSecret(p, ctx) {
   if (/[$`]/.test(p)) return true;
   // `cd ~ && cat .npmrc`: the payload cwd is no longer where a relative path points.
   if (ctx.cwdUnknown && !/^(?:[A-Za-z]:)?\//.test(p)) return true;
-  const home = slashes(ctx.home ?? homedir()).toLowerCase();
+  const cwd = slashes(ctx.cwd ?? process.cwd()).toLowerCase();
   const abs = slashes(/^(?:[A-Za-z]:)?\//.test(p) ? p : resolve(ctx.cwd ?? process.cwd(), p));
+  // Only the project's own npmrc is ordinary config. One outside the project is user-level
+  // or global (`~/.npmrc`, `/etc/npmrc`): protected without looking for HOME, which Git Bash
+  // rewrites (`/home/u` → `C:/Program Files/Git/home/u`) before node reads it on Windows.
+  const lowerAbs = abs.toLowerCase();
+  if (lowerAbs !== cwd && !lowerAbs.startsWith(`${cwd.replace(/\/$/, "")}/`)) return true;
+  const home = slashes(ctx.home ?? homedir()).toLowerCase();
   if (abs.slice(0, abs.lastIndexOf("/")).toLowerCase() === home) return true;
   return npmrcHasToken((ctx.readText ?? readHead)(abs) ?? "");
 }

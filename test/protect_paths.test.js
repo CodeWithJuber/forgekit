@@ -639,7 +639,12 @@ test("secretKind: one path predicate for tool paths and Bash words", () => {
   assert.equal(secretKind("/p/.env-prod.local"), "env file");
   assert.equal(secretKind("/p/.env-example"), null);
   assert.equal(secretKind("C:\\Users\\u\\.aws\\credentials"), "credential store");
-  assert.equal(secretKind("/x/.npmrc", { home: "/h", readText: noFile }), null);
+  // A project's own npmrc with no token is ordinary config; one outside the project is not.
+  assert.equal(secretKind("/x/.npmrc", { home: "/h", cwd: "/x", readText: noFile }), null);
+  assert.equal(
+    secretKind("/y/.npmrc", { home: "/h", cwd: "/x", readText: noFile }),
+    "credential store",
+  );
   assert.equal(secretKind("/h/.npmrc", { home: "/h", readText: noFile }), "credential store");
 });
 
