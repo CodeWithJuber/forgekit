@@ -74,8 +74,20 @@ const TW_FAMILY_HS = {
 };
 
 const HEX_RE = /#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b/gi;
-const RGB_RE = /rgba?\(\s*(\d{1,3})[,\s]+(\d{1,3})[,\s]+(\d{1,3})/gi;
-const HSL_RE = /hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%/gi;
+// The optional last group is the alpha (`, 0` or `/ 0%`): only used to skip a fully
+// transparent color, which paints nothing.
+const ALPHA_TAIL = String.raw`(?:\s*[,/]\s*([\d.]+%?))?`;
+const RGB_RE = new RegExp(
+  String.raw`rgba?\(\s*(\d{1,3})[,\s]+(\d{1,3})[,\s]+(\d{1,3})${ALPHA_TAIL}`,
+  "gi",
+);
+const HSL_RE = new RegExp(
+  String.raw`hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%${ALPHA_TAIL}`,
+  "gi",
+);
+/** Is a captured alpha (`0`, `0.0`, `0%`) zero? Undefined (no alpha) is opaque. */
+const zeroAlpha = (/** @type {string|undefined} */ a) =>
+  a !== undefined && +a.replace("%", "") === 0;
 const TW_COLOR_RE = new RegExp(
   `\\b(?:bg|text|border|from|via|to|ring|outline|fill|stroke|accent|caret|decoration|divide|shadow)-(${Object.keys(TW_FAMILY_HS).join("|")})-(50|100|200|300|400|500|600|700|800|900|950)\\b`,
   "g",
@@ -100,12 +112,25 @@ const arbitrary = (key) => key.slice(1, -1).replace(/_/g, " ");
 
 const hslOf = (/** @type {{r:number,g:number,b:number}} */ c) => rgbToHsl(c.r, c.g, c.b);
 
-/** parseColor, but null instead of a throw — for scanning free text. */
+/** parseColor, but null instead of a throw — for scanning free text. A fully
+ *  transparent color (`transparent`, alpha 0) is null too: it paints nothing, so it is
+ *  not a palette entry (and must not count as black). */
 function tryHsl(value) {
   try {
-    return hslOf(parseColor(value));
+    const c = parseColor(value);
+    return c.a === 0 ? null : hslOf(c);
   } catch {
     return null;
+  }
+}
+
+/** Does the whole string parse as one color? */
+function isColor(value) {
+  try {
+    parseColor(value);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -118,7 +143,9 @@ function parseColors(text, theme = null) {
   const out = [];
   for (const [, hex] of text.matchAll(HEX_RE)) {
     // 3/4-digit shorthand expands per CSS; a trailing alpha channel is ignored — the
-    // fingerprint cares about hue identity, not opacity.
+    // fingerprint cares about hue identity, not opacity — except alpha 0 (#0000,
+    // #rrggbb00), which paints nothing.
+    if (/^(?:[0-9a-f]{3}0|[0-9a-f]{6}00)$/i.test(hex)) continue;
     const full =
       hex.length <= 4 ? [...hex.slice(0, 3)].map((c) => c + c).join("") : hex.slice(0, 6);
     out.push(
@@ -129,9 +156,10 @@ function parseColors(text, theme = null) {
       ),
     );
   }
-  for (const [, r, g, b] of text.matchAll(RGB_RE)) out.push(rgbToHsl(+r, +g, +b));
-  for (const [, h, s, l] of text.matchAll(HSL_RE))
-    out.push({ h: Math.round(+h) % 360, s: Math.round(+s), l: Math.round(+l) });
+  for (const [, r, g, b, a] of text.matchAll(RGB_RE))
+    if (!zeroAlpha(a)) out.push(rgbToHsl(+r, +g, +b));
+  for (const [, h, s, l, a] of text.matchAll(HSL_RE))
+    if (!zeroAlpha(a)) out.push({ h: Math.round(+h) % 360, s: Math.round(+s), l: Math.round(+l) });
   for (const [fn] of text.matchAll(OKLAB_FN_RE)) {
     const c = tryHsl(fn.replace(/_/g, " "));
     if (c) out.push(c);
@@ -181,17 +209,72 @@ const substituteVars = (/** @type {string} */ s, /** @type {Map<string,string>} 
     return fallback !== undefined ? String(fallback).trim() : whole;
   });
 
+// A block scoped to dark mode: a `.dark` class (Tailwind / shadcn), a
+// `[data-theme="dark"]`-style attribute (next-themes), `prefers-color-scheme: dark`,
+// or Tailwind's `@variant dark`. Negations (`:root:not(.dark)`, `@media not (…)`) are
+// removed first: they scope a block to LIGHT mode.
+const DARK_SCOPE_RE =
+  /\.dark(?![\w-])|\[\s*data-[\w-]+\s*[~|^$*]?=\s*["']?dark["']?\s*[is]?\s*\]|prefers-color-scheme\s*:\s*dark\b|@(?:custom-)?variant\s+dark\b/i;
+const NEGATION_RE = /\bnot\s*\([^()]*\)/gi;
+const isDarkPrelude = (/** @type {string} */ p) => DARK_SCOPE_RE.test(p.replace(NEGATION_RE, ""));
+
+/**
+ * Split CSS into the text OUTSIDE dark-mode-scoped blocks and the bodies INSIDE them
+ * (brace-matched, nesting included). Comments are blanked for the scan, so a brace or
+ * a `.dark` inside one never scopes a block.
+ * @param {string} text
+ * @returns {{base:string, dark:string}}
+ */
+function splitDarkScoped(text) {
+  const scan = text.replace(/\/\*[\s\S]*?\*\//g, (c) => " ".repeat(c.length));
+  let base = "";
+  let dark = "";
+  let from = 0; // start of the pending `base` slice
+  let prelude = 0; // start of the current selector / at-rule prelude
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "}" || ch === ";") prelude = i + 1;
+    else if (ch === "{") {
+      if (!isDarkPrelude(scan.slice(prelude, i))) {
+        prelude = i + 1;
+        continue;
+      }
+      let depth = 1;
+      let j = i + 1;
+      for (; j < scan.length && depth; j++) {
+        if (scan[j] === "{") depth++;
+        else if (scan[j] === "}") depth--;
+      }
+      base += text.slice(from, prelude);
+      dark += `${text.slice(i + 1, depth ? j : j - 1)}\n`;
+      from = j;
+      prelude = j;
+      i = j - 1;
+    }
+  }
+  return { base: base + text.slice(from), dark };
+}
+
 /**
  * Every `--name: value` declaration in `text` (last wins), each resolved through the
  * others. `seed` declarations (a theme stylesheet's) are visible too but lose to the
- * text's own.
+ * text's own. Declarations inside dark-mode-scoped blocks (`.dark {}`,
+ * `[data-theme=dark] {}`, `@media (prefers-color-scheme: dark) {}`) never override a
+ * default one — the default theme is what the fingerprint measures; a property
+ * declared ONLY for dark mode still resolves through its dark value.
  * @param {string} text @param {Map<string,string>|null} [seed]
  * @returns {Map<string,string>}
  */
 function cssVarDecls(text, seed = null) {
   /** @type {Map<string,string>} */
   const decls = new Map(seed ?? []);
-  for (const [, name, value] of String(text).matchAll(VAR_DECL_RE)) decls.set(name, value.trim());
+  const { base, dark } = splitDarkScoped(String(text));
+  for (const [, name, value] of base.matchAll(VAR_DECL_RE)) decls.set(name, value.trim());
+  /** @type {Map<string,string>} */
+  const darkOnly = new Map();
+  for (const [, name, value] of dark.matchAll(VAR_DECL_RE))
+    if (!decls.has(name)) darkOnly.set(name, value.trim());
+  for (const [name, value] of darkOnly) decls.set(name, value);
   // Resolve the declarations themselves first (--a: var(--b)); 4 passes covers the
   // sane nesting depths and bounds a --a↔--b cycle to a fixed cost.
   for (let i = 0; i < 4; i++) {
@@ -258,6 +341,8 @@ function parseLengths(value) {
 }
 
 const CALC_TOKEN_RE = /\s*(?:(infinity|\d*\.?\d+)(px|rem|em)?|([-+*/()]))/iy;
+// Real calc() radii nest a few levels; anything deeper is not a design token.
+const MAX_CALC_DEPTH = 32;
 
 /**
  * Evaluate a `calc()` body over px/rem/em lengths and unitless numbers (+ − × ÷,
@@ -280,18 +365,25 @@ function evalCalc(expr) {
     }
   }
   let i = 0;
+  // Recursive descent: bound the nesting (parens + unary minus) so a pathological
+  // value is "not a length" (null) instead of a stack overflow that kills the run.
+  let depth = 0;
   /** @returns {{n:number, len:boolean}|null} */
   const atom = () => {
+    if (depth >= MAX_CALC_DEPTH) return null;
+    depth++;
     const t = toks[i++];
+    /** @type {{n:number, len:boolean}|null} */
+    let v = null;
     if (t === "(") {
-      const v = sum();
-      return toks[i++] === ")" ? v : null;
-    }
-    if (t === "-") {
-      const v = atom();
-      return v && { n: -v.n, len: v.len };
-    }
-    return typeof t === "object" ? t : null;
+      const inner = sum();
+      v = toks[i++] === ")" ? inner : null;
+    } else if (t === "-") {
+      const inner = atom();
+      v = inner && { n: -inner.n, len: inner.len };
+    } else if (typeof t === "object") v = t;
+    depth--;
+    return v;
   };
   const product = () => {
     let a = atom();
@@ -393,14 +485,18 @@ function twRadius(key, theme) {
 
 /**
  * The elevation level one `shadow-*` utility names, or null (none / not a shadow —
- * `shadow-brand` is a shadow COLOR). Theme and arbitrary shadows key on their value,
- * so `shadow-lift` and a CSS `box-shadow` with the same value are ONE level.
+ * `shadow-brand`, `shadow-[#123456]` and `shadow-[color:…]` set a shadow COLOR). Theme
+ * and arbitrary shadows key on their value, so `shadow-lift` and a CSS `box-shadow`
+ * with the same value are ONE level.
  * @param {string|undefined} key @param {ThemeTokens|null} theme
  */
 function twShadow(key, theme) {
   if (key === undefined) return theme?.shadow.get("") ?? "tw:base";
   if (key === "none") return null;
-  if (key.startsWith("[")) return normShadow(arbitrary(key));
+  if (key.startsWith("[")) {
+    const value = arbitrary(key);
+    return value.startsWith("color:") || isColor(value) ? null : normShadow(value);
+  }
   if (theme?.shadow.has(key)) return theme.shadow.get(key) ?? null;
   return TW_SHADOW_KEYS.has(key) ? `tw:${key}` : null;
 }
@@ -744,8 +840,12 @@ function objectLiteralLeaves(src, open) {
       i++;
       ws();
       const c = src[i];
-      if (c === "{") obj([...path, key]);
-      else if (c === '"' || c === "'" || c === "`") {
+      // Past MAX_CONFIG_DEPTH a nested object is skipped (iteratively), never recursed
+      // into: a pathological config must not overflow the stack.
+      if (c === "{") {
+        if (path.length < MAX_CONFIG_DEPTH) obj([...path, key]);
+        else skip();
+      } else if (c === '"' || c === "'" || c === "`") {
         const v = str();
         if (v !== null) leaves.push([[...path, key], v]);
       } else skip();
@@ -756,6 +856,8 @@ function objectLiteralLeaves(src, open) {
 }
 
 const CONFIG_KEY_RE = /\b(colors|borderRadius|boxShadow)\s*:\s*\{/g;
+// Color families nest 1–2 levels (`brand: { DEFAULT, 500 }`); 16 is far past any real one.
+const MAX_CONFIG_DEPTH = 16;
 
 /**
  * Theme tokens from a Tailwind v3 `tailwind.config.*` (`theme` or `theme.extend`
@@ -1375,7 +1477,9 @@ export function profileChecks(fingerprint, profile) {
 /**
  * Extract the project fingerprint from `files` and store it as a `fingerprint`
  * claim. Content-addressed: the same UI surface mints the same id on every machine,
- * so teammates converge on one claim instead of duplicating.
+ * so teammates converge on one claim instead of duplicating. An EMPTY vector is
+ * refused (nothing is written): stored as "home", it would fail every later `design`
+ * run against a design system with no features.
  * @param {string} root @param {string[]} files
  * @param {{t?:number, theme?:ThemeTokens|null}} [opts] `theme`: see fingerprintText —
  *   mint with the same theme `design` gates with, or token utilities won't match.
@@ -1383,6 +1487,12 @@ export function profileChecks(fingerprint, profile) {
  */
 export function mintProjectFingerprint(root, files, { t = 0, theme = null } = {}) {
   const fingerprint = fingerprintFiles(root, files, { theme });
+  if (!hasDesignSignal(fingerprint))
+    return {
+      ok: false,
+      reason:
+        "insufficient-signal: nothing stored — an empty vector is not a design system; mint from the files that carry the styles, and name the theme with --theme <file> if discovery misses it",
+    };
   const minted = mintClaim({
     kind: "fingerprint",
     body: fingerprint,

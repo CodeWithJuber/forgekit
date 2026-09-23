@@ -76,6 +76,7 @@ project's theme: Tailwind v4 `@theme` stylesheets and `tailwind.config.*` files,
 automatically or named with `--theme`. Arbitrary values such as `rounded-[13px]` are
 parsed too. `design` exits 1 on `fail` and on `insufficient-signal`: when the files carry
 no measurable color, spacing, font, radius or shadow, the verdict is never PASS.
+`fingerprint --mint` exits 1 on such files instead of storing an empty project fingerprint.
 
 ## `forge harden`
 

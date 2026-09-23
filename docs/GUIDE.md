@@ -1164,7 +1164,8 @@ $ forge uicheck contrast "rgb(0 0 0 / 50%)" "#fff"
 **`fingerprint <file...> [--theme <file>]... [--mint]`** — the design feature vector of
 your UI files: palette (hue histogram), spacing base + on-scale fraction, fonts,
 radius/shadow levels. `--mint` stores it as a shared `fingerprint` ledger claim — the
-design gate's "home":
+design gate's "home". It refuses an empty vector (exit 1, nothing stored): a "home" with
+no features would fail every later `design` run.
 
 ```console
 $ forge uicheck fingerprint src/components/*.jsx --mint
@@ -1195,7 +1196,14 @@ project's theme tokens and resolve those utilities through them:
   utilities match those keys (an `/opacity` modifier is ignored). A theme key that
   redefines a default (`--color-blue-500`, `--radius-md`) wins over Tailwind's default.
 - **Arbitrary values** are parsed in place: `rounded-[13px]`, `shadow-[0_1px_2px_#000]`,
-  `p-[13px]`, `text-[#abc]`, `bg-[oklch(0.6_0.1_250)]`.
+  `p-[13px]`, `text-[#abc]`, `bg-[oklch(0.6_0.1_250)]`. `shadow-[#123456]` and
+  `shadow-[color:…]` set a shadow _color_, so they count in the palette, not as an
+  elevation level. Fully transparent colors (`transparent`, alpha 0) are not palette
+  entries.
+- **Light/dark themes:** the default theme is what gets measured. A custom property
+  redeclared inside a dark-mode block (`.dark { … }`, `[data-theme="dark"] { … }`,
+  `@media (prefers-color-scheme: dark) { … }`) never overrides its default value; one
+  declared only for dark mode still resolves.
 - **Discovery:** theme sources are found under the working directory. That means every
   `tailwind.config.*` and every stylesheet with `@theme`, `@tailwind` or
   `@import "tailwindcss"`. `node_modules`, build output and dot-directories (`.git`,

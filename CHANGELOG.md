@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`forge uicheck` now exits 1 in three cases that used to exit 0.** A script or CI step
+  that calls it should expect a non-zero exit when:
+  - `contrast` (or the bare `uicheck <fg> <bg>`) grades a pair below WCAG AA.
+  - `design` or `visual` finds nothing measurable (verdict `insufficient-signal`).
+  - `fingerprint --mint` is given files with no measurable feature. Nothing is stored,
+    because an empty project fingerprint would fail every later `design` run.
+
 ### Fixed
 
 - **`forge uicheck contrast` exits 1 when a pair fails WCAG AA.** Before, it printed
@@ -21,6 +30,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `rounded-*`, `shadow-*` and `bg|text|border|ring|fill|stroke-*` utilities resolve
     through those tokens. Arbitrary values (`rounded-[13px]`, `shadow-[…]`, `p-[…]`,
     `text-[#…]`) are parsed too.
+  - The default theme is measured: a custom property redeclared for dark mode (`.dark`,
+    `[data-theme="dark"]`, `prefers-color-scheme: dark`) no longer overrides its default
+    value. Fully transparent colors no longer count as black.
 
   A file with no measurable feature now gets the verdict `insufficient-signal` and exits 1.
   Before, an empty `<div/>` printed PASS. `uicheck visual` applies the same rule. Because

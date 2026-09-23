@@ -176,7 +176,10 @@ export const COMMANDS = {
         flag: "--taste <name>",
         desc: "design/visual: gate thresholds + checks from a taste profile (default: the style pinned by a forge-taste DESIGN.md)",
       },
-      { flag: "--mint", desc: "fingerprint: store the vector as the project's design claim" },
+      {
+        flag: "--mint",
+        desc: "fingerprint: store the vector as the project's design claim (refused, exit 1, when it is empty)",
+      },
     ],
     examples: [
       'forge uicheck contrast "#777" "#fff"',

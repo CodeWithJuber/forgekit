@@ -132,6 +132,20 @@ test("contrastReport: verdict, thresholds, composited hexes and notes in one obj
   assert.equal(alpha.notes.length, 2, "both compositing steps are disclosed");
 });
 
+test("contrastReport: with BOTH colors translucent, report, hexes and contrastRatio agree", () => {
+  // 30% red over white quantizes to #ffb3b3; 50% black composited onto THAT (not onto
+  // the unrounded 178.5 channels) paints #805a5a. Measuring the unrounded background
+  // reported #805959 at 3.54 while contrastRatio said 3.50.
+  const fg = "rgba(0,0,0,.5)";
+  const bg = "rgba(255,0,0,.3)";
+  const r = contrastReport(fg, bg);
+  assert.equal(r.bgHex, "#ffb3b3");
+  assert.equal(r.fgHex, "#805a5a");
+  assert.equal(r.ratio, Math.round(contrastRatio(fg, bg) * 100) / 100);
+  assert.equal(r.ratio, Math.round(contrastRatio(r.fgHex, r.bgHex) * 100) / 100);
+  assert.equal(r.ratio, 3.5);
+});
+
 test("cli: `uicheck contrast` exits 1 when AA fails, 0 when it passes", () => {
   const fail = runCli(["uicheck", "contrast", "#777", "#fff"]);
   assert.equal(fail.status, 1, fail.stdout + fail.stderr);

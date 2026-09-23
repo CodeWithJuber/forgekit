@@ -248,8 +248,10 @@ export function wcagLevel(ratio, { large = false } = {}) {
 export function contrastReport(fg, bg, { large = false } = {}) {
   const f = parseColor(fg);
   const b = parseColor(bg);
-  const back = opaque(b);
-  const front = compositeOver(f, back);
+  // Quantized exactly as contrastRatio does, so the ratio, the hexes and
+  // contrastRatio(fg, bg) always agree (even when BOTH colors are translucent).
+  const back = quantize(opaque(b));
+  const front = quantize(compositeOver(f, back));
   const notes = [];
   if (b.a < 1)
     notes.push(

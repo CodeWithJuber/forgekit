@@ -732,3 +732,116 @@ test("cli: `--theme <file>` names the theme explicitly; a valueless --theme is a
   assert.equal(ghost.status, 1, "a named theme that isn't there is an error, not a no-op");
   assert.match(ghost.stderr, /theme source not found: nope\.css/);
 });
+
+// ---------------------------------------------------------------------------
+// Review follow-ups: dark-mode scoping, shadow colors, transparency, pathological
+// nesting, and refusing to mint an empty vector.
+// ---------------------------------------------------------------------------
+
+// The shadcn / next-themes layout: light defaults on :root, dark overrides AFTER them.
+const LIGHT_DARK_CSS = `
+/* .dark { --hl-fg: #ff0000 } in a comment scopes nothing */
+:root { --hl-fg: #111111; --hl-canvas: #f1f5f9; --hl-edge: transparent; }
+.dark { --hl-fg: #eeeeee; }
+:root[data-theme='dark'] { --hl-canvas: #080f17; --hl-edge: #253140; --hl-glow: #336699; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --hl-fg: #dddddd; }
+}
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@theme inline {
+  --color-fg: var(--hl-fg);
+  --color-canvas: var(--hl-canvas);
+  --color-edge: var(--hl-edge);
+  --color-glow: var(--hl-glow);
+}
+`;
+
+test("themeFromCss: dark-scoped overrides (.dark, [data-theme=dark], prefers-color-scheme) never beat the default", () => {
+  const theme = themeFromCss(LIGHT_DARK_CSS);
+  assert.deepEqual(theme.colors.get("fg"), hex("#111111"), ".dark and @media dark lose");
+  assert.deepEqual(theme.colors.get("canvas"), hex("#f1f5f9"), "[data-theme='dark'] loses");
+  assert.equal(theme.vars.get("--hl-fg"), "#111111");
+  assert.equal(theme.colors.has("edge"), false, "the default is transparent — not a color");
+  assert.deepEqual(
+    theme.colors.get("glow"),
+    hex("#336699"),
+    "declared only for dark: still resolves",
+  );
+  // Order does not matter: a dark block BEFORE the default still loses.
+  const reversed = themeFromCss(
+    ".dark { --x: #eeeeee; } :root { --x: #111111; } @theme { --color-x: var(--x); }",
+  );
+  assert.deepEqual(reversed.colors.get("x"), hex("#111111"));
+  // Same rule for a component's own declarations (fingerprintText → resolveCssVars).
+  assert.match(
+    resolveCssVars(":root { --a: #111111; } .dark { --a: #eeeeee; } .c { color: var(--a); }"),
+    /color: #111111/,
+  );
+  // An unscoped later declaration still wins (last-wins is unchanged outside dark scope).
+  assert.match(
+    resolveCssVars(":root { --a: #111111; } .brand { --a: #222222; } .c { color: var(--a); }"),
+    /color: #222222/,
+  );
+  // A negation scopes to LIGHT mode: `:root:not(.dark)` is a default, not an override.
+  assert.match(
+    resolveCssVars(
+      ":root:not(.dark) { --a: #111111; } .dark { --a: #eeeeee; } .c { color: var(--a); }",
+    ),
+    /color: #111111/,
+  );
+});
+
+test("fingerprintText: shadow-[#hex] / shadow-[color:…] are shadow COLORS, not elevation levels", () => {
+  const fp = fingerprintText(
+    `<div className="shadow-[#123456] shadow-[color:#654321] shadow-[0_1px_2px_#000]" />`,
+  );
+  assert.equal(fp.shadowLevels, 1, "only the real shadow value is a level");
+  for (const c of ["#123456", "#654321"])
+    assert.ok(
+      fp.palette.some((p) => JSON.stringify(p) === JSON.stringify(hex(c))),
+      `${c} still counts as a color`,
+    );
+});
+
+test("fingerprintText: fully transparent colors are not palette entries (never counted as black)", () => {
+  const clear = fingerprintText(
+    `<div className="bg-[transparent] bg-[oklch(0.5_0.1_200/0)] text-[#12345600]" />
+     .a { color: rgba(0, 0, 0, 0); background: hsl(210 40% 50% / 0%); border-color: #0000; }`,
+  );
+  assert.equal(clear.paletteSize, 0, JSON.stringify(clear.palette));
+  // Translucent but visible colors still count.
+  const faint = fingerprintText(".a { color: rgba(0, 0, 0, 0.5); background: #12345680; }");
+  assert.equal(faint.paletteSize, 2);
+  // A transparent theme token is skipped the same way.
+  const theme = themeFromCss("@theme { --color-clear: transparent; --color-ink: #111111; }");
+  assert.deepEqual([...theme.colors.keys()], ["ink"]);
+  assert.equal(fingerprintText(`<p className="bg-clear" />`, { theme }).paletteSize, 0);
+});
+
+test("fingerprintText / themeFromTailwindConfig: pathological nesting is skipped, never a stack overflow", () => {
+  const deep = `<div className="rounded-[calc(${"(".repeat(5000)}1px${")".repeat(5000)})] rounded-[calc(${"-".repeat(5000)}1px)] rounded-[calc((1px_+_2px)_*_2)]" />`;
+  assert.deepEqual(fingerprintText(deep).radii, [6], "only the sane calc() is a radius");
+  const theme = themeFromCss(
+    `@theme { --radius-deep: calc(${"(".repeat(5000)}1px${")".repeat(5000)}); --radius-ok: 4px; }`,
+  );
+  assert.deepEqual([...theme.radius], [["ok", 4]]);
+  const config = themeFromTailwindConfig(
+    `module.exports = { theme: { colors: { ${"a: {".repeat(20000)} b: "#ffffff" ${"}".repeat(20000)}, ink: "#111111" } } };`,
+  );
+  assert.deepEqual([...config.colors.keys()], ["ink"]);
+});
+
+test("mintProjectFingerprint: an empty vector is refused and nothing is written", () => {
+  const root = tmp();
+  writeFileSync(join(root, "empty.tsx"), "export const C = () => <div/>;");
+  const m = mintProjectFingerprint(root, ["empty.tsx"], { t: 1 });
+  assert.equal(m.ok, false);
+  if (!m.ok) assert.match(m.reason, /^insufficient-signal/);
+  assert.equal(loadProjectFingerprint(root), null, "no empty 'home' for design to gate against");
+  const cli = runCli(["uicheck", "fingerprint", "empty.tsx", "--mint", "--json"], root);
+  assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+  const out = JSON.parse(cli.stdout);
+  assert.equal(out.minted.ok, false);
+  assert.match(out.minted.reason, /^insufficient-signal/);
+  assert.equal(loadProjectFingerprint(root), null);
+});
