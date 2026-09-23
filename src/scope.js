@@ -8,7 +8,7 @@
 // pyImports / resolveSpec / loadPathAliases / pyModuleIndex from here, so the file graph
 // (scope, rank, the repo map) and the symbol graph (atlas, impact) can never disagree on
 // what a specifier points at — tsconfig path aliases included.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, posix, relative, resolve } from "node:path";
 import { IGNORE_DIRS, SRC_EXT, toPosix } from "./util.js";
 
@@ -516,6 +516,15 @@ export function parseJsonc(text) {
 // How far a chain of relative `extends` is followed (a cycle just stops here).
 const MAX_EXTENDS_DEPTH = 5;
 
+/** @param {string} abs */
+const isFile = (abs) => {
+  try {
+    return statSync(abs).isFile();
+  } catch {
+    return false;
+  }
+};
+
 /**
  * The `baseUrl` / `paths` a config ends up with after its relative `extends` chain,
  * resolved the way tsc does: a child's option replaces its base's; `baseUrl` is relative to
@@ -542,9 +551,11 @@ function readTsConfig(root, rel, depth) {
   // TS 5 accepts an array of bases; later entries override earlier ones.
   for (const ext of [cfg.extends].flat()) {
     if (typeof ext !== "string" || !/^\.\.?\//.test(ext)) continue;
-    let p = posix.normalize(posix.join(dir, toPosix(ext)));
-    if (p.startsWith("../")) continue; // outside the repo
-    if (!p.endsWith(".json")) p += ".json";
+    const lit = posix.normalize(posix.join(dir, toPosix(ext)));
+    if (lit.startsWith("../") || lit === "..") continue; // outside the repo
+    // tsc tries the path as written, and appends `.json` only when that is not a file —
+    // so `./tsconfig.base.jsonc` and an extensionless base that exists both load.
+    const p = lit.endsWith(".json") || isFile(join(root, lit)) ? lit : `${lit}.json`;
     const base = readTsConfig(root, p, depth + 1);
     if (base) out = { ...out, ...base };
   }
@@ -587,6 +598,9 @@ export function loadPathAliases(root) {
       const suffix = star >= 0 ? pattern.slice(star + 1) : "";
       // A bare `*` catches packages too, and a rule whose targets all sit outside the walk
       // (node_modules, dist, ../) cannot tell a miss from a package: neither is `local`.
+      // Known edge: a rule that shadows a real package with an in-repo target
+      // (`lodash/*` → `src/shims/*`) counts a miss as unresolved, where tsc would fall
+      // through to node_modules. That only moves a stats count; no edge is invented.
       const local = (star < 0 || prefix !== "" || suffix !== "") && targets.some(inRepo);
       rules.push({ pattern, prefix, suffix, star: star >= 0, targets, local });
     }

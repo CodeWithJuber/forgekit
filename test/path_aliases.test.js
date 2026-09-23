@@ -131,6 +131,48 @@ test("loadPathAliases follows relative extends: paths resolve from the base conf
   assert.deepEqual(loadPathAliases(cyc)[0].targets, ["src/*"]);
 });
 
+test("loadPathAliases: extends tries the path as written before appending .json (as tsc does)", () => {
+  // A `.jsonc` base: appending `.json` blindly would look for `tsconfig.base.jsonc.json`.
+  const jsonc = writeRepo({
+    "tsconfig.json": tsconfig({}, { extends: "./tsconfig.base.jsonc" }),
+    "tsconfig.base.jsonc": `{ // shared\n "compilerOptions": { "paths": { "@/*": ["src/*"], }, }, }`,
+  });
+  assert.deepEqual(loadPathAliases(jsonc)[0].targets, ["src/*"]);
+  // An extensionless base that exists on disk wins over `<name>.json`.
+  const bare = writeRepo({
+    "tsconfig.json": tsconfig({}, { extends: "./config/base" }),
+    "config/base": tsconfig({ paths: { "~/*": ["../app/*"] } }),
+    "config/base.json": tsconfig({ paths: { "~/*": ["../wrong/*"] } }),
+  });
+  assert.deepEqual(loadPathAliases(bare)[0].targets, ["app/*"]);
+});
+
+test("loadPathAliases: a baseUrl or target outside the repo is never local", () => {
+  const up = loadPathAliases(
+    writeRepo({ "tsconfig.json": tsconfig({ baseUrl: "..", paths: { "@/*": ["src/*"] } }) }),
+  );
+  assert.deepEqual(
+    up.map((a) => [a.pattern, a.targets, a.local]),
+    [
+      ["@/*", ["../src/*"], false],
+      ["*", ["../*"], false],
+    ],
+  );
+  const sibling = loadPathAliases(
+    writeRepo({
+      "tsconfig.json": tsconfig({ paths: { "@shared/*": ["../shared/*"], "@/*": ["./src/*"] } }),
+    }),
+  );
+  assert.deepEqual(
+    sibling.map((a) => [a.pattern, a.local]),
+    [
+      ["@shared/*", false],
+      ["@/*", true],
+    ],
+  );
+  assert.equal(resolveSpec("src/a.ts", "@shared/x", new Set(["shared/x.ts"]), sibling), null);
+});
+
 test("loadPathAliases orders exact, then longest prefix; catch-all and node_modules are not local", () => {
   const aliases = loadPathAliases(
     writeRepo({
@@ -253,6 +295,35 @@ test("atlas: an alias miss is counted unresolved (not external); packages and as
   const miss = atlas.edges.find((e) => e.kind === "imports" && e.spec === "@/lib/legacy-pricing");
   assert.equal(miss?.reason, "not-found");
   assert.equal(miss?.external, undefined);
+});
+
+test("atlas: a miss under a NON-local rule (catch-all, node_modules target, baseUrl) stays external", () => {
+  const atlas = build({
+    root: writeRepo({
+      "tsconfig.json": tsconfig({
+        baseUrl: ".",
+        paths: {
+          "*": ["types/*"],
+          "vendored/*": ["node_modules/vendored/*"],
+          "@/*": ["src/*"],
+        },
+      }),
+      "src/lib/utils.ts": "export const cn = (s: string) => s;\n",
+      "src/app.ts":
+        'import { cn } from "@/lib/utils";\nimport { v } from "vendored/thing";\nimport React from "react";\nimport { gone } from "@/lib/gone";\nexport const app = () => cn(String(v) + String(React) + String(gone));\n',
+    }),
+  });
+  assert.deepEqual(atlas.stats.imports, {
+    total: 4,
+    resolved: 1, // @/lib/utils
+    external: 2, // vendored/thing (node_modules target), react (catch-all + baseUrl)
+    unresolved: 1, // @/lib/gone
+    assets: 0,
+  });
+  const edge = (spec) => atlas.edges.find((e) => e.kind === "imports" && e.spec === spec);
+  assert.equal(edge("vendored/thing")?.external, true);
+  assert.equal(edge("react")?.external, true);
+  assert.equal(edge("@/lib/gone")?.reason, "not-found");
 });
 
 test("atlas: editing tsconfig paths makes the atlas stale, and the rebuild uses the new rules", () => {

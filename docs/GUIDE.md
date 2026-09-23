@@ -360,12 +360,14 @@ conceivably be affected", not "what references this".
 Imports resolve the way TypeScript resolves them: relative specifiers, and the path
 aliases in the repo-root `tsconfig.json` (or `jsconfig.json` when there is no tsconfig)
 — `compilerOptions.paths` such as `@/*` or `~/*`, the `baseUrl` lookup, and relative
-`extends`. So a Next.js or Vite app that imports through `@/lib/utils` gets the same edges
-as one that writes `../lib/utils`. An aliased import whose file does not exist counts as
-an unresolved local import (the `local import(s) … did not resolve` line, and
-`unresolvedImports` in `--json`), not as a package. Package bases (`@tsconfig/next`),
-nested per-package tsconfigs, package.json `imports` (`#…`) and workspace packages are
-not read.
+`extends`. So an app whose root tsconfig declares `@/*` (the Next.js scaffold does) and
+imports through `@/lib/utils` gets the same edges as one that writes `../lib/utils`. An
+aliased import whose file does not exist counts as an unresolved local import (the
+`local import(s) … did not resolve` line, and `unresolvedImports` in `--json`), not as a
+package. Not read: package bases (`@tsconfig/next`), nested per-package tsconfigs,
+project references (a solution-style root with `files: []` and `references` to
+`tsconfig.app.json`, as the current Vite template ships, so its aliases are not seen),
+package.json `imports` (`#…`) and workspace packages.
 
 ```console
 $ forge impact verifyToken

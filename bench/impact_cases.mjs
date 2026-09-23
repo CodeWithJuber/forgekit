@@ -31,14 +31,15 @@
 //   - src/eval.js         defines it (:28) (no other same-file caller)
 //   - test/eval.test.js   imports { evalImpact } (:7) and calls it (:34) — the only referencer
 //
-// isStale (src/atlas.js) — 6 files
-//   - src/atlas.js             defines it (:1026)
+// isStale (src/atlas.js) — 7 files
+//   - src/atlas.js             defines it (:1033)
 //   - src/verify.js            imports { isStale } (:11) and calls it (:456)
 //   - src/doctor.js            imports { isStale } (:18) and calls it (:249)
 //   - src/substrate.js         imports it ALIASED (`isStale as atlasIsStale`, :11) and calls
 //                              it twice (:177, :269) — an aliased import is still a reference
 //   - test/atlas.test.js       imports { isStale } (:6) and calls it
 //   - test/atlas_resolve.test.js imports { isStale } (:11) and calls it (:187, :190)
+//   - test/path_aliases.test.js  imports { isStale } (:10) and calls it (:332, :334)
 //
 // mergeStates (src/ledger.js) — 4 files
 //   - src/ledger.js       defines it (:796)
@@ -63,13 +64,13 @@
 //
 // contentHash (src/util.js) — 11 files. The widest fan-out in the set, and the case that
 // used to carry a documented FALSE NEGATIVE: src/atlas.js binds it to an alias,
-// `const hash = contentHash;` at :187, with no call parentheses, and the old import regex
+// `const hash = contentHash;` at :190, with no call parentheses, and the old import regex
 // captured module paths rather than named bindings, so no edge reached atlas.js. That is
 // FIXED — a named import now resolves to the exact symbol node
-// (`src/atlas.js:17 imports → src/util.js:contentHash:65`), and atlas.js is predicted at
+// (`src/atlas.js:19 imports → src/util.js:contentHash:65`), and atlas.js is predicted at
 // one hop. The case is kept for its fan-out, not for the miss.
 //   - src/util.js         defines it (:65); slug() calls it (:28)
-//   - src/atlas.js        imports { contentHash } (:17), aliases it (:187)
+//   - src/atlas.js        imports { contentHash } (:19), aliases it (:190)
 //   - src/cortex_hook.js  imports it (:9) and calls it (:98)
 //   - src/cost_report.js  imports it (:14); routeRef() calls it (:212)
 //   - src/diagnose.js     imports it (:15); failureSignature() calls it (:57)
@@ -102,6 +103,7 @@ export const IMPACT_CASES = [
       "src/substrate.js",
       "test/atlas.test.js",
       "test/atlas_resolve.test.js",
+      "test/path_aliases.test.js",
     ],
     editedFile: "src/atlas.js",
   },
