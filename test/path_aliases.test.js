@@ -15,11 +15,31 @@ import {
   matchPathAlias,
   parseJsonc,
   resolveSpec,
+  substituteStar,
 } from "../src/scope.js";
 import { predictImpact } from "../src/substrate.js";
 import { NEXT_IMPORTERS, nextFiles, writeRepo } from "./fixtures/impact_repos.mjs";
 
 const tsconfig = (compilerOptions, extra = {}) => JSON.stringify({ compilerOptions, ...extra });
+
+// --- substituteStar ------------------------------------------------------------------
+
+test("substituteStar fills the one `*` and keeps replacement patterns literal", () => {
+  assert.equal(substituteStar("src/*", "lib/x"), "src/lib/x");
+  assert.equal(substituteStar("src/*.ts", "a"), "src/a.ts");
+  assert.equal(substituteStar("src/index.ts", "ignored"), "src/index.ts");
+  // `$&` / `$'` would be patterns in String#replace; here they stay as typed.
+  assert.equal(substituteStar("src/*", "$&$'"), "src/$&$'");
+});
+
+test("loadPathAliases drops a target with more than one `*`, as tsc does", () => {
+  const root = writeRepo({
+    "tsconfig.json": tsconfig({ baseUrl: ".", paths: { "@/*": ["src/*/*", "src/*"] } }),
+    "src/a.ts": "export const a = 1;\n",
+  });
+  const rule = loadPathAliases(root).find((r) => r.pattern === "@/*");
+  assert.deepEqual(rule?.targets, ["src/*"]);
+});
 
 // --- parseJsonc ---------------------------------------------------------------------
 

@@ -423,15 +423,28 @@ export function resolveSpec(fromRel, spec, fileSet, aliases = []) {
   // Function replacers: a `$&` or `$'` in the captured text is literal, not a pattern.
   const hit = matchPathAlias(spec, aliases);
   const tries = hit
-    ? hit.alias.targets.map((t) => (hit.alias.star ? t.replace("*", () => hit.rest) : t))
+    ? hit.alias.targets.map((t) => (hit.alias.star ? substituteStar(t, hit.rest) : t))
     : [];
   for (const a of aliases)
-    if (a.fallback) for (const t of a.targets) tries.push(t.replace("*", () => stripQuery(spec)));
+    if (a.fallback) for (const t of a.targets) tries.push(substituteStar(t, stripQuery(spec)));
   for (const t of tries) {
     const file = resolveFromRoot(t, fileSet);
     if (file) return file;
   }
   return null;
+}
+
+/**
+ * Put `value` where a `paths` target's `*` is. tsc allows at most one `*` per target
+ * (loadPathAliases drops the rest), so there is exactly one or none; slicing at it
+ * (rather than String#replace) also keeps `$&`-style sequences in `value` literal.
+ * @param {string} target
+ * @param {string} value
+ * @returns {string}
+ */
+export function substituteStar(target, value) {
+  const i = target.indexOf("*");
+  return i < 0 ? target : target.slice(0, i) + value + target.slice(i + 1);
 }
 
 /** `x.svg?react` / `x.js#frag` → the path part. A LEADING `#` is an alias (`#lib/x`), kept. */
@@ -592,7 +605,9 @@ export function loadPathAliases(root) {
       const star = pattern.indexOf("*");
       if (!Array.isArray(list) || (star >= 0 && pattern.indexOf("*", star + 1) >= 0)) continue; // tsc: at most one `*`
       const targets = list
+        // tsc rejects a substitution with more than one `*`; so do we.
         .filter((t) => typeof t === "string" && !posix.isAbsolute(t) && !/^[A-Za-z]:/.test(t))
+        .filter((t) => t.indexOf("*") === t.lastIndexOf("*"))
         .map((t) => posix.normalize(posix.join(base, toPosix(t))));
       const prefix = star >= 0 ? pattern.slice(0, star) : pattern;
       const suffix = star >= 0 ? pattern.slice(star + 1) : "";
