@@ -18,6 +18,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   old file as a timestamped `AGENTS.md.forge-bak-<time>` first, instead of overwriting one
   fixed `.forge-bak`. `forge doctor` reports a hand-written file as "no Forge block" and its
   fix appends the block.
+- **Rules an older version moved to `AGENTS.md.forge-bak` are no longer forgotten.** No agent
+  reads that file, so `forge sync` and `forge doctor` now warn for as long as it holds text
+  that `AGENTS.md` lacks, even when the Stop hook did the conversion out of sight.
+- **Size checks cover the whole `AGENTS.md`.** The Codex (32 KiB) and Windsurf (~12k
+  characters) checks now count your text as well as Forge's block, and sync warns when your
+  text pushes the file over budget, since those tools drop the end of the file first. A rule,
+  fact or lesson containing a line that reads exactly like a block marker can no longer end
+  the block early.
 - **Notes added under a generated `CLAUDE.md` header survive later syncs.** Sync refreshes
   only the marker line instead of regenerating the file.
 

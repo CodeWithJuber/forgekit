@@ -526,7 +526,11 @@ file and afterwards compares and rewrites only the block; the Stop-hook auto-syn
 same and never adopts a file without one. A pre-block, fully generated `AGENTS.md` is
 recognised by the hash in its header and converted to a block keeping any text a person
 added around it; only one edited inside its generated text needs a full rewrite, which
-`forge sync` does after saving a timestamped `AGENTS.md.forge-bak-<time>`.
+`forge sync` does after saving a timestamped `AGENTS.md.forge-bak-<time>`. A body line that
+reads exactly like a marker (a multi-line rule, fact or lesson) is indented one space so it
+cannot end the block early. The Codex/Windsurf size checks measure the whole file, the
+person's text included. Sync and doctor warn while an `AGENTS.md.forge-bak` from an older
+forge still holds text AGENTS.md lacks, since no agent reads it.
 
 ### OpenClaw: what is automatic and what is not
 

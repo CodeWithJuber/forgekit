@@ -28,12 +28,22 @@ import {
   splitLegacyManaged,
 } from "../src/emit/_shared.js";
 import { init } from "../src/init.js";
-import { agentsMdStatus, assemble, autoSyncIfDrifted, canonical, sync } from "../src/sync.js";
+import {
+  agentsMdStatus,
+  assemble,
+  autoSyncIfDrifted,
+  canonical,
+  strandedAgentsBackup,
+  sync,
+} from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-block-"));
 const agentsOf = (root) => readFileSync(join(root, "AGENTS.md"), "utf8");
 const HAND =
   "# HostLelo agents\n\n- Lint: `npm run lint`\n- Never call the WHMCS API from the client.\n";
+
+/** The warning while an older forge's AGENTS.md.forge-bak holds rules no agent reads. */
+const STRANDED_RE = /AGENTS\.md\.forge-bak holds the hand-written AGENTS\.md an older forge/;
 
 /** The file the pre-block forge wrote: the generated header, then the whole body. */
 const legacyFile = (body) => managedContent(mdHeader(hashContent(body)), body);
@@ -226,8 +236,98 @@ test("a legacy file edited INSIDE the generated text: auto-sync refuses, sync ba
   assert.equal(agentsOf(root), agentsMdStatus(root).block);
   const warning = r.warnings.find((w) => w.includes("forge-bak-"));
   assert.ok(warning, "the backup is named in a warning");
-  assert.match(warning, /AGENTS\.md\.forge-bak \(the hand-written file an older forge replaced\)/);
+  assert.ok(
+    r.warnings.some((w) => STRANDED_RE.test(w)),
+    "the older fixed-name backup is reported too",
+  );
   assert.equal(readFileSync(join(root, "AGENTS.md.forge-bak"), "utf8"), HAND, "old backup kept");
+});
+
+// ---------------------------------------------------------------------------
+// Review follow-ups: marker lines in the body, whole-file size, stranded backups
+// ---------------------------------------------------------------------------
+
+test("a body line that reads like a marker cannot end the block early (sync and auto-sync converge)", () => {
+  const root = fixture();
+  writeFileSync(join(root, "AGENTS.md"), HAND);
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  // A multi-line rule keeps its newlines, so either marker can land on a line of its own.
+  writeFileSync(
+    join(root, ".forge", "rules.json"),
+    JSON.stringify({
+      sections: [{ title: "Quoted", rules: [`ends with\n${BLOCK_END}`, `starts\n${BLOCK_BEGIN}`] }],
+    }),
+  );
+  sync({ targetRoot: root });
+  const first = agentsOf(root);
+  assert.ok(first.startsWith(HAND), "the person's text is untouched");
+  const found = findManagedBlock(first);
+  assert.equal(found?.damaged, false);
+  if (found?.damaged !== false) return;
+  assert.equal(found.end, first.length, "the block runs to the real end marker");
+  assert.match(first, new RegExp(`^ ${BLOCK_END}$`, "m"), "the quoted marker is indented");
+  assert.equal(agentsMdStatus(root).state, "in-sync");
+
+  sync({ targetRoot: root });
+  assert.equal(agentsOf(root), first, "a second sync writes the same bytes");
+  assert.deepEqual(autoSyncIfDrifted(root), { synced: false, reason: "in sync" });
+  assert.equal(agentsOf(root), first, "auto-sync does not grow the file");
+});
+
+test("size checks measure the whole AGENTS.md, not only Forge's block", () => {
+  const root = fixture();
+  const big = `# Team rules\n\n${"- a hand-written rule that the team relies on every day\n".repeat(560)}`;
+  writeFileSync(join(root, "AGENTS.md"), big);
+  const r = sync({ targetRoot: root, tools: ["codex", "windsurf"] });
+  const onDisk = Buffer.byteLength(agentsOf(root));
+  assert.ok(onDisk > 32 * 1024 && r.bytes < 32 * 1024, "only the whole file is over the cap");
+  const codex = r.report.find((row) => row.tool === "Codex");
+  assert.equal(codex?.action, "warn");
+  assert.equal(codex?.note, `${onDisk} B exceeds 32 KiB cap — will truncate`);
+  assert.equal(r.report.find((row) => row.tool === "Windsurf/Devin")?.action, "warn");
+  const warning = r.warnings.find((w) => w.startsWith("AGENTS.md is "));
+  assert.ok(warning, "sync warns about the file it just wrote");
+  assert.match(warning, new RegExp(`^AGENTS\\.md is ${onDisk} B .*Forge's rules are ${r.bytes} B`));
+  assert.match(warning, /move the Forge block nearer the top/);
+
+  const small = fixture();
+  writeFileSync(join(small, "AGENTS.md"), HAND);
+  const s = sync({ targetRoot: small, tools: ["codex"] });
+  const codexSmall = s.report.find((row) => row.tool === "Codex");
+  assert.equal(codexSmall?.note, `native (${Buffer.byteLength(agentsOf(small))}/32768 B)`);
+  assert.ok(!s.warnings.some((w) => w.startsWith("AGENTS.md is ")));
+});
+
+test("a stranded AGENTS.md.forge-bak is reported by sync and doctor until its text is back", () => {
+  const root = fixture();
+  const settingsPath = join(fixture(), "settings.json");
+  // What an older forge left: the generated file, with the person's original moved aside.
+  writeFileSync(join(root, "AGENTS.md"), legacyFile(canonical(root)));
+  writeFileSync(join(root, "AGENTS.md.forge-bak"), HAND);
+  // The Stop hook usually converts first, and nobody sees its result.
+  assert.equal(autoSyncIfDrifted(root).synced, true);
+  assert.equal(agentsMdStatus(root).state, "in-sync");
+  assert.match(strandedAgentsBackup(root) ?? "", STRANDED_RE);
+
+  assert.ok(sync({ targetRoot: root }).warnings.some((w) => STRANDED_RE.test(w)));
+  const row = doctor({ targetRoot: root, settingsPath }).results.find(
+    (r) => r.label === "AGENTS.md.forge-bak",
+  );
+  assert.equal(row?.status, "warn");
+  assert.match(row?.note ?? "", /outside the Forge block/);
+  assert.equal(row?.fix, undefined, "moving rules back is a person's call");
+
+  // The person moves the text back above the block: nothing stranded any more.
+  writeFileSync(join(root, "AGENTS.md"), `${HAND}\n${agentsOf(root)}`);
+  assert.equal(strandedAgentsBackup(root), null);
+  assert.ok(!sync({ targetRoot: root }).warnings.some((w) => STRANDED_RE.test(w)));
+  const after = doctor({ targetRoot: root, settingsPath }).results;
+  assert.ok(!after.some((r) => r.label === "AGENTS.md.forge-bak"));
+
+  // An empty backup strands nothing.
+  const blank = fixture();
+  writeFileSync(join(blank, "AGENTS.md.forge-bak"), "\n");
+  assert.equal(strandedAgentsBackup(blank), null);
 });
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,13 @@ any text you added around the generated part; if you edited inside the generated
 first saves the old file as `AGENTS.md.forge-bak-<time>`. Sync emits for the tools recorded
 by `forge init` (all tools when none are recorded).
 
+The Codex (32 KiB) and Windsurf (~12k characters) size checks measure the whole
+`AGENTS.md`, your text included. Those tools drop the end of an oversized file first, so
+when your part pushes it over budget, sync warns; the Forge block can sit anywhere in the
+file, and sync keeps it where you put it. While an `AGENTS.md.forge-bak` left by an older
+Forge still holds text that `AGENTS.md` lacks, `forge sync` and `forge doctor` warn: no
+agent reads that file, so move its rules back into `AGENTS.md`, outside the block.
+
 ## `forge doctor`
 
 Health-check installed tools, guards, MCP auth, and config drift.

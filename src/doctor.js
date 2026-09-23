@@ -25,7 +25,7 @@ import { ensureLedgerGitattributes, guardKey, isStaleManagedHook, mergeSettings 
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
-import { agentsMdStatus, canonical, sync } from "./sync.js";
+import { agentsMdStatus, canonical, strandedAgentsBackup, sync } from "./sync.js";
 import { updateStatus } from "./update.js";
 
 const ok = (label, note = "") => ({ status: "ok", label, note });
@@ -575,6 +575,11 @@ function checkDrift(out, targetRoot) {
       ),
   };
   out.push(rows[status.state]());
+  // Rules an older forge moved aside when it replaced a hand-written AGENTS.md. The Stop hook
+  // often converts AGENTS.md first and its result is never shown, so doctor keeps saying it.
+  // No automatic fix: only a person can tell which of those rules still apply.
+  const stranded = strandedAgentsBackup(targetRoot);
+  if (stranded) out.push(warn("AGENTS.md.forge-bak", stranded));
 }
 
 // MCP hygiene: past ~6 servers, tool-selection accuracy drops and the context bloats.

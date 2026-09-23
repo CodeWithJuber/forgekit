@@ -62,11 +62,17 @@ const wholeLine = (marker) => new RegExp(`^${marker}\\r?$`, "m");
 const BEGIN_RE = wholeLine(BLOCK_BEGIN);
 const END_RE = wholeLine(BLOCK_END);
 
+/** A body line that reads exactly like a marker (a multi-line rule, fact or lesson can hold
+ *  one) would end the block early: every sync would then see drift and leave another stale
+ *  tail behind, growing the file. Such a line is indented one space, which Markdown renders
+ *  the same and which no longer matches a whole-line marker. */
+const MARKER_LINE_RE = new RegExp(`^(?:${BLOCK_BEGIN}|${BLOCK_END})\\r?$`, "gm");
+
 /** The exact bytes of the managed block: begin marker, the generated header (it carries the
  *  `forge:sync:<hash>` marker), the body, end marker. The writer and every drift check build
  *  their expectation through this one helper, as with managedContent (RA-16). */
 export const managedBlock = (header, body) =>
-  `${BLOCK_BEGIN}\n${header}\n${body.replace(/\n*$/, "\n")}${BLOCK_END}\n`;
+  `${BLOCK_BEGIN}\n${header}\n${body.replace(MARKER_LINE_RE, " $&").replace(/\n*$/, "\n")}${BLOCK_END}\n`;
 
 /**
  * Locate the managed block. null when there is none; `{damaged: true}` when only one marker

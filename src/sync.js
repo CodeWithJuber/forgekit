@@ -217,10 +217,6 @@ function writeAgentsBlock(status, { allowBackup }) {
     writeFileSync(path, next);
     return { action: "written", note, ...extra };
   };
-  // An older forge moved a hand-written AGENTS.md aside to this one fixed name.
-  const oldBak = existsSync(`${path}.forge-bak`)
-    ? "AGENTS.md.forge-bak (the hand-written file an older forge replaced) can now go back into AGENTS.md, outside the Forge block."
-    : "";
   if (state === "in-sync") return { action: "unchanged", note: "Forge block current" };
   if (state === "missing") return put(block, "new file (Forge block)");
   if (state === "drifted" && status.found) {
@@ -248,7 +244,6 @@ function writeAgentsBlock(status, { allowBackup }) {
     return put(
       `${before}${block}${after ? `\n${after}` : ""}`,
       "converted to a Forge block (lossless)",
-      oldBak ? { warning: oldBak } : {},
     );
   }
   if (state === "legacy-edited" && status.legacy) {
@@ -262,10 +257,7 @@ function writeAgentsBlock(status, { allowBackup }) {
       warning: [
         `AGENTS.md was fully generated but edited inside the generated text — converted to a Forge block; the previous file is saved as ${name}.`,
         "Copy your edits back OUTSIDE the <!-- forge:begin --> / <!-- forge:end --> markers, where sync never touches them.",
-        oldBak,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      ].join(" "),
     });
   }
   return {
@@ -274,6 +266,23 @@ function writeAgentsBlock(status, { allowBackup }) {
     warning:
       "AGENTS.md has a forge:begin marker without forge:end (or the reverse) — nothing written; fix or remove the marker lines by hand",
   };
+}
+
+/**
+ * The hand-written AGENTS.md an older forge replaced is parked in `AGENTS.md.forge-bak`, a file
+ * no agent reads. Whichever path converts AGENTS.md to a block (often the Stop hook, whose
+ * result nobody sees), those rules stay invisible until a person moves them back, so sync and
+ * doctor keep saying so for as long as the backup holds text that AGENTS.md does not.
+ * Pure read. Returns the warning, or null when there is nothing stranded.
+ * @param {string} [targetRoot]
+ * @returns {string|null}
+ */
+export function strandedAgentsBackup(targetRoot = process.cwd()) {
+  const saved = shared.readIfExists(join(targetRoot, "AGENTS.md.forge-bak"))?.trim();
+  if (!saved) return null;
+  const agents = shared.readIfExists(join(targetRoot, "AGENTS.md")) ?? "";
+  if (agents.includes(saved)) return null;
+  return "AGENTS.md.forge-bak holds the hand-written AGENTS.md an older forge replaced, and no agent reads it — move its text back into AGENTS.md outside the Forge block (sync never touches it there), then delete the backup";
 }
 
 /**
@@ -310,13 +319,17 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
   // behaviour replaced the whole file and parked the original in AGENTS.md.forge-bak).
   const agentsPath = join(targetRoot, "AGENTS.md");
   const agents = writeAgentsBlock(agentsMdStatus(targetRoot, canonical), { allowBackup: true });
+  // Tools read the whole file, not just forge's block, and a person's text now shares it.
+  // Size checks (Codex's 32 KiB truncation, Windsurf's ~12k-char cap) measure what is on disk.
+  const agentsText = shared.readIfExists(agentsPath) ?? canonical;
+  const agentsBytes = Buffer.byteLength(agentsText);
 
   const ctx = {
     targetRoot,
     canonical,
     hash,
-    bytes,
-    chars: canonical.length,
+    bytes: agentsBytes,
+    chars: agentsText.length,
     agentsPath,
     shared,
     join,
@@ -379,6 +392,8 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
       `${legacyRules.path} is not valid JSON — ignored, default rules used (fix or delete it)`,
     );
   if (agents.warning) warnings.push(agents.warning);
+  const stranded = strandedAgentsBackup(targetRoot);
+  if (stranded) warnings.push(stranded);
   if (selection.unknown.length)
     warnings.push(
       `unknown tool(s) in the tool selection ignored: ${selection.unknown.join(", ")} (known: ${KNOWN_TOOLS.join(", ")})`,
@@ -386,6 +401,10 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
   if (bytes > SIZE_BUDGET_BYTES)
     warnings.push(
       `canonical is ${bytes} B (> ${SIZE_BUDGET_BYTES} B budget) — trim source/rules.json`,
+    );
+  else if (agentsBytes > SIZE_BUDGET_BYTES)
+    warnings.push(
+      `AGENTS.md is ${agentsBytes} B (> ${SIZE_BUDGET_BYTES} B budget; Forge's rules are ${bytes} B of it) — Codex stops reading at 32 KiB and Windsurf at ~12k chars, so the end of the file is lost first: shorten the hand-written text, or move the Forge block nearer the top (sync keeps it where it sits)`,
     );
   // Aggregate status (ME-19): sync writes AGENTS.md, then per-tool files, then MCP files
   // and is NOT transactional — a mid-way failure is recorded as an `action:"error"` row but
