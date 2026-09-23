@@ -91,6 +91,8 @@ harness-bench run 4 is pre-registered. It fits on 150 dev issues and scores 350 
 
 **Against the best single model:** non-inferior (+1.1 points, CI [−2.0, +4.3]) at 74% lower cost. In 5-fold cross-validation it is +3.2 points (CI [+0.4, +6.2]) at −$0.58 per task.
 
+**Replicated.** An independent re-run from the pinned public data reproduced 217 of 218 test metrics exactly (only the wall-clock fit time differs). The shipped prior also refits bit for bit. See `bench/universal-router/README.md`.
+
 **Limits (measured):**
 - **Where the gain comes from.** Most of it comes from choosing across providers. On the 150-issue fit the router does not beat a fixed cascade chosen on the same dev data; with 400 training issues its target modes are cheaper than the fixed equivalents.
 - **Targets are optimistic.** Predicted cascade success is optimistic by 4 to 6 points on the test split, so `target:p` lands below p. A cross-validated calibration map is the planned fix.
