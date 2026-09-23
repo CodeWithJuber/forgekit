@@ -1,16 +1,34 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  statSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { sessionPath } from "../src/cortex_hook.js";
 import {
+  attributeChanged,
+  changedSet,
+  commandPaths,
+  currentSessionId,
+  openTrail,
   pruneSessions,
   readBaseline,
   readDirtySnapshot,
+  readTrail,
   recordBaseline,
+  recordTrail,
   rehydrationBlock,
+  sessionChanges,
+  trailEntry,
 } from "../src/session.js";
 
 function gitFixture() {
@@ -106,4 +124,159 @@ test("a >7-day-old session re-anchors instead of losing its baseline (prune-then
   recordBaseline(root, "old1");
   assert.ok(existsSync(base), "baseline exists after the aged resume");
   assert.ok(Date.now() - statSync(base).mtimeMs < 60_000, "and it is a FRESH anchor");
+});
+
+// ── The session trail: what THIS session touched, for multi-agent checkouts ──────────────
+
+test("commandPaths: the file paths a shell command names, heredoc bodies skipped", () => {
+  assert.deepEqual(commandPaths("sed -i 's/a/b/' src/a.tsx && git add src/b.ts"), [
+    "src/a.tsx",
+    "src/b.ts",
+  ]);
+  // Over-inclusive by design (a stray token matches no changed file), but never a directory.
+  assert.deepEqual(commandPaths("rm -rf dist/ && touch dist/x.js"), ["dist/x.js"]);
+  assert.deepEqual(
+    commandPaths("cat > /repo/src/c.css <<'EOF'\nimport x from './not/a/target.js'\nEOF\nls"),
+    ["/repo/src/c.css"],
+    "a heredoc body is file content, not arguments",
+  );
+  assert.deepEqual(commandPaths("prettier --write --config=.prettierrc.json x.md"), [
+    ".prettierrc.json",
+    "x.md",
+  ]);
+  assert.deepEqual(
+    commandPaths("npm test; git status; curl https://example.com/a.js; echo $HOME/x.js; ls ."),
+    [],
+    "bare commands, URLs, variables and `.` name no file",
+  );
+});
+
+test("trailEntry: edit targets, Bash paths, and only SUCCESSFUL unmasked e2e runs", () => {
+  assert.deepEqual(
+    trailEntry({ tool_name: "Write", tool_input: { file_path: "src/a.ts" } }, "/r"),
+    {
+      k: "edit",
+      p: "/r/src/a.ts",
+    },
+  );
+  assert.deepEqual(
+    trailEntry({ tool_name: "NotebookEdit", tool_input: { notebook_path: "/abs/n.ipynb" } }, "/r"),
+    { k: "edit", p: "/abs/n.ipynb" },
+  );
+  assert.equal(trailEntry({ tool_name: "Read", tool_input: { file_path: "a" } }, "/r"), null);
+  const bash = (command, extra = {}) =>
+    trailEntry(
+      { tool_name: "Bash", tool_input: { command }, hook_event_name: "PostToolUse", ...extra },
+      "/r",
+    );
+  assert.deepEqual(bash("git status"), { k: "bash", p: [] }, "any Bash call is activity");
+  assert.equal(bash("npm run e2e").e2e, true, "PostToolUse fires only for a successful call");
+  assert.equal(bash("npx playwright test e2e/home.spec.ts").e2e, true);
+  assert.equal(bash("npm run e2e", { exitCode: 1 }).e2e, undefined, "an explicit failure");
+  assert.equal(bash("npm run e2e | tail -5").e2e, undefined, "a pipe masks the exit code");
+  assert.equal(bash("npm run e2e || true").e2e, undefined);
+  assert.equal(
+    bash("npm run e2e", { tool_input: { command: "npm run e2e", run_in_background: true } }).e2e,
+    undefined,
+    "a backgrounded run has no verdict yet",
+  );
+  assert.equal(
+    trailEntry({ tool_name: "Bash", tool_input: { command: "npm run e2e" } }, "/r").e2e,
+    undefined,
+    "no event name and no exit code: success unknown",
+  );
+});
+
+test("openTrail/recordTrail/readTrail: authoritative only when opened at start and used", () => {
+  const { root } = gitFixture();
+  assert.equal(readTrail(root, "t1"), null, "no trail yet");
+  const edit = { tool_name: "Edit", tool_input: { file_path: join(root, "a.js") }, cwd: root };
+  assert.equal(
+    recordTrail(root, "t1", edit),
+    null,
+    "a trail SessionStart never opened is not written",
+  );
+  assert.equal(existsSync(sessionPath(root, "t1", "trail")), false);
+  assert.equal(openTrail(root, "t1"), true);
+  assert.equal(openTrail(root, "t1"), false, "a resume keeps the trail");
+  assert.equal(readTrail(root, "t1")?.authoritative, false, "start record only: no activity yet");
+  recordTrail(root, "t1", edit);
+  const trail = readTrail(root, "t1");
+  assert.equal(trail?.authoritative, true);
+  assert.ok(trail?.paths.has(join(root, "a.js")));
+  // A start record the agent wrote itself carries no valid MAC.
+  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
+  writeFileSync(
+    sessionPath(root, "forged", "trail"),
+    `${JSON.stringify({ k: "start", t: 1 })}\n${JSON.stringify({ k: "bash", p: [] })}\n`,
+  );
+  assert.equal(
+    readTrail(root, "forged")?.authoritative,
+    false,
+    "unsigned start: not authoritative",
+  );
+  appendFileSync(sessionPath(root, "t1", "trail"), "not json{\n");
+  assert.equal(readTrail(root, "t1")?.authoritative, true, "a torn line loses nothing");
+});
+
+test("recordTrail: a passing e2e run is stored bound to the code state, MAC'd", () => {
+  const { root } = gitFixture();
+  openTrail(root, "t2");
+  writeFileSync(join(root, "a.js"), "export const one = 2;\n");
+  recordTrail(root, "t2", {
+    tool_name: "Bash",
+    tool_input: { command: "npm run e2e" },
+    hook_event_name: "PostToolUse",
+    cwd: root,
+  });
+  const [run] = readTrail(root, "t2")?.e2e ?? [];
+  assert.equal(typeof run?.code, "string", "bound to the tree it ran against");
+  assert.match(String(run?.mac), /^[0-9a-f]{64}$/);
+});
+
+test("attributeChanged: only the changed files this session's trail names", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "a.js"), "export const one = 2;\n");
+  writeFileSync(join(root, "b.js"), "export const two = 2;\n");
+  const all = changedSet(root, null);
+  assert.deepEqual(all, ["a.js", "b.js"]);
+  assert.deepEqual(attributeChanged(root, all, [join(root, "b.js")]), ["b.js"]);
+  assert.deepEqual(attributeChanged(root, all, []), []);
+});
+
+test("currentSessionId: FORGE_SESSION_ID, else CLAUDE_CODE_SESSION_ID, else null", () => {
+  assert.equal(currentSessionId({ FORGE_SESSION_ID: "f", CLAUDE_CODE_SESSION_ID: "c" }), "f");
+  assert.equal(currentSessionId({ CLAUDE_CODE_SESSION_ID: "c" }), "c");
+  assert.equal(currentSessionId({}), null);
+});
+
+test("sessionChanges: pre-session dirt and other agents' edits are not this session's", () => {
+  const { root } = gitFixture();
+  writeFileSync(join(root, "old.js"), "dirty before the session\n");
+  assert.equal(sessionChanges(root, "s9"), null, "no baseline → unscoped (caller's whole view)");
+  assert.equal(sessionChanges(root, null), null);
+  recordBaseline(root, "s9");
+  writeFileSync(join(root, "mine.js"), "export const m = 1;\n");
+  writeFileSync(join(root, "theirs.js"), "export const t = 1;\n");
+  // No trail: baseline-scoped (the pre-session dirt is gone), other agents still in.
+  assert.deepEqual(sessionChanges(root, "s9"), {
+    base: readBaseline(root, "s9")?.head ?? null,
+    changed: ["mine.js", "theirs.js"],
+    attributed: false,
+  });
+  openTrail(root, "s9");
+  recordTrail(root, "s9", {
+    tool_name: "Write",
+    tool_input: { file_path: join(root, "mine.js") },
+    cwd: root,
+  });
+  const scoped = sessionChanges(root, "s9");
+  assert.deepEqual(scoped?.changed, ["mine.js"], "the trail narrows it to this session's files");
+  assert.equal(scoped?.attributed, true);
+  unlinkSync(sessionPath(root, "s9", "trail"));
+  assert.deepEqual(
+    sessionChanges(root, "s9")?.changed,
+    ["mine.js", "theirs.js"],
+    "no log → fallback",
+  );
 });

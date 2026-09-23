@@ -2632,6 +2632,10 @@ HANDLERS.uicheck = async (argv) => {
       process.exitCode = 1;
       return;
     }
+    // The completion gate's UI evidence (a skipped run never reaches here, so a missing
+    // browser can never count as a PASS).
+    const { recordUiCheck } = await import("./gate.js");
+    recordUiCheck(process.cwd(), { check: "visual", pass: !r.fail });
     if (json) {
       const { ok: _ok, fail: _fail, ...body } = r;
       console.log(JSON.stringify(body, null, 2));
@@ -2790,6 +2794,9 @@ HANDLERS.uicheck = async (argv) => {
     const gate = ui.uiGate(fp, { projectFp, tauSlop, tauConform });
     const checks = [...ui.scaleChecks(fp), ...(profile ? ui.profileChecks(fp, profile) : [])];
     const fail = !gate.pass || checks.some((c) => !c.pass);
+    // The completion gate's UI evidence: this verdict, bound to the current code state.
+    const { recordUiCheck } = await import("./gate.js");
+    recordUiCheck(process.cwd(), { check: "design", pass: !fail, files });
     if (json) {
       console.log(
         JSON.stringify(

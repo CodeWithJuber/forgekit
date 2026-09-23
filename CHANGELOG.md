@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Stop gate no longer demands a unit test for a UI-only change.** A stylesheet, or a
+  JS/TS file whose diff only touches `className`/`class`/`style` values, cva-style variant
+  strings or JSX text, is now its own `ui` class. It owes a design/state record, a fresh
+  `forge uicheck design|visual` PASS (now stamped to `.forge/uicheck.json`), or test
+  evidence; a passing e2e run recorded by the capture hook also counts as test evidence
+  for code. A logic change in the same file is still gated as code. Stylesheet-only
+  sessions, which used to owe nothing, now owe the same as a className edit.
+- **The Stop gate no longer blames a session for other agents' edits.** The capture hook
+  keeps a per-session trail (`.forge/sessions/<sid>.trail`) of the files the session edited
+  or named in a shell command, and the gate weighs only those; other changed files are
+  named in the reason, not blamed. Without a trail it keeps the tree-wide view.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added

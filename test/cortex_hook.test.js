@@ -9,6 +9,7 @@ import {
   detectDoomLoop,
   detectEpisodes,
   doomLoopAdvisory,
+  isE2eRun,
   processSession,
   readSession,
   sessionPath,
@@ -249,4 +250,27 @@ test("doomLoopAdvisory (C10): with no edits between runs it does not claim edits
   assert.match(noEdits, /without chang/i, noEdits);
   const withEdits = doomLoopAdvisory([same, { type: "edit", file: "a.js" }, same, same]);
   assert.match(withEdits, /Different edits aren't fixing it/);
+});
+
+test("isE2eRun: real, unmasked end-to-end suite runs only", () => {
+  for (const c of [
+    "npm run e2e",
+    "npm run test:e2e",
+    "pnpm e2e",
+    "yarn e2e:mobile",
+    "npx playwright test e2e/home.spec.ts",
+    "pnpm exec playwright test",
+    "npx cypress run",
+    "cd /repo && E2E_BASE_URL=http://localhost:3100 npm run e2e",
+  ])
+    assert.equal(isE2eRun(c), true, c);
+  for (const c of [
+    "npm test",
+    'echo "run npm run e2e later"',
+    "npm run e2e || true",
+    "npm run e2e; exit 0",
+    "npm run e2e 2>&1 | tail -20",
+    "playwright install chromium",
+  ])
+    assert.equal(isE2eRun(c), false, c);
 });

@@ -64,6 +64,20 @@ const TEST_RE =
   /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
 const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
 const isTestRun = (command) => TEST_RE.test(String(command ?? "")) && !MASKED_RE.test(command);
+// An end-to-end suite run (`npm run e2e`, `pnpm test:e2e`, `npx playwright test`, `cypress
+// run`), same position rule as TEST_RE, env assignments allowed in front. Stricter on
+// masking: a single `|` hands the exit status to the LAST command (`npm run e2e | tail`
+// exits 0 on a failing suite), so a piped run proves nothing either.
+const E2E_RE =
+  /(^|[\n;&|]\s*)(\w+=\S*\s+)*((npx|bunx|pnpm\s+exec|pnpm\s+dlx|yarn)\s+)?((npm|pnpm|yarn|bun)\s+(run\s+)?(test:)?e2e\b|playwright\s+test\b|cypress\s+run\b)/;
+const PIPED_RE = /(^|[^|])\|(?!\|)/;
+
+/** Is this shell command a real, unmasked end-to-end test run? (The completion gate
+ *  accepts a passing one as test evidence.) @param {string} command */
+export const isE2eRun = (command) => {
+  const c = String(command ?? "");
+  return E2E_RE.test(c) && !MASKED_RE.test(c) && !PIPED_RE.test(c);
+};
 // Negation must be corrective, not incidental ("no problem"); require a corrective verb.
 const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
 

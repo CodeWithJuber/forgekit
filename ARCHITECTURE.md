@@ -220,8 +220,16 @@ snapshotted at SessionStart — so pre-existing edits, branch switches, and `git
 are never pinned on the agent (adversarial review demonstrated all three false-block
 classes). Paths are classified by ONE total function derived from the atlas registries
 (`CODE_EXTS`/`DOC_EXTS`/config rules) plus the shared test-file predicate, parsed from
-`-z` NUL-separated git output (C-quoted unicode paths classify correctly). Code moved
-with no doc/state artifact → block once with the repair checklist as the reason; every
+`-z` NUL-separated git output (C-quoted unicode paths classify correctly). When the
+session has a trail (`.forge/sessions/<sid>.trail`, appended by the PostToolUse capture:
+edit targets and the paths its Bash commands name), the set is narrowed to the files the
+session itself touched, so a concurrent agent's edits are never pinned on it; no trail →
+the tree-wide set. A stylesheet, or a JS/TS file whose diff only touches
+`className`/`class`/`style` values, variant strings or JSX text (`src/uidiff.js`), is a
+UI-only change: it owes a doc/state artifact OR a fresh `forge uicheck design|visual`
+PASS OR test evidence (a verify PASS, a substantive test, or a passing e2e run, each bound
+to the current code state), never a unit test by itself. Code moved without test
+evidence or a doc/state artifact → block once with the repair checklist as the reason; every
 other row allows, every internal error allows (fail-open), the once-per-session marker
 is written BEFORE the block (unwritable marker → stand down rather than nag every turn),
 a missing `session_id` disables gating (no shared-state leaks between sessions), and
