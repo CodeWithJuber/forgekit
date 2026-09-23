@@ -18,7 +18,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { BRAND } from "./brand.js";
 import { isE2eRun, sessionPath } from "./cortex_hook.js";
 import { redactSecrets } from "./secrets.js";
@@ -319,7 +319,7 @@ export function commandPaths(command) {
       // `cd` alone, `cd -` or `cd ~`: the directory is unknown, so paths stay as written.
       dir =
         to && !to.startsWith("-") && PATH_TOKEN.test(to) && !GLOB_CHARS.test(to)
-          ? join(dir, to)
+          ? posix.join(dir, to)
           : "";
       continue;
     }
@@ -328,7 +328,7 @@ export function commandPaths(command) {
       // A trailing `/` is a directory (or a sed expression): never a changed FILE.
       if (!t || t.startsWith("-") || t.endsWith("/") || !PATH_TOKEN.test(t)) continue;
       if (!t.includes("/") && !/\.[A-Za-z0-9*?]+$/.test(t)) continue;
-      out.add(isAbsolute(t) || !dir ? t : join(dir, t));
+      out.add(isAbsolute(t) || !dir ? t : posix.join(dir, t));
       if (out.size >= TRAIL_PATHS_CAP) return [...out];
     }
   }
@@ -477,15 +477,18 @@ export function readTrail(root, sid) {
   return { paths, e2e, authoritative };
 }
 
-// One spelling per file on both sides: symlinked checkouts (/tmp → /private/tmp) and a
-// deleted file (resolve its directory instead) must still compare equal.
+// One spelling per file on both sides: symlinked checkouts (/tmp → /private/tmp), Windows
+// 8.3 short names (RUNNER~1, which only the OS resolver expands) and a deleted file
+// (resolve its directory instead) must still compare equal.
 function canonicalPath(p) {
-  try {
-    return realpathSync(p);
-  } catch {}
-  try {
-    return join(realpathSync(dirname(p)), basename(p));
-  } catch {}
+  for (const real of [realpathSync.native, realpathSync]) {
+    try {
+      return real(p);
+    } catch {}
+    try {
+      return join(real(dirname(p)), basename(p));
+    } catch {}
+  }
   return resolve(p);
 }
 

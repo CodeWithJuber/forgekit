@@ -232,12 +232,22 @@ export function recordUiCheck(cwd, { check, pass, files = [] }) {
     if (!root) return false;
     const codeState = computeCodeState(root);
     if (!codeState.gitAvailable || !codeState.dirtyHash) return false;
-    // git prints the toplevel with symlinks resolved; resolve cwd the same way.
-    const here = realpathSync(cwd);
+    // git prints the toplevel with symlinks resolved (on Windows also with 8.3 short names
+    // expanded, RUNNER~1 → runneradmin): canonicalise both sides through the OS so a
+    // relative path never climbs out of the tree.
+    const canon = (/** @type {string} */ p) => {
+      try {
+        return realpathSync.native(p);
+      } catch {
+        return realpathSync(p);
+      }
+    };
+    const top = canon(root);
+    const here = canon(cwd);
     const stamp = {
       check: String(check),
       status: pass ? "PASS" : "FAIL",
-      files: files.map((f) => relative(root, resolve(here, f)).replace(/\\/g, "/")).sort(),
+      files: files.map((f) => relative(top, resolve(here, f)).replace(/\\/g, "/")).sort(),
       codeState,
     };
     const mac = uiCheckMac(stamp);

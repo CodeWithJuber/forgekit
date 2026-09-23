@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { sessionPath } from "../src/cortex_hook.js";
 import {
@@ -168,12 +168,12 @@ test("trailEntry: edit targets, Bash paths, and only SUCCESSFUL unmasked e2e run
     trailEntry({ tool_name: "Write", tool_input: { file_path: "src/a.ts" } }, "/r"),
     {
       k: "edit",
-      p: "/r/src/a.ts",
+      p: resolve("/r", "src/a.ts"),
     },
   );
   assert.deepEqual(
     trailEntry({ tool_name: "NotebookEdit", tool_input: { notebook_path: "/abs/n.ipynb" } }, "/r"),
-    { k: "edit", p: "/abs/n.ipynb" },
+    { k: "edit", p: resolve("/abs/n.ipynb") },
   );
   assert.deepEqual(
     trailEntry({ tool_name: "Read", tool_input: { file_path: "a" } }, "/r"),

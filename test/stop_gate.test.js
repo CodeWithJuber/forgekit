@@ -608,11 +608,16 @@ test("concurrency: a session that only READ is not blamed for another agent's ed
   assert.equal(stopGate(root, "ma5").stdout.trim(), "");
 });
 
+// BSD sed (macOS) takes the backup suffix as a separate, required argument. The trail still
+// records the GNU spelling an agent types: only the command the test itself runs is adapted.
+const portableSh = (sh) =>
+  process.platform === "darwin" ? sh.replace(/\bsed -i /g, "sed -i '' ") : sh;
+
 test("concurrency: a file both sessions touched stays with this session (a glob counts)", () => {
   const { root } = gitFixture();
   start(root, "ma6");
   start(root, "ma6-other");
-  execFileSync("sh", ["-c", "sed -i 's/1/6/' *.js"], { cwd: root });
+  execFileSync("sh", ["-c", portableSh("sed -i 's/1/6/' *.js")], { cwd: root });
   capture(root, "ma6", { tool_name: "Bash", tool_input: { command: "sed -i 's/1/6/' *.js" } });
   write(root, "ma6-other", "a.js", "export const one = 66;\n");
   const out = JSON.parse(stopGate(root, "ma6").stdout);
@@ -663,7 +668,7 @@ const blocksAsCode = (root, sid) => {
 };
 
 test("unattributed writes: a glob, a heredoc script, a cd-relative path, an MCP tool", () => {
-  const edit = (root, sh) => execFileSync("sh", ["-c", sh], { cwd: root });
+  const edit = (root, sh) => execFileSync("sh", ["-c", portableSh(sh)], { cwd: root });
   const cases = {
     glob: "sed -i 's/1/42/' *.js",
     heredoc: "python3 - <<'EOF'\nopen('a.js','w').write('export const one = () => 99;\\n')\nEOF",
