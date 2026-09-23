@@ -6,7 +6,8 @@
 //   1. the bash resolution order on every OS, via injected env + filesystem (pure);
 //   2. real end-to-end runs — stdin/stdout/exit-code passthrough, an exit-2 BLOCK preserved, paths
 //      WITH SPACES on Windows and POSIX, the Windows default-install PATH shape, and the
-//      "no bash anywhere" failure mode (exit 1 + an actionable line, never a fabricated block);
+//      "no bash anywhere" failure mode (exit 1 + an actionable line for an advisory guard; the
+//      fail-closed protect-paths runs on its Node twin and BLOCKS whenever it cannot decide);
 //   3. that the launcher and both hook manifests ship in the npm archive.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -15,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { resolveBash } from "../global/guards/run.mjs";
+import { GUARD_POLICY, resolveBash, runGuard } from "../global/guards/run.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const guards = join(root, "global", "guards");
@@ -279,26 +280,115 @@ test("launcher (Windows): default-install PATH — Git\\cmd present, Git\\bin ab
   assert.match(r.err, /env file/i);
 });
 
-test("launcher: with NO bash anywhere it fails visibly (exit 1 + actionable hint) and never fabricates a block", () => {
+/** An env with NO bash reachable by any route resolveBash knows (PATH, overrides, install dirs). */
+function noBashEnv(empty) {
+  return envWith({
+    PATH: empty,
+    ProgramFiles: empty,
+    ProgramW6432: empty,
+    "ProgramFiles(x86)": empty,
+    LOCALAPPDATA: empty,
+    USERPROFILE: empty,
+    FORGE_BASH: undefined,
+    CLAUDE_CODE_GIT_BASH_PATH: undefined,
+  });
+}
+
+test("launcher: with NO bash anywhere an advisory guard fails visibly (exit 1 + actionable hint) and never fabricates a block", () => {
   const empty = mkdtempSync(join(tmpdir(), "forge-nobash-"));
   try {
-    const env = envWith({
-      PATH: empty,
-      ProgramFiles: empty,
-      ProgramW6432: empty,
-      "ProgramFiles(x86)": empty,
-      LOCALAPPDATA: empty,
-      USERPROFILE: empty,
-      FORGE_BASH: undefined,
-      CLAUDE_CODE_GIT_BASH_PATH: undefined,
+    const r = launch([join(guards, "cortex.sh"), "prompt"], {
+      input: JSON.stringify({ prompt: "hi" }),
+      env: noBashEnv(empty),
     });
-    const r = launch([join(guards, "protect-paths.sh")], { input: writeEnv, env });
     assert.equal(r.code, 1, `${r.out}\n${r.err}`);
     assert.match(r.err, /no bash found/);
     assert.match(r.err, /FORGE_BASH/);
   } finally {
     rmSync(empty, { recursive: true, force: true });
   }
+});
+
+// The review: with no bash on PATH, protect-paths exited 1 — a NON-blocking hook error — so the
+// security guard was silently off. It now runs on its Node twin (no bash at all), and any failure
+// to reach a verdict blocks.
+test("launcher: protect-paths needs no bash — it runs on its Node twin (block 2, benign 0)", () => {
+  const empty = mkdtempSync(join(tmpdir(), "forge-nobash-"));
+  try {
+    const env = noBashEnv(empty);
+    let r = launch([join(guards, "protect-paths.sh")], { input: writeEnv, env });
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.match(r.err, /env file/);
+    r = launch([join(guards, "protect-paths.sh")], { input: writeSrc, env });
+    assert.equal(r.code, 0, r.err);
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test("launcher: a fail-closed guard with no twin and NO bash BLOCKS (exit 2), never exit 1", () => {
+  const base = mkdtempSync(join(tmpdir(), "forge-failclosed-"));
+  try {
+    const g = join(base, "guards");
+    cpSync(guards, g, { recursive: true });
+    rmSync(join(g, "protect-paths.mjs")); // no twin → the bash path, and there is no bash
+    const env = noBashEnv(join(base, "empty"));
+    let r = launch([join(g, "protect-paths.sh")], { input: writeSrc, env });
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.match(r.err, /BLOCKED by protect-paths\.sh \(fail-closed\)/);
+    assert.match(r.err, /no bash found/);
+    // `--fail-closed` opts any guard in.
+    r = launch(["--fail-closed", join(g, "cortex.sh"), "prompt"], { input: "{}", env });
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.match(r.err, /BLOCKED by cortex\.sh \(fail-closed\)/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("runGuard: a signal, a spawn error or an odd exit blocks when fail-closed, stays exit 1 otherwise", () => {
+  const noTwin = () => false;
+  const bashHere = () => ({ path: "bash", via: "PATH" });
+  /** Silence the launcher's own stderr line while calling it in-process. */
+  const quiet = (fn) => {
+    const write = process.stderr.write;
+    process.stderr.write = () => true;
+    try {
+      return fn();
+    } finally {
+      process.stderr.write = write;
+    }
+  };
+  const run = (argv, result, locateBash = bashHere) =>
+    quiet(() => runGuard(argv, process.env, { spawn: () => result, locateBash, exists: noTwin }));
+  const killed = { status: null, signal: "SIGKILL" };
+  const crashed = { status: 1, signal: null };
+  const spawnErr = { error: Object.assign(new Error("EPERM"), { code: "EPERM" }), status: null };
+  // An advisory guard: unchanged — a visible, non-blocking 1 (its own exit passes through).
+  assert.equal(run(["/g/cortex.sh"], killed), 1);
+  assert.equal(run(["/g/cortex.sh"], crashed), 1);
+  assert.equal(run(["/g/cortex.sh"], spawnErr), 1);
+  // protect-paths (GUARD_POLICY) and any `--fail-closed` guard: every failure is a block.
+  for (const argv of [["/g/protect-paths.sh"], ["--fail-closed", "/g/cortex.sh"]]) {
+    assert.equal(run(argv, killed), 2, `${argv} killed`);
+    assert.equal(run(argv, crashed), 2, `${argv} exit 1`);
+    assert.equal(run(argv, spawnErr), 2, `${argv} spawn error`);
+    assert.equal(run(argv, { status: 0, signal: null }), 0, `${argv} allow`);
+    assert.equal(run(argv, { status: 2, signal: null }), 2, `${argv} deny`);
+    assert.equal(
+      run(argv, crashed, () => ({ path: null, via: "none" })),
+      2,
+      `${argv} no bash`,
+    );
+  }
+});
+
+test("GUARD_POLICY: protect-paths runs on a Node twin that ships beside it, and fails closed", () => {
+  assert.deepEqual(GUARD_POLICY["protect-paths.sh"], {
+    node: "protect-paths.mjs",
+    failClosed: true,
+  });
+  assert.ok(existsSync(join(guards, "protect-paths.mjs")));
 });
 
 test("launcher: no guard argument is a usage error (exit 1), not a block", () => {

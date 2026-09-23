@@ -166,7 +166,10 @@ function checkTooling(out) {
   out.push(
     bashOk
       ? ok("bash", `found via ${shell.via} — hook guards run through guards/run.mjs`)
-      : fail("bash", `not found — hook guards CANNOT run; ${NO_BASH_HINT}`),
+      : fail(
+          "bash",
+          `not found — the bash hook guards CANNOT run (protect-paths runs on node and still blocks); ${NO_BASH_HINT}`,
+        ),
   );
   out.push(
     hasBin("jq")
@@ -408,6 +411,7 @@ function checkPluginCompatibility(out) {
 const REQUIRED_INSTALL_ASSETS = [
   join("guards", "run.mjs"),
   join("guards", "protect-paths.sh"),
+  join("guards", "protect-paths.mjs"),
   join("guards", "secret-redact.sh"),
   join("guards", "secret-redact.mjs"),
 ];

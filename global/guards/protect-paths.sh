@@ -2,7 +2,9 @@
 # PreToolUse hook: block reads/edits of secret/credential files and obviously destructive Bash.
 # Thin launcher: the payload parsing and the whole rule set live in protect-paths.mjs (Node),
 # the same split secret-redact.sh uses — one real JSON parser instead of jq-or-a-regex, and no
-# shell pipeline that can lose a match to SIGPIPE under `pipefail`.
+# shell pipeline that can lose a match to SIGPIPE under `pipefail`. The hook launcher (run.mjs)
+# skips this file and runs protect-paths.mjs on node directly, fail-closed; this shim remains for
+# direct `bash protect-paths.sh` callers.
 # Exit 2 = block the tool call and feed the reason back to Claude (works across versions).
 # FAIL CLOSED: exit 1 is a NON-blocking hook error in Claude Code, so a guard that cannot
 # evaluate the call must deny, never fall through.
