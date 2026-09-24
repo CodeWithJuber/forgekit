@@ -47,6 +47,8 @@ delivers them into every tool you use.
 >   assume **Bash and Git** are available (`jq` is not required — the guards read hook JSON
 >   with node). Claude hooks on Windows do
 >   not require `bash` on `PATH`: their Node launcher finds Git Bash and preserves guard exits.
+>   `protect-paths` needs no bash at all and fails closed: when it cannot reach a verdict, the
+>   tool call is blocked rather than let through.
 
 ## Start in 60 seconds
 Forgekit is a beta Node.js CLI and MCP server for AI-assisted software development. It
@@ -386,7 +388,10 @@ forge doctor --fix
 `~/.claude/settings.json`. That file is global and affects all repositories. Use
 `forge init --no-settings` to skip the merge or `forge init --remove-settings` to reverse
 Forgekit-managed entries. The implementation preserves unrelated entries and creates a
-timestamped backup before changing the file.
+timestamped backup before changing the file. When the Forgekit Claude Code plugin is enabled
+(in user, project or local settings), its `hooks/hooks.json` already runs every guard, so
+`forge init` and `forge doctor --fix` merge permissions only and never register the guards a
+second time.
 
 `forge init` emits configuration only for the agent tools the repository already uses:
 Claude Code plus any tool with a sign on disk (`.cursor/`, `.codex/`,

@@ -17,9 +17,16 @@
 // exits 1: the same visible, non-blocking hook error the ENOENT was, minus the mystery. Node
 // built-ins only — a launcher that itself failed to load would be exactly the silent no-op the
 // guards exist to prevent.
+//
+// SECURITY guards are the exception to "exit 1": for a PreToolUse guard, exit 1 lets the tool call
+// through, so a guard that cannot run would be silently OFF. A fail-closed guard (GUARD_POLICY, or
+// `--fail-closed` before the guard path) turns every failure to reach a verdict — no interpreter, a
+// spawn error, a signal, an exit other than 0/2 — into exit 2: a block, with the reason on stderr.
+// protect-paths also skips bash entirely: its `.sh` is a thin launcher over a Node twin, which runs
+// on this very node, so the guard works where bash does not.
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { basename, win32 } from "node:path";
+import { basename, dirname, join, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const NO_BASH_HINT =
@@ -117,35 +124,74 @@ export function resolveBash({
 const toPosix = (p) => String(p).replaceAll("\\", "/");
 
 /**
- * Spawn `bash <script> …args` with inherited stdio and return the exit code to report.
- * @param {string[]} argv `[guardScript, ...guardArgs]`
+ * Guards the launcher treats specially, keyed by basename.
+ *  - `node`: the `.sh` is only a thin launcher over this same-directory Node twin, so the twin
+ *    runs on THIS node and bash leaves the path (one process fewer on every tool call, too).
+ *  - `failClosed`: a PreToolUse security guard; failing to reach a verdict blocks (exit 2).
+ * @type {Record<string, {node?: string, failClosed?: boolean}>}
+ */
+export const GUARD_POLICY = {
+  "protect-paths.sh": { node: "protect-paths.mjs", failClosed: true },
+};
+
+/**
+ * Run a guard with inherited stdio and return the exit code to report: `bash <script> …args`, or
+ * `node <twin.mjs> …args` for a guard with a Node twin. `--fail-closed` before the script (or
+ * GUARD_POLICY) turns every launcher-level failure into a block. `deps` are test seams.
+ * @param {string[]} argv `[--fail-closed] guardScript ...guardArgs`
  * @param {NodeJS.ProcessEnv} [env]
+ * @param {{spawn?: typeof spawnSync, locateBash?: typeof resolveBash, exists?: (p: string) => boolean}} [deps]
  * @returns {number}
  */
-export function runGuard(argv, env = process.env) {
+export function runGuard(
+  argv,
+  env = process.env,
+  { spawn = spawnSync, locateBash = resolveBash, exists = existsSync } = {},
+) {
   const self = basename(fileURLToPath(import.meta.url));
-  const [script, ...rest] = argv;
+  const args = [...argv];
+  let failClosed = false;
+  while (args[0] === "--fail-closed") {
+    failClosed = true;
+    args.shift();
+  }
+  const [script, ...rest] = args;
   if (!script) {
-    process.stderr.write(`${self}: usage: node ${self} <guard.sh> [args…]\n`);
+    process.stderr.write(`${self}: usage: node ${self} [--fail-closed] <guard.sh> [args…]\n`);
     return 1;
   }
-  const { path } = resolveBash({ env });
-  if (!path) {
-    process.stderr.write(`${self}: ${NO_BASH_HINT}\n`);
-    return 1;
+  const guard = basename(toPosix(script));
+  const policy = GUARD_POLICY[guard.toLowerCase()] ?? {};
+  failClosed ||= Boolean(policy.failClosed);
+  /** @param {string} why */
+  const failed = (why) => {
+    if (!failClosed) {
+      process.stderr.write(`${self}: ${why}\n`);
+      return 1;
+    }
+    process.stderr.write(
+      `BLOCKED by ${guard} (fail-closed): ${why} — a security guard that cannot reach a verdict blocks the tool call.\n`,
+    );
+    return 2;
+  };
+  const twin = policy.node ? join(dirname(script), policy.node) : "";
+  let cmd = process.execPath;
+  let cmdArgs = [twin, ...rest];
+  if (!twin || !exists(twin)) {
+    const { path } = locateBash({ env });
+    if (!path) return failed(NO_BASH_HINT);
+    cmd = path;
+    cmdArgs = [toPosix(script), ...rest];
   }
-  const r = spawnSync(path, [toPosix(script), ...rest], {
-    stdio: "inherit",
-    env,
-    windowsHide: true,
-  });
+  const r = spawn(cmd, cmdArgs, { stdio: "inherit", env, windowsHide: true });
   if (r.error) {
     const code = /** @type {NodeJS.ErrnoException} */ (r.error).code;
-    process.stderr.write(`${self}: ${code === "ENOENT" ? NO_BASH_HINT : r.error.message}\n`);
-    return 1;
+    return failed(code === "ENOENT" && cmd !== process.execPath ? NO_BASH_HINT : r.error.message);
   }
-  // A signal-killed guard has no status: 1 keeps it a visible non-blocking error, never a block.
-  return r.status ?? 1;
+  // A signal-killed guard has no status: a visible non-blocking error (1) or, fail-closed, a block.
+  if (r.status === null) return failed(`the guard was killed by ${r.signal ?? "a signal"}`);
+  if (failClosed && r.status !== 0 && r.status !== 2) return failed(`the guard exited ${r.status}`);
+  return r.status;
 }
 
 // Run only as the hook entrypoint (`node run.mjs …`). Importing it (doctor, tests) must not spawn

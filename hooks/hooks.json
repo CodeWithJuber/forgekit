@@ -93,7 +93,7 @@
         ]
       },
       {
-        "matcher": "Read",
+        "matcher": "Read|Grep|Glob|NotebookRead",
         "hooks": [
           {
             "type": "command",
