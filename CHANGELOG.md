@@ -54,6 +54,51 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reads the same user, project and local scopes and skips hook injection when the plugin is
   enabled in any of them (`mergeSettings` alone skips it for a settings file that enables it).
 
+## [1.4.0] - 2026-09-24
+
+### Fixed
+
+- **`forge init` / `forge sync` no longer replace a hand-written `AGENTS.md`, and the Stop-hook
+  auto-sync no longer reverts human edits.** Forge now owns only a marked block
+  (`<!-- forge:begin -->` … `<!-- forge:end -->`): sync appends it to an existing file and
+  afterwards compares and rewrites only that block; auto-sync does the same and never adopts
+  a file without one. An `AGENTS.md` generated whole by an older version converts to a block
+  on the next sync, keeping any text added above or below the generated part (verified by
+  the hash in its header). If the generated text itself was edited, `forge sync` saves the
+  old file as a timestamped `AGENTS.md.forge-bak-<time>` first, instead of overwriting one
+  fixed `.forge-bak`. `forge doctor` reports a hand-written file as "no Forge block" and its
+  fix appends the block.
+- **Rules an older version moved to `AGENTS.md.forge-bak` are no longer forgotten.** No agent
+  reads that file, so `forge sync` and `forge doctor` now warn for as long as it holds text
+  that `AGENTS.md` lacks, even when the Stop hook did the conversion out of sight.
+- **Size checks cover the whole `AGENTS.md`.** The Codex (32 KiB) and Windsurf (~12k
+  characters) checks now count your text as well as Forge's block, and sync warns when your
+  text pushes the file over budget, since those tools drop the end of the file first. A rule,
+  fact or lesson containing a line that reads exactly like a block marker can no longer end
+  the block early.
+- **Notes added under a generated `CLAUDE.md` header survive later syncs.** Sync refreshes
+  only the marker line instead of regenerating the file.
+
+### Added
+
+- **`forge init --tools <list|all>` chooses the agent tools a repo emits config for.** The
+  choice is recorded in `.forge/forge.config.json` (`tools`), and later `forge sync`,
+  `forge doctor --fix` and `forge integrations add` emit the same set.
+
+### Changed
+
+- **`forge init` emits config only for the tools a repo uses by default:** Claude Code plus
+  every tool with a sign on disk (`.cursor/`, `.codex/`, `.github/copilot-instructions.md`,
+  …). A repo with no recorded set still gets every tool on sync; `--tools all` restores the
+  old init behaviour.
+- **`forge integrations add` writes to, and takes ownership in, only the recorded tools' MCP
+  config** (its dry run lists the files). A tool added to the set later gets the recorded
+  servers on that run and Forge owns those copies, while a same-name entry you configured
+  for that tool yourself stays yours: it is never overwritten or removed.
+- **`forge tools <name>` adds the tool to a recorded set that lacks it**, so the primary tool
+  gets its own config. `forge tools --reset` now clears only the primary tool and keeps the
+  set.
+
 ## [1.3.2] - 2026-09-24
 
 ### Fixed
@@ -2837,7 +2882,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.2.0...v1.3.0

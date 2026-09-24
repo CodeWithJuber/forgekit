@@ -30,6 +30,15 @@ export default {
         note: "prepended @AGENTS.md import to your existing CLAUDE.md (content preserved)",
       };
     }
+    // A CLAUDE.md forge generated invites notes below its header, so a later sync must keep
+    // them: refresh only the marker line in place (re-adding the import if it was removed),
+    // never regenerate the file around the person's notes.
+    if (existing !== null) {
+      let next = existing.replace(ctx.shared.MD_HEADER_RE, ctx.shared.mdHeader(ctx.hash));
+      if (!IMPORTS_AGENTS.test(next)) next = `@AGENTS.md\n\n${next}`;
+      const action = ctx.shared.writeIfChanged(path, next);
+      return { tool: this.tool, target: "CLAUDE.md", action, note: "@AGENTS.md import" };
+    }
     const content = [
       "@AGENTS.md",
       "",

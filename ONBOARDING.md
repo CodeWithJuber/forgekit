@@ -13,7 +13,7 @@ start paying off on day two.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart TD
-    I["forge init"] --> Cfg["every tool configured<br/>from one source"]
+    I["forge init"] --> Cfg["your tools configured<br/>from one source"]
     Cfg --> Work["you work as usual"]
     Work --> Gate["substrate checks each task:<br/>ask first? · which model? · what breaks?"]
     Gate --> Edit["agent edits, with guardrails"]
@@ -44,16 +44,22 @@ Full matrix (no-registry `github:` install, symlink dev setup) →
 ## 2. Configure a repo (once per repo)
 
 One config for every tool. Author your rules once; `forge init` emits each tool's
-native file.
+native file — for the tools this repo uses.
 
 ```bash
 cd ~/your-project
-forge init                 # emits AGENTS.md, CLAUDE.md, .gemini/settings.json, .aider.conf.yml …
+forge init                 # AGENTS.md + CLAUDE.md + .mcp.json, plus each tool it detects
+forge init --tools all     # or pick: --tools claude,cursor,gemini (recorded for later syncs)
 ```
 
-Now Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and
-OpenClaw all read the **same** rules — each from its own native file (plus MCP server
-config for Roo Code and VS Code).
+With `--tools all`, Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
+Continue, and OpenClaw all read the **same** rules — each from its own native file (plus
+MCP server config for Roo Code and VS Code). Without it, init emits Claude Code's files and
+those of any tool the repo already shows (`.cursor/`, `.codex/`,
+`.github/copilot-instructions.md`, …); AGENTS.md-reading tools get the rules regardless.
+
+Already have an `AGENTS.md`? It is kept: Forge appends its rules between
+`<!-- forge:begin -->` and `<!-- forge:end -->` and only ever rewrites that block.
 
 On OpenClaw the rules arrive automatically (it reads the execution folder's `AGENTS.md`
 as project context), but the MCP server is a deliberate one-command step, because
@@ -72,7 +78,7 @@ Change a rule later by editing `source/rules.json` (or dropping a per-repo
 `.forge/rules.json`), then:
 
 ```bash
-forge sync                 # recompiles into every tool; idempotent (only rewrites what changed)
+forge sync                 # recompiles into each selected tool; idempotent (only rewrites what changed)
 ```
 
 ## 3. Use the cognitive substrate
