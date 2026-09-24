@@ -1380,7 +1380,7 @@ Plain `forge cost` remains the per-day spend view via `ccusage`.
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `forge init`                     | Emit native config for the tools this repo uses — Claude + detected ones, or `--tools <list|all>` (recorded for later syncs). In `AGENTS.md` forge owns only its `<!-- forge:begin/end -->` block; a hand-written file keeps every line.                                                                                                                                                                                                                                                                                                                                                                |
 | `forge sync`                     | Recompile `source/` → each selected tool's files (idempotent); rewrites only forge's block in `AGENTS.md`. Size checks measure the whole `AGENTS.md`; warns while an older `AGENTS.md.forge-bak` holds rules no agent reads.                                                                                                                                                                                                                                                                                                                                                                            |
-| `forge doctor`                   | Health check: layers, install, drift, cortex. `forge doctor --fix` auto-repairs the safely fixable findings (missing settings hooks/permissions, ledger union-merge rule, stale `AGENTS.md`, non-executable guards) by reusing the same idempotent functions `forge init`/`forge sync` use, then re-checks.                                                                                                                                                                                                                                                                                             |
+| `forge doctor`                   | Health check: layers, install, drift, cortex. `forge doctor --fix` auto-repairs the safely fixable findings (missing settings hooks/permissions — permissions only when the Forge plugin is enabled, since the plugin already wires the hooks — ledger union-merge rule, stale `AGENTS.md`, non-executable guards) by reusing the same idempotent functions `forge init`/`forge sync` use, then re-checks.                                                                                                                                                                                                                                                                                             |
 | `forge docs check`               | Docs↔code drift: commands, env vars, MCP tools, CHANGELOG, and the Mintlify site (`mintlify/`) reconciled against the code (CI-gated on the forge repo itself).                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `forge docs sync`                | Diff-driven stale-docs sweep: UPDATED / STALE (file:line hits) / VERIFIED-UNAFFECTED per artifact (see the full section above).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `forge docs impact`              | Documentation-reference graph: extract typed entities (commands/flags/env/MCP/symbols/version), index every doc surface, and report which docs reference the entities THIS diff changed — ranked by confidence (see the full section above).                                                                                                                                                                                                                                                                                                                                                            |
@@ -1453,6 +1453,33 @@ install that owns the `git` on `PATH`, the standard install dirs, and finally a 
 untouched, so a guard's exit 2 still blocks. `forge doctor` shows which bash it resolved and
 flags hooks left in the old `bash …` spelling; `forge doctor --fix` (or `forge init`) heals
 Forge-owned ones in place. On macOS/Linux nothing changes: `bash` from `PATH`, as before.
+
+**Protected paths (PreToolUse).** `protect-paths` runs on `Edit`/`Write`/`MultiEdit`/
+`NotebookEdit`/`Bash` and on the readers `Read`/`Grep`/`Glob`/`NotebookRead`. It blocks secret
+files (`.env`, `.env.local`, `.env-local`, `.env.production`, `prod.env`, `id_rsa`, `*.key`,
+`*.pem`, anything under `.ssh/` or a `secrets/` store, `.netrc`, `.git-credentials`,
+`.aws/credentials`, the user-level `~/.npmrc`, and a project `.npmrc` only when it holds a
+literal token) plus clearly destructive shell (`rm -rf` of `/`, `~`, `.`, `..` or `*`;
+`git reset --hard`; `git checkout .` and `git restore .`; force-push; pipe-to-shell). A Bash
+command is split into shell words and only each command's FILE operands are tested, so
+`grep -rn process.env src`, `rg 'import\.meta\.env'`, `cat .env.example` and
+`cat messages.key.ts` pass, while `sed -n p .env`, `cat -n .env`, `grep -eKEY .env`,
+`git show :.env`, `… < .env`, `cat .e*v`, `cat .{env,x}` and `bash -c 'cat .env'` are blocked.
+A flag between a reader and its file never hides the file, and after a `cd` a relative
+`.npmrc` is treated as the user-level one. A recursive read of a `secrets/` directory
+(`rg KEY secrets/`, `git diff -- secrets/`, the Grep tool) is blocked unless the Grep tool's `glob`/`type` keeps it to
+source files (`*.tsx`, `ts`), so a Next.js `app/…/secrets/page.tsx` route stays searchable. The
+launcher runs it on Node directly (no bash needed) and fails **closed**: a guard that cannot
+reach a verdict — no interpreter, a crash, a signal — blocks the call (exit 2) instead of
+exiting 1, which Claude Code treats as a non-blocking error. `node run.mjs --fail-closed
+<guard>.sh` opts any other guard into the same behaviour. What passes the guard can still be
+denied by Claude Code itself: a `settings.json` install keeps `Read(./.env.*)` and
+`Read(./**/.npmrc)` in `permissions.deny`, and deny always wins, so there a Read of
+`.env.example` or of a token-less `.npmrc` is still refused (Bash `cat` of them is not; a plugin
+install has no such deny list). It is pattern matching, not a sandbox: variable indirection
+(`f=.env; cat $f`), `find … -exec cat`, `xargs -a`, command substitutions other than a literal
+`$(echo …)`, and interpreters (`python -c`, `node -e`) are out of scope, and secret-redact still
+masks leaked values after the tool runs.
 
 Three more ambient layers ride the same hooks:
 
