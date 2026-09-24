@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-24
+
 ### Fixed
 
 - **`protect-paths` matches secret paths per path token, so read-only commands stop being
@@ -2882,7 +2884,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.0...v1.3.1
