@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,19 +10,27 @@ import { ASSERTABLE_CHECKS } from "../src/uicheck.js";
 import {
   activeTasteStyle,
   conformance,
+  findThemeSources,
   fingerprintFiles,
   fingerprintText,
   GENERIC_SIGNATURES,
+  hasDesignSignal,
   inferSpacingBase,
   loadProjectFingerprint,
   loadTasteProfile,
+  loadThemeTokens,
   mintProjectFingerprint,
   nearestGeneric,
   onScaleFraction,
+  overallVerdict,
   profileChecks,
   resolveCssVars,
+  rgbToHsl,
   scaleChecks,
   slopDistance,
+  themeFromCss,
+  themeFromTailwindConfig,
+  themeSourcesFor,
   UI_GATE_DEFAULTS,
   uiGate,
 } from "../src/uifingerprint.js";
@@ -396,4 +404,444 @@ test("cli: fingerprint --mint stores the project claim; design then gates agains
   assert.equal(gate.pass, true);
   assert.equal(gate.hasProjectFingerprint, true);
   assert.equal(gate.conform, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Token-based Tailwind: theme tokens, arbitrary values, insufficient signal.
+// ---------------------------------------------------------------------------
+
+// A Tailwind v4 stylesheet in the shape real projects ship: semantic tokens in
+// `@theme inline` pointing at `:root` vars, shadcn's `hsl(var(--x))`, an oklch
+// accent, a redefined default key, calc() radii and a `--color-*` reset line.
+const V4_THEME_CSS = `@import "tailwindcss";
+:root {
+  --hl-brand: #0b6aac; --hl-fg: #0d1624; --radius: 1rem; --border: 210 21% 87%;
+  --hl-shadow-2: 0 1px 2px rgb(13 22 36 / 0.06),   0 10px 28px -10px rgb(15 60 110 / 0.18);
+  --color-outside: #123456;
+}
+@theme inline {
+  --color-brand: var(--hl-brand);
+  --color-fg: var(--hl-fg);
+  --color-rule: hsl(var(--border));
+  --color-accent: oklch(0.65 0.2 30);
+  --color-blue-500: #0f75bc;
+  --shadow-lift: var(--hl-shadow-2);
+}
+@theme {
+  --color-*: initial;
+  --font-display: "Fraunces", serif;
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-pill: calc(infinity * 1px);
+}
+`;
+
+// Token utilities ONLY — before this fix the fingerprint saw nothing here and the
+// gate printed PASS.
+const TOKEN_ONLY_TSX = `export const Card = () => (
+  <div className="rounded-card bg-brand/40 text-fg shadow-lift" />
+);`;
+
+const TOKEN_TSX = `export const Card = () => (
+  <div className="rounded-card bg-brand text-fg border border-rule/60 shadow-lift p-4">
+    <button className="rounded-control rounded-t-md bg-blue-500 text-[#fff] ring-accent">Go</button>
+  </div>
+);`;
+
+const hex = (h) =>
+  rgbToHsl(parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16));
+
+test("themeFromCss: @theme --color-*/--radius-*/--shadow-* land with var(), hsl(var()), oklch and calc() resolved", () => {
+  const theme = themeFromCss(V4_THEME_CSS);
+  assert.deepEqual(theme.colors.get("brand"), hex("#0b6aac"));
+  assert.deepEqual(theme.colors.get("fg"), hex("#0d1624"));
+  assert.deepEqual(theme.colors.get("rule"), hex("#d7dee5"), "shadcn hsl(var(--border))");
+  assert.ok(theme.colors.get("accent"), "oklch token parsed");
+  assert.deepEqual(theme.colors.get("blue-500"), hex("#0f75bc"));
+  assert.equal(theme.colors.has("outside"), false, "only @theme declarations are tokens");
+  assert.equal(theme.colors.has("*"), false, "the --color-* reset line is not a key");
+  assert.equal(theme.radius.get("control"), 10);
+  assert.equal(theme.radius.get("card"), 16);
+  assert.equal(theme.radius.get("md"), 14, "calc(1rem - 2px)");
+  assert.equal(theme.radius.get("pill"), 9999, "calc(infinity * 1px) is a pill");
+  assert.equal(
+    theme.shadow.get("lift"),
+    "0 1px 2px rgb(13 22 36 / 0.06), 0 10px 28px -10px rgb(15 60 110 / 0.18)",
+    "whitespace-normalized value",
+  );
+  assert.equal(theme.vars.get("--radius"), "1rem", "the sources' custom properties ride along");
+});
+
+test("fingerprintText: token utilities resolve through the theme (rounded-*/shadow-*/bg|text|border|ring-*)", () => {
+  const theme = themeFromCss(V4_THEME_CSS);
+  const fp = fingerprintText(TOKEN_TSX, { theme });
+  assert.deepEqual(
+    fp.radii,
+    [10, 14, 16],
+    "rounded-control, rounded-t-md (theme md), rounded-card",
+  );
+  assert.equal(fp.shadowLevels, 1, "shadow-lift");
+  for (const c of ["#0b6aac", "#0d1624", "#d7dee5", "#0f75bc", "#ffffff"])
+    assert.ok(
+      fp.palette.some((p) => JSON.stringify(p) === JSON.stringify(hex(c))),
+      `${c} in palette`,
+    );
+  assert.ok(
+    !fp.palette.some((p) => p.h === 217 && p.s === 91),
+    "a theme-redefined blue-500 replaces the default-family approximation",
+  );
+  assert.equal(fp.paletteSize, 6, "brand, fg, rule, accent, blue-500, #fff");
+  // The same markup without the theme only sees the default-key utilities.
+  const bare = fingerprintText(TOKEN_TSX);
+  assert.deepEqual(bare.radii, [6], "only rounded-t-md, at Tailwind's default 6px");
+  assert.equal(bare.shadowLevels, 0);
+});
+
+test("hasDesignSignal: token-only markup is empty without its theme, measurable with it", () => {
+  assert.equal(hasDesignSignal(fingerprintText("")), false, "an empty file");
+  assert.equal(hasDesignSignal(fingerprintText("export const C = () => <div/>;")), false);
+  assert.equal(hasDesignSignal(fingerprintText(TOKEN_ONLY_TSX)), false, "no theme → nothing");
+  const fp = fingerprintText(TOKEN_ONLY_TSX, { theme: themeFromCss(V4_THEME_CSS) });
+  assert.equal(hasDesignSignal(fp), true);
+  assert.deepEqual(fp.radii, [16]);
+  assert.equal(fp.shadowLevels, 1);
+  assert.equal(fp.paletteSize, 2, "bg-brand/40 (opacity modifier ignored) + text-fg");
+});
+
+test("fingerprintText: arbitrary values — rounded-[..], shadow-[..], p-[..], text-[#..], bg-[oklch(..)]", () => {
+  const fp = fingerprintText(
+    `<div className="rounded-[13px] rounded-tl-[0.5rem] shadow-[0_1px_2px_#000] shadow-[0_8px_30px_#0003] p-[13px] mt-[7px] px-[3px_5px] text-[#abcdef] bg-[oklch(0.6_0.1_250)] bg-[rgb(10_20_30)] text-[13px] bg-[url(/x.png)]" />`,
+  );
+  assert.deepEqual(fp.radii, [8, 13]);
+  assert.equal(fp.shadowLevels, 2);
+  assert.deepEqual(fp.spacing, [3, 5, 7, 13]);
+  assert.ok(fp.palette.some((p) => JSON.stringify(p) === JSON.stringify(hex("#abcdef"))));
+  assert.ok(fp.palette.some((p) => JSON.stringify(p) === JSON.stringify(hex("#0a141e"))));
+  // #abcdef, oklch, rgb(10 20 30), and #000 / #0003 inside the arbitrary shadows;
+  // text-[13px] (a size) and bg-[url()] are not colors.
+  assert.equal(fp.paletteSize, 4, JSON.stringify(fp.palette));
+});
+
+test("fingerprintText: oklch() in plain CSS counts as a color (Tailwind v4's default syntax)", () => {
+  const fp = fingerprintText(".a { color: oklch(62.8% 0.2577 29.23); }");
+  assert.equal(fp.paletteSize, 1);
+  assert.equal(fp.palette[0].h, 0, "sRGB red");
+});
+
+test("resolveCssVars: `vars` seeds outside declarations; the text's own still win", () => {
+  const vars = new Map([["--brand", "#123456"]]);
+  assert.match(resolveCssVars(".a { color: var(--brand); }", { vars }), /color: #123456/);
+  assert.match(
+    resolveCssVars(":root { --brand: #abcdef; } .a { color: var(--brand); }", { vars }),
+    /color: #abcdef/,
+  );
+});
+
+const V3_CONFIG = `/** @type {import('tailwindcss').Config} */
+const colors = require("tailwindcss/colors");
+module.exports = {
+  content: ["./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        ...colors,
+        brand: { DEFAULT: "#0f75bc", soft: 'hsl(var(--brand-soft))', 900: "#00355b" },
+        "on-brand": "#ffffff", // trailing comment
+        /* block comment */ dynamic: \`\${"x"}\`,
+        computed: someFn("#000", { nested: true }),
+        [key]: "#111111",
+      },
+      borderRadius: { DEFAULT: "6px", card: "1rem", huge: "calc(infinity * 1px)", half: "50%" },
+      boxShadow: { lift: "0 10px 28px -10px rgba(15, 60, 110, 0.18)" },
+    },
+  },
+  plugins: [require("@tailwindcss/forms")],
+};
+`;
+
+test("themeFromTailwindConfig: v3 objects read statically — nested families, DEFAULT, var() via stylesheet vars", () => {
+  const vars = new Map([["--brand-soft", "205 90% 95%"]]);
+  const theme = themeFromTailwindConfig(V3_CONFIG, { vars });
+  assert.deepEqual([...theme.colors.keys()].sort(), [
+    "brand",
+    "brand-900",
+    "brand-soft",
+    "on-brand",
+  ]);
+  assert.deepEqual(theme.colors.get("brand"), hex("#0f75bc"));
+  assert.ok(theme.colors.get("brand-soft"), "hsl(var(--brand-soft)) resolved through vars");
+  assert.equal(theme.radius.get(""), 6, "DEFAULT → the bare `rounded`");
+  assert.equal(theme.radius.get("card"), 16);
+  assert.equal(theme.radius.get("huge"), 9999);
+  assert.equal(theme.radius.has("half"), false, "a % radius is not an absolute length");
+  assert.equal(theme.shadow.get("lift"), "0 10px 28px -10px rgba(15, 60, 110, 0.18)");
+  // Spreads, template literals with ${}, calls and computed keys are skipped, not run.
+  assert.equal(theme.colors.has("dynamic"), false);
+  assert.equal(theme.colors.has("computed"), false);
+  const fp = fingerprintText(`<b className="rounded bg-brand-900 shadow-lift" />`, { theme });
+  assert.deepEqual(fp.radii, [6], "bare rounded uses the configured DEFAULT");
+});
+
+/** A little Next.js-shaped project with a v4 theme and decoys discovery must skip. */
+function themeRepo() {
+  const root = tmp();
+  mkdirSync(join(root, "src", "app"), { recursive: true });
+  mkdirSync(join(root, "src", "components"), { recursive: true });
+  mkdirSync(join(root, "node_modules", "pkg"), { recursive: true });
+  mkdirSync(join(root, ".claude", "worktrees", "old", "src"), { recursive: true });
+  writeFileSync(join(root, "src", "app", "globals.css"), V4_THEME_CSS);
+  writeFileSync(join(root, "src", "app", "plain.css"), ".x { color: red; }");
+  writeFileSync(join(root, "src", "components", "Card.tsx"), TOKEN_TSX);
+  writeFileSync(join(root, "src", "components", "Token.tsx"), TOKEN_ONLY_TSX);
+  writeFileSync(join(root, "node_modules", "pkg", "theme.css"), "@theme { --radius-x: 1px; }");
+  writeFileSync(
+    join(root, ".claude", "worktrees", "old", "src", "globals.css"),
+    "@theme { --radius-card: 99px; }",
+  );
+  return root;
+}
+
+test("findThemeSources: @theme/@tailwind stylesheets + tailwind.config; node_modules and dot-dirs skipped", () => {
+  const root = themeRepo();
+  assert.deepEqual(findThemeSources(root), ["src/app/globals.css"]);
+  writeFileSync(join(root, "tailwind.config.ts"), V3_CONFIG);
+  writeFileSync(join(root, "src", "app", "legacy.css"), "@tailwind base;\n@tailwind utilities;");
+  assert.deepEqual(findThemeSources(root), [
+    "src/app/globals.css",
+    "src/app/legacy.css",
+    "tailwind.config.ts",
+  ]);
+  assert.deepEqual(findThemeSources(root, { maxDepth: 0 }), ["tailwind.config.ts"]);
+});
+
+test("themeSourcesFor: explicit --theme replaces discovery; a theme-bearing input always counts", () => {
+  const root = themeRepo();
+  writeFileSync(join(root, "tokens.css"), "@theme { --radius-card: 2px; }");
+  assert.deepEqual(themeSourcesFor(root, ["src/components/Card.tsx"]), [
+    "src/app/globals.css",
+    "tokens.css",
+  ]);
+  assert.deepEqual(themeSourcesFor(root, ["src/components/Card.tsx"], ["./tokens.css"]), [
+    "tokens.css",
+  ]);
+  assert.deepEqual(
+    themeSourcesFor(root, ["./src/app/globals.css", "src/components/Card.tsx"], ["tokens.css"]),
+    ["src/app/globals.css", "tokens.css"],
+    "normalized + deduplicated",
+  );
+});
+
+test("loadThemeTokens: stylesheets read together, config merged under them, unreadable paths dropped", () => {
+  const root = themeRepo();
+  writeFileSync(join(root, "tailwind.config.js"), V3_CONFIG);
+  // brand is #0f75bc in the config but var(--hl-brand) = #0b6aac in the v4 @theme.
+  const theme = loadThemeTokens(root, ["tailwind.config.js", "src/app/globals.css", "ghost.css"]);
+  assert.deepEqual(theme.sources, ["src/app/globals.css", "tailwind.config.js"]);
+  assert.deepEqual(theme.colors.get("brand"), hex("#0b6aac"), "@theme wins on conflict");
+  assert.deepEqual(theme.colors.get("brand-900"), hex("#00355b"), "config-only keys survive");
+  assert.equal(theme.radius.get("card"), 16);
+  assert.equal(theme.shadow.has("lift"), true);
+});
+
+test("uiGate: an empty vector is insufficient-signal — not PASS — with a named fix", () => {
+  const gate = uiGate(fingerprintText("export const C = () => <div/>;"));
+  assert.equal(gate.pass, false);
+  assert.equal(gate.verdict, "insufficient-signal");
+  assert.equal(gate.violations[0].feature, "signal");
+  assert.match(gate.violations[0].hint, /--theme/);
+  // Even against a project fingerprint, nothing measured is not "conforming".
+  const vsProject = uiGate(fingerprintText(""), { projectFp: fingerprintText(CUSTOM_CSS) });
+  assert.equal(vsProject.verdict, "insufficient-signal");
+  assert.equal(uiGate(fingerprintText(CUSTOM_CSS)).verdict, "pass");
+  assert.equal(uiGate(fingerprintText(GENERIC_CSS)).verdict, "fail");
+});
+
+test("overallVerdict: failing checks turn a gate PASS into FAIL; insufficient-signal always survives", () => {
+  const ok = [{ pass: true }];
+  const bad = [{ pass: false }];
+  assert.equal(overallVerdict({ pass: true, verdict: "pass" }, ok), "pass");
+  assert.equal(overallVerdict({ pass: true, verdict: "pass" }, bad), "fail");
+  assert.equal(overallVerdict({ pass: false, verdict: "fail" }, ok), "fail");
+  assert.equal(
+    overallVerdict({ pass: false, verdict: "insufficient-signal" }, ok),
+    "insufficient-signal",
+  );
+});
+
+test("mintProjectFingerprint: the minted vector includes theme-resolved tokens", () => {
+  const root = themeRepo();
+  const theme = loadThemeTokens(root, ["src/app/globals.css"]);
+  const m = mintProjectFingerprint(root, ["src/components/Card.tsx"], { t: 1, theme });
+  assert.equal(m.ok, true);
+  assert.ok(m.ok);
+  assert.deepEqual(m.fingerprint.radii, [10, 14, 16]);
+  assert.deepEqual(loadProjectFingerprint(root).radii, [10, 14, 16]);
+});
+
+test("cli: `uicheck design` on an empty file is INSUFFICIENT SIGNAL with a non-zero exit", () => {
+  const cwd = tmp();
+  writeFileSync(join(cwd, "empty.tsx"), "");
+  const r = runCli(["uicheck", "design", "empty.tsx"], cwd);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /INSUFFICIENT SIGNAL/);
+  assert.doesNotMatch(r.stdout, /✓ PASS/);
+  const j = runCli(["uicheck", "design", "empty.tsx", "--json"], cwd);
+  assert.equal(j.status, 1);
+  const out = JSON.parse(j.stdout);
+  assert.equal(out.verdict, "insufficient-signal");
+  assert.equal(out.pass, false);
+});
+
+test("cli: `uicheck design|fingerprint` discover a Tailwind v4 @theme and resolve token utilities", () => {
+  const cwd = themeRepo();
+  const fp = runCli(["uicheck", "fingerprint", "src/components/Card.tsx", "--json"], cwd);
+  assert.equal(fp.status, 0, fp.stderr);
+  const vec = JSON.parse(fp.stdout);
+  assert.deepEqual(vec.radii, [10, 14, 16]);
+  assert.equal(vec.shadowLevels, 1);
+  const text = runCli(["uicheck", "fingerprint", "src/components/Card.tsx"], cwd);
+  assert.match(text.stdout, /theme: +src\/app\/globals\.css \(\d+ color · 4 radius · 1 shadow/);
+  // The token-only component: PASS-by-emptiness before; measured (and gated) now.
+  const d = runCli(["uicheck", "design", "src/components/Token.tsx", "--json"], cwd);
+  const out = JSON.parse(d.stdout);
+  assert.notEqual(out.verdict, "insufficient-signal");
+  assert.deepEqual(out.theme.sources, ["src/app/globals.css"]);
+  assert.equal(out.theme.radius, 4);
+});
+
+test("cli: `--theme <file>` names the theme explicitly; a valueless --theme is a usage error", () => {
+  const cwd = tmp();
+  mkdirSync(join(cwd, ".design"));
+  // Hidden from discovery (dot-dir) — only the explicit flag can find it.
+  writeFileSync(join(cwd, ".design", "theme.css"), V4_THEME_CSS);
+  writeFileSync(join(cwd, "Token.tsx"), TOKEN_ONLY_TSX);
+  const none = runCli(["uicheck", "design", "Token.tsx", "--json"], cwd);
+  assert.equal(JSON.parse(none.stdout).verdict, "insufficient-signal");
+  const named = runCli(
+    ["uicheck", "design", "Token.tsx", "--theme", ".design/theme.css", "--json"],
+    cwd,
+  );
+  const out = JSON.parse(named.stdout);
+  assert.notEqual(out.verdict, "insufficient-signal");
+  assert.deepEqual(out.theme.sources, [".design/theme.css"]);
+  const bad = runCli(["uicheck", "design", "Token.tsx", "--theme"], cwd);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /usage: .*--theme <css\|tailwind\.config>/);
+  const ghost = runCli(["uicheck", "design", "Token.tsx", "--theme", "nope.css"], cwd);
+  assert.equal(ghost.status, 1, "a named theme that isn't there is an error, not a no-op");
+  assert.match(ghost.stderr, /theme source not found: nope\.css/);
+});
+
+// ---------------------------------------------------------------------------
+// Review follow-ups: dark-mode scoping, shadow colors, transparency, pathological
+// nesting, and refusing to mint an empty vector.
+// ---------------------------------------------------------------------------
+
+// The shadcn / next-themes layout: light defaults on :root, dark overrides AFTER them.
+const LIGHT_DARK_CSS = `
+/* .dark { --hl-fg: #ff0000 } in a comment scopes nothing */
+:root { --hl-fg: #111111; --hl-canvas: #f1f5f9; --hl-edge: transparent; }
+.dark { --hl-fg: #eeeeee; }
+:root[data-theme='dark'] { --hl-canvas: #080f17; --hl-edge: #253140; --hl-glow: #336699; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --hl-fg: #dddddd; }
+}
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@theme inline {
+  --color-fg: var(--hl-fg);
+  --color-canvas: var(--hl-canvas);
+  --color-edge: var(--hl-edge);
+  --color-glow: var(--hl-glow);
+}
+`;
+
+test("themeFromCss: dark-scoped overrides (.dark, [data-theme=dark], prefers-color-scheme) never beat the default", () => {
+  const theme = themeFromCss(LIGHT_DARK_CSS);
+  assert.deepEqual(theme.colors.get("fg"), hex("#111111"), ".dark and @media dark lose");
+  assert.deepEqual(theme.colors.get("canvas"), hex("#f1f5f9"), "[data-theme='dark'] loses");
+  assert.equal(theme.vars.get("--hl-fg"), "#111111");
+  assert.equal(theme.colors.has("edge"), false, "the default is transparent — not a color");
+  assert.deepEqual(
+    theme.colors.get("glow"),
+    hex("#336699"),
+    "declared only for dark: still resolves",
+  );
+  // Order does not matter: a dark block BEFORE the default still loses.
+  const reversed = themeFromCss(
+    ".dark { --x: #eeeeee; } :root { --x: #111111; } @theme { --color-x: var(--x); }",
+  );
+  assert.deepEqual(reversed.colors.get("x"), hex("#111111"));
+  // Same rule for a component's own declarations (fingerprintText → resolveCssVars).
+  assert.match(
+    resolveCssVars(":root { --a: #111111; } .dark { --a: #eeeeee; } .c { color: var(--a); }"),
+    /color: #111111/,
+  );
+  // An unscoped later declaration still wins (last-wins is unchanged outside dark scope).
+  assert.match(
+    resolveCssVars(":root { --a: #111111; } .brand { --a: #222222; } .c { color: var(--a); }"),
+    /color: #222222/,
+  );
+  // A negation scopes to LIGHT mode: `:root:not(.dark)` is a default, not an override.
+  assert.match(
+    resolveCssVars(
+      ":root:not(.dark) { --a: #111111; } .dark { --a: #eeeeee; } .c { color: var(--a); }",
+    ),
+    /color: #111111/,
+  );
+});
+
+test("fingerprintText: shadow-[#hex] / shadow-[color:…] are shadow COLORS, not elevation levels", () => {
+  const fp = fingerprintText(
+    `<div className="shadow-[#123456] shadow-[color:#654321] shadow-[0_1px_2px_#000]" />`,
+  );
+  assert.equal(fp.shadowLevels, 1, "only the real shadow value is a level");
+  for (const c of ["#123456", "#654321"])
+    assert.ok(
+      fp.palette.some((p) => JSON.stringify(p) === JSON.stringify(hex(c))),
+      `${c} still counts as a color`,
+    );
+});
+
+test("fingerprintText: fully transparent colors are not palette entries (never counted as black)", () => {
+  const clear = fingerprintText(
+    `<div className="bg-[transparent] bg-[oklch(0.5_0.1_200/0)] text-[#12345600]" />
+     .a { color: rgba(0, 0, 0, 0); background: hsl(210 40% 50% / 0%); border-color: #0000; }`,
+  );
+  assert.equal(clear.paletteSize, 0, JSON.stringify(clear.palette));
+  // Translucent but visible colors still count.
+  const faint = fingerprintText(".a { color: rgba(0, 0, 0, 0.5); background: #12345680; }");
+  assert.equal(faint.paletteSize, 2);
+  // A transparent theme token is skipped the same way.
+  const theme = themeFromCss("@theme { --color-clear: transparent; --color-ink: #111111; }");
+  assert.deepEqual([...theme.colors.keys()], ["ink"]);
+  assert.equal(fingerprintText(`<p className="bg-clear" />`, { theme }).paletteSize, 0);
+});
+
+test("fingerprintText / themeFromTailwindConfig: pathological nesting is skipped, never a stack overflow", () => {
+  const deep = `<div className="rounded-[calc(${"(".repeat(5000)}1px${")".repeat(5000)})] rounded-[calc(${"-".repeat(5000)}1px)] rounded-[calc((1px_+_2px)_*_2)]" />`;
+  assert.deepEqual(fingerprintText(deep).radii, [6], "only the sane calc() is a radius");
+  const theme = themeFromCss(
+    `@theme { --radius-deep: calc(${"(".repeat(5000)}1px${")".repeat(5000)}); --radius-ok: 4px; }`,
+  );
+  assert.deepEqual([...theme.radius], [["ok", 4]]);
+  const config = themeFromTailwindConfig(
+    `module.exports = { theme: { colors: { ${"a: {".repeat(20000)} b: "#ffffff" ${"}".repeat(20000)}, ink: "#111111" } } };`,
+  );
+  assert.deepEqual([...config.colors.keys()], ["ink"]);
+});
+
+test("mintProjectFingerprint: an empty vector is refused and nothing is written", () => {
+  const root = tmp();
+  writeFileSync(join(root, "empty.tsx"), "export const C = () => <div/>;");
+  const m = mintProjectFingerprint(root, ["empty.tsx"], { t: 1 });
+  assert.equal(m.ok, false);
+  if (!m.ok) assert.match(m.reason, /^insufficient-signal/);
+  assert.equal(loadProjectFingerprint(root), null, "no empty 'home' for design to gate against");
+  const cli = runCli(["uicheck", "fingerprint", "empty.tsx", "--mint", "--json"], root);
+  assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+  const out = JSON.parse(cli.stdout);
+  assert.equal(out.minted.ok, false);
+  assert.match(out.minted.reason, /^insufficient-signal/);
+  assert.equal(loadProjectFingerprint(root), null);
 });

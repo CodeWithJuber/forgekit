@@ -24,6 +24,7 @@ import {
   fingerprintText,
   loadProjectFingerprint,
   loadTasteProfile,
+  overallVerdict,
   profileChecks,
   scaleChecks,
   UI_GATE_DEFAULTS,
@@ -310,8 +311,8 @@ export async function renderedFingerprint(target, opts = {}) {
  *   `taste` is the EXPLICIT profile name (unknown → error, like `design --taste`);
  *   when omitted, a `forge taste`-managed DESIGN.md style is picked up automatically.
  * @returns {Promise<{ok:false, skipped?:boolean, reason:string}|{ok:true, fail:boolean,
- *   pass:boolean, slop:number, conform:number|null, violations:object[], checks:object[],
- *   fingerprint:object, screenshots:string[], elements:number, url:string,
+ *   pass:boolean, verdict:"pass"|"fail"|"insufficient-signal", slop:number,
+ *   conform:number|null, violations:object[], checks:object[], fingerprint:object, screenshots:string[], elements:number, url:string,
  *   hasProjectFingerprint:boolean, taste:string|null, tauSlop:number, tauConform:number}>}
  */
 export async function visualGate(target, opts = {}) {
@@ -333,10 +334,13 @@ export async function visualGate(target, opts = {}) {
     ...scaleChecks(r.fingerprint),
     ...(profile ? profileChecks(r.fingerprint, profile) : []),
   ];
+  // An empty rendered vector is insufficient-signal, never a PASS (same as `design`).
+  const verdict = overallVerdict(gate, checks);
   return {
     ok: true,
-    fail: !gate.pass || checks.some((c) => !c.pass),
+    fail: verdict !== "pass",
     ...gate,
+    verdict,
     checks,
     fingerprint: r.fingerprint,
     screenshots: r.screenshots,
