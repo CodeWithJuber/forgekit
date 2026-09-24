@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`forge impact`, `forge atlas`, `forge scope` and `forge rank` now follow tsconfig/jsconfig path aliases.**
+  Before, every `@/…` import in a Next.js-style repo was filed as an external package, and
+  the stats reported `unresolved: 0`. On a real Next.js app, 1,004 local import pairs went
+  from 81 found (8%) to 1,004 (100%). The resolver now reads `compilerOptions.paths` and
+  `baseUrl` from the root `tsconfig.json` (else `jsconfig.json`). It parses JSONC without
+  mangling `"**/*.ts"` and follows relative `extends`. An aliased import that misses now
+  counts as unresolved, not external. The atlas format version is bumped, so existing
+  graphs rebuild.
+
 ## [1.3.1] - 2026-09-24
 
 ### Fixed
