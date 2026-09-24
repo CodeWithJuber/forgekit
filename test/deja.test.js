@@ -10,6 +10,7 @@ import {
   dejaFromLedger,
   dejaLine,
   dejaLookup,
+  isHarnessPrompt,
   recordSessionSummary,
 } from "../src/deja.js";
 import { mintClaim, val } from "../src/ledger.js";
@@ -108,6 +109,50 @@ test("dejaAdvisory: kill switch and empty task both yield silence", () => {
   if (prev === undefined) delete process.env.FORGE_DEJA;
   else process.env.FORGE_DEJA = prev;
   assert.equal(dejaAdvisory(root, "   ", 100), "");
+});
+
+test("buildSummary: host-injected notification prompts are not the session's task", () => {
+  const note =
+    "<task-notification> <task-type>queued-remote-notifications</task-type> <status>pending</status>";
+  assert.equal(isHarnessPrompt(note), true);
+  assert.equal(isHarnessPrompt("  <system-reminder>scheduled check-in</system-reminder>"), true);
+  assert.equal(isHarnessPrompt('<wake reason="external-event">'), true);
+  assert.equal(
+    isHarnessPrompt("fix the <Header> overflow"),
+    false,
+    "a tag mid-sentence is a person",
+  );
+  assert.equal(isHarnessPrompt("<Hero> spacing is off"), false, "a JSX name is not a host wrapper");
+  // Only notifications and no edits: nothing worth remembering.
+  assert.equal(buildSummary([{ type: "prompt", text: note }]), null);
+  // The first prompt a person typed wins over an earlier notification.
+  const s = buildSummary([
+    { type: "prompt", text: note },
+    { type: "prompt", text: "tighten the pricing grid gap" },
+    { type: "edit", file: "src/Pricing.tsx" },
+  ]);
+  assert.equal(s.text, "tighten the pricing grid gap");
+  // Notifications only, but files changed: fall back to the files, never the wrapper.
+  const f = buildSummary([
+    { type: "prompt", text: note },
+    { type: "edit", file: "src/a.js" },
+  ]);
+  assert.equal(f.text, "touched src/a.js");
+});
+
+test("dejaAdvisory: a host-injected notification never triggers a déjà-vu lookup", () => {
+  const root = fixture();
+  const note = "<task-notification> <task-type>queued-remote-notifications</task-type>";
+  recordSessionSummary(
+    root,
+    "sess-N",
+    [
+      { type: "prompt", text: `${note} x` },
+      { type: "edit", file: "a.js" },
+    ],
+    100,
+  );
+  assert.equal(dejaAdvisory(root, note, 101), "");
 });
 
 test("recordSessionSummary mints a retrievable summary; passing tests make it verified", () => {

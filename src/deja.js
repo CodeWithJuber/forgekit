@@ -56,10 +56,21 @@ const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
 /** Did this command actually RUN a test suite, with its exit code intact? */
 const isTestRun = (command) => TEST_RE.test(command) && !MASKED_RE.test(command);
 
+// Turns the host injects rather than a person typing: a background task finishing, a
+// scheduled check-in, a PR notification, another agent's hand-back. In a long cloud
+// session these can be the only "prompts" left, and a summary minted from one records
+// the wrapper as solved work ("<task-notification> <task-type>queued-remote-…"), which
+// then comes back as a déjà-vu hit on the next notification.
+const HARNESS_PROMPT_RE =
+  /^\s*<(task-notification|system-reminder|wake|agent-message|local-command-stdout|local-command-stderr|command-name|command-message)\b/;
+
+/** Was this prompt injected by the host (a notification wrapper), not typed by a person? */
+export const isHarnessPrompt = (text) => HARNESS_PROMPT_RE.test(String(text ?? ""));
+
 /**
  * Distill a session's normalized event log into a deterministic summary body, or null
  * when there is nothing worth remembering (no prompt and no edits). The gist is the
- * first user prompt, secret-redacted (redactSecrets — one truth, two verbs) and
+ * first prompt a person typed (host-injected notifications are skipped), secret-redacted (redactSecrets — one truth, two verbs) and
  * whitespace-collapsed; files are the sorted unique edit targets. `tested` reports
  * whether a test command exited 0 this session (drives the confirm outcome, NOT the body
  * — verification must be evidence, never a self-asserted flag).
@@ -71,7 +82,11 @@ export function buildSummary(events = []) {
     ...new Set(events.filter((e) => e.type === "edit" && e.file).map((e) => e.file)),
   ].sort();
   const first = events.find(
-    (e) => e.type === "prompt" && typeof e.text === "string" && e.text.trim(),
+    (e) =>
+      e.type === "prompt" &&
+      typeof e.text === "string" &&
+      e.text.trim() &&
+      !isHarnessPrompt(e.text),
   );
   const gist = first ? redactSecrets(first.text).replace(/\s+/g, " ").trim().slice(0, 280) : "";
   if (!gist && !files.length) return null;
@@ -184,7 +199,8 @@ export function dejaLine(top, nowDay = 0) {
 
 /**
  * Full best-effort advisory for a task: kill-switch check (FORGE_DEJA=0), load, rank,
- * format. Returns "" for a disabled switch, an empty query, no hits, or any failure —
+ * format. Returns "" for a disabled switch, an empty or host-injected query, no hits, or
+ * any failure —
  * safe to call from a hook or a preflight path.
  * @param {string} root
  * @param {string} task
@@ -193,7 +209,7 @@ export function dejaLine(top, nowDay = 0) {
  */
 export function dejaAdvisory(root, task, nowDay = epochDay()) {
   if (process.env.FORGE_DEJA === "0") return "";
-  if (!task || !String(task).trim()) return "";
+  if (!task || !String(task).trim() || isHarnessPrompt(task)) return "";
   try {
     const hits = dejaFromLedger(root, task, { nowDay, budget: 3 });
     const line = dejaLine(hits[0], nowDay);
