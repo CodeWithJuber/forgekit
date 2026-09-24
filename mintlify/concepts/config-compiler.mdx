@@ -107,5 +107,6 @@ Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.js
 
 <Warning>
   **Char caps are real.** Codex truncates at 32 KiB, Windsurf at 6k/12k. `forge sync`
-  enforces a source size budget so a config never silently truncates.
+  enforces a source size budget and checks the whole `AGENTS.md`, including any text you
+  wrote outside the Forge block, so a config never silently truncates.
 </Warning>

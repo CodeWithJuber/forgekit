@@ -7,11 +7,11 @@ your team learns from one machine to the next.
 
 ## 1. First run — install, scaffold, see the gate
 
-Install the CLI, scaffold configs for every tool from one source, and health-check the setup:
+Install the CLI, scaffold config for the tools this repo uses from one source, and health-check the setup:
 
 ```bash
 npm i -g @codewithjuber/forgekit
-forge init          # emit every tool's native config from one source
+forge init          # emit native config for Claude + the tools this repo uses (--tools all: every tool)
 forge doctor        # health-check tools, guards, MCP, and drift
 ```
 
@@ -52,7 +52,7 @@ else's model on the next pull.
 
 [`rules.override.json`](./rules.override.json) shows a project adding its own rules on top of
 forgekit's shared source. Copy it to `.forge/rules.json` in your repo, then run `forge sync` —
-the extra rules are appended to every tool's config (AGENTS.md, CLAUDE.md, Cursor, Gemini, …).
+the extra rules reach every emitted tool's config (AGENTS.md, CLAUDE.md, Cursor, Gemini, …).
 
 ## Cortex demo
 
