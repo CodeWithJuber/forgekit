@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-24
+
 ### Changed
 
 - **`forge uicheck` now exits 1 in three cases that used to exit 0.** A script or CI step
@@ -2917,7 +2919,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.1...v1.3.2
