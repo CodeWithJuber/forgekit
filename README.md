@@ -185,7 +185,10 @@ The day-to-day value first — the substrate gives a frozen model what it can't 
   defence in depth; they are not a sandbox, and a sufficiently creative shell command can
   still bypass a regex guard.
 - **Work that finishes end to end.** A completion gate blocks "done" once per session when
-  code moved but no doc or state artifact followed — with the repair checklist as the answer
+  code moved without test evidence or a doc/state artifact (a UI-only change — styling,
+  class strings, JSX text — owes a design record or a UI check instead of a unit test, and
+  in a shared checkout a file another agent's session trail claims is named, not weighed;
+  anything no trail accounts for still counts) — with the repair checklist as the answer
   (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
   session snapshot the next session resumes from, `forge decide` records choices so no
   session re-decides them).

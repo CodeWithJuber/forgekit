@@ -64,6 +64,36 @@ const TEST_RE =
   /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
 const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
 const isTestRun = (command) => TEST_RE.test(String(command ?? "")) && !MASKED_RE.test(command);
+// An end-to-end suite run (`npm run e2e`, `pnpm test:e2e`, `npx playwright test`, `cypress
+// run`), same position rule as TEST_RE, env assignments allowed in front. The completion
+// gate takes a passing one as test evidence, and all it sees is the WHOLE command's exit
+// status. So the run counts only when that status IS the suite's: the e2e invocation is the
+// last thing the command runs, followed by nothing but its own arguments and redirections.
+// `npm run e2e; echo "exit=$?"`, `npm run e2e || echo failed`, `npm run e2e > log; cat log`
+// and `npm run e2e &` all exit 0 on a failing suite; `npm run e2e | tail` hands the status
+// to `tail`; `x || npm run e2e` may never run it; `--list`/`--help` run no test at all.
+const E2E_RE =
+  /(^|[\n;&|]\s*)(\w+=\S*\s+)*((npx|bunx|pnpm\s+exec|pnpm\s+dlx|yarn)\s+)?((npm|pnpm|yarn|bun)\s+(run\s+)?(test:)?e2e\b|playwright\s+test\b|cypress\s+run\b)/g;
+const PIPED_RE = /(^|[^|])\|(?!\|)/;
+// `>f`, `2>&1`, `&>f`, `>>f`, `<f`: redirections leave the exit status alone.
+const REDIRECT_RE = /(?:\d*|&)>>?\s*(?:&\s*(?:\d+|-)|[^\s;&|<>()`]+)|\d*<\s*[^\s;&|<>()`]+/g;
+// Quoted arguments (`--grep "a|b"`) are data. A double-quoted string holding `$` or a
+// backtick could run a substitution, so it is left in and judged like the rest.
+const QUOTED_RE = /'[^']*'|"(?:[^"\\$`]|\\.)*"/g;
+const NO_RUN_FLAG_RE = /(^|\s)(--list|--help|-h|--version|-V|--pass-with-no-tests)(?=[\s=]|$)/;
+
+/** Is this shell command a real end-to-end test run whose exit status is the command's own?
+ *  (The completion gate accepts a passing one as test evidence.) @param {string} command */
+export const isE2eRun = (command) => {
+  const c = String(command ?? "")
+    .trim()
+    .replace(QUOTED_RE, '""');
+  if (MASKED_RE.test(c) || PIPED_RE.test(c) || c.includes("||")) return false;
+  const last = [...c.matchAll(E2E_RE)].pop();
+  if (!last) return false;
+  const tail = c.slice((last.index ?? 0) + last[0].length).replace(REDIRECT_RE, " ");
+  return !/[;&|\n()`]/.test(tail) && !NO_RUN_FLAG_RE.test(tail);
+};
 // Negation must be corrective, not incidental ("no problem"); require a corrective verb.
 const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
 

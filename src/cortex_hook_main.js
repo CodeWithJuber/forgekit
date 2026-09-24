@@ -3,7 +3,7 @@
 // FAIL-SAFE BY CONSTRUCTION: any error is swallowed and the process exits 0, so Cortex can
 // never block or break a tool call or a session. It is advisory memory, nothing more.
 //
-//   modes:  capture         (PostToolUse Edit|Write|Bash) — log a signal event
+//   modes:  capture         (PostToolUse Edit|Write|Bash) — log a signal event + the session trail
 //           prompt          (UserPromptSubmit)            — log a user-utterance event
 //           preflight       (UserPromptSubmit)            — inject the substrate pre-action advisory
 //           pre-edit        (PreToolUse Edit|Write)       — advise on lessons/risk before an edit
@@ -78,6 +78,15 @@ async function main() {
 
   if (mode === "capture" || mode === "prompt") {
     appendSessionEvent(root, sid, classifyEvent(hook));
+    // The session trail: what THIS session touched (edit targets, the paths a Bash command
+    // names, passing e2e runs). It outlives the Stop-time clear of the event log, so the
+    // completion gate can tell this session's changes from another agent's.
+    if (mode === "capture" && hook.session_id) {
+      try {
+        const { recordTrail } = await import("./session.js");
+        recordTrail(root, sid, hook);
+      } catch {}
+    }
   } else if (mode === "stop") {
     const events = readSession(root, sid);
     if (events.length) {
@@ -125,9 +134,10 @@ async function main() {
     // semantics for a week-old session anyway). Then record WHERE the repo stands so
     // the completion gate can diff this session's changes against it.
     try {
-      const { pruneSessions, recordBaseline } = await import("./session.js");
+      const { openTrail, pruneSessions, recordBaseline } = await import("./session.js");
       pruneSessions(root);
       recordBaseline(root, sid);
+      if (hook.session_id) openTrail(root, sid);
     } catch {}
     // Then everything a fresh session forgets: learned lessons, the persistent goal,
     // the handoff snapshot, and the repo's recent history.
@@ -157,7 +167,10 @@ async function main() {
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
     if (typeof hook.prompt === "string" && hook.prompt.trim()) {
-      const result = substrateCheck(root, hook.prompt, { allowBuild: false });
+      const result = substrateCheck(root, hook.prompt, {
+        allowBuild: false,
+        sessionId: hook.session_id || null,
+      });
       // Best-effort metrics recording — fills the cost dashboard pipeline without
       // blocking the hook. A failing write is silently swallowed.
       try {

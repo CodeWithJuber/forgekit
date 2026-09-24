@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { assessFootprint, leanRepo, parseDiffFootprint } from "../src/lean.js";
+import { assessFootprint, leanRepo, parseDiffFootprint, renderLean } from "../src/lean.js";
 
 const diff = (s) => s.trimStart();
 
@@ -100,4 +104,30 @@ test("leanRepo (C10): a brand-new UNTRACKED file counts — that is where over-b
     abstractions: [...x.newAbstractions].sort(),
   });
   assert.deepEqual(shape(staged.footprint), shape(r.footprint), "staging it changes nothing");
+});
+
+test("leanRepo files: measures only the given paths (the session-scoped footprint)", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-lean-"));
+  const git = (...a) => execFileSync("git", a, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  git("init", "-q");
+  git("config", "user.email", "forge@test.invalid");
+  git("config", "user.name", "forge-test");
+  writeFileSync(join(root, "a.js"), "export const a = 1;\n");
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "fixture");
+  // Another agent's big untracked module, and this session's one-line edit.
+  const big = Array.from({ length: 200 }, (_, i) => `export function f${i}() { return ${i}; }`);
+  writeFileSync(join(root, "theirs.js"), `${big.join("\n")}\n`);
+  writeFileSync(join(root, "a.js"), "export const a = 2;\n");
+  const whole = leanRepo(root, "bump a");
+  assert.equal(whole.scope, "worktree");
+  assert.ok(whole.footprint.linesAdded > 120, "the whole tree includes the other agent's module");
+  const mine = leanRepo(root, "bump a", { files: ["a.js"] });
+  assert.equal(mine.scope, "session");
+  assert.equal(mine.footprint.files, 1);
+  assert.equal(mine.footprint.linesAdded, 1);
+  assert.deepEqual(mine.warnings, []);
+  const none = leanRepo(root, "bump a", { files: [] });
+  assert.equal(none.hasDiff, false);
+  assert.match(renderLean(none), /this session has not changed anything yet/);
 });
