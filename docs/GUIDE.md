@@ -449,6 +449,11 @@ Goal-anchoring (the paper's M4): it re-reads your original objective against the
 you've _actually_ changed (`git diff HEAD` + untracked, minus forge's own generated
 config), and flags work that wandered off-goal. Quiet on a clean tree — it only speaks
 once there's a diff to compare, so it's a mid-session "am I still on track?" check.
+Inside an agent session (`FORGE_SESSION_ID`, or the `CLAUDE_CODE_SESSION_ID` Claude Code
+exports to its tools) `forge anchor`, `forge lean` and `forge substrate` measure only what
+THAT session changed since its SessionStart baseline: older dirt is left out, and so is a
+file another live session's trail claims (the completion gate's attribution rule). Before the session has changed anything, the minimality check reports
+"pre-existing diff (not measured)" instead of critiquing someone else's diff.
 
 ```console
 $ forge anchor "harden verifyToken in src/auth.js"
@@ -1416,34 +1421,73 @@ that intent; questions get no ceremony, and below-confidence prompts get nothing
 `FORGE_INTENT=0` disables.
 
 **The completion gate (Stop).** The deterministic floor under "done": when the session
-tries to finish, everything changed since the baseline (committed ∪ working tree) is
-classified against the same registries the atlas is built from — and if **code moved but
-no doc or state artifact moved with it**, the stop is blocked _once_, with the repair
-checklist as the reason (`forge docs sync` → update stale docs, `forge handoff`,
-`forge decide`; plus a CUSUM goal-drift alarm when the session's recorded drift series
-sustained). The decision table, first match wins:
+tries to finish, everything it changed since the baseline (committed ∪ working tree) is
+classified against the same registries the atlas is built from — and if **code moved
+without test evidence, or without a doc or state artifact**, the stop is blocked _once_,
+with the repair checklist as the reason (`forge verify` / a real test, `forge docs sync` →
+update stale docs, `forge handoff`, `forge decide`; plus a CUSUM goal-drift alarm when the
+session's recorded drift series sustained). Test evidence is a substantive test file that
+moved with the change, a fresh `forge verify` PASS, or a passing e2e run (`npm run e2e`,
+`playwright test`, `cypress run`, recorded by the capture hook), each bound to the code
+as it stands at Stop. An e2e run only counts when the command's exit status is the
+suite's: the run is the last thing the command does, followed by nothing but arguments and
+redirections (`npm run e2e > e2e.log 2>&1` counts; `npm run e2e; echo "exit=$?"`,
+`npm run e2e || echo failed`, `npm run e2e | tail`, `npm run e2e &`, `x || npm run e2e`
+and `--list`/`--help` runs do not, since each exits 0 whatever the suite did). The
+decision table, first match wins:
 
-| #   | Condition                                                                      | Decision                   |
-| --- | ------------------------------------------------------------------------------ | -------------------------- |
-| 1   | `stop_hook_active` (already continuing from a block)                           | allow                      |
-| 2   | no `session_id` in the hook payload (per-session promises impossible)          | allow                      |
-| 3   | not a git repo / git unusable                                                  | allow (fail-open)          |
-| 4   | this session already blocked once — or the marker can't be persisted           | allow                      |
-| 5   | `FORGE_STOPGATE=0`                                                             | allow (kill switch)        |
-| 6   | nothing changed (or only `.forge/` internals / generated files)                | allow                      |
-| 7   | docs changed — or `.forge/state.md`/`decisions.md` touched since session start | allow                      |
-| 8   | **code changed ∧ no doc/state artifact moved**                                 | **block once + checklist** |
-| 9   | only tests / configs / other files changed                                     | allow                      |
-| 10  | any internal error in the gate itself                                          | allow (fail-open)          |
+| #   | Condition                                                                                                                  | Decision                   |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 1   | `stop_hook_active` (already continuing from a block)                                                                       | allow                      |
+| 2   | no `session_id` in the hook payload (per-session promises impossible)                                                      | allow                      |
+| 3   | not a git repo / git unusable                                                                                              | allow (fail-open)          |
+| 4   | this session already blocked once — or the marker can't be persisted                                                       | allow                      |
+| 5   | `FORGE_STOPGATE=0`                                                                                                         | allow (kill switch)        |
+| 6   | nothing changed (or only `.forge/` internals / generated files)                                                            | allow                      |
+| 7   | **code changed ∧ no test evidence**                                                                                        | **block once + checklist** |
+| 8   | **code changed ∧ no doc/state artifact moved** (`.forge/state.md`/`decisions.md` count)                                    | **block once + checklist** |
+| 9   | **UI-only change ∧ no doc/state artifact ∧ no fresh `forge uicheck design\|visual` PASS ∧ no test evidence**                | **block once + checklist** |
+| 10  | **config changed ∧ no doc/state artifact moved**                                                                           | **block once + checklist** |
+| 11  | only docs / tests / other files changed                                                                                    | allow                      |
+| 12  | any internal error in the gate itself                                                                                      | allow (fail-open)          |
+
+**UI-only changes** are their own class: a stylesheet (`.css`/`.scss`/`.sass`/`.less`), or
+a JS/TS file whose every change only touches `className=`/`class=`/`style=` JSX attribute
+values, cva-style variant strings (`cva`, `tv`, `cn`, `clsx`, …), or JSX text (in
+`.jsx`/`.tsx`, also a `className:` key or a `style: {…}` object in a props table). The same
+names anywhere else are code: `static className = …`, `let style = …`, Intl's
+`{ style: "currency" }`, a `{ class: … }` key. Inside a blanked attribute expression a call,
+`new`/`delete`/`await`, an assignment or `++`/`--` still counts as code
+(`className={(reset(), "a")}`). A unit test cannot see a UI-only change, so it owes ONE of:
+a design/state record (a doc, or `forge handoff`), a UI check (`forge uicheck design
+<files>` or `forge uicheck visual <url>`: a PASS after the final edit writes
+`.forge/uicheck.json` at the git toplevel, signed and bound to the code state; a `design`
+PASS covers only the files it checked, while a `visual` PASS covers every UI file in the
+change, whatever URL it rendered, because the gate cannot map a page to its source files),
+or test evidence as above. A logic change in the same file (a new handler, prop, import,
+element or variant key) keeps it code.
 
 "Changed" is **session-scoped**, not repo-scoped: files from commits made _during_ the
 session (committer time ≥ session start) plus working-tree changes _minus_ whatever was
 already dirty when the session began (snapshotted at SessionStart). Pre-existing dirt,
 commits reached by a branch switch or `git pull`, and vendor trees (`node_modules/`…)
 are never attributed to the agent — near-zero false blocks is the gate's credibility.
+When several agents share one checkout, each session's capture hook keeps a trail
+(`.forge/sessions/<sid>.trail`) of its Edit/Write targets and the file paths its Bash
+commands name (after a `cd`, and globs as patterns). A changed file is set aside as
+another agent's work only on positive evidence: another session's trail, written to while
+this session ran, names it, and this session's trail does not. It is then named in the
+reason but not weighed. Everything no trail accounts for stays with the stopping session:
+an edit through a glob, a heredoc script, `node -e`, codegen or an MCP tool, and a
+concurrent edit by an agent or person without forge's hooks. A single-agent checkout gets
+exactly the tree-wide view. The gate also keeps the tree-wide view when this session's
+trail is not authoritative (hooks installed mid-session, a host with no capture hook, or no
+tool call captured yet). The remaining gap needs two sessions on the same file: if both
+touched it and this session's write was one its trail cannot see, the other session's
+claim sets it aside.
 Test-only sessions pass on purpose (a regression test owes no prose), and the state
 snapshot counts via its mtime against the baseline because `.forge/` is gitignored. The
-gate can never loop (rows 1+4) and never brick a session (rows 3+10) — it costs at most
+gate can never loop (rows 1+4) and never brick a session (rows 3+12) — it costs at most
 one extra turn, exactly when that turn was owed.
 
 ### Every other tool — a rule + MCP tools
@@ -1709,6 +1753,8 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                                                                                                                                                         |
 | `ENABLE_CORTEX_DISTILL`                                        | `1` distills new lessons into prose via a cheap model call                                                                                                                                                                              |
 | `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                                                                                                                                                         |
+| `FORGE_SESSION_ID`                                             | the agent session a CLI/MCP call belongs to; `forge anchor`/`forge lean`/`forge substrate` then measure only that session's changes (see `CLAUDE_CODE_SESSION_ID`)                                                                       |
+| `CLAUDE_CODE_SESSION_ID`                                       | Claude Code's session id, exported to its tools — the fallback when `FORGE_SESSION_ID` is unset                                                                                                                                          |
 | `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                                                                                              |
 | `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                                                                                                           |
 | `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                                                                                                          |
