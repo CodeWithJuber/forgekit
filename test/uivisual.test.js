@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { test } from "node:test";
@@ -185,6 +185,32 @@ test("visualGate: unresolvable target is a plain error, not a skip", async () =>
     assert.notEqual(r.skipped, true);
     assert.match(r.reason, /no such file/);
   });
+});
+
+// A stand-in playwright whose page paints `records` — the gate logic without a browser.
+const fakePw = (records) => ({
+  chromium: {
+    launch: async () => ({
+      newPage: async () => ({
+        goto: async () => {},
+        evaluate: async () => records,
+        screenshot: async () => {},
+        close: async () => {},
+      }),
+      close: async () => {},
+    }),
+  },
+});
+
+test("visualGate: a page that paints nothing measurable is insufficient-signal, never PASS", async () => {
+  const root = tmp();
+  const page = join(root, "blank.html");
+  writeFileSync(page, "<!doctype html><title>x</title>");
+  const r = await visualGate(page, { root, pw: fakePw([]) });
+  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+  assert.ok(r.ok); // narrow
+  assert.equal(r.verdict, "insufficient-signal");
+  assert.equal(r.fail, true, "the CLI exits non-zero on it");
 });
 
 // ---------------------------------------------------------------------------

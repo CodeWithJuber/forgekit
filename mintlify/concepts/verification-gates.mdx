@@ -127,11 +127,21 @@ requirement fires only when the session's diff actually changes code.
 Deterministic UI checks, no LLM and no screenshots for the first three lenses:
 
 ```bash
-forge uicheck contrast <fg> <bg>     # WCAG contrast ratio
-forge uicheck fingerprint <file...>  # deterministic design fingerprint
-forge uicheck design <file...>       # slop-distance + conformance gate
-forge uicheck visual <file-or-url>   # Playwright-rendered check (opt-in tier)
+forge uicheck contrast <fg> <bg> [--large] [--json]  # WCAG contrast ratio; exit 1 when AA fails
+forge uicheck fingerprint <file...> [--theme <file>] # deterministic design fingerprint
+forge uicheck design <file...> [--theme <file>]      # slop-distance + conformance gate
+forge uicheck visual <file-or-url>                   # Playwright-rendered check (opt-in tier)
 ```
+
+`contrast` accepts hex (with optional alpha), `rgb()`, `hsl()`, `oklch()` and `oklab()`,
+and composites a translucent foreground over the background before measuring. `--large`
+applies the 3:1 large-text / UI-component bar. `fingerprint` and `design` resolve
+token-based Tailwind utilities (`rounded-card`, `shadow-lift`, `bg-brand`) through the
+project's theme: Tailwind v4 `@theme` stylesheets and `tailwind.config.*` files, found
+automatically or named with `--theme`. Arbitrary values such as `rounded-[13px]` are
+parsed too. `design` exits 1 on `fail` and on `insufficient-signal`: when the files carry
+no measurable color, spacing, font, radius or shadow, the verdict is never PASS.
+`fingerprint --mint` exits 1 on such files instead of storing an empty project fingerprint.
 
 Pair it with `forge taste` to pick one visual direction (brutalist, corporate,
 editorial, minimalist, playful) and parameterize the `design` gate thresholds.

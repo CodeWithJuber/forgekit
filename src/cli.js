@@ -2633,6 +2633,12 @@ HANDLERS.scope = async (argv) => {
   if (d.independentGroups === 1) console.log("\n  all coupled — keep as one change.");
   return;
 };
+/** The last line of a `uicheck design|visual` run, per overall verdict. */
+const VERDICT_LABEL = {
+  pass: "✓ PASS",
+  fail: "✗ FAIL",
+  "insufficient-signal": "✗ INSUFFICIENT SIGNAL — nothing measurable, so this is not a PASS",
+};
 HANDLERS.uicheck = async (argv) => {
   const sub = argv[1];
   if (sub === "visual") {
@@ -2702,7 +2708,7 @@ HANDLERS.uicheck = async (argv) => {
         console.log(
           `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
         );
-      console.log(`\n  ${r.fail ? "✗ FAIL" : "✓ PASS"}`);
+      console.log(`\n  ${VERDICT_LABEL[r.verdict]}`);
     }
     if (r.fail) process.exitCode = 1;
     return;
@@ -2774,22 +2780,55 @@ HANDLERS.uicheck = async (argv) => {
     const args = argv.slice(2);
     const tasteIdx = args.indexOf("--taste");
     const tasteArg = tasteIdx >= 0 ? (args.splice(tasteIdx, 2)[1] ?? null) : null;
+    // `--theme <file>` (repeatable) names the Tailwind theme sources explicitly;
+    // without it they are discovered (@theme / @tailwind stylesheets, tailwind.config.*).
+    /** @type {string[]} */
+    const themeArgs = [];
+    let themeMissing = false;
+    for (let i = args.indexOf("--theme"); i >= 0; i = args.indexOf("--theme")) {
+      const [, value] = args.splice(i, 2);
+      if (!value || value.startsWith("--")) themeMissing = true;
+      else themeArgs.push(value);
+    }
     const json = args.includes("--json");
     const files = args.filter((a) => !a.startsWith("--"));
-    if (!files.length || (tasteIdx >= 0 && !tasteArg)) {
+    if (!files.length || (tasteIdx >= 0 && !tasteArg) || themeMissing) {
       console.error(
-        `usage: ${BRAND.cli} uicheck ${sub} <file...> [--json]${sub === "fingerprint" ? " [--mint]" : " [--taste <name>]"}`,
+        `usage: ${BRAND.cli} uicheck ${sub} <file...> [--theme <css|tailwind.config>]... [--json]${sub === "fingerprint" ? " [--mint]" : " [--taste <name>]"}`,
       );
       process.exitCode = 1;
       return;
     }
-    const fp = ui.fingerprintFiles(process.cwd(), files);
+    // An explicitly named theme that isn't there is an error, not a silent no-op.
+    const { existsSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const absent = themeArgs.filter((t) => !existsSync(resolve(process.cwd(), t)));
+    if (absent.length) {
+      console.error(`theme source not found: ${absent.join(", ")}`);
+      process.exitCode = 1;
+      return;
+    }
+    const theme = ui.loadThemeTokens(
+      process.cwd(),
+      ui.themeSourcesFor(process.cwd(), files, themeArgs),
+    );
+    const themeLine = theme.sources.length
+      ? `${theme.sources.join(", ")} (${theme.colors.size} color · ${theme.radius.size} radius · ${theme.shadow.size} shadow token(s))`
+      : "(none found — token utilities like rounded-card / bg-brand stay unresolved; name one with --theme <file>)";
+    const themeSummary = {
+      sources: theme.sources,
+      colors: theme.colors.size,
+      radius: theme.radius.size,
+      shadow: theme.shadow.size,
+    };
+    const fp = ui.fingerprintFiles(process.cwd(), files, { theme });
     if (sub === "fingerprint") {
       let minted = null;
       if (argv.includes("--mint")) {
         const { epochDay } = await import("./util.js");
         minted = ui.mintProjectFingerprint(process.cwd(), files, {
           t: epochDay(),
+          theme,
         });
       }
       if (json) {
@@ -2806,6 +2845,11 @@ HANDLERS.uicheck = async (argv) => {
         console.log(
           `  shape:    radii ${fp.radii.join(", ") || "(none)"} (${fp.radiusLevels} level(s)) · ${fp.shadowLevels} shadow level(s)`,
         );
+        console.log(`  theme:    ${themeLine}`);
+        if (!ui.hasDesignSignal(fp))
+          console.log(
+            "\n  ! no measurable design feature in these files — `design` reports insufficient-signal",
+          );
         if (minted) {
           if (minted.ok)
             console.log(
@@ -2837,20 +2881,25 @@ HANDLERS.uicheck = async (argv) => {
     const tauConform = profile?.gate?.tau_conform ?? ui.UI_GATE_DEFAULTS.tauConform;
     const gate = ui.uiGate(fp, { projectFp, tauSlop, tauConform });
     const checks = [...ui.scaleChecks(fp), ...(profile ? ui.profileChecks(fp, profile) : [])];
-    const fail = !gate.pass || checks.some((c) => !c.pass);
+    // insufficient-signal (an empty vector) exits non-zero like FAIL: nothing was
+    // measured, so nothing passed.
+    const verdict = ui.overallVerdict(gate, checks);
     // The completion gate's UI evidence: this verdict, bound to the current code state.
+    // Only a real PASS counts; an empty measurement is not evidence.
     const { recordUiCheck } = await import("./gate.js");
-    recordUiCheck(process.cwd(), { check: "design", pass: !fail, files });
+    recordUiCheck(process.cwd(), { check: "design", pass: verdict === "pass", files });
     if (json) {
       console.log(
         JSON.stringify(
           {
             ...gate,
+            verdict,
             checks,
             hasProjectFingerprint: !!projectFp,
             taste: profile ? tasteName : null,
             tauSlop,
             tauConform,
+            theme: themeSummary,
           },
           null,
           2,
@@ -2859,43 +2908,70 @@ HANDLERS.uicheck = async (argv) => {
     } else {
       heading(`${BRAND.brand} uicheck design — slop distance + project conformance\n`);
       if (profile) console.log(`  taste:         ${tasteName} (thresholds from its profile)`);
-      console.log(
-        `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
-      );
-      console.log(
-        projectFp
-          ? `  conformance:   ${gate.conform}  (need ≤ ${tauConform} — closer to the project system is better)`
-          : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
-      );
-      for (const v of gate.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
-      console.log("");
-      for (const c of checks)
+      console.log(`  theme:         ${themeLine}`);
+      if (verdict !== "insufficient-signal") {
         console.log(
-          `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
+          `  slop distance: ${gate.slop}  (need ≥ ${tauSlop} — farther from generic is better)`,
         );
-      console.log(`\n  ${fail ? "✗ FAIL" : "✓ PASS"}`);
+        console.log(
+          projectFp
+            ? `  conformance:   ${gate.conform}  (need ≤ ${tauConform} — closer to the project system is better)`
+            : `  conformance:   (no project fingerprint claim — slop-only; mint one: \`${BRAND.cli} uicheck fingerprint <ui files> --mint\`)`,
+        );
+      }
+      for (const v of gate.violations) console.log(`\n  ✗ ${v.detail}\n    fix: ${v.hint}`);
+      if (verdict !== "insufficient-signal") {
+        console.log("");
+        for (const c of checks)
+          console.log(
+            `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.detail}${c.pass || !c.hint ? "" : `\n    fix: ${c.hint}`}`,
+          );
+      }
+      console.log(`\n  ${VERDICT_LABEL[verdict]}`);
     }
-    if (fail) process.exitCode = 1;
+    if (verdict !== "pass") process.exitCode = 1;
     return;
   }
-  const { contrastRatio, wcagLevel, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import(
-    "./uicheck.js"
-  );
+  const { contrastReport, ASSERTABLE_CHECKS, ADVISORY_ONLY } = await import("./uicheck.js");
   // `uicheck contrast <fg> <bg>` is the named form; bare `uicheck <fg> <bg>` stays
-  // supported (it predates the subcommands and hooks already call it).
-  const [fg, bg] = sub === "contrast" ? [argv[2], argv[3]] : [argv[1], argv[2]];
-  heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
+  // supported (it predates the subcommands and hooks already call it). Both exit 1
+  // when the pair fails AA — a failing contrast must fail the script that asked.
+  const args = argv.slice(sub === "contrast" ? 2 : 1);
+  const json = args.includes("--json");
+  const large = args.includes("--large");
+  const colors = args.filter((a) => !a.startsWith("--"));
+  if (sub === "contrast" && colors.length !== 2) {
+    console.error(
+      `usage: ${BRAND.cli} uicheck contrast <fg> <bg> [--large] [--json]   (colors: #hex[alpha], rgb(), hsl(), oklch(), oklab())`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const [fg, bg] = colors;
+  /** @type {ReturnType<typeof contrastReport>|null} */
+  let r = null;
   if (fg && bg) {
     try {
-      const g = wcagLevel(contrastRatio(fg, bg));
-      console.log(
-        `  contrast ${fg} on ${bg}: ${g.ratio}:1  →  ${g.level}${g.passesAA ? " (passes AA)" : " (FAILS AA)"}`,
-      );
+      r = contrastReport(fg, bg, { large });
     } catch (e) {
-      console.error(`  ${e.message}`);
+      if (json) console.log(JSON.stringify({ error: e.message }, null, 2));
+      else console.error(`  ${e.message}`);
       process.exitCode = 1;
       return;
     }
+    if (!r.passesAA) process.exitCode = 1;
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+  }
+  heading(`${BRAND.brand} uicheck — deterministic UI review\n`);
+  if (r) {
+    const kind = large ? "large text / UI" : "normal text";
+    console.log(
+      `  contrast ${fg} on ${bg}: ${r.ratio}:1  →  ${r.level}${r.passesAA ? ` (passes AA for ${kind})` : ` (FAILS AA — ${kind} needs ${r.required.aa}:1)`}`,
+    );
+    for (const n of r.notes) console.log(`  note: ${n}`);
   }
   console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
   console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
