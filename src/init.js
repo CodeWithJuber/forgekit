@@ -14,9 +14,17 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { ensureForgePrivateIgnored } from "./gitignore.js";
+import { claimEmittedIntegrations } from "./integrations.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
-import { validateProfile, writeForgeConfig } from "./repo_config.js";
+import {
+  detectTools,
+  KNOWN_TOOLS,
+  parseTools,
+  readForgeConfig,
+  validateProfile,
+  writeForgeConfig,
+} from "./repo_config.js";
 import { sync } from "./sync.js";
 import { list as tasteList } from "./taste.js";
 import { toPosix } from "./util.js";
@@ -736,14 +744,17 @@ export function removeForgeSettings({ settingsPath } = {}) {
  *  any existing config rather than clobbering it (unknown keys round-trip); a corrupt
  *  config file makes the write refuse loudly instead of discarding the bytes (RA-15).
  *  Legacy profile names are accepted, stored as their mapped profile, and surfaced via
- *  `deprecated` so the CLI can warn (RA-14). Returns the resolved profile or null. */
-function writeProfile(targetRoot, profile) {
+ *  `deprecated` so the CLI can warn (RA-14). The tool selection rides the same write
+ *  (writeForgeConfig backs the file up on every write, so one write, not two). Returns the
+ *  resolved profile or null. */
+function writeProfile(targetRoot, profile, tools) {
   if (!profile) return null;
   const v = validateProfile(profile);
   // `=== false` (not `!v.ok`): tsc only narrows the discriminated union this way here.
   if (v.ok === false) return { error: v.error };
   const res = writeForgeConfig(targetRoot, (cfg) => {
     cfg.profile = v.profile;
+    cfg.tools = toolsValue(tools);
     return cfg;
   });
   if (res.ok === false) return { error: res.reason };
@@ -751,14 +762,59 @@ function writeProfile(targetRoot, profile) {
 }
 
 /**
- * Scaffold this repo's cross-tool config (emit every tool) in one step.
+ * Decide which agent tools `forge init` emits config for. Pure (reads, never writes):
+ *   1. an explicit `--tools` list (`all` = every tool); unknown names are an error;
+ *   2. else the selection an earlier init recorded in `.forge/forge.config.json` (`tools`);
+ *   3. else Claude plus every tool the repo already shows signs of (`.cursor/`, `.codex/`,
+ *      `.github/copilot-instructions.md`, …) — never a folder for a tool nobody uses.
+ * `tools: null` means every tool. AGENTS.md is always emitted: it is the shared source.
+ * @param {string} targetRoot
+ * @param {string|string[]} [explicit]
+ * @returns {{tools: string[]|null, source: "--tools"|"config"|"detected"} | {error: string}}
+ */
+export function resolveInitTools(targetRoot, explicit) {
+  if (explicit !== undefined) {
+    const { tools, unknown } = parseTools(explicit);
+    if (unknown.length)
+      return {
+        error: `unknown tool(s) for --tools: ${unknown.join(", ")} (known: ${KNOWN_TOOLS.join(", ")}, or all)`,
+      };
+    if (tools !== null && !tools.length)
+      return { error: "--tools needs at least one tool name (or all)" };
+    return { tools, source: "--tools" };
+  }
+  const recorded = readForgeConfig(targetRoot).tools;
+  if (typeof recorded === "string" || Array.isArray(recorded))
+    return { tools: parseTools(recorded).tools, source: "config" };
+  return { tools: [...new Set(["claude", ...detectTools(targetRoot)])], source: "detected" };
+}
+
+/** Record the resolved selection so later `forge sync` runs (and doctor's fix) emit the same
+ *  set. Written only when it changed, since writeForgeConfig backs the file up on every
+ *  write. Returns the refusal reason when the config cannot be written, else null. */
+function recordTools(targetRoot, tools) {
+  const value = toolsValue(tools);
+  if (JSON.stringify(readForgeConfig(targetRoot).tools) === JSON.stringify(value)) return null;
+  const res = writeForgeConfig(targetRoot, (cfg) => {
+    cfg.tools = value;
+    return cfg;
+  });
+  return res.ok === false ? res.reason : null;
+}
+
+/** How a selection is stored: the key list, or "all" (so tools added later are included). */
+const toolsValue = (tools) => (tools === null ? "all" : tools);
+
+/**
+ * Scaffold this repo's cross-tool config in one step, for the tools the repo uses (see
+ * resolveInitTools) rather than a config folder for every tool forge knows.
  *
  * `settingsOnly` runs the idempotent, marker-guarded `mergeSettings` ONLY — no repo
  * emit, no AGENTS.md, no gitattributes. That is the surface `install.sh` calls to wire
  * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
  * `onSettingsNotice(target)` is forwarded to `mergeSettings` so the GLOBAL-settings
  * disclosure is emitted BEFORE the merge mutates ~/.claude/settings.json (ME-22).
- * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void}} [opts]
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void, tools?: string|string[]}} [opts]
  */
 export function init({
   targetRoot = process.cwd(),
@@ -767,6 +823,7 @@ export function init({
   settingsOnly = false,
   settingsPath,
   onSettingsNotice,
+  tools,
 } = {}) {
   if (settingsOnly) {
     return {
@@ -783,13 +840,22 @@ export function init({
   const valid = validateProfile(profile);
   // `=== false` (not `!valid.ok`): tsc only narrows the discriminated union this way here.
   if (valid.ok === false) return { profile: { error: valid.error }, aborted: true };
-  const profileResult = writeProfile(targetRoot, profile);
+  // A bad --tools list aborts just as early: nothing emitted, nothing written.
+  const selection = resolveInitTools(targetRoot, tools);
+  if ("error" in selection) return { tools: { error: selection.error }, aborted: true };
+  const profileResult = writeProfile(targetRoot, profile, selection.tools);
   // HI-09: the profile name is valid, but persistence can still FAIL at write time when
   // `.forge/forge.config.json` is corrupt (writeForgeConfig refuses). Abort BEFORE any further
   // side effect — no sync/AGENTS.md, no .gitattributes append, no settings merge — exactly like
   // the invalid-name path, so a corrupt config never leaves a half-initialized repo.
   if (profileResult?.error) return { profile: profileResult, aborted: true };
-  const r = sync({ targetRoot });
+  // A config that cannot record the selection still gets it for THIS run; the result says
+  // that later syncs fall back to every tool rather than failing the whole init.
+  const unrecorded = profileResult ? null : recordTools(targetRoot, selection.tools);
+  const r = sync({ targetRoot, tools: selection.tools ?? "all" });
+  // A tool that just joined the set got the recorded integrations too: own those copies the
+  // way `integrations add` would have, so spec updates and `remove` reach them (ME-08).
+  claimEmittedIntegrations(targetRoot);
   ensureLedgerGitattributes(targetRoot);
   // Session hook logs hold raw prompts/commands — never let them be committed.
   ensureForgePrivateIgnored(targetRoot);
@@ -799,7 +865,14 @@ export function init({
     onNotice: onSettingsNotice,
   });
   const detected = autoDetectProvider();
-  return { ...r, settings, detected, profile: profileResult };
+  const toolsResult = {
+    tools: selection.tools,
+    source: selection.source,
+    ...(unrecorded
+      ? { warning: `tool selection not recorded (${unrecorded}); later syncs emit every tool` }
+      : {}),
+  };
+  return { ...r, settings, detected, profile: profileResult, tools: toolsResult };
 }
 
 function skillDescription(dir) {

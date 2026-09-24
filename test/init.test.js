@@ -32,17 +32,21 @@ import { toPosix } from "../src/util.js";
  *  as-is. Tests assert on this so they are form-agnostic. */
 const effectiveCmd = (h) => (Array.isArray(h.args) ? [h.command, ...h.args].join(" ") : h.command);
 
-test("init emits the shared config for a fresh repo in one call", () => {
+test("init emits the shared config for a fresh repo in one call — Claude + AGENTS.md only", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-init-"));
   // Hermeticity: pin settingsPath under the temp root so the hook-guard merge never
   // touches the developer's real ~/.claude/settings.json (mergeSettings defaults there).
-  init({
+  const r = init({
     targetRoot: root,
     settingsPath: join(root, ".claude", "settings.json"),
   });
   assert.ok(existsSync(join(root, "AGENTS.md")), "AGENTS.md");
   assert.ok(existsSync(join(root, "CLAUDE.md")), "CLAUDE.md");
-  assert.ok(existsSync(join(root, ".aider.conf.yml")), ".aider.conf.yml");
+  assert.ok(existsSync(join(root, ".mcp.json")), ".mcp.json (Claude Code MCP)");
+  // A fresh repo shows no other tool, so none of their config appears.
+  for (const other of [".aider.conf.yml", ".cursor", ".gemini", ".codex", ".continue", ".zed"])
+    assert.ok(!existsSync(join(root, other)), `${other} not emitted for an unused tool`);
+  assert.deepEqual(r.tools, { tools: ["claude"], source: "detected" });
 });
 
 test("init gitignores the per-session hook logs under .forge/sessions (B5)", () => {

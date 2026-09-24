@@ -106,8 +106,9 @@ async function main() {
     }
     // Auto-sync: anything this session taught the memory (lessons, facts) reaches
     // every AGENTS.md-reading tool NOW — drift used to be detected by doctor but
-    // repaired by nobody. Only touches an already-Forge-managed AGENTS.md;
-    // kill switch FORGE_AUTOSYNC=0. Fail-safe like everything else here.
+    // repaired by nobody. Rewrites ONLY forge's marked block in an AGENTS.md that already
+    // has one; text a person wrote outside it is never touched, and a hand-written file
+    // is never adopted. Kill switch FORGE_AUTOSYNC=0. Fail-safe like everything else here.
     try {
       const { autoSyncIfDrifted } = await import("./sync.js");
       autoSyncIfDrifted(root);
