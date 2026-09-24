@@ -17,6 +17,56 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`isHarnessPrompt`): the summary uses the first prompt a person typed, or the files
   touched, and a notification never triggers a lookup.
 
+## [1.4.1] - 2026-09-24
+
+### Fixed
+
+- **`protect-paths` matches secret paths per path token, so read-only commands stop being
+  blocked.** `\.env(\.[\w-]+)?\b` matched `.env` anywhere in a Bash command, so
+  `grep -rn process.env src`, `rg 'import\.meta\.env'`, `git log --grep='.env handling'`,
+  `cat messages.key.ts` and Reads of `.env.example`, a plain project `.npmrc` and a Next.js
+  `app/docs/secrets/page.tsx` route were all refused. The command is now split into shell
+  words (quotes honoured) and only each command's file operands are tested; a grep/rg/sed/awk/jq
+  pattern, a commit message or a `--grep=` value is never a path. `.env.example`/`.sample`/
+  `.template`/`.dist` are templates, `*.key.ts` is code, a `secrets/` directory's source files
+  are code, and a project `.npmrc` is protected only when it holds a literal `_authToken`/
+  `_auth`/`_password` (an `${NPM_TOKEN}` reference is not a secret); `~/.npmrc` always is, and
+  so is a relative `.npmrc` once the command has changed directory (`cd ~ && cat .npmrc`).
+  `.env`, `.env.local`, `.env-local`, `.env.production`, `id_rsa`, `*.key` and `*.pem` stay
+  blocked. For a `settings.json` install, `permissions.deny` still lists `Read(./.env.*)` and
+  `Read(./**/.npmrc)`, and deny wins, so the Read tool keeps refusing `.env.example` and a
+  token-less `.npmrc` there; the relaxation reaches Bash everywhere and the Read tool on a
+  plugin install.
+- **`protect-paths` closes the reads it missed.** `sed`, `awk`, `tac`, `sort`, `uniq`, `cut`,
+  `paste`, `bat`, `jq`, `diff`, `cmp`, `fold`, `rev`, `hexdump` and `dd if=` now count as
+  readers; `… < .env` (input redirection), `cat .e*v` (globs), `cat .{env,x}` and
+  `--include '*.{env,pem}'` (brace alternation), `$( … )`/backticks, `$(echo .env)`,
+  `$'\x2eenv'`, `bash -c '…'`/`eval …` strings, a command on a second line (also after
+  `$((1<<2))`, which is a shift and not a heredoc) and a heredoc fed to a shell, wrapped or not
+  (`sudo bash <<EOF`), are checked. A flag between a reader or writer and its file no longer
+  hides the file (`cat -n .env`, `sort -n .env`, `cp -n .env x`), a pattern glued to its option
+  is read as the pattern (`grep -eKEY .env`), index paths are checked (`git show :.env`), and a
+  recursive read of a `secrets/` directory is blocked (`rg KEY secrets/`, `git diff -- secrets/`,
+  the Grep tool unless its `glob`/`type` keeps it to source files). `rm -rf` of `.`, `..`, `./` or `*`,
+  `git checkout .` / `git restore .` (but not `git restore --staged .`), and
+  `curl … | sudo sh` / `| python3` are blocked. The protect-paths matcher now covers `Read`,
+  `Grep`, `Glob` and `NotebookRead` in all three hook manifests; the Grep tool's `glob` filter
+  is checked too.
+- **`protect-paths` fails closed and no longer needs bash.** With no bash on `PATH` the hook
+  launcher exited 1, which Claude Code treats as a non-blocking error, so the guard was silently
+  off (a signal-killed guard did the same). `run.mjs` now runs `protect-paths.mjs` on its own
+  node, and any failure to reach a verdict (no interpreter, a spawn error, a signal, an exit
+  other than 0/2) blocks with exit 2. `node run.mjs --fail-closed <guard>.sh` opts any other
+  guard in.
+- **`forge doctor` no longer asks a plugin user to register every guard twice.** It ignored
+  `enabledPlugins` and reported "forge hooks missing/stale (15/15 guard(s) absent) — run forge
+  doctor --fix", and that fix merged the same hooks into `settings.json` on top of the plugin's
+  `hooks/hooks.json`, so every guard ran twice. With `forgekit@…` enabled (user, project or
+  local settings), doctor reports "guards via the forgekit plugin", its fix merges permissions
+  only, and a settings copy of the guards is reported as a double registration. `forge init`
+  reads the same user, project and local scopes and skips hook injection when the plugin is
+  enabled in any of them (`mergeSettings` alone skips it for a settings file that enables it).
+
 ## [1.4.0] - 2026-09-24
 
 ### Fixed
@@ -2845,7 +2895,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.0...v1.3.1

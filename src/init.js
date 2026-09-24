@@ -423,6 +423,43 @@ function legacyOwnedScan(settings, template) {
   return owned;
 }
 
+/** The Forge plugin's `enabledPlugins` state in ONE settings object: true/false when an entry
+ *  (`"<pkg>@<marketplace>"`) names it, undefined when none does. */
+function pluginState(settings) {
+  const ep = settings?.enabledPlugins;
+  if (!ep || typeof ep !== "object" || Array.isArray(ep)) return undefined;
+  let state;
+  for (const [id, on] of Object.entries(ep))
+    if (id.split("@")[0] === BRAND.pkg) state = state === true || on === true;
+  return state;
+}
+
+/**
+ * Is Forge running as a Claude Code PLUGIN here? Its hooks/hooks.json then wires every guard, so
+ * the same hooks in settings.json would run each guard twice. Claude Code layers
+ * `enabledPlugins` user → project → local, the later scope winning; `source` is the file that
+ * decided (null when the plugin is not enabled).
+ * @param {{settingsPath?: string, targetRoot?: string}} [opts]
+ * @returns {{enabled: boolean, source: string | null}}
+ */
+export function forgePluginEnabled({ settingsPath, targetRoot = process.cwd() } = {}) {
+  let enabled = false;
+  /** @type {string | null} */
+  let source = null;
+  for (const path of [
+    settingsPath || join(homedir(), ".claude", "settings.json"),
+    join(targetRoot, ".claude", "settings.json"),
+    join(targetRoot, ".claude", "settings.local.json"),
+  ]) {
+    const { status, data } = readExistingSettings(path);
+    const state = status === "ok" ? pluginState(data) : undefined;
+    if (state === undefined) continue;
+    enabled = state;
+    source = state ? path : null;
+  }
+  return { enabled, source };
+}
+
 /**
  * Merge Forge settings (hooks, permissions, statusline) into the user's
  * ~/.claude/settings.json. Preserves all existing entries. Idempotent.
@@ -430,9 +467,14 @@ function legacyOwnedScan(settings, template) {
  * ME-22: `onNotice(target)`, when given, is invoked with the resolved settings path BEFORE
  * any read/mutation of that GLOBAL file — so the CLI's consent/disclosure line always
  * precedes the merge it describes, never trails it. Not called when the merge is skipped.
- * @param {{settingsPath?: string, noSettings?: boolean, onNotice?: (target: string) => void}} [opts]
+ *
+ * `hooks: false` merges everything BUT the hooks — for a Forge plugin install, whose
+ * hooks/hooks.json already wires every guard (settings hooks would run each one twice). Left
+ * undefined it is decided by the target file itself: one that enables the plugin gets no hooks.
+ * `hooksVia` in the result says which ("plugin" | "settings").
+ * @param {{settingsPath?: string, noSettings?: boolean, onNotice?: (target: string) => void, hooks?: boolean}} [opts]
  */
-export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
+export function mergeSettings({ settingsPath, noSettings, onNotice, hooks } = {}) {
   if (noSettings) return { action: "skipped", reason: "--no-settings" };
   const target = settingsPath || join(homedir(), ".claude", "settings.json");
   if (typeof onNotice === "function") onNotice(target);
@@ -472,9 +514,13 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
   const ownedHooks = [...(prior?.hooks || [])];
   let ownedStatusLine = Boolean(prior?.statusLine);
   let ownedSchema = Boolean(prior?.schema);
+  const withHooks = hooks ?? pluginState(existing) !== true;
+  const hooksVia = withHooks ? "settings" : "plugin";
 
-  // Hooks
-  if (template.hooks) {
+  // Hooks — unless the Forge plugin already wires them.
+  if (template.hooks && hooksVia === "plugin") {
+    report.unchanged.push("hooks");
+  } else if (template.hooks) {
     const beforeHooks = JSON.stringify(existing.hooks || {});
     const isOwned = (event, key) => ownedHooks.some((o) => o.event === event && o.key === key);
     const { merged, added, upgraded } = mergeHooks(existing.hooks, template.hooks, isOwned);
@@ -567,6 +613,7 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
       path: target,
       added: [],
       unchanged: report.unchanged,
+      hooksVia,
     };
   }
 
@@ -587,6 +634,7 @@ export function mergeSettings({ settingsPath, noSettings, onNotice } = {}) {
     action: report.added.length ? "merged" : "created",
     backup,
     ...report,
+    hooksVia,
   };
 }
 
@@ -825,12 +873,17 @@ export function init({
   onSettingsNotice,
   tools,
 } = {}) {
+  // The plugin may be enabled in the project or local settings, not the file merged into: its
+  // hooks/hooks.json then wires every guard, so settings.json must not carry them too. Same
+  // scopes `forge doctor` reads, so init never creates the double registration doctor flags.
+  const hooks = forgePluginEnabled({ settingsPath, targetRoot }).enabled ? false : undefined;
   if (settingsOnly) {
     return {
       settings: mergeSettings({
         noSettings,
         settingsPath,
         onNotice: onSettingsNotice,
+        hooks,
       }),
       settingsOnly: true,
     };
@@ -863,6 +916,7 @@ export function init({
     noSettings,
     settingsPath,
     onNotice: onSettingsNotice,
+    hooks,
   });
   const detected = autoDetectProvider();
   const toolsResult = {
