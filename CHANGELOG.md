@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-09-24
+
 ### Fixed
 
 - **deja no longer records host notifications as solved work.** In a long cloud session
@@ -2930,7 +2932,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.2...v1.4.0
