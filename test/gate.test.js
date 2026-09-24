@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { classifyPath, gateDecision, obligationsFor } from "../src/gate.js";
+import {
+  classifyPath,
+  gateDecision,
+  obligationsFor,
+  recordUiCheck,
+  repairReason,
+} from "../src/gate.js";
 
 test("obligationsFor derives change-type obligations (P1-05)", () => {
   const code = obligationsFor({ code: ["src/x.js"] });
@@ -185,4 +195,126 @@ test("gate table: config-only owes the lighter continuity bar", () => {
 test("gate table: docs-only and other-only changes still pass", () => {
   assert.equal(gateDecision({ changed: ["docs/GUIDE.md"] }).row, "docs-touched");
   assert.equal(gateDecision({ changed: ["assets/logo.png"] }).row, "no-code-class");
+});
+
+test("classifyPath: stylesheets are the ui class (the same visual change as a className edit)", () => {
+  for (const p of ["src/app/globals.css", "styles/site.scss", "a.sass", "theme.less"])
+    assert.equal(classifyPath(p), "ui", p);
+  assert.equal(classifyPath("src/components/Hero.tsx"), "code", "by path a .tsx is code");
+  assert.equal(classifyPath("tailwind.config.ts"), "config", "config still wins over code");
+});
+
+test("gate table: a UI-only change owes a record OR a UI check, never a unit test", () => {
+  const hero = "src/components/Hero.tsx";
+  const bare = gateDecision({ changed: [hero], uiOnly: [hero] });
+  assert.equal(bare.allow, false);
+  assert.equal(bare.row, "ui-without-evidence");
+  assert.deepEqual(bare.classes.ui, [hero], "a presentational code file moves to ui");
+  assert.deepEqual(bare.classes.code, []);
+  for (const [why, extra] of [
+    ["a design doc", { changed: [hero, "DESIGN.md"] }],
+    ["a handoff", { stateTouched: true }],
+    ["a fresh uicheck PASS", { uiCheckEvidence: true }],
+    ["a passing e2e run", { e2eEvidence: true }],
+    [
+      "a fresh verify PASS",
+      { verifyEvidence: { fresh: true, status: "PASS", codeStateMatches: true } },
+    ],
+  ]) {
+    const r = gateDecision({ changed: [hero], uiOnly: [hero], ...extra });
+    assert.equal(r.allow, true, why);
+    assert.equal(r.row, "ui-with-evidence", why);
+  }
+  assert.equal(
+    gateDecision({ changed: ["src/app/globals.css"] }).row,
+    "ui-without-evidence",
+    "a bare stylesheet change is no longer free",
+  );
+});
+
+test("gate table: a logic change in the same file stays code; uiOnly never hides it", () => {
+  const r = gateDecision({ changed: ["src/components/Hero.tsx", "DESIGN.md"], uiOnly: [] });
+  assert.equal(r.row, "code-without-test-evidence");
+  assert.equal(
+    gateDecision({
+      changed: ["src/components/Hero.tsx", "DESIGN.md"],
+      uiOnly: [],
+      uiCheckEvidence: true,
+    }).row,
+    "code-without-test-evidence",
+    "a UI check is not test evidence for logic",
+  );
+  assert.equal(
+    gateDecision({ changed: ["src/x.js", "README.md"], e2eEvidence: true }).row,
+    "code-with-evidence",
+    "a passing e2e run IS test evidence for code",
+  );
+});
+
+test("gate table: UI evidence does not cover config that moved alongside", () => {
+  const r = gateDecision({
+    changed: ["src/app/globals.css", "tailwind.config.ts"],
+    uiCheckEvidence: true,
+  });
+  assert.equal(r.row, "config-without-docs", "config still owes its docs/state bar");
+  assert.equal(
+    gateDecision({ changed: ["src/app/globals.css", "tailwind.config.ts"], stateTouched: true })
+      .row,
+    "ui-with-evidence",
+  );
+});
+
+test("obligationsFor: a UI-only change names the record-or-check obligation", () => {
+  const [ui] = obligationsFor({ ui: ["a.css"] });
+  assert.match(ui, /UI-only/);
+  assert.match(ui, /uicheck/);
+  assert.match(ui, /not owed/, "says a unit test is not owed");
+});
+
+test("repairReason: the UI row leads with the UI check and cites the UI files", () => {
+  const reason = repairReason("/nonexistent-forge-root", {
+    row: "ui-without-evidence",
+    classes: { ui: ["src/components/Hero.tsx"] },
+    unattributed: 2,
+  });
+  assert.match(reason, /UI-only change/);
+  assert.match(reason, /Changed UI: src\/components\/Hero\.tsx/);
+  assert.match(reason, /uicheck design/);
+  assert.match(reason, /this alone satisfies the gate for a UI-only change/);
+  assert.match(reason, /2 other changed file\(s\).*another agent/);
+  assert.doesNotMatch(reason, /NO test evidence/);
+});
+
+test("recordUiCheck: a signed, code-state-bound stamp inside a repo; nothing outside one", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-uicheck-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  writeFileSync(join(root, "a.css"), "a{}\n");
+  assert.equal(recordUiCheck(root, { check: "design", pass: true, files: ["./a.css"] }), true);
+  const stamp = JSON.parse(readFileSync(join(root, ".forge", "uicheck.json"), "utf8"));
+  assert.equal(stamp.check, "design");
+  assert.equal(stamp.status, "PASS");
+  assert.deepEqual(stamp.files, ["a.css"], "the checked files, repo-relative");
+  assert.equal(typeof stamp.codeState.dirtyHash, "string");
+  assert.match(stamp.signature, /^[0-9a-f]{64}$/, "MAC'd like the verify stamp");
+  recordUiCheck(root, { check: "design", pass: false });
+  assert.equal(
+    JSON.parse(readFileSync(join(root, ".forge", "uicheck.json"), "utf8")).status,
+    "FAIL",
+    "a FAIL replaces an earlier PASS",
+  );
+  const bare = mkdtempSync(join(tmpdir(), "forge-uicheck-"));
+  assert.equal(recordUiCheck(bare, { check: "design", pass: true }), false);
+  assert.equal(existsSync(join(bare, ".forge")), false, "no stray .forge outside a repo");
+});
+
+test("recordUiCheck: run from a subdirectory, the stamp lands at the toplevel, toplevel-relative", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-uicheck-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  mkdirSync(join(root, "web", "src"), { recursive: true });
+  writeFileSync(join(root, "web", "src", "a.css"), "a{}\n");
+  const sub = join(root, "web");
+  assert.equal(recordUiCheck(sub, { check: "design", pass: true, files: ["src/a.css"] }), true);
+  assert.equal(existsSync(join(sub, ".forge")), false, "not in the subdirectory");
+  const stamp = JSON.parse(readFileSync(join(root, ".forge", "uicheck.json"), "utf8"));
+  assert.deepEqual(stamp.files, ["web/src/a.css"], "the path `git status` reports");
 });

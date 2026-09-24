@@ -2308,7 +2308,11 @@ HANDLERS.anchor = async (argv) => {
     process.exitCode = 1;
     return;
   }
-  const r = goalDrift(process.cwd(), goal);
+  // Session-scoped like `forge lean`: drift is judged on this session's own changes.
+  const { currentSessionId, sessionChanges } = await import("./session.js");
+  const { workFiles } = await import("./anchor.js");
+  const s = sessionChanges(process.cwd(), currentSessionId());
+  const r = goalDrift(process.cwd(), goal, s ? { changed: workFiles(s.changed) } : {});
   console.log(json ? JSON.stringify(r, null, 2) : renderAnchor(r));
   return; // advisory — never fails the process
 };
@@ -2553,7 +2557,13 @@ HANDLERS.lean = async (argv) => {
     process.exitCode = 1;
     return;
   }
-  const r = leanRepo(process.cwd(), task);
+  // Inside an agent session, measure only what THAT session changed (not other agents'
+  // work or pre-session dirt); outside one, the whole working diff as before.
+  const { currentSessionId, sessionChanges } = await import("./session.js");
+  const s = sessionChanges(process.cwd(), currentSessionId());
+  const r = s
+    ? leanRepo(process.cwd(), task, { base: s.base ?? "HEAD", files: s.changed })
+    : leanRepo(process.cwd(), task);
   console.log(json ? JSON.stringify(r, null, 2) : renderLean(r));
   return; // advisory — never fails the process
 };
@@ -2638,6 +2648,10 @@ HANDLERS.uicheck = async (argv) => {
       process.exitCode = 1;
       return;
     }
+    // The completion gate's UI evidence (a skipped run never reaches here, so a missing
+    // browser can never count as a PASS).
+    const { recordUiCheck } = await import("./gate.js");
+    recordUiCheck(process.cwd(), { check: "visual", pass: !r.fail });
     if (json) {
       const { ok: _ok, fail: _fail, ...body } = r;
       console.log(JSON.stringify(body, null, 2));
@@ -2836,6 +2850,10 @@ HANDLERS.uicheck = async (argv) => {
     // insufficient-signal (an empty vector) exits non-zero like FAIL: nothing was
     // measured, so nothing passed.
     const verdict = ui.overallVerdict(gate, checks);
+    // The completion gate's UI evidence: this verdict, bound to the current code state.
+    // Only a real PASS counts; an empty measurement is not evidence.
+    const { recordUiCheck } = await import("./gate.js");
+    recordUiCheck(process.cwd(), { check: "design", pass: verdict === "pass", files });
     if (json) {
       console.log(
         JSON.stringify(

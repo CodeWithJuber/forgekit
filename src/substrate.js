@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildRunner, llmEnabled } from "./adjudicate.js";
-import { goalDrift } from "./anchor.js";
+import { gitFiles, goalDrift, workFiles } from "./anchor.js";
 import {
   isStale as atlasIsStale,
   build as buildAtlas,
@@ -29,6 +29,7 @@ import { rankReport } from "./rank.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
 import { meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
+import { currentSessionId, sessionChanges } from "./session.js";
 import { detectStack } from "./stack.js";
 import { epochDay } from "./util.js";
 
@@ -55,6 +56,18 @@ function verificationChecklist(root) {
   checks.push("review impacted files before editing");
   checks.push("run the narrowest affected test first, then the broader suite");
   return [...new Set(checks)];
+}
+
+// The files THIS session changed (session.js sessionChanges, noise-filtered like the drift
+// check's own view), or null when the session has no baseline — the caller then keeps the
+// whole-working-diff view. Fail-open: any trouble is "not scoped", never a throw.
+function sessionScope(root, sid) {
+  try {
+    const s = sessionChanges(root, sid);
+    return s ? { base: s.base, files: workFiles(s.changed), attributed: s.attributed } : null;
+  } catch {
+    return null;
+  }
 }
 
 // Every warning derives from signals the gate ALREADY computed — the preflight
@@ -219,6 +232,9 @@ export function predictImpact(
  * @param {readonly string[]} [opts.relations] impact relations to walk — default
  *   IMPACT_RELATIONS (reverse + the paper's sibling/forward repair, each file tagged);
  *   pass DEFAULT_IMPACT_RELATIONS (["reverse"]) for the reverse-only walk.
+ * @param {string|null} [opts.sessionId] the session this check runs in (default: the
+ *   FORGE_SESSION_ID / CLAUDE_CODE_SESSION_ID env). When that session has a baseline, goal
+ *   drift and the minimality footprint measure only what THIS session changed.
  */
 export function substrateCheck(
   root,
@@ -232,9 +248,14 @@ export function substrateCheck(
     timeoutMs,
     bidirectional,
     relations = IMPACT_RELATIONS,
+    sessionId = currentSessionId(),
   } = {},
 ) {
   const text = String(task || "");
+  // Pre-action checks read the WORKING DIFF. In a checkout several agents share, most of
+  // it is other agents' work (or dirt older than this session), and critiquing it as this
+  // task's footprint is noise. Scoped to the session when it has a baseline; else as before.
+  const session = sessionScope(root, sessionId);
   const spec = loadSubstrateSpec();
   // LLM adjudication is opt-in. On the ambient hook path (allowBuild:false) it stays OFF unless
   // FORGE_LLM_AMBIENT=1, so the per-prompt hook never pays model latency by default. An explicit
@@ -428,15 +449,28 @@ export function substrateCheck(
     // never asked for. `lean` is diff-based, so it's quiet until there's something to measure.
     minimality: (() => {
       const pre = minimalityWarnings(text, route, preflight);
-      const lean = allowBuild ? leanRepo(root, text) : { warnings: [], footprint: null };
+      const scope = session ? "session" : "worktree";
+      if (!allowBuild) return { warnings: pre, footprint: null, scope };
+      // This session changed nothing yet: whatever diff exists is not its footprint.
+      if (session && !session.files.length)
+        return {
+          warnings: pre,
+          footprint: null,
+          scope,
+          ...(gitFiles(root).length ? { note: "pre-existing diff (not measured)" } : {}),
+        };
+      const lean = session
+        ? leanRepo(root, text, { base: session.base ?? "HEAD", files: session.files })
+        : leanRepo(root, text);
       return {
         warnings: [...pre, ...lean.warnings],
         footprint: lean.footprint,
+        scope,
       };
     })(),
     // M4 goal-anchoring: re-read the stated goal against files already changed this session.
     // Quiet pre-action (clean tree → no drift); speaks mid-session when work wandered off-goal.
-    goalAnchor: goalDrift(root, text, llmOpts),
+    goalAnchor: goalDrift(root, text, session ? { ...llmOpts, changed: session.files } : llmOpts),
     verification: { checklist: verificationChecklist(root) },
     substrate: loadSubstrateSpec(),
     // Which faculties, if any, had a model proposal survive external verification this run, and
@@ -622,6 +656,7 @@ export function renderSubstrate(result) {
     lines.push("", "  minimality warnings:");
     for (const w of result.minimality.warnings) lines.push(`    - ${w}`);
   }
+  if (result.minimality.note) lines.push("", `  minimality: ${result.minimality.note}`);
   if (result.goalAnchor?.drift) {
     lines.push(
       "",

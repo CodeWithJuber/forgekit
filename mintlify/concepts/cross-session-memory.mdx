@@ -42,16 +42,31 @@ after session start, plus working-tree changes minus the dirt snapshotted at
 `SessionStart` — so pre-existing edits, branch switches, and `git pull`s are never pinned
 on the agent.
 
+When several agents share one checkout, each session's capture hook keeps a trail of the
+files it edited or named in a shell command (`.forge/sessions/<sid>.trail`). A changed
+file that another live session's trail claims, and this session's does not, is named in
+the reason but not weighed. Anything no trail accounts for (a glob or heredoc edit, an MCP
+tool, an agent without forge's hooks) still counts against the stopping session, so a
+single-agent checkout keeps the tree-wide view.
+
 <Note>
-  If code moved with no doc or state artifact following, the gate **blocks once** with a
-  repair checklist as the reason. Every other case allows, and every internal error
-  allows (fail-open). `FORGE_STOPGATE=0` disables it.
+  The gate **blocks once**, with a repair checklist as the reason, when code moved without
+  test evidence or without a doc or state artifact, when a UI-only change has neither a
+  record nor a UI check nor test evidence, or when config moved with no doc or state
+  artifact. Every other case allows, and every internal error allows (fail-open).
+  `FORGE_STOPGATE=0` disables it.
 </Note>
 
-For sessions that changed code, the gate also requires **test evidence** — either a test
-file in the session's diff or a fresh passing `forge verify` against the current
-changes. A `forge handoff` snapshot alone no longer clears the code-change branch of the
-gate.
+For sessions that changed code, the gate also requires **test evidence**: a test file in
+the session's diff, a fresh passing `forge verify` against the current changes, or a
+passing e2e run (`npm run e2e`, `playwright test`, `cypress run`) whose exit status is the
+command's own (`npm run e2e; echo $?` does not count). A `forge handoff` snapshot alone no
+longer clears the code-change branch of the gate.
+
+A **UI-only change** (a stylesheet, or a JS/TS diff that only touches `className`/`style`
+JSX attribute values, class-variant strings or JSX text) owes no unit test. One of a
+design or state record, a fresh `forge uicheck design|visual` PASS, or test evidence
+covers it.
 
 The repair checklist points at the tools that finish the work:
 
