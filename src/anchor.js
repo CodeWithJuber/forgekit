@@ -111,6 +111,13 @@ export function onGoalScore(goalTokens, fileTokens) {
 // advisory coarse check; widen to a managed-file manifest if that ever matters.
 const NOISE = /(^|\/)\.forge\/|(^|\/)\.[^/]+\/|^\.[^/]+$|(^|\/)(AGENTS|CLAUDE)\.md$/i;
 
+/** The developer's own work among `files`: forge's cache and tool-config noise dropped
+ *  (the same filter gitFiles applies, for callers that bring their own file list — the
+ *  session-scoped pre-action checks). @param {string[]} files @returns {string[]} */
+export function workFiles(files) {
+  return files.filter((f) => !NOISE.test(f));
+}
+
 /** The working diff (changed vs HEAD + untracked), forge-noise filtered — exported so
  *  collide.js reads "what am I touching" the exact same way the drift check does. */
 export function gitFiles(root) {
@@ -127,14 +134,14 @@ export function gitFiles(root) {
   };
   const out =
     run(["diff", "--name-only", "HEAD"]) + run(["ls-files", "--others", "--exclude-standard"]);
-  return [
+  return workFiles([
     ...new Set(
       out
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean),
     ),
-  ].filter((f) => !NOISE.test(f));
+  ]);
 }
 
 // Files the goal's named symbols actually live in, so a symbol-named goal anchors to its

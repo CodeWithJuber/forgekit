@@ -17,6 +17,34 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts as unresolved, not external. The atlas format version is bumped, so existing
   graphs rebuild.
 
+## [1.3.1] - 2026-09-24
+
+### Fixed
+
+- **The Stop gate no longer demands a unit test for a UI-only change.** A stylesheet, or a
+  JS/TS file whose diff only touches `className`/`class`/`style` JSX attribute values,
+  cva-style variant strings or JSX text, is now its own `ui` class. It owes a design/state
+  record, a fresh `forge uicheck design|visual` PASS (now stamped to `.forge/uicheck.json`
+  at the git toplevel), or test evidence. The same names outside JSX attribute position
+  (`static className = …`, Intl's `{ style: "currency" }`) and a call or assignment inside
+  a class expression stay code, as does any logic change in the same file. Stylesheet-only
+  sessions, which used to owe nothing, now owe the same as a className edit.
+- **A passing e2e run counts as test evidence**, recorded by the capture hook and bound to
+  the code state, but only when the command's exit status is the suite's: `npm run e2e;
+  echo "exit=$?"`, `|| echo failed`, `| tail`, a trailing `&`, `x || npm run e2e` and
+  `--list`/`--help` runs do not count.
+- **The Stop gate no longer blames a session for other agents' edits.** Each session's
+  capture hook keeps a trail (`.forge/sessions/<sid>.trail`) of the files it edited or
+  named in a shell command (`cd`-relative paths and globs included). A changed file that
+  another live session's trail claims, and this session's does not, is named in the reason
+  but not weighed. Every write no trail accounts for (a glob, a heredoc script, an MCP tool,
+  an agent without forge's hooks) still counts against the stopping session, so a
+  single-agent checkout keeps the tree-wide view.
+- **`forge substrate`, `forge lean` and `forge anchor` measure only this session's changes**
+  inside an agent session (`FORGE_SESSION_ID` or Claude Code's `CLAUDE_CODE_SESSION_ID`),
+  instead of critiquing older dirt and files other live sessions claim. Before the session
+  has changed anything, minimality reports "pre-existing diff (not measured)".
+
 ## [1.3.0] - 2026-09-23
 
 ### Added
@@ -2759,7 +2787,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.1.1...v1.1.2
