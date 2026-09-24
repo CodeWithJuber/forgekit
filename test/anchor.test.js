@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cusum, goalDrift, ON_GOAL_P, onGoalScore, renderAnchor } from "../src/anchor.js";
+import {
+  cusum,
+  goalDrift,
+  ON_GOAL_P,
+  onGoalScore,
+  renderAnchor,
+  workFiles,
+} from "../src/anchor.js";
 
 // changed[] is injected so these are pure (no git needed).
 test("goalDrift flags a changed file unrelated to the goal", () => {
@@ -199,4 +206,11 @@ test("cusum treats non-numeric signals as zero drift (never NaN-poisons the char
   const r = cusum([0.6, Number.NaN, 0.6]);
   assert.ok(r.C.every((c) => Number.isFinite(c)));
   assert.equal(r.alarm, false);
+});
+
+test("workFiles drops forge's cache and tool config, keeps the developer's work", () => {
+  assert.deepEqual(
+    workFiles([".forge/state.md", "AGENTS.md", ".cursor/rules.md", "src/app.ts", "docs/x.md"]),
+    ["src/app.ts", "docs/x.md"],
+  );
 });

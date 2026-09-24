@@ -80,7 +80,8 @@ state between calls; Forge is the state.
 - **Guardrails that can't be forgotten.** Deterministic hooks enforce protected paths,
   cost budgets, and doom-loop detection — they survive a context compaction.
 - **Work that finishes end to end.** A completion gate blocks "done" once per session
-  when code moved but no doc or state artifact followed, with the repair checklist as
+  when code moved without test evidence or a doc or state artifact (a UI-only change owes
+  a design record or a UI check instead of a unit test), with the repair checklist as
   the answer.
 - **One config for 10 tools.** Author your rules once; Forge emits each tool's native
   config, plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain
