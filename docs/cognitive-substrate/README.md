@@ -114,6 +114,13 @@ output (see [Use it in a script](#use-it-in-a-script)).
 | `forge anchor "<goal>"`       | Are my changes still on the stated goal? | flags changed files that drifted off-goal       |
 | `forge verify`                | Did it actually work?                    | runs the real tests/build, not the model's word |
 
+Inside an agent session (`FORGE_SESSION_ID`, or Claude Code's `CLAUDE_CODE_SESSION_ID`),
+`forge substrate`'s goal-drift and minimality checks, `forge anchor` and `forge lean` read
+only what that session changed since its SessionStart baseline. Older dirt is left out, and
+so is a file another live session's trail claims (the completion gate's attribution rule).
+Before the session has changed anything, minimality reports "pre-existing diff (not
+measured)" instead of critiquing someone else's diff.
+
 The wider v0.5 surface — `forge context` (budgeted assembly + completeness gate),
 `forge imagine [--run]` (predicted breaks + minimal dry-run suite), `forge diagnose`
 (doom-loop), `forge ledger` / `forge reuse` (proof-carrying memory + code cache), and
