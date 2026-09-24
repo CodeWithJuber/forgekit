@@ -10,10 +10,15 @@
 
 export const COMMANDS = {
   init: {
-    summary: "scaffold this repo's config — emits every tool from one shared source",
+    summary:
+      "scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source",
     usage:
-      "forge init [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
+      "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
+      {
+        flag: "--tools <list|all>",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
+      },
       {
         flag: "--profile <minimal|standard>",
         desc: "policy profile: minimal = the five core-safety rules only; standard = the full pack (default). Legacy names (web-app, backend-service, library, regulated) are deprecated aliases of standard.",
@@ -31,7 +36,12 @@ export const COMMANDS = {
         desc: "reverse the merge — remove forge-managed hooks/permissions/statusline from ~/.claude/settings.json (backed up first)",
       },
     ],
-    examples: ["forge init", "forge init --profile minimal", "forge init --remove-settings"],
+    examples: [
+      "forge init",
+      "forge init --tools claude,cursor",
+      "forge init --profile minimal",
+      "forge init --remove-settings",
+    ],
   },
   sync: {
     summary: "recompile the canonical source into each tool's native config files",

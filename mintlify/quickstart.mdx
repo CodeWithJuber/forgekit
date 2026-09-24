@@ -1,6 +1,6 @@
 ---
 title: "Quickstart"
-description: "Install Forge, emit every tool's config from one source, and run your first pre-action gate — in about 60 seconds."
+description: "Install Forge, emit your tools' config from one source, and run your first pre-action gate — in about 60 seconds."
 ---
 
 Get from zero to a configured repo and your first substrate check in about a minute.
@@ -31,16 +31,21 @@ including the symlink dev setup.
 ## 2. Configure a repo
 
 <Steps>
-  <Step title="Emit every tool's config">
+  <Step title="Emit your tools' config">
     ```bash
     cd ~/your-project
-    forge init
+    forge init                          # Claude + the tools this repo already uses
+    forge init --tools claude,cursor    # or name them (--tools all for every tool)
     ```
-    This emits `AGENTS.md`, `CLAUDE.md`, `.gemini/settings.json`, `.aider.conf.yml`, and
-    the rest — plus the `.gitattributes` union-merge rule the ledger needs. Claude Code,
-    Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw now
-    read the **same** rules, each from its own native file. On OpenClaw the MCP server is
-    one extra command: `openclaw mcp add forge-cortex --command forge --arg cortex-mcp`.
+    This emits `AGENTS.md`, Claude Code's `CLAUDE.md` and `.mcp.json`, and the config of
+    each tool the repo already shows (`.cursor/`, `.codex/`, `.gemini/`,
+    `.github/copilot-instructions.md`, …) — plus the `.gitattributes` union-merge rule the
+    ledger needs. The choice is recorded, so later syncs emit the same set. Codex, Cursor,
+    Copilot, Windsurf, Zed, and OpenClaw read the rules from `AGENTS.md` either way; Gemini,
+    Aider, and Continue need their own files, which init writes when it detects those tools
+    or you name them in `--tools`. An existing `AGENTS.md` is kept: Forge adds its rules in
+    a marked block. On OpenClaw the MCP server is one extra command:
+    `openclaw mcp add forge-cortex --command forge --arg cortex-mcp`.
   </Step>
   <Step title="Health-check the setup">
     ```bash

@@ -18,7 +18,13 @@ import openclaw from "./emit/openclaw.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
-import { LEGACY_PROFILES, readForgeConfig } from "./repo_config.js";
+import {
+  KNOWN_TOOLS,
+  LEGACY_PROFILES,
+  parseTools,
+  readForgeConfig,
+  rowToolKey,
+} from "./repo_config.js";
 
 const MODULES = [
   codex,
@@ -156,27 +162,174 @@ function buildCanonical(targetRoot) {
   return assemble(rules) + (brain ? `\n${brain}` : "") + (lessons ? `\n${lessons}` : "");
 }
 
-export function sync({ targetRoot = process.cwd() } = {}) {
+/** Filesystem-safe timestamp for backup names (same convention as init / repo_config). */
+const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
+
+/**
+ * Where AGENTS.md stands against the block sync would write. The ONE reader shared by sync,
+ * the Stop-hook auto-sync and doctor, so they can never disagree about which text is forge's:
+ *   missing        no AGENTS.md
+ *   hand-written   a person's file with no forge block (sync appends one, never rewrites it)
+ *   in-sync        the block matches the canonical source byte for byte
+ *   drifted        the block differs (stale source, or an edit inside the markers)
+ *   legacy         the pre-block, fully generated format, hash-verified: it converts to a block
+ *                  keeping any text a person added above or below forge's region
+ *   legacy-edited  pre-block format whose generated region was itself edited; converting it
+ *                  needs a backup, so only an explicit `forge sync` does it
+ *   damaged        one marker without the other; forge will not guess where its text ends
+ * @param {string} [targetRoot]
+ * @param {string} [body] the canonical body (built from the repo when omitted)
+ * @returns {{state:"missing"|"hand-written"|"in-sync"|"drifted"|"legacy"|"legacy-edited"|"damaged",
+ *   path:string, text:string|null, block:string,
+ *   found?:{start:number, end:number}, legacy?:{lossless:boolean, before:string, after:string}}}
+ */
+export function agentsMdStatus(targetRoot = process.cwd(), body = buildCanonical(targetRoot)) {
+  const path = join(targetRoot, "AGENTS.md");
+  const text = shared.readIfExists(path);
+  const block = shared.managedBlock(shared.mdHeader(shared.hashContent(body)), body);
+  if (text === null) return { state: "missing", path, text, block };
+  const found = shared.findManagedBlock(text);
+  if (found?.damaged === true) return { state: "damaged", path, text, block };
+  if (found?.damaged === false) {
+    const current = text.slice(found.start, found.end);
+    return { state: current === block ? "in-sync" : "drifted", path, text, block, found };
+  }
+  const legacy = shared.splitLegacyManaged(text);
+  if (legacy)
+    return { state: legacy.lossless ? "legacy" : "legacy-edited", path, text, block, legacy };
+  return { state: "hand-written", path, text, block };
+}
+
+/**
+ * Bring AGENTS.md to the canonical block, touching nothing outside the markers. A person's
+ * file gets the block APPENDED; a legacy fully generated file is converted, keeping every
+ * byte a person added around forge's region. Only `legacy-edited` needs a full rewrite, and
+ * only when `allowBackup` is set: the whole old file is first copied to a timestamped
+ * `AGENTS.md.forge-bak-<time>` (never one fixed name that a later run would overwrite).
+ * @param {ReturnType<typeof agentsMdStatus>} status
+ * @param {{allowBackup:boolean}} opts
+ * @returns {{action:string, note:string, backup?:string, warning?:string}}
+ */
+function writeAgentsBlock(status, { allowBackup }) {
+  const { state, path, block } = status;
+  const text = status.text ?? "";
+  const put = (next, note, extra = {}) => {
+    writeFileSync(path, next);
+    return { action: "written", note, ...extra };
+  };
+  if (state === "in-sync") return { action: "unchanged", note: "Forge block current" };
+  if (state === "missing") return put(block, "new file (Forge block)");
+  if (state === "drifted" && status.found) {
+    const { start, end } = status.found;
+    return put(
+      text.slice(0, start) + block + text.slice(end),
+      "Forge block refreshed; text outside it untouched",
+    );
+  }
+  if (state === "hand-written") {
+    const sep = !text.trim()
+      ? ""
+      : text.endsWith("\n\n")
+        ? ""
+        : text.endsWith("\n")
+          ? "\n"
+          : "\n\n";
+    return put(
+      `${text.trim() ? text : ""}${sep}${block}`,
+      "Forge block appended; your text untouched",
+    );
+  }
+  if (state === "legacy" && status.legacy) {
+    const { before, after } = status.legacy;
+    return put(
+      `${before}${block}${after ? `\n${after}` : ""}`,
+      "converted to a Forge block (lossless)",
+    );
+  }
+  if (state === "legacy-edited" && status.legacy) {
+    if (!allowBackup)
+      return { action: "skipped", note: "generated text was hand-edited — run `forge sync`" };
+    const backup = `${path}.forge-bak-${stamp()}`;
+    writeFileSync(backup, text);
+    const name = `AGENTS.md${backup.slice(path.length)}`;
+    return put(`${status.legacy.before}${block}`, "converted to a Forge block", {
+      backup,
+      warning: [
+        `AGENTS.md was fully generated but edited inside the generated text — converted to a Forge block; the previous file is saved as ${name}.`,
+        "Copy your edits back OUTSIDE the <!-- forge:begin --> / <!-- forge:end --> markers, where sync never touches them.",
+      ].join(" "),
+    });
+  }
+  return {
+    action: "skipped",
+    note: "damaged Forge markers",
+    warning:
+      "AGENTS.md has a forge:begin marker without forge:end (or the reverse) — nothing written; fix or remove the marker lines by hand",
+  };
+}
+
+/**
+ * The hand-written AGENTS.md an older forge replaced is parked in `AGENTS.md.forge-bak`, a file
+ * no agent reads. Whichever path converts AGENTS.md to a block (often the Stop hook, whose
+ * result nobody sees), those rules stay invisible until a person moves them back, so sync and
+ * doctor keep saying so for as long as the backup holds text that AGENTS.md does not.
+ * Pure read. Returns the warning, or null when there is nothing stranded.
+ * @param {string} [targetRoot]
+ * @returns {string|null}
+ */
+export function strandedAgentsBackup(targetRoot = process.cwd()) {
+  const saved = shared.readIfExists(join(targetRoot, "AGENTS.md.forge-bak"))?.trim();
+  if (!saved) return null;
+  const agents = shared.readIfExists(join(targetRoot, "AGENTS.md")) ?? "";
+  if (agents.includes(saved)) return null;
+  return "AGENTS.md.forge-bak holds the hand-written AGENTS.md an older forge replaced, and no agent reads it — move its text back into AGENTS.md outside the Forge block (sync never touches it there), then delete the backup";
+}
+
+/**
+ * Which tools sync emits for: an explicit list (init passes one) wins, then the repo config's
+ * `tools` key (recorded by `forge init`), else every tool — a repo that never chose keeps the
+ * emit-everything behaviour it always had. `tools: null` means every tool.
+ * @param {unknown} explicit
+ * @param {Record<string, any>} cfg
+ * @returns {{tools: string[]|null, unknown: string[]}}
+ */
+function resolveTools(explicit, cfg) {
+  if (explicit !== undefined && explicit !== null) return parseTools(explicit);
+  if (typeof cfg.tools === "string" || Array.isArray(cfg.tools)) return parseTools(cfg.tools);
+  return { tools: null, unknown: [] };
+}
+
+/**
+ * Compile the canonical source into AGENTS.md (forge's marked block only) and each selected
+ * tool's native config.
+ * @param {{targetRoot?: string, tools?: string|string[]|null}} [opts] `tools`: KNOWN_TOOLS keys
+ *   or "all"; omitted = the repo config's `tools`, else every tool.
+ */
+export function sync({ targetRoot = process.cwd(), tools } = {}) {
   // Inline portable memory + learned lessons so every AGENTS.md-reading tool shares them.
   const canonical = buildCanonical(targetRoot);
   const hash = shared.hashContent(canonical);
   const bytes = Buffer.byteLength(canonical);
+  const cfg = loadConfig(targetRoot);
+  const selection = resolveTools(tools, cfg);
+  const emits = (key) => selection.tools === null || selection.tools.includes(key);
 
   // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed, OpenClaw.
-  // If the repo already has a hand-written (unmanaged) AGENTS.md, never destroy it
-  // silently — back it up first so no rules are lost when adopting Forge.
+  // Forge owns only its marked block in it: a hand-written file keeps every line (the old
+  // behaviour replaced the whole file and parked the original in AGENTS.md.forge-bak).
   const agentsPath = join(targetRoot, "AGENTS.md");
-  const existingAgents = shared.readIfExists(agentsPath);
-  const backedUp = existingAgents !== null && !shared.isManaged(existingAgents);
-  if (backedUp) writeFileSync(`${agentsPath}.forge-bak`, existingAgents);
-  const agentsAction = shared.writeManaged(agentsPath, shared.mdHeader(hash), canonical);
+  const agents = writeAgentsBlock(agentsMdStatus(targetRoot, canonical), { allowBackup: true });
+  // Tools read the whole file, not just forge's block, and a person's text now shares it.
+  // Size checks (Codex's 32 KiB truncation, Windsurf's ~12k-char cap) measure what is on disk.
+  const agentsText = shared.readIfExists(agentsPath) ?? canonical;
+  const agentsBytes = Buffer.byteLength(agentsText);
 
   const ctx = {
     targetRoot,
     canonical,
     hash,
-    bytes,
-    chars: canonical.length,
+    bytes: agentsBytes,
+    chars: agentsText.length,
     agentsPath,
     shared,
     join,
@@ -185,11 +338,12 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     {
       tool: "shared source",
       target: "AGENTS.md",
-      action: agentsAction,
-      note: `${bytes} B`,
+      action: agents.action,
+      note: `${bytes} B · ${agents.note}`,
     },
   ];
   for (const mod of MODULES) {
+    if (!emits(rowToolKey(mod.tool))) continue;
     try {
       report.push(mod.emit(ctx));
     } catch (err) {
@@ -203,7 +357,7 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   }
 
   // MCP servers — emit the FULL managed set (registry ∪ recorded integrations) into each
-  // tool's MCP config (real formats). Sharing managedMcpState with `integrations add`
+  // selected tool's MCP config (real formats). Sharing managedMcpState with `integrations add`
   // means sync can never drop a server that add installed, and vice versa (RA-03). A
   // corrupt repo config falls back to registry-only with a warning — never treated as
   // "no integrations installed, overwrite everything".
@@ -213,7 +367,8 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     try {
       const { servers, owns, warning } = managedMcpState(targetRoot);
       if (warning) warnings.push(warning);
-      for (const row of emitMcp({ targetRoot, servers, owns })) report.push(row);
+      for (const row of emitMcp({ targetRoot, servers, owns, tools: selection.tools }))
+        report.push(row);
     } catch (err) {
       report.push({
         tool: "MCP",
@@ -225,7 +380,6 @@ export function sync({ targetRoot = process.cwd() } = {}) {
   }
   // Corrupt repo config: rules were built from defaults (fail-open), but say so in the
   // report instead of only on stderr — a typo'd config must not vanish silently (RA-15).
-  const cfg = loadConfig(targetRoot);
   if (cfg.corrupt)
     warnings.push(
       `${cfg.path} is not valid JSON — config ignored, default rules used (fix or delete it)`,
@@ -237,13 +391,20 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     warnings.push(
       `${legacyRules.path} is not valid JSON — ignored, default rules used (fix or delete it)`,
     );
-  if (backedUp)
+  if (agents.warning) warnings.push(agents.warning);
+  const stranded = strandedAgentsBackup(targetRoot);
+  if (stranded) warnings.push(stranded);
+  if (selection.unknown.length)
     warnings.push(
-      "existing AGENTS.md was not Forge-managed — backed up to AGENTS.md.forge-bak; move any custom rules into source/rules.json or a per-repo .forge/rules.json",
+      `unknown tool(s) in the tool selection ignored: ${selection.unknown.join(", ")} (known: ${KNOWN_TOOLS.join(", ")})`,
     );
   if (bytes > SIZE_BUDGET_BYTES)
     warnings.push(
       `canonical is ${bytes} B (> ${SIZE_BUDGET_BYTES} B budget) — trim source/rules.json`,
+    );
+  else if (agentsBytes > SIZE_BUDGET_BYTES)
+    warnings.push(
+      `AGENTS.md is ${agentsBytes} B (> ${SIZE_BUDGET_BYTES} B budget; Forge's rules are ${bytes} B of it) — Codex stops reading at 32 KiB and Windsurf at ~12k chars, so the end of the file is lost first: shorten the hand-written text, or move the Forge block nearer the top (sync keeps it where it sits)`,
     );
   // Aggregate status (ME-19): sync writes AGENTS.md, then per-tool files, then MCP files
   // and is NOT transactional — a mid-way failure is recorded as an `action:"error"` row but
@@ -256,7 +417,11 @@ export function sync({ targetRoot = process.cwd() } = {}) {
     bytes,
     report,
     warnings,
-    backedUp,
+    // A backup is written only when a legacy file edited inside its generated text had to be
+    // rewritten in full; a hand-written AGENTS.md is never moved aside any more.
+    backedUp: Boolean(agents.backup),
+    backup: agents.backup ?? null,
+    tools: selection.tools,
     partial,
     status: partial ? "PARTIAL" : "OK",
   };
@@ -268,26 +433,42 @@ export function canonical(targetRoot = process.cwd()) {
 }
 
 /**
- * Re-run sync ONLY when the managed AGENTS.md no longer matches the canonical source.
+ * Refresh ONLY forge's block in AGENTS.md when it no longer matches the canonical source.
  * The Stop hook calls this, so lessons/facts learned in a session reach every
- * AGENTS.md-reading tool immediately — not whenever someone remembers `forge sync`
- * (nothing did before: doctor DETECTED drift but nothing repaired it).
- * Never adopts a repo: AGENTS.md must already exist AND be Forge-managed.
+ * AGENTS.md-reading tool immediately — not whenever someone remembers `forge sync`.
+ * It never adopts a repo (no block → no write), never touches text outside the markers,
+ * and never runs the full per-tool emit. The one other file it refreshes is Continue's
+ * rules copy of the same body, and only when that forge-owned file already exists.
+ * A legacy fully generated AGENTS.md is converted in place only when the conversion is
+ * provably lossless; one edited inside its generated text is left for `forge sync`.
  * Kill switch: FORGE_AUTOSYNC=0.
  * @returns {{synced: boolean, reason: string}}
  */
 export function autoSyncIfDrifted(targetRoot = process.cwd()) {
   if (process.env.FORGE_AUTOSYNC === "0") return { synced: false, reason: "disabled" };
-  const existing = shared.readIfExists(join(targetRoot, "AGENTS.md"));
-  if (existing === null || !shared.isManaged(existing))
-    return { synced: false, reason: "no managed AGENTS.md here" };
-  // Full-byte comparison against the exact content sync would write (RA-16): the embedded
-  // marker hash alone proves nothing — a hand-edited body with an intact marker must
-  // still count as drift. managedContent is the same helper writeManaged writes through,
-  // so the two paths cannot diverge again.
   const body = buildCanonical(targetRoot);
-  const expected = shared.managedContent(shared.mdHeader(shared.hashContent(body)), body);
-  if (existing === expected) return { synced: false, reason: "in sync" };
-  sync({ targetRoot });
-  return { synced: true, reason: "drifted — resynced" };
+  const status = agentsMdStatus(targetRoot, body);
+  switch (status.state) {
+    case "in-sync":
+      return { synced: false, reason: "in sync" };
+    case "missing":
+    case "hand-written":
+      return { synced: false, reason: "no managed AGENTS.md here" };
+    case "legacy-edited":
+      return {
+        synced: false,
+        reason:
+          "legacy AGENTS.md edited inside its generated text — run `forge sync` to convert it",
+      };
+    case "damaged":
+      return { synced: false, reason: "damaged Forge markers in AGENTS.md — fix them by hand" };
+  }
+  writeAgentsBlock(status, { allowBackup: false });
+  const continueRules = join(targetRoot, ".continue", "rules", "00-forge.md");
+  if (shared.isManaged(shared.readIfExists(continueRules)))
+    shared.writeManaged(continueRules, shared.mdHeader(shared.hashContent(body)), body);
+  return {
+    synced: true,
+    reason: status.state === "legacy" ? "converted to a Forge block" : "drifted — block refreshed",
+  };
 }
