@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **deja no longer records host notifications as solved work.** In a long cloud session
+  the only prompts left can be ones the host injects (`<task-notification>`,
+  `<system-reminder>`, `<wake …>`, another agent's hand-back). `buildSummary` took the
+  first of them as the session's task, so the repo ledger gained a `summary` claim reading
+  "<task-notification> <task-type>queued-remote-…" after every check-in, which the next
+  notification then surfaced as a déjà-vu hit. Such prompts are now skipped on both sides
+  (`isHarnessPrompt`): the summary uses the first prompt a person typed, or the files
+  touched, and a notification never triggers a lookup.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added
