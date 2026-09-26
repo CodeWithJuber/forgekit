@@ -32,7 +32,7 @@ one-release escape hatch.)
   <img src="/images/diagrams/ledger-flow.svg" alt="Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge" />
 </Frame>
 
-[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.
+[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.
 
 ## Why it converges without conflicts
 
@@ -79,7 +79,7 @@ A claim's life, from mint to tombstone:
   <img src="/images/diagrams/claim-lifecycle.svg" alt="Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim" />
 </Frame>
 
-[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.
+[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.
 
 ## The ledger surface
 
@@ -116,7 +116,7 @@ conflicts, never merged.
   <img src="/images/diagrams/reuse-cache.svg" alt="Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/" />
 </Frame>
 
-[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.
+[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.
 
 <Warning>
   The MinHash near-match is weak on very short specs. An optional embeddings backend

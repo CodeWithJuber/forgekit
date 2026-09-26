@@ -132,9 +132,9 @@ Forgekit supplies an external reliability layer:
 Forgekit runs a deterministic substrate before work, lets the external coding agent act,
 and records evidence from tests, CI, or explicit human correction afterwards.
 
-[![How forgekit fits around a coding agent: a task goes through the pre-action substrate; missing information sends it back to clarify first, enough information lets the agent act, and the outcome is recorded in memory that feeds the next check](docs/diagrams/core-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/core-loop.html)
+[![How forgekit fits around a coding agent: a task goes through the pre-action substrate; missing information sends it back to clarify first, enough information lets the agent act, and the outcome is recorded in memory that feeds the next check](docs/diagrams/core-loop.svg)](https://jubershaikh.com/forgekit/diagrams/core-loop.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/core-loop.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/core-loop.html): pan, zoom, search, and trace any node.</sub>
 
 Only independent oracles (tests, CI, a human accept/revert) move a memory's confidence —
 so a wrong lesson decays out instead of ossifying. Full design:

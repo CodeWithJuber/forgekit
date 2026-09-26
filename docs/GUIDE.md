@@ -70,9 +70,9 @@ substrate** (`forge substrate` — the pre-action check). The full argument is t
 The daily loop — every outcome an oracle observes lands in the team ledger, and the
 ledger informs the next task:
 
-[![The team loop: substrate pre-checks, then the edit; oracles (forge verify, forge imagine --run, CI, a human accept or revert) record outcomes that move each claim's value in the team ledger in .forge/ledger/; teammates' ledgers merge through git and forge ledger merge; lessons, facts and reuse hits feed the next pre-check](diagrams/team-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/team-loop.html)
+[![The team loop: substrate pre-checks, then the edit; oracles (forge verify, forge imagine --run, CI, a human accept or revert) record outcomes that move each claim's value in the team ledger in .forge/ledger/; teammates' ledgers merge through git and forge ledger merge; lessons, facts and reuse hits feed the next pre-check](diagrams/team-loop.svg)](https://jubershaikh.com/forgekit/diagrams/team-loop.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/team-loop.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/team-loop.html): pan, zoom, search, and trace any node.</sub>
 
 ```bash
 cd your-project
@@ -670,9 +670,9 @@ The independent check: runs the real test suite and flags edited symbols that ar
 the codebase (possible hallucinations). This is what turns "the model says it's done"
 into "the tests say it's done."
 
-[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](diagrams/verify-pipeline.svg)](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html)
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 
 ```console
 $ forge verify

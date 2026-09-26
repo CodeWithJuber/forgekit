@@ -77,9 +77,9 @@ are partial** — their acceptance criteria are not met (reasons in the table). 
 
 Each phase is labeled done or partial; a dashed arrow touches a partial phase.
 
-[![Substrate v2 phases: P0 specs leads to P1 ledger core, which feeds P2 team sync, P3 reuse cache, P4 context assembly and P6 UI quality gate; P4 leads to P5 loop closure; P2, P5 and P6 feed P7 dashboard; P3 and P5 feed P8 evaluation; P4 and P8 are partial, the rest are done](../../diagrams/phase-map.svg)](https://codewithjuber.github.io/forgekit/diagrams/phase-map.html)
+[![Substrate v2 phases: P0 specs leads to P1 ledger core, which feeds P2 team sync, P3 reuse cache, P4 context assembly and P6 UI quality gate; P4 leads to P5 loop closure; P2, P5 and P6 feed P7 dashboard; P3 and P5 feed P8 evaluation; P4 and P8 are partial, the rest are done](../../diagrams/phase-map.svg)](https://jubershaikh.com/forgekit/diagrams/phase-map.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/phase-map.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/phase-map.html): pan, zoom, search, and trace any node.</sub>
 
 | Phase                      | Delivers                                                                                                                                                                              | Depends on                 | Acceptance                                                                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |

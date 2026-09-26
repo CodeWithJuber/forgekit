@@ -43,9 +43,9 @@ You author the substrate once. `forge sync` compiles that source into each tool'
 native config. The four layers are how the brain is expressed; the compiler is how it
 is delivered.
 
-[![forgekit's architecture: forge sync compiles source/ into native configs for ten tools and configures the four layers (tools, crew, guards, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://codewithjuber.github.io/forgekit/diagrams/system.html)
+[![forgekit's architecture: forge sync compiles source/ into native configs for ten tools and configures the four layers (tools, crew, guards, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
 
 The four layers, brand-named and emitted cross-tool:
 
@@ -73,9 +73,9 @@ checks and returns a single verdict. It composes the individually-callable stage
 (`preflight`, `route`, `atlas`, `impact`, `reuse`, `context`, `scope`, `lean`,
 `anchor`, `verify`) into one pre-action contract.
 
-[![The pre-action gate: referenced entities pass through intake (preflight, route), analysis (atlas, impact, predict, reuse) and safety and fit (context, scope, memory, minimality, goal-anchor) to one verdict](docs/diagrams/pre-action-gate.svg)](https://codewithjuber.github.io/forgekit/diagrams/pre-action-gate.html)
+[![The pre-action gate: referenced entities pass through intake (preflight, route), analysis (atlas, impact, predict, reuse) and safety and fit (context, scope, memory, minimality, goal-anchor) to one verdict](docs/diagrams/pre-action-gate.svg)](https://jubershaikh.com/forgekit/diagrams/pre-action-gate.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/pre-action-gate.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/pre-action-gate.html): pan, zoom, search, and trace any node.</sub>
 
 **blast radius** — the set of files an edit is predicted to impact, read from the code
 graph. `forge impact` computes it; the pipeline surfaces it before the model touches
@@ -112,9 +112,9 @@ claims into `.forge/ledger/`. Because a claim's bytes are a pure function of
 `(kind, body, scope)`, every replica computes the same identity — so teammate ledgers
 fold together over plain git with no conflicts.
 
-[![Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge](docs/diagrams/ledger-flow.svg)](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html)
+[![Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge](docs/diagrams/ledger-flow.svg)](https://jubershaikh.com/forgekit/diagrams/ledger-flow.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.</sub>
 
 Mechanically: evidence and tombstones are append-only, hash-deduped logs; confidence
 (`val`) is a decayed Beta posterior moved only by oracles; merge is a join-semilattice
@@ -129,9 +129,9 @@ Decision recorded in
 
 A claim's life, from mint to tombstone:
 
-[![Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim](docs/diagrams/claim-lifecycle.svg)](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html)
+[![Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim](docs/diagrams/claim-lifecycle.svg)](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.</sub>
 
 ## 4. The reuse / context loop
 
@@ -140,9 +140,9 @@ when its evidence still holds — the confidence is above the floor _and_ its at
 dependencies still resolve. Otherwise it falls through to generation and mints a fresh
 claim on the way back.
 
-[![Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/](docs/diagrams/reuse-cache.svg)](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html)
+[![Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/](docs/diagrams/reuse-cache.svg)](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.</sub>
 
 The completeness gate on the retrieval side is `forge context "<task>"`: it pins the
 required-knowledge set for the edit (`R(edit)`), downgrades items along a compression ladder
@@ -167,9 +167,9 @@ synthesis §5.3, corrected 2026-09-21).
 
 Where those deterministic checks run in one Claude Code session:
 
-[![One Claude Code session with forgekit's hooks: SessionStart injects learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop and cortex pre-edit and allows or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger](docs/diagrams/hook-sequence.svg)](https://codewithjuber.github.io/forgekit/diagrams/hook-sequence.html)
+[![One Claude Code session with forgekit's hooks: SessionStart injects learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop and cortex pre-edit and allows or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger](docs/diagrams/hook-sequence.svg)](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.</sub>
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
 `completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
@@ -342,9 +342,9 @@ hook never ran, or a session whose one Stop block was already spent.
 
 Plain `forge verify`, end to end:
 
-[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](docs/diagrams/verify-pipeline.svg)](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html)
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](docs/diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 
 **Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
 asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
