@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | Memory | `forge recall`, `forge cortex`, `forge ledger` | Facts/lessons persist as content-addressed ledger claims; `forge ledger blame` shows provenance. |
 | Learning | `forge cortex`, ledger oracles | External outcomes (tests, CI, human accept/revert) move claim confidence; model weights do not change. |
-| Imagination | `forge imagine [--run]`, `forge impact` | Predicted breaks + minimal covering test suite; `--run` dry-runs it in a sandboxed worktree. |
+| Imagination | `forge imagine [--run]`, `forge impact` | Predicted breaks + minimal covering test suite; `--run` dry-runs it in an isolated git checkout of HEAD (not a security sandbox; node:test files only). |
 | Self-correction | `forge verify`, `forge diagnose` | Tests/builds beat model claims; 3× the same failure signature mints a diagnosis + escalation. |
 | Impact-awareness | `forge atlas`, `forge impact`, `forge substrate` | Known symbols/files, likely dependents, and sibling/forward co-change candidates are surfaced, each tagged by relation (`forge impact` alone is reverse-only unless `--all-relations`). |
 | M1 routing | `forge route` | Transparent model-tier recommendation. |

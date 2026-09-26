@@ -226,6 +226,24 @@ Run `forge route gateway` to emit a LiteLLM config so the routing happens automa
 Its tier aliases point at the same resolved ids, and each alias carries an `# id:` comment
 saying where its id came from (the live catalog, or the shipped snapshot and why).
 
+`forge route universal "<task>"` is a separate, opt-in router: it recommends a model or a
+cascade across providers, minimising **expected** cost for the success you ask for
+(`--objective match-best-single | target:p | value:V | budget:B`). Its shipped prior was fitted
+on public SWE-bench Verified outcomes and refits exactly from pinned public data
+(`bench/universal-router/reproduce.sh`); its held-out headline is repository-reported, from an
+external harness, not independently reproduced, and a new in-repo held-out replay finds it no
+better than a fixed cascade chosen on the same dev tasks. `budget:B` bounds expected cost, not what a task
+can actually spend; an objective no cascade can meet is reported as infeasible (an explicit
+`INFEASIBLE` line; `feasible: false` with the minimum achievable expected cost in `--json`).
+A recommended model that no configured provider serves is marked `no provider id`, and the
+recommendation is labelled `advice only` (`applicable: false`, `unmapped` in `--json`).
+Being in the registry does not make a model callable. Add its id under `providers` in
+`.forge/models.json`, or pass `--provider <name>` to route only among models you can call.
+`forge route outcome` records one attempt's pass/fail, labelled self-reported unless
+`--verify-run <run id>` ties it to a `forge verify` run whose verdict agrees; `--attempt <id>`
+makes recording idempotent. The model, its evidence status and its limits:
+[docs/UNIVERSAL_ROUTING.md](UNIVERSAL_ROUTING.md).
+
 ### `forge models` — what each tier resolves to
 
 Forge ships no model id it depends on. `src/model_tiers.json` names each tier's **family**
@@ -658,12 +676,48 @@ $ forge verify
 Forge verify
 
   changed files:    2
-  tests:            ✓ pass
+  tests:            ✓ pass (npm test, npm test (packages/api))
+  suites ran:       npm test=PASS, npm test (packages/api)=PASS
+  packages:         2/2 covered
   symbols checked:  7
-  provenance:       .forge/provenance.json
+  provenance:       .forge/provenance.json (run d83f0b7f-45f1-466c-8e3b-9754b26cf356)
 
   PASS
 ```
+
+**What a PASS covers.** Every package that declares its own suite is planned and run in its
+own directory: the root, plus each nested package with an explicit `scripts.test`, a pytest
+config, a `go.mod`, and so on. `packages: n/m covered` counts the packages that reached a
+verdict. If any package's suite never reaches one, the result is `INCOMPLETE`, never `PASS`.
+If any package fails, the result is `FAIL`, however green the root is. A root script that
+already runs every workspace (`npm test --workspaces`, `pnpm -r test`, `yarn workspaces
+foreach`, `turbo run test`, `lerna run test`, `nx run-many`) covers them in one run instead
+of once per package. Fixture and test-data packages are never required. A test runner that is
+only a devDependency is not an obligation either; `forge stack` lists it as `available`.
+Tune this per repo under `verify` in `.forge/forge.config.json`:
+
+```json
+{ "verify": { "workspaces": "auto", "exclude": ["packages/legacy"], "generated": ["coverage/**"] } }
+```
+
+- `workspaces: "root"` declares that the root command already covers every package.
+- `exclude` lists package paths that are not required suites.
+- `generated` lists outputs a test run may legitimately write.
+
+**Bound to the code that was tested.** The stamp is bound to a fingerprint of the working
+tree: HEAD, the staged and unstaged diffs, and each untracked file's path, mode, size and
+content hash. The fingerprint is taken before AND after the run. If something changed the code
+while the tests ran (a formatter, a code generator, another agent), the result is `INCOMPLETE`
+with `mutated: true`, and the stamp names the pre-run state. Interpreter caches
+(`__pycache__`, `.pytest_cache`, …) and the `generated` paths never count as a change. An
+untracked file that cannot be read makes the state unbindable; it is never silently skipped.
+Stamps written before this fingerprint (scheme `manifest-v2`) no longer verify: re-run
+`forge verify`.
+
+Every run also appends one event to `.forge/verify-events.jsonl`: the run id, the verifier
+and its version, the suites, the coverage, the pre- and post-run state, and an environment
+digest, sealed with a machine-local MAC. The event is never rewritten. `forge route outcome
+--verify-run <run id>` ties a routing outcome to it.
 
 **`forge verify --deep` — multi-lens consensus.** The deep mode runs a table of
 independent lenses over the same diff — the test suite, unknown symbols, atlas
@@ -739,9 +793,15 @@ $ forge stack
   languages:  JavaScript/TypeScript, TypeScript
   frameworks: Next.js, React
   pkg mgrs:   pnpm
-  test:       npx vitest
+  test:       pnpm test
+  available:  npx vitest
   evidence:   package.json
 ```
+
+`test` is what the repo declares it runs: an explicit `scripts.test` wins, and npm's
+`"no test specified"` placeholder is not a suite. `available` lists runners that are
+installed (a devDependency) but not what the repo runs. They are inventory, not an
+obligation: `forge verify` never requires them.
 
 Detection reads `package.json` (deps → frameworks, lockfile → package manager),
 `pyproject.toml`/`requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`,
@@ -919,7 +979,8 @@ before canonicalization folded CRLF into LF: those carry their pre-fold id in th
 which reads still accept, so nothing is broken without it — but the old form and a teammate's
 freshly minted copy of the same fact stay two entries until you run it. It moves each claim's
 evidence and provenance logs with it, unions them into an existing twin rather than
-overwriting, and is idempotent.
+overwriting, and is idempotent. Add `--dry-run` to preview the migration: it prints what
+would move and what would merge, and writes nothing.
 
 `forge ledger compact [--dry-run]` archives what this ledger's own history says will not be
 used again. It prints every number it learned, and nothing in it is a fixed threshold:
@@ -947,8 +1008,18 @@ Forge ledger — compact (every cut-off learned from this ledger)  [dry run]
 
 **Where use comes from:** forge writes `.forge/ledger/.usage.jsonl`, a gitignored local log. It records each claim that the session lesson block, pre-edit lessons, the déjà-vu advisory, `ledger query` or the MCP query served.
 
+**Similar is not the same.** Two claims are grouped as duplicates only when they also agree
+on everything that changes behaviour: operators, numbers and units, quoted literals,
+identifiers, paths, and negation. "Enable authentication…" and "Disable authentication…" are
+never merged, however similar their words. Such a pair is printed under `kept apart — similar
+but conflicting`, so a human can retract the wrong one.
+
 **What happens to archived claims:**
 - They move to `.forge/ledger/attic/`, and their logs stay where they are.
+- Each one records WHY it was archived in `attic/<id>.log`: `tombstoned`, `dormant`, `idle`,
+  or `duplicate` (naming the claim that was kept). Archived is not refuted: consolidation
+  drops a learned lesson only when its claim was actually retracted or went dormant. An idle
+  archive keeps the lesson, and a duplicate defers to the claim that was kept.
 - `forge ledger show` and `blame` still read them.
 - New evidence brings one back.
 - The Stop hook applies the first two rules on its own; duplicates are grouped only by this command.
@@ -1026,9 +1097,22 @@ tooling migrates.
 
 ### `forge reuse` — proof-carrying code cache
 
-Verified code becomes an `artifact` claim keyed by a normalized task fingerprint; a
-lookup walks exact → near → adapt → miss. An artifact serves **only while its proof
-holds** — confidence above the 0.6 floor and every declared dependency still in the atlas.
+Verified code becomes an `artifact` claim keyed by its task text; a lookup walks exact →
+near → adapt → miss. An artifact serves **only while its proof holds**: confidence above the
+0.6 floor, its file unchanged since it was minted, and every declared dependency still in
+the atlas with the same declaration.
+
+- **Exact means the same text.** The key ignores only whitespace (and Unicode
+  normalization). Case, operators, literals and punctuation all count, so `age >= 18` and
+  `age <= 18`, or `"ADMIN"` and `"admin"`, never share a key. Artifacts minted before this
+  key was introduced never hit exact.
+- **Near must also agree on behaviour.** A reworded match is offered as `near` only when
+  the two specs share their operators, numbers, literals, identifiers, paths and negation.
+  Otherwise it drops to `adapt`, with a note naming what differs.
+- **Checked where it is served.** An artifact whose file was edited or deleted since it was
+  minted is not served. When a dependency's declaration changed, it is not served either.
+  With no atlas to check against, the hit is marked `NOT revalidated` (`requiresRevalidation:
+  true` in `--json`), never presented as checked.
 
 ```console
 $ forge reuse query "debounce user input before firing search"
@@ -1090,7 +1174,7 @@ difference — not a feeling.
 $ forge context "change verifyToken in src/auth.js to reject short tokens"
 Forge context — budgeted assembly + completeness gate
 
-  budget: 1840/12000 tokens · required 4 · COMPLETE
+  budget: 1840/12000 tokens (chars/3.6 estimate of the rendered block) · required 4 · COMPLETE
     + def:src/auth.js [full] 620t
     + deps:verifyToken [head] 410t
     + tests:test/auth.test.js [full] 480t
@@ -1100,7 +1184,27 @@ Forge context — budgeted assembly + completeness gate
 On an incomplete assembly it lists the missing items and derived clarifying questions
 ("the task names `X` but the repo doesn't define it — which file implements it?") and
 exits 1. `--budget <tokens>` tightens the window; a tight budget downgrades granularity
-instead of silently dropping coverage.
+instead of silently dropping coverage, and reports what it could not deliver.
+
+What `COMPLETE` (`ok: true`) does and does not mean:
+
+- **Syntactically delivered, not semantically sufficient.** Every required item was delivered
+  as content inside the budget. Whether that content is enough for the edit is not measured.
+- **Token counts are an estimate** — characters ÷ 3.6 of the rendered block, labels and
+  separators included — not a model tokenizer's count.
+- **A pointer is not coverage.** An item that only fits as a one-line `- read <file>` pointer
+  is a pending read obligation, listed under `pending`, and the assembly is not complete until it
+  is read. A 25-line head covers a definition only when the definition's line is inside it, and
+  a dependents list cut at 12 names what it left out (`truncated`).
+- **Over budget is INCOMPLETE.** When even pointers do not fit, the result says `overflow: true`
+  and `ok: false`; it never reports a silent over-budget pass.
+- **Selection is a heuristic.** Optional items are picked greedily by value density (score ÷
+  tokens) with per-source diminishing returns, with no optimality guarantee.
+- **Only the explicit paths assemble.** `forge substrate` and `forge context` build the
+  selection; the ambient per-prompt hook does not (latency), it works from caches.
+
+Status and contract: [substrate-v2 plan 04 §7](plans/substrate-v2/04-context-assembly.md#7-status-2026-09-26--partial)
+(P4 is partial).
 
 ### `forge diagnose "<error>"` — doom-loop check
 
@@ -1149,19 +1253,34 @@ Forge imagine — consequence simulation (pre-action)
   minimal dry-run suite (1) — run these, in this order:
     - test/auth.test.js
 
-  (measure it: re-run with --run — sandboxed worktree dry-run of HEAD)
+  (measure it: re-run with --run — a dry-run in an isolated checkout of HEAD; not a security sandbox)
 ```
 
-Add **`--run`** to actually execute that suite in a sandboxed worktree of HEAD — the
-dry-run result lands as oracle evidence on the prediction. It refuses a dirty working
-tree (your uncommitted changes wouldn't be in the run); commit/stash first or pass
-`--allow-dirty` to knowingly measure the last commit. It also flags predicted breaks
+Add **`--run`** to actually execute that suite in an isolated git checkout (a detached-HEAD
+worktree) — the dry-run result lands as oracle evidence on the prediction. The checkout isolates
+files only: it is not a security sandbox, and the tests run with your network, credentials, home
+directory and process permissions. It tests the committed baseline, not a proposed uncommitted
+patch, so it refuses a dirty working tree (your uncommitted changes wouldn't be in the run);
+commit/stash first or pass `--allow-dirty` to knowingly measure the last commit. The selected
+files run under `node --test` and nothing else: when a selected test is not a `.js`, `.mjs` or
+`.cjs` file, or the project's `test` script uses another runner (Jest, Vitest, Mocha, pytest),
+the result is an explicit **unsupported runner** verdict instead of a run — run the project's own
+runner on the selected files. It also flags predicted breaks
 **no test covers** — the risk you can't dry-run away.
 
 ### `forge uicheck` — deterministic UI checks
 
 Five subcommands: three are static parsing — no LLM, no screenshots — and `visual`
 and `interact` optionally drive a real browser.
+
+They are **advisory measurements of different things**: contrast arithmetic, design-token and
+scale conformance, distance from generic templates, fingerprint similarity, and four rendered
+behaviours. A passing contrast check is not an accessibility result, and distance from common
+templates is not user value. `contrast`, `design` and `visual` exit 1 on a fail so a script or CI
+step can gate on them if you choose; nothing runs them as a blocking hook, and `interact` only
+gates under `--enforce`. What each measures, and the labelled set, false-positive cost and
+exception path a check would need before becoming blocking:
+[substrate-v2 plan 07 §7](plans/substrate-v2/07-ui-quality-gate.md#7-ui-checks-are-advisory--what-each-one-measures-2026-09-26).
 
 **`contrast <fg> <bg> [--large] [--json]`** — exact WCAG math, asserted, never guessed
 (bare `forge uicheck <fg> <bg>` still works). It **exits 1 when the pair fails AA**, so a
@@ -1308,16 +1427,20 @@ Forge uicheck interact — browser interaction checks
 
 A read-only lens over `.forge/` — stdlib `node:http`, localhost-only, one
 self-contained HTML page (no CDN, no build step). Panels: Ledger (claims with val bars,
-contested claims, per-author trust), Cost/Cache (measured stage counters), Impact
+contested claims, per-author trust), Cost/Cache (measured stage counters — stage
+self-estimates, not end-to-end spend; a stage with no logs is unknown, not $0), Impact
 (blast-radius explorer), Radar (dependency-currency rings read from the `.forge/radar.json`
 cache), Trends (per-stage metrics history as inline-SVG sparklines), Memory browser
 (ranked recall search over the ledger with confidence + freshness bars), and Session
 timeline (durable mint/tombstone events across sessions). The page live-refreshes every 5s,
 paused while the tab is hidden. Every claim row shows its `forge ledger blame` command.
-The only two writes are the human-driven `POST /api/ratify` and `POST /api/retract`; both
-are guarded against CSRF and DNS-rebinding — a request whose `Host` isn't the loopback
-interface, or whose browser `Origin` isn't the loopback origin, is refused with `403` (a
-non-loopback `--host` bind is the documented opt-out).
+The only two writes are the human-driven `POST /api/ratify` and `POST /api/retract`.
+Every route, reads included, refuses a request whose `Host` is not this loopback address
+and port, with `403`; that blocks DNS rebinding. A write also needs the per-session token
+the server embeds in its own page (sent back as the `x-forge-token` header). When a browser
+sends an `Origin`, it must be exactly this server's origin, so a page on another localhost
+port cannot write either. A script that POSTs must read the token from the page first.
+Binding a non-loopback `--host` turns the `Host` check off; that exposure is your choice.
 
 ```console
 $ forge dash
@@ -1370,9 +1493,22 @@ Read the `context` line with care: that 62% is the white paper's 30-task routing
 demonstration, measured on the tasks its thresholds were tuned on. A pre-registered
 evaluation on 80 held-out tasks refuted it — counting every escalation, routing cost
 20.2% _more_ than always-premium ([research/empirical-refutation/](../research/empirical-refutation/)).
-The line is quoted here as the CLI currently prints it.
+The line is quoted here as the CLI currently prints it. The ~90 % "target" it names is a
+hypothesis, never a result: the stage arithmetic it was argued from used the refuted routing
+figure and has been withdrawn (see the plan's cost model, §2).
 
 Plain `forge cost` remains the per-day spend view via `ccusage`.
+
+**Reading any cost number.** A figure is only comparable when it states: the currency and the
+date of the prices; whether it is actual spend or a counterfactual (tokens repriced at another
+model's price are a counterfactual, not an observed saving); which attempts it includes (first
+attempt only, or every retry and escalation); whether cached tokens and verifier and tool costs are
+counted; and what data is missing. A day or stage with no logs is **unknown, not $0 actual
+spend**. The number that decides whether the substrate saves money is total cost per completed,
+externally verified task, read beside the acceptance and abandonment rates, against a baseline
+with equivalent tools, context and repair opportunity — always-premium / read-everything is a weak
+comparator. Per-stage factors diagnose where cost goes; they are not multiplied into a total. The
+full rule: [substrate-v2 plan 05 §3](plans/substrate-v2/05-cost-model.md#3-acceptance-rule-for-any-cost-headline).
 
 ### The rest
 
@@ -1689,9 +1825,10 @@ session. For learned-from-mistakes memory, just work: Cortex captures recurring
 corrections on its own.
 
 **UI work.** `forge uicheck contrast <fg> <bg>` for exact contrast; `forge uicheck
-design <files> --taste <style>` as the anti-slop gate (mint the project fingerprint
+design <files> --taste <style>` as an advisory anti-slop check (mint the project fingerprint
 first: `forge uicheck fingerprint <files> --mint`); the `ui-workflow` and `taste`
-tools for the rest.
+tools for the rest. None of these replaces looking at the rendered UI with a keyboard and a
+screen reader.
 
 ---
 
@@ -1855,12 +1992,20 @@ code reads but this table misses fails CI on the forge repo):
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
   to too few shingles to rank reliably; write a sentence, not a keyword — or configure
   the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.
-- **The UI fingerprint doesn't resolve CSS `var()` indirection yet** — a fully
-  tokenized palette is partially invisible to the design gate.
+- **The static UI fingerprint sees only what it can resolve** — `var()` indirection resolves
+  within the gated files and the theme stylesheets, but values set at runtime stay invisible to
+  it (use `visual`), and every UI check is advisory: contrast math is not an accessibility audit.
+  _(Corrected 2026-09-26: this said the fingerprint "doesn't resolve CSS `var()` indirection
+  yet", which the `uicheck` section above contradicts.)_
 - **`forge cost --stages` reports measured stages only** — a stage with no events says
-  "no data", never a default; the composed figure is not a bound (a stage can raise
-  cost) and ~90 % is a
-  labeled _target_, not a claim.
+  "no data", never a default; the composed figure is a diagnostic, not a bound or a total (a
+  stage can raise cost, and stages interact), and ~90 % is a labeled _target_ — a hypothesis,
+  not a claim.
+- **`forge context` completeness is syntactic.** `COMPLETE` means every required item was
+  delivered within an estimated token budget, with no pending reads; it does not mean the
+  context is sufficient for the edit.
+- **`forge imagine --run` is an isolated checkout, not a sandbox.** It runs the committed
+  baseline's selected tests under `node --test` with your normal permissions.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
   use. What's _asserted_ (safe to gate on): repo grounding, graph traversal, scope
   decomposition, routing arithmetic, and the test/build commands. Everything else is

@@ -56,8 +56,16 @@ in `oracle.py` as the module defaults:
    dependencies. Two terminal relations were added: `sibling` (one bounded forward hop to a
    bridge, then one bounded reverse hop from it, skipping bridges whose in-degree exceeds
    the cap) and `forward` (the changed symbol's own dependencies, ≤2 hops).
-   Held-out (never-tuned) repos at threshold 0.10: precision 0.320, recall 0.647,
-   **F1 0.428 vs the grep baseline's 0.371** — a reversal of the as-shipped 0.042 vs 0.437.
+   On the three held-out (never-tuned) repositories at the pre-registered canonical threshold
+   0.02: precision 0.305, recall 0.653, **F1 0.416 against the grep baseline's 0.371** (ΔF1 about
+   +0.044). At threshold 0.10, which was selected on the tuning repositories, F1 is 0.428
+   (precision 0.320, recall 0.647; ΔF1 +0.0565), and that is the only threshold with
+   per-repository counts: all three held-out repositories favour the repair there, but three of
+   three is a one-sided sign-test p of 0.125 and pytest supplies 71.3% of the held-out pairs, so
+   that it *beats* grep is not established. Never compare a 0.10 figure with a 0.02 one. (Corrected
+   2026-09-26: this line quoted only the 0.10 result, as "F1 0.428 vs the grep baseline's 0.371 — a
+   reversal of the as-shipped 0.042 vs 0.437", which also set three held-out repositories against
+   all nine.)
 
 `ImpactOracle(wm, sibling_enabled=False, forward_enabled=False)` reproduces the
 as-shipped reverse-only traversal exactly; the untouched as-shipped package is archived as
@@ -119,12 +127,16 @@ On this demo package the oracle reached recall 1.000 (it missed no affected modu
 these five mutations), with its best F1 of 0.79 at the optimal threshold (t=0.4).
 
 > **Refuted on real code.** That recall did not transfer. On 759 files in nine open-source
-> Python repositories, with co-change ground truth, this version's recall was **0.022** and a
+> Python repositories, with co-change ground truth, the as-shipped version's recall was **0.022** and a
 > grep baseline scored F1 0.437 against its 0.042: the traversal walks only reverse edges, and a
-> construction defect breaks `src/`-layout packages. A repaired version ships in
-> [`../../empirical-refutation/replication_package.tar.gz`](../../empirical-refutation/). Earlier
-> versions of this README said the oracle "achieves perfect recall (never misses a truly affected
-> module)". (Corrected 2026-09-21.)
+> construction defect breaks `src/`-layout packages. This package **is** the repaired version (see
+> "Repaired (v2)" above); the untouched as-shipped v1 is archived in
+> [`../../empirical-refutation/replication_package.tar.gz`](../../empirical-refutation/), and
+> `ImpactOracle(wm, sibling_enabled=False, forward_enabled=False)` reproduces its traversal. The
+> results table above is the original five-mutation demonstration reported in the white paper (§8). Earlier versions of
+> this README said the oracle "achieves perfect recall (never misses a truly affected module)".
+> (Corrected 2026-09-21; the pointer to the repaired version corrected 2026-09-26 — it said "A
+> repaired version ships in" the replication tarball.)
 
 ## File structure
 

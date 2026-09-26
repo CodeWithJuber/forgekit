@@ -33,7 +33,8 @@
 ## §2 Imagination — the consequence simulator g (paper Eq. 4)
 
 The paper: `ĉ = g(a, C)` predicting `{broken call sites, type errors, failing tests}` —
-partly exact (static), partly cheap simulation (sandboxed tests). Atlas gives the static
+partly exact (static), partly cheap simulation (tests run in an isolated git checkout — not a
+security sandbox; see the GUIDE's `forge imagine` section). Atlas gives the static
 half; P5 adds the simulation half:
 
 1. **Impacted-test selection.** Build the bipartite cover relation `covers(test, symbol)`

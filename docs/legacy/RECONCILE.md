@@ -9,7 +9,7 @@ Read from your actual machine on 2026-07-04. Honest feedback, then what changed.
 
 ## 🔴 Fix now
 
-**1. Exposed GitHub token.** `~/.claude/settings.json` → `mcpServers.github.env.GITHUB_PERSONAL_ACCESS_TOKEN` holds a `github_pat_…` in plaintext (file is mode 600, but any process running as you can read it, and it's one accidental screenshot/commit from leaking). Action: revoke it at github.com/settings/tokens, issue a new fine-scoped one, and reference it as `"${GITHUB_PAT}"` from your shell env instead of pasting the literal. Do the same review for the `hostlelo_ops_ed25519` path baked into an allow-rule.
+**1. Exposed GitHub token.** `~/.claude/settings.json` → `mcpServers.github.env.GITHUB_PERSONAL_ACCESS_TOKEN` holds a `github_pat_…` in plaintext (file is mode 600, but any process running as you can read it, and it's one accidental screenshot/commit from leaking). Action: revoke it at github.com/settings/tokens, issue a new fine-scoped one, and reference it as `"${GITHUB_PAT}"` from your shell env instead of pasting the literal. Do the same review for the SSH private-key path (`<ops SSH key>`) baked into an allow-rule. _(Machine-specific key filename redacted 2026-09-26; the rest of this archived note is unchanged.)_
 
 **2. You're paying max rate for everything.** `"model": "opus[1m]"` + `"effortLevel": "high"` = the most expensive setup that exists, on every turn, in every project. You explicitly want low cost. Recommendation: default `"model": "sonnet"`, keep `effortLevel` at `"high"` only if you feel the quality drop, and switch to Opus per-session (`/model`) for genuinely hard work. Opus's 1M window also means huge prefixes → bigger cache-write bills. This one change is your biggest cost lever.
 

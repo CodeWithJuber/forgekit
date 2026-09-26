@@ -14,28 +14,39 @@
   </picture>
 </p>
 
-Forge is one shared brain for your AI coding agents. It gives a stateless model the
-three things it structurally lacks — memory, foresight, and guardrail hooks — and
-delivers them into every tool you use.
+**A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis, and
+explicit verification around coding agents.** Forgekit is a Node.js CLI and MCP server with no
+runtime dependencies. You author project rules once, and it emits native configuration for Claude
+Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue and OpenClaw (plus MCP
+configuration for Roo and VS Code). Claude Code is the most deeply exercised integration.
 
-> An experimental reliability toolkit for AI-assisted coding — evidence-referenced,
-> content-addressed memory (we call it "proof-carrying memory" / PCM — see the honesty note
-> below), heuristic impact foresight, and guardrail hooks (automatic on Claude Code;
-> instructions and MCP tools elsewhere) — authored once and delivered as native config to
-> Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw
-> (plus MCP config for Roo and VS Code). Guardrails reduce risk; they are not a security
-> sandbox.
+It does three jobs:
+
+1. **Share reliable project knowledge.** Lessons, facts and decisions live in the repository as
+   *evidence-referenced memory*: each claim carries references to its evidence, only tests, CI or
+   a person raise its confidence, and teammates merge it over plain git.
+2. **Inspect likely change impact.** Before an edit, a *heuristic* impact analysis lists the files
+   the change probably touches, including coupled files you did not name. It reads a
+   regex-derived code graph, so it can miss files as well as over-warn.
+3. **Verify the current change.** `forge verify` runs the repository's detected test suites and
+   reports `PASS`, `FAIL`, `INCOMPLETE` or `NOT_CONFIGURED` for the code state it ran on. A run that
+   covers only part of the repository is *partial* verification, and says so.
 
 > **Status: beta — read before you rely on it.**
 >
-> - The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards) is tested and in daily
->   use; some flags may change before `1.0`.
+> - Releases follow Semantic Versioning ([CHANGELOG](CHANGELOG.md),
+>   [release notes](docs/RELEASING.md)): since 1.0.0 a breaking change ships as a new major
+>   version. "Beta" describes maturity, not interface churn — the analyses are heuristic, the
+>   checks are advisory unless you enable enforcement, and most integrations have less real-world
+>   exercise than Claude Code. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
+>   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). The other nine tools receive native config plus MCP tools, but have had less
->   real-world exercise. On OpenClaw specifically, rules arrive via `AGENTS.md` project
->   context; the config-only path uses a one-command MCP registration, while installing the
->   package as a compatible Codex bundle loads its skills and bundle-scoped MCP server.
->   Neither path provides ambient hooks (see
+>   guards). The other nine tools receive native config (most also an MCP server entry; Aider
+>   and Windsurf/Devin do not) but no automatic hooks, and have had less real-world exercise.
+>   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
+>   path uses a one-command MCP registration, while installing the package as a compatible
+>   Codex bundle loads its skills and bundle-scoped MCP server. Neither path provides ambient
+>   hooks (see
 >   [OpenClaw in ARCHITECTURE](ARCHITECTURE.md#openclaw-what-is-automatic-and-what-is-not)).
 > - **Impact/blast-radius analysis is heuristic** — a regex-approximate code graph, not a sound
 >   call graph. It is not conservative: it can miss affected files as well as flag unaffected
@@ -49,49 +60,9 @@ delivers them into every tool you use.
 >   not require `bash` on `PATH`: their Node launcher finds Git Bash and preserves guard exits.
 >   `protect-paths` needs no bash at all and fails closed: when it cannot reach a verdict, the
 >   tool call is blocked rather than let through.
-
-## Start in 60 seconds
-Forgekit is a beta Node.js CLI and MCP server for AI-assisted software development. It
-externalizes project memory, predicts the likely impact of code changes, and adds
-deterministic checks around coding-agent workflows. The same source can emit native
-configuration for several AI coding tools; Claude Code is the most deeply exercised
-integration.
-
-The project is best read as **agent reliability and developer tooling**. It is not presented
-as an enterprise multi-agent application, a general-purpose RAG platform, or an Azure AI
-deployment.
-
-## Portfolio evidence
-
-For reviewers evaluating hands-on Agentic AI or GenAI work, each claim below links to the
-implementation and its closest test or build proof. The evidence snapshot used for this
-table is default-branch commit
-[`3d9be37`](https://github.com/CodeWithJuber/forgekit/commit/3d9be37e26639c5c0a787d9196562b70444e2640).
-
-| Area | Implementation evidence | Test or delivery evidence | Evidence-safe claim |
-| --- | --- | --- | --- |
-| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) defines 21 tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [current audited CI run](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393690) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
-| Agent memory | [`src/ledger.js`](src/ledger.js) implements content-addressed claims, an oracle taxonomy, time-decayed validity, ranked retrieval, and a semilattice merge; [`src/ledger_store.js`](src/ledger_store.js) adds persistence, hash verification, and quarantine; [`src/ledger_sync.js`](src/ledger_sync.js) adds directory and git-ref sync | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js), [`test/ledger_sync.test.js`](test/ledger_sync.test.js) | Implemented durable, evidence-weighted, mergeable memory for coding-agent workflows |
-| LLM integration | [`src/llm.js`](src/llm.js) implements Anthropic Messages and OpenAI-compatible chat-completions calls; [`src/providers.js`](src/providers.js) configures Anthropic, OpenRouter, LiteLLM, OpenAI, Gemini, and custom endpoints | [`test/llm.test.js`](test/llm.test.js), [`test/providers.test.js`](test/providers.test.js) | Implemented direct, bounded single-prompt LLM adapters and provider configuration; this is not a streaming or autonomous tool-call client loop |
-| Retrieval and embeddings | [`src/context.js`](src/context.js) assembles code definitions, dependants, tests, and trusted lessons under a token budget; [`src/embed.js`](src/embed.js) supports an optional command or OpenAI-compatible embedding endpoint, cosine similarity, and a disk cache; [`src/reuse.js`](src/reuse.js) falls back to MinHash and gates reuse on evidence | [`test/context.test.js`](test/context.test.js), [`test/embed.test.js`](test/embed.test.js), [`test/reuse.test.js`](test/reuse.test.js) | Implemented repository-local retrieval/context augmentation and an optional embedding adapter; no vector database or enterprise-document ingestion pipeline is claimed |
-| Guardrails and verification | [`hooks/hooks.json`](hooks/hooks.json) wires lifecycle hooks; [`global/guards/protect-paths.sh`](global/guards/protect-paths.sh) and [`global/guards/secret-redact.sh`](global/guards/secret-redact.sh) add path and secret controls; [`src/skillgate.js`](src/skillgate.js), [`src/verify.js`](src/verify.js), and [`src/consensus.js`](src/consensus.js) implement scanning and multi-lens checks | [`test/secrets.test.js`](test/secrets.test.js), [`test/skillgate.test.js`](test/skillgate.test.js), [`test/verify.test.js`](test/verify.test.js), [`test/consensus.test.js`](test/consensus.test.js); [Security workflow](https://github.com/CodeWithJuber/forgekit/actions/workflows/security.yml) and [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/workflows/codeql.yml) | Implemented deterministic defence-in-depth controls and evidence-producing verification; the regex guards are not a security sandbox |
-| Human review affordances | [`src/ledger.js`](src/ledger.js) defines human accept/revert oracles; [`src/ledger_store.js`](src/ledger_store.js) implements ratify and retract records | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js) | Implemented auditable human correction and ratification paths; no identity-enforced RBAC or enterprise approval workflow is claimed |
-| Agent roles | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) registers [`scout`](global/crew/scout.md), [`verifier`](global/crew/verifier.md), [`independent-reviewer`](global/crew/independent-reviewer.md), [`frontend-verifier`](global/crew/frontend-verifier.md), and [`doc-sync`](global/crew/doc-sync.md) | [`test/channels.test.js`](test/channels.test.js) checks plugin-channel wiring | Authored five concrete Claude Code role definitions; they are declarative roles, not a multi-agent orchestration runtime |
-| Evaluation | [`src/eval.js`](src/eval.js) calculates precision, recall, and F1; [`bench/bench.mjs`](bench/bench.mjs) provides a seeded benchmark harness; [`reports/benchmarks.md`](reports/benchmarks.md) records methodology and limitations | [`test/eval.test.js`](test/eval.test.js), [`test/bench.test.js`](test/bench.test.js) | Implemented reproducible evaluation for the repository's impact predictor and local performance; the datasets are small and are not field benchmarks |
-| Python research | [`research/python-prototypes/router_gate/`](research/python-prototypes/router_gate/) implements assumption gating, model routing, execution, verification, escalation, CLI, and MCP; [`research/python-prototypes/impact_oracle/`](research/python-prototypes/impact_oracle/) implements Python AST parsing and a persistent NetworkX dependency graph | [`router_gate` tests](research/python-prototypes/router_gate/tests/test_router_gate.py), [`router_gate` live demonstration results](research/python-prototypes/router_gate/eval_results.json), [`impact_oracle` tests](research/python-prototypes/impact_oracle/tests/test_demo_package.py) | Built working Python research prototypes; the shipped Forgekit runtime is Node and the Python packages are not presented as production services |
-| Delivery engineering | [`package.json`](package.json) defines a Node 20+ CLI with no runtime dependencies; [`.github/workflows/release.yml`](.github/workflows/release.yml) gates releases and configures npm provenance; [`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) exercises clean install and uninstall | [Release v0.32.1](https://github.com/CodeWithJuber/forgekit/releases/tag/v0.32.1); successful audited runs for [CI](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393690), [Smoke](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393550), [Security](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393540), [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393514), and [Scorecard](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393496) | Demonstrates packaging, cross-platform CI, security checks, and repeatable OSS release engineering; it does not establish enterprise production operation |
-
-### Maturity boundary
-
-| Evidence level | What belongs here |
-| --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 21 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
-| **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
-| **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
-
-Personal maintainer use is intentionally not used as proof of organizational adoption. No
-customer count, enterprise deployment, production traffic, or service-level claim is made
-without corresponding public evidence.
+> - Guardrails reduce risk; they are not a security sandbox. What each integration actually does —
+>   config emission, MCP registration, automatic hooks, blocking — is in
+>   [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## 60-second quickstart
 
@@ -108,26 +79,35 @@ forge substrate "Change verifyToken in src/auth.js to require length > 20; updat
 ```
 
 The result includes an assumption verdict, a model-tier recommendation, predicted impact,
-context completeness, scope clusters, and a verification checklist. On Claude Code, the
+a context-coverage check (what was delivered, not a proof that it suffices), scope clusters, and
+a verification checklist. On Claude Code, the
 pre-action check can run automatically through a `UserPromptSubmit` hook. On other supported
 tools, Forgekit emits instructions and MCP configuration that the tool can invoke.
 
+The three jobs, one command each:
+
+```bash
+forge ledger query "token validation"   # 1. what does the team already know about this area?
+forge impact verifyToken                 # 2. which files will this edit probably touch?
+forge verify                             # 3. did the change pass the suites that actually ran?
+```
+
 ## Contents
 
-- [Portfolio evidence](#portfolio-evidence)
-- [Maturity boundary](#maturity-boundary)
 - [60-second quickstart](#60-second-quickstart)
 - [Why Forgekit exists](#why-forgekit-exists)
 - [How the loop works](#how-the-loop-works)
 - [Core capabilities](#core-capabilities)
-- [LLMs, retrieval, and embeddings](#llms-retrieval-and-embeddings)
-- [Agent roles and MCP tools](#agent-roles-and-mcp-tools)
-- [Measured evidence](#measured-evidence)
 - [Setup details](#setup-details)
 - [Commands](#commands)
 - [Team memory](#team-memory)
-- [Structural comparison](#structural-comparison)
+- [LLMs, retrieval, and embeddings](#llms-retrieval-and-embeddings)
+- [Agent roles and MCP tools](#agent-roles-and-mcp-tools)
 - [Honest limits](#honest-limits)
+- [Portfolio evidence](#portfolio-evidence)
+- [Maturity boundary](#maturity-boundary)
+- [Measured evidence](#measured-evidence)
+- [Structural comparison](#structural-comparison)
 - [Python research prototypes](#python-research-prototypes)
 - [White paper](#white-paper)
 - [Public site](#public-site)
@@ -170,14 +150,14 @@ so a wrong lesson decays out instead of ossifying. Full design:
 
 ## What you get
 
-The day-to-day value first — the substrate gives a frozen model what it can't hold itself:
+The day-to-day value first — what the substrate keeps outside the model, so it survives between sessions and tools:
 
 - **Memory that persists across sessions and teammates.** _[Implemented]_ Every lesson, fact,
   and verified reuse is _proof-carrying memory (PCM)_ — our name for **evidence-referenced,
   content-addressed memory**: a claim that carries references to its own evidence and is only
   trusted once independent oracles raise its confidence above a floor (the "proof" is that
   evidence trail, not a formal proof). Wrong lessons decay out instead of ossifying.
-- **Foresight before you break things.** _[Heuristic]_ Ask "what does changing `verifyToken`
+- **Heuristic impact before you break things.** _[Heuristic]_ Ask "what does changing `verifyToken`
   break?" and get the _blast radius_ — the set of files an edit is predicted to impact, read
   from a regex-approximate code graph (not sound, and it can miss affected files), including
   coupled files you never named.
@@ -204,14 +184,14 @@ Every number is a median from `npm run bench` on this repo, recorded with its en
 block in [`reports/benchmarks.md`](reports/benchmarks.md) — the project rule is _a number is
 an assumption until measured_.
 
-- **Blast radius in 0.40 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
-  real import graph, recall is 1.00 against 0.27 for looking at the edited file alone, and
+- **Blast radius in 1.68 ms** (warm code-graph). On 6 hand-labeled cases from this repo's
+  real import graph, recall is 1.00 against 0.26 for looking at the edited file alone, and
   precision is 0.17 — `impact` walks reverse dependencies transitively by default, so it
   returns everything downstream while the labels name only the direct referencers (restricted
   to one hop the same cases return their labeled sets). The precision 0.90 this line used to
   quote does not reproduce. On nine real Python repositories the research prototype's impact
   oracle reached recall 0.022 ([refutation](research/empirical-refutation/)).
-- **A full pre-action gate in 886 ms** (median on this repo, warm, on a 4-core Windows VM — this
+- **A full pre-action gate in 851 ms** (median on this repo, warm, on a 4-core Linux VM — this
   row is machine-bound; see the environment block) — assumption check, routing,
   reuse lookup, context assembly, blast radius, scope, and goal anchor in one deterministic
   pass, no LLM call. On Claude Code it runs on **every prompt, automatically**.
@@ -221,8 +201,8 @@ an assumption until measured_.
   judge accepted it cost $1.06 against $1.76, but only 6 and 3 of 64 outputs were accepted
   ([refutation](research/empirical-refutation/)). `forge cost --stages` reports only _your_
   measured stages.
-- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **4308 ms** on that
-  same VM (I/O-bound, 4–6x a Linux host); the
+- **Conflict-free team memory** — merging two 500-claim ledger replicas takes **191 ms** on that
+  same VM (I/O-bound, so it varies with the disk); the
   merge is order-independent and property-tested, so teammate ledgers converge to the same state
   no matter who syncs first, over plain git.
 The substrate is advisory by default. Set `FORGE_ENFORCE=1` to block only its strongest
@@ -245,22 +225,152 @@ from a fresh repository graph.
   candidates.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
-  rather than invented context.
+  rather than invented context. Coverage is syntactic — delivered, not proven sufficient — token
+  counts are estimates, and a file that only fits as a "read this" pointer stays a pending read.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
   signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
   vote for a higher tier is never applied automatically — it is recorded as an advisory
   `escalateTo` recommendation, which names the tier only once an external check has actually
   failed (the doom-loop diagnosis at its thrash threshold). Forgekit advises which tier to
-  request; it does not itself proxy or fail over model traffic.
+  request; it does not itself proxy or fail over model traffic. The opt-in cross-provider router
+  (`route universal`) minimises **expected routing cost** for a success target; its budgets are
+  expectations, not spend caps, and its benchmark headline is repository-reported. Its shipped
+  prior refits exactly from pinned public data in this repository, and a new in-repo held-out
+  replay finds it no better than a fixed cascade chosen on the same dev tasks
+  ([docs/UNIVERSAL_ROUTING.md](docs/UNIVERSAL_ROUTING.md)).
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
 - **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
   budget, repeated failures, format-on-edit, secret redaction, completion checks, and session
   learning. These controls reduce risk; they do not create a secure execution boundary.
-- **Independent verification.** `forge verify` runs the repository's detected test suites,
-  reports `PASS`, `FAIL`, `INCOMPLETE`, or `NOT_CONFIGURED` honestly, checks unknown symbols,
-  and binds provenance to the code state. `--deep` adds structural, security, spec-drift,
+- **Verification, partial or full.** `forge verify` runs the repository's detected test
+  suites, reports `PASS`, `FAIL`, `INCOMPLETE`, or `NOT_CONFIGURED`, checks unknown symbols,
+  and binds provenance to the code state it ran on. A verdict covers only the suites that ran:
+  partial coverage is `INCOMPLETE`, not `PASS`. `--deep` adds structural, security, spec-drift,
   impact, and optional model-review lenses.
+
+## Setup details
+
+Install using one path:
+
+| Use case | Command |
+| --- | --- |
+| Claude Code or another plugin-capable supported host | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit` |
+| Global CLI from npm | `npm install -g @codewithjuber/forgekit` |
+| Directly from GitHub | `npm install -g github:CodeWithJuber/forgekit` |
+| Contributor checkout | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` |
+
+Initialize inside a project:
+
+```bash
+forge init
+forge doctor
+forge doctor --fix
+```
+
+`forge init` can merge Forgekit hooks and permissions into
+`~/.claude/settings.json`. That file is global and affects all repositories. Use
+`forge init --no-settings` to skip the merge or `forge init --remove-settings` to reverse
+Forgekit-managed entries. The implementation preserves unrelated entries and creates a
+timestamped backup before changing the file. When the Forgekit Claude Code plugin is enabled
+(in user, project or local settings), its `hooks/hooks.json` already runs every guard, so
+`forge init` and `forge doctor --fix` merge permissions only and never register the guards a
+second time.
+
+`forge init` emits configuration only for the agent tools the repository already uses:
+Claude Code plus any tool with a sign on disk (`.cursor/`, `.codex/`,
+`.github/copilot-instructions.md`, and so on). Choose explicitly with
+`forge init --tools claude,cursor` or `--tools all`; the choice is recorded in
+`.forge/forge.config.json`, so later `forge sync` runs emit the same set. In `AGENTS.md`,
+Forgekit owns only the block between `<!-- forge:begin -->` and `<!-- forge:end -->`. A
+hand-written `AGENTS.md` keeps every line and gets the block appended; `forge sync` and the
+Stop-hook auto-sync rewrite that block and nothing else.
+
+For an explicit model provider, inspect or update configuration with `forge config`. API keys
+remain environment variables; Forgekit's provider file stores the environment-variable name,
+not the secret value.
+
+## Commands
+
+Commands are advisory unless their documented enforcement flag is enabled. Full worked examples
+and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
+
+<!-- forge:render:commands-table:begin (generated by `forge docs render` — do not edit) -->
+| Group                   | Command              | Does                                                                                                                                                                                                                        |
+| ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core**                | `forge init`         | scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source                                                                                                                |
+|                         | `forge sync`         | recompile the canonical source into each tool's native config files                                                                                                                                                         |
+|                         | `forge doctor`       | health-check installed tools, guards, MCP auth, and config drift                                                                                                                                                            |
+|                         | `forge tools`        | primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)                                                               |
+|                         | `forge catalog`      | Start Here — list every tool, crew, and guard with a one-line why                                                                                                                                                           |
+|                         | `forge docs`         | docs↔code drift — check (registry reconcile) / render (regenerate machine-owned tables + diagrams) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed) |
+|                         | `forge update`       | self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades                                                                                                          |
+|                         | `forge config`       | provider setup — show / switch / add providers, set default model                                                                                                                                                           |
+| **Substrate**           | `forge substrate`    | one pre-action gate: assumptions, route, impact, scope, memory, verify                                                                                                                                                      |
+|                         | `forge preflight`    | assumption check — what a task names that the repo doesn't define                                                                                                                                                           |
+|                         | `forge impact`       | hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history                                                                                              |
+|                         | `forge scope`        | decompose files into independent clusters (+ coupled files you didn't name)                                                                                                                                                 |
+|                         | `forge context`      | budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed                                                                                                                                 |
+|                         | `forge route`        | recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes                                         |
+|                         | `forge verify`       | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                     |
+|                         | `forge precommit`    | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                     |
+| **Memory**              | `forge cortex`       | self-correcting project memory — status / why <symbol>                                                                                                                                                                      |
+|                         | `forge recall`       | manage cross-session memory (list / add / consolidate)                                                                                                                                                                      |
+|                         | `forge remember`     | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                             |
+|                         | `forge brain`        | show / rebuild the portable project memory index                                                                                                                                                                            |
+|                         | `forge ledger`       | evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import                                                                                  |
+|                         | `forge handoff`      | bounded session snapshot — rewrite .forge/state.md, re-injected each session start                                                                                                                                          |
+|                         | `forge decide`       | append-only decision log — D-#### ADR-lite entries in .forge/decisions.md                                                                                                                                                   |
+|                         | `forge know`         | route any fact to its storage home (decision / ledger / recall / …) — total, never dropped                                                                                                                                  |
+| **Quality**             | `forge scan`         | vet a skill/MCP for injection/RCE/exfil before install (skill-gate)                                                                                                                                                         |
+|                         | `forge spec`         | spec-as-contract — init (OpenSpec) / lock / check drift                                                                                                                                                                     |
+|                         | `forge harden`       | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                        |
+|                         | `forge radar`        | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                          |
+| **Config**              | `forge brand`        | print the active brand token map                                                                                                                                                                                            |
+|                         | `forge atlas`        | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                       |
+|                         | `forge stack`        | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                     |
+|                         | `forge integrations` | opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it                                                              |
+|                         | `forge cost`         | real per-day spend via ccusage + measured stage factors (--stages)                                                                                                                                                          |
+|                         | `forge models`       | each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from                                                          |
+| **Labs (experimental)** | `forge taste`        | enable one UI-taste tool for this repo (no arg = list)                                                                                                                                                                      |
+|                         | `forge uicheck`      | deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>                                                                                                              |
+|                         | `forge imagine`      | consequence simulation — predicted breaks + the minimal dry-run test suite for a task                                                                                                                                       |
+|                         | `forge lean`         | scope-minimality (M5) — measure the diff's footprint vs what the task asked for                                                                                                                                             |
+|                         | `forge anchor`       | goal-drift check — are your actual (git) changes still on the stated goal?                                                                                                                                                  |
+|                         | `forge diagnose`     | doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation                                                                                                                                    |
+|                         | `forge dash`         | live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius                                                                                                                                       |
+|                         | `forge report`       | emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server                                                                                                                                           |
+|                         | `forge deja`         | anti-repetition — have you done this task before? ranks prior solved/verified sessions                                                                                                                                      |
+|                         | `forge reuse`        | proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats                                                                                                                                                |
+|                         | `forge rank`         | load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files                                                                                                             |
+|                         | `forge collide`      | parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing                                                                                                           |
+<!-- forge:render:commands-table:end -->
+
+Terminal output is plain when piped. On an interactive terminal it can use color and confidence
+meters; `NO_COLOR` disables color and `FORCE_COLOR=1` enables it explicitly.
+
+## Team memory
+
+Lessons, durable facts, and verified reuse artifacts land as content-addressed claims under
+`.forge/ledger/`:
+
+```bash
+forge init
+
+# Work normally; hooks and explicit memory commands add claims and evidence.
+git pull
+forge ledger merge <path-to-another-ledger>
+forge ledger sync
+```
+
+Identical claim content converges to one identifier while provenance records preserve authors.
+`forge ledger blame <id>` shows the mint history, oracle outcomes, and derived trust. The default
+storage is files in git, not a hosted database or synchronization service.
+
+With no flags, `forge ledger sync` serializes ledger state under `refs/forge/ledger` on the
+repository's git remote. A non-fast-forward race triggers a re-merge and bounded retry. A shared
+directory can be selected with `--dir <path>` or `FORGE_SYNC_DIR`; `--personal` includes the
+per-user ledger.
 
 ## LLMs, retrieval, and embeddings
 
@@ -331,6 +441,74 @@ The built-in MCP server exposes 21 tools, including:
 The MCP server is the tool-provider side of function calling. The compatible host remains
 responsible for deciding when to call a tool and feeding the result back to its model.
 
+## Honest limits
+
+- **Beta software.** The CLI is released, CI-tested and semantically versioned (a breaking
+  change is a major version); "beta" is about maturity and evidence, not about interface churn.
+  Support is maintainer-led and best-effort; there is no SLA.
+- **Claude Code is the deepest-tested integration.** Other emitters and MCP configuration are
+  implemented, but the repository does not provide equivalent real-world exercise evidence for
+  every supported host.
+- **The code graph is heuristic.** Regex extraction is not a sound call graph and can both
+  over-predict and miss dependencies.
+- **Routing is advisory.** Forgekit recommends a tier. LiteLLM or another gateway must be run
+  separately to move traffic, handle failover, enforce quotas, or manage credentials. Routing
+  costs are expected values, not caps, and no cost saving has been measured end to end: the
+  ~90 % figure in the plans is a target (a hypothesis), and the white paper's 62.1 % routing
+  saving was refuted on held-out tasks.
+- **Memory is external state, not model training.** Claims live in files and are retrieved into
+  context; Forgekit does not update model weights. It supplies persistence and external checks
+  that a model does not guarantee on its own — one tested way to do that, not the only one.
+- **Embeddings are an adapter, not an included model or vector store.** A user supplies the
+  external command or HTTP service. MinHash remains the default and fallback.
+- **Guardrails are defence in depth.** Shell-regex checks can be bypassed and post-tool redaction
+  runs after the external tool has executed. Forgekit is not a sandbox.
+- **Human ratification is a workflow convention.** Ratify and retract operations record the git
+  author, but this repository does not authenticate a human or enforce enterprise approval roles.
+- **Evaluations are deliberately scoped.** The JavaScript impact set has six hand-labelled cases;
+  the Python router set has 30 hand-labelled tasks tuned to its rubric; the Python impact study has
+  five mutations. None is a production field study.
+- **No enterprise platform claim.** There is no Azure OpenAI/AI Foundry integration, vector DB,
+  business-system/RPA connector layer, multi-tenant service, Kubernetes deployment, IaC stack,
+  or public production-usage case study in this repository.
+
+## Portfolio evidence
+
+The project is best read as **agent reliability and developer tooling**. It is not presented
+as an enterprise multi-agent application, a general-purpose RAG platform, or an Azure AI
+deployment. Per-claim status (implemented, measured, refuted, hypothesis, partial, reported) is
+kept in [docs/status/](docs/status/README.md).
+
+For reviewers evaluating hands-on Agentic AI or GenAI work, each claim below links to the
+implementation and its closest test or build proof. The evidence snapshot used for this
+table is default-branch commit
+[`3d9be37`](https://github.com/CodeWithJuber/forgekit/commit/3d9be37e26639c5c0a787d9196562b70444e2640).
+
+| Area | Implementation evidence | Test or delivery evidence | Evidence-safe claim |
+| --- | --- | --- | --- |
+| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) defines 21 tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [current audited CI run](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393690) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
+| Agent memory | [`src/ledger.js`](src/ledger.js) implements content-addressed claims, an oracle taxonomy, time-decayed validity, ranked retrieval, and a semilattice merge; [`src/ledger_store.js`](src/ledger_store.js) adds persistence, hash verification, and quarantine; [`src/ledger_sync.js`](src/ledger_sync.js) adds directory and git-ref sync | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js), [`test/ledger_sync.test.js`](test/ledger_sync.test.js) | Implemented durable, evidence-weighted, mergeable memory for coding-agent workflows |
+| LLM integration | [`src/llm.js`](src/llm.js) implements Anthropic Messages and OpenAI-compatible chat-completions calls; [`src/providers.js`](src/providers.js) configures Anthropic, OpenRouter, LiteLLM, OpenAI, Gemini, and custom endpoints | [`test/llm.test.js`](test/llm.test.js), [`test/providers.test.js`](test/providers.test.js) | Implemented direct, bounded single-prompt LLM adapters and provider configuration; this is not a streaming or autonomous tool-call client loop |
+| Retrieval and embeddings | [`src/context.js`](src/context.js) assembles code definitions, dependants, tests, and trusted lessons under a token budget; [`src/embed.js`](src/embed.js) supports an optional command or OpenAI-compatible embedding endpoint, cosine similarity, and a disk cache; [`src/reuse.js`](src/reuse.js) falls back to MinHash and gates reuse on evidence | [`test/context.test.js`](test/context.test.js), [`test/embed.test.js`](test/embed.test.js), [`test/reuse.test.js`](test/reuse.test.js) | Implemented repository-local retrieval/context augmentation and an optional embedding adapter; no vector database or enterprise-document ingestion pipeline is claimed |
+| Guardrails and verification | [`hooks/hooks.json`](hooks/hooks.json) wires lifecycle hooks; [`global/guards/protect-paths.sh`](global/guards/protect-paths.sh) and [`global/guards/secret-redact.sh`](global/guards/secret-redact.sh) add path and secret controls; [`src/skillgate.js`](src/skillgate.js), [`src/verify.js`](src/verify.js), and [`src/consensus.js`](src/consensus.js) implement scanning and multi-lens checks | [`test/secrets.test.js`](test/secrets.test.js), [`test/skillgate.test.js`](test/skillgate.test.js), [`test/verify.test.js`](test/verify.test.js), [`test/consensus.test.js`](test/consensus.test.js); [Security workflow](https://github.com/CodeWithJuber/forgekit/actions/workflows/security.yml) and [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/workflows/codeql.yml) | Implemented deterministic defence-in-depth controls and evidence-producing verification; the regex guards are not a security sandbox |
+| Human review affordances | [`src/ledger.js`](src/ledger.js) defines human accept/revert oracles; [`src/ledger_store.js`](src/ledger_store.js) implements ratify and retract records | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js) | Implemented auditable human correction and ratification paths; no identity-enforced RBAC or enterprise approval workflow is claimed |
+| Agent roles | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) registers [`scout`](global/crew/scout.md), [`verifier`](global/crew/verifier.md), [`independent-reviewer`](global/crew/independent-reviewer.md), [`frontend-verifier`](global/crew/frontend-verifier.md), and [`doc-sync`](global/crew/doc-sync.md) | [`test/channels.test.js`](test/channels.test.js) checks plugin-channel wiring | Authored five concrete Claude Code role definitions; they are declarative roles, not a multi-agent orchestration runtime |
+| Evaluation | [`src/eval.js`](src/eval.js) calculates precision, recall, and F1; [`bench/bench.mjs`](bench/bench.mjs) provides a seeded benchmark harness; [`reports/benchmarks.md`](reports/benchmarks.md) records methodology and limitations | [`test/eval.test.js`](test/eval.test.js), [`test/bench.test.js`](test/bench.test.js) | Implemented reproducible evaluation for the repository's impact predictor and local performance; the datasets are small and are not field benchmarks |
+| Python research | [`research/python-prototypes/router_gate/`](research/python-prototypes/router_gate/) implements assumption gating, model routing, execution, verification, escalation, CLI, and MCP; [`research/python-prototypes/impact_oracle/`](research/python-prototypes/impact_oracle/) implements Python AST parsing and a persistent NetworkX dependency graph | [`router_gate` tests](research/python-prototypes/router_gate/tests/test_router_gate.py), [`router_gate` live demonstration results](research/python-prototypes/router_gate/eval_results.json), [`impact_oracle` tests](research/python-prototypes/impact_oracle/tests/test_demo_package.py) | Built working Python research prototypes; the shipped Forgekit runtime is Node and the Python packages are not presented as production services |
+| Delivery engineering | [`package.json`](package.json) defines a Node 20+ CLI with no runtime dependencies; [`.github/workflows/release.yml`](.github/workflows/release.yml) gates releases and configures npm provenance; [`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) exercises clean install and uninstall | [Release v0.32.1](https://github.com/CodeWithJuber/forgekit/releases/tag/v0.32.1); successful audited runs for [CI](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393690), [Smoke](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393550), [Security](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393540), [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393514), and [Scorecard](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393496) | Demonstrates packaging, cross-platform CI, security checks, and repeatable OSS release engineering; it does not establish enterprise production operation |
+
+### Maturity boundary
+
+| Evidence level | What belongs here |
+| --- | --- |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 21 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
+| **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
+
+Personal maintainer use is intentionally not used as proof of organizational adoption. No
+customer count, enterprise deployment, production traffic, or service-level claim is made
+without corresponding public evidence.
+
 ## Measured evidence
 
 Numbers below are reported only with their test boundary. See
@@ -339,8 +517,8 @@ methodology.
 
 Parser-stable snapshot labels used by the generated project pages are:
 
-- **A full pre-action gate in 886 ms median** — deterministic, warm repository graph, LLM disabled;
-- **Blast radius in 0.40 ms median** — warm impact query; and
+- **A full pre-action gate in 851 ms median** — deterministic, warm repository graph, LLM disabled;
+- **Blast radius in 1.68 ms median** — warm impact query; and
 - **20.2% more cost than always-premium** — the held-out routing result. The 62.1% saving the
   white paper reported came from a 30-task demonstration with thresholds tuned on those same
   tasks; on 80 pre-registered held-out tasks the same router spent 20.2% *more* (table below).
@@ -350,12 +528,12 @@ The boundaries in the table below are part of each result.
 
 | Measurement | Recorded result | Boundary |
 | --- | ---: | --- |
-| Warm impact query | 0.40 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
-| Deterministic substrate check | 886 ms median | 3 runs on one repository, warm graph, LLM disabled, on a 4-core Windows VM — wall-clock rows are machine-bound and were ~150 ms on the Linux host that produced the pre-2026-09-22 snapshot; re-run `npm run bench` on your own hardware |
-| Impact quality | precision 0.17, recall 1.00, F1 0.29 (the precision 0.90 / F1 0.92 reported before 2026-09-21 do not reproduce) | 6 hand-labelled symbols in this repository (which imports only by relative path, so it does not exercise tsconfig path aliases), scored by `evalImpact` against labels re-derived by `git grep`; `impact` walks reverse dependencies transitively by default, so precision measures the transitive closure against direct-only labels; edited-file-only baseline recall 0.27 |
-| Ledger replica merge | 4308 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared, on the same 4-core Windows VM (I/O-bound: 4–6x the Linux host's figure) |
-| Python router live demonstration | 62.1% calculated cost reduction versus always-premium | 30 hand-labelled tasks, thresholds tuned to the set, real measured LLM tokens, approximate public prices; demonstration, not field benchmark |
-| Python router, held-out evaluation | total spend 20.2% **higher** than always-premium; gate F1 0.37 | 80 tasks from real GitHub issues and PRs, thresholds frozen, pre-registered; refutes the row above |
+| Warm impact query | 1.68 ms median | 30 runs on one JavaScript repository with a memoized adjacency index; not model latency |
+| Deterministic substrate check | 851 ms median | 3 runs on one repository, warm graph, LLM disabled, on a 4-core Linux VM (Node v22.22.2, recorded 2026-09-26 in the environment block) — wall-clock rows are machine-bound; re-run `npm run bench` on your own hardware |
+| Impact quality | precision 0.17, recall 1.00, F1 0.28 (the precision 0.90 / F1 0.92 reported before 2026-09-21 do not reproduce) | 6 hand-labelled symbols in this repository (which imports only by relative path, so it does not exercise tsconfig path aliases), scored by `evalImpact` against labels re-derived by `git grep`; `impact` walks reverse dependencies transitively by default, so precision measures the transitive closure against direct-only labels; edited-file-only baseline recall 0.26 |
+| Ledger replica merge | 191 ms median | 3 runs merging two synthetic 500-claim replicas with 250 claims shared, on the same 4-core Linux VM (I/O-bound: varies with the disk more than the CPU-bound rows do) |
+| Python router live demonstration | 62.1% calculated cost reduction versus always-premium (repriced tokens; refuted by the next row) | 30 hand-labelled tasks, thresholds tuned to the set, real measured LLM tokens, approximate public prices; demonstration, not field benchmark |
+| Python router, held-out evaluation | total spend 20.2% **higher** than always-premium; gate F1 0.37; success = judge-accepted (6/64 vs 3/64), not test-verified | 80 tasks from real GitHub issues and PRs, thresholds frozen, pre-registered; refutes the row above |
 | Python impact oracle | precision 0.633, recall 1.000, F1 0.753 | 5 mutations in the bundled demo package; mutation-derived test failures as ground truth |
 | Python impact oracle, real repositories | precision 0.398, recall 0.022, F1 0.042 (grep baseline F1 0.437) | 759 files in 9 open-source repositories, co-change ground truth, pre-registered; refutes the row above |
 
@@ -363,130 +541,9 @@ The current audited CI run at commit `3d9be37` completed successfully for Node 2
 and Windows Git Bash, plus the reusable quality gate. The quality gate ran the Node unit suite,
 Biome checks, TypeScript type checking, critical-level npm audit, ShellCheck, zero-runtime-dependency
 assertion, version and documentation checks, and `npm pack --dry-run`. The Python prototype
-pytest suites are present in the repository but are not part of that current CI workflow.
-
-## Setup details
-
-Install using one path:
-
-| Use case | Command |
-| --- | --- |
-| Claude Code or another plugin-capable supported host | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit` |
-| Global CLI from npm | `npm install -g @codewithjuber/forgekit` |
-| Directly from GitHub | `npm install -g github:CodeWithJuber/forgekit` |
-| Contributor checkout | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` |
-
-Initialize inside a project:
-
-```bash
-forge init
-forge doctor
-forge doctor --fix
-```
-
-`forge init` can merge Forgekit hooks and permissions into
-`~/.claude/settings.json`. That file is global and affects all repositories. Use
-`forge init --no-settings` to skip the merge or `forge init --remove-settings` to reverse
-Forgekit-managed entries. The implementation preserves unrelated entries and creates a
-timestamped backup before changing the file. When the Forgekit Claude Code plugin is enabled
-(in user, project or local settings), its `hooks/hooks.json` already runs every guard, so
-`forge init` and `forge doctor --fix` merge permissions only and never register the guards a
-second time.
-
-`forge init` emits configuration only for the agent tools the repository already uses:
-Claude Code plus any tool with a sign on disk (`.cursor/`, `.codex/`,
-`.github/copilot-instructions.md`, and so on). Choose explicitly with
-`forge init --tools claude,cursor` or `--tools all`; the choice is recorded in
-`.forge/forge.config.json`, so later `forge sync` runs emit the same set. In `AGENTS.md`,
-Forgekit owns only the block between `<!-- forge:begin -->` and `<!-- forge:end -->`. A
-hand-written `AGENTS.md` keeps every line and gets the block appended; `forge sync` and the
-Stop-hook auto-sync rewrite that block and nothing else.
-
-For an explicit model provider, inspect or update configuration with `forge config`. API keys
-remain environment variables; Forgekit's provider file stores the environment-variable name,
-not the secret value.
-
-## Commands
-
-Commands are advisory unless their documented enforcement flag is enabled. Full worked examples
-and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
-
-<!-- forge:render:commands-table:begin (generated by `forge docs render` — do not edit) -->
-| Group                   | Command              | Does                                                                                                                                                                                                                        |
-| ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core**                | `forge init`         | scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source                                                                                                                |
-|                         | `forge sync`         | recompile the canonical source into each tool's native config files                                                                                                                                                         |
-|                         | `forge doctor`       | health-check installed tools, guards, MCP auth, and config drift                                                                                                                                                            |
-|                         | `forge tools`        | primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)                                                               |
-|                         | `forge catalog`      | Start Here — list every tool, crew, and guard with a one-line why                                                                                                                                                           |
-|                         | `forge docs`         | docs↔code drift — check (registry reconcile) / render (regenerate machine-owned tables + diagrams) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed) |
-|                         | `forge update`       | self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades                                                                                                          |
-|                         | `forge config`       | provider setup — show / switch / add providers, set default model                                                                                                                                                           |
-| **Substrate**           | `forge substrate`    | one pre-action gate: assumptions, route, impact, scope, memory, verify                                                                                                                                                      |
-|                         | `forge preflight`    | assumption check — what a task names that the repo doesn't define                                                                                                                                                           |
-|                         | `forge impact`       | hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history                                                                                              |
-|                         | `forge scope`        | decompose files into independent clusters (+ coupled files you didn't name)                                                                                                                                                 |
-|                         | `forge context`      | budgeted context assembly + completeness gate — what an edit NEEDS known                                                                                                                                                    |
-|                         | `forge route`        | recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes                                         |
-|                         | `forge verify`       | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                     |
-|                         | `forge precommit`    | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                     |
-| **Memory**              | `forge cortex`       | self-correcting project memory — status / why <symbol>                                                                                                                                                                      |
-|                         | `forge recall`       | manage cross-session memory (list / add / consolidate)                                                                                                                                                                      |
-|                         | `forge remember`     | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                             |
-|                         | `forge brain`        | show / rebuild the portable project memory index                                                                                                                                                                            |
-|                         | `forge ledger`       | evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import                                                                                  |
-|                         | `forge handoff`      | bounded session snapshot — rewrite .forge/state.md, re-injected each session start                                                                                                                                          |
-|                         | `forge decide`       | append-only decision log — D-#### ADR-lite entries in .forge/decisions.md                                                                                                                                                   |
-|                         | `forge know`         | route any fact to its storage home (decision / ledger / recall / …) — total, never dropped                                                                                                                                  |
-| **Quality**             | `forge scan`         | vet a skill/MCP for injection/RCE/exfil before install (skill-gate)                                                                                                                                                         |
-|                         | `forge spec`         | spec-as-contract — init (OpenSpec) / lock / check drift                                                                                                                                                                     |
-|                         | `forge harden`       | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                        |
-|                         | `forge radar`        | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                          |
-| **Config**              | `forge brand`        | print the active brand token map                                                                                                                                                                                            |
-|                         | `forge atlas`        | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                       |
-|                         | `forge stack`        | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                     |
-|                         | `forge integrations` | opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it                                                              |
-|                         | `forge cost`         | real per-day spend via ccusage + measured stage factors (--stages)                                                                                                                                                          |
-|                         | `forge models`       | each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from                                                          |
-| **Labs (experimental)** | `forge taste`        | enable one UI-taste tool for this repo (no arg = list)                                                                                                                                                                      |
-|                         | `forge uicheck`      | deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>                                                                                                              |
-|                         | `forge imagine`      | consequence simulation — predicted breaks + the minimal dry-run test suite for a task                                                                                                                                       |
-|                         | `forge lean`         | scope-minimality (M5) — measure the diff's footprint vs what the task asked for                                                                                                                                             |
-|                         | `forge anchor`       | goal-drift check — are your actual (git) changes still on the stated goal?                                                                                                                                                  |
-|                         | `forge diagnose`     | doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation                                                                                                                                    |
-|                         | `forge dash`         | live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius                                                                                                                                       |
-|                         | `forge report`       | emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server                                                                                                                                           |
-|                         | `forge deja`         | anti-repetition — have you done this task before? ranks prior solved/verified sessions                                                                                                                                      |
-|                         | `forge reuse`        | proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats                                                                                                                                                |
-|                         | `forge rank`         | load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files                                                                                                             |
-|                         | `forge collide`      | parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing                                                                                                           |
-<!-- forge:render:commands-table:end -->
-
-Terminal output is plain when piped. On an interactive terminal it can use color and confidence
-meters; `NO_COLOR` disables color and `FORCE_COLOR=1` enables it explicitly.
-
-## Team memory
-
-Lessons, durable facts, and verified reuse artifacts land as content-addressed claims under
-`.forge/ledger/`:
-
-```bash
-forge init
-
-# Work normally; hooks and explicit memory commands add claims and evidence.
-git pull
-forge ledger merge <path-to-another-ledger>
-forge ledger sync
-```
-
-Identical claim content converges to one identifier while provenance records preserve authors.
-`forge ledger blame <id>` shows the mint history, oracle outcomes, and derived trust. The default
-storage is files in git, not a hosted database or synchronization service.
-
-With no flags, `forge ledger sync` serializes ledger state under `refs/forge/ledger` on the
-repository's git remote. A non-fast-forward race triggers a re-merge and bounded retry. A shared
-directory can be selected with `--dir <path>` or `FORGE_SYNC_DIR`; `--personal` includes the
-per-user ledger.
+pytest suites were not part of CI at that commit; since `aedddf5` a separate CI job runs both
+prototype suites, the Theorem D sanity checks (`research/recompute_corrections.py
+--theorem-checks`) and the recomputation of every corrected number from the replication package.
 
 ## Structural comparison
 
@@ -500,32 +557,6 @@ This table describes architecture, not a claim of superiority or equivalent prod
 | Tool use | A JSON-RPC MCP server with 21 executable tool handlers | Does not implement the model/client loop that chooses and executes tool calls autonomously |
 | Agent roles | Five host-consumable Claude Code role definitions | No multi-agent graph, scheduler, inter-agent messaging layer, or named orchestration framework |
 | Verification | Repository tests, provenance, structural and security lenses, limited benchmark suites | No managed GenAI evaluation service, production telemetry, online evaluation, or broad red-team certification |
-
-## Honest limits
-
-- **Beta software.** The CLI is released and CI-tested, but interfaces may still change before
-  `1.0`. Support is maintainer-led and best-effort; there is no SLA.
-- **Claude Code is the deepest-tested integration.** Other emitters and MCP configuration are
-  implemented, but the repository does not provide equivalent real-world exercise evidence for
-  every supported host.
-- **The code graph is heuristic.** Regex extraction is not a sound call graph and can both
-  over-predict and miss dependencies.
-- **Routing is advisory.** Forgekit recommends a tier. LiteLLM or another gateway must be run
-  separately to move traffic, handle failover, enforce quotas, or manage credentials.
-- **Memory is external state, not model training.** Claims live in files and are retrieved into
-  context; Forgekit does not update model weights.
-- **Embeddings are an adapter, not an included model or vector store.** A user supplies the
-  external command or HTTP service. MinHash remains the default and fallback.
-- **Guardrails are defence in depth.** Shell-regex checks can be bypassed and post-tool redaction
-  runs after the external tool has executed. Forgekit is not a sandbox.
-- **Human ratification is a workflow convention.** Ratify and retract operations record the git
-  author, but this repository does not authenticate a human or enforce enterprise approval roles.
-- **Evaluations are deliberately scoped.** The JavaScript impact set has six hand-labelled cases;
-  the Python router set has 30 hand-labelled tasks tuned to its rubric; the Python impact study has
-  five mutations. None is a production field study.
-- **No enterprise platform claim.** There is no Azure OpenAI/AI Foundry integration, vector DB,
-  business-system/RPA connector layer, multi-tenant service, Kubernetes deployment, IaC stack,
-  or public production-usage case study in this repository.
 
 ## Python research prototypes
 
@@ -553,8 +584,13 @@ that set, not a general accuracy estimate. Despite legacy package metadata using
 ### Impact Oracle
 
 [`impact_oracle`](research/python-prototypes/impact_oracle/) parses Python ASTs, stores a NetworkX
-dependency graph as JSON, and predicts change impact through reverse-dependency traversal. The
-bundled evaluation mutates five symbols and uses pytest failures as independent ground truth.
+dependency graph as JSON, and predicts change impact through reverse-dependency traversal plus the
+repaired sibling and forward relations (the in-tree package is the repaired v2, 49 tests). The
+bundled evaluation mutates five symbols and uses pytest failures as independent ground truth. On
+nine real repositories the as-shipped traversal reached recall 0.022; the repaired version's
+held-out point estimate is above grep's, but that it beats grep is not established
+([refutation](research/empirical-refutation/)). The Node `forge impact` graph is a different,
+regex-derived implementation and inherits none of these numbers.
 
 The production Forgekit equivalents are the Node implementations behind `forge preflight`,
 `forge route`, `forge atlas`, `forge impact`, and the MCP substrate tools.
@@ -564,7 +600,12 @@ The production Forgekit equivalents are the Node implementations behind `forge p
 The [cognitive-substrate white paper](docs/cognitive-substrate/) explains the motivation,
 formal model, evidence map, adjacent work, and the relationship between the Python research
 prototypes and the current Node implementation. Treat the paper's measurements according to
-their stated methodology; do not blend results from different codebases or evaluation sets.
+their stated methodology; do not blend results from different codebases or evaluation sets. The
+"faculty" and theorem language lives there and in [`research/`](research/), with dated
+corrections: the papers now state what a frozen model does not guarantee (durable state across
+calls, context beyond the window, weight updates from outcomes, reliable self-verification) rather
+than claiming it cannot adapt at all, and they name the prior art (CoALA, Reflexion) the
+architecture builds on. Their PDFs are historical, pre-correction editions; read the HTML.
 
 ## Public site
 
@@ -588,6 +629,9 @@ not an AI application deployment.
 | --- | --- |
 | [`ONBOARDING.md`](ONBOARDING.md) | Five-minute setup and design principles |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full command reference, worked examples, MCP schemas, and honest limits |
+| [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) | Per-tool behaviour: config emission, MCP registration, automatic hooks, blocking — and how each is tested |
+| [`docs/UNIVERSAL_ROUTING.md`](docs/UNIVERSAL_ROUTING.md) | The cross-provider router: model, shipped prior, evidence status and modeling limits |
+| [`docs/status/`](docs/status/README.md) | Machine-readable status of every load-bearing claim (generated table) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime layers, emitters, state, and design decisions |
 | [`reports/benchmarks.md`](reports/benchmarks.md) | Reproducible benchmark snapshot, methodology, environment, and limitations |
 | [`research/python-prototypes/README.md`](research/python-prototypes/README.md) | Explicit maturity boundary for the Python research packages |

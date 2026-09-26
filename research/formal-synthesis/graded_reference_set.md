@@ -6,6 +6,22 @@ Independent verification: modern arXiv sources by direct metadata API fetch (tit
 
 **Tally: 9 confirmed · 6 traceable · 0 unverifiable** (of 15 new sources).
 
+**What these grades are (added 2026-09-26).** `confirmed` / `traceable` / `unverifiable` are
+**bibliographic verification** grades: they establish that a source exists and is correctly
+attributed. They are not independent validation of the theory the source is cited for. Four other
+dimensions are kept separate and are **not assessed** for these 15 sources:
+
+| Dimension | Question it answers | Status for this set |
+|---|---|---|
+| Bibliographic verification | Does the source exist and is it correctly attributed? | graded below |
+| Claim support | Does the source support the specific claim it is cited for? | not assessed |
+| Study design | What kind of evidence is it (experiment, survey, position paper, book, doctrine)? | not assessed |
+| Independent replication | Has anyone other than the authors reproduced the result? | not assessed |
+| Transfer scope | Which settings can the result be carried to? | not assessed |
+
+Most of these sources are cited as architectural analogues or framing (CoALA, ReAct, OODA, PDCA), so a
+`confirmed` grade here says the citation is real, not that the synthesis is right.
+
 | Source | ID | Grade | Note |
 |---|---|---|---|
 | **Cognitive Architectures for Language Agents** (Theodore R. Sumers, Shunyu Yao, Karthik Narasimhan et al., 2023) | `2309.02427` | confirmed | Retrieved via arXiv metadata API; title/authors match claim exactly. Unifies memory, planning/reasoning, action, and learning modules into a single CoALA framework for language agents, giving the c… |

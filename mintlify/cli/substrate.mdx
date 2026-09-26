@@ -110,8 +110,12 @@ Consequence simulation — predicted breaks + the minimal dry-run test suite for
 
 ```bash
 forge imagine "<task>"
-forge imagine "<task>" --run   # execute the minimal suite sandboxed
+forge imagine "<task>" --run   # execute the minimal suite in an isolated git checkout
 ```
+
+`--run` executes the suite in an isolated git checkout (a detached-HEAD worktree). It isolates
+checkout files only — not network, credentials, your home directory or process permissions — and
+it tests the committed baseline, not uncommitted changes.
 
 ## `forge lean`
 

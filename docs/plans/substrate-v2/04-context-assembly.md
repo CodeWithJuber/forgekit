@@ -4,6 +4,12 @@
 > a budgeted optimization, and *whether the context is sufficient* becomes a computed
 > set, not a feeling. Supplies the paper's P3 remedy at the system level and gives M2's
 > questions a derivation. Phase P4, wired into `src/substrate.js`.
+>
+> **Status: partial (corrected 2026-09-26).** Several statements below describe the design, not
+> what ships: token costs are an estimate, selection is a heuristic with no approximation
+> guarantee, `contracts(S)` is not computed, and the ambient hook does not inject an assembled
+> selection. [§7](#7-status-2026-09-26--partial) states the implemented contract, including what
+> `ok` does and does not mean.
 
 ## 0. The two failures this kills
 
@@ -30,9 +36,10 @@ candidates `I`:
 | files | source spans for `S` and its direct callers; relevant test files |
 | summaries | `summary` claims covering cold ranges (below) |
 
-Each item `i` carries: token cost `tᵢ` (measured, not guessed — `str.length/3.6`
-heuristic calibrated in P8), score `sᵢ`, and a **coverage set** `cov(i)` — which required
-entities it satisfies.
+Each item `i` carries: token cost `tᵢ`, score `sᵢ`, and a **coverage set** `cov(i)` — which
+required entities it satisfies. _(Corrected 2026-09-26: `tᵢ` was described as "measured, not
+guessed — `str.length/3.6` heuristic calibrated in P8". It is an **estimate**: characters ÷ 3.6 of
+the rendered text, never calibrated, and no per-model tokenizer is used — see §7.)_
 
 ## 2. Selection — a budgeted knapsack
 
@@ -45,9 +52,13 @@ subject to Σ tᵢ·xᵢ ≤ B,   xᵢ ∈ {0,1}
 ```
 
 `sᵢ` = Eq. 3 score ([01](./01-pcm-protocol.md) §4) × source prior (atlas slice and
-required files outrank nice-to-have lessons). Solved greedily by density `sᵢ/tᵢ` with the
-best-single-item fallback — the classic ½-approximation to 0/1 knapsack; optimality is
+required files outrank nice-to-have lessons). Solved greedily by density `sᵢ/tᵢ`; optimality is
 not the point, *having an objective* is. Deterministic, O(n log n), zero model calls.
+_(Corrected 2026-09-26: this claimed "the best-single-item fallback — the classic
+½-approximation to 0/1 knapsack". What ships is a greedy **heuristic**: required items are pinned
+first, and the per-source discount below changes item values as the fill proceeds, which breaks the
+preconditions of the knapsack and set-cover approximation results, so no approximation guarantee is
+claimed.)_
 
 Two refinements:
 
@@ -69,7 +80,7 @@ Define the **required-knowledge set** for an edit — computed, not vibes:
 R(edit) = defs(S)                      // the symbols being changed
         ∪ blast₁(S)                    // direct dependents (atlas reverse edges, hop 1)
         ∪ tests(S)                     // tests covering S (atlas contains/test edges)
-        ∪ contracts(S)                 // types/interfaces S implements
+        ∪ contracts(S)                 // types/interfaces S implements — not computed yet (§7)
         ∪ lessons*(S)                  // scope-matching lessons with val ≥ 0.8
 ```
 
@@ -117,15 +128,53 @@ check — O(|R|) with a hash set.
   scores, covered vs. required entities, and the missing-set if any. `--json` for hooks.
 - `substrateCheck()` stage order becomes: preflight(lexical) → **context-assemble +
   completeness gate** → reuse → route → impact → lean → verify plan.
-- The ambient hook (`substrateContext()`) injects the *rendered selection*, replacing
-  ad-hoc "read these files" advisories.
+- ~~The ambient hook (`substrateContext()`) injects the *rendered selection*, replacing
+  ad-hoc "read these files" advisories.~~ _(Corrected 2026-09-26: not implemented, by design for
+  latency — the per-prompt hook runs the substrate from caches only and does not assemble context.
+  Assembly runs in the explicit gate (`forge substrate`) and `forge context`; see §7.)_
 
 ## 6. Honest limits
 
 - `R(edit)` inherits atlas's regex-approximation: over-approximate on dependents (safe —
   more required knowledge), potentially blind where regex misses an edge. The AST-backed
   atlas upgrade ([06](./06-faculties-and-mechanisms.md) §1) tightens both at once.
-- Greedy ½-approximation can leave budget value on the table; irrelevant next to the
-  failure mode it replaces (no objective at all).
+- The greedy heuristic can leave budget value on the table, and has no approximation guarantee
+  _(corrected 2026-09-26 from "Greedy ½-approximation")_; that is acceptable next to the failure
+  mode it replaces (no objective at all), but it is measured as a heuristic, not proved.
 - `lessons*` selection uses `val`, so a young team ledger under-supplies at first — the
   gate's floor (`defs ∪ blast₁ ∪ tests`) is structural and needs no history.
+
+## 7. Status (2026-09-26) — partial
+
+An external review (2026-09-26) reproduced two counterexamples to this phase's acceptance
+criterion at v1.4.3 (commit `d2abfa6`): with a budget of 1 token the result reported `ok: true`
+with 39 tokens used (F02), and with a budget of 8 tokens a one-line `- read src/calc.js` pointer
+counted as delivering a definition that sat below line 100 of that file (F03). P4 is therefore
+**partial**, and the source is being repaired to this contract:
+
+- **Token counts are estimates of the rendered block.** `tokens` is computed on the text actually
+  injected — labels, file headers and separators included — as characters ÷ 3.6. It is an
+  estimate: no per-model tokenizer is used, so a hard per-model cap needs a real tokenizer.
+- **Overflow is reported, never hidden.** When the required items cannot fit even as pointers, the
+  result carries `overflow: true` and `ok: false`; it never claims completion over budget.
+- **A pointer is an obligation, not coverage.** A one-line `- read <file>` creates a *pending read
+  obligation*, listed in `pending`; it does not count as covering anything until the span is
+  actually read.
+- **A head covers only what it shows.** The "first 25 lines" variant covers a definition only when
+  the definition's line falls inside the delivered span; definitions use a symbol-span variant when
+  the atlas knows the line.
+- **Truncation is visible.** A dependents list cut at 12 entries names the omitted entries in
+  `truncated`.
+- **Selection is a heuristic.** Optional items are chosen greedily by value density (score ÷
+  tokens) with per-source diminishing returns. The per-source discount breaks the preconditions of
+  the knapsack and set-cover approximation results, so no approximation guarantee is claimed.
+- **The ambient hook does not assemble context.** For latency, the per-prompt hook uses caches
+  only; the explicit gate (`forge substrate`) and `forge context` assemble.
+- **`ok` means syntactically delivered.** Every required key has delivered content within the
+  budget, with no overflow and no pending reads. It does not mean the delivered text is
+  semantically sufficient for the edit, and `contracts(S)` (the types and interfaces a symbol
+  implements) is not yet part of `R(edit)`.
+
+P4 becomes *implemented* when that contract ships with regression tests for the F02 and F03
+fixtures; it would take a measured sufficiency evaluation (edits made with and without the
+assembled context, judged by tests) before any stronger claim.

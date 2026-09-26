@@ -1,11 +1,12 @@
 # Onboarding — five minutes to productive
 
-**One brain for every AI coding agent.** A language model is _stateless_ — one
-context window, wiped every call — so it has no memory of what your team learned, no
-foresight about what an edit breaks, and no enforced guardrails. forgekit is the
-**cognitive substrate** that supplies exactly those three things, and it delivers them
-as native config to Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
-Continue, and OpenClaw at once. Author the brain once; every tool reads it.
+**A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
+and explicit verification around coding agents.** A language model keeps no durable state
+between independent calls and sees only its context window, so on its own it does not carry
+what your team learned, cannot see what an edit affects unless those files are in context, and
+cannot enforce rules on itself. forgekit supplies that state and those checks from outside the
+model, and delivers them as native config to Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
+Windsurf, Zed, Continue, and OpenClaw at once. Author it once; every tool reads it.
 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.

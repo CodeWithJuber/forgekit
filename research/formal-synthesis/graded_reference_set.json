@@ -6,6 +6,17 @@
     "traceable": "the work clearly exists and is correctly attributed, but rests on established secondary/historical knowledge rather than a single retrievable record",
     "unverifiable": "could not confirm existence or attribution"
   },
+  "grade_scope": {
+    "added": "2026-09-26",
+    "grade_is": "bibliographic_verification",
+    "meaning": "confirmed / traceable / unverifiable establish that a source exists and is correctly attributed; they are not independent validation of the theory it is cited for.",
+    "not_assessed": [
+      "claim_support",
+      "study_design",
+      "independent_replication",
+      "transfer_scope"
+    ]
+  },
   "tally": {
     "confirmed": 9,
     "traceable": 6,

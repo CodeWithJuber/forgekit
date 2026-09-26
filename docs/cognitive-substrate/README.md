@@ -7,10 +7,15 @@ an edit will break — all from the repo you already have, with no extra LLM cal
 
 In Claude Code it runs **automatically**. In other tools you (or the agent) run one command.
 
-> Why this exists, in one line: a frozen model is a stateless function `y = f(x)` — no memory,
-> no foresight, a fixed window. Those faculties can't be prompted in; they have to be supplied
-> from the outside. This is that outside layer. Full argument: the white paper
-> ([PDF](./cognitive_substrate_whitepaper.pdf) · [HTML](./cognitive_substrate_whitepaper.html)).
+> Why this exists, in one line: a model with frozen weights keeps no durable state between
+> independent calls, sees only a bounded context, never updates its weights from outcomes, and
+> cannot reliably verify itself without external evidence. Prompting does change what it does
+> inside one context, but it cannot supply those guarantees; this layer supplies persistence and
+> verification from the outside — one tested way to do it, not the only possible one. Full
+> argument: the white paper ([HTML](./cognitive_substrate_whitepaper.html), with the 2026-09-21
+> and 2026-09-26 corrections · [PDF](./cognitive_substrate_whitepaper.pdf), a pre-correction
+> edition). _(Corrected 2026-09-26: this line used to say "no memory, no foresight, a fixed
+> window. Those faculties can't be prompted in"; see the white paper's Corrections.)_
 
 ---
 
@@ -264,15 +269,38 @@ needs a hook surface. Tests and human corrections always win. The full, canonica
 ## Learn more
 
 - **White paper** — the full argument: [HTML](./cognitive_substrate_whitepaper.html) (with the
-  2026-09-21 corrections) · [PDF](./cognitive_substrate_whitepaper.pdf) (predates them). Its two
+  2026-09-21 and 2026-09-26 corrections) · [PDF](./cognitive_substrate_whitepaper.pdf)
+  (historical, pre-correction edition; provenance in
+  [research/HISTORICAL_EDITIONS.md](../../research/HISTORICAL_EDITIONS.md)). Its two
   prototype results were refuted on real data — see
   [research/empirical-refutation/](../../research/empirical-refutation/).
 - **[Package overview](./deliverable-package.md)** — headline results (refuted; see its banner)
   and prototypes
 - **[Evidence map](./evidence_map.md)** — every load-bearing statistic re-graded against
-  primary sources (5 confirmed, 5 vendor-reported, 2 dropped)
+  primary sources (5 confirmed, 5 vendor-reported, 2 dropped); since 2026-09-26 it also grades
+  claim support, study design, replication and transfer scope separately
 - **[Ecosystem map](./ecosystem_map.md)** — each capability vs. the real 2026 tool stack
 - **[Prototype source](../../research/python-prototypes/)** — the auditable Python originals
+- **[Claim status registry](../status/README.md)** — every load-bearing headline with its
+  status (implemented / measured / refuted / hypothesis / partial / reported) and evidence
+
+### Which copy is canonical
+
+`research/cognitive-substrate/` is the canonical source. Four files here are byte-identical
+copies kept for readers of `docs/`, and `node scripts/claims-status.mjs --check` fails when they
+drift (sha256):
+
+| Copy in `docs/cognitive-substrate/` | Canonical source |
+| --- | --- |
+| `cognitive_substrate_whitepaper.html` | `research/cognitive-substrate/cognitive_substrate_whitepaper.html` |
+| `cognitive_substrate_whitepaper.pdf` | `research/cognitive-substrate/cognitive_substrate_whitepaper.pdf` |
+| `evidence_map.md` | `research/cognitive-substrate/evidence/evidence_map.md` |
+| `ecosystem_map.md` | `research/cognitive-substrate/evidence/ecosystem_map.md` |
+
+Edit the canonical file, then copy it over (`node scripts/claims-status.mjs --sync-copies` does
+that). [`deliverable-package.md`](./deliverable-package.md) is not a copy: it is an adapted
+edition of `research/cognitive-substrate/EXECUTIVE_SUMMARY.md` with links rewritten for this
+folder, so it is edited by hand alongside it.
 
 **How the paper maps to what ships (all 11):** memory → `recall`/`cortex`/`ledger` ·
 learning → `cortex` + ledger oracles · imagination → `imagine [--run]`/`impact` ·

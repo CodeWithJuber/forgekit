@@ -173,3 +173,25 @@ python -m pytest
 ```
 
 The included evaluation task set is a demonstration set, not a field benchmark. Calibrate thresholds on your own workload before enforcing automated model selection in high-stakes production paths.
+
+## Held-out result, and what "success" means
+
+*(Added 2026-09-26.)* The 30-task demonstration above was the set the thresholds were tuned on. On
+80 pre-registered held-out tasks from real GitHub issues and pull requests
+([`research/empirical-refutation/`](../../empirical-refutation/)), gate F1 was 0.37, and on the 64
+non-halted tasks the routed pipeline spent **$6.3582** against always-premium's **$5.2893** —
+**20.21% more**, not saved.
+
+"Success" in that evaluation is **`judge_accepted`**: a model judge (the same model the pipeline
+used as its mid-tier executor) accepted 6 of 64 routed outputs and 3 of 64 always-premium outputs.
+That gives $1.060 against $1.763 per judge-accepted output, a ratio that is unstable at those counts.
+No held-out task admitted execution-based verification, so **`tests_passed`**, **`human_accepted`**
+and **`deployed_without_revert`** were never measured. Re-labelling 30 tasks with the same model and a
+reworded prompt gave halt κ 0.5161 and tier κ 0.8919 — self-consistency, not agreement with a human.
+The figures are recomputed from the replication archive by
+[`research/recompute_corrections.py`](../../recompute_corrections.py) (§7, §9).
+
+When you evaluate this pipeline on your own workload, record those four outcomes separately, anchor
+coding success on executable tests and blind human adjudication of disagreements, and keep gate
+precision/recall, router solve rate and total pipeline cost as separate endpoints; count
+clarification turns and tasks the gate rejected that were in fact valid.

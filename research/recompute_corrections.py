@@ -8,11 +8,16 @@ re-run it. It reads the replication package shipped with the refutation paper:
     python research/recompute_corrections.py rp/repro
 
 Sections 1-3 need no data (they are arithmetic on the synthesis paper's own worked
-examples). Sections 4-9 read `results/*.json` and `data/*.parquet` from the package.
+examples). Section 3b (added 2026-09-26) holds executable sanity checks on Theorem D that
+need no data either; each is an `assert`, so a wrong statement fails the run with a
+non-zero exit. Sections 4-9 read `results/*.json` and `data/*.parquet` from the package.
 Every random draw uses a fixed seed that is printed next to its result.
 
-The corrections these numbers support were prompted by an external deep review of the
-repository (2026-09-21); see the "Corrections" sections of each paper.
+    python research/recompute_corrections.py --theorem-checks   # sections 1-3b only, no data
+    python research/recompute_corrections.py --help
+
+The corrections these numbers support were prompted by external deep reviews of the
+repository (2026-09-21 and 2026-09-26); see the "Corrections" sections of each paper.
 """
 
 import json
@@ -115,6 +120,56 @@ def theorem_d():
         print(f"  STATE-touch rate h={h:.1f}: c = 0.95(1-h) = {c1:.3f}, residual (p=0.7) = {(1 - 0.7) * (1 - c1):.4f}")
     print(f"  block-once-per-session: c=0 for later tasks in the session, residual = {1 - 0.7:.2f}")
     print(f"  T4: 150 lines x 80 bytes = {150 * 80} bytes > 8 KB cap (8192); 8192/150 = {8192 / 150:.1f} bytes/line")
+
+
+def theorem_checks():
+    """Executable sanity checks on Theorem D (2026-09-26 corrections). Each one is an assert."""
+    header("3b. Theorem D sanity checks (asserted; 2026-09-26 corrections)")
+    tol = 1e-12
+
+    # (a) Separately maximal p and q need not be jointly attainable under one policy. The
+    # residual of a policy pi is (1 - p(pi)) * (1 - q(pi)); the target is its minimum over the
+    # joint feasible set F = {(p(pi), q(pi)) : admissible pi}, not the product of the maxima.
+    policies = {"A": (0.5, 0.9), "B": (0.9, 0.1)}
+    residual = {name: (1 - p) * (1 - q) for name, (p, q) in policies.items()}
+    p_max = max(p for p, _ in policies.values())
+    q_max = max(q for _, q in policies.values())
+    naive = (1 - p_max) * (1 - q_max)
+    attained = min(residual.values())
+    for name, (p, q) in policies.items():
+        print(f"  policy {name}: (p, q) = ({p}, {q}) -> residual (1-p)(1-q) = {residual[name]:.4f}")
+    print(f"  separate maxima p_max = {p_max}, q_max = {q_max} -> (1-p_max)(1-q_max) = {naive:.4f}")
+    print(f"  lowest residual any feasible policy attains = {attained:.4f}")
+    assert abs(residual["A"] - 0.05) < tol, residual["A"]
+    assert abs(residual["B"] - 0.09) < tol, residual["B"]
+    assert abs(naive - 0.01) < tol, naive
+    assert naive < attained, "the product of separate maxima is not attained by any policy here"
+    print("  => (1-p_max)(1-q_max) is a LOWER bound on the attainable residual unless the maxima are")
+    print("     jointly attainable; optimise min over F = {(p(pi), q(pi))} of (1-p)(1-q) instead")
+
+    # (b) Over n independent tasks with per-task residuals r_i <= eps,
+    # P(>=1 miss) = 1 - prod(1 - r_i) <= 1 - (1 - eps)^n, with EQUALITY only when every r_i = eps.
+    # Independence alone does not give equality; the union bound n * eps needs neither.
+    eps = 0.01
+    unequal = [0.01, 0.005, 0.001]
+    n = len(unequal)
+    bound = 1 - (1 - eps) ** n
+    p_unequal = 1 - math.prod(1 - r for r in unequal)
+    p_equal = 1 - math.prod(1 - r for r in [eps] * n)
+    print(f"  n={n}, eps={eps}: 1-(1-eps)^n = {bound:.6f}; union bound n*eps = {n * eps:.6f}")
+    print(f"    residuals {unequal}: 1-prod(1-r_i) = {p_unequal:.6f}  (strictly below the bound)")
+    print(f"    residuals all equal to eps: 1-prod(1-r_i) = {p_equal:.6f}  (equality)")
+    assert p_unequal < bound - tol, (p_unequal, bound)
+    assert abs(p_equal - bound) < tol, (p_equal, bound)
+    assert bound <= n * eps + tol, (bound, n * eps)
+
+    # (c) Three lifecycle copies of one classifier are not three independent detectors: the
+    # independence product understates the nested residual (1-p)(1-c) 400-fold (section 2).
+    p, c, k = 0.7, 0.95, 3
+    ratio = ((1 - p) * (1 - c)) / ((1 - p) * (1 - c) ** k)
+    print(f"  {k} copies of one check (p={p}, c={c}): nested / independence-product residual = {ratio:.0f}x")
+    assert round(ratio) == 400, ratio
+    print("  all Theorem D sanity checks passed")
 
 
 # --------------------------------------------------------------------------------------
@@ -344,6 +399,12 @@ def cluster_bootstrap(pkg):
     po, pg = pooled(oracle, full), pooled(grep, full)
     print(f"  pooled oracle P/R/F1 = {po[0]:.4f} / {po[1]:.4f} / {po[2]:.4f}")
     print(f"  pooled grep   P/R/F1 = {pg[0]:.4f} / {pg[1]:.4f} / {pg[2]:.4f}")
+    # Repository-level view (added 2026-09-26): macro F1 weights each repository equally, so one
+    # large repository cannot carry the pooled figure. F1 is 0 where a method predicts nothing.
+    f1o = [prf(*oracle[i])[2] for i in full]
+    f1g = [prf(*grep[i])[2] for i in full]
+    print(f"  macro F1 over {len(repos)} repositories: oracle {sum(f1o) / len(f1o):.4f}, grep {sum(f1g) / len(f1g):.4f}")
+    print(f"  repositories where grep F1 > oracle F1: {sum(g > o for o, g in zip(f1o, f1g))} of {len(repos)}")
     rng = random.Random(SEED)
     draws = []
     for _ in range(B):
@@ -484,11 +545,18 @@ def kappa(pkg):
 
 
 def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__)
+        return
     theorem_d()
-    if len(sys.argv) < 2:
+    theorem_checks()
+    if args and args[0] == "--theorem-checks":
+        return
+    if not args:
         print("\n(pass the extracted replication package's repro/ directory to recompute sections 4-9)")
         return
-    pkg = sys.argv[1]
+    pkg = args[0]
     ground_truth(pkg)
     cluster_bootstrap(pkg)
     repaired_vs_grep(pkg)

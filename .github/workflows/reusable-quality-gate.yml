@@ -33,4 +33,6 @@ jobs:
         run: node -e "process.exit(Object.keys(require('./package.json').dependencies||{}).length)"
       - run: node scripts/bump.mjs check
       - run: node src/cli.js docs check
+      - name: Claim registry and research copies are current
+        run: node scripts/claims-status.mjs --check
       - run: npm pack --dry-run

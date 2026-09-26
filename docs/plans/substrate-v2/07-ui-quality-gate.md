@@ -127,3 +127,37 @@ the gate's job is to stop the template from ever reaching them. Thresholds start
 advisory and only become enforcing once the P8 fixture set (known-slop vs. known-custom
 UI corpus) shows separation, same as every other research-edge gate
 ([00-overview.md](./00-overview.md) §4).
+
+## 7. UI checks are advisory — what each one measures (2026-09-26)
+
+The checks in this spec measure different things, and none of them measures whether a UI is good:
+
+| Check | What it measures | What it does not measure |
+|---|---|---|
+| `forge uicheck contrast` | WCAG contrast arithmetic for one foreground/background pair | whether the page is accessible: keyboard use, focus order, zoom, screen-reader names and motion are untouched |
+| design-token / scale checks (`design`) | whether spacing, radii, shadows and palette sit on the project's scales | whether the layout works for a user |
+| slop distance (`design`, `visual`) | distance from a small corpus of generic templates | user value or aesthetic quality — far from a template is not the same as good |
+| visual fingerprint conformance (`design`, `visual`) | similarity to the project's minted fingerprint | whether the rendered states are correct |
+| `forge uicheck interact` | four rendered behaviours: console-clean, keyboard-reachable, focus-visible, reduced-motion | the rest of accessibility and any task flow |
+
+**What the code does today.** `contrast` exits 1 when a pair fails AA, `design` exits 1 on a fail
+or on insufficient signal, and `visual` exits 1 on a fail (and 0, with a note, when no browser
+runtime is installed), so a script or CI step *can* gate on them. `interact` is advisory unless
+`--enforce` or `FORGE_ENFORCE=1` is set. No guard runs any of them automatically — §4's "the
+PostToolUse guard runs them on edited UI files" is not implemented — and the Stop completion gate
+accepts a fresh, signed `design`/`visual` PASS as *one* form of UI evidence, beside a design or
+state record, a passing e2e run or `forge verify`. The gate asks for evidence; a failing UI check
+is simply not evidence, and the gate blocks at most once per session either way.
+
+**Before any UI check becomes blocking** (by default, in a hook, or recommended as a CI gate) it
+needs evidence it does not have yet:
+
+- a small **labelled set** of rendered UI states covering keyboard navigation, focus order, zoom,
+  responsive overflow, reduced motion and screen-reader names, with the verdict a person reached
+  for each;
+- a **measured false-positive cost** on that set — how often the check blocks a UI the labels call
+  fine, and what each false block costs to clear;
+- an **exception path** that lets a person record an override with a reason, visible in review.
+
+Until then, a passing contrast check is not an accessibility result, and a large slop distance is
+not a quality result; both are prompts for a human look.

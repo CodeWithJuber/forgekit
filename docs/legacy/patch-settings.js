@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// ARCHIVED — pre-Forge, not maintained, not part of the current CLI (kept for history only).
+// It edits an older hand-rolled ~/.claude setup; for the current workflow see ONBOARDING.md
+// and docs/GUIDE.md. Do not run it against a current install.
+//
 // Safe, reversible edits to ~/.claude/settings.json:
 //  - model -> sonnet (was opus[1m]); use Opus per-session for hard work
 //  - add statusLine + PreToolUse/PostToolUse hooks (keeps existing Stop hook)

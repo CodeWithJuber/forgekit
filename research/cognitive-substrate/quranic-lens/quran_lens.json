@@ -7,6 +7,14 @@
     "Grounded with quran.ai: fetch_tafsir(49:6, en-ibn-kathir)",
     "Grounded with quran.ai: fetch_tafsir(33:72, en-ibn-kathir)"
   ],
+  "field_legend": {
+    "added": "2026-09-26",
+    "arabic_or_ref": "verse rows: the source text in clean Uthmani script (retrieved); concept rows: the Arabic term and root",
+    "retrieved_translation_or_gloss": "verse rows: M.A.S. Abdel Haleem's translation (retrieved); concept rows: the author's own gloss. The two are different kinds of text.",
+    "concrete_design_principle": "the author's design analogy: not a translation, not tafsir, and not a claim about what the verse means",
+    "source": "retrieval record; a tafsir named here was consulted, and quran_lens.md quotes it under its own label",
+    "operational_note": "The lens motivates the 'do not assert without evidence' discipline (claim registry, verifier events, visible uncertainty). It establishes no algorithm's correctness, catch rate or uniqueness, and a deterministic implementation does not imply c -> 1 for a semantic detector. No theological adjudication is attempted."
+  },
   "mappings": [
     {
       "concept_or_verse": "17:36 — lā taqfu (do not pursue without knowledge)",
