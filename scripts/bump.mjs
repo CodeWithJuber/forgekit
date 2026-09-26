@@ -32,6 +32,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHANGELOG_PAGE } from "../src/changelog_page.js";
+import { renderFile } from "../src/docs_render.js";
 
 // ---------------------------------------------------------------------------
 // Pure version math
@@ -356,6 +358,9 @@ export function applyBump(root, currentVersion, newVersion, date) {
   const changelog = readIfExists(path.join(root, clRel));
   if (changelog !== null) {
     write(clRel, rotateChangelog(changelog, newVersion, currentVersion, date));
+    // The docs site's changelog page is generated from CHANGELOG.md (docs check fails when
+    // it is stale), so the release commit regenerates it: [Unreleased] became this version.
+    if (renderFile(root, CHANGELOG_PAGE, { write: true }).changed) changed.push(CHANGELOG_PAGE);
   }
 
   return changed;

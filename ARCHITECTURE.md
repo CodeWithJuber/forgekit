@@ -433,8 +433,10 @@ as the `collide_check` MCP tool.
 
 **Machine-owned doc surfaces (`src/docs_render.js`, `forge docs render`).** The
 auto-maintenance layer that keeps tables and diagrams in sync with the code registries.
-Four marker-managed blocks (commands table in README, groups and MCP-tools tables in GUIDE,
-repo-map diagram in ARCHITECTURE) are regenerated from `COMMANDS`/`GROUPS`/`TOOLS`; six
+Five marker-managed blocks (commands table in README, groups and MCP-tools tables in GUIDE,
+repo-map diagram in ARCHITECTURE, and the Mintlify changelog page, rendered from
+`CHANGELOG.md` by `src/changelog_page.js` between MDX-safe JSX-comment markers) are
+regenerated from `COMMANDS`/`GROUPS`/`TOOLS`/`CHANGELOG.md`; six
 "N MCP tools" count phrases are auto-corrected; and every mermaid block across all `.md`
 and `.mdx` files receives the branded `%%{init` theme. Registry-derived blocks are CI-gated
 errors when stale; tree-derived output is advisory.
@@ -675,8 +677,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>133 files"]
-  src["src<br/>119 files"]
+  test["test<br/>134 files"]
+  src["src<br/>120 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   bench["bench<br/>6 files"]
@@ -684,13 +686,13 @@ flowchart LR
   scripts["scripts<br/>3 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 281 --> src
+  test -- 284 --> src
   bench -- 12 --> src
   examples -- 4 --> src
+  scripts -- 3 --> src
   test -- 3 --> global
   test -- 3 --> scripts
   test -- 2 --> bench
-  scripts --> src
   src --> global
 ```
 <!-- forge:render:repo-map:end -->
