@@ -6,6 +6,39 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **The claim-registry table escapes backslashes, and four patterns no longer backtrack
+  quadratically on long runs (CodeQL).** `scripts/claims-status.mjs` escaped `|` in table
+  cells but not `\`, so a trailing backslash could undo an escape (`js/incomplete-sanitization`,
+  high). The model-catalog tokenizer's trailing `.0` collapse and its URL trim (`js/polynomial-redos`,
+  high, pre-existing), the workspace-glob trim and the semantic guard's edge-punctuation trim now
+  use linear scans with identical results (checked against the old regexes).
+
+### Added
+
+- **The docs site's changelog page is generated from `CHANGELOG.md`.** It had one hand-written
+  entry from July while thirty releases shipped. `forge docs render` now writes every release,
+  plus `[Unreleased]`, as a Mintlify `<Update>` entry with each change's headline, filter tags
+  and a link to its full notes (`src/changelog_page.js`, between MDX-safe JSX-comment markers).
+  `forge docs check` fails when the page is stale, and `scripts/bump.mjs` regenerates it in the
+  release commit.
+
+### Documentation
+
+- **The Mintlify reference pages describe the current behavior** of `forge verify` (per-package
+  coverage, pre/post binding, verifier events), `forge stack` (`available` runners),
+  `forge context` (what `COMPLETE` means, `--block`), `forge reuse` and `forge ledger`
+  (lossless keys, serve-time revalidation, one vote per event, archive reasons, conflicts,
+  `--fix --dry-run`), `forge dash` (Host check, session token) and the universal router, which
+  the site did not document at all. The landing page lists all ten native targets (OpenClaw was
+  missing).
+- **Two historical `CHANGELOG.md` entries are corrected.** 1.1.2 called the project's own
+  second-machine re-run an independent replication (now marked as a dated correction), and 1.0.0
+  had lost the `\r\n` / `\n` escapes inside two code spans.
+
+## [1.5.0] - 2026-09-26
+
 ### Changed
 
 These tighten what a result is allowed to CLAIM, after the 2026-09-26 external deep review
@@ -74,12 +107,6 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 
 ### Security
 
-- **The claim-registry table escapes backslashes, and four patterns no longer backtrack
-  quadratically on long runs (CodeQL).** `scripts/claims-status.mjs` escaped `|` in table
-  cells but not `\`, so a trailing backslash could undo an escape (`js/incomplete-sanitization`,
-  high). The model-catalog tokenizer's trailing `.0` collapse and its URL trim (`js/polynomial-redos`,
-  high, pre-existing), the workspace-glob trim and the semantic guard's edge-punctuation trim now
-  use linear scans with identical results (checked against the old regexes).
 - **The dashboard checks Host on every route, and writes need the page's session token and
   this exact origin (F13).** A foreign Host (DNS rebinding) gets 403 on reads too; another
   localhost port cannot write. Native clients that POSTed without a token must now send the
@@ -131,12 +158,6 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 
 ### Added
 
-- **The docs site's changelog page is generated from `CHANGELOG.md`.** It had one hand-written
-  entry from July while thirty releases shipped. `forge docs render` now writes every release,
-  plus `[Unreleased]`, as a Mintlify `<Update>` entry with each change's headline, filter tags
-  and a link to its full notes (`src/changelog_page.js`, between MDX-safe JSX-comment markers).
-  `forge docs check` fails when the page is stale, and `scripts/bump.mjs` regenerates it in the
-  release commit.
 - **`bench/universal-router/reproduce.sh` rebuilds the shipped router prior** from pinned,
   sha256-checked public inputs (`sources.json`). The refit reproduces `data/router_prior.json`
   exactly: all 176 fitted values, with only `fittedAt` different (Node v22.22.2, about 7 minutes
@@ -156,16 +177,6 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 
 ### Documentation
 
-- **The Mintlify reference pages describe the current behavior** of `forge verify` (per-package
-  coverage, pre/post binding, verifier events), `forge stack` (`available` runners),
-  `forge context` (what `COMPLETE` means, `--block`), `forge reuse` and `forge ledger`
-  (lossless keys, serve-time revalidation, one vote per event, archive reasons, conflicts,
-  `--fix --dry-run`), `forge dash` (Host check, session token) and the universal router, which
-  the site did not document at all. The landing page lists all ten native targets (OpenClaw was
-  missing).
-- **Two historical `CHANGELOG.md` entries are corrected.** 1.1.2 called the project's own
-  second-machine re-run an independent replication (now marked as a dated correction), and 1.0.0
-  had lost the `\r\n` / `\n` escapes inside two code spans.
 - **A machine-readable claim/status registry** (`docs/status/claims.json`, 47 claims assessed
   against `d2abfa6`), with a generated table in `docs/status/README.md`. `node
   scripts/claims-status.mjs --check`, now part of the CI quality gate, fails when the registry
@@ -195,9 +206,9 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 - **Evidence grades are split** into bibliographic verification, claim support, study design,
   independent replication and transfer scope. METR's slowdown result is scoped to its
   16-developer, early-2025 study, with a link to the February 2026 update.
-- **The Qur'anic lens labels its layers separately:** the Arabic source text, the translation, tafsir and the author's
-  design analogy separately, and states what the lens does and does not establish. No Arabic
-  text or translation was changed.
+- **The Qur'anic lens labels its layers separately:** the Arabic source text, the
+  translation, tafsir and the author's design analogy. It states what the lens does and does
+  not establish. No Arabic text or translation was changed.
 - **The research PDFs are marked as historical, pre-correction editions** and recorded in
   `research/HISTORICAL_EDITIONS.md` (git blob, sha256, pinned commit, figure map, render
   recipe). They were not re-rendered: the Qur'anic text in a fresh render could not be
@@ -3133,7 +3144,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
