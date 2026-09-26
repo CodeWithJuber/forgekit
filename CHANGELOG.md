@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-09-26
+
 ### Changed
 
 - **The site's canonical URL is `https://jubershaikh.com/forgekit/`.** GitHub Pages serves the
@@ -3208,7 +3210,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.5.0...v1.6.0
