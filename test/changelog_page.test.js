@@ -128,7 +128,8 @@ test("renderChangelogUpdates: one Update per non-empty release, tagged, linked t
 });
 
 test("the repository's changelog page is current and MDX-safe", () => {
-  const page = readFileSync(join(BRAND.root, CHANGELOG_PAGE), "utf8");
+  // A Windows checkout (core.autocrlf) holds CRLF; the renderer compares in LF.
+  const page = readFileSync(join(BRAND.root, CHANGELOG_PAGE), "utf8").replace(/\r\n/g, "\n");
   const begin = page.indexOf("{/* forge:render:changelog:begin");
   const end = page.indexOf("{/* forge:render:changelog:end */}");
   assert.ok(begin !== -1 && end > begin, "the page carries the MDX render markers");

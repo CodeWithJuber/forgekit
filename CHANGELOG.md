@@ -15,6 +15,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   high, pre-existing), the workspace-glob trim and the semantic guard's edge-punctuation trim now
   use linear scans with identical results (checked against the old regexes).
 
+### Fixed
+
+- **`forge docs check` and `forge docs render` work on a Windows checkout.** With
+  `core.autocrlf`, Markdown checks out with CRLF line endings while generated blocks render
+  with LF, so every generated block read as stale and a render wrote LF lines into a CRLF
+  file. Blocks are now compared in LF and written back in the file's own line endings.
+
 ### Added
 
 - **The docs site's changelog page is generated from `CHANGELOG.md`.** It had one hand-written

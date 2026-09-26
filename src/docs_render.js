@@ -222,6 +222,16 @@ function trackedMarkdown(root) {
   return out ? out.split("\n").filter(Boolean) : [];
 }
 
+/** A Windows checkout (`core.autocrlf`) holds CRLF while blocks render in LF, so every
+ *  strict block would read as stale and a write would mix line endings. Render and compare
+ *  in LF; write back in the file's own line endings. */
+function readDoc(path) {
+  const raw = readFileSync(path, "utf8");
+  const crlf = raw.includes("\r\n");
+  return { text: crlf ? raw.replace(/\r\n/g, "\n") : raw, crlf };
+}
+const withEol = (text, crlf) => (crlf ? text.replace(/\n/g, "\r\n") : text);
+
 /**
  * Render every managed doc surface. With {write:true} stale files are rewritten;
  * otherwise this is a pure report (what `--check` and the docs-check reconciler use).
@@ -231,18 +241,18 @@ function trackedMarkdown(root) {
  *   missing:{file:string, name:string}[]}}
  */
 export function renderDocs(root = BRAND.root, { write = false } = {}) {
-  /** @type {Map<string, {text:string, orig:string, strict:boolean, why:string[]}>} */
+  /** @type {Map<string, {text:string, orig:string, crlf:boolean, strict:boolean, why:string[]}>} */
   const touched = new Map();
   const missing = [];
   const load = (file) => {
     if (!touched.has(file)) {
-      let text;
+      let doc;
       try {
-        text = readFileSync(join(root, file), "utf8");
+        doc = readDoc(join(root, file));
       } catch {
         return null;
       }
-      touched.set(file, { text, orig: text, strict: false, why: [] });
+      touched.set(file, { text: doc.text, orig: doc.text, crlf: doc.crlf, strict: false, why: [] });
     }
     return touched.get(file);
   };
@@ -291,7 +301,7 @@ export function renderDocs(root = BRAND.root, { write = false } = {}) {
   const files = [];
   for (const [file, doc] of touched) {
     const changed = doc.text !== doc.orig;
-    if (changed && write) writeFileSync(join(root, file), doc.text);
+    if (changed && write) writeFileSync(join(root, file), withEol(doc.text, doc.crlf));
     if (changed || doc.why.length) files.push({ file, changed, strict: doc.strict, why: doc.why });
   }
   // `missing` is informational (a root without markers manages nothing) — only STALE
@@ -308,12 +318,13 @@ export function renderDocs(root = BRAND.root, { write = false } = {}) {
  * @returns {{found: boolean, changed: boolean}}
  */
 export function renderFile(root, file, { write = false } = {}) {
-  let text;
+  let doc;
   try {
-    text = readFileSync(join(root, file), "utf8");
+    doc = readDoc(join(root, file));
   } catch {
     return { found: false, changed: false };
   }
+  const { text } = doc;
   let next = text;
   let found = false;
   for (const t of BLOCK_TARGETS) {
@@ -322,6 +333,6 @@ export function renderFile(root, file, { write = false } = {}) {
     found ||= r.found;
     next = r.text;
   }
-  if (write && next !== text) writeFileSync(join(root, file), next);
+  if (write && next !== text) writeFileSync(join(root, file), withEol(next, doc.crlf));
   return { found, changed: next !== text };
 }
