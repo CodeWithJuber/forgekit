@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-26
+
 ### Fixed
 
 - **Build caches under `.cache/` stay out of the import graph.** `forge impact`, `forge scope`
@@ -3189,7 +3191,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...v1.4.3
