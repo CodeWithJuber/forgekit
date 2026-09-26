@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-26
+
 ### Changed
 
 These tighten what a result is allowed to CLAIM, after the 2026-09-26 external deep review
@@ -3107,7 +3109,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.4.0...v1.4.1
