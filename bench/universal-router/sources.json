@@ -1,0 +1,110 @@
+{
+  "$comment": "Pinned inputs of bench/universal-router/build_input.py. Every file is checked against its sha256 before use; files from GitHub also carry their git blob id at the pinned commit. Keys of experiments.runs are registry ids (data/models.json), in canonical (ascending) order.",
+  "dataset": {
+    "name": "SWE-bench Verified",
+    "repo": "SWE-bench/SWE-bench_Verified",
+    "revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+    "revisionDate": "2026-08-16",
+    "path": "data/test-00000-of-00001.parquet",
+    "url": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/78f471bf655a3137b2e8a75af1501690ec009ec3/data/test-00000-of-00001.parquet",
+    "bytes": 6304616,
+    "sha256": "030cfd7f2a704c4c0226e7f104c725a3b41230b1d3517f9c915ad7ea5be3fa25",
+    "note": "Revision 78f471b exists in the SWE-bench org repo, not in princeton-nlp/SWE-bench_Verified. The file is stored with Git LFS, so its sha256 is also its LFS oid."
+  },
+  "experiments": {
+    "repo": "https://github.com/SWE-bench/experiments",
+    "commit": "40f164d5b8f1d249bf95a6df8b74b577fd8e519d",
+    "scaffold": "mini-SWE-agent 2.0.0",
+    "runDate": "2026-02-17",
+    "runs": {
+      "claude-haiku-4.5": {
+        "run": "20260217_mini-v2.0.0_claude-4-5-haiku-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_claude-4-5-haiku-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_claude-4-5-haiku-high/per_instance_details.json",
+        "gitBlob": "251ca4c02f45e8b109c0749821fa98414064daae",
+        "bytes": 53125,
+        "sha256": "4104e3cf041d57048ac22bf1ffc0805b154a064dfcbb1c0666647e4613008533"
+      },
+      "claude-opus-4.5": {
+        "run": "20260217_mini-v2.0.0_claude-4-5-opus-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_claude-4-5-opus-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_claude-4-5-opus-high/per_instance_details.json",
+        "gitBlob": "39c730e7216071796617cb9c0a3c034b7c018d57",
+        "bytes": 52799,
+        "sha256": "e9657d90a145b9b22db233eb8a796d978ef9f8ecb9434570d0d599a635831907"
+      },
+      "claude-opus-4.6": {
+        "run": "20260217_mini-v2.0.0_claude-4-6-opus",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_claude-4-6-opus/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_claude-4-6-opus/per_instance_details.json",
+        "gitBlob": "082659fa7078a88eddb71c64b40c4f0e7f192ba2",
+        "bytes": 52805,
+        "sha256": "c669276c9b7c23ffe967df0d7cc9f1f6406001ae02095761ddb2ac067103430d"
+      },
+      "claude-sonnet-4.5": {
+        "run": "20260217_mini-v2.0.0_claude-4-5-sonnet-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_claude-4-5-sonnet-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_claude-4-5-sonnet-high/per_instance_details.json",
+        "gitBlob": "697da24c32b43e81245ac92a741afa39f1b3293b",
+        "bytes": 52885,
+        "sha256": "c7f61049937deafa6327e0d5f17c0baf482751388530530bb9f5d53ce0fbf7cc"
+      },
+      "deepseek-v3.2": {
+        "run": "20260217_mini-v2.0.0_deepseek-3-2-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_deepseek-3-2-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_deepseek-3-2-high/per_instance_details.json",
+        "gitBlob": "ad4a0b8333a866bb11d1849be15a809866fc8191",
+        "bytes": 53441,
+        "sha256": "5eeebd0aa53aa6234f36380d14141597f7776b32b0ba1a020dc2abaf005b50c1"
+      },
+      "gemini-3-flash": {
+        "run": "20260217_mini-v2.0.0_gemini-3-flash-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_gemini-3-flash-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_gemini-3-flash-high/per_instance_details.json",
+        "gitBlob": "092530f4dc7eba8985a485aa1374af53436237d7",
+        "bytes": 53102,
+        "sha256": "6e49e555537839726c02dbbefd45cdf63bbed8c138eaf349d783381ca0716e33"
+      },
+      "glm-5": {
+        "run": "20260217_mini-v2.0.0_glm-5-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_glm-5-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_glm-5-high/per_instance_details.json",
+        "gitBlob": "27bb601b3f59860985dcea4b682ad9a0e2feca5f",
+        "bytes": 53220,
+        "sha256": "cd139949a7a4044709f28d628c0a6ae9861da3e334033ae736a92a44d1d0a57c"
+      },
+      "gpt-5-mini": {
+        "run": "20260217_mini-v2.0.0_gpt-5-mini",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_gpt-5-mini/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_gpt-5-mini/per_instance_details.json",
+        "gitBlob": "22de38049e86540c4d93ddfa2ec6f21664360820",
+        "bytes": 52686,
+        "sha256": "b98b3f03cf9fbcf0eaa878ccde6d34a72483149ceb04559c90fd52277cb9d1ae"
+      },
+      "gpt-5.2": {
+        "run": "20260217_mini-v2.0.0_gpt-5-2-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_gpt-5-2-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_gpt-5-2-high/per_instance_details.json",
+        "gitBlob": "cfdc6c07ad339e60e6d34b4d9050b85243b1bbc8",
+        "bytes": 52861,
+        "sha256": "8bac088fcc87374906a207a3cf93e25df715546ace895b3a588cc075f6353fd1"
+      },
+      "kimi-k2.5": {
+        "run": "20260217_mini-v2.0.0_kimi-k2-5-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_kimi-k2-5-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_kimi-k2-5-high/per_instance_details.json",
+        "gitBlob": "d76d9549613a46e3ae98fcc727f8129cf9ae66b4",
+        "bytes": 53298,
+        "sha256": "3794b2c4b853845d97cf89db10f4264a0b27ba75f6b1bbbf1e34ddf6fa8a5c1f"
+      },
+      "minimax-m2.5": {
+        "run": "20260217_mini-v2.0.0_minimax-2-5-high",
+        "path": "evaluation/verified/20260217_mini-v2.0.0_minimax-2-5-high/per_instance_details.json",
+        "url": "https://raw.githubusercontent.com/SWE-bench/experiments/40f164d5b8f1d249bf95a6df8b74b577fd8e519d/evaluation/verified/20260217_mini-v2.0.0_minimax-2-5-high/per_instance_details.json",
+        "gitBlob": "c14b9ea51db8dc65ff8fb9ae03366ddbe4906ce5",
+        "bytes": 53456,
+        "sha256": "62a26211006b557f1a31371ee6cf3119be5bdaed43dcce3fe6efedc0912c012c"
+      }
+    }
+  }
+}
