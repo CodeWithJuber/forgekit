@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
   BEGIN,
+  cell,
   checkCopies,
   END,
   README_PATH,
@@ -208,4 +209,11 @@ test("--check reads a CRLF checkout (Windows core.autocrlf) as current", () => {
 test("the repository's own registry is valid, its table current, and its docs copies identical", () => {
   const r = cli(["--check"]);
   assert.equal(r.code, 0, r.err);
+});
+
+test("table cells escape backslashes before pipes (a trailing backslash cannot undo an escape)", () => {
+  assert.equal(cell("a|b"), "a\\|b");
+  assert.equal(cell("a\\|b"), "a\\\\\\|b");
+  assert.equal(cell("ends with \\"), "ends with \\\\");
+  assert.equal(cell("two\nlines"), "two lines");
 });

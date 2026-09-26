@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clamp01, slug } from "../src/util.js";
+import { clamp01, slug, stripTrailingSlashes } from "../src/util.js";
 
 test("clamp01 regression (E5): NaN and non-numeric input fail to 0, never propagate", () => {
   // Math.max(0, Math.min(1, NaN)) is NaN — one NaN signal poisoned every score it touched.
@@ -42,4 +42,14 @@ test("slug regression (E5): non-ASCII names get distinct slugs instead of all co
   assert.notEqual(a, b);
   assert.equal(slug("🔥🔥"), a, "deterministic");
   for (const s of [arabic, chinese, hindi, a]) assert.ok(!/[\\/:*?"<>|\s]/.test(s), s);
+});
+
+test("stripTrailingSlashes removes only trailing slashes, in linear time", () => {
+  assert.equal(stripTrailingSlashes("a/b///"), "a/b");
+  assert.equal(stripTrailingSlashes("///"), "");
+  assert.equal(stripTrailingSlashes("a//b"), "a//b");
+  assert.equal(stripTrailingSlashes(null), "");
+  const t0 = performance.now();
+  assert.equal(stripTrailingSlashes(`${"/".repeat(300000)}x`).length, 300001);
+  assert.ok(performance.now() - t0 < 1000);
 });
