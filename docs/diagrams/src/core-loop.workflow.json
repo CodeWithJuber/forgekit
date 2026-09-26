@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How forgekit fits around a coding agent",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "task-lane", "label": "Task" },
+    { "id": "forgekit", "label": "forgekit" },
+    { "id": "work-lane", "label": "Agent and outcome" }
+  ],
+  "mainPath": ["task", "substrate", "agent", "outcome", "memory"],
+  "semanticChecks": {
+    "allowedRoots": [],
+    "allowedTerminals": [],
+    "requiredEdges": [
+      { "from": "task", "to": "substrate" },
+      { "from": "substrate", "to": "clarify" },
+      { "from": "clarify", "to": "task" },
+      { "from": "substrate", "to": "agent" },
+      { "from": "memory", "to": "substrate" }
+    ]
+  },
+  "nodes": [
+    { "id": "clarify", "lane": "task-lane", "col": 0, "type": "frontend", "label": "Clarify first", "width": 180 },
+    { "id": "task", "lane": "task-lane", "col": 1, "type": "frontend", "label": "Task", "width": 180 },
+    { "id": "substrate", "lane": "forgekit", "col": 1, "type": "security", "label": "Pre-action substrate", "width": 180 },
+    { "id": "memory", "lane": "forgekit", "col": 4, "type": "database", "label": "Memory", "sublabel": "evidence-weighted", "width": 180 },
+    { "id": "agent", "lane": "work-lane", "col": 2, "type": "backend", "label": "Agent acts", "sublabel": "external coding agent", "width": 180 },
+    { "id": "outcome", "lane": "work-lane", "col": 3, "type": "external", "label": "Tests, CI or human", "width": 180 }
+  ],
+  "edges": [
+    { "id": "task-check", "from": "task", "to": "substrate" },
+    { "id": "missing-info", "from": "substrate", "to": "clarify", "label": "missing information", "role": "branch" },
+    { "id": "clarify-back", "from": "clarify", "to": "task", "role": "return" },
+    { "id": "enough-info", "from": "substrate", "to": "agent", "label": "enough information", "variant": "emphasis" },
+    { "id": "agent-outcome", "from": "agent", "to": "outcome" },
+    { "id": "outcome-memory", "from": "outcome", "to": "memory", "toSide": "bottom" },
+    { "id": "memory-feeds", "from": "memory", "to": "substrate", "label": "feeds the next check", "variant": "dashed", "role": "return", "route": "straight" }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Proof-carrying memory: how claims gain and lose trust",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 640],
+    "views": [
+      {"id": "claims-in", "label": "Claims and evidence in", "focus": ["events", "oracles", "ledger"], "note": "Local events write content-addressed claims; independent oracles append evidence and move confidence."},
+      {"id": "team-sync", "label": "Team sync over git", "focus": ["ledger", "teammates"], "note": "Ledgers exchange both ways via git union-merge, conflict-free."},
+      {"id": "read-path", "label": "Merged read view", "focus": ["ledger", "readview", "recall", "lessons", "brain"], "note": "The merged read view feeds the recall list, lesson injection and the brain index."}
+    ]
+  },
+  "stages": [
+    {"label": "This machine · sources"},
+    {"label": "This machine · ledger"},
+    {"label": "This machine · read"},
+    {"label": "This machine · feeds"},
+    {"label": "Team · git"}
+  ],
+  "nodes": [
+    {"id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "tests · CI", "tag": "human accept / revert", "stage": 0, "row": 0, "width": 150},
+    {"id": "events", "type": "frontend", "label": "Local events", "sublabel": "recall / remember · cortex lesson", "tag": "reuse mint · diagnose", "stage": 0, "row": 1, "width": 150},
+    {"id": "ledger", "type": "database", "label": ".forge/ledger/", "sublabel": "content-addressed claims", "tag": "append-only evidence logs", "stage": 1, "row": 1},
+    {"id": "readview", "type": "backend", "label": "Merged read view", "stage": 2, "row": 1},
+    {"id": "recall", "type": "frontend", "label": "Recall list", "stage": 3, "row": 0},
+    {"id": "lessons", "type": "frontend", "label": "Lesson injection", "stage": 3, "row": 1},
+    {"id": "brain", "type": "frontend", "label": "Brain index", "stage": 3, "row": 2},
+    {"id": "teammates", "type": "database", "label": "Teammate ledgers", "stage": 4, "row": 3}
+  ],
+  "flows": [
+    {"id": "write-claims", "from": "events", "to": "ledger", "label": "writes claims", "variant": "emphasis"},
+    {"id": "append-evidence", "from": "oracles", "to": "ledger", "label": "append evidence", "classification": "moves confidence", "toSide": "top", "via": [[315, 157]]},
+    {"id": "read-merged", "from": "ledger", "to": "readview", "label": "claims + evidence", "variant": "emphasis"},
+    {"id": "feed-recall", "from": "readview", "to": "recall", "label": "feeds", "fromSide": "top", "via": [[530, 157]]},
+    {"id": "feed-lessons", "from": "readview", "to": "lessons", "label": "feeds", "variant": "emphasis"},
+    {"id": "feed-brain", "from": "readview", "to": "brain", "label": "feeds", "fromSide": "bottom", "via": [[530, 385]]},
+    {"id": "sync-out", "from": "ledger", "to": "teammates", "label": "git union-merge", "classification": "conflict-free", "fromSide": "bottom", "toSide": "left", "via": [[315, 499]], "labelDy": -20},
+    {"id": "sync-in", "from": "teammates", "to": "ledger", "label": "forge ledger merge / sync", "fromSide": "left", "toSide": "bottom", "via": [[315, 499]], "labelAt": [610, 519]}
+  ]
+}

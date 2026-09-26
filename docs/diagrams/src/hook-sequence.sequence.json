@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "One Claude Code session with forgekit's hooks",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1500, 696]
+  },
+  "participants": [
+    { "id": "developer", "type": "external", "label": "Developer" },
+    { "id": "agent", "type": "frontend", "label": "Claude Code (agent)" },
+    { "id": "hooks", "type": "security", "label": "forgekit hooks" },
+    { "id": "state", "type": "database", "label": ".forge/ state" }
+  ],
+  "segments": [
+    { "from": 156, "to": 214, "label": "Session start" },
+    { "from": 228, "to": 358, "label": "Prompt" },
+    { "from": 372, "to": 502, "label": "Tool call" },
+    { "from": 516, "to": 610, "label": "Stop" }
+  ],
+  "messages": [
+    { "id": "session-start", "from": "agent", "to": "hooks", "y": 168, "label": "SessionStart: recall-load · cortex session-start" },
+    { "id": "inject-context", "from": "hooks", "to": "agent", "y": 204, "label": "inject learned lessons + last handoff (.forge/state.md)", "variant": "return" },
+    { "id": "prompt", "from": "developer", "to": "agent", "y": 240, "label": "prompt", "variant": "emphasis" },
+    { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt + preflight" },
+    { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "reads CACHED atlas only; never builds it in a hook" },
+    { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "substrate advisory: suggested model · impact · verify checklist", "variant": "return" },
+    { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · cortex pre-edit", "variant": "security" },
+    { "id": "allow-deny", "from": "hooks", "to": "agent", "y": 420, "label": "allow | deny", "variant": "return" },
+    { "id": "post-tool", "from": "agent", "to": "hooks", "y": 456, "label": "PostToolUse: format-on-edit · secret-redact · cortex capture" },
+    { "id": "capture", "from": "hooks", "to": "state", "y": 492, "label": "cortex capture: signals + evidence" },
+    { "id": "stop", "from": "agent", "to": "hooks", "y": 528, "label": "Stop: completion-gate · lean-guard · session-learner · cortex stop" },
+    { "id": "distill", "from": "hooks", "to": "state", "y": 564, "label": "cortex stop: distill lessons into the ledger" },
+    { "id": "stop-result", "from": "hooks", "to": "agent", "y": 600, "label": "session ends | agent told what is missing", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "agent", "from": 163, "to": 605, "type": "frontend" },
+    { "participant": "hooks", "from": 163, "to": 209, "type": "security" },
+    { "participant": "hooks", "from": 271, "to": 353, "type": "security" },
+    { "participant": "hooks", "from": 379, "to": 425, "type": "security" },
+    { "participant": "hooks", "from": 451, "to": 497, "type": "security" },
+    { "participant": "hooks", "from": 523, "to": 605, "type": "security" }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "Advisory by default", "items": ["UserPromptSubmit output is advisory by default", "PreToolUse (Edit/Write/Bash) denies secret paths and dangerous writes; the others are advisory unless enforced"] },
+    { "dot": "rose", "title": "Completion gate", "items": ["Sessions that touched code need a test in the diff or a fresh passing forge verify"] },
+    { "dot": "slate", "title": "secret-redact", "items": ["Scrubs secrets from tool output after the tool runs"] },
+    { "dot": "emerald", "title": ".forge/ state", "items": ["ledger · atlas cache · metrics"] }
+  ]
+}

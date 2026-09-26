@@ -12,6 +12,12 @@ The router code names no vendor, model, tier or threshold, and a test enforces t
 >
 > The shipped prior is a useful initialization, not a guarantee about your workload. The universal router is a separately versioned component from the old tiered router whose 62.1% saving was refuted (`research/empirical-refutation/`); neither result transfers to the other.
 
+How a recommendation is chosen, run and learned from:
+
+[![forge route universal: the task's 12 features and each model's P(solve) and expected cost select the cheapest cascade that meets the objective, or report INFEASIBLE with a labeled least-bad fallback; each attempt is checked by tests or forge verify, a failure escalates to the next model, and forge route outcome records each outcome for forge route fit, which refits a local estimate shrunk toward the shipped prior](diagrams/router-cascade.svg)](https://codewithjuber.github.io/forgekit/diagrams/router-cascade.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/router-cascade.html): pan, zoom, search, and trace any node.</sub>
+
 ## The model
 
 **1. Who solves what: multidimensional item response theory.**

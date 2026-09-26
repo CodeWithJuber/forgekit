@@ -6,6 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Build caches under `.cache/` stay out of the import graph.** `forge impact`, `forge scope`
+  and the generated repository map walked into `.cache/`, so a fetched tool checkout (such as
+  the pinned Archify under `.cache/archify/`) showed up as hundreds of project files.
+- **The landing page's hero says ten native targets.** It still said nine after OpenClaw joined
+  the grid.
+
+### Added
+
+- **Every diagram is now rendered by [Archify](https://github.com/tt-a1i/archify) from a typed
+  source.** Thirteen Archify diagrams replace the fifteen hand-written Mermaid diagrams in
+  README, ARCHITECTURE, ONBOARDING, GUIDE, the substrate docs and the docs site.
+  - The sources are architecture, workflow, sequence, dataflow and lifecycle schemas in
+    `docs/diagrams/src/`, each validated at Archify's showcase quality bar.
+  - The docs embed a dual-theme SVG that links to an interactive page on the Pages site
+    (`/diagrams/`). There you can pan, zoom, search and trace a node's dependencies.
+  - `scripts/diagrams.mjs` pins Archify by commit. The Pages build refuses to publish a
+    rendered page whose sha256 differs from its validated receipt.
+  - `node scripts/diagrams.mjs check`, now in the CI quality gate, fails when a source
+    changed without a re-render. `forge docs check` rejects new hand-written Mermaid
+    diagrams.
+  - The generated repository map stays Mermaid, because it is laid out from the live import
+    graph.
+
+  See `docs/diagrams/README.md`.
+- **Illustrations for the docs site and the landing page, and a new social card.**
+  - Seven docs-site pages open with an illustration.
+  - The landing page's evidence band has a background image, veiled so its text keeps at
+    least 5.4:1 contrast. It falls back to a flat color when the reader asks for more
+    contrast.
+  - The link-preview card is now `og.jpg` (284 KB), rendered from `docs/assets/og.svg` by
+    `scripts/og-card.mjs`. The script refuses to write the card if any line of text overlaps
+    the art or leaves the crop-safe area, or if the file exceeds link-preview size limits.
+    The previous `og.png` was 1.3 MB, over the size many preview scrapers accept.
+
 ## [1.6.0] - 2026-09-26
 
 ### Security

@@ -43,24 +43,9 @@ You author the substrate once. `forge sync` compiles that source into each tool'
 native config. The four layers are how the brain is expressed; the compiler is how it
 is delivered.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    S["source/<br/>rules.json · substrate.json · mcp.json"] -->|"forge sync<br/>content-hash + DO-NOT-EDIT headers"| N["native configs<br/>CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …"]
-    S -. configures .-> L
-    subgraph L["the four layers"]
-        direction LR
-        T["tools<br/>model-invoked skills"]
-        C["crew<br/>isolated sub-agents"]
-        G["guards (enforced)<br/>deterministic hooks"]
-        M["mcp<br/>atlas + substrate server"]
-    end
-    K["local events<br/>cortex · recall · reuse · diagnose"] --> LG[("PCM ledger<br/>.forge/ledger/")]
-    O["independent oracles<br/>tests · CI · human accept/revert"] -->|"move confidence"| LG
-    LG <-->|"git union-merge, conflict-free"| TM["teammate ledgers"]
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class G accent;
-```
+[![forgekit's architecture: forge sync compiles source/ into native configs for ten tools and configures the four layers (tools, crew, guards, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://codewithjuber.github.io/forgekit/diagrams/system.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
 
 The four layers, brand-named and emitted cross-tool:
 
@@ -88,28 +73,9 @@ checks and returns a single verdict. It composes the individually-callable stage
 (`preflight`, `route`, `atlas`, `impact`, `reuse`, `context`, `scope`, `lean`,
 `anchor`, `verify`) into one pre-action contract.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    RE["referenced entities"] --> INTAKE
-    subgraph INTAKE["intake"]
-        direction LR
-        PF["preflight<br/>assumption gap"] --> RT["route<br/>cheapest tier"]
-    end
-    INTAKE --> ANALYSIS
-    subgraph ANALYSIS["analysis"]
-        direction LR
-        AT["atlas<br/>code graph"] --> IM["impact<br/>blast radius"] --> PT["predict<br/>failing tests"] --> RU["reuse<br/>cache hit?"]
-    end
-    ANALYSIS --> SAFETY
-    subgraph SAFETY["safety + fit"]
-        direction LR
-        CX["context<br/>completeness gate"] --> SC["scope<br/>coupled files"] --> ME["memory<br/>recall + lessons"] --> MN["minimality<br/>lean footprint"] --> GA["goal-anchor<br/>drift check"]
-    end
-    SAFETY --> VD["verdict"]
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class VD accent;
-```
+[![The pre-action gate: referenced entities pass through intake (preflight, route), analysis (atlas, impact, predict, reuse) and safety and fit (context, scope, memory, minimality, goal-anchor) to one verdict](docs/diagrams/pre-action-gate.svg)](https://codewithjuber.github.io/forgekit/diagrams/pre-action-gate.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/pre-action-gate.html): pan, zoom, search, and trace any node.</sub>
 
 **blast radius** — the set of files an edit is predicted to impact, read from the code
 graph. `forge impact` computes it; the pipeline surfaces it before the model touches
@@ -146,23 +112,9 @@ claims into `.forge/ledger/`. Because a claim's bytes are a pure function of
 `(kind, body, scope)`, every replica computes the same identity — so teammate ledgers
 fold together over plain git with no conflicts.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    subgraph EV["local events"]
-        direction TB
-        E1["recall / remember"]
-        E2["cortex lesson"]
-        E3["reuse mint"]
-        E4["diagnose"]
-    end
-    EV -->|"content-addressed claims"| LG[(".forge/ledger")]
-    O["independent oracles<br/>tests · CI · human accept/revert"] -->|"append evidence<br/>move confidence"| LG
-    TM["teammate ledgers"] <-->|"git union-merge<br/>conflict-free"| LG
-    LG --> RV["merged read view<br/>recall list · lesson inject · brain index"]
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class LG accent;
-```
+[![Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge](docs/diagrams/ledger-flow.svg)](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.</sub>
 
 Mechanically: evidence and tombstones are append-only, hash-deduped logs; confidence
 (`val`) is a decayed Beta posterior moved only by oracles; merge is a join-semilattice
@@ -175,6 +127,12 @@ query | ratify | retract | merge | import` (`--personal` for the per-user ledger
 Decision recorded in
 [`docs/adr/0006-proof-carrying-memory.md`](docs/adr/0006-proof-carrying-memory.md).
 
+A claim's life, from mint to tombstone:
+
+[![Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim](docs/diagrams/claim-lifecycle.svg)](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.</sub>
+
 ## 4. The reuse / context loop
 
 `forge reuse` is a proof-carrying code cache. A generated artifact is only served again
@@ -182,19 +140,9 @@ when its evidence still holds — the confidence is above the floor _and_ its at
 dependencies still resolve. Otherwise it falls through to generation and mints a fresh
 claim on the way back.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    SP["spec"] --> FP["fingerprint<br/>MinHash + LSH"]
-    FP --> LD["match ladder<br/>exact → near → adapt → miss"]
-    LD --> GT{"confidence ≥ floor<br/>AND deps resolve?"}
-    GT -->|"yes"| SV["serve (proof holds)"]
-    GT -->|"miss"| GN["generate"]
-    GN -->|"mint claim"| MT[(".forge/ledger")]
-    MT -.->|"available next time"| FP
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class SV accent;
-```
+[![Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/](docs/diagrams/reuse-cache.svg)](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.</sub>
 
 The completeness gate on the retrieval side is `forge context "<task>"`: it pins the
 required-knowledge set for the edit (`R(edit)`), downgrades items along a compression ladder
@@ -216,6 +164,12 @@ check lowers that only where it catches what the first cannot; the product `∏(
 only if the checks fire independently. The same check repeated at another point (Stop,
 pre-commit, CI on the same diff) is nested, so the residual is `(1−p)(1−c_max)` (formal
 synthesis §5.3, corrected 2026-09-21).
+
+Where those deterministic checks run in one Claude Code session:
+
+[![One Claude Code session with forgekit's hooks: SessionStart injects learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop and cortex pre-edit and allows or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger](docs/diagrams/hook-sequence.svg)](https://codewithjuber.github.io/forgekit/diagrams/hook-sequence.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.</sub>
 
 **The completion gate (Stop, `src/gate.js`).** The only Stop-path guard that may answer:
 `completion-gate.sh` runs synchronously (the lesson-mining `cortex.sh stop` stays
@@ -385,6 +339,12 @@ layers: on the same diff the copies fire together, so they do not multiply the c
 and the residual stays `(1−p)(1−c_max)`. This rung adds catches only where it sees what the
 Stop hook could not — edits made after the turn ended, a host or session where the Stop
 hook never ran, or a session whose one Stop block was already spent.
+
+Plain `forge verify`, end to end:
+
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](docs/diagrams/verify-pipeline.svg)](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 
 **Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
 asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
@@ -677,21 +637,21 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>134 files"]
+  test["test<br/>135 files"]
   src["src<br/>120 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   bench["bench<br/>6 files"]
   global["global<br/>5 files"]
-  scripts["scripts<br/>3 files"]
+  scripts["scripts<br/>5 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 284 --> src
+  test -- 286 --> src
   bench -- 12 --> src
+  scripts -- 5 --> src
   examples -- 4 --> src
-  scripts -- 3 --> src
+  test -- 4 --> scripts
   test -- 3 --> global
-  test -- 3 --> scripts
   test -- 2 --> bench
   src --> global
 ```

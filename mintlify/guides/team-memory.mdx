@@ -3,6 +3,10 @@ title: "Team memory with the ledger"
 description: "Fold a teammate's ledger in, conflict-free, over plain git — no server, no sync service, just files that converge in any order."
 ---
 
+<Frame>
+  <img src="/images/illustrations/team-memory.webp" alt="Two geometric lattices interlocking seamlessly in the middle: teammates' ledgers merging without conflicts." />
+</Frame>
+
 Everything the substrate learns — cortex lessons, `forge remember` facts, verified reuse
 artifacts — lands as content-addressed claims in a git-native ledger (`.forge/ledger/`)
 built to merge without conflicts. There is no server and no sync service; it is just
@@ -36,14 +40,11 @@ the same identity for the same knowledge. The merge is a join-semilattice —
 property-tested to be commutative, associative, and idempotent — so two teammates'
 ledgers converge to the same state no matter who syncs first.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    A["your ledger"] <-->|"git union-merge · conflict-free"| B["teammate ledger"]
-    A --> M["merged read view"]
-    B --> M
-    M --> R["recall list · lesson inject · brain index"]
-```
+<Frame>
+  <img src="/images/diagrams/ledger-flow.svg" alt="Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; teammate ledgers merge through git union-merge and forge ledger merge; a merged read view feeds the recall list, lesson injection and the brain index" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.
 
 <Note>
   Identical knowledge minted independently converges to **one** claim with every author

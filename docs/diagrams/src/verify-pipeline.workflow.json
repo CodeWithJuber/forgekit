@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "forge verify: a PASS bound to the code that was tested",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "state", "label": "Code state" },
+    { "id": "suites", "label": "Suites" },
+    { "id": "files", "label": ".forge/" }
+  ],
+  "mainPath": ["plan", "pre", "run", "post", "aggregate", "symbols", "stamp"],
+  "semanticChecks": {
+    "allowedRoots": ["config"],
+    "allowedTerminals": ["events"]
+  },
+  "nodes": [
+    { "id": "config", "lane": "files", "col": 0, "type": "database", "label": ".forge/forge.config.json", "sublabel": "under verify", "tag": "workspaces · exclude · generated", "width": 180 },
+    { "id": "plan", "lane": "suites", "col": 0, "type": "messagebus", "label": "Plan suites", "sublabel": "root + nested packages with a suite", "tag": "scripts.test · pytest config · go.mod · …", "width": 180 },
+    { "id": "pre", "lane": "state", "col": 1, "type": "database", "label": "Pre-run state", "sublabel": "HEAD · diffs · untracked files", "tag": "untracked: path/mode/size/sha256", "width": 180 },
+    { "id": "run", "lane": "suites", "col": 2, "type": "messagebus", "label": "Run each suite", "sublabel": "in its own directory", "width": 180 },
+    { "id": "post", "lane": "state", "col": 3, "type": "database", "label": "Post-run state", "sublabel": "changed → INCOMPLETE (mutated)", "width": 180 },
+    { "id": "aggregate", "lane": "suites", "col": 4, "type": "security", "label": "Aggregate", "sublabel": "PASS · FAIL · INCOMPLETE · NOT_CONFIGURED", "width": 200 },
+    { "id": "symbols", "lane": "suites", "col": 5, "type": "security", "label": "Hallucinated-symbol check", "sublabel": "against the atlas", "width": 200 },
+    { "id": "stamp", "lane": "files", "col": 5, "type": "database", "label": ".forge/provenance.json", "sublabel": "MAC-sealed stamp", "tag": "bound to the pre-run state", "width": 200 },
+    { "id": "events", "lane": "files", "col": 4, "type": "database", "label": ".forge/verify-events.jsonl", "sublabel": "verifier event appended", "width": 200 }
+  ],
+  "edges": [
+    { "id": "config-plan", "from": "config", "to": "plan", "variant": "dashed" },
+    { "id": "plan-pre", "from": "plan", "to": "pre", "fromSide": "right", "toSide": "bottom" },
+    { "id": "pre-run", "from": "pre", "to": "run", "fromSide": "right", "toSide": "top" },
+    { "id": "run-post", "from": "run", "to": "post", "fromSide": "right", "toSide": "bottom" },
+    { "id": "post-aggregate", "from": "post", "to": "aggregate", "fromSide": "right", "toSide": "top" },
+    { "id": "aggregate-symbols", "from": "aggregate", "to": "symbols" },
+    { "id": "symbols-stamp", "from": "symbols", "to": "stamp", "variant": "emphasis" },
+    { "id": "stamp-events", "from": "stamp", "to": "events", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Aggregate",
+      "items": [
+        "Any suite FAIL → FAIL",
+        "Any package without a verdict → INCOMPLETE",
+        "All covered and passing → PASS",
+        "No runner at all → NOT_CONFIGURED"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Coverage and mutation",
+      "items": [
+        "A root script that runs every workspace covers them once",
+        "Interpreter caches and generated paths do not count as a change"
+      ]
+    }
+  ]
+}

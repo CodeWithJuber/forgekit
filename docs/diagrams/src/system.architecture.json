@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "forgekit: one source, native configs, enforced guards, evidence-carrying memory",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "one-source", "label": "One source, native configs", "focus": ["source", "forge-sync", "native-configs"], "note": "source/ is the one source of truth; forge sync emits each tool's native config." },
+      { "id": "four-layers", "label": "The four layers", "focus": ["source", "tools", "crew", "guards", "mcp"], "note": "source/ configures tools, crew, guards and mcp; guards are deterministic, enforced hooks." },
+      { "id": "memory", "label": "Evidence-carrying memory", "focus": ["local-events", "oracles", "ledger", "teammates"], "note": "Local events add content-addressed claims; oracles move confidence; ledgers git union-merge with teammates." }
+    ]
+  },
+  "components": [
+    { "id": "source", "type": "database", "label": "source/ · the one source of truth", "sublabel": "rules.json · substrate.json · mcp.json", "pos": [40, 60], "size": [270, 76] },
+    { "id": "forge-sync", "type": "backend", "label": "forge sync", "sublabel": "content hash · DO-NOT-EDIT headers", "pos": [470, 60], "size": [250, 76] },
+    { "id": "native-configs", "type": "external", "label": "Native configs for ten tools", "sublabel": "CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …", "pos": [860, 60], "size": [340, 76] },
+    { "id": "tools", "type": "backend", "label": "tools", "sublabel": "model-invoked skills", "pos": [40, 260], "size": [230, 70] },
+    { "id": "crew", "type": "backend", "label": "crew", "sublabel": "isolated sub-agents", "pos": [350, 260], "size": [230, 70] },
+    { "id": "guards", "type": "security", "label": "guards · enforced", "sublabel": "deterministic hooks", "pos": [660, 260], "size": [230, 70] },
+    { "id": "mcp", "type": "backend", "label": "mcp", "sublabel": "atlas + substrate MCP server", "pos": [970, 260], "size": [230, 70] },
+    { "id": "local-events", "type": "messagebus", "label": "Local events", "sublabel": "cortex · recall · reuse · diagnose", "pos": [40, 470], "size": [260, 76] },
+    { "id": "ledger", "type": "database", "label": "PCM ledger", "sublabel": ".forge/ledger/", "pos": [520, 470], "size": [240, 76] },
+    { "id": "teammates", "type": "external", "label": "Teammate ledgers", "pos": [980, 470], "size": [220, 76] },
+    { "id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "tests · CI · human accept/revert", "pos": [510, 660], "size": [260, 76] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "the four layers", "wraps": ["tools", "crew", "guards", "mcp"] }
+  ],
+  "connections": [
+    { "id": "source-to-sync", "from": "source", "to": "forge-sync" },
+    { "id": "sync-emits-configs", "from": "forge-sync", "to": "native-configs", "label": "emits" },
+    { "id": "source-configures-layers", "from": "source", "to": "tools", "label": "configures all four", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "events-claims", "from": "local-events", "to": "ledger", "label": "content-addressed claims" },
+    { "id": "oracles-confidence", "from": "oracles", "to": "ledger", "label": "move confidence" },
+    { "id": "ledger-to-teammates", "from": "ledger", "to": "teammates", "label": "git union-merge, conflict-free" },
+    { "id": "teammates-to-ledger", "from": "teammates", "to": "ledger" }
+  ]
+}

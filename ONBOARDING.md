@@ -11,18 +11,9 @@ Windsurf, Zed, Continue, and OpenClaw at once. Author it once; every tool reads 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    I["forge init"] --> Cfg["your tools configured<br/>from one source"]
-    Cfg --> Work["you work as usual"]
-    Work --> Gate["substrate checks each task:<br/>ask first? · which model? · what breaks?"]
-    Gate --> Edit["agent edits, with guardrails"]
-    Edit --> Learn["cortex learns from corrections"]
-    Learn -.->|next task is smarter| Work
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class Gate accent;
-```
+[![Guided onboarding: forge init configures your tools from one source; then for each task you work as usual, the substrate checks whether to ask first, which model to use and what breaks, the agent edits with guardrails, and cortex learns from corrections so the next task is smarter](docs/diagrams/onboarding-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/onboarding-loop.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/onboarding-loop.html): pan, zoom, search, and trace any node.</sub>
 
 ## 1. Install (once)
 
