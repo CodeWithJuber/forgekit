@@ -144,10 +144,12 @@ export function validateRegistry(registry, { root = null } = {}) {
   return errors;
 }
 
-/** Escape a value for a single Markdown table cell. */
-const cell = (s) =>
+/** Escape a value for a single Markdown table cell: backslashes first, then the pipes a
+ *  cell cannot contain (escaping only the pipes would let a trailing `\` undo the escape). */
+export const cell = (s) =>
   String(s ?? "")
     .replace(/\r?\n/g, " ")
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
     .trim();
 

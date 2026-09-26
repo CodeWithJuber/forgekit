@@ -16,6 +16,7 @@
 // function here is total: an unavailable catalog is `null`, never a throw.
 import { join } from "node:path";
 import { cachedGetJson, httpGet } from "./http_cache.js";
+import { stripTrailingSlashes } from "./util.js";
 
 export const ANTHROPIC_API = "https://api.anthropic.com";
 export const ANTHROPIC_VERSION = "2023-06-01";
@@ -53,7 +54,10 @@ export function tokenize(s) {
     }
     const run = [];
     while (i < parts.length && isVersionPart(parts[i])) run.push(parts[i++]);
-    out.add(run.join(".").replace(/(?:\.0)+$/, ""));
+    // Drop trailing ".0" parts ("4.0" → "4") by popping: `/(?:\.0)+$/` backtracks
+    // quadratically on a long ".0.0.0…" run (polynomial ReDoS on library input).
+    while (run.length > 1 && run[run.length - 1] === "0") run.pop();
+    out.add(run.join("."));
   }
   return out;
 }
@@ -268,7 +272,7 @@ export function matchCatalogModel(modelId, models) {
  * @typedef {{kind:null, reason:string}} NoCatalog
  */
 
-const trimUrl = (u) => String(u ?? "").replace(/\/+$/, "");
+const trimUrl = (u) => stripTrailingSlashes(u);
 
 /** The Anthropic Models API, authenticated with an API key (x-api-key). */
 export function anthropicSource(apiKey) {

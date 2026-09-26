@@ -45,6 +45,28 @@ The `PASS`-implies-base-`PASS` rule is deliberate: a green deep consensus can ne
 outrun a red base run, so `INCOMPLETE` or `NOT_CONFIGURED` on the base test lens
 downgrades the deep result to match.
 
+**What a `PASS` covers.** `forge verify` plans one suite per package that declares its own
+tests (the root, plus each nested package with an explicit `scripts.test`, a pytest config,
+a `go.mod`, …) and runs each in its own directory. `packages: n/m covered` counts the ones
+that reached a verdict. A package whose suite never reached one makes the result
+`INCOMPLETE`, and a failing package makes it `FAIL`, however green the root is. A root
+script that already runs every workspace (`npm test --workspaces`, `pnpm -r test`,
+`turbo run test`, …) covers them in one run. Tune it under `verify` in
+`.forge/forge.config.json`:
+
+```json
+{ "verify": { "workspaces": "auto", "exclude": ["packages/legacy"], "generated": ["coverage/**"] } }
+```
+
+**Bound to the code that was tested.** The stamp is bound to a fingerprint of the working
+tree (HEAD, staged and unstaged diffs, and each untracked file's path, mode, size and
+content hash), taken before **and** after the run. If the code changed while the tests ran
+(a formatter, a generator, another agent), the result is `INCOMPLETE` with
+`mutated: true`. Interpreter caches and the `generated` paths never count as a change.
+Each run also appends a MAC-sealed event to `.forge/verify-events.jsonl` (run id, verifier
+version, suites, coverage, pre/post state), which `forge route outcome --verify-run <id>`
+can cite.
+
 ## The hallucinated-symbol flag — `forge atlas has`
 
 `forge atlas has <symbol>` is the hallucination check: if the model calls a symbol that

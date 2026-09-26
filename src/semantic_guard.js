@@ -81,6 +81,20 @@ const PATH_RE = /[\\/]|\.(?:m?[jt]sx?|py|go|rs|java|rb|json|ya?ml|toml|md|css|ht
 
 const sorted = (xs) => [...xs].sort();
 
+// What may stay at a token's edges: a leading "." keeps dotfiles and relative paths, a
+// trailing one is sentence punctuation. A code-point scan, not `/…|[^…]+$/g`, which
+// backtracks quadratically on a long run of punctuation inside one token.
+const KEEP_HEAD = /[\p{L}\p{N}_$./\\]/u;
+const KEEP_TAIL = /[\p{L}\p{N}_$/\\]/u;
+export function trimEdges(raw) {
+  const cps = [...raw];
+  let a = 0;
+  let b = cps.length;
+  while (a < b && !KEEP_HEAD.test(cps[a])) a++;
+  while (b > a && !KEEP_TAIL.test(cps[b - 1])) b--;
+  return cps.slice(a, b).join("");
+}
+
 /**
  * The behaviour-carrying features of a text.
  * @param {string} text
@@ -103,7 +117,7 @@ export function criticalFeatures(text) {
   const polarity = [];
   for (const raw of rest.split(/\s+/)) {
     // edge punctuation only — inner punctuation (dots, underscores, slashes) is identity
-    const tok = raw.replace(/^[^\p{L}\p{N}_$./\\]+|[^\p{L}\p{N}_$/\\]+$/gu, "");
+    const tok = trimEdges(raw);
     if (!tok) continue;
     if (PATH_RE.test(tok) && /[\p{L}\p{N}]/u.test(tok)) paths.push(tok);
     else if (IDENT_RE.test(tok)) identifiers.push(tok);

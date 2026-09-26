@@ -5,6 +5,7 @@ import {
   describeConflicts,
   sameSemantics,
   semanticConflicts,
+  trimEdges,
 } from "../src/semantic_guard.js";
 
 // The review's four exact-key collisions (F04) and its opposite-rule pair (F16): similar text,
@@ -67,4 +68,44 @@ test("semantic guard: features are extracted per class; literals are not re-scan
     paths: [],
     polarity: [],
   });
+});
+
+test("trimEdges equals the edge-punctuation regex it replaced, in linear time", () => {
+  const OLD = /^[^\p{L}\p{N}_$./\\]+|[^\p{L}\p{N}_$/\\]+$/gu; // quadratic on long runs
+  const alphabet = [
+    "a",
+    "Z",
+    "7",
+    "_",
+    "$",
+    ".",
+    "/",
+    "\\",
+    "!",
+    "?",
+    ",",
+    "(",
+    ")",
+    "é",
+    "ß",
+    "😀",
+    "-",
+    '"',
+  ];
+  let seed = 20260926;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let trial = 0; trial < 2000; trial++) {
+    const n = Math.floor(rand() * 9);
+    let tok = "";
+    for (let i = 0; i < n; i++) tok += alphabet[Math.floor(rand() * alphabet.length)];
+    assert.equal(trimEdges(tok), tok.replace(OLD, ""), JSON.stringify(tok));
+  }
+  // A long punctuation run inside one token: the old regex took quadratic time here.
+  const hostile = `a${"!".repeat(200000)}a`;
+  const t0 = performance.now();
+  assert.equal(trimEdges(hostile), hostile);
+  assert.ok(performance.now() - t0 < 1000, "linear, not quadratic");
 });

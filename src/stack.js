@@ -6,6 +6,7 @@
 // skipped, never thrown.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { stripTrailingSlashes } from "./util.js";
 
 const read = (root, rel) => {
   try {
@@ -410,7 +411,7 @@ function scanPackageRoots(root) {
  * @param {string} glob @param {string} rel POSIX path relative to the repo root
  */
 export function matchesWorkspaceGlob(glob, rel) {
-  const g = String(glob).replace(/^\.\//, "").replace(/\/+$/, "");
+  const g = stripTrailingSlashes(String(glob).replace(/^\.\//, ""));
   let re = "";
   for (let i = 0; i < g.length; i++) {
     const c = g[i];
@@ -423,7 +424,7 @@ export function matchesWorkspaceGlob(glob, rel) {
     else if (c === "?") re += "[^/]";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${re}$`).test(String(rel).replace(/\/+$/, ""));
+  return new RegExp(`^${re}$`).test(stripTrailingSlashes(rel));
 }
 
 // A root test script that runs EVERY workspace's suite itself — so a nested package that is a

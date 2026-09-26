@@ -581,7 +581,12 @@ generated from the same registries the check reads, into marker-managed blocks
   every diagram in every tracked markdown file re-themes (deliberate bad examples
   opted out with `docs-check-ignore` are left alone);
 - the repo map in `ARCHITECTURE.md` — drawn from the live import graph, so it cannot
-  drift from the tree it describes.
+  drift from the tree it describes;
+- the docs site's changelog page (`mintlify/changelog/overview.mdx`) — from `CHANGELOG.md`:
+  every release, and the `[Unreleased]` work, as one Mintlify `<Update>` entry listing each
+  change's headline with a link to its full notes. An MDX page cannot hold HTML comments,
+  so its markers are JSX comments (`{/* forge:render:changelog:begin … */}`). A release
+  (`scripts/bump.mjs`) regenerates it in the release commit.
 
 ```console
 $ forge docs render
@@ -594,7 +599,8 @@ $ forge docs render --check
 reconciler in CI: a stale registry-derived block is an **error** whose message is the
 fix (`run forge docs render`), while tree-derived output (the repo map, diagram theme)
 is a warning — moving a file never fails an unrelated PR, but a new command with a
-stale table always does.
+stale table always does. The changelog page is an error too: edit `CHANGELOG.md`, then
+run `forge docs render` in the same change.
 
 ### `forge docs sync` — which prose did this diff make stale?
 

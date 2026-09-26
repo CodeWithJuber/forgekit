@@ -50,6 +50,8 @@ Proof-carrying memory — the content-addressed claim store.
 ```bash
 forge ledger stats                 # what the repo knows, by kind and trust level
 forge ledger verify                # re-check claims are in normal form
+forge ledger verify --fix [--dry-run]  # re-address old claims (--dry-run previews, writes nothing)
+forge ledger compact [--dry-run]   # archive what this ledger's own history says is unused
 forge ledger show <id>             # a claim and its evidence
 forge ledger blame <id-prefix>     # who minted it, every oracle outcome, per-author trust
 forge ledger query "<text>"        # retrieve by relevance
@@ -64,6 +66,15 @@ forge ledger import                # back-fill pre-ledger history into the ledge
 
 Add `--personal` for the per-user ledger.
 
+Evidence counts once per event: four spellings of one commit (`git:` plus 7, 8, 9 or 40
+characters) are one vote, and a resolvable abbreviation is stored under the full id.
+A reworded lesson inherits its predecessor's evidence only when the rewrite is equivalent up
+to case, whitespace and punctuation; otherwise it starts at the prior and records what it
+supersedes. `compact` merges near-duplicates only when they also agree on operators,
+numbers, literals, identifiers, paths and negation. "Enable X" and "Disable X" are listed as
+conflicts for a human to resolve, never merged. Every archived claim records why it went to
+the attic (`tombstoned`, `dormant`, `idle` or `duplicate`); archived is not refuted.
+
 ## `forge reuse`
 
 Proof-carrying code cache — served only when its evidence still holds.
@@ -73,6 +84,15 @@ forge reuse query "<spec>"                 # verified code you already have
 forge reuse mint "<spec>" --file <path>    # add an artifact to the cache
 forge reuse stats                          # cache stats
 ```
+
+- **Exact means the same text.** The key ignores only whitespace; case, operators,
+  literals and punctuation all count, so `age >= 18` and `age <= 18` never share a key.
+- **Near must also agree on behaviour.** A reworded match whose operators, numbers,
+  literals, identifiers, paths or negation differ drops to `adapt`, with a note naming the
+  difference.
+- **Checked where it is served.** An artifact whose file changed or was deleted since it
+  was minted, or whose dependency's declaration changed, is not served. Without an atlas to
+  check against, a hit is marked `NOT revalidated` (`requiresRevalidation: true`).
 
 ## `forge handoff`
 

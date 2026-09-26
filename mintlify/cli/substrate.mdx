@@ -33,7 +33,15 @@ Recommend the cheapest capable model for a task.
 ```bash
 forge route "<task>"
 forge route gateway        # emit LiteLLM gateway config
+forge route universal "<task>" [--objective match-best-single|target:<p>|value:<$>|budget:<$>] [--provider <name>]
+forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>] [--attempt <id>] [--verify-run <run id>]
+forge route fit            # refit the universal router on your recorded outcomes
+forge route models         # the registry: who serves which model, at what price
 ```
+
+`route universal` is the opt-in cross-provider router; see
+[Model routing](/concepts/model-routing)
+for what its numbers mean and what they do not.
 
 ## `forge impact`
 
@@ -81,10 +89,23 @@ Budgeted context assembly + completeness gate — what an edit NEEDS known.
 
 ```bash
 forge context "<task>"
+forge context "<task>" --budget 4000   # tighter token budget
+forge context "<task>" --block         # print the assembled context itself
 ```
 
-Assembles a budgeted context via set-cover over the predicted edit set, applies a
-compression ladder, and reports the computed missing set.
+Pins the required-knowledge set for the edit, downgrades items along a compression ladder
+before dropping anything, fills the rest of the budget with a value-density heuristic, and
+reports the computed missing set.
+
+- **`COMPLETE` means delivered, not sufficient.** Every required item arrived as content
+  inside the budget; whether that content is enough for the edit is not measured.
+- **Token counts are an estimate** (characters ÷ 3.6 of the rendered block, labels and
+  separators included), not a tokenizer's count, and never exceed `--budget` while the
+  result reports success.
+- **A pointer is not coverage.** An item that only fits as a `- read <file>` pointer is a
+  `pending` read; a 25-line head covers a definition only when the definition is inside it.
+- **Over budget is `INCOMPLETE`.** When even pointers do not fit, the result is
+  `overflow: true`, `ok: false`, never a silent over-budget pass.
 
 ## `forge anchor`
 

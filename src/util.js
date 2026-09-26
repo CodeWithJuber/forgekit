@@ -42,6 +42,15 @@ export const clamp01 = (x) => {
 // POSIX (no `\` in the path) and safe on Windows (fs/join accept `/`).
 export const toPosix = (p) => String(p).replaceAll("\\", "/");
 
+/** `s` without its trailing slashes. A backward scan, not `/\/+$/`: that regex backtracks
+ *  quadratically on a long run of slashes followed by anything else (polynomial ReDoS). */
+export function stripTrailingSlashes(s) {
+  const t = String(s ?? "");
+  let end = t.length;
+  while (end > 0 && t.charCodeAt(end - 1) === 47) end--;
+  return t.slice(0, end);
+}
+
 export const MS_PER_DAY = 86400000;
 export const epochDay = () => Math.floor(Date.now() / MS_PER_DAY);
 

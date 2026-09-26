@@ -3,7 +3,7 @@
 ## Stack
 
 - Node.js >=20, pure ESM (`"type": "module"`), zero runtime dependencies.
-- Linter/formatter: Biome 2.5.5 (dev dependency).
+- Linter/formatter: Biome 2.5.13 (dev dependency; `npx biome migrate --write` after an upgrade).
 - Types: TypeScript via JSDoc annotations — no `.ts` files, checked by `tsc`.
 
 ## Commands
@@ -24,4 +24,8 @@
 - Run `npm test && npx biome check && npm run typecheck && node src/cli.js docs check`
   before committing — the docs check fails CI when commands/env vars/MCP tools/CHANGELOG
   drift from the code, so update docs IN THE SAME CHANGE, not later.
+- After editing `CHANGELOG.md` (or commands/MCP tools), run `node src/cli.js docs render`:
+  it regenerates the machine-owned blocks, including the Mintlify changelog page
+  (`mintlify/changelog/overview.mdx`), which the docs check fails on when stale. Never edit
+  between `forge:render` markers by hand.
 - Version lives in `package.json` — `scripts/bump.mjs` keeps all manifests in sync.

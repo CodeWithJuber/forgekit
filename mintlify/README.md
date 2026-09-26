@@ -19,6 +19,7 @@ mintlify/
                        #   verification gates, model routing
   cli/                 # overview + one page per command GROUP
   guides/              # zero-config onboarding, team memory, radar deps
+  changelog/           # overview.mdx — generated from CHANGELOG.md by `forge docs render`
 ```
 
 ## Preview locally
@@ -54,6 +55,10 @@ handles deploys. The only CI added is an advisory broken-link check
   file paths relative to this folder, without the `.mdx` extension.
 - Keep content grounded in the real repo docs — Forge has a "no mock data / metrics must
   be real" ethos. Do not add invented features or benchmark numbers.
+- **Do not edit `changelog/overview.mdx` between its markers.** The entries are generated
+  from `CHANGELOG.md` (`src/changelog_page.js`): write the release notes there, then run
+  `node src/cli.js docs render`. `forge docs check` fails CI when the page is stale, and a
+  release (`scripts/bump.mjs`) regenerates it in the release commit.
 
 ## Localization
 

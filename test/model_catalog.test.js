@@ -11,12 +11,14 @@ import {
   canonicalKey,
   catalogSource,
   fetchCatalog,
+  gatewaySource,
   inFamily,
   matchCatalogModel,
   newestInFamily,
   normalizeCatalogPage,
   openRouterSource,
   perMillion,
+  tokenize,
 } from "../src/model_catalog.js";
 import { anthropicPage, ok, stubTransport } from "./_catalog_stub.js";
 
@@ -272,4 +274,52 @@ test("fetchCatalog reports when its answer expires (the memo uses it, no invente
   });
   const b = fetchCatalog(anthropicSource("sk-a"), { fetchImpl: noHeaders.fetchImpl, now: T });
   assert.equal(b?.freshUntil, T, "no freshness stated → revalidate on the next use");
+});
+
+test("tokenize collapses trailing .0 versions exactly as before, in linear time", () => {
+  const old = (s) => {
+    // The previous implementation, kept here as the oracle (its regex was quadratic).
+    const parts = String(s ?? "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+    const out = new Set();
+    for (let i = 0; i < parts.length; ) {
+      if (!/^\d{1,3}$/.test(parts[i])) {
+        out.add(parts[i++]);
+        continue;
+      }
+      const run = [];
+      while (i < parts.length && /^\d{1,3}$/.test(parts[i])) run.push(parts[i++]);
+      out.add(run.join(".").replace(/(?:\.0)+$/, ""));
+    }
+    return out;
+  };
+  for (const id of [
+    "claude-sonnet-4-5-20250929",
+    "claude-opus-4-0",
+    "gpt-4.0",
+    "model-0-0",
+    "model-4-00",
+    "x-0",
+    "x-4-0-5",
+    "gemini-3-flash",
+    "a-10-0-0",
+  ])
+    assert.deepEqual([...tokenize(id)], [...old(id)], id);
+  const hostile = `m-${"0-".repeat(60000)}1`;
+  const t0 = performance.now();
+  tokenize(hostile);
+  assert.ok(performance.now() - t0 < 1000, "linear, not quadratic");
+});
+
+test("catalog urls drop any run of trailing slashes, in linear time", () => {
+  assert.equal(gatewaySource("http://gw.local///").url, "http://gw.local/v1/models");
+  assert.equal(
+    openRouterSource("https://openrouter.ai/api/v1/").url,
+    "https://openrouter.ai/api/v1/models",
+  );
+  const t0 = performance.now();
+  gatewaySource(`http://x${"/".repeat(200000)}a`);
+  assert.ok(performance.now() - t0 < 1000);
 });
