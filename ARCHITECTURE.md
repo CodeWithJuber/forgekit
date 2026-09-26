@@ -1,11 +1,13 @@
 # forgekit — architecture
 
-> **One brain for every AI coding agent.** A large language model is stateless: one
-> context window, wiped every call. It has no memory of what your team learned, no
-> foresight about what an edit will break, and no enforced guardrails. forgekit is the
-> **cognitive substrate** — the layer that runs _before_ the model edits code, supplying
-> proof-carrying memory, impact foresight, and enforced guardrails — and a **cross-tool
-> config compiler** that delivers that brain as native config into every tool at once.
+> **A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
+> and explicit verification around coding agents.** A language model keeps no durable state
+> between independent calls and sees only a bounded context window, so on its own it does not
+> carry what your team learned, cannot see the parts of the repository an edit affects unless
+> they are in context, and cannot enforce rules on itself. forgekit is the **cognitive
+> substrate** — the layer that runs _before_ the model edits code, supplying evidence-referenced
+> ("proof-carrying") memory, heuristic impact analysis, and guardrails — and a **cross-tool
+> config compiler** that delivers it as native config into every tool at once.
 
 This document is the architecture reference. It is organized around four diagrams:
 
@@ -194,10 +196,13 @@ flowchart LR
     class SV accent;
 ```
 
-The completeness gate on the retrieval side is `forge context "<task>"`: it assembles a
-budgeted context via set-cover over the predicted edit set (`R(edit)`), applies a
-compression ladder, and reports the _computed missing set_ — the inputs it could not
-assemble. That missing set is exactly what the substrate pipeline's context stage reads
+The completeness gate on the retrieval side is `forge context "<task>"`: it pins the
+required-knowledge set for the edit (`R(edit)`), downgrades items along a compression ladder
+before dropping anything, fills the rest of the budget with a value-density heuristic (no
+approximation guarantee), and reports the _computed missing set_ — the inputs it could not
+assemble — plus pending reads and truncations. Its "complete" means syntactically delivered
+within an estimated token budget, not semantically sufficient
+([plan 04 §7](docs/plans/substrate-v2/04-context-assembly.md#7-status-2026-09-26--partial)). That missing set is exactly what the substrate pipeline's context stage reads
 to decide whether an edit is safe to start. Surface: `forge reuse query | mint | stats`.
 
 ## 5. The end-to-end reliability layer
@@ -597,7 +602,7 @@ forgekit/
     learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge duplicates, drop only ledger-refuted (dormant/retracted/attic) lessons; no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
-    context.js            # budgeted context assembly + completeness gate: R(edit) set cover, compression ladder, computed missing-set
+    context.js            # budgeted context assembly + completeness gate: R(edit) coverage, compression ladder, computed missing-set
     diagnose.js           # doom-loop diagnosis: normalized failure signatures; 3× = diagnosis claim + one-tier escalation
     imagine.js            # consequence simulation (Eq. 4): predicted breaks + minimal dry-run suite via greedy set cover
     uifingerprint.js      # deterministic design fingerprint + slop-distance / conformance gate (no LLM, no screenshots)
@@ -670,24 +675,21 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>119 files"]
-  src["src<br/>110 files"]
-  test["test<br/>121 files"]
-  src["src<br/>111 files"]
+  test["test<br/>133 files"]
+  src["src<br/>119 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
+  bench["bench<br/>6 files"]
   global["global<br/>5 files"]
-  bench["bench<br/>3 files"]
-  scripts["scripts<br/>2 files"]
+  scripts["scripts<br/>3 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 247 --> src
-  test -- 244 --> src
-  bench -- 8 --> src
+  test -- 281 --> src
+  bench -- 12 --> src
   examples -- 4 --> src
+  test -- 3 --> global
+  test -- 3 --> scripts
   test -- 2 --> bench
-  test -- 2 --> global
-  test -- 2 --> scripts
   scripts --> src
   src --> global
 ```

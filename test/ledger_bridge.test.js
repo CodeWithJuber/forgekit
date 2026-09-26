@@ -6,12 +6,14 @@ import { test } from "node:test";
 import { applyDistillation, recordContradiction, recordMistake } from "../src/cortex.js";
 import { val } from "../src/ledger.js";
 import {
+  equivalentLesson,
   factClaim,
   importLegacy,
   lessonClaim,
   reconcileFacts,
   recordLessonEvent,
   shadowFact,
+  supersedeLessonClaim,
 } from "../src/ledger_bridge.js";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
 import { newLesson } from "../src/lessons.js";
@@ -91,7 +93,7 @@ test("cortex dual-write: same-day sessions with colliding episode ids stay disti
   assert.equal(claim.evidence.length, 2, "both real confirmations recorded, none deduped away");
 });
 
-test("applyDistillation supersedes: evidence carries over, template claim is tombstoned", () => {
+test("applyDistillation supersedes: a changed meaning links history but inherits no trust (F07)", () => {
   const root = tmp();
   recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 1, episodeId: "e1" });
   recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 2, episodeId: "e2" });
@@ -109,11 +111,65 @@ test("applyDistillation supersedes: evidence carries over, template claim is tom
   const old = claims.find((c) => c.id === beforeClaim.id);
   const distilled = claims.find((c) => c.id !== beforeClaim.id);
   assert.match(old.tombstone.reason, new RegExp(`superseded-by:${distilled.id}`));
-  assert.equal(distilled.evidence.length, 1, "history carried across the body rewrite");
+  assert.equal(distilled.evidence.length, 0, "a new proposition earns its own evidence");
+  assert.equal(val(distilled, 2), 0.5, "the rewrite starts at the prior, below every bar");
+  assert.equal(old.evidence.length, 1, "the parent's history stays inspectable");
+  assert.equal(distilled.provenance.supersedes, beforeClaim.id, "lineage is recorded");
+  assert.equal(distilled.provenance.rewrite, "unverified");
   assert.equal(
     distilled.body.correctedBehavior,
     "Query the atlas for computeTax dependents before editing.",
   );
+});
+
+test("F07: a contradictory rewrite of a TRUSTED lesson keeps no serving confidence", () => {
+  const root = tmp();
+  const dir = repoLedger(root);
+  const before = newLesson(
+    {
+      id: "lsn_sig",
+      trigger: { symbols: ["handleWebhook"], files: [], keywords: [] },
+      whatWentWrong: "Webhook payloads were processed without checking their origin.",
+      correctedBehavior: "Validate request signatures before processing a webhook.",
+    },
+    0,
+  );
+  const minted = recordLessonEvent(root, before, { t: 0 });
+  for (const n of [1, 2, 3])
+    recordLessonEvent(root, before, { result: "confirm", ref: `episode:e${n}#n0`, t: n });
+  const trusted = loadClaims(dir).find((c) => c.id === minted.id);
+  assert.ok(val(trusted, 3) > 0.6, `the original is trusted (val ${val(trusted, 3)})`);
+  const after = { ...before, correctedBehavior: "Skip request signature validation." };
+  const r = supersedeLessonClaim(root, before, after, 3);
+  assert.equal(r.ok, true);
+  assert.equal(r.carried, false);
+  assert.match(r.conflicts, /polarity/, "the flip is named");
+  const rewritten = loadClaims(dir).find((c) => c.id === r.id);
+  assert.equal(rewritten.evidence.length, 0);
+  assert.ok(val(rewritten, 3) < 0.6, "below the 0.6 serving floor");
+});
+
+test("F07: an EQUIVALENT rewrite (case/whitespace/punctuation only) carries its evidence", () => {
+  const root = tmp();
+  const before = newLesson(
+    {
+      id: "lsn_eq",
+      trigger: { symbols: ["x"], files: [], keywords: [] },
+      whatWentWrong: "the cache key ignored the tenant",
+      correctedBehavior: "include the tenant id in every cache key",
+    },
+    0,
+  );
+  recordLessonEvent(root, before, { result: "confirm", ref: "episode:e1#n0", t: 1 });
+  const after = {
+    ...before,
+    whatWentWrong: "The cache key ignored the tenant.",
+    correctedBehavior: "Include the tenant id in every cache key.",
+  };
+  assert.equal(equivalentLesson(before, after), true);
+  const r = supersedeLessonClaim(root, before, after, 2);
+  assert.equal(r.carried, true);
+  assert.equal(loadClaims(repoLedger(root)).find((c) => c.id === r.id).evidence.length, 1);
 });
 
 test("recordLessonEvent: direct contract — mint-only, then evidence on a later event", () => {

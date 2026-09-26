@@ -4,7 +4,7 @@
 // contradiction. Kept fs-thin and deterministic (day + ids passed in) so it's testable
 // without any hook wiring.
 
-import { recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
+import { equivalentLesson, recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
 import { ledgerLessons, mergedLessons } from "./ledger_read.js";
 import { recordUse, repoLedger } from "./ledger_store.js";
 import {
@@ -245,15 +245,45 @@ export function applyDistillation(root, lessonId, distilled) {
   // supersede below rewrite it there (save() is a ledger-only no-op that still succeeds).
   const lesson = localLessons(root, 0).find((l) => l.id === lessonId);
   if (!lesson) return false;
-  const updated = {
+  const rewritten = {
     ...lesson,
     whatWentWrong: distilled.whatWentWrong,
     correctedBehavior: distilled.correctedBehavior,
   };
+  // A model rewrite is a PROPOSAL (review F07): unless it is equivalent by the narrow rule
+  // (same text up to case/whitespace/punctuation, no semantic conflict), the lesson's earned
+  // standing does not carry over to the new wording — it restarts as a candidate that has to
+  // earn its own confirmations. What it earned before stays inspectable in provenance and on
+  // the ledger's superseded parent claim.
+  const hadEvidence =
+    (lesson.evidenceCount ?? 0) > 0 ||
+    (lesson.contradictionCount ?? 0) > 0 ||
+    lesson.status === "active";
+  const updated =
+    equivalentLesson(lesson, rewritten) || !hadEvidence
+      ? rewritten
+      : {
+          ...rewritten,
+          status: "candidate",
+          evidenceCount: 0,
+          contradictionCount: 0,
+          quarantineReconfirms: 0,
+          lastConfirmedDay: lesson.createdDay ?? lesson.lastConfirmedDay,
+          provenance: {
+            ...(lesson.provenance ?? {}),
+            rewrittenFrom: {
+              whatWentWrong: lesson.whatWentWrong,
+              correctedBehavior: lesson.correctedBehavior,
+              status: lesson.status,
+              evidenceCount: lesson.evidenceCount ?? 0,
+              contradictionCount: lesson.contradictionCount ?? 0,
+            },
+          },
+        };
   const ok = save(root, updated).ok;
-  // A body rewrite changes the content-addressed claim id — supersede in the ledger
-  // (mint the distilled claim, carry the evidence over, tombstone the template claim)
-  // or the lesson's history splits across two disjoint claims.
+  // A body rewrite changes the content-addressed claim id — supersede in the ledger (mint
+  // the distilled claim, tombstone the template claim as its parent; evidence carries over
+  // only for an equivalent rewrite) so the lesson's history stays linked, not split.
   if (ok) supersedeLessonClaim(root, lesson, updated);
   return ok;
 }

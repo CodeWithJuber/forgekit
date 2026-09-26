@@ -1,8 +1,9 @@
 # Roadmap
 
-forgekit is one brain for every AI coding agent — the cognitive substrate (memory, foresight,
-guardrails) that a stateless model is missing, authored once and delivered as native config to
-every tool. This is where that brain is headed.
+forgekit is a beta toolkit for shared evidence-referenced memory, heuristic change-impact
+analysis, and explicit verification around coding agents — the state and checks a model does not
+carry between sessions on its own, authored once and delivered as native config to every tool.
+This is where it is headed.
 
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
@@ -19,10 +20,13 @@ Gateway environments are supported end to end — `ANTHROPIC_AUTH_TOKEN` recogni
 `ANTHROPIC_BASE_URL`, and direct-HTTP LLM calls when the `claude` CLI is absent (`src/llm.js`).
 See [CHANGELOG.md](./CHANGELOG.md).
 
-## Shipped — Substrate v2 (all phases P0–P8, v0.5.0)
+## Shipped — Substrate v2 (P0–P3 and P5–P7, v0.5.0; P4 and P8 partial)
 
 The plan lives in [docs/plans/substrate-v2/](./docs/plans/substrate-v2/00-overview.md)
-(phase dependency graph + acceptance gates, all marked done): every paper faculty and
+(phase dependency graph + acceptance gates). Two phases do not meet their acceptance criteria and
+are marked **partial**: P4 context assembly (budget overflow and pointer-only coverage were
+reported as complete; the repair reports them) and P8 evaluation (no end-to-end cost has been
+measured). Per-claim status is in [docs/status/](./docs/status/README.md). Every paper faculty and
 mechanism mapped to an algorithm, unified by the **Proof-Carrying Memory (PCM)
 protocol** (ADR-0006) — every stored thing is a claim that carries its evidence, earns
 confidence only from independent oracles, and merges across teammates conflict-free
@@ -68,12 +72,17 @@ confidence only from independent oracles, and merges across teammates conflict-f
   ledger is the sole store. `FORGE_LEDGER_ONLY=0` is a one-release escape hatch that restores
   the file store. The only remaining step is deleting the now-dormant legacy write/read code
   once that escape hatch is removed in a later release.
-- **OpenAI + Gemini provider detection** — extend `autoDetectProvider()` beyond
-  Anthropic/OpenRouter/LiteLLM (`OPENAI_API_KEY`, `GEMINI_API_KEY`) with the same
-  guided, low-configuration auto-detect contract.
-- **Playwright loop** — still open: interaction checks and feeding verdicts back as
-  oracle evidence on design claims (fingerprinting itself shipped as
-  `forge uicheck visual`).
+- **Evidence before stronger claims** — the 2026-09-26 review's evaluation plan: an impact study
+  on unseen repositories with the parser and relations frozen first, and co-edited-file prediction
+  and regression-test selection reported separately; the universal router on a new scaffold, time
+  split or language with real spend under an external cap, with a cascade cost model that
+  conditions on earlier failures (the in-repo replay under-predicts cascade cost by 5–22%); and
+  the P8 paired end-to-end cost harness. Until they run, the matching headlines stay `hypothesis` or `reported` in
+  [docs/status/](./docs/status/README.md).
+- **UI checks stay advisory** until a labelled set (keyboard, focus order, zoom, overflow,
+  reduced motion, screen-reader names) measures their false-positive cost. OpenAI + Gemini
+  provider detection (0.17.0) and the Playwright interaction loop (`forge uicheck interact`,
+  0.16.0) have shipped; this list used to show both as open.
 - **Advisory → gated promotions** — the measured-promotion gate has shipped
   (`src/promote.js`, generalizing the risk predictor's kill-criteria): a candidate only
   replaces a baseline when it beats it on held-out data, never by assertion. First

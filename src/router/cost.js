@@ -7,7 +7,26 @@
 // have both, α_k − log(blended price_k) is nearly constant (same agent, same token volume), so
 // α_m = log(blended price_m) + mean(α_k − log blended price_k). The input/output blend ρ is the
 // value that makes that difference most constant across those models (chosen from data).
+//
+// Sparse data (review F11). The regression needs residual degrees of freedom: with fewer
+// observations than per-model intercepts + slopes + 2, the slopes cannot be estimated and the
+// old code fell back to α = 0 (a $1 attempt) with a residual variance computed from THAT
+// arbitrary fit — one observed $0.05 attempt predicted ≈ $88.87. Now, when the slopes are not
+// identifiable, each model's α is its MEAN LOG COST (slopes 0), and s² is the pooled
+// within-model variance shrunk toward an explicit prior (LOG_COST_VAR_PRIOR), or the prior
+// alone when no model has two observations. Every fit reports its `method`, where s² came from
+// (`s2Source`), the per-model observation `counts`, and the standard error of each α
+// (`alphaSE`), so a sparse estimate is visibly uncertain rather than silently confident.
+// Zero-cost attempts (a provider that recorded no charge) and missing costs cannot enter a
+// log-cost fit: they are excluded and counted in `excluded`.
 import { leastSquares } from "./linalg.js";
+
+/** Residual variance of log attempt cost assumed when the data cannot estimate it: the
+ *  shipped SWE-bench fit's own residual variance (data/router_prior.json → cost.s2 = 0.438,
+ *  5,498 attempts), rounded. An explicit, documented prior — pass `s2Prior` to override. */
+export const LOG_COST_VAR_PRIOR = 0.44;
+/** Pseudo-observations the variance prior is worth when pooling a few residuals. */
+const VAR_PRIOR_WEIGHT = 2;
 
 /**
  * @param {{model: number, x: number[], cost: number}[]} obs
@@ -15,22 +34,49 @@ import { leastSquares } from "./linalg.js";
  * @param {number} nFeatures
  * @param {{priceIn?: number|null, priceOut?: number|null}[]} [prices] per model, USD per Mtok
  */
-export function fitCost(obs, nModels, nFeatures, prices = []) {
-  const used = obs.filter((o) => o.cost > 0 && Number.isFinite(o.cost));
+export function fitCost(
+  obs,
+  nModels,
+  nFeatures,
+  prices = [],
+  { s2Prior = LOG_COST_VAR_PRIOR } = {},
+) {
+  const inRange = obs.filter(
+    (o) => Number.isInteger(o?.model) && o.model >= 0 && o.model < nModels && Array.isArray(o.x),
+  );
+  const used = inRange.filter((o) => Number.isFinite(o.cost) && o.cost > 0);
+  const excluded = {
+    zeroCost: inRange.filter((o) => o.cost === 0).length,
+    missingCost: inRange.filter((o) => !Number.isFinite(o.cost) || o.cost < 0).length,
+    invalid: obs.length - inRange.length,
+  };
   const seen = new Set(used.map((o) => o.model));
   const models = [...seen].sort((a, b) => a - b);
   const col = new Map(models.map((m, i) => [m, i]));
   const X = used.map((o) => [...models.map((m) => (m === o.model ? 1 : 0)), ...o.x]);
   const y = used.map((o) => Math.log(o.cost));
-  // A tiny ridge on the slopes only keeps the system well-posed with few observations.
-  const ridge = [
-    ...models.map(() => 0),
-    ...new Array(nFeatures).fill(1e-6 * Math.max(1, used.length)),
-  ];
-  const coef =
-    used.length > models.length
-      ? leastSquares(X, y, ridge)
-      : [...models.map(() => 0), ...new Array(nFeatures).fill(0)];
+  const counts = new Array(nModels).fill(0);
+  for (const o of used) counts[o.model]++;
+  // Slopes are identifiable only with residual degrees of freedom left over (≥ 2).
+  const dofOls = used.length - models.length - nFeatures;
+  const method = dofOls >= 2 ? "ols" : used.length ? "mean-log" : null;
+  let coef;
+  if (method === "ols") {
+    // A tiny ridge on the slopes only keeps the system well-posed.
+    const ridge = [
+      ...models.map(() => 0),
+      ...new Array(nFeatures).fill(1e-6 * Math.max(1, used.length)),
+    ];
+    coef = leastSquares(X, y, ridge);
+  } else {
+    // Per-model mean log cost, no slopes: the estimate the data CAN support.
+    const sums = new Map();
+    for (const [i, o] of used.entries()) sums.set(o.model, (sums.get(o.model) ?? 0) + y[i]);
+    coef = [
+      ...models.map((m) => /** @type {number} */ (sums.get(m)) / counts[m]),
+      ...new Array(nFeatures).fill(0),
+    ];
+  }
   const alpha = new Array(nModels).fill(null);
   for (const m of models) alpha[m] = coef[col.get(m)];
   const beta = coef.slice(models.length);
@@ -39,8 +85,20 @@ export function fitCost(obs, nModels, nFeatures, prices = []) {
     const pred = X[i].reduce((s, v, c) => s + v * coef[c], 0);
     rss += (y[i] - pred) ** 2;
   }
-  const dof = Math.max(1, used.length - models.length - nFeatures);
-  const s2 = used.length ? rss / dof : 0;
+  let s2;
+  let s2Source;
+  if (method === "ols") {
+    s2 = rss / dofOls;
+    s2Source = "fitted";
+  } else {
+    // Within-model residuals only (no slopes were fitted), shrunk toward the prior.
+    const dofPooled = used.length - models.length;
+    s2 =
+      dofPooled > 0 ? (rss + VAR_PRIOR_WEIGHT * s2Prior) / (dofPooled + VAR_PRIOR_WEIGHT) : s2Prior;
+    s2Source = dofPooled > 0 ? "pooled+prior" : "prior";
+  }
+  // Standard error of each fitted α (a model with one observation is barely known).
+  const alphaSE = counts.map((n, m) => (alpha[m] === null || !n ? null : Math.sqrt(s2 / n)));
 
   // Cold start from prices.
   const priced = models.filter((m) => prices[m]?.priceIn > 0 && prices[m]?.priceOut > 0);
@@ -75,7 +133,21 @@ export function fitCost(obs, nModels, nFeatures, prices = []) {
       source[m] = "price";
     }
   }
-  return { alpha, beta, s2, rho, kappa, source, pricedModels: priced.length, n: used.length };
+  return {
+    alpha,
+    beta,
+    s2,
+    rho,
+    kappa,
+    source,
+    pricedModels: priced.length,
+    n: used.length,
+    method,
+    s2Source,
+    counts,
+    alphaSE,
+    excluded,
+  };
 }
 
 /** Expected attempt cost per model for a task (null where the model's cost is unknown). */

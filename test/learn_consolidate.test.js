@@ -26,7 +26,14 @@ import {
   renderConsolidated,
 } from "../src/learn_consolidate.js";
 import { isDormant, mintClaim, outcomeRecord } from "../src/ledger.js";
-import { appendEvidence, putClaim, repoLedger, tombstone } from "../src/ledger_store.js";
+import {
+  appendEvidence,
+  loadClaims,
+  pruneToAttic,
+  putClaim,
+  repoLedger,
+  tombstone,
+} from "../src/ledger_store.js";
 
 const SCRIPT = fileURLToPath(new URL("../bin/learn-consolidate.sh", import.meta.url));
 const tmp = (p = "forge-learn-") => mkdtempSync(join(tmpdir(), p));
@@ -211,4 +218,110 @@ test("the script runs deterministically with no model call; --llm is opt-in", {
   assert.equal(llm.status, 1, "the stub's login error keeps the originals");
   assert.match(llm.stdout, /by model judgment/);
   assert.match(llm.stdout, /originals kept/);
+});
+
+// Review 2026-09-26 — F16: similar is not the same. These two rules overlap almost entirely
+// and say the OPPOSITE; MinHash merged them and one silently disappeared.
+const ENABLE =
+  "Enable authentication for every admin route and require a signed session token before serving any page";
+const DISABLE = ENABLE.replace("Enable", "Disable");
+
+test("F16: opposite rules stay two claims, with the conflict exposed; exact duplicates still merge", () => {
+  const r = consolidateLearned(
+    [
+      { project: "shop", text: ENABLE },
+      { project: "shop", text: DISABLE },
+      { project: "shop", text: `${ENABLE}.` }, // exact after normalization
+    ],
+    { claims: [] },
+  );
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [ENABLE, DISABLE],
+    "neither rule is dropped as a 'duplicate' of the other",
+  );
+  assert.equal(r.merged.length, 1, "the exact duplicate still merges deterministically");
+  assert.equal(r.conflicts.length, 1);
+  assert.match(r.conflicts[0].conflicts, /polarity: enable ≠ disable/i);
+});
+
+test("F16: a refuted OPPOSITE claim does not drop a lesson", () => {
+  const refuted = repoWith("shop", ENABLE, { refute: true });
+  const r = consolidateLearned([{ project: "shop", text: DISABLE }], {
+    claims: ledgerClaimsFor([refuted.root]),
+    nowDay: 102,
+  });
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [DISABLE],
+  );
+  assert.equal(r.dropped.length, 0);
+});
+
+// F15: archived is storage lifecycle, not a truth verdict.
+test("F15: an idle-archived claim does not refute; a retracted or dormant one does", () => {
+  const idle = repoWith("shop", RETRY);
+  pruneToAttic(repoLedger(idle.root), idle.claim.id, {
+    cause: "idle",
+    reason: "idle 90 d",
+    t: 200,
+  });
+  const retracted = repoWith("shop", TRIVIA, { retract: true });
+  pruneToAttic(repoLedger(retracted.root), retracted.claim.id, {
+    cause: "tombstoned",
+    reason: "tombstoned",
+    t: 200,
+  });
+  const claims = ledgerClaimsFor([idle.root, retracted.root]);
+  assert.ok(
+    claims.every((c) => c.attic),
+    "both are read back from the attic with their logs",
+  );
+  const r = consolidateLearned(
+    [
+      { project: "shop", text: RETRY },
+      { project: "shop", text: TRIVIA },
+    ],
+    { claims, nowDay: 200 },
+  );
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [RETRY],
+    "the idle claim's lesson survives",
+  );
+  assert.deepEqual(
+    r.dropped.map((d) => d.reason),
+    ["retracted in the ledger"],
+  );
+});
+
+test("F15: a deduplicated claim defers to the claim that survived it", () => {
+  const { root } = repoWith("shop", FLAKY);
+  const dir = repoLedger(root);
+  const [survivor] = loadClaims(dir);
+  const dupe = mintClaim({
+    kind: "lesson",
+    body: {
+      correctedBehavior: `${FLAKY} again`,
+      trigger: { action: "edit", files: [], keywords: [], symbols: [] },
+      whatWentWrong: "",
+    },
+    scope: { level: "repo" },
+    provenance: { agent: "cortex", author: "t", task: "lsn_dupe" },
+    t: 100,
+  }).claim;
+  putClaim(dir, dupe);
+  pruneToAttic(dir, dupe.id, { cause: "duplicate", survivor: survivor.id, reason: "dup", t: 150 });
+  const live = consolidateLearned([{ project: "shop", text: `${FLAKY} again` }], {
+    claims: ledgerClaimsFor([root]),
+    nowDay: 150,
+  });
+  assert.equal(live.dropped.length, 0, "the survivor is live — the duplicate refutes nothing");
+  tombstone(dir, survivor.id, { author: "t", reason: "wrong", t: 151 });
+  const gone = consolidateLearned([{ project: "shop", text: `${FLAKY} again` }], {
+    claims: ledgerClaimsFor([root]),
+    nowDay: 152,
+  });
+  assert.equal(gone.dropped.length, 1);
+  assert.match(gone.dropped[0].reason, /via the claim it was deduplicated into/);
 });

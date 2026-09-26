@@ -7,6 +7,7 @@
 // (human-only ḥikma promotion, mints a decision claim) and POST /api/retract
 // (tombstone with a reason). Both are append-only, so the dashboard can never
 // corrupt the ledger; everything else stays read-only.
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename, dirname, join } from "node:path";
@@ -101,14 +102,24 @@ function metricsSection(root) {
  * @param {{nowDay?: number}} [opts]
  */
 export function dashData(root, { nowDay = epochDay() } = {}) {
+  // A section that could not be read degrades to empty — but SAYS so (review A11): an
+  // unreadable store must never render as a healthy, empty one.
+  /** @type {{section: string, error: string}[]} */
+  const errors = [];
+  const failed = (section, e) =>
+    errors.push({ section, error: String(/** @type {any} */ (e)?.message ?? e).slice(0, 200) });
   let ledger = emptyLedger();
   try {
     ledger = ledgerSection(root, nowDay);
-  } catch {}
+  } catch (e) {
+    failed("ledger", e);
+  }
   let metrics = { stages: {}, recent: [] };
   try {
     metrics = metricsSection(root);
-  } catch {}
+  } catch (e) {
+    failed("metrics", e);
+  }
   let atlas = { built: false, symbols: 0, files: 0 };
   try {
     const a = loadAtlas(root);
@@ -118,18 +129,26 @@ export function dashData(root, { nowDay = epochDay() } = {}) {
         symbols: a.symbols?.length ?? 0,
         files: a.files ?? 0,
       };
-  } catch {}
+  } catch (e) {
+    failed("atlas", e);
+  }
   let spend = null;
   try {
     spend = estimateSpendFromLogs({ root });
-  } catch {}
+  } catch (e) {
+    failed("spend", e);
+  }
   // First-run signal for the empty-state copy: a truly untouched .forge/ has no
   // ledger claims AND no metrics events. `metrics.recent` is capped but only ever
   // empty when zero events exist, so it doubles as the metrics-count check — no
   // extra read, and (like everything above) it never throws.
   const meta = {
-    empty: (ledger?.stats?.total ?? 0) === 0 && (metrics?.recent?.length ?? 0) === 0,
+    empty:
+      errors.length === 0 &&
+      (ledger?.stats?.total ?? 0) === 0 &&
+      (metrics?.recent?.length ?? 0) === 0,
     forgeDir: join(root, ".forge"),
+    ...(errors.length ? { errors } : {}),
   };
   return { repo: basename(root), nowDay, meta, ledger, metrics, atlas, spend };
 }
@@ -463,31 +482,73 @@ async function handleWrite(root, pathname, req, res) {
 
 const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract"]);
 
-// CSRF + DNS-rebinding guard for the two write routes. The dashboard is a localhost
-// convenience server with no auth, so an unguarded POST is reachable by (a) any web page
-// the user visits (a cross-site form/fetch — the browser attaches an Origin), and (b) a
-// DNS-rebinding attack (an attacker domain rebinds to 127.0.0.1 — the request then carries
-// the ATTACKER's Host, not the loopback one). We refuse a write unless the Host names the
-// loopback interface AND any browser Origin is that same loopback origin; native clients
-// (curl, the CLI) send no Origin and pass. Skipped entirely for an explicit non-loopback
-// bind — passing a public host is the documented "on your own head" opt-out.
+// Access control (review F13). The dashboard is a localhost convenience server with no login,
+// so it defends itself in three layers:
+//  1. EVERY route (reads too) answers only requests addressed to it: the Host header must name
+//     the loopback interface AND the port it listens on. A DNS-rebinding page (an attacker
+//     domain re-pointed at 127.0.0.1) carries the attacker's Host and is refused — before, only
+//     the two POSTs checked Host, and GET /api/data served the whole ledger to a foreign Host.
+//  2. Writes need a per-session CAPABILITY TOKEN: a random value minted when the server starts,
+//     embedded in the page it serves, and sent back in the `x-forge-token` header. Another
+//     page — including another localhost port — cannot read it, so it cannot forge a write.
+//  3. A browser write must also come from EXACTLY this origin (http, loopback host, same
+//     port) — the old check compared the hostname only, so any localhost port passed.
+// An explicit non-loopback bind (`--host 0.0.0.0`) skips the Host allow-list (its valid names
+// are unknowable here — the documented "on your own head" opt-out) but keeps the token.
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
-const normHost = (h) =>
-  String(h ?? "")
-    .replace(/:\d+$/, "")
-    .replace(/^\[|\]$/g, "")
+export const TOKEN_HEADER = "x-forge-token";
+const TOKEN_PLACEHOLDER = "__FORGE_DASH_TOKEN__";
+
+/** Split a Host header value into {host, port}; null when it is missing or malformed. */
+function parseHostHeader(value) {
+  const raw = String(value ?? "")
+    .trim()
     .toLowerCase();
-function writeAllowed(req, boundHost) {
-  if (!LOOPBACK_HOSTS.has(boundHost)) return true; // non-loopback bind: explicit opt-out
-  if (!LOOPBACK_HOSTS.has(normHost(req.headers.host))) return false; // DNS-rebinding
+  const m = /^(\[[0-9a-f:.]+\]|[^:[\]\s/]+)(?::(\d{1,5}))?$/.exec(raw);
+  if (!m) return null;
+  return { host: m[1].replace(/^\[|\]$/g, ""), port: m[2] ? Number(m[2]) : null };
+}
+
+/**
+ * Is this request addressed to this server — a loopback name, on the port it listens on?
+ * Applied to every route. A non-loopback bind is an explicit opt-out (always true).
+ * @param {{headers: Record<string, any>}} req
+ * @param {{boundHost: string, port: number}} bound
+ */
+export function hostAllowed(req, { boundHost, port }) {
+  if (!LOOPBACK_HOSTS.has(boundHost)) return true;
+  const h = parseHostHeader(req.headers.host);
+  if (!h || !LOOPBACK_HOSTS.has(h.host)) return false;
+  return (h.port ?? 80) === port;
+}
+
+/**
+ * May this request write? The session's capability token (constant-time compared) AND, when a
+ * browser sent an Origin, exactly this server's origin — scheme, loopback host and port.
+ * @param {{headers: Record<string, any>}} req
+ * @param {{boundHost: string, port: number, token: string}} bound
+ */
+export function writeAllowed(req, { boundHost, port, token }) {
+  const got = Buffer.from(String(req.headers[TOKEN_HEADER] ?? ""));
+  const want = Buffer.from(String(token ?? ""));
+  if (!want.length || got.length !== want.length || !timingSafeEqual(got, want)) return false;
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin !== undefined) {
+    let u;
     try {
-      if (!LOOPBACK_HOSTS.has(new URL(origin).hostname.toLowerCase())) return false; // CSRF
+      u = new URL(String(origin));
     } catch {
-      return false; // a malformed Origin is never trusted
+      return false; // a malformed (or "null") Origin is never trusted
     }
+    if (u.protocol !== "http:") return false;
+    const oport = u.port ? Number(u.port) : 80;
+    if (LOOPBACK_HOSTS.has(boundHost)) {
+      const oh = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+      if (!LOOPBACK_HOSTS.has(oh) || oport !== port) return false;
+    } else if (u.host.toLowerCase() !== String(req.headers.host ?? "").toLowerCase()) return false;
   }
+  const site = req.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin" && site !== "none") return false;
   return true;
 }
 
@@ -497,19 +558,43 @@ function writeAllowed(req, boundHost) {
  * /api/radar → dependency rings (cache-only), GET /api/timeline → durable event
  * stream, GET /api/impact?target=X → blast radius (when an atlas exists), POST
  * /api/ratify and POST /api/retract → the spec's two append-only writes. Else 404.
- * Localhost-only by default — pass a host explicitly to expose it, on your own head.
+ * Localhost-only by default — pass a host explicitly to expose it, on your own head. Every
+ * route checks the Host header; writes also need the page's session token (see above).
  * @param {string} root
  * @param {{port?: number, host?: string}} [opts]
  * @returns {import("node:http").Server}
  */
 export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
-  const html = readFileSync(HTML_PATH, "utf8"); // read once at startup, self-contained
+  // The per-session capability token (F13): minted at startup, embedded in the page.
+  const token = randomBytes(24).toString("hex");
+  // read once at startup, self-contained; the token rides in a <meta> the page reads
+  const html = readFileSync(HTML_PATH, "utf8").replaceAll(TOKEN_PLACEHOLDER, token);
+  const boundHost = String(host)
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
   const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    const addr = server.address();
+    const bound = {
+      boundHost,
+      port: addr && typeof addr === "object" ? addr.port : port,
+      token,
+    };
+    // Every route: refuse a request that is not addressed to this server (DNS rebinding).
+    if (!hostAllowed(req, bound))
+      return sendJson(res, 403, {
+        error: "refused: the Host header does not name this loopback server (DNS-rebinding guard)",
+      });
+    let url;
+    try {
+      url = new URL(req.url ?? "/", "http://localhost");
+    } catch {
+      return sendJson(res, 400, { error: "malformed request URL" });
+    }
     if (req.method === "POST" && WRITE_ROUTES.has(url.pathname)) {
-      if (!writeAllowed(req, host)) {
+      if (!writeAllowed(req, bound)) {
         sendJson(res, 403, {
-          error: "write refused: cross-origin or non-loopback request (CSRF/DNS-rebinding guard)",
+          error:
+            "write refused: missing session token or foreign origin (CSRF/DNS-rebinding guard) — use the dashboard page",
         });
         return;
       }
@@ -526,6 +611,10 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
+        // The page holds the write token: never let another site frame it (clickjacking).
+        "x-frame-options": "DENY",
+        "content-security-policy": "frame-ancestors 'none'",
+        "referrer-policy": "no-referrer",
       });
       return res.end(html);
     }
@@ -544,7 +633,18 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       );
     if (url.pathname === "/api/spend") {
       const spend = estimateSpendFromLogs({ root });
-      return sendJson(res, 200, spend || { totalCost: 0, sessions: 0, byModel: [] });
+      // No logs is UNKNOWN spend, never $0 (review A10).
+      return sendJson(
+        res,
+        200,
+        spend || {
+          available: false,
+          reason: "no Claude session logs found — spend is unknown, not zero",
+          totalCost: null,
+          sessions: 0,
+          byModel: [],
+        },
+      );
     }
     if (url.pathname === "/api/impact") {
       const target = url.searchParams.get("target");
@@ -565,5 +665,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
     return sendJson(res, 404, { error: "not found" });
   });
   server.listen(port, host);
+  // Exposed for the CLI/tests (the page itself carries it for the browser).
+  Object.defineProperty(server, "dashToken", { value: token, enumerable: false });
   return server;
 }

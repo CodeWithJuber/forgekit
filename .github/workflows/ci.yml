@@ -1,6 +1,7 @@
 # CI gate for every push and PR: the Node 20/22 test matrix (matches the ">=20" engines
-# field; 18 is EOL) plus the shared quality gate (Biome, typecheck, ShellCheck, zero-dep
-# assertion, version-drift, docs-drift, pack). The quality gate is the SAME reusable workflow
+# field; 18 is EOL), the research contracts (Python prototype suites + recomputation), plus
+# the shared quality gate (Biome, typecheck, ShellCheck, zero-dep assertion, version-drift,
+# docs-drift, pack). The quality gate is the SAME reusable workflow
 # the version bump and release require, so none of the three can drift from the others.
 name: CI
 
@@ -57,6 +58,38 @@ jobs:
           # assertion detail (expected/actual/location) is visible in the CI log.
           awk '/^not ok /{p=1} p{print} p&&/^  \.\.\.[[:space:]]*$/{p=0}' /tmp/win-test.log | head -200
           exit "$ec"
+
+  # The research contracts (review A02): the two Python prototypes' own suites, the Theorem-D
+  # sanity checks (no data needed), and the recomputation of every corrected number from the
+  # replication package shipped in this repo. A research claim that stops recomputing fails CI
+  # like a broken unit test.
+  research:
+    name: Research (Python prototypes + recomputation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install prototype test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            -r research/python-prototypes/impact_oracle/requirements.txt \
+            -r research/python-prototypes/router_gate/requirements.txt
+      - name: impact_oracle tests
+        working-directory: research/python-prototypes/impact_oracle
+        run: python -m pytest -q
+      - name: router_gate tests
+        working-directory: research/python-prototypes/router_gate
+        run: python -m pytest -q
+      - name: Theorem sanity checks (no data)
+        run: python research/recompute_corrections.py --theorem-checks
+      - name: Recompute the corrections from the replication package
+        run: |
+          mkdir -p "$RUNNER_TEMP/rp"
+          tar -xzf research/empirical-refutation/replication_package.tar.gz -C "$RUNNER_TEMP/rp"
+          python research/recompute_corrections.py "$RUNNER_TEMP/rp/repro"
 
   quality-gate:
     name: Quality gate

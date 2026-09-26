@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -15,8 +15,10 @@ import {
   lookup,
   mintArtifact,
   normalizeSpec,
+  reusePeek,
   reuseQuery,
   revalidate,
+  specKey,
 } from "../src/reuse.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-reuse-"));
@@ -52,13 +54,35 @@ test("normalizeSpec: the same task worded across teammates fingerprints identica
   assert.equal(a, b, "identifier/number shape matches — same near-neighborhood");
 });
 
-test("fingerprint: exact key is context-sensitive (slice), sketch is stable", () => {
+test("fingerprint: exact key is context-sensitive (slice) and lossless but whitespace; sketch is stable", () => {
   const f1 = fingerprint("build a rate limiter", "slice-a");
   const f2 = fingerprint("build a rate limiter", "slice-b");
-  const f3 = fingerprint("build a  RATE limiter", "slice-a");
+  const f3 = fingerprint("  build a \n rate   limiter ", "slice-a");
+  const f4 = fingerprint("build a RATE limiter", "slice-a");
   assert.notEqual(f1.exact, f2.exact, "different graph context → different exact key");
-  assert.equal(f1.exact, f3.exact, "whitespace/case never fork the key");
+  assert.equal(f1.exact, f3.exact, "whitespace never forks the key");
+  assert.notEqual(f1.exact, f4.exact, "case is identity (F04): only whitespace is normalized");
   assert.deepEqual(f1.sketch, f2.sketch);
+});
+
+test("F04: behaviour-changing pairs never share an exact key and never near-serve", () => {
+  const pairs = [
+    ["accept ages >= 18 at signup", "accept ages <= 18 at signup"],
+    ['return "ADMIN" for the owner role', 'return "admin" for the owner role'],
+    ["set enabled = true on the feature flag", "set enabled != true on the feature flag"],
+    ["call getURL before the redirect", "call getUrl before the redirect"],
+  ];
+  for (const [a, b] of pairs) {
+    assert.notEqual(specKey(a), specKey(b), `${a} / ${b}`);
+    assert.notEqual(fingerprint(a).exact, fingerprint(b).exact);
+    const r = lookup([verified(a)], b, { nowDay: 0 });
+    assert.ok(r.tier === "adapt" || r.tier === "miss", `${b} got ${r.tier} from ${a}`);
+    if (r.tier === "adapt")
+      assert.ok(
+        r.reasons.some((x) => /held at adapt/.test(x)),
+        "the conflict is named",
+      );
+  }
 });
 
 test("bandKeys: 32 deterministic bands; near-duplicates share at least one", () => {
@@ -97,10 +121,17 @@ const verified = (spec, { slice = "", deps = [], evidence = 2 } = {}) => {
   return c;
 };
 
-test("lookup: exact tier — same normalized spec and slice, proof attached", () => {
-  const r = lookup([verified(SPEC)], SPEC.replace("implement", "IMPLEMENT"), { nowDay: 0 });
+test("lookup: exact tier — same text (whitespace aside) and slice, proof attached", () => {
+  const r = lookup([verified(SPEC)], ` ${SPEC.replace(" ", "\n  ")} `, { nowDay: 0 });
   assert.equal(r.tier, "exact");
   assert.equal(r.jaccard, 1);
+  // No repo root and no atlas: the hit is returned, but never presented as checked (F05).
+  assert.equal(r.revalidation.status, "unknown");
+  assert.equal(r.requiresRevalidation, true);
+  // Shouting a word is a different text: not exact (F04), and ALLCAPS is identity to the
+  // semantic guard, so it is only offered as a starting point.
+  const shouted = lookup([verified(SPEC)], SPEC.replace("implement", "IMPLEMENT"), { nowDay: 0 });
+  assert.equal(shouted.tier, "adapt");
 });
 
 test("lookup: the proof floor — an unverified artifact NEVER serves", () => {
@@ -135,24 +166,42 @@ test("lookup: exact hits are slice-scoped — a different graph context falls th
 
 test("revalidate: a vanished dependency blocks serving (stale cache can't ship)", () => {
   const atlas = { symbols: [{ name: "validateInput" }] };
-  const okArt = verified(SPEC, { deps: ["validateInput"] });
-  const staleArt = verified(SPEC, { deps: ["validateInput", "removedHelper"] });
+  const inline = (deps) => {
+    const c = verified(SPEC, { deps });
+    return { ...c, body: { ...c.body, code: { inline: "export const x = 1" } } };
+  };
+  const okArt = inline(["validateInput"]);
+  const staleArt = inline(["validateInput", "removedHelper"]);
+  assert.equal(revalidate(okArt, atlas).status, "valid");
   assert.equal(revalidate(okArt, atlas).ok, true);
   const rv = revalidate(staleArt, atlas);
-  assert.deepEqual({ ok: rv.ok, missing: rv.missing }, { ok: false, missing: ["removedHelper"] });
+  assert.deepEqual(
+    { ok: rv.ok, status: rv.status, missing: rv.missing },
+    { ok: false, status: "invalid", missing: ["removedHelper"] },
+  );
   const r = lookup([staleArt], SPEC, { atlas, nowDay: 0 });
   assert.equal(r.tier, "miss");
   assert.ok(r.reasons.some((x) => /failed revalidation: missing removedHelper/.test(x)));
+  // No atlas is UNKNOWN validation, not success (F05).
+  assert.equal(revalidate(okArt, null).status, "unknown");
+  assert.equal(revalidate(okArt, null).ok, false);
 });
 
 // --- store level: fill → hit → demote --------------------------------------------------
+
+/** A real artifact file in `root` and its verifiable pointer (describeFile). */
+const realFile = (root, rel = "src/limit.js", body = "export const limit = 42;\n") => {
+  mkdirSync(join(root, rel, ".."), { recursive: true });
+  writeFileSync(join(root, rel), body);
+  return describeFile(root, rel);
+};
 
 test("mintArtifact + reuseQuery: verified fill serves; serving adds NO evidence of its own (C2)", () => {
   const { root, head } = gitRepo();
   const dir = repoLedger(root);
   const m = mintArtifact(
     dir,
-    { spec: SPEC, code: { path: "src/limit.js", sha256: "a".repeat(64) } },
+    { spec: SPEC, code: realFile(root).code },
     { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
   );
   assert.equal(m.ok, true);
@@ -213,6 +262,59 @@ test("mint without evidence is honest: stored but flagged as not serving", () =>
   assert.equal(reuseQuery(root, SPEC, { nowDay: 0 }).tier, "miss");
 });
 
+// --- F05: the proof is about the bytes it saw — revalidated at the serving boundary ------
+
+test("F05: an artifact whose file changed or was deleted is never served", () => {
+  const { root, head } = gitRepo();
+  const dir = repoLedger(root);
+  const desc = realFile(root, "answer.js", "export const answer = 42;\n");
+  mintArtifact(
+    dir,
+    { spec: SPEC, ...desc },
+    { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
+  );
+  const atlas = { symbols: [] };
+  assert.equal(reuseQuery(root, SPEC, { atlas, nowDay: 0 }).tier, "exact");
+  writeFileSync(join(root, "answer.js"), "export const answer = 99;\n");
+  const edited = reusePeek(root, SPEC, { atlas, nowDay: 0 });
+  assert.equal(edited.tier, "miss");
+  assert.ok(
+    edited.reasons.some((x) => /changed since it was verified/.test(x)),
+    edited.reasons,
+  );
+  rmSync(join(root, "answer.js"));
+  const deleted = reusePeek(root, SPEC, { atlas, nowDay: 0 });
+  assert.equal(deleted.tier, "miss");
+  assert.ok(
+    deleted.reasons.some((x) => /no longer exists/.test(x)),
+    deleted.reasons,
+  );
+  // A changed FILE is not an oracle contradiction: the proof was true of the old bytes.
+  assert.ok(!readEvidence(dir, loadClaims(dir)[0].id).some((e) => e.oracle === "graph.reval"));
+});
+
+test("F05: a same-name dependency whose signature changed invalidates the artifact", () => {
+  const root = tmp();
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src", "util.js"), "export function helper(a) {\n  return a;\n}\n");
+  writeFileSync(
+    join(root, "src", "mod.js"),
+    'import { helper } from "./util.js";\nexport const run = () => helper(1);\n',
+  );
+  const atlas = { symbols: [{ name: "helper", kind: "function", file: "src/util.js", line: 1 }] };
+  const desc = describeFile(root, "src/mod.js", { atlas });
+  assert.ok(desc.depContracts.helper, "the dependency's declaration is fingerprinted at mint");
+  const art = artifactClaim({ spec: SPEC, ...desc }, 0).claim;
+  assert.equal(revalidate(art, atlas, { root }).status, "valid");
+  writeFileSync(
+    join(root, "src", "util.js"),
+    "export function helper(a, strict) {\n  return a;\n}\n",
+  );
+  const rv = revalidate(art, atlas, { root });
+  assert.equal(rv.status, "invalid");
+  assert.deepEqual(rv.changed, ["helper"]);
+});
+
 // --- helpers ----------------------------------------------------------------------------
 
 test("describeFile: extracts exports, relative-import deps, and a verifiable content hash", () => {
@@ -254,7 +356,7 @@ test("metrics: record/read/summarize roundtrip; corrupt lines skipped", () => {
 test("lookup (C9): a different identifier is never served as exact or near", () => {
   const cache = [verified("add pagination to listUsers")];
   const same = lookup(cache, "Add pagination to listUsers", { nowDay: 0 });
-  assert.equal(same.tier, "exact", "the same task, reworded in case, is still exact");
+  assert.equal(same.tier, "near", "a case change is not the same TEXT (F04) — serve-with-diff");
   const other = lookup(cache, "add pagination to listOrders", { nowDay: 0 });
   assert.ok(
     other.tier === "adapt" || other.tier === "miss",

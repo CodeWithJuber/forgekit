@@ -19,6 +19,39 @@
 | 11 | A standard MCP setup (few servers) can consume ~72% of a 200K-token context window before ... | (b) Qiyao Sun et al. (2025) | ⚠️ vendor-only | See note |
 | 12 | LLM evaluators recognize and favor their own generations - self-preference bias correlates... | Advances in Neural Information Processing Systems 37 (NeurIPS 2024), Main Conference Track (Oral) (2024) | ✅ confirmed | See note |
 
+## Five kinds of grade, kept separate (added 2026-09-26)
+
+The `Status` column above records mainly **bibliographic verification** and source independence:
+whether a number can be traced to a primary source, and whether the party behind it has a stake. It
+is not a grade of whether the source supports the claim as used, of its design, of replication, or of
+how far the result travels, so "confirmed" does not mean "generalizes". The table below grades those
+dimensions separately, using only what each entry in this map already records.
+
+| Dimension | Question it answers |
+|---|---|
+| Bibliographic verification | Does the cited source exist, is it correctly attributed, and does it contain the number? |
+| Claim support | Does the source support the claim *as this paper uses it* (population, measure, direction)? |
+| Study design | Randomized trial, observational study, survey, vendor telemetry, benchmark audit? |
+| Independent replication | Has anyone other than the originator reproduced it? |
+| Transfer scope | Which population, date, tooling and setting can the result be carried to? |
+
+| Claim | Bibliographic verification | Claim support | Study design | Independent replication | Transfer scope |
+|---|---|---|---|---|---|
+| C1 METR slowdown | confirmed (arXiv:2507.09089; METR site) | supports 19% slower for its own population; does not support a universal or 2026 coefficient in either direction | randomized controlled trial: 16 experienced developers, 246 tasks | none recorded here; METR's own 2026-02-24 update is by the same group and METR calls it weak evidence because of selection effects | experienced developers on mature repositories they knew, early-2025 tools |
+| C2 Stack Overflow trust | confirmed (official survey site and blog) | supports the trust and favourability figures as survey responses | self-reported survey, 49,000+ respondents; self-selection noted by Stack Overflow | none recorded here | Stack Overflow survey respondents, 2025 |
+| C3 Veracode vulnerabilities | 45% confirmed in the vendor report; '2.74x' not found in Veracode's materials | supports 45% only; '2.74x' is unsupported (conflated with a separate study) | vendor benchmark of LLM-generated code samples | none recorded here | the LLMs, languages and prompts Veracode tested in 2025 |
+| C4 GitClear duplication | vendor report found; internally inconsistent (title 4x, body 8x) | partial: the direction is supported, the multiplier is not settled | vendor code-analytics telemetry, correlational | none independent (press summaries re-report the same dataset) | GitClear's analysed repositories, 2020-2024 |
+| C5 DORA amplifier | confirmed (official DORA report) | supports the 'amplifier' framing and the survey figures | survey of ~5,000 professionals plus interviews; published methodology | none recorded here | DORA survey respondents, 2025 |
+| C6 SWE-bench Verified audit | confirmed (OpenAI blog) | supports flawed tests in at least 59.4% of a 138-problem audited hard subset, not of all 500 tasks; the 80.9%/45.9% pairing is a third-party leaderboard snapshot | vendor audit of a benchmark subset, plus contamination probes | none recorded here | SWE-bench Verified's audited hard subset and the frontier models OpenAI probed |
+| C7 Faros PR review | confirmed in the vendor report | supports the reported deltas as vendor telemetry | cross-sectional vendor telemetry (22,000 developers), not a controlled study | none recorded here | Faros AI's customer organisations |
+| C8 comprehension (conflated) | unverifiable as attributed (two studies conflated) | not supported: the 400,000-session study does not measure comprehension | not assessed (primary number not retrieved) | not assessed | not assessed |
+| C9 Sonar verification gap | confirmed in the vendor survey | supports the 96% / 48% figures as survey responses | vendor survey, 1,100+ developers | none recorded here | Sonar survey respondents, January 2026 |
+| C10 JetBrains manual correction | not found in JetBrains' materials | not supported | not assessed | not assessed | not assessed |
+| C11 MCP context bloat | 43%/14% traceable to RAG-MCP (arXiv:2505.03275); 72% has no formal source | not supported as framed: 43% vs 14% is a method-vs-baseline stress test, not an accumulation curve | synthetic stress test in a preprint, plus blog anecdotes | none recorded here | that stress test's setup |
+| C12 self-preference bias | confirmed (NeurIPS 2024 proceedings) | supports the qualitative self-preference finding | controlled evaluation experiments, peer-reviewed | none recorded here | the evaluator models studied (GPT-4, Llama 2) |
+
+The same grades are in `evidence_map.json` under each record's `grades` field.
+
 ## Detailed Findings
 
 ### 1. C1_METR_slowdown: ✅ confirmed
@@ -34,6 +67,8 @@
 **What the field report claimed:** 19% slowdown for experienced devs; matches primary source exactly.
 
 **Note:** Directly reachable on arXiv and METR's own site; numbers match field report exactly. Caveat directly stated by METR: small sample (16 devs), specific to mature/familiar open-source repos, and AI-averse developers increasingly decline to participate (self-selection risk noted by METR itself).
+
+**Correction (2026-09-26):** scope this wherever C1 appears. It is a study of 16 experienced developers on 246 tasks with early-2025 tooling, not a universal 2026 productivity coefficient in either direction. METR's [February 2026 update](https://metr.org/blog/2026-02-24-uplift-update/) explains why selection effects complicate newer estimates; it is not evidence that AI now speeds developers up either. (This scoping was recommended in `research/formal-synthesis/audits/our_evidence_corrections.json` and had not been applied here.)
 
 ### 2. C2_SO2025_trust: ✅ confirmed
 
@@ -193,7 +228,7 @@
 
 
 **Safe to lean on without hedging (peer-reviewed / official primary source, methodology transparent):**
-- METR's 19%-slowdown RCT (C1) — the single best-controlled empirical finding in the set; cite with its own caveats (n=16, mature-repo setting).
+- METR's 19%-slowdown RCT (C1) — the single best-controlled empirical finding in the set; cite with its own caveats (n=16, mature-repo setting, early-2025 tools; not a universal 2026 coefficient — see the 2026-09-26 correction under C1).
 - Panickssery et al. NeurIPS 2024 self-preference bias (C12) — the only genuinely peer-reviewed academic paper among the twelve; strongest citation for the M6 argument that an LLM cannot be its sole verifier.
 - OpenAI's own retirement of SWE-bench Verified and the 59.4%-of-audited-problems figure (C6) — directly stated on OpenAI's blog. The specific 80.9%/45.9% score pairing, however, should be cited as a third-party leaderboard snapshot (Scale AI SEAL/BenchLM), not as OpenAI's own number, since it will drift release-to-release.
 - DORA 2025 "AI is an amplifier" finding (C5) — large, transparent, non-vendor-captured methodology (Google Cloud + independent research partners), the most credible of the survey-based claims.

@@ -6,6 +6,181 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+These tighten what a result is allowed to CLAIM, after the 2026-09-26 external deep review
+reproduced 16 cases where a label (`PASS`, `complete`, `exact`, trusted) was stronger than the
+evidence behind it. Scripts that read the JSON output may need to adapt:
+
+- **`forge verify` covers the whole repo, or says what it did not cover.** Every nested
+  package that declares its own suite (an explicit `scripts.test`, a pytest config, go.mod…)
+  is now planned and run in its own directory, and `tests.coverage` reports which packages
+  got a verdict. A passing root suite can no longer hide a failing workspace package (F08).
+  A root script that already runs every workspace (`npm test --workspaces`, `pnpm -r`,
+  `turbo run test`, …) covers them once, without duplicate runs. New `.forge/forge.config.json`
+  keys: `verify.workspaces: "root"` (declare that the root command covers everything),
+  `verify.exclude` (package paths that are not required suites) and `verify.generated`
+  (outputs a test run may legitimately write). Fixture/test-data packages are not required.
+- **A test runner that is only a devDependency is inventory, not an obligation (F09).** With an
+  explicit `scripts.test`, `detectStack().testCommands` no longer adds `npx vitest`/`npx jest`;
+  they are listed in the new `testInventory` (and `forge stack` prints them as "available").
+  npm's `"no test specified"` placeholder is not a suite.
+- **`forge verify` refuses to bind a verdict to code that changed while the tests ran (F10).**
+  The code state is captured before and after the run; if it moved, the result is
+  `INCOMPLETE` with `mutated: true`, and the stamp is bound to the PRE-run state. Interpreter
+  caches (`__pycache__`, `.pytest_cache`, …) never count as a change.
+- **The code-state fingerprint is a canonical manifest bound to HEAD (F01).** Renaming an
+  untracked file, moving bytes between files, adding an empty file, changing an exec bit or a
+  symlink target, and checking out another commit all change it; an unreadable untracked file
+  makes the state unbindable. Stamps from older forge versions no longer verify (by design:
+  their fingerprint could not tell those states apart) — re-run `forge verify`.
+- **Exact reuse keys are lossless except whitespace (F04).** Case, operators, literals and
+  punctuation are part of the key, so `>= 18` / `<= 18`, `"ADMIN"` / `"admin"`, `= true` /
+  `!= true`, `getURL` / `getUrl` never share one. A near candidate must also pass a semantic
+  guard (same operators, numbers, literals, identifiers, paths and polarity words) or it is
+  only offered at the adapt tier. Artifacts minted before this change never exact-hit.
+- **`forge context` reports delivery, not availability (F02, F03).** `tokens` is measured on the
+  rendered block (a chars/3.6 estimate, now labeled as such) and never exceeds `--budget`
+  while the result claims success: when even pointers cannot fit, items are dropped and the
+  result is `overflow: true`, `ok: false`. A `- read <file>` pointer is a `pending` read, not
+  coverage; a definition span / first-25-lines head covers only what it shows; omitted
+  dependents are listed in `truncated`. New `--block` prints the assembled context itself.
+- **`forge route universal` makes an unreachable objective explicit (F12).** A budget no
+  cascade fits, or a target none reaches, returns `ok: false`, `feasible: false`, a `reason`,
+  `budgetMet: false` (budget objective) and `minimumExpectedCost`, with the least-bad cascade
+  only as a labeled `fallback`; the CLI prints `INFEASIBLE` and exits 1. Every recommendation
+  also reports `maxPossibleCost` (every attempt runs) next to the expected cost.
+- **`forge route universal` says when a recommended model cannot be called (A07).** Each
+  cascade step lists the providers that serve it and where its cost comes from. A step that no
+  configured provider serves is marked `no provider id`, and the recommendation is labeled
+  `advice only` (`applicable: false`, `unmapped` in `--json`). Registry presence is not
+  availability: the shipped default recommendation was two such models.
+- **`forge route outcome` validates what it records (A04, A01).** Unknown model ids, negative
+  or non-finite costs and wrong-length feature vectors are refused; each row carries an
+  `attemptId` (`--attempt <id>` makes re-recording idempotent) and is `self-reported` unless
+  `--verify-run <run id>` ties it to a matching `forge verify` run.
+- **`forge imagine --run` is described as what it is: an isolated checkout of HEAD, not a
+  security sandbox (A05)**, and a project whose tests use another runner (jest, vitest,
+  pytest…) gets an explicit unsupported-runner result instead of a `node --test` run of files
+  written for a different runner.
+
+- **Cost model: the 90.2/85.6/74.3% scenarios built on the refuted 0.62 routing factor are
+  withdrawn.** Every stage saving is labeled a hypothesis. A cost headline must now state its
+  run id, code SHA, dataset, denominator, baseline, correctness rule, uncertainty and evidence
+  status (`docs/plans/substrate-v2/05-cost-model.md` §3).
+- **README leads with the three jobs**: shared evidence-referenced memory, heuristic
+  change-impact analysis, and explicit verification. P4 context assembly and P8 evaluation
+  are marked partial, and UI checks are documented as advisory.
+
+### Security
+
+- **The dashboard checks Host on every route, and writes need the page's session token and
+  this exact origin (F13).** A foreign Host (DNS rebinding) gets 403 on reads too; another
+  localhost port cannot write. Native clients that POSTed without a token must now send the
+  `x-forge-token` the server embeds in its page. Missing session logs render as "spend
+  unknown", never `$0`; unpriced models are "unpriced", not free (A10).
+
+### Fixed
+
+- **One evidence event, one vote (F06).** Four spellings of one commit (7/8/9/40 characters)
+  lifted a lesson from 0.655 to 0.821, across the 0.8 required-context bar. `val()` now counts
+  distinct events (an abbreviation of a git object id is the same event; a re-recorded ref is
+  the same event, and cannot refresh its decay), and `appendEvidence` stores resolvable
+  abbreviations under the full object id.
+- **A rewritten lesson no longer inherits the old wording's trust (F07).** Evidence carries
+  over only when the rewrite is equivalent up to case, whitespace and punctuation; otherwise
+  the new claim starts at the 0.5 prior, names its parent (`supersedes`) and any semantic
+  conflicts in its provenance, and the legacy lesson restarts as a candidate.
+- **Artifacts are revalidated where they are served (F05).** A cached artifact whose file was
+  edited or deleted is no longer served; dependency contracts recorded at mint (a
+  declaration fingerprint) invalidate an artifact when a same-name dependency's signature
+  changes; and "no atlas" is `unknown` validation (`requiresRevalidation: true`), never "ok".
+- **Archived is not refuted (F15).** Pruning records WHY a claim went to the attic
+  (`tombstoned`, `dormant`, `idle`, `duplicate` + survivor, in `attic/<id>.log`), and learned-
+  lesson consolidation drops a lesson only when its matching claim is actually retracted or
+  dormant — an idle archive keeps it, a deduplicated one defers to its survivor.
+- **Similar-but-opposite rules are never merged (F16).** Consolidation and the ledger's
+  duplicate compaction only merge texts that pass the semantic guard; "Enable
+  authentication…" and "Disable authentication…" stay two claims and are reported as a
+  conflict (`forge ledger compact`, `learn-consolidate`).
+- **Sparse router cost fits no longer invent a $1 intercept (F11).** One observed $0.05 attempt
+  used to predict ≈ $88.87; without enough data for slopes each model's intercept is its mean
+  log cost, with an explicit variance prior, and the fit reports `method`, `s2Source`,
+  `counts`, `alphaSE` and excluded zero-cost/missing rows.
+- **The reuse benchmark measures the tiers it names (F14).** The fixture's evidence refs were
+  capped below the serving floor, so every "exact"/"near" row had timed a miss. Fixtures now
+  cite a real git object, each row is validated before timing (a stale fixture aborts the
+  run), cold rows clear every memoized sketch, and exact/near/miss and warm/cold are separate
+  rows. `reports/benchmarks.md` was regenerated; the landing page and README quote it.
+- **`forge verify` no longer runs a project's suite with the parent test runner's
+  `NODE_TEST_CONTEXT`**, which made a nested `node --test` exit 0 without running its files.
+- The format-on-edit guard no longer rewrites a Biome project with a global prettier.
+- Evidence records with a non-finite day or an oversized ref, and malformed
+  `.forge/models.json` entries, are refused at the boundary (reported, never trusted).
+- The dashboard reports an unreadable store as unreadable (`meta.errors`), not as empty.
+- `forge substrate` says when the impact graph was truncated by the atlas file cap
+  (`capped`, `skippedFiles`), instead of presenting a partial graph as the whole repo (A06).
+- `forge verify` no longer counts its own outputs under `.forge/` as changed files.
+- `forge ledger verify --fix --dry-run` previews the address migration without writing.
+
+### Added
+
+- `bench/universal-router/reproduce.sh` rebuilds the shipped router prior from pinned,
+  sha256-checked public inputs (`sources.json`). The refit reproduces `data/router_prior.json`
+  exactly: all 176 fitted values, with only `fittedAt` different (Node v22.22.2, about 7 minutes
+  on 4 vCPUs). `holdout_eval.mjs` is a new seeded 150/350 held-out experiment. It is not a
+  reproduction of the reported 76.3% / $0.093 headline, whose harness is external. In it the
+  router did not beat a fixed cascade on solve rate (80.0% vs 80.6%) but was slightly cheaper.
+  It under-predicted cost by 5–22%, because failed attempts cost 1.2–2.0× as much as
+  successful ones. See `bench/universal-router/README.md`.
+- `src/semantic_guard.js` (behaviour-bearing token comparison) and `src/schema.js` (narrow
+  runtime validation), both zero-dependency.
+- Seeded property tests for the trust invariants (`test/trust_properties.test.js`) and a
+  regression test for each reproduced review finding.
+- CI runs the two Python prototype suites (49 + 23 tests), the Theorem-D sanity checks and
+  the recomputation of every corrected research number from the shipped replication package.
+- Command handlers for memory, verification and routing moved to `src/cli/` (a pure move;
+  `src/cli.js` keeps dispatch and help).
+
+### Documentation
+
+- A machine-readable claim/status registry (`docs/status/claims.json`, 47 claims assessed
+  against `d2abfa6`), with a generated table in `docs/status/README.md`. `node
+  scripts/claims-status.mjs --check`, now part of the CI quality gate, fails when the registry
+  is invalid, the table is stale, or a `docs/cognitive-substrate/` copy has drifted from its
+  `research/` source.
+- `docs/INTEGRATIONS.md`: for every supported tool, config emission, MCP registration,
+  automatic hooks and enforcement are listed separately, each marked tested, declared or not
+  supported. It also records which registry models have provider ids, with a date.
+- Universal router docs. The run-4 held-out headline is labeled repository-reported. The
+  shipped prior's refit is documented as reproduced exactly in this repository. The new
+  held-out replay is documented, as are the modeling limits: cascade cost under-predicted by
+  5–22%, optimistic targets, and budgets that bound only expected cost. The dataset pin is
+  corrected to `SWE-bench/SWE-bench_Verified@78f471b`.
+- Research corrections (2026-09-26) in the synthesis, the preprint and the white paper:
+  - Theorem D: joint attainability, with a counterexample.
+  - The equality condition of the silent-miss bound.
+  - "A caught miss is not a completed task."
+  - The frozen-model thesis restated to account for in-context learning.
+  - Prior art (CoALA, Reflexion).
+  - Impact-oracle results reported separately for each threshold.
+
+  `research/recompute_corrections.py --theorem-checks` asserts the Theorem D checks without
+  data, and the recomputation also prints macro F1.
+- Evidence grades are split into bibliographic verification, claim support, study design,
+  independent replication and transfer scope. METR's slowdown result is scoped to its
+  16-developer, early-2025 study, with a link to the February 2026 update.
+- The Qur'anic lens labels the Arabic source text, the translation, tafsir and the author's
+  design analogy separately, and states what the lens does and does not establish. No Arabic
+  text or translation was changed.
+- The research PDFs are marked as historical, pre-correction editions and recorded in
+  `research/HISTORICAL_EDITIONS.md` (git blob, sha256, pinned commit, figure map, render
+  recipe). They were not re-rendered: the Qur'anic text in a fresh render could not be
+  verified, and the refutation paper needs a TeX toolchain.
+- `forge verify`, `forge stack`, `forge ledger`, `forge reuse`, `forge dash` and `forge route
+  universal` sections of the guide describe the new coverage, binding, archive, reuse,
+  dashboard and advice-only behavior.
+
 ## [1.4.3] - 2026-09-24
 
 ### Fixed

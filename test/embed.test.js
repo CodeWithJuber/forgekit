@@ -4,7 +4,7 @@
 // hash-based pseudo-vectors that make two designated spec strings close).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -20,7 +20,7 @@ import {
 } from "../src/embed.js";
 import { mintClaim, retrieve, score } from "../src/ledger.js";
 import { appendEvidence, putClaim, repoLedger } from "../src/ledger_store.js";
-import { artifactClaim, lookup, mintArtifact, reuseQuery } from "../src/reuse.js";
+import { artifactClaim, describeFile, lookup, mintArtifact, reuseQuery } from "../src/reuse.js";
 import { epochDay } from "../src/util.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -161,11 +161,19 @@ test("embed: no provider → null; crash / garbage / timeout → null (clean, no
 const STORED = "delete a user account";
 const REWORDED = "remove a user account";
 
+// The artifact's code must be a REAL file with its real digest: a pointer to a missing or
+// changed file is never served (review F05), and these tests are about the similarity tier.
+const realArtifactFile = (root) => {
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src", "users.js"), "export function deleteUser(id) {}\n");
+  return describeFile(root, "src/users.js").code;
+};
+
 const verifiedArtifactRoot = () => {
   const { root, head } = gitTmp();
   const m = mintArtifact(
     repoLedger(root),
-    { spec: STORED, code: { path: "src/users.js", sha256: "a".repeat(64) } },
+    { spec: STORED, code: realArtifactFile(root) },
     { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` }, t: 0 },
   );
   assert.equal(m.ok, true);
@@ -311,7 +319,7 @@ test("forge ledger query / reuse query print which similarity backend served", (
   // evidence is stamped TODAY because the spawned CLI evaluates val at epochDay().
   const m = mintArtifact(
     dir,
-    { spec: STORED, code: { path: "src/users.js", sha256: "e".repeat(64) } },
+    { spec: STORED, code: realArtifactFile(cwd) },
     {
       evidence: { oracle: "test.run", result: "confirm", ref: `git:${head.slice(0, 12)}` },
       t: epochDay(),

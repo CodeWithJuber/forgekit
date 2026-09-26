@@ -23,6 +23,7 @@ import { load as loadLessons } from "./lessons_store.js";
 // merged `list` (P2 read flip) includes ledger-only teammate facts, which have no file
 // and would read here as "deleted from the store".
 import { listStored as listFacts, readFact } from "./recall.js";
+import { describeConflicts, sameSemantics, semanticConflicts } from "./semantic_guard.js";
 import { epochDay, gitAuthor, ledgerOnly } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
@@ -41,7 +42,7 @@ const bestEffort = (fn) => {
  *  content address) — so teammates who learn the same lesson mint the same id even
  *  if their legacy filenames differ, and confirm/contradict never re-mints.
  *  @returns {{ok:boolean, reason?:string, claim?:any}} */
-export function lessonClaim(lesson, t = 0) {
+export function lessonClaim(lesson, t = 0, lineage = {}) {
   return mintClaim({
     kind: "lesson",
     body: {
@@ -55,7 +56,8 @@ export function lessonClaim(lesson, t = 0) {
       whatWentWrong: lesson.whatWentWrong ?? "",
     },
     scope: { level: lesson.scope ?? "repo" },
-    provenance: { agent: "cortex", author: gitAuthor(), task: lesson.id ?? "" },
+    // `lineage` (supersedes/rewrite/conflicts) rides in PROVENANCE — never the content address.
+    provenance: { agent: "cortex", author: gitAuthor(), task: lesson.id ?? "", ...lineage },
     t,
   });
 }
@@ -113,29 +115,74 @@ export function recordLessonEvent(root, lesson, ev = {}) {
   });
 }
 
+// The narrow equivalence rule for carrying evidence across a rewrite (review F07): the two
+// texts differ at most in case, whitespace and punctuation, AND the semantic guard finds no
+// behaviour-bearing difference (polarity, operators, numbers, literals, identifiers, paths).
+const plainText = (s) =>
+  String(s ?? "")
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}<>=!]+/gu, " ")
+    .trim();
+const sameText = (a, b) => plainText(a) === plainText(b) && sameSemantics(a, b);
+
 /**
- * A lesson's body was rewritten (distillation) — content addressing means a NEW claim
- * id, so carry the history across: mint the new claim, copy the old claim's evidence
- * to it, and tombstone the old claim as superseded. Without this, evidence splits
- * between an orphaned template claim and the distilled one.
+ * Whether a lesson rewrite keeps the lesson's MEANING by the narrow, verifiable rule: both
+ * `whatWentWrong` and `correctedBehavior` equal up to case/whitespace/punctuation, with no
+ * semantic-guard conflict. Anything else is a different proposition.
+ * @param {object} before
+ * @param {object} after
+ */
+export function equivalentLesson(before, after) {
+  return (
+    sameText(before?.whatWentWrong, after?.whatWentWrong) &&
+    sameText(before?.correctedBehavior, after?.correctedBehavior)
+  );
+}
+
+/**
+ * A lesson's body was rewritten (distillation) — content addressing means a NEW claim id.
+ * Evidence is carried across ONLY when the rewrite is equivalent by the narrow rule above
+ * (review F07): proof earned by "Validate request signatures…" must not transfer to "Skip
+ * request signature validation." A changed meaning starts as an unproven claim at the 0.5
+ * prior (below every serving bar) and earns its own evidence; the old claim is tombstoned as
+ * its parent (`superseded-by:`), and its evidence stays inspectable there (`forge ledger
+ * blame`) without counting as confirmation of the new text. The new claim's provenance names
+ * its parent (`supersedes`) and the semantic conflicts, if any.
+ * @returns {{ok:boolean, reason?:string, id?:string, carried?:boolean, conflicts?:string}}
  */
 export function supersedeLessonClaim(root, before, after, t = epochDay()) {
   return bestEffort(() => {
     const dir = repoLedger(root);
     const oldC = lessonClaim(before, t);
-    const newC = lessonClaim(after, t);
+    const equivalent = equivalentLesson(before, after);
+    const conflicts = describeConflicts(
+      semanticConflicts(
+        `${before?.whatWentWrong ?? ""} ${before?.correctedBehavior ?? ""}`,
+        `${after?.whatWentWrong ?? ""} ${after?.correctedBehavior ?? ""}`,
+      ),
+    );
+    const newC = lessonClaim(after, t, {
+      ...(oldC.ok ? { supersedes: oldC.claim.id } : {}),
+      rewrite: equivalent ? "equivalent" : "unverified",
+      ...(conflicts ? { conflicts } : {}),
+    });
     if (!newC.ok) return { ok: false, reason: newC.reason };
     const put = putClaim(dir, newC.claim);
     if (!put.ok) return put;
+    let carried = false;
     if (oldC.ok && oldC.claim.id !== newC.claim.id) {
-      for (const o of readEvidence(dir, oldC.claim.id)) appendEvidence(dir, newC.claim.id, o);
+      if (equivalent) {
+        for (const o of readEvidence(dir, oldC.claim.id)) appendEvidence(dir, newC.claim.id, o);
+        carried = true;
+      }
       tombstone(dir, oldC.claim.id, {
         author: gitAuthor(),
         reason: `superseded-by:${newC.claim.id}`,
         t,
       });
     }
-    return { ok: true, id: newC.claim.id };
+    return { ok: true, id: newC.claim.id, carried, ...(conflicts ? { conflicts } : {}) };
   });
 }
 

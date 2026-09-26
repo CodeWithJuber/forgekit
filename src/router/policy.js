@@ -16,6 +16,16 @@
 //   target:p                    : the cheapest cascade with P(success) ≥ p (else the most likely).
 //   value:V                     : maximise V·P(success) − E[cost]  (V = what a solved task is worth).
 //   budget:B                    : the most likely cascade with E[cost] ≤ B.
+//
+// Infeasibility is explicit (review F12): when no cascade meets the target or fits the budget,
+// the least-bad cascade is still computed, but the result says `feasible: false` with a
+// `reason`, `budgetMet: false` for a budget objective, and `minimumExpectedCost` — the caller
+// must choose to fall back; nothing reads as "within budget". A budget constrains EXPECTED
+// cost only: `maxPossibleCost` (every attempt in the cascade runs) is the worst case, and the
+// ACTUAL charge is whatever the attempts cost — enforce a hard cap at execution time if one is
+// promised. The cost formula also assumes an attempt's cost does not depend on earlier
+// attempts having failed (E[cost_i | earlier failed, x] = E[cost_i | x]); hard residual tasks
+// may cost more, so treat expected cost as an estimate under that assumption.
 
 /** @param {number[][]} P @param {number[]} w @param {number[]} costs @param {number[]} seq */
 export function cascadeStats(P, w, costs, seq) {
@@ -100,10 +110,25 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
       best = { seq, ...st };
     }
   }
+  const targetMet = target === null ? null : best.p >= target - eps;
+  const budgetMet = objective.kind === "budget" ? best.cost <= objective.budget + eps : null;
+  const minimumExpectedCost = Math.min(...single.map((x) => x.cost));
+  const maxPossibleCost = best.seq.reduce((sum, m) => sum + costs[m], 0);
+  const feasible = targetMet !== false && budgetMet !== false;
+  const reason = feasible
+    ? undefined
+    : budgetMet === false
+      ? `infeasible: no cascade's expected cost fits the budget $${objective.budget} (the cheapest expected cost is $${minimumExpectedCost.toFixed(4)})`
+      : `infeasible: no cascade reaches P(success) ${target} (the best reachable is ${best.p.toFixed(4)})`;
   return {
     ...best,
     target,
-    targetMet: target === null ? null : best.p >= target - eps,
+    targetMet,
+    budgetMet,
+    feasible,
+    ...(reason ? { reason } : {}),
+    minimumExpectedCost,
+    maxPossibleCost,
     bestSingle: { model: bestSingle.m, p: bestSingle.p, cost: bestSingle.cost },
     evaluated,
   };

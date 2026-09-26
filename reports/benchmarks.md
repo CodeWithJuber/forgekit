@@ -4,7 +4,7 @@
 > **a number is an assumption until measured.** Every figure in the generated section below
 > came from an actual run of `npm run bench` on the machine recorded in the environment
 > block — no projections, no targets, no numbers copied forward from a different machine.
-> Re-run `npm run bench` (≈10 s, node stdlib only) and the generated section is rewritten
+> Re-run `npm run bench` (≈20 s, node stdlib only) and the generated section is rewritten
 > in place with your machine's numbers.
 
 ## Methodology
@@ -45,12 +45,22 @@
 - **ledger / val()**: pure in-memory scoring; the fixture gives most claims 0–1 evidence
   records, and val() cost scales with evidence count — a heavily-evidenced ledger will be
   slower per claim.
-- **reuse / lookup**: the memoized `_sketch` cache is stripped before every timed run, so
-  each run behaves like a fresh CLI process. The *exact* tier returns before any pool
-  sketching (normalized-string compare); the *near* tier pays MinHash-sketching the whole
-  candidate pool plus LSH banding — that difference is the point of reporting both.
+- **reuse / lookup**: every row is VALIDATED before it is timed — the fixture's artifacts
+  cite a real, resolvable git object as their test evidence, and the harness aborts unless
+  the lookup returns the tier the row is labeled with (review F14, 2026-09-26: the previous
+  fixture cited untyped `bench:artifact:<i>` refs, which val() caps below the serving floor,
+  so every "exact"/"near" row had actually measured a MISS; those older numbers are
+  invalid). "cold" rows strip every memoized sketch the lookup path caches (`_sketch`,
+  `_terms`, `_specSketch`, `_keySketch` — the old harness stripped only `_sketch`, which the
+  reuse ladder never reads), so each run behaves like a fresh CLI process; "warm" rows keep
+  them, like a long-lived process. The *exact* tier returns before any pool sketching
+  (identity-key compare); *near* and *miss* pay MinHash-sketching the candidate pool plus
+  LSH banding — that difference is the point of reporting them separately.
 - **context / assemble()**: warm atlas, empty ledger (the repo copy has no `.forge`),
   includes the real file reads for pinned items. Task: a three-symbol, one-file edit spec.
+  "complete"/"incomplete" is the assembler's own honest verdict: an item that could only
+  be delivered as a pointer or partial span is a pending read, so a large named file makes
+  this task's context incomplete at the default budget (review F02/F03).
 - **substrate / substrateCheck**: the whole deterministic gate — preflight grounding,
   routing rubric, up to 8 impact queries, reuse lookup, context assembly, scope
   decomposition, lessons, minimality, goal anchor — with `llm: false`. **No model latency
@@ -90,9 +100,12 @@ now resolve to the exact symbol (`src/atlas.js:17 imports → src/util.js:conten
 
 What these numbers do **not** mean: n = 6 cases, one JavaScript repo, symbols chosen to be
 uniquely named (the atlas resolves ambiguous names to nothing — a separate, known
-limitation). They are not comparable to the paper's numbers, which came from mutation
-testing a Python codebase against a real test suite. The two appear side by side below,
-labeled, and are never blended.
+limitation). They are not comparable to the paper prototype's numbers: its 0.63 / 1.00 /
+0.75 came from mutation testing on the authors' own fixture — a self-built demo that the
+pre-registered field study REFUTED (pooled precision 0.40, recall 0.022, F1 0.042 over 759
+files' mined co-change in nine repositories; see `research/empirical-refutation/`). The
+regex atlas here is a different, Node graph — not the evaluated Python oracle. All three
+appear side by side below, labeled, and are never blended.
 
 > **History of this row.** The precision 0.90 / F1 0.92 this file carried until 2026-09-21 came
 > from a much smaller atlas (145 files) and a reverse walk that stopped at the direct
@@ -114,61 +127,69 @@ labeled, and are never blended.
 
 ```json
 {
-  "node": "v24.19.0",
-  "cpu": "AMD EPYC Processor (with IBPB)",
+  "node": "v22.22.2",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
   "cores": 4,
-  "memGB": 8,
-  "platform": "win32",
+  "memGB": 16,
+  "platform": "linux",
   "arch": "x64",
-  "commit": "703da31d574c30d22bef019b1c8563ade0d0d6be",
-  "date": "2026-09-21T22:09:58.366Z"
+  "fsType": "ext2/ext3",
+  "commit": "a56606afd5baebdabee95ad95af626a965557d92 + uncommitted changes",
+  "date": "2026-09-26T20:35:15.125Z"
 }
 ```
 
 ### Measured results
 
-| suite     | benchmark                                   | median   | p95     | runs | notes                                  |
-|-----------|---------------------------------------------|----------|---------|------|----------------------------------------|
-| atlas     | full build (this repo)                      | 530 ms   | 622 ms  | 5    | 455 files, 10498 symbols, 29728 edges  |
-| atlas     | incremental rebuild (unchanged)             | 339 ms   | 359 ms  | 5    | per-file hash cache hit                |
-| atlas     | impact("claimText") (warm adjacency)        | 0.40 ms  | 1.08 ms | 30   | 51 files impacted                      |
-| ledger    | mint+put 1000 claims                        | 1854 ms  | 1986 ms | 5    | 539/s                                  |
-| ledger    | loadClaims at 1000 claims                   | 213 ms   | 230 ms  | 5    | full state from disk                   |
-| ledger    | mergeDirs 2×500-claim replicas (250 shared) | 4308 ms  | 4409 ms | 3    | +250 claims, +313 records              |
-| ledger    | val() over 1000 claims                      | 0.076 ms | 0.16 ms | 20   | 13,140,604/s (mean val 0.51)           |
-| reuse     | fingerprint 2000 specs                      | 116 ms   | 156 ms  | 5    | 17,171/s                               |
-| reuse     | lookup exact @ 100 artifacts                | 5.71 ms  | 10.5 ms | 10   | tier=miss                              |
-| reuse     | lookup near (LSH) @ 100 artifacts           | 4.76 ms  | 5.18 ms | 5    | tier=miss, j=-                         |
-| reuse     | lookup exact @ 1000 artifacts               | 52.8 ms  | 88.5 ms | 10   | tier=miss                              |
-| reuse     | lookup near (LSH) @ 1000 artifacts          | 46.7 ms  | 89.8 ms | 5    | tier=miss, j=-                         |
-| context   | assemble() (this repo, 3-symbol task)       | 12.6 ms  | 30.0 ms | 10   | 4070/6000 tokens, 9 required, complete |
-| substrate | substrateCheck (allowBuild, llm off)        | 886 ms   | 908 ms  | 3    | 99 impacted files, route simple        |
+| suite     | benchmark                                    | median  | p95     | runs | notes                                                        |
+|-----------|----------------------------------------------|---------|---------|------|--------------------------------------------------------------|
+| atlas     | full build (this repo)                       | 719 ms  | 753 ms  | 5    | 504 files, 13396 symbols, 37369 edges, cap 20000 not reached |
+| atlas     | incremental rebuild (unchanged)              | 346 ms  | 365 ms  | 5    | per-file hash cache hit                                      |
+| atlas     | impact("claimText") (warm adjacency)         | 1.68 ms | 2.38 ms | 30   | 61 files impacted                                            |
+| ledger    | mint+put 1000 claims                         | 248 ms  | 326 ms  | 5    | 4,038/s                                                      |
+| ledger    | loadClaims at 1000 claims                    | 13.6 ms | 15.3 ms | 5    | full state from disk                                         |
+| ledger    | mergeDirs 2×500-claim replicas (250 shared)  | 191 ms  | 198 ms  | 3    | +250 claims, +313 records                                    |
+| ledger    | val() over 1000 claims                       | 0.85 ms | 1.39 ms | 20   | 1,170,474/s (mean val 0.51)                                  |
+| reuse     | fingerprint 2000 specs                       | 232 ms  | 290 ms  | 5    | 8,636/s                                                      |
+| reuse     | lookup exact hit, cold @ 100 artifacts       | 1.01 ms | 9.43 ms | 10   | tier=exact                                                   |
+| reuse     | lookup exact hit, warm @ 100 artifacts       | 0.67 ms | 5.89 ms | 10   | tier=exact                                                   |
+| reuse     | lookup near hit (LSH), cold @ 100 artifacts  | 18.5 ms | 33.0 ms | 5    | tier=near, j=0.98                                            |
+| reuse     | lookup miss, cold @ 100 artifacts            | 18.2 ms | 25.4 ms | 5    | tier=miss                                                    |
+| reuse     | lookup exact hit, cold @ 1000 artifacts      | 3.98 ms | 6.11 ms | 10   | tier=exact                                                   |
+| reuse     | lookup exact hit, warm @ 1000 artifacts      | 3.38 ms | 4.14 ms | 10   | tier=exact                                                   |
+| reuse     | lookup near hit (LSH), cold @ 1000 artifacts | 128 ms  | 133 ms  | 5    | tier=near, j=0.95                                            |
+| reuse     | lookup miss, cold @ 1000 artifacts           | 123 ms  | 130 ms  | 5    | tier=miss                                                    |
+| context   | assemble() (this repo, 3-symbol task)        | 17.6 ms | 27.0 ms | 10   | 4174/6000 tokens, 9 required, incomplete                     |
+| substrate | substrateCheck (allowBuild, llm off)         | 851 ms  | 995 ms  | 3    | 141 impacted files, route simple                             |
 
 ### Impact-oracle quality (hand-labeled cases, this repo)
 
 | case (target) | precision | recall | F1   | predicted | truth |
 |---------------|-----------|--------|------|-----------|-------|
-| normalizeSpec | 0.12      | 1.00   | 0.21 | 17        | 2     |
+| normalizeSpec | 0.11      | 1.00   | 0.20 | 18        | 2     |
 | evalImpact    | 0.29      | 1.00   | 0.44 | 7         | 2     |
-| isStale       | 0.20      | 1.00   | 0.33 | 30        | 6     |
-| mergeStates   | 0.16      | 1.00   | 0.28 | 25        | 4     |
-| claimText     | 0.16      | 1.00   | 0.27 | 51        | 8     |
-| contentHash   | 0.11      | 1.00   | 0.21 | 87        | 10    |
-| mean of 6     | 0.17      | 1.00   | 0.29 |           |       |
+| isStale       | 0.17      | 1.00   | 0.30 | 40        | 7     |
+| mergeStates   | 0.14      | 1.00   | 0.25 | 28        | 4     |
+| claimText     | 0.18      | 1.00   | 0.31 | 61        | 11    |
+| contentHash   | 0.10      | 1.00   | 0.19 | 105       | 11    |
+| mean of 6     | 0.17      | 1.00   | 0.28 |           |       |
 
-Edited-file-only baseline recall over the same cases: **0.27**.
+Edited-file-only baseline recall over the same cases: **0.26**.
 
-Two methodologies, side by side — different codebases, different ground-truth
+Different methodologies, side by side — different codebases, different ground-truth
 derivations, so the rows are comparable in spirit only and are never blended:
 
-| series                                     | precision | recall | F1   | ground truth                                  |
-|--------------------------------------------|-----------|--------|------|-----------------------------------------------|
-| paper prototype (Python, mutation-derived) | 0.63      | 1.00   | 0.75 | mutation testing against a real suite         |
-| this repo (regex atlas, hand-labeled)      | 0.17      | 1.00   | 0.29 | 6 hand-labeled cases (bench/impact_cases.mjs) |
+| series                                         | precision | recall | F1   | ground truth                                               |
+|------------------------------------------------|-----------|--------|------|------------------------------------------------------------|
+| paper prototype, self-built demo (REFUTED)     | 0.63      | 1.00   | 0.75 | mutation testing on the authors' own fixture               |
+| paper prototype, field study (pooled, 9 repos) | 0.40      | 0.02   | 0.04 | 759 files' mined co-change (research/empirical-refutation) |
+| this repo (regex atlas, hand-labeled)          | 0.17      | 1.00   | 0.28 | 6 hand-labeled cases (bench/impact_cases.mjs)              |
 
 <!-- BENCH:RESULTS:END -->
 
-> **Snapshot boundary.** The measured results above were generated at commit `eb68ea9` and
+> **Snapshot boundary.** The measured results above were generated at the commit recorded in
+> the environment block (`commit`; "+ uncommitted changes" means the working tree the review
+> fixes of 2026-09-26 were measured in, before they were committed) and
 > do not benchmark the optional embedding adapter now implemented in `src/embed.js` and
 > exercised with a deterministic fake provider in `test/embed.test.js`. MinHash remains the
 > zero-dependency default and failure fallback. The structural comparisons below describe the
@@ -216,6 +237,6 @@ that forgekit structurally does not.
 ## Reproduce
 
 ```sh
-npm run bench   # ≈10 s; prints the tables and rewrites the generated section above
+npm run bench   # ≈20 s; prints the tables and rewrites the generated section above
 npm test        # includes a smoke test of the harness's pure helpers (test/bench.test.js)
 ```

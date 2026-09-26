@@ -1,16 +1,27 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  CODE_STATE_SCHEME,
   classifySuiteFailure,
   computeCodeState,
   extractCalledSymbols,
   findUnknownSymbols,
   maskedTestScript,
+  planSuites,
   provenanceMac,
+  readVerifyEvents,
   signProvenance,
   verify,
 } from "../src/verify.js";
@@ -34,6 +45,12 @@ const withBins = (binDir, fn) => {
     process.env.PATH = old;
   }
 };
+
+// verify spawns the package manager shell-free (never a shell, never npx). On Windows `npm` is a
+// `.cmd` shim, which Node refuses to spawn without a shell, so a real npm-driven verify reports
+// INCOMPLETE there; the end-to-end PASS/FAIL tests below are POSIX-only for that reason.
+const NO_NPM_SPAWN =
+  process.platform === "win32" && "npm is a .cmd shim on Windows; verify never spawns a shell";
 
 const gitRepo = () => {
   const root = mkdtempSync(join(tmpdir(), "forge-verify-"));
@@ -207,6 +224,13 @@ test("verify: an untracked source file appears in provenance (changedFiles + unt
   const r = verify({ targetRoot: root });
   assert.ok(r.changedFiles.includes("brand_new.js"), "untracked file in changedFiles");
   assert.ok(r.provenance.untracked.includes("brand_new.js"), "untracked file in provenance stamp");
+  // verify's own outputs (.forge/provenance.json, verify-events.jsonl) are not the change.
+  const again = verify({ targetRoot: root });
+  assert.deepEqual(
+    again.changedFiles.filter((f) => f.startsWith(".forge/")),
+    [],
+    again.changedFiles.join(", "),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -420,4 +444,315 @@ test("verify: the provenance stamp is signed, and an edited one no longer verifi
   assert.notEqual(handWritten.signature, provenanceMac(handWritten), "an unsigned stamp fails");
   // …and the signer is what closes the gap: only `forge verify` runs it.
   assert.equal(signProvenance(handWritten).signature, provenanceMac(handWritten));
+});
+
+// ---------------------------------------------------------------------------
+// Review 2026-09-26 — F01: the fingerprint is a canonical manifest, not a byte stream.
+// ---------------------------------------------------------------------------
+
+const committedRepo = () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "keep.js"), "export const keep = 1\n");
+  execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+  return root;
+};
+
+test("F01: renaming an untracked file (identical bytes) changes the fingerprint", () => {
+  const root = committedRepo();
+  writeFileSync(join(root, "a.js"), "export const x = 42\n");
+  const before = computeCodeState(root);
+  renameSync(join(root, "a.js"), join(root, "b.js"));
+  const after = computeCodeState(root);
+  assert.equal(before.scheme, CODE_STATE_SCHEME);
+  assert.notEqual(after.dirtyHash, before.dirtyHash, "a.js → b.js is a different code state");
+});
+
+test("F01: moving bytes between untracked files ([ab,c] vs [a,bc]) changes the fingerprint", () => {
+  const root = committedRepo();
+  writeFileSync(join(root, "x.js"), "ab");
+  writeFileSync(join(root, "y.js"), "c");
+  const s1 = computeCodeState(root);
+  writeFileSync(join(root, "x.js"), "a");
+  writeFileSync(join(root, "y.js"), "bc");
+  assert.notEqual(computeCodeState(root).dirtyHash, s1.dirtyHash, "file boundaries are bound");
+});
+
+test("F01: an added EMPTY untracked file, and HEAD itself, are part of the code state", () => {
+  const root = committedRepo();
+  const clean = computeCodeState(root);
+  writeFileSync(join(root, "empty.js"), "");
+  assert.notEqual(computeCodeState(root).dirtyHash, clean.dirtyHash, "empty file changes it");
+  execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "second"], { cwd: root, stdio: "ignore" });
+  const cleanAtNewHead = computeCodeState(root);
+  // Both states are CLEAN (empty diff) — only HEAD differs. v1 hashed them identically.
+  assert.notEqual(
+    cleanAtNewHead.dirtyHash,
+    clean.dirtyHash,
+    "a different commit is not the same code",
+  );
+});
+
+test("F01: an untracked file's exec bit and a symlink target are bound", {
+  skip: process.platform === "win32" && "POSIX modes/symlinks",
+}, () => {
+  const root = committedRepo();
+  writeFileSync(join(root, "run.sh"), "echo hi\n");
+  const s1 = computeCodeState(root);
+  chmodSync(join(root, "run.sh"), 0o755);
+  const s2 = computeCodeState(root);
+  assert.notEqual(s2.dirtyHash, s1.dirtyHash, "mode change is a code-state change");
+  symlinkSync("keep.js", join(root, "link.js"));
+  const s3 = computeCodeState(root);
+  renameSync(join(root, "link.js"), join(root, "link2.js"));
+  assert.notEqual(computeCodeState(root).dirtyHash, s3.dirtyHash, "symlink path is bound");
+});
+
+test("F01: an unreadable untracked file makes the state unbindable (fail closed)", {
+  skip:
+    (process.platform === "win32" || process.getuid?.() === 0) &&
+    "needs a non-root POSIX user (root reads mode-000 files)",
+}, () => {
+  const root = committedRepo();
+  writeFileSync(join(root, "secret.js"), "x");
+  chmodSync(join(root, "secret.js"), 0o000);
+  const s = computeCodeState(root);
+  assert.equal(s.dirtyHash, null);
+  assert.match(s.unbindable, /could not be read/);
+  chmodSync(join(root, "secret.js"), 0o644);
+});
+
+test("F01: the stamp's signature binds the fingerprint scheme (old-scheme stamps are stale)", () => {
+  const stamp = {
+    tests: { status: "PASS" },
+    codeState: { scheme: CODE_STATE_SCHEME, head: "a".repeat(40), dirtyHash: "b".repeat(64) },
+  };
+  signProvenance(stamp);
+  const v1 = { ...stamp, codeState: { ...stamp.codeState, scheme: undefined } };
+  assert.notEqual(
+    provenanceMac(v1),
+    stamp.signature,
+    "a stamp without the v2 scheme no longer verifies",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// F10: a verdict is bound to the bytes it TESTED — a mutation during the run is INCOMPLETE.
+// ---------------------------------------------------------------------------
+
+test("F10: a test that rewrites source during the run cannot produce a signed PASS", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node --test");
+  writeFileSync(join(root, "subject.cjs"), "module.exports = 42;\n");
+  writeFileSync(
+    join(root, "subject.test.cjs"),
+    [
+      "const { test } = require('node:test');",
+      "const assert = require('node:assert');",
+      "const fs = require('node:fs');",
+      "test('checks then mutates', () => {",
+      "  assert.strictEqual(require('./subject.cjs'), 42);",
+      "  fs.writeFileSync(__dirname + '/subject.cjs', 'module.exports = 0;\\n');",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.executed[0].status, "PASS", "the suite itself passed…");
+  assert.equal(r.tests.status, "INCOMPLETE", "…but the tree moved, so no verdict is bound");
+  assert.equal(r.tests.mutated, true);
+  assert.equal(r.ok, false);
+  assert.notEqual(r.provenance.codeState.dirtyHash, r.provenance.codeStateAfter.dirtyHash);
+  assert.equal(
+    r.provenance.codeStateAfter.dirtyHash,
+    computeCodeState(root).dirtyHash,
+    "the after-state is the mutated tree",
+  );
+  assert.equal(r.provenance.signature, provenanceMac(r.provenance), "signed as INCOMPLETE");
+});
+
+test("F10: outputs declared in verify.generated may change during the run", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node --test");
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { generated: ["reports/**"] } }),
+  );
+  writeFileSync(
+    join(root, "gen.test.cjs"),
+    [
+      "const { test } = require('node:test');",
+      "const fs = require('node:fs');",
+      "test('writes a report', () => {",
+      "  fs.mkdirSync(__dirname + '/reports', { recursive: true });",
+      "  fs.writeFileSync(__dirname + '/reports/out.txt', String(Date.now()));",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "PASS", r.tests.output);
+  assert.equal(r.tests.mutated, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// F08/F09: suites are planned per package; coverage is explicit.
+// ---------------------------------------------------------------------------
+
+const monorepo = ({ rootScript = "node --test", workspaces = ["packages/*"] } = {}) => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ name: "mono", private: true, workspaces, scripts: { test: rootScript } }),
+  );
+  writeFileSync(
+    join(root, "root.test.cjs"),
+    "const { test } = require('node:test');\ntest('root ok', () => {});\n",
+  );
+  mkdirSync(join(root, "packages", "bad"), { recursive: true });
+  writeFileSync(
+    join(root, "packages", "bad", "package.json"),
+    JSON.stringify({ name: "bad", scripts: { test: 'node -e "process.exit(1)"' } }),
+  );
+  return root;
+};
+
+test("F08: a failing workspace package cannot hide behind a passing root suite", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = monorepo();
+  const r = verify({ targetRoot: root });
+  const nested = r.tests.executed.find((s) => s.cwd === "packages/bad");
+  assert.ok(nested, `the nested suite ran: ${JSON.stringify(r.tests.executed)}`);
+  assert.equal(nested.status, "FAIL");
+  assert.equal(r.tests.status, "FAIL");
+  assert.deepEqual(r.tests.coverage.required, [".", "packages/bad"]);
+});
+
+test("F08: a recursive root script covers declared workspaces once (no duplicate run)", () => {
+  const root = monorepo({ rootScript: "npm test --workspaces --if-present" });
+  const plan = planSuites(root);
+  assert.equal(plan.suites.length, 1, "only the root suite runs");
+  assert.deepEqual(plan.suites[0].covers, [".", "packages/bad"], "…and it covers the workspace");
+  assert.equal(plan.coverage.rootCoversWorkspaces, true);
+});
+
+test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/fixtures skip", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = monorepo();
+  mkdirSync(join(root, "test", "fixtures", "pkg"), { recursive: true });
+  writeFileSync(
+    join(root, "test", "fixtures", "pkg", "package.json"),
+    JSON.stringify({ scripts: { test: "exit 1" } }),
+  );
+  const plan = planSuites(root);
+  assert.ok(
+    plan.coverage.excluded.some((e) => e.path === "test/fixtures/pkg"),
+    "a fixture package is not a required suite",
+  );
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { exclude: ["packages/bad"] } }),
+  );
+  const excluded = verify({ targetRoot: root });
+  assert.equal(excluded.tests.status, "PASS", excluded.tests.output);
+  assert.ok(excluded.tests.coverage.excluded.some((e) => e.reason === "verify.exclude"));
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { workspaces: "root" } }),
+  );
+  const declared = planSuites(root);
+  assert.equal(declared.suites.length, 1);
+  assert.ok(declared.suites[0].covers.includes("packages/bad"));
+});
+
+test("F08: a nested suite forge cannot execute leaves its package uncovered → INCOMPLETE", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node --test");
+  mkdirSync(join(root, "services", "api"), { recursive: true });
+  writeFileSync(join(root, "services", "api", "go.mod"), "module x\n\ngo 1.22\n");
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE");
+  assert.deepEqual(r.tests.coverage.uncovered, ["services/api"]);
+  assert.ok(r.tests.notExecuted.some((l) => l.includes("services/api")));
+});
+
+test("F09: an explicit passing script + a runner devDependency is a complete PASS", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "t",
+      scripts: { test: "node --test" },
+      devDependencies: { vitest: "2" },
+    }),
+  );
+  writeFileSync(
+    join(root, "ok.test.cjs"),
+    "const { test } = require('node:test');\ntest('ok', () => {});\n",
+  );
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "PASS", r.tests.output);
+  assert.deepEqual(
+    r.tests.notExecuted,
+    [],
+    "the vitest dependency is inventory, not an obligation",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A01: one verifier event per run — id, suites, coverage, pre/post state, environment.
+// ---------------------------------------------------------------------------
+
+test("A01: verify records an immutable, MAC'd verifier event", { skip: NO_NPM_SPAWN }, () => {
+  const root = fixtureWithTestScript("node --test");
+  writeFileSync(
+    join(root, "ok.test.cjs"),
+    "const { test } = require('node:test');\ntest('ok', () => {});\n",
+  );
+  const r = verify({ targetRoot: root });
+  const e = r.provenance.event;
+  assert.match(e.runId, /^[0-9a-f-]{36}$/);
+  assert.equal(e.status, "PASS");
+  assert.equal(e.pre.dirtyHash, r.provenance.codeState.dirtyHash);
+  assert.equal(e.post.dirtyHash, e.pre.dirtyHash);
+  assert.deepEqual(e.suites[0].covers, ["."]);
+  assert.equal(typeof e.environment.digest, "string");
+  const events = readVerifyEvents(root);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].runId, e.runId);
+  // A hand-edited event line (verdict flipped) is not read back as evidence.
+  const path = join(root, ".forge", "verify-events.jsonl");
+  const forged = { ...JSON.parse(readFileSync(path, "utf8").trim()), status: "FAIL" };
+  writeFileSync(path, `${JSON.stringify(forged)}\n`);
+  assert.equal(readVerifyEvents(root).length, 0);
+});
+
+test("F10: interpreter caches written by a test run are not a code mutation", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node write-cache.cjs");
+  writeFileSync(
+    join(root, "write-cache.cjs"),
+    [
+      "const fs = require('node:fs');",
+      "fs.mkdirSync(__dirname + '/pkg/__pycache__', { recursive: true });",
+      "fs.writeFileSync(__dirname + '/pkg/__pycache__/m.cpython-312.pyc', String(Date.now()));",
+      "fs.mkdirSync(__dirname + '/.pytest_cache', { recursive: true });",
+      "fs.writeFileSync(__dirname + '/.pytest_cache/state', String(Date.now()));",
+      "",
+    ].join("\n"),
+  );
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "PASS", r.tests.output);
+  assert.equal(r.tests.mutated, undefined);
 });

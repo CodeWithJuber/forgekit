@@ -8,6 +8,15 @@
 > statement. **`substrate_synthesis.pdf` predates these corrections** (it was built with
 > WeasyPrint, which was not available to rebuild it); read the HTML. The numbers are
 > recomputed by [`../recompute_corrections.py`](../recompute_corrections.py).
+>
+> **Corrected again 2026-09-26.** A second review found that the corrected range statement still
+> combined two maxima that need not be attainable together, `(1 − p_max)(1 − q_max)`; that the equality condition
+> for `1 − (1 − ε)ⁿ` was misstated; that a caught miss was being read as a completed task; that the
+> frozen-map premise was broader than the guarantees it removes; and that prior art and the shared
+> authorship of the "three bodies of work" needed stating. The HTML's **Corrections (2026-09-26)**
+> section lists each with its original wording, and
+> `python3 ../recompute_corrections.py --theorem-checks` asserts the numeric counterexample, the
+> equality condition and the 400× correction with no data.
 
 This directory contains a formal, mathematical unification of three separately
 developed bodies of work that all describe the **same architecture** for making a
@@ -44,6 +53,20 @@ dependence between tasks.
 
 What the corrections changed, briefly:
 
+- **The two maxima need not be jointly attainable (2026-09-26).** The attainable residual is
+  `r* = min over (p, q) ∈ F of (1 − p)(1 − q)`, with `F = {(p(π), q(π)) : admissible policies π}`.
+  Instructions change which misses remain, and `q` is a catch rate on that changed population, so
+  `(1 − p_max)(1 − q_max)` is a *lower bound* on `r*` unless compatibility is established. Policy A
+  with `(p, q) = (0.5, 0.9)` leaves 0.05 and policy B with `(0.9, 0.1)` leaves 0.09; the separate
+  maxima suggest 0.01, which neither attains.
+- **Equality needs equal residuals (2026-09-26).** With per-task residuals `rᵢ ≤ ε` and independent
+  tasks, `P(≥1 miss) = 1 − ∏(1 − rᵢ) ≤ 1 − (1 − ε)ⁿ`, with equality only when every `rᵢ = ε`;
+  independence alone does not give equality. The union bound `nε` needs neither.
+- **Catching is not completing (2026-09-26).** A lower silent-miss probability is not automatically a
+  higher completed-correct-task rate: a caught mistake can end in an abort, repeated blocking or a
+  failed repair. Measure the true catch rate, false-block rate, repaired success conditional on a
+  catch, abandonment, latency and recovery cost.
+
 - **It is a bound, not an impossibility proof.** The old criterion, `P(≥1 miss) → 1`,
   also condemns the composed system (0.993 over 1,000 tasks at a residual of 0.005), and
   raising `p` bends the curve too (30-task `P(≥1 miss)` is 0.958 at `p = 0.9` and 0.260 at
@@ -52,6 +75,9 @@ What the corrections changed, briefly:
   `(1 − p)·∏(1 − cⱼ)`, assumed the checks fire independently given a miss. The same
   classifier at the Stop hook, pre-commit and CI fires together, so the residual is
   `(1 − p)(1 − c_max)`: 0.015, not the product's 3.75 × 10⁻⁵, in the paper's own example.
+  Three lifecycle copies of one classifier widen the opportunities to run it; they are not three
+  independent semantic detectors. The 400× figure is recomputed (§2) and asserted (§3b) by the
+  recomputation script.
 - **`cⱼ` belongs to the agent as well as the gate.** The gate detects its proxy exactly,
   not the miss; an agent that touches `STATE.md` passes it. At a STATE-touch rate of 0.9
   the residual is 0.27, not 0.015.
@@ -60,6 +86,15 @@ What the corrections changed, briefly:
 - **Priority is conceded.** The law is standard layer-of-protection algebra, and two
   concurrent preprints derived a more general Bayesian form first (see the refutation
   paper's related work). The paper no longer says it "proves" the result.
+- **The same care for the rest of the framing (2026-09-26).** A frozen model lacks specific
+  guarantees — durable state across independent invocations, context beyond the window, automatic
+  parameter update, reliable self-verification without external evidence — not the ability to adapt
+  inside a context (Brown et al., 2020, [arXiv:2005.14165](https://arxiv.org/abs/2005.14165)).
+  CoALA ([arXiv:2309.02427](https://arxiv.org/abs/2309.02427)) and Reflexion
+  ([arXiv:2303.11366](https://arxiv.org/abs/2303.11366)) are prior art for the broad architecture;
+  the defensible claim is *a portable implementation of evidence-weighted coding-agent memory and
+  checks, with empirical evaluation of trust failure modes*, and the five faculties are a
+  decomposition, not a proof of necessity.
 
 It is the formal content of the practitioner's rule: _never trust the output of a
 probability engine; earn trust with an external check._
@@ -79,10 +114,10 @@ set, and said reverse reachability run to fixpoint implied perfect recall.
 
 | File                                | What it is                                                                                                                                                                                                                                           |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `substrate_synthesis.pdf`           | The formal synthesis paper (42 pp): definitions, Theorem D + proof, the unified A1–A7 TASK loop, invariants I1–I4, theorems T1–T6 with proofs, the 16-row crosswalk, the full 14-mapping Qur'anic epistemology, both prototypes. **Predates the 2026-09-21 corrections.** |
-| `substrate_synthesis.html`          | Same paper, self-contained HTML, **with the 2026-09-21 corrections** and a Corrections section.                                                                                                                                                      |
+| `substrate_synthesis.pdf`           | The formal synthesis paper (42 pp): definitions, Theorem D + proof, the unified A1–A7 TASK loop, invariants I1–I4, theorems T1–T6 with proofs, the 16-row crosswalk, the full 14-mapping Qur'anic epistemology, both prototypes. **Historical, pre-correction edition** (git blob `2e17362`; predates the 2026-09-21 and 2026-09-26 corrections — see [`../HISTORICAL_EDITIONS.md`](../HISTORICAL_EDITIONS.md)). |
+| `substrate_synthesis.html`          | Same paper, self-contained HTML, **with the 2026-09-21 and 2026-09-26 corrections** and a Corrections section for each. The corrected source.                                                                                                        |
 | `crosswalk.json` / `crosswalk.md`   | The three-way term-by-term correspondence (substrate ↔ framework ↔ forgekit), with the P1/P2/P3 → Π₁/Π₂/Π₃ notation reconciliation.                                                                                                                  |
-| `graded_reference_set.json` / `.md` | The 15 new sources independently verified and graded (9 confirmed, 6 traceable, 0 unverifiable), including the disambiguation of the two future-dated arXiv IDs.                                                                                     |
+| `graded_reference_set.json` / `.md` | The 15 new sources independently verified and graded (9 confirmed, 6 traceable, 0 unverifiable), including the disambiguation of the two future-dated arXiv IDs. These are bibliographic grades (the source exists and is correctly attributed); claim support, study design, replication and transfer scope are separate and not assessed. |
 | `merged_references.json`            | Full 47-entry bibliography (32 original + 15 new, deduped).                                                                                                                                                                                          |
 | `figures/schematic_duality.png`     | The two-layer duality architecture.                                                                                                                                                                                                                  |
 | `figures/schematic_taskloop.png`    | The unified 7-stage TASK loop (each stage bound to faculty · algorithm · Qur'anic anchor).                                                                                                                                                           |
@@ -91,15 +126,18 @@ The **two runnable prototypes** referenced throughout the paper already live in 
 repo and are not duplicated here:
 
 - `../python-prototypes/impact_oracle/` — Prototype I, the impact oracle (approximates
-  A1 / Δ\*). Runnable, 36 tests. Recall 1.00 on five mutations of its own demo package;
+  A1 / Δ\*). Runnable; the in-tree package is the repaired v2 (49 tests: 36 demo-package + 13
+  repair; corrected 2026-09-26 from "36 tests"). Recall 1.00 on five mutations of its own demo package;
   **refuted on real repositories: recall 0.022** on 759 files in nine repositories, where
   grep scored F1 0.437 against the oracle's 0.042 (see
   [`../empirical-refutation/`](../empirical-refutation/)).
 - `../python-prototypes/router_gate/` — Prototype II, complexity-router +
-  assumption-gate (A7 + A6 / M1 + M2). Runnable, 19 tests. 62.1% cost saved on the 30
+  assumption-gate (A7 + A6 / M1 + M2). Runnable, 23 tests in-tree (the version archived as
+  evaluated has 19; corrected 2026-09-26). 62.1% cost saved on the 30
   tasks its thresholds were tuned on; **refuted on 80 held-out tasks: total spend was
-  20.2% higher** than always-premium. Per output a judge accepted, it cost $1.06 against
-  always-premium's $1.76, but only 6 and 3 of 64 outputs were accepted.
+  20.2% higher** than always-premium. Per judge-accepted output (a model judge that is also the
+  mid-tier executor; no output was test-verified), it cost $1.06 against always-premium's $1.76,
+  but only 6 and 3 of 64 outputs were accepted.
 
 ## Honesty commitments (carried from the source work)
 

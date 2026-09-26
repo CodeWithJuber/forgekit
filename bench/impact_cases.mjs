@@ -48,13 +48,15 @@
 //   - test/ledger.test.js imports { mergeStates } (:14) and calls it
 //   (src/ledger_sync.js:3 also names it in the module header — same file, already labeled.)
 //
-// claimText (src/ledger.js) — 10 files
+// claimText (src/ledger.js) — 11 files
 //   - src/ledger.js       defines it (:610); sketchOf() (:636), termsOf() (:637) and :880 call it
 //   - src/context.js      imports { claimText } (:13) and calls it (:185)
 //   - src/dash.js         imports { claimText } (:16) and calls it (:58, :389, :400)
 //   - src/deja.js         imports { claimText } (:19) and calls it (:179)
 //   - src/ledger_store.js imports { claimText } (:26) and calls it (:663)
-//   - src/cli.js          dynamic-imports { claimText } (:874, :1644) and calls it
+//   - src/cli.js          dynamic-imports { claimText } (:989) and calls it (:1012, :1023)
+//   - src/cli/memory.js   dynamic-imports { claimText } (:251) and calls it (:257, :283, :313)
+//                         — the recall/brain handlers moved here out of src/cli.js (review A03)
 //   - src/cortex_mcp.js   dynamic-imports { claimText } (:91) and calls it (:96, :106)
 //   - test/ledger.test.js imports { claimText } (:8) and calls it
 //   - src/learn_consolidate.js imports { claimText } (:32) and calls it (:110)
@@ -123,6 +125,7 @@ export const IMPACT_CASES = [
       "src/ledger_retention.js",
       "src/ledger_store.js",
       "src/cli.js",
+      "src/cli/memory.js",
       "src/cortex_mcp.js",
       "test/ledger.test.js",
     ],

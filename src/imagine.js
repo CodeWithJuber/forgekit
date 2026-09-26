@@ -3,10 +3,16 @@
 // exact-structure half: entities → blast radius → predicted breaks with confidence.
 // This module adds impacted-test SELECTION — the minimal dry-run suite that makes
 // pre-action simulation affordable at all (minutes → seconds vs "run everything") —
-// and the sandboxed worktree runner (spec §2.2) that EXECUTES that suite: dryRun()
-// checks out HEAD into an ephemeral `git worktree`, runs the suite there, parses the
-// TAP summary, and always discards the sandbox. Selection stays useful on its own as
+// and the isolated-checkout runner (spec §2.2) that EXECUTES that suite: dryRun()
+// checks out HEAD into an ephemeral, detached `git worktree`, runs the suite there, parses
+// the TAP summary, and always discards the checkout. Selection stays useful on its own as
 // "run these, in this order"; dryRun turns the prediction into measured evidence.
+//
+// What it is NOT (review A05): a security sandbox. A git worktree isolates the CHECKOUT —
+// the files the tests see — and nothing else: the tests run with this user's network,
+// credentials, home directory and process permissions. And it runs the COMMITTED baseline
+// (HEAD), not an uncommitted patch. Untrusted test code needs a restricted execution
+// backend, which this is not.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,7 +97,7 @@ const locFile = (line) => {
 /**
  * @typedef {{ok: boolean, reason?: string, passed?: number, failed?: number,
  *   perFile?: Record<string, "pass"|"fail">, durationMs?: number, runner?: string,
- *   output?: string, worktree?: string}} DryRunVerdict
+ *   output?: string, worktree?: string, unsupported?: boolean}} DryRunVerdict
  */
 
 /**
@@ -115,8 +121,34 @@ export function tapSummary(stdout) {
 }
 
 /**
- * Sandboxed dry-run of a selected suite — the simulation half of ĉ = g(a, C)
- * (spec §2.2): run the tests in an EPHEMERAL `git worktree` of HEAD and discard it.
+ * Why a selected suite cannot be dry-run under `node --test`, or null when it can: a test
+ * file node cannot execute natively (anything but .js/.mjs/.cjs), or a package whose
+ * declared test script uses another runner. Pure w.r.t. the tree (reads package.json).
+ * @param {string} dir the checkout the suite would run in
+ * @param {string[]} tests repo-relative test paths
+ * @returns {string|null}
+ */
+export function unsupportedRunner(dir, tests) {
+  const foreign = tests.map(String).filter((t) => !/\.(?:c|m)?js$/.test(t));
+  if (foreign.length)
+    return `unsupported runner: forge's dry-run executes node:test files only, and ${foreign.slice(0, 3).join(", ")}${foreign.length > 3 ? ", …" : ""} ${foreign.length > 1 ? "are not" : "is not"} one — run the project's own runner on them`;
+  try {
+    const script = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))?.scripts?.test;
+    if (
+      typeof script === "string" &&
+      script.trim() &&
+      !/no test specified/.test(script) &&
+      !/\bnode\s+(--[\w-]+(=\S+)?\s+)*--test\b/.test(script)
+    )
+      return `unsupported runner: the project's tests run under \`${script.slice(0, 60)}\`, not node:test — forge will not guess an adapter; run that command on the selected files`;
+  } catch {} // no/unreadable package.json → node:test is the only runner in play
+  return null;
+}
+
+/**
+ * Isolated-checkout dry-run of a selected suite — the simulation half of ĉ = g(a, C)
+ * (spec §2.2): run the tests in an EPHEMERAL, detached `git worktree` of HEAD and discard
+ * it. Isolation is of the CHECKOUT only — not network, credentials, home or permissions.
  * The worktree is HEAD, not the working tree — worktrees share the object store,
  * never uncommitted files — so callers MUST surface that a dirty tree dry-runs the
  * last commit, not the in-flight proposal (the CLI refuses dirty trees by default).
@@ -133,7 +165,7 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
   if (!hasBin("git"))
     return {
       ok: false,
-      reason: "git not found — the sandbox is a git worktree",
+      reason: "git not found — the isolated checkout is a git worktree",
     };
   try {
     execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
@@ -161,17 +193,14 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
       const msg = /** @type {{stderr?: Buffer}} */ (e).stderr?.toString().trim() || String(e);
       return { ok: false, reason: `git worktree add failed: ${msg}` };
     }
-    // Runner policy: always `node --test <files...>` — a custom package test script
-    // (jest, vitest, …) is a WHOLE-SUITE command that can't be scoped per-file safely,
-    // which would defeat minimal selection. We still run node --test and say so, so a
-    // surprising verdict is attributable to the runner mismatch.
-    let runner = "node --test";
-    try {
-      const pkg = JSON.parse(readFileSync(join(wt, "package.json"), "utf8"));
-      const script = pkg?.scripts?.test;
-      if (script && !/\bnode\s+(--[\w-]+\s+)*--test\b/.test(script))
-        runner = `node --test (package.json test script is custom: ${String(script).slice(0, 60)})`;
-    } catch {} // no/unreadable package.json → default runner
+    // Runner policy: this dry-run executes `node --test <files...>` and NOTHING else. A
+    // project whose tests run under another runner (jest, vitest, mocha, pytest — a
+    // whole-suite command that cannot be scoped per file) gets an explicit UNSUPPORTED
+    // result instead of a node:test run of files written for a different runner, whose
+    // "failures" would be the adapter's, not the code's (review A05).
+    const runner = "node --test";
+    const unsupported = unsupportedRunner(wt, tests);
+    if (unsupported) return { ok: false, unsupported: true, reason: unsupported, runner };
     // TAP reporter is forced: the default reporter depends on TTY-ness, and the
     // `# pass/# fail` summary below is the contract this parser relies on. The env
     // must NOT leak a parent test-runner's context — when dryRun itself runs under
@@ -272,7 +301,7 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
   try {
     result = body();
   } finally {
-    // ALWAYS discard the sandbox — a leaked worktree pins refs and litters
+    // ALWAYS discard the checkout — a leaked worktree pins refs and litters
     // `git worktree list` forever. Order matters on Windows: `git worktree remove`
     // can fail there when a just-exited `node --test` worker still holds a handle, so
     // we then rm the directory ourselves and prune LAST — pruning only reconciles
@@ -303,7 +332,7 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
  * Imagine the consequences of a task before acting: entities → impact() blast
  * radius → predicted breaks (per-file max confidence across targets), the minimal
  * dry-run suite, and riskScore = Σ confidence — the number spec §2.3 thresholds to
- * decide whether the (follow-up) sandboxed dry-run is worth paying for.
+ * decide whether the (follow-up) isolated-checkout dry-run is worth paying for.
  * @param {string} root
  * @param {string} task
  * @param {{atlas?: object, threshold?: number}} [opts] inject `atlas` to skip the build.
@@ -365,6 +394,9 @@ export function renderImagine(r, { footer = true } = {}) {
       `  ! no test covers: ${r.uncovered.slice(0, 6).join(", ")}${r.uncovered.length > 6 ? " …" : ""}`,
     );
   if (footer)
-    lines.push("", "  (measure it: re-run with --run — sandboxed worktree dry-run of HEAD)");
+    lines.push(
+      "",
+      "  (measure it: re-run with --run — a dry-run in an isolated checkout of HEAD; not a security sandbox)",
+    );
   return lines.join("\n");
 }

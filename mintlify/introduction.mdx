@@ -1,17 +1,21 @@
 ---
 title: "Forge: the cognitive substrate for AI coding agents"
-description: "Forge is the cognitive substrate stateless models are missing — memory, foresight, and guardrails — as native config for every AI coding agent."
+description: "A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis, and explicit verification around coding agents — as native config for every AI coding tool."
 ---
 
-**One brain for every AI coding agent.** A large language model is stateless: one
-context window, wiped every call. It has no memory of what your team learned, no
-foresight about what an edit will break, and no enforced guardrails. Forge
+**A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
+and explicit verification around coding agents.** A language model keeps no durable state between
+independent calls and sees only a bounded context window, so on its own it does not carry what
+your team learned, cannot see the parts of the repository an edit affects unless they are in
+context, and cannot enforce rules on itself. Forge
 (`@codewithjuber/forgekit`) is the **cognitive substrate** — the layer that runs
 _before_ the model edits code, supplying evidence-referenced, content-addressed memory (we
-call it "proof-carrying memory"), heuristic impact foresight, and enforced guardrails — and
-a **cross-tool config compiler** that delivers that brain as native config into every tool
-at once. Claude Code is the deepest-tested integration; the others receive native config and
-MCP tools with less real-world exercise.
+call it "proof-carrying memory"), heuristic impact foresight, and guardrails (blocking on
+Claude Code) — and a **cross-tool config compiler** that delivers that brain as native config
+into every tool at once. Claude Code is the deepest-tested integration and the only one with
+automatic hooks; the others receive native config (most also an MCP server entry) with less
+real-world exercise. The repository's `docs/INTEGRATIONS.md` lists, per tool, what is emitted,
+registered, run automatically and enforced.
 
 <CardGroup cols={3}>
   <Card title="Memory" icon="brain">
@@ -30,10 +34,11 @@ MCP tools with less real-world exercise.
 
 ## The problem
 
-A large language model is stateless — one context window, wiped every call.
+A language model keeps no durable state between independent calls, and it sees only what fits in
+its context window.
 
-- It has **no memory** of what your team already learned.
-- It has **no foresight** about what an edit will break.
+- It does not **carry what your team learned** from one session to the next.
+- It does not **see what an edit will affect** unless those files are in its context.
 - It has **no enforced guardrails** — prose rules get forgotten after a compaction.
 
 And every tool wants its own config file (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`,
@@ -42,11 +47,12 @@ things, and the compiler that delivers it into every tool from one source.
 
 ## The thesis
 
-A model can't learn from your codebase between calls: its weights are frozen and its
-working memory is wiped after every response. Memory, foresight, and self-checking
-can't be prompted into it — they have to be supplied from _outside_. That outside layer
-is the cognitive substrate. Formally, inference is a fixed function `y = f(x)` with no
-state between calls; Forge is the state.
+A model with frozen weights does adapt within one context — examples, retrieved facts and
+feedback change what it does — but it does not guarantee four things on its own: durable state
+across independent calls, context beyond its window, weight updates from outcomes, and reliable
+self-verification without external evidence. Forge supplies persistence and external checks from
+_outside_ the model. It is one tested way of doing that, not the only possible architecture;
+the research programme's dated corrections explain the difference.
 
 <Steps>
   <Step title="Author once">
@@ -75,8 +81,9 @@ state between calls; Forge is the state.
   content-addressed memory: a claim that carries references to its evidence and is trusted
   only once independent oracles raise its confidence above a floor. The "proof" is that
   evidence trail, not a formal proof.
-- **Foresight before you break things.** Ask "what does changing `verifyToken` break?"
-  and get the blast radius from the code graph, including coupled files you never named.
+- **Heuristic impact before you break things.** Ask "what does changing `verifyToken`
+  break?" and get the blast radius from a regex-derived code graph, including coupled files you
+  never named — it can miss files as well as over-warn.
 - **Guardrails that can't be forgotten.** Deterministic hooks enforce protected paths,
   cost budgets, and doom-loop detection — they survive a context compaction.
 - **Work that finishes end to end.** A completion gate blocks "done" once per session
@@ -117,8 +124,10 @@ Forge states its own ceiling everywhere.
 - **Tests and human corrections always win.**
 
 <Note>
-  Forge is **beta**. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
-  is tested and in daily use; some flags may change before `1.0`.
+  Forge is **beta**: releases follow semantic versioning (a breaking change is a new major
+  version), and "beta" describes maturity — heuristic analyses, advisory checks, and less
+  real-world exercise outside Claude Code. The core (`init`, `sync`, `substrate`, `impact`,
+  `ledger`, guards) is tested and in daily use.
 </Note>
 
 ## Next steps

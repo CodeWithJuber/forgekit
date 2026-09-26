@@ -47,7 +47,7 @@ the impacted files — including importers you didn't name.
 `forge impact <symbol|file>` (blast radius) · `forge scope <file…>` (decomposition) ·
 `forge context "<task>"` (budgeted context assembly; *computes* what's missing) ·
 `forge imagine "<task>" [--run]` (predicted breaks + minimal covering test suite;
-`--run` dry-runs it in a sandboxed worktree) ·
+`--run` dry-runs it in an isolated git checkout of HEAD — not a security sandbox) ·
 `forge diagnose "<error>"` (doom-loop: 3× the same failure signature = stop retrying,
 escalate one tier with the minted diagnosis claim at the head of the prompt).
 MCP equivalents: `assumption_gate`, `route_task`, `predict_impact`, `scope_files`.

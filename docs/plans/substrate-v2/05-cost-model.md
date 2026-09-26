@@ -1,13 +1,27 @@
-# 05 — The cost model: the path to ~90 %, stated honestly
+# 05 — The cost model: a ~90 % target, stated as a hypothesis
 
-> The owner's target is ~90 % cost reduction. This doc gives the composition argument for
-> why the target is reachable, the exact formula, which factors are **measured** today
-> versus **targets**, and the P8 harness that will replace targets with measurements.
-> Discipline per the paper (§4, C6): a number is an assumption until measured.
+> The owner's target is ~90 % cost reduction. This doc states that target, the stage model it
+> was argued from, why that argument is **not evidence** of any achieved saving, and the P8
+> harness that would replace hypotheses with measurements. Every factor below — routing included —
+> is a hypothesis until paired, externally verified runs measure it. Discipline per the paper (§4,
+> C6): a number is an assumption until measured.
 
-## 1. The stage model
+> **Corrected 2026-09-26.** This page used to open with a factor table whose routing row read
+> "`r_route` … **0.62 measured live** (paper §9, real tokens, real ladder)", and §2 derived three
+> scenarios "with routing fixed at its measured 0.62": **90.2 %** (repeat-heavy team), **85.6 %**
+> (moderate reuse) and **74.3 %** (cold start), concluding that "~90 % is credible on repeat-heavy
+> team workloads once the ledger is warm" and that the floor was "≈ 75 %". That 0.62 was the old
+> router's 62.1 % saving on the 30 tasks its thresholds were tuned on; on 80 held-out tasks the same
+> router's total spend was 20.2 % **higher** than always-premium
+> ([research/empirical-refutation/](../../../research/empirical-refutation/)), and it was a
+> repricing of measured tokens, not an observed cheaper-model outcome. A footnote conceded the
+> refutation while the arithmetic above it still used the number. The scenarios are **retired, not
+> re-derived**: §2 explains why multiplying independently estimated stage savings would not give a
+> valid total even with honest inputs.
 
-A task's cost passes through independent multiplicative stages:
+## 1. The stage model — a hypothesis about where cost could fall
+
+A task's cost may pass through these stages:
 
 ```
 C = C₀ · (1 − g·h_gate) · (1 − h_cache·σ_cache) · (1 − ρ_ctx) · (1 − r_route)
@@ -15,42 +29,94 @@ C = C₀ · (1 − g·h_gate) · (1 − h_cache·σ_cache) · (1 − ρ_ctx) · 
 
 | factor    | stage                                     | meaning                                                                                                                  | status                                                                                      |
 | --------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `h_gate`  | M2 gate                                   | fraction of requests halted as under-specified (spend ≈ 0 generation tokens; `g` ≈ their share of would-have-been spend) | mechanism **measured** in paper §9 (9/9 halts, zero gen tokens); rate is workload-dependent |
-| `h_cache` | reuse ([03](./03-reuse-cache.md))         | hit rate; `σ_cache` = avg saving per hit (≈ 1.0 exact, ≈ 0.85 near, ≈ 0.5 adapt)                                         | **target** — P8 measures                                                                    |
-| `ρ_ctx`   | assembly ([04](./04-context-assembly.md)) | input-token reduction from knapsack + compression ladder vs. read-everything baseline                                    | **target** — P8 measures                                                                    |
-| `r_route` | M1 routing                                | tier selection saving on remaining generation                                                                            | **0.62 measured live** (paper §9, real tokens, real ladder)                                 |
+| `h_gate`  | M2 gate                                   | fraction of requests halted as under-specified (spend ≈ 0 generation tokens; `g` ≈ their share of would-have-been spend) | **hypothesis** — the paper §9 demo halted its own under-specified examples with zero generation tokens (the tuned set); on 80 held-out tasks the gate's F1 was 0.37, and the halt rate and its net value on a real workload are unmeasured |
+| `h_cache` | reuse ([03](./03-reuse-cache.md))         | hit rate; `σ_cache` = avg saving per hit (≈ 1.0 exact, ≈ 0.85 near, ≈ 0.5 adapt)                                         | **hypothesis** — P8 measures                                                                |
+| `ρ_ctx`   | assembly ([04](./04-context-assembly.md)) | input-token reduction from knapsack + compression ladder vs. read-everything baseline                                    | **hypothesis** — P8 measures                                                                |
+| `r_route` | routing                                   | tier-selection saving on remaining generation                                                                            | **hypothesis** — no current measurement supports a positive value for this pipeline (components below) |
 
-Secondary effects deliberately **excluded** from the multiplication (they'd double-count
-or are unpriceable now): doom-loop halts (avoided thrash loops), M5 lean (fewer generated
-tokens), avoided-rework from the completeness gate (C2's "almost right" loop). These are
-tracked in P8 as separate counters, reported alongside — upside, not arithmetic.
+Routing is two separately versioned components, and neither supplies a measured `r_route`:
 
-## 2. What the target requires
+- **The old tiered router** — the Python prototype `research/python-prototypes/router_gate/`
+  (July 2026; 62.1 % on its 30 tuning tasks, **refuted**: 20.2 % more total spend than
+  always-premium on 80 held-out tasks) and its Node descendant `forge route` (`src/route.js`, a
+  k-NN rubric over labelled exemplars), which has never been evaluated end to end on cost.
+- **The universal router** — `forge route universal` (`src/router/`, prior
+  `data/router_prior.json` fitted 2026-09-22 on public SWE-bench Verified outcomes). Its held-out
+  headline is repository-reported, comes from an external harness, prices a different scaffold's
+  attempts, and says nothing about this pipeline's stages. A new in-repo replay on those
+  recorded attempts (2026-09-26) finds it no better than a fixed cascade chosen on the same dev
+  tasks, and finds its expected-cost formula under-predicting replayed cost by 5–22%
+  ([UNIVERSAL_ROUTING.md](../../UNIVERSAL_ROUTING.md)).
 
-With routing fixed at its measured 0.62, reaching 90 % total requires the _other_ stages
-to jointly remove ≈ 74 % of the remaining cost:
+Secondary effects are deliberately **excluded** from the multiplication (they would double-count or
+are unpriceable now): doom-loop halts (avoided thrash loops), M5 lean (fewer generated tokens),
+avoided rework from the completeness gate (C2's "almost right" loop). These are tracked in P8 as
+separate counters, reported alongside — upside, not arithmetic.
 
-```
-(1 − h_cache·σ) · (1 − ρ_ctx) · (1 − g·h_gate) ≤ 0.10 / 0.38 ≈ 0.263
-```
+## 2. Why the product is not a total
 
-Example compositions that satisfy it:
+Four separately estimated saving rates cannot simply be multiplied into a total:
 
-| scenario                                         | h_cache·σ | ρ_ctx | g·h_gate | total reduction |
-| ------------------------------------------------ | --------- | ----- | -------- | --------------- |
-| repeat-heavy team (CRUD, components, migrations) | 0.55      | 0.35  | 0.10     | **90.2 %**      |
-| moderate reuse                                   | 0.40      | 0.30  | 0.10     | 85.6 %          |
-| cold start (fresh repo, empty ledger)            | 0.05      | 0.25  | 0.05     | 74.3 %          |
+- **Cache hits change the routed workload.** The tasks that miss the cache are the novel ones, which
+  are likely the harder and more expensive ones; a routing saving estimated on all tasks does not
+  carry over to that residue.
+- **Context assembly changes quality, and quality changes retries.** Fewer input tokens that cost an
+  extra failed attempt or an escalation are not a saving; `ρ_ctx` measured as input-token reduction
+  alone ignores that.
+- **Halts can defer cost rather than remove it.** A clarified task usually comes back and is paid
+  for; a halt saves only if the work it prevents was wrong or unnecessary.
+- **Conditional ratios telescope only over one realized pipeline.** `C_final / C₀ = ∏ₖ (Cₖ / Cₖ₋₁)`
+  holds when every `Cₖ` is measured on the same tasks in the same run, each stage's denominator is
+  the cost that actually reached it, and the ledger includes what the stages themselves add:
+  lookups, prompt injection, verification, failed attempts and human recovery.
 
-Read the table honestly: **~90 % is credible on repeat-heavy team workloads once the
-ledger is warm, and is not credible cold.** The cache factor dominates, and it _grows_
-with team adoption (every teammate's verified artifact is everyone's hit —
-[02](./02-team-memory.md)) and with time (ledger accumulation). The floor — routing +
-assembly + gate alone — is ≈ 75 %, already substantial.
+Two further rules keep numbers honest:
 
-## 3. Measurement plan (P8)
+- **Repricing is a price counterfactual.** Repricing one model's measured tokens at another model's
+  price is not an observed cheaper-model outcome: the cheaper model would have produced different
+  tokens, different failures and different retries. It may be reported, labelled as a
+  counterfactual, never as a saving.
+- **Name the component and its version.** "Routing saves X" must say which router (the old tiered
+  router, `forge route`, or `forge route universal`), which version or prior, and which task set.
 
-**Instrumentation** — every stage emits one line to `.forge/metrics.jsonl`:
+The ~90 % figure remains the owner's target and a **hypothesis**. It is never a result, and no
+published achieved saving may be derived from this stage model.
+
+## 3. Acceptance rule for any cost headline
+
+A cost figure may be published only with every field below. A figure that cannot fill them is
+labelled a target, a hypothesis or a counterfactual; the evidence status is the one recorded in
+[`docs/status/claims.json`](../../status/claims.json).
+
+| Field                | What it must say                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Run ID               | the run (or runs) that produced the number, so it can be found and re-read                                |
+| Code SHA             | the exact commit of forgekit (and of any external harness) that ran                                      |
+| Dataset              | the task set, how it was selected, and whether any of it was used to tune the policy                      |
+| Denominator          | per task, or — the primary outcome — per **completed, externally verified** task                         |
+| Baseline             | what it is compared with, run with equivalent tools, context and repair opportunity                       |
+| Correctness rule     | what counts as success: `tests_passed`, `human_accepted`, `deployed_without_revert` — or `judge_accepted`, named as such |
+| Uncertainty          | an interval, its method, and the unit resampled (task, repository, time block)                            |
+| Evidence status      | `measured`, `reported` (someone else's number, not reproduced here) or `hypothesis`                       |
+
+No published achieved saving may derive from a factor that has been refuted.
+
+**Cost reporting fields** (for `forge cost`, `forge dash` and any report; see
+[GUIDE → `forge cost --stages`](../../GUIDE.md#forge-cost---stages--the-measured-cost-report)):
+
+- currency and the date of the prices used;
+- actual spend versus counterfactual (repriced or modelled) spend, never mixed in one number;
+- which attempts are included (first attempt only, or every retry and escalation);
+- cached tokens, and verifier and tool costs, counted or explicitly excluded;
+- missing-data status: a stage or day with no logs is **unknown**, never $0 actual spend;
+- beside the primary outcome (total cost per completed, externally verified task), the acceptance
+  rate and the abandonment rate;
+- stage-level logs diagnose where cost goes; only paired, full-system outcomes judge whether the
+  system saves.
+
+## 4. Measurement plan (P8) — status: partial
+
+**Instrumentation (implemented)** — every stage emits one line to `.forge/metrics.jsonl`:
 
 ```
 { t, task, stage: "gate|cache|context|route|generate|verify",
@@ -59,27 +125,32 @@ assembly + gate alone — is ≈ 75 %, already substantial.
 
 Written by the existing guard layer (`cost-budget.sh` already meters spend; it gains
 stage tags), `substrateCheck()`, and the reuse/context modules. `forge cost` learns a
-`--stages` report; `forge dash` charts it.
+`--stages` report; `forge dash` charts it. The per-stage factors it prints are stage
+self-estimates over whatever was logged — diagnostics, not a total.
 
-**Harness** — extend `src/eval.js` (which already does precision/recall for impact):
+**Harness (not yet run)** — extend `src/eval.js` (which already does precision/recall for impact):
 
 1. **Replay corpus:** N ≥ 100 real tasks captured from session traces (spec + repo state
-   ref + outcome), stratified: repeat-heavy / mixed / cold.
-2. **Paired runs:** baseline (always-premium, read-everything, no cache) vs. substrate,
-   same tasks — the paper §9 methodology (identical tokens repriced) extended to all four
-   stages, so every saving is arithmetic on measured tokens, never an estimate.
-3. **Correctness guard:** a saving only counts if the external verifier passes the output
-   (paper §9.3's rule: "routing down only counts as a win if the cheap tier is still
-   correct" — applied to every stage; a cache hit that gets reverted is a _negative_
-   entry).
-4. **Report:** per-stage factors with confidence intervals → `reports/cost-eval.md`;
-   the README claim gets updated to whatever the harness measured, with the workload
-   caveat attached. Until then the README may say "~90 % composed target" — never "90 %
-   achieved". (It used to also say "62.1 % measured (routing)"; that figure came from the 30
-   tasks the router was tuned on and was refuted on 80 held-out tasks, where routing cost
-   20.2 % more than always-premium — see `research/empirical-refutation/`.)
+   ref + outcome), stratified: repeat-heavy / mixed / cold, selected before any policy is tuned
+   on them.
+2. **Paired runs:** baseline (equivalent tools, context and repair opportunity; always-premium /
+   read-everything is reported too, but it is a weak comparator) vs. substrate, same tasks, **each
+   policy actually executed**. Repricing the baseline's tokens at a cheaper model's price is a
+   counterfactual (§2) and is labelled as one.
+3. **Correctness guard:** a saving only counts if an external verifier passes the output
+   (`tests_passed` or `human_accepted`); a cache hit that gets reverted is a _negative_ entry, and
+   abandoned tasks count against the policy that abandoned them.
+4. **Report:** total cost per completed, externally verified task with an interval, acceptance and
+   abandonment rates beside it, and per-stage diagnostics → `reports/cost-eval.md`, every field of
+   §3 filled. The README may say "~90 % target (hypothesis)" — never "90 % achieved". (It used to
+   also say "62.1 % measured (routing)"; that figure came from the 30 tasks the router was tuned on
+   and was refuted on 80 held-out tasks, where routing cost 20.2 % more than always-premium — see
+   `research/empirical-refutation/`.)
 
-## 4. Cost of the substrate itself
+Until the harness has run, P8 is **partial**: instrumentation and the stage report exist, and
+[`reports/cost-eval.md`](../../../reports/cost-eval.md) holds no measured end-to-end figure.
+
+## 5. Cost of the substrate itself
 
 The overhead side of the ledger, counted against the savings in P8:
 

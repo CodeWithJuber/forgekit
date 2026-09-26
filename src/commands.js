@@ -106,7 +106,17 @@ export const COMMANDS = {
   ledger:
     "evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import",
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
-  context: "budgeted context assembly + completeness gate — what an edit NEEDS known",
+  context: {
+    summary:
+      "budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed",
+    usage: 'forge context "<task>" [--budget <tokens>] [--block] [--json]',
+    flags: [
+      { flag: "--budget <tokens>", desc: "assembly budget (chars/3.6 estimate; default 6000)" },
+      { flag: "--block", desc: "print the assembled context block itself (what gets delivered)" },
+      { flag: "--json", desc: "machine-readable result (add --block to include the block)" },
+    ],
+    examples: ['forge context "update computeTax in src/tax.js" --block'],
+  },
   preflight: "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
   route:

@@ -169,7 +169,10 @@ test("duplicateGroups: near-duplicates collapse to one survivor; distinct facts 
 test("duplicateGroups: a chain A–B–C drops only what is close to the survivor itself", () => {
   // B contains A's text and C's text; A and C share nothing. Union-find links all three, but
   // C is no duplicate of the survivor A, so only B goes.
-  const words = Array.from({ length: 14 }, (_, i) => `w${i}x`);
+  const words =
+    "amber birch cedar delta ember fjord grove heron inlet juniper kelp larch maple nectar".split(
+      " ",
+    );
   const claims = [
     { id: "a", kind: "fact", body: { text: words.slice(0, 8).join(" ") }, provenance: { t: 1 } },
     { id: "b", kind: "fact", body: { text: words.join(" ") }, provenance: { t: 2 } },
@@ -257,4 +260,35 @@ test("recordServedLessons: logs ledger-backed lessons, skips legacy ones", async
   const uses = readUses(dir);
   assert.deepEqual([...uses.keys()], ["c-ledger"]);
   assert.deepEqual(uses.get("c-ledger"), [12]);
+});
+
+// Review 2026-09-26 — F16: the duplicate boundary PROPOSES; the semantic guard decides.
+test("F16: a close pair that says the opposite is never archived as a duplicate", () => {
+  const dir = tmp();
+  const base =
+    "authentication for every admin route of the payments dashboard behind the corporate proxy";
+  const on = fact("auth-on", `Enable ${base}`, 1);
+  const off = fact("auth-off", `Disable ${base}`, 2);
+  const again = fact("auth-on-2", `Enable ${base} please`, 3);
+  for (const c of [on, off, again, ...TOPICS.map((t, i) => fact(`t${i}`, t, 1))]) putClaim(dir, c);
+  const r = duplicateGroups(loadClaims(dir), 10);
+  const grouped = new Set(r.groups.flatMap((g) => [g.keep, ...g.drop.map((d) => d.id)]));
+  assert.ok(
+    !(
+      grouped.has(on.id) &&
+      grouped.has(off.id) &&
+      r.groups.length === 1 &&
+      r.groups[0].drop.length === 2
+    ),
+    "enable and disable are not one group",
+  );
+  for (const g of r.groups)
+    assert.ok(
+      !(g.keep === on.id && g.drop.some((d) => d.id === off.id)),
+      "disable is not a dup of enable",
+    );
+  assert.ok(
+    r.conflicts.some((c) => [c.a, c.b].includes(on.id) && [c.a, c.b].includes(off.id)),
+    `the conflict is reported: ${JSON.stringify(r.conflicts)}`,
+  );
 });

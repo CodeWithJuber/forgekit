@@ -7,6 +7,11 @@ node_modules/
 npm-debug.log*
 *.tgz
 
+# Python bytecode / test caches (research prototypes)
+__pycache__/
+*.pyc
+.pytest_cache/
+
 # Forge runtime artifacts (generated, never committed)
 .forge/
 *.log

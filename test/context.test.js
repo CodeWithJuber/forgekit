@@ -47,20 +47,24 @@ const trustedLesson = (root) => {
   putClaim(dir, minted.claim);
   // Four confirmations: val = (1 + 4·0.9)/(2 + 4·0.9) ≈ 0.82 — past the 0.8 floor.
   // (Three lands at 0.787 and is correctly NOT trusted enough to be required.) The refs
-  // must be git objects that resolve in this repo — the only ref type forge re-derives.
+  // must be git objects that resolve in this repo — the only ref type forge re-derives —
+  // and FOUR DISTINCT events: four spellings of one commit are one event (review F06).
   const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
   g("init");
   g("config", "user.email", "t@t.t");
   g("config", "user.name", "t");
   g("add", "-A");
   g("commit", "-m", "fixture");
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  for (const ref of [7, 8, 9, 40].map((n) => `git:${head.slice(0, n)}`))
+  for (let n = 1; n <= 4; n++) {
+    if (n > 1) g("commit", "--allow-empty", "-m", `review ${n}`);
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
     appendEvidence(
       dir,
       minted.claim.id,
-      outcomeRecord({ oracle: "human.accept", result: "confirm", ref, t: 0 }).outcome,
+      outcomeRecord({ oracle: "human.accept", result: "confirm", ref: `git:${head}`, t: 0 })
+        .outcome,
     );
+  }
   return minted.claim;
 };
 
@@ -125,7 +129,7 @@ test("assemble: complete context — everything required is covered within budge
   assert.ok(r.block.includes("Never change the tax rate"), "the team lesson rides along");
 });
 
-test("assemble: a tight budget downgrades granularity instead of dropping coverage", () => {
+test("assemble: a tight budget downgrades before dropping — and says what it no longer delivers", () => {
   const { root, atlas } = fixture();
   const roomy = assemble(root, "update computeTax in src/tax.js", { atlas, nowDay: 0 });
   const tight = assemble(root, "update computeTax in src/tax.js", {
@@ -133,14 +137,76 @@ test("assemble: a tight budget downgrades granularity instead of dropping covera
     nowDay: 0,
     budget: 60,
   });
-  assert.equal(tight.ok, true, "coverage survives the squeeze");
-  assert.deepEqual(tight.missing, []);
+  assert.ok(tight.tokens <= 60, "the rendered block fits the budget");
   assert.ok(tight.tokens < roomy.tokens);
   assert.ok(
     tight.selection.some((s) => s.gran !== "full"),
     "compression ladder engaged (a lossy move chosen explicitly, not by scroll-off)",
   );
-  assert.deepEqual(roomy.covered, tight.covered, "same coverage either way");
+  assert.deepEqual(tight.missing, [], "nothing required vanished — it is pointed at…");
+  assert.ok(tight.pending.length > 0, "…as a pending read, not as delivered coverage (F03)");
+  assert.equal(tight.ok, false, "a pointer-only item is not a complete context");
+  for (const k of tight.covered) assert.ok(roomy.covered.includes(k));
+});
+
+// Review 2026-09-26 — F02: a hard budget is never exceeded while claiming success.
+test("F02: when even pointers cannot fit, the result is OVERFLOW, never ok", () => {
+  const { root, atlas } = fixture();
+  for (const budget of [1, 8, 20]) {
+    const r = assemble(root, "update computeTax in src/tax.js", { atlas, nowDay: 0, budget });
+    assert.ok(r.tokens <= budget, `budget ${budget}: rendered ${r.tokens}`);
+    assert.equal(r.ok, false, `budget ${budget}`);
+    assert.equal(r.overflow, true);
+    assert.ok(r.dropped.length > 0);
+    assert.ok(r.missing.length > 0, "what was dropped is reported missing");
+    assert.match(r.tokenEstimate, /estimate/);
+  }
+});
+
+// F03: availability is not delivery. The definition sits below 100 lines of padding.
+test("F03: a definition below line 100 is delivered by a span, or stays pending — never 'covered' by a pointer or head", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  const padding = Array.from({ length: 100 }, (_, i) => `// padding line ${i}`).join("\n");
+  writeFileSync(
+    join(root, "src", "calc.js"),
+    `${padding}\nexport function calcTotal(items) {\n  return items.length;\n}\n${padding}\n`,
+  );
+  const atlas = buildAtlas({ root });
+  const task = "change calcTotal in src/calc.js";
+  const pointerOnly = assemble(root, task, { atlas, nowDay: 0, budget: 8 });
+  assert.equal(pointerOnly.ok, false, "a `- read src/calc.js` line is not the definition");
+  assert.ok(!pointerOnly.covered.includes("def:calcTotal"));
+  assert.ok(
+    pointerOnly.pending.includes("def:calcTotal") || pointerOnly.missing.includes("def:calcTotal"),
+  );
+  // A mid-size budget cannot hold the whole file but CAN hold the definition's span.
+  const mid = assemble(root, task, { atlas, nowDay: 0, budget: 400 });
+  const item = mid.selection.find((s) => s.id === "def:src/calc.js");
+  assert.equal(item.gran, "span", JSON.stringify(mid.selection));
+  assert.ok(mid.covered.includes("def:calcTotal"), "the span delivers the definition");
+  assert.ok(mid.block.includes("export function calcTotal"));
+  assert.ok(mid.pending.includes("file:src/calc.js"), "the rest of the named file is still owed");
+  assert.equal(mid.ok, false);
+  assert.ok(mid.truncated.some((t) => t.id === "def:src/calc.js" && t.totalLines > 200));
+});
+
+test("F03: dependents beyond the listed twelve stay visible as omitted", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src", "core.js"), "export function coreFn(x) {\n  return x;\n}\n");
+  for (let i = 0; i < 15; i++)
+    writeFileSync(
+      join(root, "src", `user${i}.js`),
+      `import { coreFn } from "./core.js";\nexport function use${i}() {\n  return coreFn(${i});\n}\n`,
+    );
+  const atlas = buildAtlas({ root });
+  const r = assemble(root, "change coreFn", { atlas, nowDay: 0 });
+  const t = r.truncated.find((x) => x.id === "deps:coreFn");
+  assert.ok(t, JSON.stringify(r.truncated));
+  assert.equal(t.shown, 12);
+  assert.equal(t.omitted.length, t.total - 12);
+  assert.match(r.block, /more, omitted here/);
 });
 
 test("assemble: an unknown symbol becomes a DERIVED question, and the gate can block on it", () => {

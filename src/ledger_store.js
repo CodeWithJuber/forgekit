@@ -255,9 +255,26 @@ export function putClaim(dir, claim) {
   return { ok: true, id: claim.id, existed: already && healthy };
 }
 
+// The full object id a `git:` abbreviation names in THIS repo, or null (ambiguous, unknown,
+// or not a git repo). `^{object}` peels nothing; `--verify` refuses ambiguity.
+const gitFullId = (root, sha) => {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${sha}^{object}`], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return /^[0-9a-f]{40,64}$/.test(out) ? out : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Append one evidence outcome (deduped by its content hash — append is idempotent). A typed,
  *  unresolvable ref (e.g. a `git:` sha absent from this repo) is REJECTED here, before it can
- *  reach val() and buy confidence. */
+ *  reach val() and buy confidence. A resolvable `git:` abbreviation is stored under its FULL
+ *  object id (re-sealed), so one commit has one spelling in the log (review F06; val() also
+ *  dedupes aliases already on disk). */
 export function appendEvidence(dir, id, outcome) {
   if (!validOutcome(outcome)) return { ok: false, reason: "invalid outcome (use outcomeRecord)" };
   const root = repoRootOf(dir);
@@ -266,6 +283,12 @@ export function appendEvidence(dir, id, outcome) {
     resolveFile: fileResolver(root),
   });
   if (!v.ok) return { ok: false, reason: v.reason ?? "unresolvable evidence ref" };
+  const m = /^git:([0-9a-f]{7,39})$/i.exec(String(outcome.ref));
+  const full = m ? gitFullId(root, m[1]) : null;
+  if (full) {
+    const { h: _h, ...rest } = outcome;
+    return appendRecord(dir, "evidence", id, sealRecord({ ...rest, ref: `git:${full}` }));
+  }
   return appendRecord(dir, "evidence", id, outcome);
 }
 
@@ -788,11 +811,14 @@ export function reindex(dir, _nowDay = 0) {
  * fork the fold exists to prevent. This moves the claim file to its current address and
  * takes its logs with it, unioning into an existing log rather than overwriting one (the
  * logs are append-only sets deduped by content hash, so a union is the merge).
- * Idempotent: a second run finds nothing to do.
+ * Idempotent: a second run finds nothing to do. `dryRun` reports the same summary (what
+ * would move, what would merge into an existing twin) and writes nothing — a migration is
+ * previewed before it touches a shared store (review A11).
  * @param {string} dir ledger dir
- * @returns {{migrated: string[], merged: string[], failed: string[]}}
+ * @param {{dryRun?: boolean}} [opts]
+ * @returns {{migrated: string[], merged: string[], failed: string[], dryRun: boolean}}
  */
-export function migrateAddresses(dir) {
+export function migrateAddresses(dir, { dryRun = false } = {}) {
   const migrated = [];
   const merged = [];
   const failed = [];
@@ -801,6 +827,10 @@ export function migrateAddresses(dir) {
     const current = claimId(claim.kind, claim.body, claim.scope);
     if (current === id) continue; // already at its current address
     if (legacyClaimId(claim.kind, claim.body, claim.scope) !== id) continue; // not ours to touch
+    if (dryRun) {
+      (existsSync(claimPath(dir, current)) ? merged : migrated).push(current);
+      continue;
+    }
     try {
       const target = claimPath(dir, current);
       const already = existsSync(target);
@@ -823,7 +853,7 @@ export function migrateAddresses(dir) {
       failed.push(id);
     }
   }
-  return { migrated, merged, failed };
+  return { migrated, merged, failed, dryRun };
 }
 
 export function verify(dir) {
@@ -897,9 +927,17 @@ export function verify(dir) {
 export function pruneLedger(dir, nowDay = epochDay(), { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
   const plan = retentionPlan(loadClaims(dir), readUses(dir), nowDay, { halfLife });
   const pruned = [];
-  for (const { id } of plan.archive) if (pruneToAttic(dir, id).ok) pruned.push(id);
+  for (const a of plan.archive)
+    if (pruneToAttic(dir, a.id, { ...archiveWhy(a), t: nowDay }).ok) pruned.push(a.id);
   return { pruned, retention: plan.retention };
 }
+
+/** The archive record fields of one retention-plan entry. */
+const archiveWhy = (a) => ({
+  cause: a.cause,
+  reason: a.reason,
+  ...(a.survivor ? { survivor: a.survivor } : {}),
+});
 
 /**
  * `forge ledger compact`: the prune plan plus near-duplicate grouping, with every learned
@@ -917,7 +955,9 @@ export function compactLedger(
   const uses = readUses(dir);
   const plan = retentionPlan(claims, uses, nowDay, { halfLife, duplicates: true });
   const archived = [];
-  if (!dryRun) for (const a of plan.archive) if (pruneToAttic(dir, a.id).ok) archived.push(a.id);
+  if (!dryRun)
+    for (const a of plan.archive)
+      if (pruneToAttic(dir, a.id, { ...archiveWhy(a), t: nowDay }).ok) archived.push(a.id);
   return {
     dryRun,
     claims: claims.length,
@@ -929,13 +969,61 @@ export function compactLedger(
   };
 }
 
-/** Move one dormant/tombstoned claim file to the attic (audit trail, never retrieved). */
-export function pruneToAttic(dir, id) {
+const atticLogPath = (dir, id) => join(dir, "attic", `${id}.log`);
+
+/**
+ * Move one claim file to the attic (audit trail, never retrieved) and record WHY (review F15):
+ * `cause` is "tombstoned", "dormant", "idle" or "duplicate" (with the `survivor` it duplicates).
+ * Archiving is storage lifecycle, not a verdict — an idle or duplicate claim was not refuted,
+ * and readers (e.g. learned-lesson consolidation) must not treat it as refuted. The record is
+ * a sealed, append-only line in `attic/<id>.log` (union-merged like every ledger log).
+ * @param {string} dir
+ * @param {string} id
+ * @param {{cause?: string, reason?: string, survivor?: string, t?: number}} [why]
+ */
+export function pruneToAttic(dir, id, why = {}) {
   const from = claimPath(dir, id);
   if (!existsSync(from)) return { ok: false, reason: "no such claim" };
   mkdirSync(join(dir, "attic"), { recursive: true });
   renameSync(from, join(dir, "attic", `${id}.json`));
+  if (why.cause) {
+    try {
+      const rec = sealRecord({
+        cause: String(why.cause),
+        reason: redactSecrets(String(why.reason ?? "")).slice(0, 300),
+        ...(why.survivor ? { survivor: String(why.survivor) } : {}),
+        t: why.t ?? 0,
+      });
+      appendLine(atticLogPath(dir, id), canonicalize(rec));
+    } catch {} // the move is the archive; the reason is best-effort metadata
+  }
   return { ok: true };
+}
+
+/**
+ * Why a claim was archived: the latest verified record of `attic/<id>.log` ({cause, reason,
+ * survivor?, t}), or null when none was recorded (claims archived before reasons existed).
+ * @param {string} dir
+ * @param {string} id
+ */
+export function archiveRecord(dir, id) {
+  let text = "";
+  try {
+    text = readFileSync(atticLogPath(dir, id), "utf8");
+  } catch {
+    return null;
+  }
+  const recs = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const rec = JSON.parse(line);
+      const { h, ...rest } = rec ?? {};
+      if (h && sealRecord(rest).h === h && typeof rest.cause === "string") recs.push(rec);
+    } catch {}
+  }
+  const sorted = sortRecords(recs);
+  return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
 /** Counts + val distribution for `forge ledger stats` and the dashboard. Buckets use

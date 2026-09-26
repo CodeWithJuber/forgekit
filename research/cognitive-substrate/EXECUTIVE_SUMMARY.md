@@ -7,7 +7,7 @@
 > | Claim below | Measured on real data |
 > |---|---|
 > | Impact oracle recall **1.00** | **0.022** (9 OSS repos; 801 labelled files, 759 evaluated); `grep` beats it ~10× on F1 |
-> | Router/gate F1 **1.00**, cost saving **+62.1%** | F1 **0.37**; cost saving **−20.2%** (routing costs *more* than always-premium; per judged-correct output $1.06 vs $1.76, from only 6 and 3 correct outputs of 64) |
+> | Router/gate F1 **1.00**, cost saving **+62.1%** | F1 **0.37**; cost saving **−20.2%** (routing costs *more* than always-premium; per judge-accepted output $1.06 vs $1.76, from only 6 and 3 judge-accepted outputs of 64; the judge is a model, not executed tests) |
 >
 > The theory sections remain the programme's working framework. The *numbers* here do not. A repair
 > raised recall to 0.653 and F1 to 0.416, a point estimate above grep's 0.371, documented in the
@@ -24,6 +24,17 @@
 ### Theory → Evidence → Build-Map edition (v2)
 
 **One-line thesis:** The faculties a coding agent lacks — memory, learning, imagination, self-correction, impact-awareness — are not gaps in the model's *knowledge* but structural consequences of what a frozen transformer *is* (a stateless map `y = f_θ(x)`, fixed weights, bounded window). They cannot be prompted or tooled away; they can only be supplied by **re-wrapping the input→process→output loop** into a closed, stateful cycle around the frozen model.
+
+> *Corrected 2026-09-26:* the thesis above is broader than its argument. Frozen weights rule out
+> weight updates during use, not all adaptation: examples, retrieved facts and feedback in the
+> context change behaviour with no gradient step (Brown et al., 2020,
+> [arXiv:2005.14165](https://arxiv.org/abs/2005.14165)). What a bare model lacks is a set of
+> guarantees — no durable state across independent invocations, a bounded context, no automatic
+> parameter update, and unreliable self-verification without external evidence — and the substrate
+> is one tested way of supplying persistence and verification, not the only possible architecture.
+> Prior art for the broad architecture includes CoALA ([arXiv:2309.02427](https://arxiv.org/abs/2309.02427))
+> and Reflexion ([arXiv:2303.11366](https://arxiv.org/abs/2303.11366)); see the white paper's
+> Corrections (2026-09-26).
 
 **What v2 adds.** The first edition argued the five faculties from first principles and prototyped the one that is buildable today. This edition (1) **grounds the argument in the field's own evidence** — twelve load-bearing pain-point statistics independently re-grounded from primary sources and graded *confirmed / vendor-reported / unverifiable*; (2) adds **six metacognitive mechanisms** the frozen loop also lacks (routing, assumption gate, decomposition, goal-anchoring, anti-over-engineering, inline verification); (3) **maps all eleven capabilities against the real 2026 Claude-Code stack**, marking each solved / partial / residual-gap so we say clearly *what not to build*; and (4) ships a **second runnable prototype** — a complexity-aware router + assumption gate, evaluated live on real models.
 
