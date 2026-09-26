@@ -1,6 +1,7 @@
 // The Archify diagram pipeline (scripts/diagrams.mjs): the offline receipt check, source
 // naming, the gallery page, and the docs-check rules for embeds and hand-written Mermaid.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -159,4 +160,20 @@ test("the repository's diagrams match their receipts and are embedded where the 
   assert.ok(manifest.diagrams.length >= 13);
   for (const d of manifest.diagrams)
     assert.ok(d.usedIn.length >= 1, `${d.id} is embedded somewhere`);
+});
+
+test("diagram sources and SVGs check out with LF everywhere (receipts hash exact bytes)", () => {
+  const paths = [
+    "docs/diagrams/src/core-loop.workflow.json",
+    "docs/diagrams/diagrams.json",
+    "docs/diagrams/core-loop.svg",
+    "mintlify/images/diagrams/system.svg",
+  ];
+  const out = execFileSync("git", ["check-attr", "eol", "--", ...paths], {
+    cwd: BRAND.root,
+    encoding: "utf8",
+  });
+  const lines = out.trim().split(/\r?\n/);
+  assert.equal(lines.length, paths.length);
+  for (const line of lines) assert.match(line, /: eol: lf$/, line);
 });
