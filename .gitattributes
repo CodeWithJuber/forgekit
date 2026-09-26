@@ -7,3 +7,9 @@
 # Shell scripts and the Node guard must stay LF even on Windows checkouts — bash chokes on
 # CRLF (\r), which breaks the guard/install tests under Git Bash on windows-latest.
 *.sh text eol=lf
+
+# Diagram sources and their SVG exports are content-addressed: docs/diagrams/diagrams.json
+# records each source's sha256 and the docs-site copies must be byte-identical. A Windows
+# checkout (core.autocrlf) would rewrite them with CRLF and every receipt would read stale.
+docs/diagrams/** text eol=lf
+mintlify/images/diagrams/*.svg text eol=lf

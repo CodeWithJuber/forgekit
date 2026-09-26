@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The diagram check passes on a Windows checkout.** With `core.autocrlf`, Git checked the
+  diagram sources out with CRLF line endings. Their sha256 then differed from the receipts in
+  `docs/diagrams/diagrams.json`, so all thirteen diagrams read as changed. `.gitattributes` now
+  keeps `docs/diagrams/` and the docs-site SVG copies LF on every platform.
+
 ## [1.7.0] - 2026-09-26
 
 ### Fixed
