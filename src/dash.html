@@ -819,7 +819,7 @@
                 spend.totalCost.toFixed(2) +
                 '</span><span class="l">est. spend (USD, logged tokens × list price' +
                 (spend.complete === false
-                  ? "; partial — " + (spend.unpriced?.length ?? 0) + " model(s) unpriced"
+                  ? `; partial — ${spend.unpriced?.length ?? 0} model(s) unpriced`
                   : "") +
                 ")</span></span>" +
                 '<span class="stat"><span class="n">' +
@@ -847,7 +847,7 @@
                   '</td><td class="num">' +
                   (m.priced === false || m.cost == null
                     ? "unpriced"
-                    : "$" + m.cost.toFixed(4)) +
+                    : `$${m.cost.toFixed(4)}`) +
                   '</td><td class="num">' +
                   (m.inTokens || 0).toLocaleString() +
                   '</td><td class="num">' +

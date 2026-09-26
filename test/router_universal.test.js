@@ -166,6 +166,23 @@ test("F12: an unreachable budget is INFEASIBLE, with the cheapest cost and an ex
   assert.ok(r.fallback.maxPossibleCost >= r.fallback.expectedCost);
 });
 
+test("A07: a recommended model no provider serves is labeled advice only, never presented as callable", () => {
+  const d = project();
+  const reg = loadRegistry(d);
+  const unserved = reg.models.filter((m) => Object.keys(m.providers ?? {}).length === 0);
+  assert.ok(unserved.length >= 1, "the shipped registry has models with no provider id");
+  const only = routeUniversal(d, TASK, { candidates: [unserved[0].id] });
+  const rec = only.ok ? only : only.fallback;
+  assert.equal(rec.applicable, false);
+  assert.deepEqual(rec.unmapped, [unserved[0].id]);
+  assert.deepEqual(rec.cascade[0].providers, []);
+  // Routing within one provider only ever returns models that provider can serve.
+  const served = routeUniversal(d, TASK, { provider: "anthropic" });
+  assert.equal(served.applicable, true);
+  assert.ok(served.cascade.every((c) => c.providers.includes("anthropic")));
+  assert.ok(served.cascade.every((c) => typeof c.costSource === "string"));
+});
+
 test("fitRouter: local outcomes move a model's ability in their direction (Bayesian update)", () => {
   const d = project();
   const prior = loadRouterModel(d);

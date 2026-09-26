@@ -71,7 +71,7 @@ export function fitCost(
   } else {
     // Per-model mean log cost, no slopes: the estimate the data CAN support.
     const sums = new Map();
-    used.forEach((o, i) => sums.set(o.model, (sums.get(o.model) ?? 0) + y[i]));
+    for (const [i, o] of used.entries()) sums.set(o.model, (sums.get(o.model) ?? 0) + y[i]);
     coef = [
       ...models.map((m) => /** @type {number} */ (sums.get(m)) / counts[m]),
       ...new Array(nFeatures).fill(0),

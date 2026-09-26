@@ -192,6 +192,20 @@ test("enforceDecision (enforcing): blocks an edit into a large blast radius", as
   assert.match(g.reason, /large blast radius/);
 });
 
+test("A06: a graph the file cap truncated says so in the substrate result and render", () => {
+  const root = repo();
+  build({ root, cap: 1 }); // two source files, one indexed
+  const r = substrateCheck(root, "Update `computeTax` in `math.js`", { allowBuild: false });
+  assert.equal(r.impact.atlasFresh, true);
+  assert.equal(r.impact.capped, true);
+  assert.equal(r.impact.skippedFiles, 1);
+  assert.match(renderSubstrate(r), /graph capped: 1 file\(s\) over the atlas cap/);
+  const whole = repo();
+  build({ root: whole });
+  const full = substrateCheck(whole, "Update `computeTax` in `math.js`", { allowBuild: false });
+  assert.equal(full.impact.capped, undefined, "an uncapped graph adds no truncation note");
+});
+
 test("stale ambient atlas is dropped: no impacts, no predicted tests, honest render (RA-07)", async () => {
   const { renderSubstrate, substrateContext } = await import("../src/substrate.js");
   const root = repo();

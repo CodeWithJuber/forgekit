@@ -506,19 +506,24 @@ const PACKAGE_MANIFESTS = [
  * @returns {{roots: string[], truncated: boolean}}
  */
 function nestedPackages(root, stack) {
-  const listed = git(
-    [
-      "ls-files",
-      "-z",
-      "--cached",
-      "--others",
-      "--exclude-standard",
-      "--",
-      ...PACKAGE_MANIFESTS.map((m) => `:(glob)**/${m}`),
-    ],
-    root,
-  );
-  if (listed) {
+  const inGit = git(["rev-parse", "--is-inside-work-tree"], root).trim() === "true";
+  const listed = inGit
+    ? git(
+        [
+          "ls-files",
+          "-z",
+          "--cached",
+          "--others",
+          "--exclude-standard",
+          "--",
+          ...PACKAGE_MANIFESTS.map((m) => `:(glob)**/${m}`),
+        ],
+        root,
+      )
+    : "";
+  // In a git work tree the listing is authoritative even when it is empty (no nested
+  // manifests); only outside git does the bounded walk stand in.
+  if (inGit) {
     const roots = new Set();
     for (const f of listed.split("\0")) {
       const i = f.lastIndexOf("/");
@@ -844,9 +849,11 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   // Untracked (new, not-yet-added) files are part of the change too — a brand-new source file
   // and its call sites would be invisible to `git diff`. Fold their paths into changedFiles and
   // their contents into `added` so provenance and the hallucination check both see them (P0-09).
+  // Forge's own state dir is not the change under verification (the fingerprint excludes it
+  // too): verify's outputs — provenance.json, verify-events.jsonl — never count as changed.
   const untracked = git(["ls-files", "--others", "--exclude-standard"], targetRoot)
     .split("\n")
-    .filter(Boolean);
+    .filter((f) => f && !f.startsWith(".forge/"));
   // Mirror the diff's --cached fallback so the base file list is derived from the SAME diff that
   // produced `added` (a base whose worktree matches HEAD but whose index differs would otherwise
   // yield `added` from --cached while changedFiles stayed empty, weakening impact/docsdrift).

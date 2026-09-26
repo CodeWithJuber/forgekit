@@ -117,15 +117,29 @@ export function routeUniversal(root, task, opts = {}) {
   const pick = choose(nodes, costs, candidates, objective, maxDepth);
   if (!pick) return { ok: false, reason: "no candidate model has a known cost for this provider" };
   const p1 = marginals(nodes);
-  const rec = {
-    ok: true,
-    feasible: pick.feasible,
-    cascade: pick.seq.map((i) => ({
+  // Review A07: a registry entry is not availability. Each step names the providers that can
+  // serve it and where its cost comes from; a step no configured provider serves is advice only.
+  const entry = new Map(registry.models.map((m) => [m.id, m]));
+  const cascade = pick.seq.map((i) => {
+    const m = entry.get(aligned.ids[i]);
+    return {
       model: aligned.ids[i],
       status: aligned.status[i],
       pSolveAlone: p1[i],
       expectedAttemptCost: costs[i],
-    })),
+      providers: Object.keys(m?.providers ?? {}),
+      costSource:
+        aligned.status[i] === "fitted" ? "fit (observed attempt costs)" : (m?.price_source ?? null),
+    };
+  });
+  const unmapped = cascade.filter((c) => c.providers.length === 0).map((c) => c.model);
+  const rec = {
+    ok: true,
+    feasible: pick.feasible,
+    cascade,
+    // false: at least one step has no provider id — add one in .forge/models.json to apply it.
+    applicable: unmapped.length === 0,
+    unmapped,
     pSuccess: pick.p,
     // EXPECTED cost under the fit (not a cap); the worst case runs every attempt.
     expectedCost: pick.cost,

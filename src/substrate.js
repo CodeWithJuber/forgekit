@@ -445,6 +445,8 @@ export function substrateCheck(
       // Consumers must not present impactedFiles as trustworthy when this is false.
       atlasFresh,
       ...(atlasFresh ? {} : { note: "impact unavailable: atlas missing or stale" }),
+      // Review A06: the scope a prediction covers — a graph the file cap truncated says so.
+      ...(atlas?.capped ? { capped: true, skippedFiles: atlas.skippedFiles ?? 0 } : {}),
     },
     scope,
     memory: {
@@ -668,6 +670,10 @@ export function renderSubstrate(result) {
     for (const file of shown.slice(0, 10)) lines.push(`    - ${file}`);
     if (shown.length > 10) lines.push(`    … ${shown.length - 10} more`);
     if (hasCoChange(result.impact)) lines.push(`    (${RELATION_LEGEND})`);
+    if (result.impact.capped)
+      lines.push(
+        `    (graph capped: ${result.impact.skippedFiles} file(s) over the atlas cap were not indexed — impact can miss them)`,
+      );
   }
   // Predicted tests only speak for a FRESH atlas — right after an "impact: unavailable"
   // notice, a likely-affected-tests list would contradict it with stale data (RA-07).

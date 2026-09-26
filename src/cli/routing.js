@@ -359,9 +359,14 @@ async function routeUniversalCli(argv) {
   );
   rec.cascade.forEach((c, i) => {
     console.log(
-      `  ${i === 0 ? "→" : "then, if a check fails →"} ${paint(c.model, "accent")}  P(solve alone) ${c.pSolveAlone.toFixed(2)} · ~$${c.expectedAttemptCost.toFixed(3)}/attempt${c.status === "cold" ? " · cold (no outcomes yet)" : ""}`,
+      `  ${i === 0 ? "→" : "then, if a check fails →"} ${paint(c.model, "accent")}  P(solve alone) ${c.pSolveAlone.toFixed(2)} · ~$${c.expectedAttemptCost.toFixed(3)}/attempt${c.status === "cold" ? " · cold (no outcomes yet)" : ""}${c.providers.length ? "" : " · no provider id"}`,
     );
   });
+  // A07: a model in the registry is not a model you can call.
+  if (!rec.applicable)
+    console.log(
+      `\n  ${paint("advice only", "warn")}: ${rec.unmapped.join(", ")} ${rec.unmapped.length === 1 ? "has" : "have"} no provider id — add one under "providers" in .forge/models.json, or pass --provider <name> to route among models you can call (\`${BRAND.cli} route models\` lists who serves what)`,
+    );
   console.log(
     `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} (not a cap; up to $${rec.maxPossibleCost.toFixed(3)} if every attempt runs) · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
   );

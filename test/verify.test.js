@@ -46,6 +46,12 @@ const withBins = (binDir, fn) => {
   }
 };
 
+// verify spawns the package manager shell-free (never a shell, never npx). On Windows `npm` is a
+// `.cmd` shim, which Node refuses to spawn without a shell, so a real npm-driven verify reports
+// INCOMPLETE there; the end-to-end PASS/FAIL tests below are POSIX-only for that reason.
+const NO_NPM_SPAWN =
+  process.platform === "win32" && "npm is a .cmd shim on Windows; verify never spawns a shell";
+
 const gitRepo = () => {
   const root = mkdtempSync(join(tmpdir(), "forge-verify-"));
   const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
@@ -218,6 +224,13 @@ test("verify: an untracked source file appears in provenance (changedFiles + unt
   const r = verify({ targetRoot: root });
   assert.ok(r.changedFiles.includes("brand_new.js"), "untracked file in changedFiles");
   assert.ok(r.provenance.untracked.includes("brand_new.js"), "untracked file in provenance stamp");
+  // verify's own outputs (.forge/provenance.json, verify-events.jsonl) are not the change.
+  const again = verify({ targetRoot: root });
+  assert.deepEqual(
+    again.changedFiles.filter((f) => f.startsWith(".forge/")),
+    [],
+    again.changedFiles.join(", "),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -528,7 +541,9 @@ test("F01: the stamp's signature binds the fingerprint scheme (old-scheme stamps
 // F10: a verdict is bound to the bytes it TESTED — a mutation during the run is INCOMPLETE.
 // ---------------------------------------------------------------------------
 
-test("F10: a test that rewrites source during the run cannot produce a signed PASS", () => {
+test("F10: a test that rewrites source during the run cannot produce a signed PASS", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = fixtureWithTestScript("node --test");
   writeFileSync(join(root, "subject.cjs"), "module.exports = 42;\n");
   writeFileSync(
@@ -558,7 +573,9 @@ test("F10: a test that rewrites source during the run cannot produce a signed PA
   assert.equal(r.provenance.signature, provenanceMac(r.provenance), "signed as INCOMPLETE");
 });
 
-test("F10: outputs declared in verify.generated may change during the run", () => {
+test("F10: outputs declared in verify.generated may change during the run", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = fixtureWithTestScript("node --test");
   mkdirSync(join(root, ".forge"), { recursive: true });
   writeFileSync(
@@ -604,7 +621,9 @@ const monorepo = ({ rootScript = "node --test", workspaces = ["packages/*"] } = 
   return root;
 };
 
-test("F08: a failing workspace package cannot hide behind a passing root suite", () => {
+test("F08: a failing workspace package cannot hide behind a passing root suite", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = monorepo();
   const r = verify({ targetRoot: root });
   const nested = r.tests.executed.find((s) => s.cwd === "packages/bad");
@@ -622,7 +641,9 @@ test("F08: a recursive root script covers declared workspaces once (no duplicate
   assert.equal(plan.coverage.rootCoversWorkspaces, true);
 });
 
-test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/fixtures skip", () => {
+test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/fixtures skip", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = monorepo();
   mkdirSync(join(root, "test", "fixtures", "pkg"), { recursive: true });
   writeFileSync(
@@ -651,7 +672,9 @@ test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/f
   assert.ok(declared.suites[0].covers.includes("packages/bad"));
 });
 
-test("F08: a nested suite forge cannot execute leaves its package uncovered → INCOMPLETE", () => {
+test("F08: a nested suite forge cannot execute leaves its package uncovered → INCOMPLETE", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = fixtureWithTestScript("node --test");
   mkdirSync(join(root, "services", "api"), { recursive: true });
   writeFileSync(join(root, "services", "api", "go.mod"), "module x\n\ngo 1.22\n");
@@ -661,7 +684,9 @@ test("F08: a nested suite forge cannot execute leaves its package uncovered → 
   assert.ok(r.tests.notExecuted.some((l) => l.includes("services/api")));
 });
 
-test("F09: an explicit passing script + a runner devDependency is a complete PASS", () => {
+test("F09: an explicit passing script + a runner devDependency is a complete PASS", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
@@ -688,7 +713,7 @@ test("F09: an explicit passing script + a runner devDependency is a complete PAS
 // A01: one verifier event per run — id, suites, coverage, pre/post state, environment.
 // ---------------------------------------------------------------------------
 
-test("A01: verify records an immutable, MAC'd verifier event", () => {
+test("A01: verify records an immutable, MAC'd verifier event", { skip: NO_NPM_SPAWN }, () => {
   const root = fixtureWithTestScript("node --test");
   writeFileSync(
     join(root, "ok.test.cjs"),
@@ -712,7 +737,9 @@ test("A01: verify records an immutable, MAC'd verifier event", () => {
   assert.equal(readVerifyEvents(root).length, 0);
 });
 
-test("F10: interpreter caches written by a test run are not a code mutation", () => {
+test("F10: interpreter caches written by a test run are not a code mutation", {
+  skip: NO_NPM_SPAWN,
+}, () => {
   const root = fixtureWithTestScript("node write-cache.cjs");
   writeFileSync(
     join(root, "write-cache.cjs"),
