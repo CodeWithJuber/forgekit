@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The site's canonical URL is `https://jubershaikh.com/forgekit/`.** GitHub Pages serves the
+  project site from that custom domain, and `codewithjuber.github.io/forgekit/` only redirects
+  there. `brand.json`, the landing and 404 pages (canonical, Open Graph and JSON-LD) and every
+  diagram link now point at the custom domain directly, so links and link previews skip the
+  redirect.
+
 ## [1.7.1] - 2026-09-26
 
 ### Fixed

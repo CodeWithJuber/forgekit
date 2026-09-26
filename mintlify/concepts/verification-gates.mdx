@@ -29,7 +29,7 @@ checks provenance.
   <img src="/images/diagrams/verify-pipeline.svg" alt="forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl" />
 </Frame>
 
-[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.
+[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.
 
 ```bash
 forge verify              # tests + hallucinated-symbol + provenance

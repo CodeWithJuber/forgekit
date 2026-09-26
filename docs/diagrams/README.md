@@ -6,7 +6,7 @@ folder. Nobody hand-draws a diagram or hand-edits a rendered file. `forge docs c
 rejects a hand-written Mermaid block in any tracked Markdown or MDX file, and it rejects
 an embed that names a diagram the manifest does not register.
 
-**Browse them:** https://codewithjuber.github.io/forgekit/diagrams/. Each diagram opens as
+**Browse them:** https://jubershaikh.com/forgekit/diagrams/. Each diagram opens as
 an interactive page where you can pan, zoom and search (`/`). Press `?` for the guide, and
 select a node to trace what it depends on and what depends on it.
 
@@ -52,7 +52,7 @@ To add a diagram, create its source and add an entry `{ "id", "type", "usedIn": 
 - **Markdown (GitHub, npm):** link the SVG to its interactive page:
 
   ```md
-  [![Alt text that says what the diagram shows](docs/diagrams/core-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/core-loop.html)
+  [![Alt text that says what the diagram shows](docs/diagrams/core-loop.svg)](https://jubershaikh.com/forgekit/diagrams/core-loop.html)
   ```
 
 - **Docs site (Mintlify):** put the copy in a `<Frame>`, then add a link to the interactive

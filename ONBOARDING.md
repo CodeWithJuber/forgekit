@@ -11,9 +11,9 @@ Windsurf, Zed, Continue, and OpenClaw at once. Author it once; every tool reads 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.
 
-[![Guided onboarding: forge init configures your tools from one source; then for each task you work as usual, the substrate checks whether to ask first, which model to use and what breaks, the agent edits with guardrails, and cortex learns from corrections so the next task is smarter](docs/diagrams/onboarding-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/onboarding-loop.html)
+[![Guided onboarding: forge init configures your tools from one source; then for each task you work as usual, the substrate checks whether to ask first, which model to use and what breaks, the agent edits with guardrails, and cortex learns from corrections so the next task is smarter](docs/diagrams/onboarding-loop.svg)](https://jubershaikh.com/forgekit/diagrams/onboarding-loop.html)
 
-<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/onboarding-loop.html): pan, zoom, search, and trace any node.</sub>
+<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/onboarding-loop.html): pan, zoom, search, and trace any node.</sub>
 
 ## 1. Install (once)
 
