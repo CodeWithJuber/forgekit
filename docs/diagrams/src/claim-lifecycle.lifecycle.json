@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Claim lifecycle in the ledger",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [980, 632],
+    "views": [
+      {"id": "gain-trust", "label": "Gaining trust", "focus": ["reworded", "minted", "uncertain", "trusted"], "note": "A new claim starts at the 0.5 prior; confirming evidence raises val toward Trusted."},
+      {"id": "lose-trust", "label": "Losing trust", "focus": ["trusted", "uncertain", "dormant", "tombstoned"], "note": "Contradicting evidence lowers val; dormancy latches until a later confirmation; retraction is permanent."},
+      {"id": "attic", "label": "Attic and return", "focus": ["dormant", "trusted", "archived", "uncertain"], "note": "Archived claims keep a recorded reason; new evidence brings them back."}
+    ]
+  },
+  "lanes": [
+    {"id": "main", "label": "Live · retrievable"},
+    {"id": "out", "label": "Out of retrieval"},
+    {"id": "terminal", "label": "Permanent"}
+  ],
+  "states": [
+    {"id": "reworded", "type": "external", "label": "Reworded lesson", "sublabel": "keeps trust only if equivalent", "tag": "up to case · space · punct.", "lane": "main", "col": 0, "width": 124},
+    {"id": "minted", "type": "start", "label": "Minted", "sublabel": "0.5 prior", "tag": "candidate", "lane": "main", "col": 1, "width": 90},
+    {"id": "uncertain", "type": "active", "label": "Uncertain", "sublabel": "val 0.35–0.65", "lane": "main", "col": 2},
+    {"id": "trusted", "type": "active", "label": "Trusted", "sublabel": "val ≥ 0.65", "tag": "reuse serve floor 0.6", "lane": "main", "col": 4},
+    {"id": "dormant", "type": "failure", "label": "Dormant", "sublabel": "val < 0.35 · latched", "tag": "kept for audit, never retrieved", "lane": "out", "col": 0, "width": 130},
+    {"id": "archived", "type": "neutral", "label": "Archived", "sublabel": ".forge/ledger/attic/", "tag": "tombstoned · dormant · idle · duplicate", "lane": "out", "col": 2, "width": 164},
+    {"id": "tombstoned", "type": "failure", "label": "Tombstoned", "sublabel": "permanent", "tag": "retracted by a human", "lane": "terminal", "col": 1}
+  ],
+  "transitions": [
+    {"id": "reword", "from": "reworded", "to": "minted"},
+    {"id": "mint", "from": "minted", "to": "uncertain"},
+    {"id": "confirm", "from": "uncertain", "to": "trusted", "label": "confirms raise val", "variant": "emphasis"},
+    {"id": "contradict", "from": "trusted", "to": "uncertain", "label": "contradicts lower val", "labelAt": [556, 202]},
+    {"id": "fall", "from": "uncertain", "to": "dormant", "label": "contradicts: val < 0.35", "variant": "security", "labelAt": [322, 233]},
+    {"id": "wake", "from": "dormant", "to": "uncertain", "label": "later confirmation", "variant": "emphasis", "labelAt": [470, 233]},
+    {"id": "archive-dormant", "from": "dormant", "to": "archived", "label": "dormant", "variant": "dashed"},
+    {"id": "archive-idle", "from": "trusted", "to": "archived", "label": "idle · duplicate", "note": "past learned cut-off · survivor named", "variant": "dashed", "labelAt": [710, 233]},
+    {"id": "retract", "from": "trusted", "to": "tombstoned", "label": "forge ledger retract", "variant": "security", "fromSide": "right", "toSide": "right", "via": [[830, 157], [830, 479]], "labelAt": [830, 350]},
+    {"id": "restore", "from": "archived", "to": "uncertain", "label": "new evidence brings it back", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "via": [[710, 390], [20, 390], [20, 80], [402, 80]]}
+  ]
+}

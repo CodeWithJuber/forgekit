@@ -202,19 +202,9 @@ Set **`FORGE_LLM=1`** to add a **thin, opt-in semantic layer** on top: a cheap `
 call proposes a completeness reading (M2), a complexity band (M1), the coupled edges the
 regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    T["task / edit"] --> R["deterministic rubric"]
-    T --> P["LLM proposer"]
-    R --> C{reconcile}
-    P --> V["verify: rubric band · repo grounding<br/>grep · tests"]
-    V --> C
-    C -->|passes checks| M["verdict moves<br/>llm-cleared / lowered / raised / verified"]
-    C -->|fails / unavailable| D["verdict holds<br/>deterministic"]
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class C accent;
-```
+[![Rubric first, LLM second: a task or edit goes to the deterministic rubric and, when FORGE_LLM=1, to an LLM proposer whose proposal is verified against the rubric band, repository grounding (grep) and tests; the verdict moves (llm-cleared, lowered, raised or verified) only when the proposal passes those checks, and otherwise the deterministic verdict holds](../diagrams/llm-reconcile.svg)](https://codewithjuber.github.io/forgekit/diagrams/llm-reconcile.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/llm-reconcile.html): pan, zoom, search, and trace any node.</sub>
 
 The model **proposes**; the deterministic rubric, the code graph, and the tests **verify**.
 The verdict only moves when the proposal survives that check — otherwise it falls back, unchanged.

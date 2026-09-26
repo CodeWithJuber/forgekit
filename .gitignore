@@ -22,3 +22,6 @@ __pycache__/
 
 # Generated status page — built fresh at deploy (scripts/build-pages.mjs)
 public/
+
+# Build caches: the pinned Archify checkout (scripts/diagrams.mjs), the Pages API cache
+.cache/

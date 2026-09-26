@@ -3,6 +3,10 @@ title: "Proof-carrying memory"
 description: "Every stored fact, lesson, or reuse artifact is a claim that carries its own evidence — trusted only once independent oracles raise its confidence above a floor."
 ---
 
+<Frame>
+  <img src="/images/illustrations/proof-carrying-memory.webp" alt="A stack of tiles sealed with star stamps, some glowing and some dim, each linked to evidence markers: a claim is trusted only as far as its evidence." />
+</Frame>
+
 **Proof-carrying memory (PCM)** — every stored fact, lesson, or reuse artifact is a
 _claim_ that carries its own evidence. It is trusted only once independent oracles
 (tests, CI, a human accept/revert) raise its confidence above a floor. A wrong lesson
@@ -24,21 +28,11 @@ claims into `.forge/ledger/`. The ledger is now the **default and only** store: 
 materializes from the ledger. (`FORGE_LEDGER_ONLY=0` restores the legacy file store as a
 one-release escape hatch.)
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    subgraph EV["local events"]
-        direction TB
-        E1["recall / remember"]
-        E2["cortex lesson"]
-        E3["reuse mint"]
-        E4["diagnose"]
-    end
-    EV -->|"content-addressed claims"| LG["(.forge/ledger)"]
-    O["independent oracles · tests · CI · human accept/revert"] -->|"append evidence · move confidence"| LG
-    TM["teammate ledgers"] <-->|"git union-merge · conflict-free"| LG
-    LG --> RV["merged read view · recall list · lesson inject · brain index"]
-```
+<Frame>
+  <img src="/images/diagrams/ledger-flow.svg" alt="Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/ledger-flow.html): pan, zoom, search, and trace any node.
 
 ## Why it converges without conflicts
 
@@ -79,6 +73,14 @@ Unverifiable evidence is rejected by a closed `ORACLES` table (`src/ledger.js`).
 Unreviewed knowledge decays toward _uncertainty_, not deletion — dormant claims are kept
 for audit, never silently removed.
 
+A claim's life, from mint to tombstone:
+
+<Frame>
+  <img src="/images/diagrams/claim-lifecycle.svg" alt="Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.
+
 ## The ledger surface
 
 ```bash
@@ -110,16 +112,11 @@ One event is one vote. Abbreviations of one commit count once. A reworded lesson
 trust only when the rewrite is equivalent. Similar-but-opposite rules are reported as
 conflicts, never merged.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    SP["spec"] --> FP["fingerprint · MinHash + LSH"]
-    FP --> LD["match ladder · exact to near to adapt to miss"]
-    LD --> GT{"confidence >= floor AND deps resolve?"}
-    GT -->|"yes"| SV["serve · proof holds"]
-    GT -->|"miss"| GN["generate"]
-    GN -->|"mint claim"| MT["(.forge/ledger)"]
-```
+<Frame>
+  <img src="/images/diagrams/reuse-cache.svg" alt="Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.
 
 <Warning>
   The MinHash near-match is weak on very short specs. An optional embeddings backend

@@ -1,0 +1,202 @@
+{
+  "archify": {
+    "repo": "https://github.com/tt-a1i/archify",
+    "commit": "9e35d2b0b39b155553ba9fcfe0b4f2a5198dd993",
+    "license": "MIT"
+  },
+  "diagrams": [
+    {
+      "id": "core-loop",
+      "type": "workflow",
+      "usedIn": [
+        "README.md"
+      ],
+      "title": "How forgekit fits around a coding agent",
+      "receipt": {
+        "specSha256": "36f083e0f0fd475928450143da634566b42b1d461e3c644df19ec7425cb37494",
+        "artifactSha256": "6d593c7f5fb0f2276a64840a58b4d92aecdcbdf792e3d1d283464aa610520673",
+        "artifactBytes": 802431,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "system",
+      "type": "architecture",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/config-compiler.mdx"
+      ],
+      "title": "forgekit: one source, native configs, enforced guards, evidence-carrying memory",
+      "receipt": {
+        "specSha256": "fa81768a8a95ab952a1bfb9ba2bb2968074b90142d9b9a5e5ca717001408fba6",
+        "artifactSha256": "9c7108271573d07626a1af3c9ce31816ce7c1d99874fd4fda768687c7e7e89a6",
+        "artifactBytes": 810944,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "pre-action-gate",
+      "type": "workflow",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/pre-action-gate.mdx"
+      ],
+      "title": "The pre-action gate: one deterministic pass before the agent edits",
+      "receipt": {
+        "specSha256": "01f9114c08733345bd946316c398e67a77cd72ba45d187dfde62cf0ae4809a8d",
+        "artifactSha256": "a4628c3c21c9f1d8be3365de05e33a5a19920471eb7021b33bda24b6055b157a",
+        "artifactBytes": 810094,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "ledger-flow",
+      "type": "dataflow",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/proof-carrying-memory.mdx",
+        "mintlify/guides/team-memory.mdx"
+      ],
+      "title": "Proof-carrying memory: how claims gain and lose trust",
+      "receipt": {
+        "specSha256": "e2468b369423327a7a4b39def20dc2c3b61e198367f1f922e8aa456cea173e80",
+        "artifactSha256": "6778222c587e62d1e088b81af1c2d90348801410e2e3da0f968f4cb973b3f973",
+        "artifactBytes": 808572,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "claim-lifecycle",
+      "type": "lifecycle",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/proof-carrying-memory.mdx"
+      ],
+      "title": "Claim lifecycle in the ledger",
+      "receipt": {
+        "specSha256": "90ec1d01391f010752f8df9204194a18e405fc8e5887107763a6f4256bc06611",
+        "artifactSha256": "e0d31bdb3007eb87b2b7c3273777b9f7f8951c6bb804685e2c89d082142f0206",
+        "artifactBytes": 808845,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "reuse-cache",
+      "type": "workflow",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/proof-carrying-memory.mdx"
+      ],
+      "title": "Reuse cache: serve only while the proof holds",
+      "receipt": {
+        "specSha256": "2a8c4e773fc7d91dacb3de2964f3c3b08999b2bc334348807c02df82f8b3a2fe",
+        "artifactSha256": "6956ed90f594f32323f63684eec1fe67aa1f55cc7ced32501259f171c7f5bdcf",
+        "artifactBytes": 813029,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "team-loop",
+      "type": "workflow",
+      "usedIn": [
+        "docs/GUIDE.md"
+      ],
+      "title": "The team loop: work, verify, remember",
+      "receipt": {
+        "specSha256": "6bf73f5500964bc19185cb52bd79f354243cd71cec920a44141eb499f1b2201e",
+        "artifactSha256": "e90ff6b2bb13ec4efa6ce8566a9dd71c1307c247be0c0006f71aae1d45483bb5",
+        "artifactBytes": 801007,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "hook-sequence",
+      "type": "sequence",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "mintlify/concepts/cross-session-memory.mdx"
+      ],
+      "title": "One Claude Code session with forgekit's hooks",
+      "receipt": {
+        "specSha256": "7d64581815896d8bc7b02ed3a083a2f79f1003d59e80504a5529ddb29efec171",
+        "artifactSha256": "63c7f944ef3641c474fcda162e6c873da2bfd43acd98a66b19d357936905dce2",
+        "artifactBytes": 810635,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "verify-pipeline",
+      "type": "workflow",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "docs/GUIDE.md",
+        "mintlify/concepts/verification-gates.mdx"
+      ],
+      "title": "forge verify: a PASS bound to the code that was tested",
+      "receipt": {
+        "specSha256": "99a2dc93be3d1bba13bbfd4c16aef7e9def0a922e1991d202077dbb12bfeffd4",
+        "artifactSha256": "c574188d958ec8493a57989fc868e6b5edd4e13c92d6c1d542dae611ed72cfcc",
+        "artifactBytes": 807339,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "onboarding-loop",
+      "type": "workflow",
+      "usedIn": [
+        "ONBOARDING.md",
+        "mintlify/guides/zero-config-onboarding.mdx"
+      ],
+      "title": "Guided onboarding: what happens after forge init",
+      "receipt": {
+        "specSha256": "b16e5c655a469284374caa8c04ab570882ec2f65a67ae48efb45113a638c702d",
+        "artifactSha256": "906dfad571e5d6b7b0e13cf6ac558a136461841b21637126046873123399674b",
+        "artifactBytes": 801851,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "llm-reconcile",
+      "type": "workflow",
+      "usedIn": [
+        "docs/cognitive-substrate/README.md"
+      ],
+      "title": "Rubric first, LLM second: how a proposal can move a verdict",
+      "receipt": {
+        "specSha256": "ad240c992e5927c0f41b06467ec2e09600ed30d28603195d29f2e526912ec0fa",
+        "artifactSha256": "a97271ef516163b9e21a330b19099bb5ff62b1f52d15e68dbb2bec7cf748c0ac",
+        "artifactBytes": 803139,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "router-cascade",
+      "type": "workflow",
+      "usedIn": [
+        "docs/UNIVERSAL_ROUTING.md",
+        "mintlify/concepts/model-routing.mdx"
+      ],
+      "title": "forge route universal: a cascade under an explicit objective",
+      "receipt": {
+        "specSha256": "900d1d09ee7910b349bf9a5284f69d2f6c81f0522a36582a1845ef03ba8835b7",
+        "artifactSha256": "2a6b7cb3ad4d601b01f41aee5376b8d308cee5d625416e7e3088891e2c5aa2ec",
+        "artifactBytes": 812232,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "phase-map",
+      "type": "architecture",
+      "usedIn": [
+        "docs/plans/substrate-v2/00-overview.md"
+      ],
+      "title": "Substrate v2 plan: phases and dependencies",
+      "receipt": {
+        "specSha256": "df6ce832e4d597f41827d041fa3b15ddd950324bc4c69fd48875e4a042721445",
+        "artifactSha256": "064cd5d36912d29aa49d04f8d924333f83da69dbad48f2b25b7f636eee9b6f45",
+        "artifactBytes": 804443,
+        "checks": "9/9 showcase"
+      }
+    }
+  ]
+}

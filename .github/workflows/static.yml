@@ -40,10 +40,14 @@ jobs:
           mkdir -p _site/status
           cp landing/index.html _site/index.html
           cp landing/app.js _site/app.js
+          cp -R landing/media _site/media
           cp public/index.html _site/status/index.html
           # Brand assets referenced by absolute URL from both pages (favicon,
           # apple-touch-icon, 1200x630 og card). Served from the Pages root.
-          cp docs/assets/og.png docs/assets/favicon.svg docs/assets/apple-touch-icon.png _site/
+          cp docs/assets/og.jpg docs/assets/favicon.svg docs/assets/apple-touch-icon.png _site/
+          # Interactive diagrams (/diagrams/): rendered from docs/diagrams/src by the pinned
+          # Archify commit; a file whose sha256 differs from its validated receipt is refused.
+          node scripts/diagrams.mjs site _site/diagrams
       - name: Setup Pages
         uses: actions/configure-pages@v6
       - name: Upload artifact

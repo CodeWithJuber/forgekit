@@ -3,23 +3,19 @@ title: "The four-layer config compiler"
 description: "Author the substrate once; forge sync compiles it into each tool's native config. The four layers are how the brain is expressed; the compiler is how it is delivered."
 ---
 
+<Frame>
+  <img src="/images/illustrations/config-compiler.webp" alt="One eight-point star sends ten ember lines to ten matching tiles: one source, native config for every tool." />
+</Frame>
+
 You author the substrate once. `forge sync` compiles that source into each tool's native
 config. The four layers are _how the brain is expressed_; the compiler is _how it is
 delivered_.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    S["source/ · rules.json · substrate.json · mcp.json"] -->|"forge sync — content-hash + DO-NOT-EDIT headers"| N["native configs · CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider"]
-    S -. configures .-> L
-    subgraph L["the four layers"]
-        direction LR
-        T["tools · model-invoked skills"]
-        C["crew · isolated sub-agents"]
-        G["guards · deterministic hooks"]
-        M["mcp · atlas + substrate server"]
-    end
-```
+<Frame>
+  <img src="/images/diagrams/system.svg" alt="forgekit's architecture: forge sync compiles source/ into native configs for ten tools and configures the four layers (tools, crew, guards, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.
 
 ## One source, many emitters
 

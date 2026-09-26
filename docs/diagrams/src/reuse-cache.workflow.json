@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Reuse cache: serve only while the proof holds",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {"id": "serve-path", "label": "Serve path", "focus": ["spec", "exact", "near", "guard", "check", "served"], "note": "A hit is served only while its proof holds: confidence ≥ 0.6, same sha256, unchanged dependency contracts."},
+      {"id": "miss-path", "label": "Miss path", "focus": ["adapt", "check", "generate", "verify", "mint"], "note": "A miss or failed revalidation is generated, verified and minted into .forge/ledger/ for next time."}
+    ]
+  },
+  "lanes": [
+    {"id": "lookup", "label": "Lookup ladder"},
+    {"id": "gate", "label": "Serve gate"},
+    {"id": "miss", "label": "Miss path", "variant": "exception"}
+  ],
+  "mainPath": ["spec", "exact", "check", "served"],
+  "nodes": [
+    {"id": "spec", "lane": "lookup", "col": 0, "type": "external", "label": "Spec", "sublabel": "the task text", "width": 150, "height": 76},
+    {"id": "exact", "lane": "lookup", "col": 1, "type": "messagebus", "label": "Exact tier", "sublabel": "lossless except whitespace", "tag": "Unicode-normalized; case kept", "width": 150, "height": 92},
+    {"id": "near", "lane": "lookup", "col": 2, "type": "messagebus", "label": "Near tier", "sublabel": "MinHash + LSH similarity", "width": 150, "height": 76},
+    {"id": "guard", "lane": "lookup", "col": 3, "type": "security", "label": "Semantic guard", "sublabel": "operators · numbers · literals", "tag": "identifiers · paths · negation", "width": 150, "height": 92},
+    {"id": "adapt", "lane": "lookup", "col": 4, "type": "messagebus", "label": "Adapt tier", "sublabel": "a match that differs", "width": 150, "height": 76},
+    {"id": "check", "lane": "gate", "col": 2, "type": "security", "label": "Proof check", "sublabel": "serve floor: confidence ≥ 0.6", "tag": "same sha256 · dep contracts hold", "width": 150, "height": 92},
+    {"id": "served", "lane": "gate", "col": 3, "type": "messagebus", "label": "Served", "sublabel": "proof holds · adds no evidence", "tag": "no atlas → requiresRevalidation", "width": 150, "height": 92},
+    {"id": "generate", "lane": "miss", "col": 3, "type": "backend", "label": "Generate", "width": 150, "height": 60},
+    {"id": "verify", "lane": "miss", "col": 2, "type": "security", "label": "Verify", "width": 150, "height": 60},
+    {"id": "mint", "lane": "miss", "col": 1, "type": "database", "label": "forge reuse mint", "sublabel": "claim → .forge/ledger/", "tag": "available next time", "width": 150, "height": 92}
+  ],
+  "edges": [
+    {"id": "lookup-exact", "from": "spec", "to": "exact", "label": "lookup", "variant": "emphasis", "role": "main"},
+    {"id": "exact-hit", "from": "exact", "to": "check", "label": "hit", "variant": "emphasis", "role": "main", "fromSide": "bottom", "toSide": "left"},
+    {"id": "check-served", "from": "check", "to": "served", "label": "all hold", "variant": "emphasis", "role": "main", "fromSide": "right", "toSide": "left"},
+    {"id": "exact-near", "from": "exact", "to": "near", "label": "otherwise", "role": "branch"},
+    {"id": "near-guard", "from": "near", "to": "guard", "label": "similar", "role": "branch", "fromSide": "right", "toSide": "left"},
+    {"id": "guard-hit", "from": "guard", "to": "check", "label": "agrees: hit", "role": "branch", "fromSide": "bottom", "toSide": "top"},
+    {"id": "guard-adapt", "from": "guard", "to": "adapt", "label": "differs", "role": "branch"},
+    {"id": "adapt-miss", "from": "adapt", "to": "generate", "label": "otherwise: miss", "variant": "dashed", "role": "error", "fromSide": "bottom", "toSide": "right"},
+    {"id": "check-fails", "from": "check", "to": "generate", "label": "fails", "variant": "security", "role": "error", "fromSide": "bottom", "toSide": "top", "route": "drop"},
+    {"id": "generate-verify", "from": "generate", "to": "verify"},
+    {"id": "verify-mint", "from": "verify", "to": "mint"}
+  ]
+}

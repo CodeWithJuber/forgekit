@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "The team loop: work, verify, remember",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {"id": "work", "label": "Work"},
+    {"id": "verify", "label": "Verify"},
+    {"id": "remember", "label": "Remember"}
+  ],
+  "mainPath": ["precheck", "edit", "oracles", "ledger"],
+  "nodes": [
+    {"id": "precheck", "lane": "work", "col": 0, "type": "security", "label": "Substrate pre-checks", "width": 150},
+    {"id": "edit", "lane": "work", "col": 1, "type": "backend", "label": "Edit", "width": 150},
+    {"id": "oracles", "lane": "verify", "col": 2, "type": "security", "label": "Oracles", "sublabel": "forge verify · forge imagine --run · CI · human accept/revert", "width": 280},
+    {"id": "ledger", "lane": "remember", "col": 4, "type": "database", "label": "Team ledger", "sublabel": ".forge/ledger/", "width": 150},
+    {"id": "teammates", "lane": "remember", "col": 5, "type": "database", "label": "Teammates' ledgers", "width": 150}
+  ],
+  "edges": [
+    {"id": "precheck-edit", "from": "precheck", "to": "edit", "variant": "emphasis", "role": "main"},
+    {"id": "edit-oracles", "from": "edit", "to": "oracles", "variant": "emphasis", "role": "main"},
+    {"id": "outcomes", "from": "oracles", "to": "ledger", "label": "outcomes move claim val", "variant": "emphasis", "role": "main"},
+    {"id": "share-out", "from": "ledger", "to": "teammates", "label": "git + forge ledger merge", "variant": "dashed", "role": "async"},
+    {"id": "share-in", "from": "teammates", "to": "ledger", "label": "git + forge ledger merge", "variant": "dashed", "role": "async"},
+    {"id": "feed-back", "from": "ledger", "to": "precheck", "label": "lessons · facts · reuse hits", "variant": "emphasis", "role": "return"}
+  ]
+}

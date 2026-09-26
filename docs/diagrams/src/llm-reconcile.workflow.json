@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Rubric first, LLM second: how a proposal can move a verdict",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "rubric-lane", "label": "Rubric first" },
+    { "id": "reconcile-lane", "label": "Reconcile" },
+    { "id": "llm-lane", "label": "LLM second" }
+  ],
+  "semanticChecks": {
+    "allowedRoots": ["input"],
+    "allowedTerminals": ["moves", "holds"],
+    "requiredEdges": [
+      { "from": "input", "to": "rubric" },
+      { "from": "input", "to": "proposer" },
+      { "from": "proposer", "to": "verify" },
+      { "from": "verify", "to": "reconcile" },
+      { "from": "rubric", "to": "reconcile" },
+      { "from": "reconcile", "to": "moves" },
+      { "from": "reconcile", "to": "holds" }
+    ]
+  },
+  "nodes": [
+    { "id": "input", "lane": "reconcile-lane", "col": 0, "type": "database", "label": "Task or edit", "width": 180 },
+    { "id": "rubric", "lane": "rubric-lane", "col": 1, "type": "security", "label": "Deterministic rubric", "width": 180 },
+    { "id": "proposer", "lane": "llm-lane", "col": 1, "type": "cloud", "label": "LLM proposer", "sublabel": "opt-in: FORGE_LLM=1", "tag": "never judges alone", "width": 180 },
+    { "id": "verify", "lane": "llm-lane", "col": 2, "type": "security", "label": "Verify", "sublabel": "rubric band · repo grounding (grep) · tests", "width": 220 },
+    { "id": "reconcile", "lane": "reconcile-lane", "col": 3, "type": "security", "label": "Reconcile", "width": 180 },
+    { "id": "holds", "lane": "rubric-lane", "col": 4, "type": "security", "label": "Verdict holds", "sublabel": "deterministic", "width": 220 },
+    { "id": "moves", "lane": "reconcile-lane", "col": 4, "type": "security", "label": "Verdict moves", "sublabel": "llm-cleared / lowered / raised / verified", "width": 220 }
+  ],
+  "edges": [
+    { "id": "to-rubric", "from": "input", "to": "rubric", "fromSide": "top" },
+    { "id": "to-proposer", "from": "input", "to": "proposer", "variant": "dashed", "fromSide": "bottom" },
+    { "id": "rubric-reconcile", "from": "rubric", "to": "reconcile", "fromSide": "right", "toSide": "left" },
+    { "id": "propose-verify", "from": "proposer", "to": "verify", "variant": "dashed" },
+    { "id": "verify-reconcile", "from": "verify", "to": "reconcile", "variant": "dashed" },
+    { "id": "passes", "from": "reconcile", "to": "moves", "label": "passes checks", "variant": "emphasis" },
+    { "id": "fails", "from": "reconcile", "to": "holds", "label": "fails or unavailable" }
+  ]
+}

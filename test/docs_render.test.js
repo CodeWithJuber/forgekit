@@ -92,6 +92,10 @@ test("renderRepoMap draws directories and import edges from the real tree", () =
   assert.ok(map.includes(mermaidInit()), "uses the shared brand theme");
   assert.ok(map.includes('app["app<br/>1 file"]') && map.includes('lib["lib<br/>1 file"]'));
   assert.ok(map.includes("app --> lib"), "the import edge points importer → imported");
+  // A build cache (e.g. a fetched tool checkout under .cache/) is not part of the repo.
+  mkdirSync(join(root, ".cache", "tool"), { recursive: true });
+  writeFileSync(join(root, ".cache", "tool", "x.mjs"), 'import "./y.mjs";\n');
+  assert.equal(renderRepoMap(root), map, ".cache/ never enters the map");
 });
 
 test("renderDocs fills managed blocks, is idempotent, and reports tampering as strict drift", () => {

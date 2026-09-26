@@ -3,32 +3,21 @@ title: "The pre-action gate"
 description: "forge substrate runs one ordered pass of checks before the model edits code and returns a single verdict — assumptions, routing, impact, scope, memory, and verification."
 ---
 
+<Frame>
+  <img src="/images/illustrations/pre-action-gate.webp" alt="A geometric arch with ember light passing through onto the paths beyond: each task is checked before the agent edits." />
+</Frame>
+
 **Cognitive substrate** — the layer that runs _before_ the model edits code. `forge
 substrate "<task>"` (and the MCP tool `substrate_check`) runs one ordered pass of checks
 and returns a single verdict. It composes the individually-callable stages —
 `preflight`, `route`, `atlas`, `impact`, `reuse`, `context`, `scope`, `lean`, `anchor`,
 `verify` — into one pre-action contract.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    RE["referenced entities"] --> INTAKE
-    subgraph INTAKE["intake"]
-        direction LR
-        PF["preflight · assumption gap"] --> RT["route · cheapest tier"]
-    end
-    INTAKE --> ANALYSIS
-    subgraph ANALYSIS["analysis"]
-        direction LR
-        AT["atlas · code graph"] --> IM["impact · blast radius"] --> PT["predict · failing tests"] --> RU["reuse · cache hit?"]
-    end
-    ANALYSIS --> SAFETY
-    subgraph SAFETY["safety + fit"]
-        direction LR
-        CX["context · completeness gate"] --> SC["scope · coupled files"] --> ME["memory · recall + lessons"] --> MN["minimality · lean footprint"] --> GA["goal-anchor · drift check"]
-    end
-    SAFETY --> VD["verdict"]
-```
+<Frame>
+  <img src="/images/diagrams/pre-action-gate.svg" alt="The pre-action gate: referenced entities pass through intake (preflight, route), analysis (atlas, impact, predict, reuse) and safety and fit (context, scope, memory, minimality, goal-anchor) to one verdict" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/pre-action-gate.html): pan, zoom, search, and trace any node.
 
 ## The three phases
 

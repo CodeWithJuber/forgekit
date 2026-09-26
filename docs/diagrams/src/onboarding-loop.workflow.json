@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Guided onboarding: what happens after forge init",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "setup", "label": "Setup" },
+    { "id": "each-task", "label": "Each task" },
+    { "id": "learning", "label": "Learning" }
+  ],
+  "mainPath": ["init", "configured", "work", "check", "edit", "learn"],
+  "semanticChecks": {
+    "allowedRoots": ["init"],
+    "allowedTerminals": [],
+    "requiredEdges": [{ "from": "learn", "to": "work" }]
+  },
+  "nodes": [
+    { "id": "init", "lane": "setup", "col": 0, "type": "messagebus", "label": "forge init", "width": 180, "height": 76 },
+    { "id": "configured", "lane": "setup", "col": 1, "type": "database", "label": "Your tools configured", "sublabel": "from one source", "width": 180, "height": 76 },
+    { "id": "work", "lane": "each-task", "col": 1, "type": "frontend", "label": "You work as usual", "width": 180, "height": 76 },
+    { "id": "check", "lane": "each-task", "col": 2, "type": "security", "label": "Substrate checks", "sublabel": "ask first? which model? what breaks?", "width": 180, "height": 76 },
+    { "id": "edit", "lane": "each-task", "col": 3, "type": "backend", "label": "Agent edits", "sublabel": "with guardrails", "width": 180, "height": 76 },
+    { "id": "learn", "lane": "learning", "col": 3, "type": "database", "label": "Cortex learns", "sublabel": "from corrections", "width": 180, "height": 76 }
+  ],
+  "edges": [
+    { "id": "init-configure", "from": "init", "to": "configured" },
+    { "id": "configured-work", "from": "configured", "to": "work" },
+    { "id": "work-check", "from": "work", "to": "check" },
+    { "id": "check-edit", "from": "check", "to": "edit" },
+    { "id": "edit-learn", "from": "edit", "to": "learn" },
+    { "id": "next-task", "from": "learn", "to": "work", "label": "next task is smarter", "variant": "dashed", "role": "return" }
+  ]
+}

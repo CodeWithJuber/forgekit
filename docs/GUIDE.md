@@ -70,16 +70,9 @@ substrate** (`forge substrate` — the pre-action check). The full argument is t
 The daily loop — every outcome an oracle observes lands in the team ledger, and the
 ledger informs the next task:
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    W["work — substrate pre-checks,<br/>then edit"] --> O["oracles — forge verify ·<br/>imagine --run · CI · human accept/revert"]
-    O -->|"outcomes move claim val"| L[("team ledger<br/>.forge/ledger/")]
-    L <-->|"git + forge ledger merge"| T["teammates' ledgers"]
-    L -->|"lessons · facts · reuse hits"| W
-    classDef accent fill:#f26430,stroke:#f26430,color:#171310;
-    class L accent;
-```
+[![The team loop: substrate pre-checks, then the edit; oracles (forge verify, forge imagine --run, CI, a human accept or revert) record outcomes that move each claim's value in the team ledger in .forge/ledger/; teammates' ledgers merge through git and forge ledger merge; lessons, facts and reuse hits feed the next pre-check](diagrams/team-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/team-loop.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/team-loop.html): pan, zoom, search, and trace any node.</sub>
 
 ```bash
 cd your-project
@@ -676,6 +669,10 @@ screenshot or diagram, or a design/wording choice with no textual anchor.
 The independent check: runs the real test suite and flags edited symbols that aren't in
 the codebase (possible hallucinations). This is what turns "the model says it's done"
 into "the tests say it's done."
+
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](diagrams/verify-pipeline.svg)](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 
 ```console
 $ forge verify

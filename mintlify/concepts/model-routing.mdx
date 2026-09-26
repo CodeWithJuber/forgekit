@@ -3,6 +3,10 @@ title: "Model routing"
 description: "A deterministic, diffable rubric picks the cheapest capable model tier before dispatch — each tier a model family, resolved to the newest live model with a fail-safe fallback."
 ---
 
+<Frame>
+  <img src="/images/illustrations/model-routing.webp" alt="One ember line splits into three paths through gates of rising brightness: a cascade that escalates only on failure." />
+</Frame>
+
 Forge recommends the cheapest capable model for a task **before** dispatch, from a
 deterministic rubric you can read in the repo (`src/route.js`). Unlike a gateway
 that decides inside the proxy at request time, the routing decision is visible and
@@ -98,6 +102,12 @@ verification.
 A separate, opt-in router: it recommends one model, or a cascade that escalates on a failed
 check, across every provider in the registry, minimising **expected** cost for the success
 you ask for.
+
+<Frame>
+  <img src="/images/diagrams/router-cascade.svg" alt="forge route universal: the task's 12 features and each model's P(solve) and expected cost select the cheapest cascade that meets the objective, or report INFEASIBLE with a labeled least-bad fallback; each attempt is checked by tests or forge verify, a failure escalates to the next model, and forge route outcome records each outcome for forge route fit, which refits a local estimate shrunk toward the shipped prior" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/router-cascade.html): pan, zoom, search, and trace any node.
 
 ```bash
 forge route universal "<task>"                         # match the best single model

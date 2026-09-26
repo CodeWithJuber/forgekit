@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Substrate v2 plan: phases and dependencies",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "p0", "type": "backend", "label": "P0 specs", "sublabel": "done", "pos": [40, 320], "size": [200, 70] },
+    { "id": "p1", "type": "backend", "label": "P1 ledger core", "sublabel": "done", "pos": [300, 320], "size": [200, 70] },
+    { "id": "p2", "type": "backend", "label": "P2 team sync", "sublabel": "done", "pos": [560, 60], "size": [200, 70] },
+    { "id": "p6", "type": "backend", "label": "P6 UI quality gate", "sublabel": "done", "pos": [560, 190], "size": [200, 70] },
+    { "id": "p4", "type": "backend", "label": "P4 context assembly", "sublabel": "partial", "pos": [560, 320], "size": [200, 70] },
+    { "id": "p3", "type": "backend", "label": "P3 reuse cache", "sublabel": "done", "pos": [560, 450], "size": [200, 70] },
+    { "id": "p5", "type": "backend", "label": "P5 loop closure", "sublabel": "done", "pos": [820, 320], "size": [200, 70] },
+    { "id": "p7", "type": "backend", "label": "P7 dashboard", "sublabel": "done", "pos": [1080, 125], "size": [200, 70] },
+    { "id": "p8", "type": "backend", "label": "P8 evaluation", "sublabel": "partial", "pos": [1080, 385], "size": [200, 70] }
+  ],
+  "connections": [
+    { "id": "p0-p1", "from": "p0", "to": "p1" },
+    { "id": "p1-p2", "from": "p1", "to": "p2" },
+    { "id": "p1-p3", "from": "p1", "to": "p3" },
+    { "id": "p1-p4", "from": "p1", "to": "p4", "variant": "dashed" },
+    { "id": "p1-p6", "from": "p1", "to": "p6" },
+    { "id": "p4-p5", "from": "p4", "to": "p5", "variant": "dashed" },
+    { "id": "p2-p7", "from": "p2", "to": "p7" },
+    { "id": "p5-p7", "from": "p5", "to": "p7" },
+    { "id": "p6-p7", "from": "p6", "to": "p7" },
+    { "id": "p3-p8", "from": "p3", "to": "p8", "variant": "dashed" },
+    { "id": "p5-p8", "from": "p5", "to": "p8", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Done", "items": ["P0 · P1 · P2 · P3 · P5 · P6 · P7"] },
+    { "dot": "amber", "title": "Partial", "items": ["P4 context assembly", "P8 evaluation", "Dashed links touch a partial phase"] },
+    { "dot": "slate", "title": "Reading", "items": ["Each arrow points to the phase that depends on it"] }
+  ]
+}

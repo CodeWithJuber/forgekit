@@ -3,6 +3,10 @@ title: "Verification gates"
 description: "Independent verification, the hallucinated-symbol flag, spec-as-contract, and the skill-gate — checks you can run that reduce, but never certify, correctness."
 ---
 
+<Frame>
+  <img src="/images/illustrations/verification-gates.webp" alt="Concentric geometric rings like layered sieves, with only a few particles reaching the glowing center: independent checks that reduce silent misses." />
+</Frame>
+
 Nothing is "done" without a check you can run — a test, a build exit code, a screenshot.
 With per-task miss rate `1 − p`, silent misses fall to `(1 − p)` times the chance that no
 check fires on the miss: `(1 − p)(1 − c)` for one gate with catch rate `c`. A further gate
@@ -20,6 +24,12 @@ so the residual stays `(1 − p)(1 − c_max)` rather than a product.
 
 An independent gate: it runs the repo's real tests, flags hallucinated symbols, and
 checks provenance.
+
+<Frame>
+  <img src="/images/diagrams/verify-pipeline.svg" alt="forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl" />
+</Frame>
+
+[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.
 
 ```bash
 forge verify              # tests + hallucinated-symbol + provenance

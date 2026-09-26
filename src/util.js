@@ -139,6 +139,9 @@ export const IGNORE_DIRS = new Set([
   "coverage",
   ".venv",
   "vendor",
+  // Build caches — e.g. the pinned Archify checkout scripts/diagrams.mjs fetches, which
+  // would otherwise enter the import graph and the generated repo map.
+  ".cache",
 ]);
 
 export const SRC_EXT = /\.(js|jsx|ts|tsx|mjs|cjs|py)$/;

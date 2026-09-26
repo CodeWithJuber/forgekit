@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "The pre-action gate: one deterministic pass before the agent edits",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "intake", "label": "Intake" },
+    { "id": "analysis", "label": "Analysis" },
+    { "id": "safety", "label": "Safety + fit" }
+  ],
+  "semanticChecks": {
+    "allowedRoots": ["entities"],
+    "allowedTerminals": ["verdict"],
+    "requiredPaths": [{ "from": "entities", "to": "verdict" }]
+  },
+  "nodes": [
+    { "id": "entities", "lane": "intake", "col": 0, "type": "database", "label": "Referenced entities", "sublabel": "from the task", "width": 140 },
+    { "id": "preflight", "lane": "intake", "col": 1, "type": "security", "label": "preflight", "sublabel": "assumption gap", "width": 140 },
+    { "id": "route", "lane": "intake", "col": 2, "type": "security", "label": "route", "sublabel": "cheapest capable tier", "width": 140 },
+    { "id": "atlas", "lane": "analysis", "col": 2, "type": "database", "label": "atlas", "sublabel": "code graph", "width": 140 },
+    { "id": "impact", "lane": "analysis", "col": 3, "type": "database", "label": "impact", "sublabel": "blast radius", "width": 140 },
+    { "id": "predict", "lane": "analysis", "col": 4, "type": "database", "label": "predict", "sublabel": "likely failing tests", "width": 140 },
+    { "id": "reuse", "lane": "analysis", "col": 5, "type": "database", "label": "reuse", "sublabel": "cache hit?", "width": 140 },
+    { "id": "context", "lane": "safety", "col": 5, "type": "security", "label": "context", "sublabel": "completeness gate", "width": 140 },
+    { "id": "scope", "lane": "safety", "col": 4, "type": "database", "label": "scope", "sublabel": "coupled files", "width": 140 },
+    { "id": "memory", "lane": "safety", "col": 3, "type": "database", "label": "memory", "sublabel": "recall + lessons", "width": 140 },
+    { "id": "minimality", "lane": "safety", "col": 2, "type": "security", "label": "minimality", "sublabel": "lean footprint", "width": 140 },
+    { "id": "anchor", "lane": "safety", "col": 1, "type": "security", "label": "goal-anchor", "sublabel": "drift check", "width": 140 },
+    { "id": "verdict", "lane": "safety", "col": 0, "type": "security", "label": "Verdict", "sublabel": "advisory by default", "width": 140 }
+  ],
+  "edges": [
+    { "id": "enter-gate", "from": "entities", "to": "preflight" },
+    { "id": "preflight-route", "from": "preflight", "to": "route" },
+    { "id": "route-atlas", "from": "route", "to": "atlas" },
+    { "id": "atlas-impact", "from": "atlas", "to": "impact" },
+    { "id": "impact-predict", "from": "impact", "to": "predict" },
+    { "id": "predict-reuse", "from": "predict", "to": "reuse" },
+    { "id": "reuse-context", "from": "reuse", "to": "context" },
+    { "id": "context-scope", "from": "context", "to": "scope" },
+    { "id": "scope-memory", "from": "scope", "to": "memory" },
+    { "id": "memory-minimality", "from": "memory", "to": "minimality" },
+    { "id": "minimality-anchor", "from": "minimality", "to": "anchor" },
+    { "id": "anchor-verdict", "from": "anchor", "to": "verdict", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "FORGE_ENFORCE=1 blocks only the strongest signals",
+      "items": [
+        "A vacuous task",
+        "Required context that cannot be assembled",
+        "A large impact set from a fresh graph"
+      ]
+    }
+  ]
+}

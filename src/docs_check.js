@@ -219,6 +219,15 @@ const MERMAID_BLOCK_RE = /```mermaid\n([\s\S]*?)```/g;
  * "the diagrams look bad" from silently recurring; nothing else reconciled diagram quality.
  */
 function checkDiagrams(root, issues) {
+  // A repo that renders its diagrams with Archify (a docs/diagrams/diagrams.json manifest)
+  // draws them from typed, validated sources: an embed must name a registered diagram, and
+  // a hand-written Mermaid block is a diagram that skipped that pipeline. Machine-owned
+  // blocks (`forge:render` markers) and opted-out examples stay allowed.
+  let archify = null;
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, "docs/diagrams/diagrams.json"), "utf8"));
+    archify = new Set((manifest.diagrams ?? []).map((d) => d.id));
+  } catch {}
   for (const rel of markdownFiles(root)) {
     let text;
     try {
@@ -226,10 +235,31 @@ function checkDiagrams(root, issues) {
     } catch {
       continue;
     }
+    if (archify) {
+      for (const m of text.matchAll(/diagrams\/([a-z0-9][a-z0-9-]*)\.(?:svg|html)\b/g)) {
+        if (!archify.has(m[1]))
+          issues.push({
+            check: "diagrams",
+            severity: "error",
+            detail: `${rel}: embeds diagram "${m[1]}", which is not registered in docs/diagrams/diagrams.json`,
+          });
+      }
+    }
     for (const m of text.matchAll(MERMAID_BLOCK_RE)) {
       // An intentional example block (e.g. docs showing what a BAD diagram looks like) opts
       // out with an HTML comment `<!-- docs-check-ignore -->` on the line before the fence.
       if (/docs-check-ignore/.test(text.slice(Math.max(0, m.index - 80), m.index))) continue;
+      // Machine-owned: inside a `forge:render` block whose end marker has not been reached.
+      const before = text.slice(0, m.index);
+      const generated =
+        before.lastIndexOf("forge:render:") !== -1 &&
+        /forge:render:[a-z-]+:begin/.test(before.slice(before.lastIndexOf("forge:render:")));
+      if (archify && !generated)
+        issues.push({
+          check: "diagrams",
+          severity: "error",
+          detail: `${rel}: a hand-written mermaid diagram — draw it as an Archify source in docs/diagrams/src and embed its SVG (see docs/diagrams/README.md)`,
+        });
       const block = m[1];
       if (!block.includes("%%{init")) {
         issues.push({

@@ -110,16 +110,19 @@ test("both public pages ship social image + favicon (no blank cards)", async () 
     ["landing", landing],
     ["status", status],
   ]) {
-    assert.match(
-      html,
-      /property="og:image"[^>]*content="https:\/\/[^"]+\.png"/,
-      `${name}: absolute og:image`,
+    const og = html.match(
+      /property="og:image"[^>]*content="(https:\/\/[^"]+\.(?:png|jpe?g))"/,
+    )?.[1];
+    assert.ok(og, `${name}: absolute og:image`);
+    // The Pages build publishes the card from docs/assets; a URL naming a file that is not
+    // there is a blank card in every link preview.
+    const card = og.split("/").pop();
+    assert.ok(
+      existsSync(fileURLToPath(new URL(`../docs/assets/${card}`, import.meta.url))),
+      `${name}: og:image ${card} ships from docs/assets`,
     );
-    assert.match(
-      html,
-      /name="twitter:image"[^>]*content="https:\/\/[^"]+\.png"/,
-      `${name}: twitter:image`,
-    );
+    const twitter = html.match(/name="twitter:image"[^>]*content="(https:\/\/[^"]+)"/)?.[1];
+    assert.equal(twitter?.split("/").pop(), card, `${name}: twitter:image is the same card`);
     assert.match(html, /rel="icon"[^>]*image\/svg/, `${name}: svg favicon`);
     assert.match(html, /rel="apple-touch-icon"/, `${name}: apple-touch-icon`);
   }

@@ -132,17 +132,9 @@ Forgekit supplies an external reliability layer:
 Forgekit runs a deterministic substrate before work, lets the external coding agent act,
 and records evidence from tests, CI, or explicit human correction afterwards.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart TD
-    T["Task"] --> G["Pre-action substrate"]
-    G -->|"Missing information"| Q["Clarify first"]
-    Q --> T
-    G -->|"Enough information"| A["External coding agent acts"]
-    A --> V["Tests, CI, or human outcome"]
-    V --> M["Evidence-weighted memory"]
-    M -.-> G
-```
+[![How forgekit fits around a coding agent: a task goes through the pre-action substrate; missing information sends it back to clarify first, enough information lets the agent act, and the outcome is recorded in memory that feeds the next check](docs/diagrams/core-loop.svg)](https://codewithjuber.github.io/forgekit/diagrams/core-loop.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/core-loop.html): pan, zoom, search, and trace any node.</sub>
 
 Only independent oracles (tests, CI, a human accept/revert) move a memory's confidence —
 so a wrong lesson decays out instead of ossifying. Full design:

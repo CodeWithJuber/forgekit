@@ -75,27 +75,11 @@ later phase stores its state as PCM claims. P0–P3 and P5–P7 have shipped (v0
 are partial** — their acceptance criteria are not met (reasons in the table). _(Corrected
 2026-09-26: this said "**All phases have shipped** (v0.5.0)", and every node below was green.)_
 
-Green nodes are shipped; amber nodes are partial.
+Each phase is labeled done or partial; a dashed arrow touches a partial phase.
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
-flowchart LR
-    P0["P0 specs"] --> P1["P1 ledger core"]
-    P1 --> P2["P2 team sync"]
-    P1 --> P3["P3 reuse cache"]
-    P1 --> P4["P4 context assembly"]
-    P1 --> P6["P6 UI quality gate"]
-    P4 --> P5["P5 loop closure"]
-    P2 --> P7["P7 dashboard"]
-    P5 --> P7
-    P6 --> P7
-    P3 --> P8["P8 evaluation"]
-    P5 --> P8
-    classDef done fill:#1f3d2b,stroke:#67e8a5,color:#f2ede7;
-    classDef partial fill:#3d321c,stroke:#e8b64a,color:#f2ede7;
-    class P0,P1,P2,P3,P5,P6,P7 done;
-    class P4,P8 partial;
-```
+[![Substrate v2 phases: P0 specs leads to P1 ledger core, which feeds P2 team sync, P3 reuse cache, P4 context assembly and P6 UI quality gate; P4 leads to P5 loop closure; P2, P5 and P6 feed P7 dashboard; P3 and P5 feed P8 evaluation; P4 and P8 are partial, the rest are done](../../diagrams/phase-map.svg)](https://codewithjuber.github.io/forgekit/diagrams/phase-map.html)
+
+<sub>[Open the interactive diagram](https://codewithjuber.github.io/forgekit/diagrams/phase-map.html): pan, zoom, search, and trace any node.</sub>
 
 | Phase                      | Delivers                                                                                                                                                                              | Depends on                 | Acceptance                                                                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
