@@ -12,6 +12,7 @@ import {
   selectTests,
   selectTestsReport,
   tapSummary,
+  unsupportedRunner,
 } from "../src/imagine.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-imagine-"));
@@ -242,4 +243,19 @@ test("tapSummary takes the runner's OWN (last) summary, and dryRun cross-checks 
   const red = dryRun(root, { tests: ["test/fail.test.js"] });
   assert.equal(red.failed, 1);
   assert.equal(red.passed, 0);
+});
+
+// Review 2026-09-26 — A05: the dry-run executes node:test files only; anything else is an
+// explicit UNSUPPORTED result, never a node:test run of files written for another runner.
+test("unsupportedRunner: foreign files and custom runners are refused explicitly", () => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-imagine-runner-"));
+  assert.equal(unsupportedRunner(dir, ["test/a.test.js", "b.test.mjs"]), null, "no package.json");
+  assert.match(unsupportedRunner(dir, ["tests/test_x.py"]) ?? "", /node:test files only/);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
+  assert.match(unsupportedRunner(dir, ["a.test.js"]) ?? "", /run under `vitest run`/);
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ scripts: { test: "node --test --import ./setup.js test/*.test.js" } }),
+  );
+  assert.equal(unsupportedRunner(dir, ["a.test.js"]), null, "a node --test script is supported");
 });

@@ -110,13 +110,17 @@ test("dashData: meta.empty is true on a bare repo, false once claims/metrics exi
   assert.equal(dashData(metricsOnly, { nowDay: NOW }).meta.empty, false);
 });
 
-test("dashData: meta never throws on a corrupt store, degrades to empty", () => {
+test("dashData: a corrupt store never throws — and is reported as unreadable, not empty (A11)", () => {
   const root = tmp();
   mkdirSync(join(root, ".forge", "ledger"), { recursive: true });
   writeFileSync(join(root, ".forge", "ledger", "claims"), "not a directory");
   writeFileSync(join(root, ".forge", "metrics.jsonl"), "{nope\n");
   const m = dashData(root, { nowDay: NOW }).meta;
-  assert.equal(m.empty, true, "unreadable stores count as no data, not a crash");
+  assert.equal(m.empty, false, "an unreadable store is not an untouched one");
+  assert.ok(
+    m.errors.some((e) => e.section === "ledger"),
+    `the unreadable section is named: ${JSON.stringify(m.errors)}`,
+  );
   assert.equal(m.forgeDir, join(root, ".forge"));
 });
 
@@ -211,10 +215,14 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
   await new Promise((resolve) => server.on("listening", resolve));
   const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
   const base = `http://127.0.0.1:${addr.port}`;
+  // Like the browser: the write token comes from the page the server served (F13).
+  const page = await (await fetch(`${base}/`)).text();
+  const token = /name="forge-dash-token" content="([0-9a-f]+)"/.exec(page)?.[1];
+  assert.ok(token, "the page carries the session write token");
   const post = (path, body) =>
     fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-forge-token": token },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
   try {
@@ -259,6 +267,7 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-forge-token": token,
         origin: "https://evil.example",
       },
       body: JSON.stringify({ id: trusted.id.slice(0, 8) }),
@@ -273,7 +282,11 @@ test("serve: POST /api/ratify and /api/retract are the two append-only writes", 
           port: addr.port,
           path: "/api/ratify",
           method: "POST",
-          headers: { "content-type": "application/json", host: "evil.example" },
+          headers: {
+            "content-type": "application/json",
+            host: "evil.example",
+            "x-forge-token": token,
+          },
         },
         (res) => resolve(res.statusCode),
       );
@@ -471,6 +484,89 @@ test("serve: v2 endpoints answer 200 with their payloads", async () => {
 
     const memAll = await (await fetch(`${base}/api/claims`)).json();
     assert.equal(memAll.total, 3);
+  } finally {
+    server.close();
+  }
+});
+
+// Review 2026-09-26 — F13: every route checks Host; writes need the session token and the
+// EXACT origin (another localhost port is another site).
+const rawRequest = (port, { method = "GET", path = "/api/data", headers = {}, body } = {}) =>
+  new Promise((resolve) => {
+    const r = request({ host: "127.0.0.1", port, path, method, headers }, (res) => {
+      let data = "";
+      res.on("data", (c) => {
+        data += c;
+      });
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+    });
+    r.on("error", () => resolve({ status: -1 }));
+    r.end(body);
+  });
+
+test("F13: read routes refuse a foreign Host (DNS rebinding) and a wrong port", async () => {
+  const { root } = fixture();
+  const server = serve(root, { port: 0 });
+  await new Promise((resolve) => server.on("listening", resolve));
+  const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
+  try {
+    for (const path of ["/api/data", "/api/claims", "/api/timeline", "/"]) {
+      const evil = await rawRequest(port, {
+        path,
+        headers: { host: "attacker.invalid", origin: "http://attacker.invalid" },
+      });
+      assert.equal(evil.status, 403, `${path}: foreign Host must not read the ledger`);
+      assert.doesNotMatch(evil.body, /stats|ledger/i);
+    }
+    assert.equal(
+      (await rawRequest(port, { headers: { host: `localhost:${port + 1}` } })).status,
+      403,
+    );
+    assert.equal((await rawRequest(port, { headers: { host: `127.0.0.1:${port}` } })).status, 200);
+    assert.equal((await rawRequest(port, { headers: { host: `localhost:${port}` } })).status, 200);
+    const page = await rawRequest(port, { path: "/", headers: { host: `127.0.0.1:${port}` } });
+    assert.equal(
+      page.headers["x-frame-options"],
+      "DENY",
+      "the token-bearing page cannot be framed",
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("F13: writes need the session token AND this exact origin", async () => {
+  const { root, trusted } = fixture();
+  const server = serve(root, { port: 0 });
+  await new Promise((resolve) => server.on("listening", resolve));
+  const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
+  const token = /** @type {any} */ (server).dashToken;
+  const write = (headers) =>
+    rawRequest(port, {
+      method: "POST",
+      path: "/api/ratify",
+      headers: { host: `127.0.0.1:${port}`, "content-type": "application/json", ...headers },
+      body: JSON.stringify({ id: trusted.id.slice(0, 8) }),
+    });
+  try {
+    assert.equal((await write({})).status, 403, "no token → refused");
+    assert.equal((await write({ "x-forge-token": "0".repeat(48) })).status, 403, "wrong token");
+    assert.equal(
+      (await write({ "x-forge-token": token, origin: `http://localhost:${port + 1}` })).status,
+      403,
+      "an unrelated localhost origin/port cannot mutate claims",
+    );
+    assert.equal(
+      (await write({ "x-forge-token": token, origin: `https://127.0.0.1:${port}` })).status,
+      403,
+      "scheme is part of the origin",
+    );
+    assert.equal(
+      (await write({ "x-forge-token": token, "sec-fetch-site": "cross-site" })).status,
+      403,
+    );
+    const ok = await write({ "x-forge-token": token, origin: `http://127.0.0.1:${port}` });
+    assert.equal(ok.status, 200, `normal same-origin dashboard use still works: ${ok.body}`);
   } finally {
     server.close();
   }

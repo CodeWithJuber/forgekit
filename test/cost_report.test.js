@@ -284,7 +284,11 @@ test("estimateSpendFromLogs: live catalog price by id, family fallback, unknown 
     "an unknown Opus is priced as the Opus tier",
   );
   assert.equal(by["<synthetic>"].priced, false);
+  assert.equal(by["<synthetic>"].cost, null, "unpriced is unknown, not $0 (A10)");
   assert.deepEqual(est.unpriced, ["<synthetic>"], "never billed at a guessed $3/$15");
+  assert.equal(est.complete, false, "a total with an unpriced model is partial");
+  assert.equal(est.currency, "USD");
+  assert.match(est.basis, /estimate.*not an invoice/);
   assert.equal(t.calls.length, 1, "one catalog request per estimate, not one per model");
 });
 

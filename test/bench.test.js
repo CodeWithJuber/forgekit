@@ -2,15 +2,20 @@
 // start a benchmark run (it is main-module guarded), and this file never runs one —
 // the full bench is `npm run bench`, on demand, never in CI's test pass.
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
 import { test } from "node:test";
 import {
+  coldSketches,
+  expectTier,
   fmtMs,
   fmtRate,
   formatTable,
+  makeArtifacts,
   makeSpec,
   median,
   mulberry32,
   p95,
+  resolvedEvidenceRepo,
   timeIt,
 } from "../bench/bench.mjs";
 
@@ -74,4 +79,28 @@ test("mulberry32/makeSpec: deterministic fixtures — same seed, same spec, ever
   assert.equal(a.split(" ").length, 40);
   assert.notEqual(a, makeSpec(mulberry32(43), 40), "different seed diverges");
   assert.match(a, /^[a-z ]+$/, "prose-only tokens (no idents/paths/numbers/secrets)");
+});
+
+// Review 2026-09-26 — F14: a row labeled "exact"/"near" must exercise that tier. The old
+// fixture's untyped refs were capped below the serving floor, so every "hit" row timed a miss.
+test("bench fixtures: resolved evidence makes exact/near genuinely hit; a stale fixture aborts", () => {
+  const repo = resolvedEvidenceRepo();
+  try {
+    const { claims, specs } = makeArtifacts(20, { ref: `git:${repo.oid}` });
+    assert.equal(expectTier(claims, specs[10], "exact").tier, "exact");
+    assert.equal(expectTier(claims, `${specs[10]} gently`, "near").tier, "near");
+    const stale = makeArtifacts(20, { ref: "bench:artifact:0" });
+    assert.throws(
+      () => expectTier(stale.claims, stale.specs[10], "exact"),
+      /bench fixture invalid: expected a exact lookup, got miss/,
+    );
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+test("bench: coldSketches clears every cache the lookup path memoizes", () => {
+  const c = { _sketch: [1], _terms: new Set(), _specSketch: [2], _keySketch: [3] };
+  coldSketches([c]);
+  assert.deepEqual(Object.keys(c), []);
 });

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="forge-dash-token" content="__FORGE_DASH_TOKEN__" />
     <title>forge dash</title>
     <style>
       /* Taste discipline (07-ui-quality-gate.md): ONE accent (forge ember, the brand's
@@ -502,6 +503,7 @@
         <span class="mono">forge sync</span>, then work a session. Claims, cost,
         and trends fill in here as the substrate records what happens.
       </div>
+      <div id="read-errors" class="empty-banner" role="alert" hidden></div>
 
       <section class="panel wide legend" id="legend" hidden>
         <h2>What each panel means</h2>
@@ -803,16 +805,23 @@
         const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
         const spend = d.spend;
         const noData =
-          (!spend || spend.totalCost <= 0) && saved === 0 && events === 0;
+          (!spend || !(spend.totalCost > 0)) && saved === 0 && events === 0;
         if (noData) {
-          $("cost-stats").innerHTML =
-            '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>';
+          $("cost-stats").innerHTML = spend
+            ? '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>'
+            : '<div class="empty">spend unknown — no session logs were found (that is not $0)</div>';
         } else {
+          // An ESTIMATE (logged tokens × catalog prices, USD) — never labeled as a bill, and
+          // marked partial when some model had no price (review A10).
           $("cost-stats").innerHTML =
             (spend && spend.totalCost > 0
               ? '<span class="stat"><span class="n ember">$' +
                 spend.totalCost.toFixed(2) +
-                '</span><span class="l">real spend</span></span>' +
+                '</span><span class="l">est. spend (USD, logged tokens × list price' +
+                (spend.complete === false
+                  ? "; partial — " + (spend.unpriced?.length ?? 0) + " model(s) unpriced"
+                  : "") +
+                ")</span></span>" +
                 '<span class="stat"><span class="n">' +
                 spend.sessions +
                 '</span><span class="l">sessions</span></span>'
@@ -835,8 +844,10 @@
                 (m) =>
                   '<tr><td class="mono">' +
                   esc(m.model) +
-                  '</td><td class="num">$' +
-                  m.cost.toFixed(4) +
+                  '</td><td class="num">' +
+                  (m.priced === false || m.cost == null
+                    ? "unpriced"
+                    : "$" + m.cost.toFixed(4)) +
                   '</td><td class="num">' +
                   (m.inTokens || 0).toLocaleString() +
                   '</td><td class="num">' +
@@ -1147,6 +1158,15 @@
       function renderEmptyState(d) {
         const es = $("empty-state");
         if (es) es.hidden = !d?.meta?.empty;
+        // A store that could not be READ is not an empty one — say which, and why.
+        const re = $("read-errors");
+        const errs = d?.meta?.errors ?? [];
+        if (re) {
+          re.hidden = !errs.length;
+          re.textContent = errs.length
+            ? `Could not read: ${errs.map((e) => `${e.section} (${e.error})`).join("; ")} — the panels below are incomplete, not empty.`
+            : "";
+        }
       }
 
       async function refresh() {
@@ -1180,9 +1200,12 @@
           if (reason === null) return; // cancelled
           body.reason = reason;
         }
+        // The per-session write token the server embedded in this page (CSRF guard).
+        const token =
+          document.querySelector('meta[name="forge-dash-token"]')?.getAttribute("content") ?? "";
         const res = await fetch(`/api/${act}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-forge-token": token },
           body: JSON.stringify(body),
         });
         const r = await res.json().catch(() => ({}));

@@ -7,11 +7,17 @@
 // Here nothing is judged, reworded or invented:
 //  - MERGE: an exact duplicate (normalized text) or a near-duplicate (MinHash Jaccard ≥ τ,
 //    the ledger's own consolidation threshold, ledger.clusters) within one project
-//    collapses into its first occurrence.
+//    collapses into its first occurrence — but only when the semantic guard finds no
+//    behaviour-bearing difference (review F16): "Enable authentication…" and "Disable
+//    authentication…" overlap almost entirely and are OPPOSITE rules, so they are kept apart
+//    and reported as a conflict for a person to resolve.
 //  - DROP: only on ledger ground truth. A lesson is dropped when its best-matching ledger
-//    claim (lesson/fact, Jaccard ≥ τ against claimText) is dormant (ledger.isDormant: its
-//    oracle-evidenced val fell below DORMANT_VAL and no confirmation restored it),
-//    retracted (tombstoned), or archived to the ledger attic by `forge ledger prune`.
+//    claim (lesson/fact, Jaccard ≥ τ against claimText, and not reversed by polarity,
+//    operators, numbers or literals) is dormant (ledger.isDormant: its oracle-evidenced val
+//    fell below DORMANT_VAL and no confirmation restored it) or retracted (tombstoned). An
+//    ARCHIVED claim is not a refuted one (review F15): the attic also holds claims archived for
+//    idleness or as duplicates, so an attic claim refutes only when its own logs say so
+//    (tombstone/dormant), and a deduplicated one defers to the claim that survived it.
 //    A lesson with no matching claim is KEPT: absence of evidence is not refutation.
 // Claims are matched only within the lesson's project (a repo whose directory name is the
 // project), so a lesson refuted in one repo is not dropped from another.
@@ -30,7 +36,13 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claimText, isDormant, jaccard, sketch } from "./ledger.js";
-import { loadClaims, repoLedger } from "./ledger_store.js";
+import { archiveRecord, getClaimByPrefix, loadClaims, repoLedger } from "./ledger_store.js";
+import {
+  describeConflicts,
+  FLIP_KINDS,
+  sameSemantics,
+  semanticConflicts,
+} from "./semantic_guard.js";
 import { epochDay } from "./util.js";
 
 /** Same τ as ledger.clusters — "these two say the same thing". */
@@ -84,17 +96,31 @@ export function parseLearned(text) {
 /**
  * @typedef {{project: string, text: string}} Learned
  * @typedef {{id?: string, kind?: string, body?: any, tombstone?: any, attic?: boolean,
- *   project?: string}} LedgerClaim
+ *   archive?: {cause?: string, survivor?: string} | null, project?: string}} LedgerClaim
  */
 
-/** Why a claim refutes the lessons that match it, or null when it does not. */
-function refutation(claim, nowDay) {
-  if (claim.attic) return "archived to the ledger attic (dormant or retracted)";
+/**
+ * Why a claim refutes the lessons that match it, or null when it does not. Truth comes from
+ * the claim's own logs (a tombstone, or oracle evidence that made it dormant) — never from
+ * where it is stored: an archived claim that was merely idle refutes nothing, and one archived
+ * as a duplicate refutes only if the claim that survived it does (review F15).
+ * @param {LedgerClaim} claim
+ * @param {number} nowDay
+ * @param {Map<string, LedgerClaim>} [byId] every known claim, to follow a duplicate's survivor
+ * @param {number} [depth]
+ * @returns {string|null}
+ */
+function refutation(claim, nowDay, byId = new Map(), depth = 0) {
   if (claim.tombstone) return "retracted in the ledger";
   try {
     if (isDormant(claim, nowDay)) return "dormant in the ledger (oracle evidence refuted it)";
   } catch {}
-  return null;
+  if (claim.attic && claim.archive?.cause === "duplicate" && claim.archive.survivor && depth < 8) {
+    const survivor = byId.get(claim.archive.survivor);
+    const why = survivor ? refutation(survivor, nowDay, byId, depth + 1) : null;
+    return why ? `${why} (via the claim it was deduplicated into)` : null;
+  }
+  return null; // live, or archived for idleness / unknown reason: not a refutation
 }
 
 /**
@@ -103,26 +129,46 @@ function refutation(claim, nowDay) {
  * @param {{claims?: LedgerClaim[], nowDay?: number, tau?: number}} [opts] each claim may
  *   carry `project` (the repo directory name); a claim without one matches any project.
  * @returns {{kept: Learned[], merged: {text: string, into: string}[],
- *   dropped: {project: string, text: string, claim: string, reason: string}[]}}
+ *   dropped: {project: string, text: string, claim: string, reason: string}[],
+ *   conflicts: {project: string, text: string, other: string, conflicts: string}[]}}
  */
 export function consolidateLearned(
   entries,
   { claims = [], nowDay = epochDay(), tau = CONSOLIDATE_TAU } = {},
 ) {
+  const byId = new Map(claims.filter((c) => c?.id).map((c) => [String(c.id), c]));
   const usable = claims
     .filter((c) => c && (c.kind === "lesson" || c.kind === "fact"))
-    .map((c) => ({ c, s: sketch(claimText(c)), why: refutation(c, nowDay) }));
+    .map((c) => ({
+      c,
+      text: claimText(c),
+      s: sketch(claimText(c)),
+      why: refutation(c, nowDay, byId),
+    }));
   /** @type {(Learned & {s: any, n: string})[]} */
   const kept = [];
   const merged = [];
   const dropped = [];
+  /** @type {{project: string, text: string, other: string, conflicts: string}[]} */
+  const conflicts = [];
   for (const e of entries) {
     const text = String(e.text || "").trim();
     if (!text) continue;
     const project = e.project || GENERAL;
     const s = sketch(text);
     const n = norm(text);
-    const dup = kept.find((k) => k.project === project && (k.n === n || jaccard(k.s, s) >= tau));
+    // Similar is not the same (F16): a close pair that differs in polarity, operators,
+    // numbers, literals, identifiers or paths is two rules — keep both, report the conflict.
+    let dup = null;
+    for (const k of kept) {
+      if (k.project !== project || (k.n !== n && jaccard(k.s, s) < tau)) continue;
+      const differs = semanticConflicts(k.text, text);
+      if (!differs.length) {
+        dup = k;
+        break;
+      }
+      conflicts.push({ project, text, other: k.text, conflicts: describeConflicts(differs) });
+    }
     if (dup) {
       merged.push({ text, into: dup.text });
       continue;
@@ -131,7 +177,10 @@ export function consolidateLearned(
     for (const u of usable) {
       if (u.c.project && project !== GENERAL && u.c.project !== project) continue;
       const j = jaccard(u.s, s);
-      if (j >= tau && (!best || j > best.j)) best = { ...u, j };
+      // A claim saying the OPPOSITE (a flipped polarity/operator/number/literal) is not this
+      // lesson's evidence, however similar the words.
+      if (j >= tau && (!best || j > best.j) && sameSemantics(u.text, text, { kinds: FLIP_KINDS }))
+        best = { ...u, j };
     }
     if (best?.why) {
       dropped.push({
@@ -144,7 +193,12 @@ export function consolidateLearned(
     }
     kept.push({ project, text, s, n });
   }
-  return { kept: kept.map(({ project, text }) => ({ project, text })), merged, dropped };
+  return {
+    kept: kept.map(({ project, text }) => ({ project, text })),
+    merged,
+    dropped,
+    conflicts,
+  };
 }
 
 /**
@@ -182,10 +236,15 @@ export function ledgerClaimsFor(repos) {
       for (const c of loadClaims(dir)) out.push({ ...c, project });
     } catch {}
     try {
+      // Attic claims WITH their logs (evidence, tombstones) and the recorded archive reason —
+      // the raw JSON alone cannot tell an idle claim from a refuted one (F15).
       const attic = join(dir, "attic");
-      for (const f of existsSync(attic) ? readdirSync(attic) : [])
-        if (f.endsWith(".json"))
-          out.push({ ...JSON.parse(readFileSync(join(attic, f), "utf8")), attic: true, project });
+      for (const f of existsSync(attic) ? readdirSync(attic) : []) {
+        if (!f.endsWith(".json")) continue;
+        const id = f.replace(/\.json$/, "");
+        const view = getClaimByPrefix(dir, id, { attic: true });
+        if (view) out.push({ ...view, attic: true, archive: archiveRecord(dir, id), project });
+      }
     } catch {}
   }
   return out;
@@ -212,7 +271,7 @@ export function consolidateDir({
     ...(existsSync(join(dir, "CONSOLIDATED.md")) ? ["CONSOLIDATED.md"] : []),
     ...monthly,
   ];
-  const none = { kept: [], merged: [], dropped: [] };
+  const none = { kept: [], merged: [], dropped: [], conflicts: [] };
   if (!inputs.length) return { ok: true, row: "nothing", dir, inputs, ...none };
   const entries = inputs.flatMap((f) => parseLearned(readFileSync(join(dir, f), "utf8")));
   if (!entries.length) return { ok: true, row: "empty", dir, inputs, ...none };
@@ -242,6 +301,14 @@ export function renderReport(r) {
   ];
   for (const d of r.dropped.slice(0, 20))
     lines.push(`    - [${d.project}] ${d.text.slice(0, 80)} — ${d.reason} (claim ${d.claim})`);
+  const conflicts = r.conflicts ?? [];
+  if (conflicts.length) {
+    lines.push(`  kept apart — similar but conflicting (review these): ${conflicts.length}`);
+    for (const c of conflicts.slice(0, 20))
+      lines.push(
+        `    ! [${c.project}] ${c.text.slice(0, 60)} ↔ ${c.other.slice(0, 60)} — ${c.conflicts}`,
+      );
+  }
   return lines.join("\n");
 }
 

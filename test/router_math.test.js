@@ -193,3 +193,66 @@ test("cost: fitted per model; a model with only a price enters from the price ra
   const e = expectedCosts(c, [0]);
   assert.ok(e[1] > e[0] && e.every((v) => v > 0));
 });
+
+// Review 2026-09-26 — F11: a sparse fit must not invent a $1 intercept (one $0.05 attempt
+// used to predict ≈ $88.87).
+test("F11: sparse cost fits use the mean log cost and report their uncertainty", () => {
+  const one = fitCost([{ model: 0, x: [], cost: 0.05 }], 1, 0);
+  assert.equal(one.method, "mean-log");
+  assert.equal(one.s2Source, "prior");
+  assert.ok(Math.abs(one.alpha[0] - Math.log(0.05)) < 1e-12);
+  const e1 = expectedCosts(one, [])[0];
+  assert.ok(e1 > 0.05 && e1 < 0.1, `one observed $0.05 predicts ${e1}, not tens of dollars`);
+  assert.ok(one.alphaSE[0] > 0.5, "one observation is visibly uncertain");
+
+  const two = fitCost(
+    [
+      { model: 0, x: [1, 2], cost: 0.04 },
+      { model: 0, x: [3, 1], cost: 0.06 },
+    ],
+    2,
+    2,
+  );
+  assert.equal(two.method, "mean-log", "2 points cannot identify 1 intercept + 2 slopes");
+  assert.equal(two.s2Source, "pooled+prior");
+  assert.deepEqual(two.beta, [0, 0]);
+  assert.equal(two.alpha[1], null, "a cold model with no price stays unknown");
+  const e2 = expectedCosts(two, [5, 5]);
+  assert.ok(Number.isFinite(e2[0]) && e2[0] < 0.1);
+  assert.equal(e2[1], null);
+
+  const mixed = fitCost(
+    [
+      { model: 0, x: [], cost: 0 }, // a failed attempt with no recorded charge
+      { model: 0, x: [], cost: null }, // missing
+      { model: 0, x: [], cost: 0.02 },
+      { model: 9, x: [], cost: 1 }, // out of range
+    ],
+    1,
+    0,
+  );
+  assert.deepEqual(mixed.excluded, { zeroCost: 1, missingCost: 1, invalid: 1 });
+  assert.equal(mixed.n, 1);
+  assert.ok(Number.isFinite(expectedCosts(mixed, [])[0]));
+});
+
+// F12: all-infeasible input is unambiguous.
+test("F12: choose() reports infeasibility explicitly instead of a silent least-bad pick", () => {
+  const nodes = { P: [[0.6], [0.8]], weights: [1] };
+  const r = choose(nodes, [1, 2], [0, 1], parseObjective("budget:0.01"), 2);
+  assert.equal(r.feasible, false);
+  assert.equal(r.budgetMet, false);
+  assert.equal(r.minimumExpectedCost, 1);
+  assert.match(r.reason, /infeasible: no cascade's expected cost fits the budget/);
+  assert.equal(
+    r.maxPossibleCost,
+    r.seq.reduce((s, m) => s + [1, 2][m], 0),
+  );
+  const t = choose(nodes, [1, 2], [0, 1], parseObjective("target:0.999"), 2);
+  assert.equal(t.feasible, false);
+  assert.equal(t.targetMet, false);
+  const ok = choose(nodes, [1, 2], [0, 1], parseObjective("budget:5"), 2);
+  assert.equal(ok.feasible, true);
+  assert.equal(ok.budgetMet, true);
+  assert.ok(ok.maxPossibleCost >= ok.cost, "the worst case bounds the expectation");
+});

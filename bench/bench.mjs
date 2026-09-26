@@ -166,8 +166,32 @@ function fillLedger(dir, { count, offset = 0, evidenceEvery = 4 }) {
   }
 }
 
-/** n in-memory artifact claims, each with one test.run confirm so it clears SERVE_FLOOR. */
-function makeArtifacts(n) {
+/**
+ * A real git object to cite as evidence: a throwaway one-commit repo, and its full commit id,
+ * checked to resolve (`git cat-file -e`) — the same resolution appendEvidence performs. The
+ * old fixture cited `bench:artifact:<i>`, an untyped ref that val() caps below SERVE_FLOOR, so
+ * every "exact"/"near" row actually measured a MISS (review F14).
+ * @returns {{dir: string, oid: string}}
+ */
+export function resolvedEvidenceRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "forge-bench-git-"));
+  const g = (...args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "bench@example.invalid");
+  g("config", "user.name", "bench");
+  g("config", "commit.gpgsign", "false");
+  writeFileSync(join(dir, "fixture.txt"), "reuse bench fixture\n");
+  g("add", "-A");
+  g("commit", "-m", "bench fixture");
+  const oid = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  g("cat-file", "-e", oid); // throws if it does not resolve
+  return { dir, oid };
+}
+
+/** n in-memory artifact claims, each with one RESOLVED test.run confirm (a `git:` object id)
+ *  so it genuinely clears SERVE_FLOOR. `ref` overrides the evidence ref — a stale/unresolved
+ *  fixture for the validation self-test. */
+export function makeArtifacts(n, { ref }) {
   const rand = mulberry32(42);
   const claims = [];
   const specs = [];
@@ -179,22 +203,42 @@ function makeArtifacts(n) {
       0,
     );
     if (!minted.ok) throw new Error(minted.reason);
-    const o = outcomeRecord({
-      oracle: "test.run",
-      result: "confirm",
-      ref: `bench:artifact:${i}`,
-      author: "bench",
-      t: 0,
-    });
-    minted.claim.evidence = o.ok ? [o.outcome] : [];
+    const o = outcomeRecord({ oracle: "test.run", result: "confirm", ref, author: "bench", t: 0 });
+    if (!o.ok) throw new Error(`bench evidence rejected: ${o.reason}`);
+    minted.claim.evidence = [o.outcome];
     claims.push(minted.claim);
   }
   return { claims, specs };
 }
 
-const coldSketches = (claims) => {
-  for (const c of claims) delete c._sketch;
+/** Strip EVERY memoized sketch the lookup path caches — ledger.js's claim-text `_sketch`/
+ *  `_terms` and reuse.js's `_specSketch`/`_keySketch` — so a "cold" row behaves like a fresh
+ *  process. (It used to delete `_sketch` only, which reuse never reads.) */
+export const coldSketches = (claims) => {
+  for (const c of claims) {
+    delete c._sketch;
+    delete c._terms;
+    delete c._specSketch;
+    delete c._keySketch;
+  }
 };
+
+/**
+ * A row is only labeled with a tier it actually exercised: run the lookup once, untimed, and
+ * abort the benchmark unless the expected tier comes back (review F14).
+ * @param {any[]} claims
+ * @param {string} spec
+ * @param {"exact"|"near"|"adapt"|"miss"} tier
+ */
+export function expectTier(claims, spec, tier) {
+  coldSketches(claims);
+  const r = lookup(claims, spec);
+  if (r.tier !== tier)
+    throw new Error(
+      `bench fixture invalid: expected a ${tier} lookup, got ${r.tier}${r.reasons?.length ? ` (${r.reasons.slice(0, 2).join("; ")})` : ""}`,
+    );
+  return r;
+}
 
 // ---------------------------------------------------------------------------
 // The run
@@ -204,6 +248,17 @@ function environment() {
   let commit = "unknown";
   try {
     commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT }).toString().trim();
+    // Numbers measured on an uncommitted tree are not the numbers OF that commit — say so.
+    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: REPO_ROOT })
+      .toString()
+      .trim();
+    if (dirty) commit += " + uncommitted changes";
+  } catch {}
+  // The filesystem the tmpdir fixtures live on changes the disk-bound rows (A06).
+  let fsType = "unknown";
+  try {
+    if (platform() === "linux")
+      fsType = execFileSync("stat", ["-f", "-c", "%T", tmpdir()], { encoding: "utf8" }).trim();
   } catch {}
   return {
     node: process.version,
@@ -212,6 +267,7 @@ function environment() {
     memGB: Math.round(totalmem() / 2 ** 30),
     platform: platform(),
     arch: arch(),
+    fsType,
     commit,
     date: new Date().toISOString(),
   };
@@ -240,7 +296,7 @@ function runBenchmarks() {
       "atlas",
       "full build (this repo)",
       tFull,
-      `${atlas.files} files, ${atlas.symbols.length} symbols, ${atlas.edges.length} edges`,
+      `${atlas.files} files, ${atlas.symbols.length} symbols, ${atlas.edges.length} edges${atlas.capped ? `, CAPPED at ${atlas.cap} files` : `, cap ${atlas.cap ?? "none"} not reached`}`,
     );
     const tIncr = timeIt(
       () => {
@@ -335,10 +391,17 @@ function runBenchmarks() {
       tFp,
       fmtRate(fpSpecs.length / (tFp.median / 1000)),
     );
+    const evidence = resolvedEvidenceRepo();
+    cleanup.push(evidence.dir);
     for (const n of [100, 1000]) {
-      const { claims, specs } = makeArtifacts(n);
+      const { claims, specs } = makeArtifacts(n, { ref: `git:${evidence.oid}` });
       const exactQ = specs[n >> 1];
       const nearQ = `${specs[n >> 1]} gently`; // superset tokens → Jaccard ≈ 0.97 → near tier
+      const missQ = "configure the blue ocean lighthouse keeper rotation schedule";
+      // Validate BEFORE timing: each row must exercise the tier it is labeled with.
+      expectTier(claims, exactQ, "exact");
+      expectTier(claims, nearQ, "near");
+      expectTier(claims, missQ, "miss");
       let hit = null;
       const tExact = timeIt(
         () => {
@@ -347,7 +410,14 @@ function runBenchmarks() {
         },
         { runs: 10, warmup: 2 },
       );
-      push("reuse", `lookup exact @ ${n} artifacts`, tExact, `tier=${hit.tier}`);
+      push("reuse", `lookup exact hit, cold @ ${n} artifacts`, tExact, `tier=${hit.tier}`);
+      const tExactWarm = timeIt(
+        () => {
+          hit = lookup(claims, exactQ); // memoized sketches kept: a long-lived process
+        },
+        { runs: 10, warmup: 2 },
+      );
+      push("reuse", `lookup exact hit, warm @ ${n} artifacts`, tExactWarm, `tier=${hit.tier}`);
       const tNear = timeIt(
         () => {
           coldSketches(claims);
@@ -357,10 +427,18 @@ function runBenchmarks() {
       );
       push(
         "reuse",
-        `lookup near (LSH) @ ${n} artifacts`,
+        `lookup near hit (LSH), cold @ ${n} artifacts`,
         tNear,
         `tier=${hit.tier}, j=${hit.jaccard?.toFixed(2) ?? "-"}`,
       );
+      const tMiss = timeIt(
+        () => {
+          coldSketches(claims);
+          hit = lookup(claims, missQ);
+        },
+        { runs: 5, warmup: 1 },
+      );
+      push("reuse", `lookup miss, cold @ ${n} artifacts`, tMiss, `tier=${hit.tier}`);
     }
 
     // --- context: assemble() on this repo for a representative task ----------------
@@ -409,17 +487,27 @@ const RESULT_HEADERS = ["suite", "benchmark", "median", "p95", "runs", "notes"];
 const QUALITY_HEADERS = ["case (target)", "precision", "recall", "F1", "predicted", "truth"];
 const SERIES_HEADERS = ["series", "precision", "recall", "F1", "ground truth"];
 
-/** Paper prototype vs this repo — two different methodologies, side by side and
- *  labeled, NEVER averaged or blended. The paper row is a constant from the
- *  whitepaper (Figure 5 / deliverable-package.md), not something this harness ran. */
+/** Paper prototype vs this repo — different methodologies, side by side and labeled,
+ *  NEVER averaged or blended. The two paper rows are constants, not something this harness
+ *  ran: the self-built demo (whitepaper Figure 5 / deliverable-package.md), which the
+ *  pre-registered field study REFUTED, and that field study's own result on real co-change
+ *  data (research/empirical-refutation; recomputed by the 2026-09-26 external review). The
+ *  regex atlas measured below is a different (Node) graph — not the evaluated Python oracle. */
 export function seriesRows(quality) {
   return [
     [
-      "paper prototype (Python, mutation-derived)",
+      "paper prototype, self-built demo (REFUTED)",
       "0.63",
       "1.00",
       "0.75",
-      "mutation testing against a real suite",
+      "mutation testing on the authors' own fixture",
+    ],
+    [
+      "paper prototype, field study (pooled, 9 repos)",
+      "0.40",
+      "0.02",
+      "0.04",
+      "759 files' mined co-change (research/empirical-refutation)",
     ],
     [
       "this repo (regex atlas, hand-labeled)",
@@ -475,7 +563,7 @@ function resultsMarkdown(env, rows, quality) {
     "",
     `Edited-file-only baseline recall over the same cases: **${quality.baseline.recall.toFixed(2)}**.`,
     "",
-    "Two methodologies, side by side — different codebases, different ground-truth",
+    "Different methodologies, side by side — different codebases, different ground-truth",
     "derivations, so the rows are comparable in spirit only and are never blended:",
     "",
     formatTable(SERIES_HEADERS, seriesRows(quality), { markdown: true }),

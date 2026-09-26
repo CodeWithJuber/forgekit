@@ -350,6 +350,11 @@ HANDLERS.stack = async (argv) => {
   row("frameworks", s.frameworks);
   row("pkg mgrs", s.packageManagers);
   row("test", s.testCommands);
+  // Runners that are only installed (a devDependency) are inventory, never a required suite.
+  row(
+    "available",
+    (s.testInventory ?? []).filter((c) => !s.testCommands.includes(c)),
+  );
   row("tools", s.tools);
   row("notes", s.notes);
   console.log(`  ${"evidence:".padEnd(11)} ${s.evidence.join(", ")}`);
@@ -758,13 +763,16 @@ HANDLERS.ledger = async (argv) => {
     // --fix re-addresses claims still stored under their pre-CRLF-fold id. Reads accept
     // that address either way, so this is not a repair — it is what stops one fact living
     // at two addresses once a teammate on another platform mints its current form.
-    const migration = args.includes("--fix") ? ls.migrateAddresses(dir) : null;
+    // `--fix --dry-run` previews the migration without writing (A11).
+    const migration = args.includes("--fix")
+      ? ls.migrateAddresses(dir, { dryRun: argv.includes("--dry-run") })
+      : null;
     const r = ls.verify(dir);
     if (json) return console.log(JSON.stringify(migration ? { ...r, migration } : r, null, 2));
     if (migration) {
       const { migrated, merged, failed } = migration;
       console.log(
-        `  migrated ${migrated.length} claim(s) to their current address, merged ${merged.length} into an existing twin${failed.length ? `, ${failed.length} failed` : ""}`,
+        `  ${migration.dryRun ? "(dry run) would migrate" : "migrated"} ${migrated.length} claim(s) to their current address, ${migration.dryRun ? "would merge" : "merged"} ${merged.length} into an existing twin${failed.length ? `, ${failed.length} failed` : ""}`,
       );
     }
     console.log(`  ${r.ok ? "OK" : "ISSUES"} — ${r.claims} claim(s), ${r.outcomes} outcome(s)`);
@@ -931,6 +939,16 @@ HANDLERS.ledger = async (argv) => {
     ];
     for (const a of r.archive.slice(0, 20)) lines.push(`    ${a.id.slice(0, 12)}  ${a.reason}`);
     if (r.archive.length > 20) lines.push(`    … ${r.archive.length - 20} more (--json for all)`);
+    // Similar-but-opposite pairs are never archived as duplicates (review F16): a person decides.
+    const conflicts = d?.conflicts ?? [];
+    if (conflicts.length) {
+      lines.push(
+        "",
+        `  kept apart — similar but conflicting (review, then retract one): ${conflicts.length}`,
+      );
+      for (const c of conflicts.slice(0, 10))
+        lines.push(`    ${c.a.slice(0, 12)} ↔ ${c.b.slice(0, 12)}  ${c.conflicts}`);
+    }
     lines.push(
       "",
       dryRun
@@ -1180,6 +1198,8 @@ HANDLERS.reuse = async (argv) => {
             jaccard: r.jaccard,
             similarity: r.similarity,
             sim: r.sim,
+            revalidation: r.revalidation?.status,
+            requiresRevalidation: r.requiresRevalidation === true,
             reasons: r.reasons,
           },
           null,
@@ -1197,8 +1217,14 @@ HANDLERS.reuse = async (argv) => {
       console.log(
         `    claim ${a.id.slice(0, 12)} — \`forge ledger blame ${a.id.slice(0, 8)}\` for its proof`,
       );
+      if (r.tier === "near")
+        console.log("    near tier: a reworded match — review the diff before reusing it as-is");
       if (r.tier === "adapt")
         console.log("    adapt tier: inject as a verified starting point, generate only the delta");
+      if (r.requiresRevalidation)
+        console.log(
+          `    NOT revalidated: ${(r.revalidation?.unknown ?? []).join(", ")} — check before use`,
+        );
     }
     for (const why of r.reasons) console.log(`    note: ${why}`);
     return;
@@ -1215,7 +1241,9 @@ HANDLERS.reuse = async (argv) => {
       return;
     }
     const { repoLedger } = await import("./ledger_store.js");
-    const desc = ru.describeFile(root, file);
+    // With an atlas, each dependency's declaration is fingerprinted, so a later signature
+    // change invalidates the artifact (review F05).
+    const desc = ru.describeFile(root, file, { atlas: loadAtlas(root) });
     const r = ru.mintArtifact(
       repoLedger(root),
       { spec, form: "module", ...desc },
@@ -1282,11 +1310,14 @@ HANDLERS.context = async (argv) => {
     nowDay: epochDay(),
     ...(budget ? { budget } : {}),
   });
+  // --block delivers the assembled context itself — the spans the summary talks about (R13).
+  const withBlock = argv.includes("--block");
   if (json) {
     const { block, ...rest } = r;
-    return console.log(JSON.stringify(rest, null, 2));
-  }
-  console.log(renderContext(r));
+    console.log(JSON.stringify(withBlock ? r : rest, null, 2));
+  } else if (withBlock) {
+    console.log(r.block);
+  } else console.log(renderContext(r));
   if (!r.ok) process.exitCode = 1;
   return;
 };
@@ -1512,12 +1543,22 @@ HANDLERS.verify = async (argv) => {
     );
   if (t.notExecuted?.length)
     console.log(`  suites skipped:   ${t.notExecuted.join(", ")} (no built-in executor)`);
+  // Coverage (review F08): which package dirs the verdict actually speaks for.
+  const cov = t.coverage;
+  if (cov && cov.required.length > 1)
+    console.log(
+      `  packages:         ${cov.covered.length}/${cov.required.length} covered${
+        cov.uncovered.length ? ` — no verdict for ${cov.uncovered.join(", ")}` : ""
+      }${cov.excluded.length ? ` (${cov.excluded.length} excluded)` : ""}`,
+    );
+  if (t.mutated)
+    console.log("  ! the code changed while the tests ran — the verdict is not bound to it");
   console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
   if (r.unknown.length)
     console.log(
       `  ! not in codebase (possible hallucination): ${r.unknown.slice(0, 12).join(", ")}`,
     );
-  console.log(`  provenance:       .forge/provenance.json`);
+  console.log(`  provenance:       .forge/provenance.json (run ${r.provenance.event?.runId})`);
   // BLOCKED is reserved for a runner that actually FAILED; anything that never ran
   // to completion is NOT VERIFIED (still exit 1 — unverified is not a pass).
   const verdict = r.ok
@@ -2204,7 +2245,15 @@ async function routeUniversalCli(argv) {
   const { loadRegistry } = await import("./router/registry.js");
   const json = argv.includes("--json");
   const val = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
-  const VALUED = new Set(["--objective", "--provider", "--model", "--cost", "--depth"]);
+  const VALUED = new Set([
+    "--objective",
+    "--provider",
+    "--model",
+    "--cost",
+    "--depth",
+    "--attempt",
+    "--verify-run",
+  ]);
   const words = argv
     .slice(1)
     .filter((a, i, arr) => !a.startsWith("--") && !VALUED.has(arr[i - 1] ?? ""));
@@ -2246,7 +2295,7 @@ async function routeUniversalCli(argv) {
   if (!task) {
     console.error(
       'usage: forge route universal "<task>" [--objective match-best-single|target:<p>|value:<$>|budget:<$>] [--provider <name>|any] [--depth <n>] [--json]\n' +
-        '       forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>]\n' +
+        '       forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>] [--attempt <id>] [--verify-run <run id>]\n' +
         "       forge route fit | forge route models",
     );
     process.exitCode = 1;
@@ -2256,10 +2305,19 @@ async function routeUniversalCli(argv) {
     const passed = argv.includes("--pass") ? true : argv.includes("--fail") ? false : undefined;
     const cost = val("--cost") !== undefined ? Number(val("--cost")) : null;
     try {
-      const row = U.recordOutcome(root, { task, model: val("--model"), passed, cost });
+      const row = U.recordOutcome(root, {
+        task,
+        model: val("--model"),
+        passed,
+        cost,
+        attemptId: val("--attempt") ?? null,
+        verifyRunId: val("--verify-run") ?? null,
+      });
       if (json) return console.log(JSON.stringify(row, null, 2));
       console.log(
-        `  recorded ${row.model} ${row.passed ? "pass" : "fail"} for task ${row.task} (.forge/route_outcomes.jsonl)`,
+        row.duplicate
+          ? `  attempt ${row.attemptId} was already recorded — not counted twice`
+          : `  recorded ${row.model} ${row.passed ? "pass" : "fail"} (${row.provenance}) for task ${row.task} (.forge/route_outcomes.jsonl)`,
       );
     } catch (e) {
       console.error(`  ${e.message}`);
@@ -2279,9 +2337,19 @@ async function routeUniversalCli(argv) {
     process.exitCode = 1;
     return;
   }
-  if (json) return console.log(JSON.stringify(rec, null, 2));
+  if (json) {
+    console.log(JSON.stringify(rec, null, 2));
+    if (!rec.ok) process.exitCode = 1;
+    return;
+  }
   if (!rec.ok) {
-    console.error(`  ${rec.reason}`);
+    console.error(`  ${rec.feasible === false ? "INFEASIBLE — " : ""}${rec.reason}`);
+    // F12: the least-bad cascade is shown only as an explicit, labeled fallback.
+    const fb = rec.fallback;
+    if (fb)
+      console.error(
+        `  fallback (does NOT meet the objective): ${fb.cascade.map((c) => c.model).join(" → ")} · P(success) ${fb.pSuccess.toFixed(2)} · expected $${fb.expectedCost.toFixed(3)} (up to $${fb.maxPossibleCost.toFixed(3)} if every attempt runs)`,
+      );
     process.exitCode = 1;
     return;
   }
@@ -2294,7 +2362,7 @@ async function routeUniversalCli(argv) {
     );
   });
   console.log(
-    `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
+    `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} (not a cap; up to $${rec.maxPossibleCost.toFixed(3)} if every attempt runs) · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
   );
   console.log(
     `  ${rec.candidates} candidate model(s), ${rec.cascadesEvaluated} cascade(s) compared · fit: ${rec.fit.origin}`,
@@ -2532,7 +2600,7 @@ HANDLERS.imagine = async (argv) => {
     } catch {} // not a repo / no git → dryRun reports its own precondition failure
     if (dirty) {
       console.error(
-        "\n  imagine --run refused: the working tree is dirty and the sandbox runs HEAD,\n" +
+        "\n  imagine --run refused: the working tree is dirty and the isolated checkout runs HEAD,\n" +
           "  so your uncommitted changes would NOT be in the dry-run. Commit or stash them,\n" +
           "  or pass --allow-dirty to knowingly measure the last commit instead.",
       );
@@ -2564,7 +2632,9 @@ HANDLERS.imagine = async (argv) => {
     process.exitCode = 1;
     return;
   }
-  console.log(`\n  dry-run (sandboxed worktree of HEAD · ${d.runner}):`);
+  console.log(
+    `\n  dry-run (isolated checkout of HEAD — not a security sandbox · ${d.runner ?? "node --test"}):`,
+  );
   console.log(
     `    pass ${d.passed} · fail ${d.failed} · ${d.durationMs}ms · worktree ${d.worktree}`,
   );

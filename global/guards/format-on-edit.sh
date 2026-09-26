@@ -17,9 +17,19 @@ fpath="$(forge_field file_path)"
 have() { command -v "$1" >/dev/null 2>&1; }
 run()  { "$@" >/dev/null 2>&1 || true; }
 
+# A project that formats with Biome must never be rewritten by a global prettier: the two
+# disagree (line width, object wrapping), so every edit churned the whole file. Biome owns
+# the files it is configured for; everything else (markdown included) is left alone.
+biome_project() { [ -f "biome.json" ] || [ -f "biome.jsonc" ]; }
+
 case "$fpath" in
   *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.json|*.css|*.scss|*.md|*.html|*.yaml|*.yml)
-    if have npx && [ -f "package.json" ]; then run npx --no-install prettier --write "$fpath"; fi
+    if biome_project; then
+      case "$fpath" in
+        *.md|*.html|*.yaml|*.yml) ;;
+        *) if have npx && [ -x "node_modules/.bin/biome" ]; then run npx --no-install biome format --write "$fpath"; fi ;;
+      esac
+    elif have npx && [ -f "package.json" ]; then run npx --no-install prettier --write "$fpath"; fi
     ;;
   *.py)
     if have ruff; then run ruff format "$fpath"; run ruff check --fix "$fpath";

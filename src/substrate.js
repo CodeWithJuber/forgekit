@@ -378,6 +378,8 @@ export function substrateCheck(
             }
           : undefined,
         jaccard: r.jaccard,
+        // F05: "unknown" (no fresh atlas) is not "checked" — say so rather than imply it.
+        ...(r.requiresRevalidation ? { requiresRevalidation: true } : {}),
       };
     } catch {
       return { tier: "miss" }; // cache trouble must never block the gate
@@ -412,11 +414,20 @@ export function substrateCheck(
     route,
     entities,
     reuse,
+    // P4 context: only the explicit gate assembles (file reads are too heavy for the
+    // per-prompt hook), so the ambient path reports `context: null` rather than a guess. The
+    // summary carries the honest delivery state (review F02/F03, R13): `ok` = every required
+    // item DELIVERED within budget; pointers are `pending` reads; `overflow` = the budget
+    // could not hold the required set. The assembled block itself is `forge context`'s job.
     context: context && {
       ok: context.ok,
       tokens: context.tokens,
       budget: context.budget,
+      tokenEstimate: context.tokenEstimate,
+      overflow: context.overflow,
       required: context.required.length,
+      covered: context.covered.length,
+      pending: context.pending,
       missing: context.missing,
       questions: context.questions,
     },
@@ -620,17 +631,30 @@ export function renderSubstrate(result) {
   if (result.route.reasons.length) lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
   if (result.reuse && result.reuse.tier !== "miss") {
     const a = result.reuse.artifact;
+    // exact = the same text; near = a reworded neighbour (review the diff); adapt = a starting
+    // point only. None is re-verified against the current tree unless revalidation says so.
+    const how =
+      result.reuse.tier === "exact"
+        ? "start from it, don't regenerate"
+        : result.reuse.tier === "near"
+          ? "reworded match — review the diff before reusing"
+          : "a starting point only — generate the delta";
     lines.push(
       "",
-      `  reuse: ${result.reuse.tier.toUpperCase()} hit — verified ${a?.form ?? "artifact"}${a?.path ? ` at ${a.path}` : ""} (\`forge ledger show ${a?.id.slice(0, 8)}\`) — start from it, don't regenerate`,
+      `  reuse: ${result.reuse.tier.toUpperCase()} hit — verified ${a?.form ?? "artifact"}${a?.path ? ` at ${a.path}` : ""} (\`forge ledger show ${a?.id.slice(0, 8)}\`) — ${how}${
+        result.reuse.requiresRevalidation ? " (not revalidated against the current tree)" : ""
+      }`,
     );
   }
   if (result.context) {
+    const c = result.context;
+    const state = c.ok ? "complete" : c.overflow ? "OVER BUDGET" : "INCOMPLETE";
     lines.push(
       "",
-      `  context: ${result.context.ok ? "complete" : "INCOMPLETE"} — ${result.context.required} required item(s), ${result.context.tokens}/${result.context.budget} tokens (\`forge context\` for the assembly)`,
+      `  context: ${state} — ${c.covered ?? "?"}/${c.required} required item(s) delivered, ${c.tokens}/${c.budget} tokens est. (\`forge context\` for the assembly)`,
     );
-    for (const q of result.context.questions ?? []) lines.push(`    ? ${q}`);
+    if (c.pending?.length) lines.push(`    pending reads: ${c.pending.slice(0, 6).join(", ")}`);
+    for (const q of c.questions ?? []) lines.push(`    ? ${q}`);
   }
   if (result.impact.atlasFresh === false) {
     lines.push("", "  impact: unavailable — atlas missing or stale (predictions not trustworthy)");

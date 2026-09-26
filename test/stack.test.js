@@ -96,7 +96,7 @@ test("empty repo → empty but safe; corrupt manifest never throws", () => {
   assert.doesNotThrow(() => detectStack(root));
 });
 
-test("testRunners: structured descriptors alongside UNCHANGED testCommands strings", () => {
+test("testRunners: an explicit test script is the suite; a runner dependency is inventory (F09)", () => {
   const root = tmp();
   writeFileSync(
     join(root, "package.json"),
@@ -107,15 +107,35 @@ test("testRunners: structured descriptors alongside UNCHANGED testCommands strin
   );
   writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
   const s = detectStack(root);
-  // strings: back-compat surface, byte-identical to before
-  assert.deepEqual(s.testCommands, ["npx vitest", "pnpm test"]);
+  // The declared script already runs vitest: the dependency is NOT a second obligation.
+  assert.deepEqual(s.testCommands, ["pnpm test"]);
+  assert.deepEqual(s.testInventory, ["npx vitest", "pnpm test"], "still visible as inventory");
   // descriptors: the DETECTED package manager, structured for a shell-free spawn
   assert.deepEqual(
     s.testRunners.find((r) => r.label === "pnpm test"),
     { bin: "pnpm", args: ["test"], label: "pnpm test" },
   );
-  const npx = s.testRunners.find((r) => r.label === "npx vitest");
+  assert.equal(
+    s.testRunners.find((r) => r.label === "npx vitest"),
+    undefined,
+  );
+
+  // With NO declared script, the installed runner stands in as the (report-only) suite.
+  const bare = tmp();
+  writeFileSync(join(bare, "package.json"), JSON.stringify({ devDependencies: { vitest: "2" } }));
+  const b = detectStack(bare);
+  const npx = b.testRunners.find((r) => r.label === "npx vitest");
   assert.ok(npx && !npx.bin, "npx detections stay label-only — forge never executes npx");
+
+  // npm's `npm init` placeholder is not a suite.
+  const placeholder = tmp();
+  writeFileSync(
+    join(placeholder, "package.json"),
+    JSON.stringify({
+      scripts: { test: 'echo "Error: no test specified" && exit 1' },
+    }),
+  );
+  assert.deepEqual(detectStack(placeholder).testCommands, []);
 
   const go = tmp();
   writeFileSync(join(go, "go.mod"), "module x\n\ngo 1.22\n");

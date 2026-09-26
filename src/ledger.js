@@ -300,6 +300,53 @@ const recordStrength = (e) =>
     ? "format"
     : refStrength(e.ref, e.oracle);
 
+/**
+ * Evidence EVENTS, not records (review F06). Two records that cite the same underlying event
+ * are one piece of evidence, however they are spelled: the same oracle + result on one git
+ * object cited as a 7-, 8-, 9- or 40-character id (an abbreviation is a PREFIX of the full id,
+ * case-insensitive), or the same typed ref re-recorded later, by another author, or re-imported.
+ * Record-level dedupe (content hash) never caught these, so four aliases of one commit lifted a
+ * lesson from 0.655 to 0.821 — across the 0.8 required-lesson bar — with one real event.
+ * The EARLIEST record (by (t, h)) represents the event, so re-citing an old event can neither
+ * add weight nor refresh its decay clock. Contradicting records are a different event from
+ * confirming ones (a flip-flopping oracle is evidence of both). Pure and deterministic —
+ * identical on every replica after any merge order.
+ * @param {any[]} evidence
+ * @returns {any[]} the representative record of each distinct event, in (t, h) order
+ */
+export function evidenceEvents(evidence) {
+  const kept = [];
+  const exact = new Set();
+  /** @type {{oracle:string, result:string, oid:string}[]} */
+  const gitKeys = [];
+  for (const e of sortRecords((evidence ?? []).filter(validOutcome))) {
+    const m = /^git:([0-9a-f]{7,64})$/i.exec(String(e.ref));
+    if (m) {
+      const oid = m[1].toLowerCase();
+      const same = gitKeys.find(
+        (k) =>
+          k.oracle === e.oracle &&
+          k.result === e.result &&
+          (k.oid.startsWith(oid) || oid.startsWith(k.oid)),
+      );
+      if (same) {
+        // keep the longest spelling as the group's identity, so a DIFFERENT object that merely
+        // shares a short prefix is not swallowed once the full id is known
+        if (oid.length > same.oid.length) same.oid = oid;
+        continue;
+      }
+      gitKeys.push({ oracle: e.oracle, result: e.result, oid });
+      kept.push(e);
+      continue;
+    }
+    const key = `${e.oracle}\u0000${e.result}\u0000${e.ref}`;
+    if (exact.has(key)) continue;
+    exact.add(key);
+    kept.push(e);
+  }
+  return kept;
+}
+
 /** Weight multiplier applied to merely-format-valid (unresolved) evidence in val(). */
 export const UNRESOLVED_WEIGHT = 0.5;
 /** A claim whose confirming evidence is ALL format-only may never be lifted to/above the
@@ -360,10 +407,18 @@ export function validOutcome(e) {
       (e.result === "confirm" || e.result === "contradict") &&
       typeof e.ref === "string" &&
       e.ref &&
+      e.ref.length <= MAX_REF_LENGTH &&
       validateRef(e.ref).ok &&
+      // A record's day must be a finite number (or absent): a NaN/Infinity/string `t` from an
+      // imported or hand-edited line would otherwise poison the decay arithmetic (review A04).
+      (e.t === undefined || Number.isFinite(e.t)) &&
+      (e.author === undefined || typeof e.author === "string") &&
       e.h,
   );
 }
+
+/** Longest evidence ref accepted — a pointer, not a payload. */
+export const MAX_REF_LENGTH = 2048;
 
 // Weight comes from the ORACLES table — a stored `w` is audit metadata, never trusted
 // (a hand-edited or forged log line must not be able to buy extra confidence).
@@ -384,6 +439,9 @@ const decayed = (outcome, nowDay, halfLife) =>
  * appender's earned reliability. Pure function of (evidence set, trust map) ⇒
  * identical after any merge order.
  *
+ * Evidence is counted per EVENT, not per record (evidenceEvents, review F06): an abbreviated
+ * and a full id of one git object, or one ref re-recorded, count once.
+ *
  * Resolution strength (ME-05/C2): evidence forge did not resolve (anything but a `git:`
  * object id or a bridge pointer — see refStrength) counts at UNRESOLVED_WEIGHT, and a claim
  * with NO resolved confirmation is capped at UNRESOLVED_VAL_CAP so `lgtm`,
@@ -397,8 +455,8 @@ export function val(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS, trus
   let confirms = 0;
   let all = 0;
   let resolvedConfirm = false;
-  for (const e of claim.evidence ?? []) {
-    if (!validOutcome(e)) continue;
+  // One event, one vote (F06): aliases and re-records of an event count once.
+  for (const e of evidenceEvents(claim.evidence)) {
     const resolved = recordStrength(e) === "resolved";
     const strength = resolved ? 1 : UNRESOLVED_WEIGHT;
     const d = decayed(e, nowDay, halfLife) * (trust?.[e.author ?? ""] ?? 1) * strength;
@@ -429,8 +487,8 @@ export function authorTrust(claims) {
     const author = claim.provenance?.author ?? "";
     if (!author) continue;
     const t = tally.get(author) ?? { c: 0, m: 0 };
-    for (const e of claim.evidence ?? []) {
-      if (!validOutcome(e) || (e.author ?? "") === author) continue;
+    for (const e of evidenceEvents(claim.evidence)) {
+      if ((e.author ?? "") === author) continue;
       const w = ORACLES[e.oracle].w;
       if (e.result === "confirm") t.c += w;
       else t.m += w;
@@ -465,7 +523,7 @@ export function rec(claim, nowDay = 0, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {
  * @returns {{t:number, v:number, result:string}[]}
  */
 export function valTimeline(claim, { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
-  const evs = sortRecords((claim.evidence ?? []).filter(validOutcome));
+  const evs = evidenceEvents(claim.evidence);
   return evs.map((e, i) => ({
     t: e.t ?? 0,
     result: e.result,

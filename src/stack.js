@@ -82,7 +82,19 @@ const hasAnyDep = (names, pairs) => {
   return [...new Set(out)];
 };
 
-function detectNode(root, add) {
+// The script `npm init` writes. It is a placeholder, not a suite: running it "fails" every
+// time, which would turn every freshly-initialised workspace package into a false FAIL.
+const NPM_PLACEHOLDER_TEST = /no test specified/;
+
+/** The package's declared `scripts.test`, or null when absent or npm's placeholder. */
+export function declaredTestScript(pkg) {
+  const script = pkg?.scripts?.test;
+  return typeof script === "string" && script.trim() && !NPM_PLACEHOLDER_TEST.test(script)
+    ? script
+    : null;
+}
+
+function detectNode(root, add, { pmRoot = root } = {}) {
   const pkg = readJson(root, "package.json");
   if (!pkg) return;
   add.language("JavaScript/TypeScript");
@@ -92,20 +104,31 @@ function detectNode(root, add) {
   if (existsSync(join(root, "tsconfig.json")) || names.some((n) => n === "typescript"))
     add.language("TypeScript");
   for (const f of hasAnyDep(names, NODE_FRAMEWORKS)) add.framework(f);
-  // npx-based runner detections stay label-only: forge must never EXECUTE npx (it can
-  // download arbitrary packages), so no bin/args descriptor is emitted for them.
-  for (const t of hasAnyDep(names, NODE_TEST)) add.runner({ label: runnerCmd(root, t) });
   // package manager from the lockfile present
   if (existsSync(join(root, "pnpm-lock.yaml"))) add.pm("pnpm");
   else if (existsSync(join(root, "yarn.lock"))) add.pm("yarn");
   else if (existsSync(join(root, "bun.lockb"))) add.pm("bun");
   else if (existsSync(join(root, "package-lock.json"))) add.pm("npm");
+  // A runner found in the dependencies is INVENTORY — a tool that is available — not a
+  // suite someone declared (review F09). With an explicit `scripts.test`, that script IS
+  // the suite (`"test": "vitest run"` already runs vitest), so the dependency must not
+  // become a second, report-only obligation that turns a passing run INCOMPLETE. Only
+  // when nothing is declared does an installed runner stand in as the (report-only)
+  // suite. npx-based detections stay label-only either way: forge never EXECUTES npx (it
+  // can download arbitrary packages), so no bin/args descriptor is emitted for them.
+  const script = declaredTestScript(pkg);
+  for (const t of hasAnyDep(names, NODE_TEST)) {
+    const label = runnerCmd(pmRoot, t);
+    if (script) add.inventory(label);
+    else add.runner({ label });
+  }
   // an explicit test script beats guessing — executable via the DETECTED package manager
-  if (pkg.scripts?.test)
+  // (a workspace package uses the monorepo root's lockfile, hence pmRoot)
+  if (script)
     add.runner({
-      bin: pmRun(root),
+      bin: pmRun(pmRoot),
       args: ["test"],
-      label: `${pmRun(root)} test`,
+      label: `${pmRun(pmRoot)} test`,
     });
 }
 
@@ -345,8 +368,10 @@ function workspaceGlobs(root) {
 // Bounded BFS for nested package roots below `root`. Returns POSIX-relative dir paths,
 // deduped and sorted. Never descends past MONO_MAX_DEPTH, never stats more than
 // MONO_SCAN_BUDGET dirs, never returns more than MONO_MAX_ROOTS — so a giant repo is
-// sampled, never fully walked. Fail-safe: an unreadable dir is skipped.
-function nestedPackageRoots(root) {
+// sampled, never fully walked. Fail-safe: an unreadable dir is skipped. `truncated` says
+// the walk stopped early (budget or root cap): the list is then a SAMPLE, and nothing may
+// claim every package was covered (review F08).
+function scanPackageRoots(root) {
   const found = [];
   let budget = MONO_SCAN_BUDGET;
   /** @type {{dir:string, rel:string, depth:number}[]} */
@@ -376,7 +401,53 @@ function nestedPackageRoots(root) {
     if (WORKSPACE_MANIFESTS.some((m) => existsSync(join(dir, m)))) found.push(rel);
     enqueueChildren(dir, rel, depth + 1);
   }
-  return [...new Set(found)].sort();
+  return { roots: [...new Set(found)].sort(), truncated: queue.length > 0 };
+}
+
+/**
+ * Does a workspace glob (`packages/*`, `apps/**`, `libs/core`) name this package dir?
+ * `*` matches one path segment, `**` any number. Pure.
+ * @param {string} glob @param {string} rel POSIX path relative to the repo root
+ */
+export function matchesWorkspaceGlob(glob, rel) {
+  const g = String(glob).replace(/^\.\//, "").replace(/\/+$/, "");
+  let re = "";
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === "*" && g[i + 1] === "*") {
+      // `**/` = zero or more whole segments; a trailing `**` = anything below
+      const slash = g[i + 2] === "/";
+      re += slash ? "(?:[^/]+/)*" : ".*";
+      i += slash ? 2 : 1;
+    } else if (c === "*") re += "[^/]*";
+    else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`).test(String(rel).replace(/\/+$/, ""));
+}
+
+// A root test script that runs EVERY workspace's suite itself — so a nested package that is a
+// declared workspace member is covered by the root run and must not be run twice.
+const RECURSIVE_TEST_RE =
+  /(?:^|\s)(?:--workspaces|-ws|--recursive|-r)(?:\s|$)|\bworkspaces\s+foreach\b|\bturbo\s+(?:run\s+)?test\b|\blerna\s+run\s+test\b|\bnx\s+run-many\b/;
+
+/** Whether the root's declared test script runs every declared workspace's tests. Pure
+ *  w.r.t. the tree (reads package.json). */
+export function rootTestCoversWorkspaces(root) {
+  const script = declaredTestScript(readJson(root, "package.json"));
+  return !!script && RECURSIVE_TEST_RE.test(script);
+}
+
+/**
+ * The runners ONE directory declares — the manifest detectors only, no workspace walk.
+ * `pmRoot` is where the package manager's lockfile lives (a workspace package installs
+ * through the monorepo root). Used for per-package suites in a monorepo (review F08).
+ * @param {string} dir
+ * @param {{pmRoot?: string}} [opts]
+ * @returns {TestRunner[]}
+ */
+export function detectRunners(dir, { pmRoot = dir } = {}) {
+  return collect(dir, { pmRoot }).testRunners;
 }
 
 /**
@@ -391,25 +462,14 @@ function nestedPackageRoots(root) {
  * @property {string[]} [args]
  */
 
-/**
- * Detect the repo's real stack by reading its manifests. Pure aside from fs reads;
- * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays;
- * `testRunners` is deduped by label and sorted by label.
- * Additive monorepo fields (ME-03): `workspaces` are the declared workspace globs and
- * `packageRoots` the nested package/suite roots found on disk (bounded, capped) — either
- * being non-empty signals the root suite does NOT necessarily cover the whole repo. Both
- * are `[]` for a plain single-root repo, so the pre-existing shape is unchanged.
- * @param {string} [root]
- * @returns {{languages:string[], frameworks:string[], packageManagers:string[],
- *   testCommands:string[], testRunners:TestRunner[], tools:string[], notes:string[],
- *   evidence:string[], workspaces:string[], packageRoots:string[]}}
- */
-export function detectStack(root = process.cwd()) {
+// Run every manifest detector over ONE directory. Fail-safe per detector.
+function collect(root, { pmRoot = root } = {}) {
   const sets = {
     languages: new Set(),
     frameworks: new Set(),
     packageManagers: new Set(),
     testCommands: new Set(),
+    testInventory: new Set(),
     tools: new Set(),
     notes: new Set(),
     evidence: new Set(),
@@ -425,15 +485,18 @@ export function detectStack(root = process.cwd()) {
     runner: (r) => {
       if (!r?.label) return;
       sets.testCommands.add(r.label);
+      sets.testInventory.add(r.label);
       if (!runners.has(r.label)) runners.set(r.label, r);
     },
+    /** an AVAILABLE runner that no declaration requires (inventory only, never a suite) */
+    inventory: (v) => v && sets.testInventory.add(v),
     tool: (v) => v && sets.tools.add(v),
     note: (v) => v && sets.notes.add(v),
     evidence: (v) => v && sets.evidence.add(v),
   };
   for (const d of DETECTORS) {
     try {
-      d(root, add);
+      d(root, add, { pmRoot });
     } catch {}
   }
   const sort = (s) => [...s].sort();
@@ -443,10 +506,39 @@ export function detectStack(root = process.cwd()) {
     packageManagers: sort(sets.packageManagers),
     testCommands: sort(sets.testCommands),
     testRunners: [...runners.values()].sort((a, b) => a.label.localeCompare(b.label)),
+    testInventory: sort(sets.testInventory),
     tools: sort(sets.tools),
     notes: sort(sets.notes),
     evidence: sort(sets.evidence),
+  };
+}
+
+/**
+ * Detect the repo's real stack by reading its manifests. Pure aside from fs reads;
+ * every detector is fail-safe. Returns deduped, deterministic (sorted) arrays;
+ * `testRunners` is deduped by label and sorted by label.
+ * `testCommands`/`testRunners` are the REQUIRED suites (what a declaration asks for:
+ * an explicit `scripts.test`, a pytest config, go.mod…); `testInventory` is every runner
+ * DETECTED, including ones merely installed as a dependency (review F09) — inventory is
+ * never an extra obligation.
+ * Additive monorepo fields (ME-03): `workspaces` are the declared workspace globs and
+ * `packageRoots` the nested package/suite roots found on disk (bounded, capped) — either
+ * being non-empty signals the root suite does NOT necessarily cover the whole repo. Both
+ * are `[]` for a plain single-root repo, so the pre-existing shape is unchanged.
+ * `packageRootsTruncated` is true when the bounded walk stopped early (the list is a
+ * sample, so full coverage cannot be claimed from it).
+ * @param {string} [root]
+ * @returns {{languages:string[], frameworks:string[], packageManagers:string[],
+ *   testCommands:string[], testRunners:TestRunner[], testInventory:string[], tools:string[],
+ *   notes:string[], evidence:string[], workspaces:string[], packageRoots:string[],
+ *   packageRootsTruncated:boolean}}
+ */
+export function detectStack(root = process.cwd()) {
+  const scan = scanPackageRoots(root);
+  return {
+    ...collect(root),
     workspaces: workspaceGlobs(root),
-    packageRoots: nestedPackageRoots(root),
+    packageRoots: scan.roots,
+    packageRootsTruncated: scan.truncated,
   };
 }

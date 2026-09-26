@@ -798,3 +798,95 @@ test("migrateAddresses moves a pre-CRLF-fold claim to its current address, logs 
   assert.equal(loaded[0].evidence.length, 1, "its evidence came with it");
   assert.deepEqual(migrateAddresses(dir).migrated, [], "idempotent: nothing left to move");
 });
+
+// Review 2026-09-26 — F06: evidence is counted per EVENT. One real commit cited under four
+// spellings (7/8/9/40 chars) used to lift confidence 0.655 → 0.821, past the 0.8 bar.
+test("F06: aliases of one git object are one event — in the store and in val()", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-f06-"));
+  const g = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  writeFileSync(join(root, "a.txt"), "a\n");
+  g("add", "-A");
+  g("commit", "-m", "init");
+  const full = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const dir = repoLedger(root);
+  const c = fact("f06", "one commit, four spellings");
+  putClaim(dir, c);
+  appendEvidence(dir, c.id, ev("confirm", `git:${full.slice(0, 7)}`, 0));
+  const one = val(loadClaims(dir)[0], 0);
+  for (const n of [8, 9, 40])
+    appendEvidence(dir, c.id, ev("confirm", `git:${full.slice(0, n)}`, 0));
+  const stored = readEvidence(dir, c.id);
+  assert.ok(
+    stored.every((e) => e.ref === `git:${full}`),
+    "abbreviations are stored under the full object id",
+  );
+  assert.equal(stored.length, 1, "…so re-citing the same commit dedupes at append");
+  assert.equal(val(loadClaims(dir)[0], 0), one, "four spellings, one event, one vote");
+});
+
+test("F06: val() collapses aliases already on disk (pure prefix aliasing, earliest wins)", () => {
+  const oid = "0123456789abcdef0123456789abcdef01234567";
+  const rec = (ref, t) =>
+    outcomeRecord({ oracle: "test.run", result: "confirm", ref, author: "a", t }).outcome;
+  const aliased = { evidence: [rec(`git:${oid.slice(0, 7)}`, 0), rec(`git:${oid}`, 5)] };
+  const single = { evidence: [rec(`git:${oid.slice(0, 7)}`, 0)] };
+  assert.equal(
+    val(aliased, 5),
+    val(single, 5),
+    "the later alias neither adds weight nor refreshes decay",
+  );
+  // Two DIFFERENT objects still count twice, even sharing a short prefix once both are known.
+  const other = `${oid.slice(0, 7)}fffffffffffffffffffffffffffffffff`;
+  const two = { evidence: [rec(`git:${oid}`, 0), rec(`git:${other}`, 0)] };
+  assert.ok(val(two, 0) > val(single, 0), "distinct objects are distinct events");
+  // The same untyped ref re-recorded by another author/day is also one event.
+  const again = {
+    evidence: [
+      outcomeRecord({ oracle: "ci.run", result: "confirm", ref: "ci:42", author: "a", t: 0 })
+        .outcome,
+      outcomeRecord({ oracle: "ci.run", result: "confirm", ref: "ci:42", author: "b", t: 3 })
+        .outcome,
+    ],
+  };
+  const once = { evidence: [again.evidence[0]] };
+  assert.equal(val(again, 3), val(once, 3));
+});
+
+// Review 2026-09-26 — A11: the storage contracts under concurrent writers and migration.
+test("A11: two processes appending to one log concurrently lose no record", async () => {
+  const dir = tmp();
+  const c = fact("concurrent", "two writers, one log");
+  putClaim(dir, c);
+  const { spawn } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const storeUrl = new URL("../src/ledger_store.js", import.meta.url).href;
+  const ledgerUrl = new URL("../src/ledger.js", import.meta.url).href;
+  const writer = (tag) =>
+    new Promise((resolve, reject) => {
+      const code = `
+        const { appendEvidence } = await import(${JSON.stringify(storeUrl)});
+        const { outcomeRecord } = await import(${JSON.stringify(ledgerUrl)});
+        for (let i = 0; i < 60; i++) {
+          const o = outcomeRecord({ oracle: "ci.run", result: "confirm", ref: "ci:${tag}" + i, t: i });
+          const r = appendEvidence(${JSON.stringify(dir)}, ${JSON.stringify(c.id)}, o.outcome);
+          if (!r.ok) { console.error(r.reason); process.exit(1); }
+        }`;
+      const p = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: "inherit" });
+      p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`writer ${tag} ${code}`))));
+    });
+  void fileURLToPath;
+  await Promise.all([writer("1"), writer("2")]);
+  assert.equal(readEvidence(dir, c.id).length, 120, "every append from both writers survives");
+  assert.equal(verify(dir).ok, true, "no torn or glued lines");
+});
+
+test("A11: migrateAddresses --dry-run previews without writing", () => {
+  const dir = tmp();
+  const c = fact("plain", "nothing to migrate");
+  putClaim(dir, c);
+  const preview = migrateAddresses(dir, { dryRun: true });
+  assert.deepEqual(preview, { migrated: [], merged: [], failed: [], dryRun: true });
+});

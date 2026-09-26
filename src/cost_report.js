@@ -351,7 +351,8 @@ export function estimateSpendFromLogs({ root = process.cwd(), fetchImpl, date } 
       else unpriced.push(model);
       modelBreakdown.push({
         model,
-        cost,
+        // An unpriced model's cost is UNKNOWN, not zero (review A10).
+        cost: pricing ? cost : null,
         priced: Boolean(pricing),
         priceSource: pricing
           ? `${pricing.source}${pricing.basis ? `:${pricing.basis}` : ""}`
@@ -362,8 +363,20 @@ export function estimateSpendFromLogs({ root = process.cwd(), fetchImpl, date } 
         cacheReadTokens: u.cacheReadTokens,
       });
     }
-    modelBreakdown.sort((a, b) => b.cost - a.cost);
-    return { totalCost, sessions, byModel: modelBreakdown, unpriced };
+    modelBreakdown.sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1));
+    // Label what this number IS (review A10): an estimate — logged tokens × published
+    // per-token prices, in USD — not an invoice; complete only when every model was priced;
+    // and it never includes verifier/test runtime or non-model tool costs.
+    return {
+      totalCost,
+      currency: "USD",
+      basis: "estimate: logged tokens × published per-token prices (not an invoice)",
+      complete: unpriced.length === 0,
+      excludes: ["verifier/test runtime", "tool and API costs outside model calls"],
+      sessions,
+      byModel: modelBreakdown,
+      unpriced,
+    };
   } catch {
     return null;
   }

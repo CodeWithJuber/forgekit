@@ -27,6 +27,7 @@
 // its logs in place, and any new evidence brings it back (ledger_store appendRecord).
 
 import { claimText, isDormant, jaccard, SKETCH_K, sketch, val } from "./ledger.js";
+import { describeConflicts, semanticConflicts } from "./semantic_guard.js";
 
 /** @typedef {{id: string, kind?: string, body?: any, provenance?: {t?: number},
  *   evidence?: {t?: number}[], tombstone?: {t?: number} | null}} Claim */
@@ -93,6 +94,10 @@ export function learnIdleCutoff(histories, nowDay, { usageSince = null } = {}) {
 }
 
 // ── Duplicates ────────────────────────────────────────────────────────────────────────
+
+/** What a claim ASSERTS, for the semantic guard: a fact's text (its name is a unique label,
+ *  not part of the statement), otherwise the claim's retrievable text. */
+const statementOf = (c) => (c.kind === "fact" ? String(c.body?.text ?? "") : claimText(c));
 
 /** Log-likelihood of xs under N(mu, v). */
 const gaussLL = (xs, mu, v) =>
@@ -171,10 +176,15 @@ export function similarityBoundary(xs, k = SKETCH_K) {
 /**
  * Near-duplicate groups among live claims of the same kind, with one survivor each: the
  * highest val, then the most evidence, then the earliest minted, then the smallest id.
+ * Similarity only PROPOSES a duplicate (review F16): a close pair whose texts differ in
+ * polarity, operators, numbers, literals, identifiers or paths ("Enable authentication…" vs
+ * "Disable authentication…") is never grouped — it is reported in `conflicts`, both claims
+ * stay live, and a person decides.
  * @param {Claim[]} claims live (servable) claims
  * @param {number} nowDay
  * @returns {{boundary: number | null, bic1?: number, bic2?: number | null, compared: number,
- *   groups: {keep: string, drop: {id: string, similarity: number}[]}[]}}
+ *   groups: {keep: string, drop: {id: string, similarity: number}[]}[],
+ *   conflicts: {a: string, b: string, similarity: number, conflicts: string}[]}}
  */
 export function duplicateGroups(claims, nowDay) {
   const byKind = new Map();
@@ -198,10 +208,17 @@ export function duplicateGroups(claims, nowDay) {
       }
     nn.push(...best);
   }
-  if (!nn.length) return { boundary: null, compared: 0, groups: [] };
+  if (!nn.length) return { boundary: null, compared: 0, groups: [], conflicts: [] };
   const fit = similarityBoundary(nn);
   if (fit.boundary == null)
-    return { boundary: null, bic1: fit.bic1, bic2: fit.bic2, compared: nn.length, groups: [] };
+    return {
+      boundary: null,
+      bic1: fit.bic1,
+      bic2: fit.bic2,
+      compared: nn.length,
+      groups: [],
+      conflicts: [],
+    };
   // Union-find over the pairs at or above the boundary.
   const parent = new Map();
   const find = (x) => {
@@ -214,8 +231,20 @@ export function duplicateGroups(claims, nowDay) {
   const pairKey = (a, b) => (a < b ? `${a}\n${b}` : `${b}\n${a}`);
   /** @type {Map<string, number>} similarity of each pair at or above the boundary */
   const close = new Map();
+  /** @type {{a: string, b: string, similarity: number, conflicts: string}[]} */
+  const conflicts = [];
   for (const p of pairs) {
     if (p.sim < fit.boundary) continue;
+    const differs = semanticConflicts(statementOf(p.i.c), statementOf(p.j.c));
+    if (differs.length) {
+      conflicts.push({
+        a: p.i.c.id,
+        b: p.j.c.id,
+        similarity: p.sim,
+        conflicts: describeConflicts(differs),
+      });
+      continue;
+    }
     for (const it of [p.i, p.j]) if (!parent.has(it.c.id)) parent.set(it.c.id, it.c.id);
     parent.set(find(p.i.c.id), find(p.j.c.id));
     close.set(pairKey(p.i.c.id, p.j.c.id), p.sim);
@@ -254,7 +283,14 @@ export function duplicateGroups(claims, nowDay) {
     })
     .filter((g) => g.drop.length)
     .sort((a, b) => (a.keep < b.keep ? -1 : 1));
-  return { boundary: fit.boundary, bic1: fit.bic1, bic2: fit.bic2, compared: nn.length, groups };
+  return {
+    boundary: fit.boundary,
+    bic1: fit.bic1,
+    bic2: fit.bic2,
+    compared: nn.length,
+    groups,
+    conflicts: conflicts.sort((x, y) => (x.a < y.a ? -1 : x.a > y.a ? 1 : x.b < y.b ? -1 : 1)),
+  };
 }
 
 // ── The plan ──────────────────────────────────────────────────────────────────────────
@@ -265,7 +301,12 @@ export function duplicateGroups(claims, nowDay) {
  * @param {Map<string, number[]>} uses
  * @param {number} nowDay
  * @param {{halfLife?: number, duplicates?: boolean}} [opts] halfLife only feeds isDormant
- * @returns {{archive: {id: string, reason: string}[], retention: ReturnType<typeof learnIdleCutoff>,
+ * Every archive entry carries a machine-readable `cause` — "tombstoned", "dormant", "idle" or
+ * "duplicate" (+ `survivor`) — because archiving is STORAGE lifecycle, not a truth verdict
+ * (review F15): an idle or deduplicated claim is not a refuted one, and a reader must be able
+ * to tell them apart after the fact.
+ * @returns {{archive: {id: string, reason: string, cause: "tombstoned"|"dormant"|"idle"|"duplicate",
+ *   survivor?: string}[], retention: ReturnType<typeof learnIdleCutoff>,
  *   duplicates: ReturnType<typeof duplicateGroups> | null}}
  */
 export function retentionPlan(claims, uses, nowDay, { halfLife, duplicates = false } = {}) {
@@ -280,24 +321,29 @@ export function retentionPlan(claims, uses, nowDay, { halfLife, duplicates = fal
   for (const [id, days] of uses)
     if (!known.has(id)) learnFrom.push({ days: [...new Set(days)].sort((a, b) => a - b) });
   const retention = learnIdleCutoff(learnFrom, nowDay, { usageSince });
-  /** @type {{id: string, reason: string}[]} */
+  /** @type {{id: string, reason: string, cause: "tombstoned"|"dormant"|"idle"|"duplicate",
+   *   survivor?: string}[]} */
   const archive = [];
   const live = [];
   const dormantOpts = halfLife == null ? {} : { halfLife };
   for (let i = 0; i < claims.length; i++) {
     const c = claims[i];
     if (c.tombstone) {
-      archive.push({ id: c.id, reason: "tombstoned (never served)" });
+      archive.push({ id: c.id, reason: "tombstoned (never served)", cause: "tombstoned" });
       continue;
     }
     if (isDormant(c, nowDay, dormantOpts)) {
-      archive.push({ id: c.id, reason: "dormant (never served)" });
+      archive.push({ id: c.id, reason: "dormant (never served)", cause: "dormant" });
       continue;
     }
     const days = histories[i].days;
     const idle = days.length ? nowDay - days[days.length - 1] : null;
     if (retention.learned && idle != null && idle > /** @type {number} */ (retention.cutoff)) {
-      archive.push({ id: c.id, reason: `idle ${idle} d > learned cut-off ${retention.cutoff} d` });
+      archive.push({
+        id: c.id,
+        reason: `idle ${idle} d > learned cut-off ${retention.cutoff} d`,
+        cause: "idle",
+      });
       continue;
     }
     live.push(c);
@@ -310,6 +356,8 @@ export function retentionPlan(claims, uses, nowDay, { halfLife, duplicates = fal
         archive.push({
           id: d.id,
           reason: `near-duplicate of ${g.keep.slice(0, 12)} (similarity ${d.similarity.toFixed(2)} ≥ learned ${dup.boundary?.toFixed(2)})`,
+          cause: "duplicate",
+          survivor: g.keep,
         });
   }
   return { archive, retention, duplicates: dup };
