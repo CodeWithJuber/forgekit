@@ -80,16 +80,16 @@
     },
     {
       "id": "node-impact-fixture-quality",
-      "claim": "forge impact scores precision 0.17, recall 1.00, F1 0.29 on six hand-labelled cases from this repository.",
+      "claim": "forge impact scores precision 0.17, recall 1.00, F1 0.28 on six hand-labelled cases from this repository.",
       "component": "Node code graph (src/atlas.js, forge impact)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "measured",
       "evidence": [
         "reports/benchmarks.md",
         "bench/impact_cases.mjs"
       ],
-      "notes": "Six self-labelled symbols in one repository; the transitive walk is scored against direct-only labels. The 2026-09-26 review measured macro 0.18 / 1.00 / 0.30 on the same cases. A regex-derived graph, not the evaluated Python AST oracle; none of the Python study's numbers apply to it."
+      "notes": "Six self-labelled symbols in one repository; the transitive walk is scored against direct-only labels. Re-measured on the tree merged as 7eef611, after the CLI handler move added src/cli/memory.js as an eleventh claimText dependent (reports/benchmarks.md: mean F1 0.28, was 0.29). The 2026-09-26 review measured macro 0.18 / 1.00 / 0.30 on the same cases at d2abfa6. A regex-derived graph, not the evaluated Python AST oracle; none of the Python study's numbers apply to it."
     },
     {
       "id": "router-gate-demo-saving",
@@ -247,54 +247,55 @@
       "id": "universal-router-target-guarantee",
       "claim": "The target:p objective guarantees a success rate of at least p.",
       "component": "Universal router (src/router, forge route universal)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "refuted",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
         "bench/universal-router/README.md"
       ],
-      "notes": "Predicted cascade success was optimistic by 4-6 points on the run-4 test split (repository-reported), so target:p lands below p; in the in-repo replay (match-best-single) predicted minus observed success ranged from -2.8 to +9.1 points across six splits. Not a guarantee until an out-of-fold calibration map, reliability intervals and an abstention policy exist."
+      "notes": "Predicted cascade success was optimistic by 4-6 points on the run-4 test split (repository-reported), so target:p lands below p; in the in-repo replay (match-best-single) predicted minus observed success ranged from -2.8 to +9.1 points across six splits. Not a guarantee until an out-of-fold calibration map, reliability intervals and an abstention policy exist. Unchanged at 7eef611."
     },
     {
       "id": "universal-router-budget-contract",
       "claim": "The budget:B objective returns a cascade whose expected cost is at most B, and says so explicitly when none exists.",
       "component": "Universal router (src/router, forge route universal)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "partial",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
         "src/router/policy.js"
       ],
-      "notes": "B bounds expected cost, not spend: a cascade can cost the sum of all its attempts, and E[cost] is under-predicted by 5-22% in the in-repo replay (see universal-router-cascade-cost-independence). At the assessed commit an infeasible budget returned the least expensive cascade with no budgetMet:false (review F12); aedddf5 (committed after the assessed commit) reports feasible:false, budgetMet:false, minimumExpectedCost, maxPossibleCost and a reason, and the CLI prints INFEASIBLE."
+      "notes": "B bounds expected cost, not spend: a cascade can cost the sum of all its attempts, and E[cost] is under-predicted by 5-22% in the in-repo replay (see universal-router-cascade-cost-independence). The explicit half now holds at 7eef611: an infeasible budget returns ok:false, feasible:false, budgetMet:false, minimumExpectedCost and a reason (the CLI prints INFEASIBLE), with the least-bad cascade only as a labeled fallback, and every recommendation reports maxPossibleCost (review F12, regression-tested)."
     },
     {
       "id": "universal-router-cascade-cost-independence",
       "claim": "A later cascade attempt costs the same in expectation whether or not earlier attempts failed.",
       "component": "Universal router cost model (src/router/policy.js)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "refuted",
       "evidence": [
         "bench/universal-router/README.md",
         "bench/universal-router/holdout_eval.mjs",
         "docs/UNIVERSAL_ROUTING.md"
       ],
-      "notes": "The cascade cost formula assumes E[cost_i | earlier attempts failed, x] = E[cost_i | x]. On the recorded SWE-bench Verified runs (in-repo replay, holdout_eval.mjs) expected cascade cost was under-predicted in all six splits, by 5-22% of the replayed cost ($0.102 expected against $0.124 replayed per task for seed 20260926): a failed attempt costs on average 1.2-2.0 times a successful one, for every model, and a later attempt is reached only after a failure. Corrected wording: this formula's E[cost] is optimistic until the cost model conditions on earlier outcomes."
+      "notes": "The cascade cost formula assumes E[cost_i | earlier attempts failed, x] = E[cost_i | x]. On the recorded SWE-bench Verified runs (in-repo replay, holdout_eval.mjs) expected cascade cost was under-predicted in all six splits, by 5-22% of the replayed cost ($0.102 expected against $0.124 replayed per task for seed 20260926): a failed attempt costs on average 1.2-2.0 times a successful one, for every model, and a later attempt is reached only after a failure. Corrected wording: this formula's E[cost] is optimistic until the cost model conditions on earlier outcomes. Unchanged at 7eef611."
     },
     {
       "id": "route-outcome-provenance",
       "claim": "Outcomes recorded with forge route outcome are verified results.",
       "component": "Universal router outcome log (src/router/index.js)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "status": "refuted",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "status": "partial",
       "evidence": [
-        "docs/UNIVERSAL_ROUTING.md",
-        "src/router/index.js"
+        "src/router/index.js",
+        "test/router_universal.test.js",
+        "docs/UNIVERSAL_ROUTING.md"
       ],
-      "notes": "At the assessed commit the pass/fail was caller-entered, with no provenance or attempt identity, so replaying a log multiplied evidence. aedddf5 (committed after the assessed commit) labels records provenance: self-reported unless --verify-run names a forge verify run whose verdict agrees (then verify-event), makes recording idempotent by attemptId (--attempt), and schema-validates records on write and read. Re-assess before changing the status."
+      "notes": "Re-assessed on 7eef611: records are schema-validated on write and read, recording is idempotent by attemptId (--attempt), and a row is provenance verify-event only when --verify-run names a forge verify run whose verdict agrees. Without --verify-run a row is labeled self-reported, which is the default, so the claim holds only for rows recorded that way. At d2abfa6 it was refuted (caller-entered, replayable)."
     },
     {
       "id": "cost-reduction-90-target",
@@ -355,29 +356,30 @@
       "id": "phase-p3-reuse-cache",
       "claim": "P3: the reuse cache serves an artifact only while its evidence holds, and refuses a stale one.",
       "component": "Reuse cache (src/reuse.js, forge reuse)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
         "src/reuse.js",
-        "test/reuse.test.js"
+        "test/reuse.test.js",
+        "test/trust_properties.test.js"
       ],
-      "notes": "Acceptance counterexamples at the assessed commit: exact keys erased operators and case (F04), and changed or deleted artifacts still exact-hit (F05). aedddf5 (committed after the assessed commit) repairs both with regression tests; re-assess before relying on it, and mark this phase partial if the probes still fail."
+      "notes": "Re-assessed on 7eef611: the acceptance counterexamples found at d2abfa6, exact keys that erased operators and case (F04) and changed or deleted artifacts that still exact-hit (F05), are repaired with regression tests and a seeded property test."
     },
     {
       "id": "phase-p4-context-assembly",
       "claim": "P4: context assembly never exceeds its token budget and reports a computed missing set.",
       "component": "Context assembly (src/context.js, forge context)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "partial",
       "evidence": [
         "docs/plans/substrate-v2/04-context-assembly.md",
         "docs/plans/substrate-v2/00-overview.md",
         "src/context.js"
       ],
-      "notes": "Over budget and pointer-only coverage were reported as complete (F02, F03). aedddf5 (committed after the assessed commit) reports overflow and pending reads; tokens are a chars/3.6 estimate of the rendered block; selection is a value-density heuristic with no approximation guarantee; the ambient hook does not assemble context; ok means syntactically delivered."
+      "notes": "Re-assessed on 7eef611: the rendered block never exceeds the budget (a seeded property test over 50 budgets), overflow and pending reads are reported, and a pointer is not coverage (F02, F03). Still partial: tokens are a chars/3.6 estimate; selection is a value-density heuristic with no approximation guarantee; the ambient hook does not assemble context; ok means syntactically delivered."
     },
     {
       "id": "phase-p5-loop-closure",
@@ -437,69 +439,76 @@
     },
     {
       "id": "context-completeness",
-      "claim": "forge context COMPLETE means the required knowledge was delivered within the token budget.",
+      "claim": "forge context COMPLETE means every required item was delivered as content within the (estimated) token budget.",
       "component": "Context assembly (src/context.js, forge context)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "status": "refuted",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "status": "implemented",
       "evidence": [
-        "docs/plans/substrate-v2/04-context-assembly.md",
-        "docs/GUIDE.md"
+        "src/context.js",
+        "test/context.test.js",
+        "test/trust_properties.test.js",
+        "docs/plans/substrate-v2/04-context-assembly.md"
       ],
-      "notes": "At the assessed commit a 1-token budget returned ok:true with 39 tokens (F02), and a one-line pointer counted as delivering a definition below line 100 (F03). The contract repaired in aedddf5 (committed after the assessed commit): ok means syntactically delivered, overflow and pending reads are reported, and semantic sufficiency is not measured."
+      "notes": "Re-assessed on 7eef611: F02 (over budget reported as ok) and F03 (a pointer counted as coverage) are regression tests, and a seeded property test holds the rendered block within budget for 50 budgets. Tokens are a chars/3.6 estimate of the rendered block, not a tokenizer count; COMPLETE means syntactically delivered, and whether the content suffices for the edit is not measured. At d2abfa6 the stronger wording was refuted."
     },
     {
       "id": "verify-pass-binding",
-      "claim": "A forge verify PASS is bound to the exact code state that was tested and covers every declared suite.",
+      "claim": "A forge verify PASS is bound to the code state that was tested (HEAD, staged and unstaged diffs, untracked non-ignored files) and covers every declared suite.",
       "component": "Verification (src/verify.js, forge verify)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "status": "refuted",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "status": "implemented",
       "evidence": [
         "src/verify.js",
         "test/verify.test.js",
+        "test/trust_properties.test.js",
         "docs/GUIDE.md"
       ],
-      "notes": "Counterexamples at the assessed commit: the working-tree fingerprint ignored paths and file boundaries (F01), a failing nested workspace still gave a whole-repo PASS (F08), and code changed during the run was signed (F10). aedddf5 (committed after the assessed commit) uses a length-delimited manifest, reports uncovered workspaces as INCOMPLETE and detects mutation; re-run the review's probes before changing this status."
+      "notes": "Re-assessed on 7eef611 (the merge of the 2026-09-26 review fixes): the review's counterexamples F01 (renames, byte moves, empty files, modes, symlinks), F08 (a failing nested workspace) and F10 (code changed during the run) are regression tests, and a seeded property test moves the fingerprint under any composition of manifest transformations. Scope: gitignored files, declared `verify.generated` outputs and interpreter caches are not bound; a nested repository is bound by path only (listed as `unbound`); an unreadable untracked file makes the state unbindable. At d2abfa6 this claim was refuted."
     },
     {
       "id": "ledger-evidence-independence",
       "claim": "A claim's confidence rises only with independent evidence for that claim.",
       "component": "Ledger (src/ledger_store.js, src/ledger_bridge.js)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "status": "refuted",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "status": "partial",
       "evidence": [
+        "src/ledger.js",
         "src/ledger_store.js",
-        "src/ledger_bridge.js"
+        "src/ledger_bridge.js",
+        "test/ledger_store.test.js",
+        "test/trust_properties.test.js"
       ],
-      "notes": "At the assessed commit four prefixes of one commit raised confidence past the 0.8 threshold (F06), and a contradictory rewrite kept its evidence and 0.64 confidence (F07). aedddf5 (committed after the assessed commit) repairs this with regression tests; re-run the review's probes before changing the status."
+      "notes": "Re-assessed on 7eef611: abbreviations of one git object count as one event, a replayed or re-cited ref cannot refresh decay, and a non-equivalent rewrite no longer inherits trust (F06, F07 regression tests; a seeded property test over spelling mixes, replays and order). Not yet held: two different references to the same underlying run (for example a CI run id and its commit) still count as two events. At d2abfa6 this claim was refuted."
     },
     {
       "id": "reuse-exact-identity",
-      "claim": "An exact reuse hit serves an artifact minted for the same specification, and only while its bytes still match.",
+      "claim": "An exact reuse hit serves an artifact minted for the same specification (up to whitespace and Unicode normalization), and only while its bytes still match.",
       "component": "Reuse cache (src/reuse.js)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "status": "refuted",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "status": "implemented",
       "evidence": [
         "src/reuse.js",
-        "test/reuse.test.js"
+        "test/reuse.test.js",
+        "test/trust_properties.test.js"
       ],
-      "notes": "At the assessed commit '>= 18' and '<= 18' shared an exact key (F04), and an edited or deleted artifact still exact-hit (F05). aedddf5 (committed after the assessed commit) repairs this with regression tests; re-run the review's probes before changing the status."
+      "notes": "Re-assessed on 7eef611: F04 (operator, case, literal and polarity pairs) and F05 (edited or deleted artifacts) are regression tests, and a seeded property test never serves an artifact after an edit, move or deletion. Bytes are checked at serve time wherever the repository root is known (`forge reuse query`, the substrate); dependency contracts need an atlas, and without one a hit is marked requiresRevalidation. Artifacts minted before key version 2 never exact-hit. At d2abfa6 this claim was refuted."
     },
     {
       "id": "imagine-sandbox",
       "claim": "forge imagine --run executes the selected tests in a sandbox.",
       "component": "Consequence simulation (src/imagine.js, forge imagine)",
-      "version": "1.4.3",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "version": "master after 1.4.3 (unreleased)",
+      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
       "status": "refuted",
       "evidence": [
         "src/imagine.js",
         "docs/GUIDE.md"
       ],
-      "notes": "It is an isolated git checkout (a detached-HEAD worktree): it isolates checkout files, not network, credentials, the home directory or process permissions, and it tests the committed baseline, not uncommitted patches. Since aedddf5 (committed after the assessed commit) the CLI says so (\"an isolated checkout of HEAD; not a security sandbox\"), and a suite that is not node:test gets an explicit unsupported-runner result."
+      "notes": "Still false at 7eef611, and no longer claimed: it is an isolated git checkout (a detached-HEAD worktree) that isolates checkout files, not network, credentials, the home directory or process permissions, and it tests the committed baseline, not uncommitted patches. The CLI and docs now say \"an isolated checkout of HEAD, not a security sandbox\", and a suite that is not node:test gets an explicit unsupported-runner result."
     },
     {
       "id": "integrations-emission",

@@ -93,6 +93,44 @@ name decide.
 `forge doctor`'s **gateway models** row prints the resolved `tier → model` mapping for
 verification.
 
+## Universal router — `forge route universal`
+
+A separate, opt-in router: it recommends one model, or a cascade that escalates on a failed
+check, across every provider in the registry, minimising **expected** cost for the success
+you ask for.
+
+```bash
+forge route universal "<task>"                         # match the best single model
+forge route universal "<task>" --objective target:0.8  # or value:<$>, budget:<$>
+forge route universal "<task>" --provider anthropic    # only models you can call there
+```
+
+- **Infeasible is explicit.** A budget no cascade fits, or a target none reaches, prints
+  `INFEASIBLE` and exits 1 (`ok: false`, `feasible: false`, the minimum achievable expected
+  cost, and the least-bad cascade only as a labeled `fallback` in `--json`). `budget:` bounds
+  expected cost, not what one task can spend; each recommendation also shows the cost if
+  every attempt runs.
+- **In the registry is not callable.** A recommended model that no configured provider
+  serves is marked `no provider id` and the recommendation is `advice only`
+  (`applicable: false`). Add its id under `providers` in `.forge/models.json`, or pass
+  `--provider`.
+- **Learning from your outcomes.** `forge route outcome` records one attempt, validated
+  (known model, finite non-negative cost, the right feature length). It is self-reported
+  unless `--verify-run <run id>` ties it to a matching `forge verify` run, and
+  `--attempt <id>` makes re-recording idempotent. `forge route fit` then updates the shipped
+  prior with them.
+
+<Warning>
+  The shipped prior was fitted on public SWE-bench Verified outcomes: one agent scaffold,
+  Python repositories, February 2026 prices. Its refit reproduces exactly from pinned public
+  data (`bench/universal-router/reproduce.sh`). The 76.3% / $0.093 held-out headline is
+  repository-reported from an external harness, not independently reproduced. In an in-repo
+  held-out replay the router did not beat a fixed cascade on solve rate, and expected cost was
+  under-predicted by 5–22% because failed attempts cost more. Treat it as a starting point for
+  your own outcomes, not a guarantee. The full evidence and limits are in
+  [docs/UNIVERSAL_ROUTING.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/UNIVERSAL_ROUTING.md).
+</Warning>
+
 ## Providers and cost
 
 ```bash
@@ -103,5 +141,7 @@ forge cost --stages        # measured per-stage cost factors
 
 <Note>
   `forge cost --stages` reports **measured stages only** — a stage with no events says
-  "no data", never a default. A number is an assumption until measured.
+  "no data", never a default. A number is an assumption until measured. A day or stage with
+  no logs is **unknown, not $0**; spend figures are estimates (logged tokens × list price,
+  USD), and a model without a price is "unpriced", not free.
 </Note>

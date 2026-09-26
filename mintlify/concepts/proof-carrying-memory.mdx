@@ -84,6 +84,7 @@ for audit, never silently removed.
 ```bash
 forge ledger stats                 # what the repo knows, by kind and trust level
 forge ledger verify                # re-check claims are in normal form
+forge ledger verify --fix --dry-run  # preview re-addressing old claims; writes nothing
 forge ledger show <id>             # a claim and its evidence trail
 forge ledger blame <id-prefix>     # who minted it, every oracle outcome, per-author trust
 forge ledger query "<text>"        # retrieve claims by relevance
@@ -98,9 +99,16 @@ Add `--personal` for the per-user ledger.
 ## The reuse cache is proof-carrying too
 
 `forge reuse` is a proof-carrying code cache. A generated artifact is only served again
-when its evidence still holds — the confidence is above the floor **and** its atlas
-dependencies still resolve. Otherwise it falls through to generation and mints a fresh
-claim on the way back.
+when its evidence still holds. Its confidence must be above the floor, its file must be
+byte-identical to what was verified, and its dependencies must still resolve with the same
+declarations. Otherwise it falls through to generation and mints a fresh claim on the way
+back. An exact hit needs the same text (only whitespace is ignored). A near hit must also
+agree on operators, numbers, literals, identifiers, paths and negation, so `age >= 18` is
+never served for `age <= 18`.
+
+One event is one vote. Abbreviations of one commit count once. A reworded lesson inherits
+trust only when the rewrite is equivalent. Similar-but-opposite rules are reported as
+conflicts, never merged.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
