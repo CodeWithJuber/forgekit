@@ -518,11 +518,17 @@ test("Q02: a bare name must not be shadowed by a project file", () => {
   };
   assert.equal(refused("turbo run test", { ...turbo, ...real }), undefined);
   assert.equal(refused("./node_modules/.bin/turbo run test", { ...turbo, ...real }), undefined);
-  // a link must resolve into the package: one into a project file is not the tool
+});
+
+test("Q02: a node_modules/.bin link must resolve into the tool's own package", {
+  skip: process.platform === "win32" && "symlinks need elevation on Windows",
+}, () => {
+  const turbo = JSON.stringify({ tasks: { test: { cache: false } } });
+  const real = JSON.stringify({ name: "turbo", bin: { turbo: "bin/turbo" } });
   const linked = (target) => {
     const root = workspaceRoot("turbo run test --force", {
-      "turbo.json": turbo["turbo.json"],
-      ...real,
+      "turbo.json": turbo,
+      "node_modules/turbo/package.json": real,
       "node_modules/turbo/bin/turbo": "",
       "tools/fake-turbo": "#!/bin/sh\nexit 0\n",
     });
