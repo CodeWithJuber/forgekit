@@ -141,9 +141,10 @@ export function routeUniversal(root, task, opts = {}) {
     applicable: unmapped.length === 0,
     unmapped,
     pSuccess: pick.p,
-    // EXPECTED cost under the fit (not a cap); the worst case runs every attempt.
+    // EXPECTED cost under the fit (not a cap), and the modeled cost if every attempt runs —
+    // also an estimate, never a bound on what a run can bill.
     expectedCost: pick.cost,
-    maxPossibleCost: pick.maxPossibleCost,
+    estimatedCostIfAllAttemptsRun: pick.estimatedCostIfAllAttemptsRun,
     minimumExpectedCost: pick.minimumExpectedCost,
     objective,
     target: pick.target,
@@ -209,16 +210,55 @@ const outcomeSpec = (nFeatures) =>
   });
 
 /**
+ * An outcome row's provenance, DERIVED — never read from the row (review N07): the outcomes
+ * file is user-editable, merged and replayed, so a stored `provenance: "verify-event"` label
+ * proves nothing. A row is "verify-event" only when its `verifyRunId` names an AUTHENTICATED
+ * verifier event in this checkout (readVerifyEvents: the MAC verifies under this machine's
+ * key), that run's verdict is pass/fail and agrees with the row's `passed`, and no earlier
+ * attempt already cites the same run (one verifier run backs one outcome — a replayed or
+ * copied row cannot multiply it). Anything else is "self-reported", with the reason in `note`.
+ * A verifier event authenticates the pass/fail VERDICT only: which model produced the patch,
+ * and what it cost, stay self-reported whatever the provenance.
+ * @param {any} row
+ * @param {Map<string, any>} runs authenticated events by run id
+ * @param {Map<string, string>} claimed run id → the attempt that cites it first
+ * @param {string} attempt this row's identity (attempt id, or a content key for legacy rows)
+ * @returns {{provenance: "self-reported"|"verify-event", note?: string}}
+ */
+function deriveProvenance(row, runs, claimed, attempt) {
+  const id = row.verifyRunId;
+  if (!id) return { provenance: "self-reported" };
+  const self = (note) => ({ provenance: /** @type {const} */ ("self-reported"), note });
+  const run = runs.get(id);
+  if (!run) return self(`verify run ${id} is not an authenticated verifier event in this checkout`);
+  const verdict = run.status === "PASS" ? true : run.status === "FAIL" ? false : null;
+  if (verdict === null) return self(`verify run ${id} is ${run.status}, not a pass/fail verdict`);
+  if (verdict !== row.passed)
+    return self(
+      `verify run ${id} says ${run.status}, the row says ${row.passed ? "pass" : "fail"}`,
+    );
+  const first = claimed.get(id);
+  if (first !== undefined && first !== attempt)
+    return self(`verify run ${id} already backs attempt ${first}`);
+  claimed.set(id, attempt);
+  return { provenance: "verify-event" };
+}
+
+/**
  * Record the outcome of one attempt (the only evidence the router learns from). The task text
  * is not stored: only its hash and features. Validated before it is written (review A04): a
  * model the registry does not know, a non-boolean verdict, a negative or non-finite cost, or
  * a feature vector of the wrong length is refused.
  *
  * `passed` is SELF-REPORTED by the caller unless `verifyRunId` names a `forge verify` run in
- * this checkout's verifier-event log whose verdict agrees (PASS ⇔ passed, FAIL ⇔ failed) —
- * then the row is `provenance: "verify-event"` (A01). `attemptId` makes recording idempotent:
- * the same attempt recorded twice (a retry, a replayed file) counts once; omit it and a fresh
- * id is minted.
+ * this checkout's verifier-event log whose verdict agrees (PASS ⇔ passed, FAIL ⇔ failed) and
+ * whose event is AUTHENTICATED — then the row is `provenance: "verify-event"` (A01). An event
+ * that exists but is not authenticated (no evidence key could be read or created, or its MAC
+ * does not verify) never earns that label (review N06): the row is recorded as self-reported,
+ * with the reason in `provenanceNote`. A run that already backs another attempt is refused.
+ * `attemptId` makes recording idempotent: the same attempt recorded twice (a retry, a
+ * replayed file) counts once; omit it and a fresh id is minted. Readers re-derive provenance
+ * from the events either way (readOutcomes), so the stored label is informational.
  * @param {string} root
  * @param {{task: string, model: string, passed: boolean, cost?: number|null,
  *   features?: number[]|null, attemptId?: string|null, verifyRunId?: string|null,
@@ -241,7 +281,12 @@ export function recordOutcome(
     throw new Error("recordOutcome needs model and passed (boolean)");
   if (!registry.models.some((m) => m.id === model))
     throw new Error(`unknown model "${model}" — not in the registry (\`forge route models\`)`);
+  const id = attemptId ?? randomUUID();
+  const existing = readOutcomes(root);
+  const prev = existing.find((o) => o.attemptId === id);
+  if (prev) return { ...prev, duplicate: true };
   let provenance = "self-reported";
+  let provenanceNote = null;
   if (verifyRunId) {
     const run = readVerifyEvents(root).find((e) => e.runId === verifyRunId);
     if (!run) throw new Error(`no verify run ${verifyRunId} in .forge/verify-events.jsonl`);
@@ -252,12 +297,16 @@ export function recordOutcome(
       throw new Error(
         `verify run ${verifyRunId} says ${run.status}, not ${passed ? "pass" : "fail"}`,
       );
-    provenance = "verify-event";
-  }
-  const id = attemptId ?? randomUUID();
-  if (readOutcomes(root).some((o) => o.attemptId === id)) {
-    const prev = readOutcomes(root).find((o) => o.attemptId === id);
-    return { ...prev, duplicate: true };
+    const other = existing.find(
+      (o) => o.verifyRunId === verifyRunId && o.provenance === "verify-event",
+    );
+    if (other)
+      throw new Error(
+        `verify run ${verifyRunId} already backs attempt ${other.attemptId} — one verifier run backs one outcome`,
+      );
+    if (run.authenticated) provenance = "verify-event";
+    else
+      provenanceNote = `verify run ${verifyRunId} is not authenticated (no evidence key could be read or created, or its MAC does not verify) — recorded as self-reported`;
   }
   const row = {
     attemptId: id,
@@ -269,6 +318,7 @@ export function recordOutcome(
     cost: cost === null || cost === undefined ? null : Number(cost),
     provenance,
     ...(verifyRunId ? { verifyRunId } : {}),
+    ...(provenanceNote ? { provenanceNote } : {}),
   };
   const v = validate(row, outcomeSpec(featureCount(root)), "outcome");
   if (!v.ok) throw new Error(`invalid outcome: ${v.errors.join("; ")}`);
@@ -279,18 +329,32 @@ export function recordOutcome(
 }
 
 /**
- * The recorded outcomes, validated and deduplicated: a row that fails the outcome schema is
- * skipped (and counted in `readOutcomes.lastInvalid`); rows sharing an `attemptId` count once;
- * legacy rows without one are deduplicated by their exact content, so a replayed or
- * union-merged file never multiplies training evidence.
+ * The recorded outcomes, validated, deduplicated and with provenance RE-DERIVED from this
+ * checkout's authenticated verifier events (deriveProvenance, review N07): a row that fails
+ * the outcome schema is skipped (counted in `readOutcomes.lastInvalid`); rows sharing an
+ * `attemptId` count once; legacy rows without one are deduplicated by their exact content, so
+ * a replayed or union-merged file never multiplies training evidence. A row whose stored label
+ * said "verify-event" but whose run is missing, unauthenticated, disagrees, or already backs
+ * another attempt is read as "self-reported" with a `provenanceNote`, and counted in
+ * `readOutcomes.lastDowngraded`.
  * @param {string} root
  */
 export function readOutcomes(root) {
+  readOutcomes.lastInvalid = 0;
+  readOutcomes.lastDowngraded = 0;
   if (!existsSync(OUTCOMES(root))) return [];
   const spec = outcomeSpec(featureCount(root));
+  const runs = new Map(
+    readVerifyEvents(root)
+      .filter((e) => e.authenticated)
+      .map((e) => [e.runId, e]),
+  );
+  /** @type {Map<string, string>} */
+  const claimed = new Map();
   const seen = new Set();
   const out = [];
   let invalid = 0;
+  let downgraded = 0;
   for (const line of readFileSync(OUTCOMES(root), "utf8").split("\n")) {
     if (!line.trim()) continue;
     let row;
@@ -309,12 +373,17 @@ export function readOutcomes(root) {
       : `row:${createHash("sha256").update(JSON.stringify(row)).digest("hex")}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(row);
+    const { provenanceNote: _stored, ...rest } = row;
+    const d = deriveProvenance(row, runs, claimed, row.attemptId ?? key);
+    if (row.provenance === "verify-event" && d.provenance !== "verify-event") downgraded++;
+    out.push({ ...rest, provenance: d.provenance, ...(d.note ? { provenanceNote: d.note } : {}) });
   }
   readOutcomes.lastInvalid = invalid;
+  readOutcomes.lastDowngraded = downgraded;
   return out;
 }
 readOutcomes.lastInvalid = 0;
+readOutcomes.lastDowngraded = 0;
 
 /**
  * Refit on the project's recorded outcomes with the shipped fit as the prior mean (Bayesian
@@ -381,8 +450,11 @@ export function fitRouter(
       prior: shipped.provenance,
       local: {
         outcomes: outcomes.length - skipped,
-        // How much of the local evidence is tied to a verifier event vs self-reported (A01).
+        // How much of the local evidence is tied to an AUTHENTICATED verifier event vs
+        // self-reported (A01/N07 — derived by readOutcomes, never read from the row). The event
+        // vouches for the pass/fail verdict only; model and cost stay self-reported.
         verifiedOutcomes: verified,
+        verifiedFields: ["passed"],
         selfReportedOutcomes: outcomes.length - skipped - verified,
         skipped,
         tasks: data.tasks.length,

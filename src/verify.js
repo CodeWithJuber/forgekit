@@ -11,6 +11,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   writeFileSync,
@@ -23,8 +24,9 @@ import { readForgeConfig } from "./repo_config.js";
 import {
   detectRunners,
   detectStack,
+  isWorkspaceMember,
   matchesWorkspaceGlob,
-  rootTestCoversWorkspaces,
+  recursiveTestRun,
 } from "./stack.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
@@ -140,8 +142,10 @@ export function signProvenance(prov) {
 
 /** The fingerprint scheme. v2 (review F01): a canonical, length-delimited MANIFEST — the v1
  *  hash concatenated untracked files' bytes with no path and no boundary, so renaming an
- *  untracked file, or moving bytes from one file to the next, kept the same hash. */
-export const CODE_STATE_SCHEME = "manifest-v2";
+ *  untracked file, or moving bytes from one file to the next, kept the same hash. v3 (review
+ *  N05): nested repositories and submodules are bound by their own code state, and declared
+ *  `verify.external` paths are part of the hashed policy. */
+export const CODE_STATE_SCHEME = "manifest-v3";
 
 /**
  * The per-repo `verify` settings from `.forge/forge.config.json` (`verify` key), validated:
@@ -152,9 +156,13 @@ export const CODE_STATE_SCHEME = "manifest-v2";
  *   - `generated`: git glob pathspecs for outputs a test run may legitimately write (coverage
  *     reports, build output that is not gitignored). They are excluded from the code-state
  *     fingerprint EVERYWHERE, so they can never invalidate — or be vouched for by — a stamp.
+ *   - `external`: paths deliberately OUTSIDE the verified code (a vendored checkout, a nested
+ *     repository you do not own). Excluded from the fingerprint like `generated`, but recorded
+ *     in every verifier event as a declared boundary (review N05): code the fingerprint cannot
+ *     bind otherwise makes a PASS INCOMPLETE.
  * Malformed values are dropped, never trusted.
  * @param {string} root
- * @returns {{workspaces: "auto"|"root", exclude: string[], generated: string[]}}
+ * @returns {{workspaces: "auto"|"root", exclude: string[], generated: string[], external: string[]}}
  */
 export function verifyConfig(root) {
   let raw = {};
@@ -167,6 +175,7 @@ export function verifyConfig(root) {
     workspaces: raw?.workspaces === "root" ? "root" : "auto",
     exclude: strings(raw?.exclude),
     generated: strings(raw?.generated),
+    external: strings(raw?.external),
   };
 }
 
@@ -194,24 +203,74 @@ const DIFF_FLAGS = [
   "--dst-prefix=b/",
 ];
 
+/** How deep nested repositories are followed (a repo inside a repo inside a repo…). */
+const NESTED_DEPTH = 3;
+
+/**
+ * A nested repository's own code state, as a manifest record (review N05). Git lists an
+ * untracked embedded repository as one `dir/` entry and a submodule as one gitlink, so its
+ * FILES never reach the outer fingerprint: a test could rewrite code it imports from there and
+ * the stamp would still match. It is bound by its own HEAD, diffs and untracked manifest,
+ * recursively. What cannot be bound (no repository there, too deep, unreadable) is `unbound`.
+ * @param {string} cwd @param {string} rel @param {string} type @param {number} depth
+ * @returns {{record: any[], unbound?: string[]}}
+ */
+function nestedRecord(cwd, rel, type, depth) {
+  const dir = rel.replace(/\/+$/, "");
+  const abs = join(cwd, dir);
+  // An uninitialized submodule is an empty directory: there is no code there to bind.
+  let empty = false;
+  try {
+    empty = readdirSync(abs).length === 0;
+  } catch {}
+  if (empty) return { record: [type, rel, "empty"] };
+  if (depth >= NESTED_DEPTH || !existsSync(join(abs, ".git")))
+    return { record: [type, rel, null], unbound: [`${dir}/`] };
+  const inner = computeCodeState(abs, { depth: depth + 1 });
+  if (typeof inner.dirtyHash !== "string")
+    return { record: [type, rel, null], unbound: [`${dir}/`] };
+  return {
+    record: [type, rel, inner.scheme, inner.head ?? "", inner.dirtyHash],
+    ...(inner.unbound ? { unbound: inner.unbound.map((u) => `${dir}/${u}`) } : {}),
+  };
+}
+
 /**
  * One manifest record for an untracked path — `[type, path, …]` as canonical JSON, so every
  * field is unambiguously delimited. Symlinks are recorded by TARGET (never followed); a nested
- * repository/directory entry (`sub/`) is bound by path only and reported in `unbound`; a
- * regular file by exec bit, size and content sha256. Throws when a file cannot be read — the
- * caller turns that into an unbindable state instead of hashing around the gap.
- * @param {string} cwd @param {string} rel
+ * repository (`sub/`) by its own code state (nestedRecord); a regular file by exec bit, size
+ * and content sha256; anything else (a socket, a FIFO) by path only, reported in `unbound`.
+ * Throws when a file cannot be read — the caller turns that into an unbindable state instead
+ * of hashing around the gap.
+ * @param {string} cwd @param {string} rel @param {number} depth
+ * @returns {{record: any[], unbound?: string[]}}
  */
-function manifestRecord(cwd, rel) {
+function manifestRecord(cwd, rel, depth) {
   const abs = join(cwd, rel);
-  if (rel.endsWith("/")) return { record: ["dir", rel], unbound: true };
+  if (rel.endsWith("/")) return nestedRecord(cwd, rel, "repo", depth);
   const st = lstatSync(abs);
   if (st.isSymbolicLink()) return { record: ["symlink", rel, readlinkSync(abs)] };
-  if (!st.isFile()) return { record: ["other", rel], unbound: true };
+  if (!st.isFile()) return { record: ["other", rel], unbound: [rel] };
   // git tracks only the executable bit; on Windows it is not meaningful at all.
   const mode = platform() === "win32" ? "-" : st.mode & 0o111 ? "755" : "644";
   const digest = createHash("sha256").update(readFileSync(abs)).digest("hex");
   return { record: ["file", rel, mode, st.size, digest] };
+}
+
+/** Submodule paths declared in `.gitmodules` (their working trees are other repositories). */
+function submodulePaths(cwd) {
+  let text = "";
+  try {
+    text = readFileSync(join(cwd, ".gitmodules"), "utf8");
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*path\s*=(.*)$/.exec(line);
+    if (m?.[1].trim()) out.push(m[1].trim());
+  }
+  return [...new Set(out)].sort();
 }
 
 /**
@@ -227,11 +286,15 @@ function manifestRecord(cwd, rel) {
  *   - untracked files: path + exec bit + size + sha256 — a rename, a repartition of bytes
  *     between files, an added EMPTY file, or a mode change all change the hash;
  *   - untracked symlinks: bound by their target string, never followed;
- *   - untracked nested repositories: bound by path only (their content is another repo's
- *     state) and listed in `unbound`;
+ *   - nested repositories — an untracked embedded repo, or a submodule's working tree — are
+ *     bound by THEIR OWN code state (HEAD, diffs, untracked manifest), recursively to depth
+ *     NESTED_DEPTH (review N05: a test that rewrote code it imported from a nested repo used to
+ *     leave the fingerprint unchanged). Whatever cannot be bound is listed in `unbound`, and a
+ *     verdict is never PASS while code is unbound (see verify);
  *   - gitignored files are not code state (generated/untracked-by-design), and neither are
- *     interpreter/tool caches (BUILTIN_GENERATED), the `verify.generated` pathspecs, or forge's
- *     own `.forge/` directory;
+ *     interpreter/tool caches (BUILTIN_GENERATED), the `verify.generated` pathspecs, paths
+ *     declared `verify.external` (outside the verified code, by declaration), or forge's own
+ *     `.forge/` directory;
  *   - an untracked file that cannot be read makes the state UNBINDABLE (`dirtyHash: null`,
  *     `unbindable` says why) — never hashed around.
  * Never throws; `gitAvailable:false` / `dirtyHash:null` is the honest "cannot bind" signal
@@ -239,18 +302,25 @@ function manifestRecord(cwd, rel) {
  * error or an over-size output hashes as "cannot bind", never as the empty diff). Pure w.r.t.
  * the tree — reads git + files, writes nothing.
  * @param {string} [cwd]
+ * @param {{depth?: number}} [opts] nesting depth (internal: nested repositories recurse)
  * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean, scheme: string,
- *   unbound?: string[], unbindable?: string}}
+ *   unbound?: string[], external?: string[], unbindable?: string}}
  */
-export function computeCodeState(cwd = process.cwd()) {
+export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
   const scheme = CODE_STATE_SCHEME;
   try {
     if (git(["rev-parse", "--is-inside-work-tree"], cwd).trim() !== "true")
       return { head: null, dirtyHash: null, gitAvailable: false, scheme };
     const head = git(["rev-parse", "HEAD"], cwd).trim() || null;
-    const generated = [...BUILTIN_GENERATED, ...verifyConfig(cwd).generated];
-    // Generated outputs (built-in caches + what the repo declared) are excluded on BOTH sides.
-    const excludes = generated.map((g) => `:(top,exclude,glob)${g}`);
+    const config = verifyConfig(cwd);
+    const generated = [...BUILTIN_GENERATED, ...config.generated];
+    const external = config.external;
+    // Generated outputs (built-in caches + what the repo declared) and declared-external paths
+    // are excluded on BOTH sides; an external path is excluded as itself and as a directory.
+    const excludes = [
+      ...generated,
+      ...external.flatMap((g) => [g, `${g.replace(/\/+$/, "")}/**`]),
+    ].map((g) => `:(top,exclude,glob)${g}`);
     const trackedSpec = excludes.length ? ["--", ":/", ...excludes] : [];
     const untrackedSpec = excludes.length ? ["--", ".", ...excludes] : [];
     // Exclude forge's OWN state dir: writing provenance.json / session files must never
@@ -273,6 +343,7 @@ export function computeCodeState(cwd = process.cwd()) {
     section("scheme", scheme);
     section("head", head ?? "");
     section("generated", JSON.stringify(generated));
+    section("external", JSON.stringify(external));
     // Unborn HEAD (no commit yet): index-vs-worktree + staged covers the whole change.
     section(
       "worktree",
@@ -289,7 +360,7 @@ export function computeCodeState(cwd = process.cwd()) {
     for (const f of untracked) {
       let rec;
       try {
-        rec = manifestRecord(cwd, f);
+        rec = manifestRecord(cwd, f, depth);
       } catch (err) {
         return {
           head,
@@ -299,16 +370,29 @@ export function computeCodeState(cwd = process.cwd()) {
           unbindable: `untracked file ${f} could not be read (${err?.code ?? "error"})`,
         };
       }
-      if (rec.unbound) unbound.push(f);
+      if (rec.unbound) unbound.push(...rec.unbound);
       lines.push(JSON.stringify(rec.record));
     }
     section("untracked", lines.join("\n"));
+    // Submodule working trees: the outer diff shows only their commit (plus a "-dirty" flag
+    // that cannot tell one edit from the next), so each is bound by its own state.
+    const isExternal = (p) =>
+      external.some((g) => matchesWorkspaceGlob(g, p) || p.startsWith(`${g.replace(/\/+$/, "")}/`));
+    const subs = [];
+    for (const p of submodulePaths(cwd)) {
+      if (isExternal(p) || !existsSync(join(cwd, p))) continue;
+      const rec = nestedRecord(cwd, p, "submodule", depth);
+      if (rec.unbound) unbound.push(...rec.unbound);
+      subs.push(JSON.stringify(rec.record));
+    }
+    section("submodules", subs.join("\n"));
     return {
       head,
       dirtyHash: h.digest("hex"),
       gitAvailable: true,
       scheme,
-      ...(unbound.length ? { unbound } : {}),
+      ...(unbound.length ? { unbound: [...new Set(unbound)].sort() } : {}),
+      ...(external.length ? { external } : {}),
     };
   } catch {
     return { head: null, dirtyHash: null, gitAvailable: false, scheme };
@@ -350,6 +434,12 @@ export function computeCodeState(cwd = process.cwd()) {
  * @property {string[]} uncovered
  * @property {{path: string, reason: string}[]} excluded
  * @property {boolean} rootCoversWorkspaces  the root command runs every declared workspace
+ * @property {Record<string, "measured"|"inferred"|"declared">} [basis]  what each required
+ *   package's verdict rests on, weakest link: a suite ran there (measured), the root command
+ *   was recognized as a recursive run reaching it (inferred), or `verify.workspaces: "root"`
+ *   says so (declared)
+ * @property {{tool: string, command: string}} [rootRun]  the recognized recursive root command
+ * @property {string} [declared]             the declaration behind "declared" coverage
  * @property {boolean} [truncated]           the package scan was a sample (non-git fallback)
  */
 /**
@@ -364,6 +454,7 @@ export function computeCodeState(cwd = process.cwd()) {
  * @property {string[]} [notExecuted]     labels of detected suites forge has no built-in executor for
  * @property {SuiteCoverage} [coverage]   which packages the verdict actually covers
  * @property {boolean} [mutated]          the code state changed while the suites ran (review F10)
+ * @property {string[]} [unbound]         code the fingerprint could not bind — never a PASS (N05)
  * @property {string} [output]
  */
 // Bins forge is willing to execute directly. Everything else stays report-only.
@@ -541,17 +632,30 @@ function nestedPackages(root, stack) {
   };
 }
 
+// The package managers whose `<pm> test` runner is a package's own `scripts.test` — the one
+// suite a recursive workspace run executes for it (a pytest or go suite beside it is not).
+const SCRIPT_RUNNERS = new Set(["npm", "pnpm", "yarn", "bun"]);
+const isScriptRunner = (r) => SCRIPT_RUNNERS.has(r?.bin) && r?.args?.[0] === "test";
+// Weakest link first: what a package's verdict ultimately rests on (review N03, suggestion 4).
+const BASIS_ORDER = ["declared", "inferred", "measured"];
+
 /**
- * The verification plan (review F08/F09): which suites run where, and which package dirs
+ * The verification plan (review F08/F09/N03): which suites run where, and which package dirs
  * each verdict speaks for. A PASS may only be claimed for what a suite actually covered.
  *   - The root's declared suites run at the root and cover ".".
  *   - A nested package that declares its own suite (an explicit `scripts.test`, a pytest
  *     config, go.mod…) is REQUIRED, unless excluded by `verify.exclude` or by living under
  *     a fixture/test-data directory (a declared workspace member is never excluded that way).
- *   - It is covered by the root run when the root script is a recursive workspace run and the
- *     package is a declared workspace member, or when the repo declares `verify.workspaces:
- *     "root"` — then it is not run twice. Otherwise its own suite runs in its own directory.
- * Runners found only as dependencies are inventory, never obligations (see stack.js).
+ *   - Its `scripts.test` suite is covered by the root run only when the root `test` script is
+ *     an ESTABLISHED recursive run (stack.recursiveTestRun: a recognized, unfiltered
+ *     invocation whose failure reaches the script's exit status) and the package is a member
+ *     of the workspace list THAT tool iterates; every package's suites are covered when the
+ *     repo declares `verify.workspaces: "root"`. Any other suite of the package — and every
+ *     suite of a package the run does not reach — runs in the package's own directory.
+ * `coverage.basis` says what each required package's verdict rests on, weakest link first:
+ * "declared" (the repo's `verify.workspaces: "root"` statement), "inferred" (the recognized
+ * recursive command in `coverage.rootRun`), or "measured" (a suite ran in that package and its
+ * exit code was read). Runners found only as dependencies are inventory, never obligations.
  * @param {string} root
  * @param {{stack?: any, config?: ReturnType<typeof verifyConfig>}} [opts]
  */
@@ -561,13 +665,15 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     ? stack.testRunners
     : parseRunnerStrings(stack?.testCommands ?? []);
   const workspaces = stack?.workspaces ?? [];
-  const recursive = rootTestCoversWorkspaces(root);
+  const run = recursiveTestRun(root);
   const declaredRoot = config.workspaces === "root";
   /** @type {{cwd: string, runner: any, label: string, covers: string[]}[]} */
   const nested = [];
   /** @type {{path: string, reason: string}[]} */
   const excluded = [];
   const required = rootRunners.length ? ["."] : [];
+  /** @type {Record<string, "measured"|"inferred"|"declared">} */
+  const basis = rootRunners.length ? { ".": "measured" } : {};
   const rootCovers = ["."];
   const scan = nestedPackages(root, stack);
   for (const pkg of scan.roots) {
@@ -586,14 +692,22 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     } catch {}
     if (!runners.length) continue; // declares no suite — nothing is owed for it
     required.push(pkg);
-    if (declaredRoot || (recursive && member)) {
-      rootCovers.push(pkg);
-      continue;
-    }
+    const reached = !!run && isWorkspaceMember(run.globs, pkg);
+    const bases = new Set();
     for (const r of runners) {
-      detected.push(`${r.label} (${pkg})`);
-      nested.push({ cwd: pkg, runner: r, label: `${r.label} (${pkg})`, covers: [pkg] });
+      if (declaredRoot) bases.add("declared");
+      else if (reached && isScriptRunner(r)) bases.add("inferred");
+      else {
+        bases.add("measured");
+        detected.push(`${r.label} (${pkg})`);
+        nested.push({ cwd: pkg, runner: r, label: `${r.label} (${pkg})`, covers: [pkg] });
+        continue;
+      }
+      if (!rootCovers.includes(pkg)) rootCovers.push(pkg);
     }
+    basis[pkg] = /** @type {"measured"|"inferred"|"declared"} */ (
+      BASIS_ORDER.find((b) => bases.has(b))
+    );
   }
   const rootSuites = rootRunners.map((r) => ({
     cwd: ".",
@@ -607,7 +721,10 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     coverage: {
       required,
       excluded,
-      rootCoversWorkspaces: recursive || declaredRoot,
+      rootCoversWorkspaces: !!run || declaredRoot,
+      basis,
+      ...(run ? { rootRun: { tool: run.tool, command: run.command } } : {}),
+      ...(declaredRoot ? { declared: "verify.workspaces=root" } : {}),
       ...(scan.truncated ? { truncated: true } : {}),
     },
   };
@@ -778,26 +895,60 @@ function environmentDigest() {
 }
 
 /**
- * The MAC over one verifier event: the run id, the verdict, and the code state before and
- * after the run. It AUTHENTICATES who recorded the event (this machine's key) — it does not
- * make the verdict true.
- * @param {any} event
+ * The verifier-event CONTRACT version (review suggestion 2). A v2 event's MAC covers the WHOLE
+ * event — run id, verifier and version, timestamps, verdict, every suite's cwd/command/covers/
+ * status/exit code, what was not executed, package coverage and its basis, the pre/post code
+ * state (unbound paths included) and the environment — in canonical form (sorted keys), so no
+ * field a consumer reads can be edited without breaking it. v1 events (read-only now) MAC'd
+ * the run id, verdict and code state only; their other fields are unauthenticated.
  */
-export const verifyEventMac = (event) =>
-  evidenceMac([
-    "verify-event",
-    event?.runId,
-    event?.status,
-    event?.pre?.scheme,
-    event?.pre?.head,
-    event?.pre?.dirtyHash,
-    event?.post?.head,
-    event?.post?.dirtyHash,
-  ]);
+export const VERIFY_EVENT_VERSION = 2;
+// Fields a READER derives (readVerifyEvents) — never signed, never trusted from the file.
+const DERIVED_EVENT_FIELDS = new Set(["mac", "authenticated", "authScope"]);
+
+/** Deterministic JSON: keys sorted at every depth, undefined dropped. */
+const canonicalJson = (v) => {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  const keys = Object.keys(v)
+    .filter((k) => v[k] !== undefined)
+    .sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(",")}}`;
+};
 
 /**
- * Read this checkout's verifier events (`.forge/verify-events.jsonl`), newest last. Lines
- * that fail to parse or whose MAC does not verify are skipped, never trusted.
+ * The MAC over one verifier event (see VERIFY_EVENT_VERSION for what it covers). It
+ * AUTHENTICATES who recorded the event (this machine's key) — it does not make the verdict
+ * true. `null` when no evidence key is available.
+ * @param {any} event
+ */
+export const verifyEventMac = (event) => {
+  if (event?.v === 1)
+    return evidenceMac([
+      "verify-event",
+      event?.runId,
+      event?.status,
+      event?.pre?.scheme,
+      event?.pre?.head,
+      event?.pre?.dirtyHash,
+      event?.post?.head,
+      event?.post?.dirtyHash,
+    ]);
+  const signed = Object.fromEntries(
+    Object.entries(event ?? {}).filter(([k]) => !DERIVED_EVENT_FIELDS.has(k)),
+  );
+  return evidenceMac([`verify-event/v${VERIFY_EVENT_VERSION}`, canonicalJson(signed)]);
+};
+
+/**
+ * This checkout's verifier events (`.forge/verify-events.jsonl`), newest last, each with two
+ * DERIVED fields that are never read from the file:
+ *   - `authenticated` — its MAC verifies under this machine's evidence key;
+ *   - `authScope` — what that MAC covers: "event" (every field, v2), "verdict" (run id,
+ *     verdict and code state only, v1), or null when not authenticated.
+ * Existence is not authenticity (review N06): with no key available (an unreadable or
+ * unwritable state dir) NOTHING is authenticated — an unsigned line is reported, never
+ * promoted into verified evidence. Lines that do not parse or name no run are skipped.
  * @param {string} root
  * @returns {any[]}
  */
@@ -811,11 +962,20 @@ export function readVerifyEvents(root) {
   const out = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
+    let e;
     try {
-      const e = JSON.parse(line);
-      const mac = verifyEventMac(e);
-      if (typeof e?.runId === "string" && (mac == null || e.mac === mac)) out.push(e);
-    } catch {}
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!e || typeof e !== "object" || typeof e.runId !== "string") continue;
+    const mac = verifyEventMac(e);
+    const authenticated = typeof mac === "string" && e.mac === mac;
+    out.push({
+      ...e,
+      authenticated,
+      authScope: authenticated ? (e.v === 1 ? "verdict" : "event") : null,
+    });
   }
   return out;
 }
@@ -907,9 +1067,23 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     tests.passed = false;
     tests.output = tests.output ? `${note}; ${tests.output}` : note;
   }
+  // N05: code the fingerprint cannot bind (a nested repository it could not read, a socket…)
+  // could change without changing the stamp — so a PASS is never claimed while any is
+  // unbound. A path that is deliberately not part of the verified code is DECLARED
+  // (`verify.external`), which excludes it and records the boundary in the event instead.
+  const unbound = [...new Set([...(pre.unbound ?? []), ...(post.unbound ?? [])])].sort();
+  if (unbound.length) {
+    tests.unbound = unbound;
+    if (tests.status === "PASS") {
+      const note = `code the fingerprint cannot bind: ${unbound.join(", ")} — it could change without changing this stamp; declare it in verify.external if it is not part of what you verify`;
+      tests.status = "INCOMPLETE";
+      tests.passed = false;
+      tests.output = tests.output ? `${note}; ${tests.output}` : note;
+    }
+  }
 
   const event = {
-    v: 1,
+    v: VERIFY_EVENT_VERSION,
     runId,
     verifier: `${BRAND.cli} verify`,
     verifierVersion: BRAND.version,
@@ -925,8 +1099,20 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
     })),
     notExecuted: tests.notExecuted ?? [],
     coverage: tests.coverage ?? null,
-    pre: { scheme: pre.scheme, head: pre.head, dirtyHash: pre.dirtyHash },
-    post: { head: post.head, dirtyHash: post.dirtyHash },
+    pre: {
+      scheme: pre.scheme,
+      head: pre.head,
+      dirtyHash: pre.dirtyHash,
+      ...(pre.unbound ? { unbound: pre.unbound } : {}),
+    },
+    post: {
+      head: post.head,
+      dirtyHash: post.dirtyHash,
+      ...(post.unbound ? { unbound: post.unbound } : {}),
+    },
+    // Declared boundaries (review N05): paths excluded from the fingerprint by the repo's own
+    // statement — inspectable by every evidence consumer, never silently outside the proof.
+    ...(pre.external?.length ? { external: pre.external } : {}),
     environment: environmentDigest(),
   };
   const provenance = {

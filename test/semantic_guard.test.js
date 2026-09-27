@@ -3,8 +3,10 @@ import { test } from "node:test";
 import {
   criticalFeatures,
   describeConflicts,
+  layoutFeatures,
   sameSemantics,
   semanticConflicts,
+  statementKey,
   trimEdges,
 } from "../src/semantic_guard.js";
 
@@ -67,6 +69,7 @@ test("semantic guard: features are extracted per class; literals are not re-scan
     identifiers: [],
     paths: [],
     polarity: [],
+    layout: [],
   });
 });
 
@@ -108,4 +111,15 @@ test("trimEdges equals the edge-punctuation regex it replaced, in linear time", 
   const t0 = performance.now();
   assert.equal(trimEdges(hostile), hostile);
   assert.ok(performance.now() - t0 < 1000, "linear, not quadratic");
+});
+
+// Review 2026-09-27: the new layout and statement-key scans must stay linear on hostile text —
+// a `[…]+$` regex over a long punctuation run took over a minute on 200k characters.
+test("layoutFeatures and statementKey are linear on long punctuation runs", () => {
+  const run = ".".repeat(200000);
+  const t0 = performance.now();
+  assert.ok(layoutFeatures(`x ${run}a  b`).length > 0);
+  assert.equal(statementKey(`a${run}b${run}`), `a${run}b`);
+  assert.ok(semanticConflicts(`x ${run}a  b`, `x ${run}a b`).length > 0);
+  assert.ok(performance.now() - t0 < 2000, "linear, not quadratic");
 });

@@ -160,9 +160,14 @@ counted as delivering a definition that sat below line 100 of that file (F03). P
 - **A pointer is an obligation, not coverage.** A one-line `- read <file>` creates a *pending read
   obligation*, listed in `pending`; it does not count as covering anything until the span is
   actually read.
-- **A head covers only what it shows.** The "first 25 lines" variant covers a definition only when
-  the definition's line falls inside the delivered span; definitions use a symbol-span variant when
-  the atlas knows the line.
+- **A definition is delivered whole, or not at all.** A span or the "first 25 lines" head covers a
+  definition only when it shows the whole definition, from its declaration to its last line (the
+  atlas records `endLine`, the extent of every definition it can scope). One that shows the
+  declaration but cuts the body is listed in `partial` (lines shown, lines spanned) and stays a
+  pending read (review N04: a 103-line function delivered as lines 1–41 used to count as covered).
+  A definition with no known extent is delivered only by the whole file. The span ladder offers
+  whole definitions first, so a small definition deep in a large file is still delivered within
+  a small budget.
 - **Truncation is visible.** A dependents list cut at 12 entries names the omitted entries in
   `truncated`.
 - **Selection is a heuristic.** Optional items are chosen greedily by value density (score ÷
@@ -171,7 +176,7 @@ counted as delivering a definition that sat below line 100 of that file (F03). P
 - **The ambient hook does not assemble context.** For latency, the per-prompt hook uses caches
   only; the explicit gate (`forge substrate`) and `forge context` assemble.
 - **`ok` means syntactically delivered.** Every required key has delivered content within the
-  budget, with no overflow and no pending reads. It does not mean the delivered text is
+  budget (every definition whole), with no overflow and no pending reads. It does not mean the delivered text is
   semantically sufficient for the edit, and `contracts(S)` (the types and interfaces a symbol
   implements) is not yet part of `R(edit)`.
 

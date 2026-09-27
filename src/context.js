@@ -115,26 +115,50 @@ export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 
 // An item is one injectable unit with a COMPRESSION LADDER: granularity variants from
 // full text down to a one-line pointer. The optimizer may downgrade an item instead of
 // dropping it — compression is a lossy move with a known cost, chosen explicitly, never by
-// scroll-off (spec §2). EVERY VARIANT CARRIES ITS OWN COVERAGE (review F03): the full file
-// covers all its keys; a symbol span covers the definitions whose declaration line it shows;
-// the first-25-lines head covers only what lies inside it; a pointer (`- read <file>`)
-// covers NOTHING — it creates a pending read obligation. Availability is not delivery.
+// scroll-off (spec §2). EVERY VARIANT CARRIES ITS OWN COVERAGE (review F03, then N04): the
+// full file covers all its keys; a span or the first-25-lines head covers a definition only
+// when it shows the WHOLE definition, declaration through its last line (the atlas records
+// each definition's extent, `endLine`). One that shows the declaration but cuts the body is
+// PARTIAL — named in `partial` and still a pending read, so a 104-line function delivered as
+// its first 41 lines is never reported as a delivered definition. A definition whose extent
+// is unknown is covered by the whole file only. A pointer (`- read <file>`) covers NOTHING —
+// it creates a pending read obligation. Availability is not delivery.
 
 /** One variant: its rendered text, estimated tokens, the keys it satisfies, the keys it only
- *  points at (pending reads), and what it truncated. */
-const variant = (gran, text, covers, pending = [], truncated = null) => ({
+ *  points at (pending reads), what it truncated, and the definitions it shows only in part
+ *  (`{key, shown, definition}` line ranges — a partial key is also pending). */
+const variant = (gran, text, covers, pending = [], truncated = null, partial = []) => ({
   gran,
   text,
   tokens: tokensOf(text),
   covers,
   pending,
   ...(truncated ? { truncated } : {}),
+  ...(partial.length ? { partial } : {}),
 });
+
+/** Split definition needs by what a [from, to] line window shows of them: `covers` — the whole
+ *  definition; `partial` — the declaration line but not its end (or an unknown end). */
+function windowCoverage(defs, from, to) {
+  const covers = [];
+  const partial = [];
+  for (const d of defs) {
+    if (d.line < from || d.line > to) continue;
+    if (Number.isFinite(d.endLine) && d.endLine <= to) covers.push(d.key);
+    else
+      partial.push({
+        key: d.key,
+        shown: [from, to],
+        definition: [d.line, Number.isFinite(d.endLine) ? d.endLine : null],
+      });
+  }
+  return { covers, partial };
+}
 
 /**
  * All variants of one file, given the required keys it serves: `needs` entries are
- * {key, kind: "def"|"file"|"tests", line?}. Ordered largest → smallest; a variant that is not
- * smaller than the previous one is skipped.
+ * {key, kind: "def"|"file"|"tests", line?, endLine?}. Ordered largest → smallest; a variant
+ * that is not smaller than the previous one is skipped.
  */
 function fileItem(root, rel, { needs, source, score }) {
   const text = readRel(root, rel);
@@ -144,29 +168,32 @@ function fileItem(root, rel, { needs, source, score }) {
   const keys = needs.map((n) => n.key);
   const defs = needs.filter((n) => n.kind === "def" && Number.isFinite(n.line));
   const variants = [variant("full", `// ${rel}\n${text}`, keys)];
-  // Symbol span: the lines around the requested definitions, when the atlas knows them.
+  const windowed = (gran, label, from, to) => {
+    const { covers, partial } = windowCoverage(defs, from, to);
+    return variant(
+      gran,
+      `// ${rel}:${from}-${to} of ${total} (${label})\n${lines.slice(from - 1, to).join("\n")}`,
+      covers,
+      keys.filter((k) => !covers.includes(k)),
+      { shownLines: [from, to], totalLines: total },
+      partial,
+    );
+  };
   if (defs.length) {
     const from = Math.max(1, Math.min(...defs.map((d) => d.line)) - SPAN_BEFORE);
-    const to = Math.min(total, Math.max(...defs.map((d) => d.line)) + SPAN_AFTER);
-    if (from > 1 || to < total) {
-      const covers = defs.filter((d) => d.line >= from && d.line <= to).map((d) => d.key);
-      variants.push(
-        variant(
-          "span",
-          `// ${rel}:${from}-${to} of ${total} (definition span)\n${lines.slice(from - 1, to).join("\n")}`,
-          covers,
-          keys.filter((k) => !covers.includes(k)),
-          { shownLines: [from, to], totalLines: total },
-        ),
-      );
+    // Whole definitions, when the atlas knows where every requested one ends.
+    if (defs.every((d) => Number.isFinite(d.endLine))) {
+      const to = Math.min(total, Math.max(...defs.map((d) => /** @type {number} */ (d.endLine))));
+      if (from > 1 || to < total) variants.push(windowed("span", "whole definitions", from, to));
     }
+    // The declaration and the start of the body: a smaller rung, partial for long bodies.
+    const to = Math.min(total, Math.max(...defs.map((d) => d.line)) + SPAN_AFTER);
+    if (from > 1 || to < total) variants.push(windowed("span", "definition span", from, to));
   }
   if (total > HEAD_LINES) {
-    // The head covers a definition only if its declaration line is inside the head; a whole
-    // file or test file is never "covered" by its first 25 lines.
-    const covers = needs
-      .filter((n) => n.kind === "def" && Number.isFinite(n.line) && n.line <= HEAD_LINES)
-      .map((n) => n.key);
+    // The head covers a definition only if the WHOLE definition is inside it; a whole file or
+    // test file is never "covered" by its first 25 lines.
+    const { covers, partial } = windowCoverage(defs, 1, HEAD_LINES);
     variants.push(
       variant(
         "head",
@@ -174,13 +201,18 @@ function fileItem(root, rel, { needs, source, score }) {
         covers,
         keys.filter((k) => !covers.includes(k)),
         { shownLines: [1, HEAD_LINES], totalLines: total },
+        partial,
       ),
     );
   }
   variants.push(variant("pointer", `- read ${rel}`, [], keys));
-  const ladder = [];
-  for (const v of variants.sort((a, b) => b.tokens - a.tokens))
-    if (!ladder.length || v.tokens < ladder[ladder.length - 1].tokens) ladder.push(v);
+  // The whole file is always the top rung; every lower rung is strictly smaller (a window
+  // whose label outweighs the lines it saves is no compression at all, and would otherwise
+  // outrank the full file while delivering less of it).
+  const [full, ...smaller] = variants;
+  const ladder = [full];
+  for (const v of smaller.sort((a, b) => b.tokens - a.tokens))
+    if (v.tokens < ladder[ladder.length - 1].tokens) ladder.push(v);
   return { id: `${source}:${rel}`, source, covers: keys, score, variants: ladder };
 }
 
@@ -188,16 +220,20 @@ function fileItem(root, rel, { needs, source, score }) {
  * Assemble the context for a task: pinned required items (downgraded before dropped),
  * optional items greedily by value density, and the missing set as derived questions.
  *
- * Honesty contract (review F02/F03):
+ * Honesty contract (review F02/F03/N04):
  *   - `tokens` is measured on the RENDERED block (labels and separators included) with the
  *     chars/3.6 estimate (`tokenEstimate` says so). The block never exceeds `budget` by that
  *     measure: when even pointers cannot fit, required items are DROPPED (lowest score first)
  *     and reported, with `overflow: true`.
- *   - `covered` holds only keys whose content was actually delivered; `pending` holds keys the
- *     block merely points at (a pointer, or a partial span/head) — read obligations; `missing`
- *     holds keys neither delivered nor pointed at (unresolvable, or dropped on overflow).
- *   - `ok` means every required key was DELIVERED within budget: no missing, no pending, no
- *     overflow. It is syntactic delivery, not semantic sufficiency.
+ *   - `covered` holds only keys whose content was actually delivered — for a definition, the
+ *     WHOLE definition, declaration through its last line; `pending` holds keys the block
+ *     merely points at (a pointer, a head or span that cuts the body) — read obligations;
+ *     `partial` names the definitions whose declaration was shown but whose body was cut
+ *     (shown lines vs the definition's extent); `missing` holds keys neither delivered nor
+ *     pointed at (unresolvable, or dropped on overflow).
+ *   - `ok` means every required key was DELIVERED within budget: no missing, no pending (so
+ *     no partial definition), no overflow. It is syntactic delivery, not semantic
+ *     sufficiency.
  *   - Optional items are chosen greedily by value density (score per token) with per-source
  *     diminishing returns — a heuristic, with no knapsack or set-cover guarantee (the
  *     per-source discount breaks the preconditions those guarantees need).
@@ -217,7 +253,7 @@ export function assemble(
   // --- build candidate items, keyed by what they cover -------------------------------
   // File-backed keys are grouped per file first, so one file is one item whose variants
   // know exactly which of its keys each one delivers.
-  /** @type {Map<string, {needs: {key:string, kind:string, line?:number}[], source:string, score:number}>} */
+  /** @type {Map<string, {needs: {key:string, kind:string, line?:number, endLine?:number}[], source:string, score:number}>} */
   const files = new Map();
   const need = (rel, n, source, score) => {
     const f = files.get(rel) ?? { needs: [], source, score };
@@ -235,7 +271,8 @@ export function assemble(
     if (!r.resolvable) continue;
     if (r.kind === "def") {
       const hit = atlasQuery(atlas, r.name).find((s) => s.name === r.name || s.qname === r.name);
-      if (hit?.file) need(hit.file, { key: r.key, kind: "def", line: hit.line }, "def", 1);
+      if (hit?.file)
+        need(hit.file, { key: r.key, kind: "def", line: hit.line, endLine: hit.endLine }, "def", 1);
     } else if (r.kind === "file") {
       need(r.name, { key: r.key, kind: "file" }, "def", 1);
     } else if (r.kind === "tests") {
@@ -366,6 +403,12 @@ export function assemble(
   const missing = required.filter(
     (r) => !r.resolvable || (!covered.has(r.key) && !pending.has(r.key)),
   );
+  // Definitions shown only in part (declaration delivered, body cut — review N04). Each is
+  // also pending: the rest of the body is a read obligation, never "delivered".
+  const partial = chosen
+    .flatMap((c) => c.item.variants[c.v].partial ?? [])
+    .filter((p) => !covered.has(p.key))
+    .sort((a, b) => (a.key < b.key ? -1 : 1));
   const questions = missing
     .filter((r) => !r.resolvable)
     .map((r) =>
@@ -388,6 +431,7 @@ export function assemble(
     required: required.map((r) => r.key),
     covered: [...covered].sort(),
     pending: [...pending].sort(),
+    partial,
     missing: missing.map((r) => r.key),
     questions,
     truncated,
@@ -419,6 +463,10 @@ export function renderContext(r) {
     lines.push("", "  pending reads (pointed at, not delivered — read before acting):");
     for (const p of r.pending) lines.push(`    - ${p}`);
   }
+  for (const p of r.partial ?? [])
+    lines.push(
+      `    ~ ${p.key}: only lines ${p.shown[0]}-${p.shown[1]} shown of a definition spanning ${p.definition[0]}-${p.definition[1] ?? "?"} — the body is not delivered`,
+    );
   for (const t of r.truncated ?? [])
     if (t.omitted?.length)
       lines.push(

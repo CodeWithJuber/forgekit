@@ -4,12 +4,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { build } from "../src/atlas.js";
 import { val } from "../src/ledger.js";
 import { loadClaims, readEvidence, repoLedger } from "../src/ledger_store.js";
 import { read as readMetrics, record, summarize } from "../src/metrics.js";
 import {
   artifactClaim,
   bandKeys,
+  depContract,
   describeFile,
   fingerprint,
   lookup,
@@ -54,14 +56,16 @@ test("normalizeSpec: the same task worded across teammates fingerprints identica
   assert.equal(a, b, "identifier/number shape matches — same near-neighborhood");
 });
 
-test("fingerprint: exact key is context-sensitive (slice) and lossless but whitespace; sketch is stable", () => {
+test("fingerprint: the exact key is byte-exact and context-sensitive; the sketches are layout-blind", () => {
   const f1 = fingerprint("build a rate limiter", "slice-a");
   const f2 = fingerprint("build a rate limiter", "slice-b");
   const f3 = fingerprint("  build a \n rate   limiter ", "slice-a");
   const f4 = fingerprint("build a RATE limiter", "slice-a");
   assert.notEqual(f1.exact, f2.exact, "different graph context → different exact key");
-  assert.equal(f1.exact, f3.exact, "whitespace never forks the key");
-  assert.notEqual(f1.exact, f4.exact, "case is identity (F04): only whitespace is normalized");
+  assert.equal(f1.exact, fingerprint("build a rate limiter", "slice-a").exact, "deterministic");
+  assert.notEqual(f1.exact, f3.exact, "N01: whitespace is part of the exact identity");
+  assert.notEqual(f1.exact, f4.exact, "case is identity (F04)");
+  assert.deepEqual(f1.keySketch, f3.keySketch, "…but retrieval never sees layout");
   assert.deepEqual(f1.sketch, f2.sketch);
 });
 
@@ -83,6 +87,75 @@ test("F04: behaviour-changing pairs never share an exact key and never near-serv
         "the conflict is named",
       );
   }
+});
+
+// --- N01: whitespace, escapes and code points are identity at the exact boundary --------
+
+test("N01: literal whitespace, tabs, escapes, indentation and NFC/NFD never exact-hit", () => {
+  const pairs = [
+    ['return "a  b"', 'return "a b"'], // the review's counterexample
+    ['return "a\tb"', 'return "a b"'], // an embedded tab inside the literal
+    ['return "a\nb"', 'return "a\\nb"'], // a real newline vs the escape sequence
+    [String.raw`say "a\"b"`, String.raw`say "a\\"b"`], // escaped quote vs escaped backslash
+    ["if ok:\n    ping()\npong()", "if ok:\n    ping()\n    pong()"], // Python block scope
+    ["all:\n\techo hi", "all:\n    echo hi"], // a Makefile recipe needs its tab
+    ["match /a  b/ in the log", "match /a b/ in the log"], // a regex's spaces are its pattern
+    ['return "\u00e9"', 'return "e\u0301"'], // composed vs decomposed é
+  ];
+  for (const [a, b] of pairs) {
+    assert.notEqual(fingerprint(a).exact, fingerprint(b).exact, `${a} / ${b}`);
+    for (const [minted, asked] of [
+      [a, b],
+      [b, a],
+    ]) {
+      const r = lookup([verified(minted)], asked, { nowDay: 0 });
+      assert.ok(
+        r.tier === "adapt" || r.tier === "miss",
+        `${JSON.stringify(asked)} must not be served ${JSON.stringify(minted)} as-is (${r.tier})`,
+      );
+    }
+  }
+});
+
+test("N01: genuinely identical specs still hit exact — through the ledger's canonical store", () => {
+  const { root, head } = gitRepo();
+  const specs = [
+    'return "a  b" from fmt',
+    "if ok:\n    ping()\npong()",
+    "line one\r\nline two", // CRLF: the ledger folds claim TEXT to LF, never the digest
+    'return "e\u0301"', // NFD: the ledger folds claim TEXT to NFC, never the digest
+  ];
+  for (const [i, spec] of specs.entries()) {
+    const m = mintArtifact(
+      repoLedger(root),
+      { spec, code: { inline: `export const answer${i} = ${i};` } },
+      { evidence: { oracle: "test.run", result: "confirm", ref: `git:${head}` } },
+    );
+    assert.ok(m.ok, m.reason);
+    const r = reusePeek(root, spec, { nowDay: 0 });
+    assert.equal(r.tier, "exact", `${JSON.stringify(spec)} → ${r.tier}`);
+    assert.equal(r.artifact?.body?.code?.inline, `export const answer${i} = ${i};`);
+  }
+});
+
+test("N01: inline code the ledger would rewrite (CRLF, non-NFC) is refused, never folded", () => {
+  for (const inline of ['const s = "a\r\nb";', 'const s = "e\u0301";']) {
+    const r = artifactClaim({ spec: "keep the bytes", code: { inline } }, 0);
+    assert.equal(r.ok, false, JSON.stringify(inline));
+    assert.match(r.reason, /file pointer/);
+  }
+  assert.equal(
+    artifactClaim({ spec: "fine", code: { inline: 'const s = "\u00e9";' } }, 0).ok,
+    true,
+  );
+});
+
+test("N01: an artifact keyed before v3 never reaches the exact tier", () => {
+  const c = verified(SPEC);
+  const v2 = { ...c, body: { ...c.body, keyV: 2 } };
+  assert.equal(lookup([v2], SPEC, { nowDay: 0 }).tier, "near");
+  const unhashed = { ...c, body: { ...c.body, keyHash: undefined } };
+  assert.notEqual(lookup([unhashed], SPEC, { nowDay: 0 }).tier, "exact");
 });
 
 test("bandKeys: 32 deterministic bands; near-duplicates share at least one", () => {
@@ -121,10 +194,13 @@ const verified = (spec, { slice = "", deps = [], evidence = 2 } = {}) => {
   return c;
 };
 
-test("lookup: exact tier — same text (whitespace aside) and slice, proof attached", () => {
-  const r = lookup([verified(SPEC)], ` ${SPEC.replace(" ", "\n  ")} `, { nowDay: 0 });
+test("lookup: exact tier — the same text and slice, proof attached", () => {
+  const r = lookup([verified(SPEC)], SPEC, { nowDay: 0 });
   assert.equal(r.tier, "exact");
   assert.equal(r.jaccard, 1);
+  // N01: a whitespace-only rewrite of prose is no longer the same key — it reaches near.
+  const spaced = lookup([verified(SPEC)], ` ${SPEC.replace(" ", "\n  ")} `, { nowDay: 0 });
+  assert.equal(spaced.tier, "near");
   // No repo root and no atlas: the hit is returned, but never presented as checked (F05).
   assert.equal(r.revalidation.status, "unknown");
   assert.equal(r.requiresRevalidation, true);
@@ -301,18 +377,162 @@ test("F05: a same-name dependency whose signature changed invalidates the artifa
     join(root, "src", "mod.js"),
     'import { helper } from "./util.js";\nexport const run = () => helper(1);\n',
   );
-  const atlas = { symbols: [{ name: "helper", kind: "function", file: "src/util.js", line: 1 }] };
-  const desc = describeFile(root, "src/mod.js", { atlas });
+  const desc = describeFile(root, "src/mod.js", { atlas: build({ root }) });
   assert.ok(desc.depContracts.helper, "the dependency's declaration is fingerprinted at mint");
+  assert.equal(
+    desc.depSources.helper,
+    "src/util.js",
+    "…and pinned to the module it is imported from",
+  );
   const art = artifactClaim({ spec: SPEC, ...desc }, 0).claim;
-  assert.equal(revalidate(art, atlas, { root }).status, "valid");
+  assert.equal(revalidate(art, build({ root }), { root }).status, "valid");
   writeFileSync(
     join(root, "src", "util.js"),
     "export function helper(a, strict) {\n  return a;\n}\n",
   );
-  const rv = revalidate(art, atlas, { root });
+  const rv = revalidate(art, build({ root }), { root });
   assert.equal(rv.status, "invalid");
   assert.deepEqual(rv.changed, ["helper"]);
+});
+
+// --- N08: the whole declaration is the contract, and the import binding names the dependency --
+
+/** `answer.js` imports `calc` from `./dep.js`; `after(src, file)` rewrites a file and returns
+ *  the minted artifact's revalidation against a freshly built atlas. */
+const contractFixture = (depSrc, { extra = {} } = {}) => {
+  const root = tmp();
+  writeFileSync(join(root, "dep.js"), depSrc);
+  writeFileSync(
+    join(root, "answer.js"),
+    'import { calc } from "./dep.js";\nexport const answer = calc({ a: 42 });\n',
+  );
+  for (const [f, text] of Object.entries(extra)) writeFileSync(join(root, f), text);
+  const desc = describeFile(root, "answer.js", { atlas: build({ root }) });
+  const art = artifactClaim({ spec: SPEC, ...desc }, 0).claim;
+  return {
+    desc,
+    after(src, file = "dep.js") {
+      writeFileSync(join(root, file), src);
+      return revalidate(art, build({ root }), { root });
+    },
+  };
+};
+
+test("N08: a destructured key, default, nested pattern or annotation change invalidates", () => {
+  const cases = [
+    // the review's counterexample: both used to hash as `export function calc(`
+    ["export function calc({a}) { return a; }", "export function calc({b}) { return b; }"],
+    ["export function calc({a = 1}) { return a; }", "export function calc({a = 2}) { return a; }"],
+    [
+      "export function calc({a: {b}}) { return b; }",
+      "export function calc({a: {c}}) { return c; }",
+    ],
+    ["export function calc([x, y]) { return x; }", "export function calc([y, x]) { return x; }"],
+    [
+      'export function calc(a, sep = " ") { return a; }',
+      'export function calc(a, sep = "  ") { return a; }',
+    ],
+    ["export const calc = ({a}) => a;", "export const calc = ({b}) => b;"],
+    [
+      "export const calc = async function ({a}) { return a; };",
+      "export const calc = async function ({a, b}) { return a; };",
+    ],
+    [
+      "export function calc(a: number): {x: number} {\n  return {x: a};\n}",
+      "export function calc(a: number): {y: number} {\n  return {y: a};\n}",
+    ],
+  ];
+  for (const [before, after] of cases) {
+    const f = contractFixture(`${before}\n`);
+    assert.match(f.desc.depContracts.calc ?? "", /^v2:/, before);
+    const rv = f.after(`${after}\n`);
+    assert.equal(rv.status, "invalid", `${before} → ${after}`);
+    assert.deepEqual(rv.changed, ["calc"]);
+  }
+});
+
+test("N08: a body-only edit, a reformat or a comment keeps the contract", () => {
+  const before = "export function calc({a}) {\n  return a;\n}\n";
+  for (const after of [
+    "export function calc({a}) {\n  return a * 2; // the body is not the contract\n}\n",
+    "export function calc( { a } ) { return a; }\n",
+    "/** docs */\nexport function calc({a} /* the input */) {\n  return a;\n}\n",
+  ])
+    assert.equal(contractFixture(before).after(after).status, "valid", after);
+});
+
+test("N08: the contract follows the import binding, not the first same-name symbol", () => {
+  // `a.js` sorts before `dep.js`: the old resolver fingerprinted a.js's `calc` for everyone.
+  const f = contractFixture("export function calc({a}) { return a; }\n", {
+    extra: { "a.js": "export function calc(x) { return x; }\n" },
+  });
+  assert.equal(f.desc.depSources.calc, "dep.js");
+  assert.equal(f.after("export function calc(y, z) { return y; }\n", "a.js").status, "valid");
+  assert.equal(f.after("export function calc({b}) { return b; }\n").status, "invalid");
+  assert.equal(
+    f.after("export function other() {}\n").status,
+    "invalid",
+    "the bound module no longer defines it",
+  );
+});
+
+test("N08: an ambiguous name, an old-format or an unestablished contract is unknown, never valid", () => {
+  const root = tmp();
+  writeFileSync(join(root, "a.js"), "export function calc(x) { return x; }\n");
+  writeFileSync(join(root, "b.js"), "export function calc(y) { return y; }\n");
+  const atlas = build({ root });
+  assert.equal(
+    depContract(root, atlas, "calc"),
+    null,
+    "two definitions, no binding: not established",
+  );
+  assert.match(depContract(root, atlas, "calc", { file: "b.js" }) ?? "", /^v2:/);
+  const base = { spec: SPEC, code: { inline: "export const x = calc(1);" }, deps: ["calc"] };
+  for (const sig of ["626fb87d7f2b9cde", null]) {
+    const art = artifactClaim({ ...base, depContracts: { calc: sig } }, 0).claim;
+    const rv = revalidate(art, atlas, { root });
+    assert.equal(rv.status, "unknown", String(sig));
+    assert.ok(
+      rv.unknown.some((u) => u.startsWith("contract of calc")),
+      rv.unknown.join("; "),
+    );
+  }
+});
+
+test("N08: Python defaults and class members are contract; a def's body is not", () => {
+  const root = tmp();
+  const write = (src) => {
+    writeFileSync(join(root, "dep.py"), src);
+    const atlas = build({ root });
+    return { calc: depContract(root, atlas, "calc"), box: depContract(root, atlas, "Box") };
+  };
+  const v0 = write(
+    "def calc(a, scale=1):\n    return a * scale\n\nclass Box:\n    def put(self, x):\n        return x\n",
+  );
+  assert.match(v0.calc ?? "", /^v2:/);
+  const v1 = write(
+    "def calc(a, scale=1):\n    return a * scale * 1\n\nclass Box:\n    def put(self, x, y=None):\n        return x\n",
+  );
+  assert.equal(v1.calc, v0.calc, "a body edit keeps a def's contract");
+  assert.notEqual(v1.box, v0.box, "a method signature is part of a class's contract");
+  const v2 = write("def calc(a, scale=2):\n    return a * scale * 1\n\nclass Box:\n    pass\n");
+  assert.notEqual(v2.calc, v0.calc, "a changed default is a changed contract");
+});
+
+test("N08: a value's contract is the value; an overload set is one contract", () => {
+  const root = tmp();
+  const sig = (src, name) => {
+    writeFileSync(join(root, "dep.ts"), src);
+    return depContract(root, build({ root }), name);
+  };
+  assert.notEqual(
+    sig("export const LIMIT = 10;\n", "LIMIT"),
+    sig("export const LIMIT = 20;\n", "LIMIT"),
+  );
+  const one =
+    "export function over(a: string): void;\nexport function over(a: any) {\n  return a;\n}\n";
+  const two = `export function over(a: number): void;\n${one}`;
+  assert.notEqual(sig(one, "over"), sig(two, "over"), "an added overload changes the contract");
 });
 
 // --- helpers ----------------------------------------------------------------------------

@@ -8,8 +8,10 @@
 //
 // Deliberately conservative and deterministic: the features are the tokens that carry
 // behaviour — operators, numbers (with units), quoted literals, code identifiers and paths
-// (case kept), and polarity/negation words. A false conflict costs a human glance; a missed
-// one serves or keeps the opposite rule. Pure — no I/O.
+// (case AND code points kept: no Unicode fold, since `"é"` composed and decomposed are two
+// different strings to a program), polarity/negation words, and the whitespace that can be
+// data (`layout`, review N01). A false conflict costs a human glance; a missed one serves or
+// keeps the opposite rule. Pure — no I/O.
 
 // Polarity is judged two ways, so that emphasis ("run X" vs "always run X") is not a flip
 // but a real reversal is:
@@ -95,14 +97,88 @@ export function trimEdges(raw) {
   return cps.slice(a, b).join("");
 }
 
+// Whitespace that can be DATA (review N01). Similarity is layout-blind by design, and a
+// reworded instruction moves whitespace around harmlessly — but a fenced code block's bytes,
+// an indented line of a text that carries code (Python, YAML, a Makefile tab), and any run of
+// whitespace other than one space beside a code token (`/a  b/`, `x\t= 1`) can change what the
+// code does. Those are compared verbatim; whitespace between two plain words never is, and a
+// line break in prose reads as one space. (Whitespace INSIDE a quoted literal is already part
+// of that literal.)
+const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/;
+const CODE_LINE_RE = /[(){}[\];=<>|&]|:[ \t]*$/;
+const PLAIN_WORD_RE = /^[\p{L}\p{N}_'’-]*$/u;
+const LIT_MARK = "\u27e8lit\u27e9"; // a masked literal: a code token with no inner whitespace
+const OPENERS = new Set([..."(\"'‘“["]);
+const CLOSERS = new Set([...".,;:!?)\"'’”]"]);
+/** Strip opening brackets/quotes and closing punctuation from a token's edges — a code-point
+ *  scan, linear on any input — then what is left of a plain word is letters and digits;
+ *  anything else marks a code token. */
+const isPlainWord = (tok) => {
+  const cps = [...tok];
+  let a = 0;
+  let b = cps.length;
+  while (a < b && OPENERS.has(cps[a])) a++;
+  while (b > a && CLOSERS.has(cps[b - 1])) b--;
+  return PLAIN_WORD_RE.test(cps.slice(a, b).join(""));
+};
+
+/**
+ * The layout features of a text (review N01): every fenced block and every indented line of a
+ * code-bearing text, verbatim, plus every whitespace run other than a single space that sits
+ * next to a code token, with its neighbours. Sorted; JSON-quoted so whitespace is visible.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function layoutFeatures(text) {
+  const out = [];
+  const rest = [];
+  let fence = "";
+  let block = [];
+  for (const line of String(text ?? "").split("\n")) {
+    const m = FENCE_RE.exec(line);
+    if (fence) {
+      block.push(line);
+      if (
+        m &&
+        m[1][0] === fence[0] &&
+        m[1].length >= fence.length &&
+        !line.slice(m[0].length).trim()
+      ) {
+        out.push(`fence ${JSON.stringify(block.join("\n"))}`);
+        fence = "";
+      }
+    } else if (m) {
+      fence = m[1];
+      block = [line];
+    } else rest.push(line);
+  }
+  if (fence) out.push(`fence ${JSON.stringify(block.join("\n"))}`); // unclosed: code to the end
+  const lines = rest.join("\n").replace(LITERAL_RE, LIT_MARK).split("\n");
+  if (lines.some((l) => CODE_LINE_RE.test(l)))
+    for (const l of lines)
+      if (/^[ \t]+\S/.test(l)) out.push(`indent ${JSON.stringify(l.trimEnd())}`);
+  const parts = lines
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" ")
+    .split(/(\s+)/);
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    if (parts[i] === " ") continue;
+    const [left, right] = [parts[i - 1], parts[i + 1]];
+    if (!isPlainWord(left) || !isPlainWord(right))
+      out.push(`space ${JSON.stringify(`${left}${parts[i]}${right}`)}`);
+  }
+  return sorted(out);
+}
+
 /**
  * The behaviour-carrying features of a text.
  * @param {string} text
  * @returns {{operators: string[], numbers: string[], literals: string[],
- *   identifiers: string[], paths: string[], polarity: string[]}}
+ *   identifiers: string[], paths: string[], polarity: string[], layout: string[]}}
  */
 export function criticalFeatures(text) {
-  const s = String(text ?? "").normalize("NFC");
+  const s = String(text ?? "");
   /** @type {string[]} */
   const literals = s.match(LITERAL_RE) ?? [];
   // Literals are compared whole; strip them before scanning the rest so a quoted ">=" or a
@@ -132,6 +208,7 @@ export function criticalFeatures(text) {
     identifiers: sorted(identifiers),
     paths: sorted(paths),
     polarity: sorted(polarity),
+    layout: layoutFeatures(s),
   };
 }
 
@@ -165,6 +242,7 @@ export const ALL_KINDS = /** @type {const} */ ([
   "literals",
   "identifiers",
   "paths",
+  "layout",
 ]);
 export const FLIP_KINDS = /** @type {const} */ (["polarity", "operators", "numbers", "literals"]);
 
@@ -193,14 +271,35 @@ export function semanticConflicts(a, b, { kinds = ALL_KINDS } = {}) {
   return out;
 }
 
-/** True when neither text changes polarity, operators, numbers, literals, identifiers or
- *  paths relative to the other. Similar-and-conflicting texts are NOT the same instruction.
+/** True when neither text changes polarity, operators, numbers, literals, identifiers,
+ *  paths or code layout relative to the other. Similar-and-conflicting texts are NOT the same instruction.
  *  @param {string} a @param {string} b @param {{kinds?: readonly string[]}} [opts] */
 export const sameSemantics = (a, b, opts) => semanticConflicts(a, b, opts).length === 0;
 
+/** The exact-duplicate key of a statement (review N02): whitespace runs collapsed and trailing
+ *  sentence punctuation dropped — nothing else (case, quotes, inner punctuation all stay). */
+export const statementKey = (s) => {
+  const t = String(s ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  let end = t.length;
+  while (end > 0 && ".!;".includes(t[end - 1])) end--; // a scan: `[.!;]+$` backtracks on runs
+  return t.slice(0, end);
+};
+
+/**
+ * The SAME statement, not a similar one (review N02): equal statement keys, with the guard
+ * confirming no behaviour-bearing difference hid in the whitespace (inside a literal, in code
+ * layout). The only equality that may merge or archive a rule automatically. Similarity —
+ * lexical or embedded — can only PROPOSE: "allow admins, deny guests" and "deny admins, allow
+ * guests" keep every token, polarity words included, so no token-level check separates them.
+ * @param {string} a @param {string} b
+ */
+export const sameStatement = (a, b) => statementKey(a) === statementKey(b) && sameSemantics(a, b);
+
 /** One-line human description of a conflict list: `polarity: enable ≠ disable; …`. */
 export function describeConflicts(conflicts) {
-  return conflicts
-    .map((c) => `${c.kind}: ${c.a.join(" ") || "∅"} ≠ ${c.b.join(" ") || "∅"}`)
-    .join("; ");
+  // A layout item can be a whole code block: shown truncated, compared in full.
+  const show = (xs) => xs.map((x) => (x.length > 72 ? `${x.slice(0, 71)}…` : x)).join(" ") || "∅";
+  return conflicts.map((c) => `${c.kind}: ${show(c.a)} ≠ ${show(c.b)}`).join("; ");
 }

@@ -103,7 +103,9 @@ reports the computed missing set.
   separators included), not a tokenizer's count, and never exceed `--budget` while the
   result reports success.
 - **A pointer is not coverage.** An item that only fits as a `- read <file>` pointer is a
-  `pending` read; a 25-line head covers a definition only when the definition is inside it.
+  `pending` read. A definition counts as delivered only whole, declaration through its last
+  line: a span or 25-line head that cuts the body leaves it pending and names it under
+  `partial` (lines shown vs lines spanned).
 - **Over budget is `INCOMPLETE`.** When even pointers do not fit, the result is
   `overflow: true`, `ok: false`, never a silent over-budget pass.
 

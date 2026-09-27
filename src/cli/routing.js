@@ -320,6 +320,7 @@ async function routeUniversalCli(argv) {
           ? `  attempt ${row.attemptId} was already recorded — not counted twice`
           : `  recorded ${row.model} ${row.passed ? "pass" : "fail"} (${row.provenance}) for task ${row.task} (.forge/route_outcomes.jsonl)`,
       );
+      if (row.provenanceNote) console.log(`  ! ${row.provenanceNote}`);
     } catch (e) {
       console.error(`  ${e.message}`);
       process.exitCode = 1;
@@ -349,7 +350,7 @@ async function routeUniversalCli(argv) {
     const fb = rec.fallback;
     if (fb)
       console.error(
-        `  fallback (does NOT meet the objective): ${fb.cascade.map((c) => c.model).join(" → ")} · P(success) ${fb.pSuccess.toFixed(2)} · expected $${fb.expectedCost.toFixed(3)} (up to $${fb.maxPossibleCost.toFixed(3)} if every attempt runs)`,
+        `  fallback (does NOT meet the objective): ${fb.cascade.map((c) => c.model).join(" → ")} · P(success) ${fb.pSuccess.toFixed(2)} · expected $${fb.expectedCost.toFixed(3)} (an estimated $${fb.estimatedCostIfAllAttemptsRun.toFixed(3)} if every attempt runs)`,
       );
     process.exitCode = 1;
     return;
@@ -368,7 +369,7 @@ async function routeUniversalCli(argv) {
       `\n  ${paint("advice only", "warn")}: ${rec.unmapped.join(", ")} ${rec.unmapped.length === 1 ? "has" : "have"} no provider id — add one under "providers" in .forge/models.json, or pass --provider <name> to route among models you can call (\`${BRAND.cli} route models\` lists who serves what)`,
     );
   console.log(
-    `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} (not a cap; up to $${rec.maxPossibleCost.toFixed(3)} if every attempt runs) · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
+    `\n  P(success) ${rec.pSuccess.toFixed(2)} · expected cost $${rec.expectedCost.toFixed(3)} (not a cap; an estimated $${rec.estimatedCostIfAllAttemptsRun.toFixed(3)} if every attempt runs) · best single: ${rec.bestSingle.model} ${rec.bestSingle.pSuccess.toFixed(2)} at $${rec.bestSingle.expectedCost.toFixed(3)}`,
   );
   console.log(
     `  ${rec.candidates} candidate model(s), ${rec.cascadesEvaluated} cascade(s) compared · fit: ${rec.fit.origin}`,

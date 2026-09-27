@@ -5,11 +5,21 @@
 // never asserted) AND its dependencies still resolving in the atlas — stale or
 // discredited code silently stops being served, because the cache is pruned by
 // ground truth, not by an LRU.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { has as atlasHas } from "./atlas.js";
 import { claimSim, simLabel } from "./embed.js";
-import { isDormant, jaccard, mintClaim, outcomeRecord, SKETCH_K, sketch, val } from "./ledger.js";
+import {
+  isDormant,
+  jaccard,
+  mintClaim,
+  outcomeRecord,
+  SKETCH_K,
+  sketch,
+  storesVerbatim,
+  val,
+} from "./ledger.js";
 import { appendEvidence, loadClaims, putClaim, readEvidence, repoLedger } from "./ledger_store.js";
 import { record as recordMetric } from "./metrics.js";
 import { describeConflicts, semanticConflicts } from "./semantic_guard.js";
@@ -32,27 +42,34 @@ export const NEAR_COS = 0.85;
 export const ADAPT_COS = 0.7;
 
 // ---------------------------------------------------------------------------
-// Normalization — TWO forms, because "the same neighbourhood" and "the same task" are
-// different questions (review C9, then review F04):
-//   • specKey (IDENTITY) — LOSSLESS except for whitespace: Unicode NFC and runs of whitespace
-//     collapsed, NOTHING else. Case, operators, literals, paths and punctuation all stay: the
-//     old identity form lowercased and trimmed punctuation per token, so `accept ages >= 18`
-//     and `<= 18`, `return "ADMIN"` and `"admin"`, `set enabled = true` and `!= true`, and
-//     `getURL` and `getUrl` shared ONE exact key — an exact hit could serve the opposite
-//     requirement. Two specs now share an exact key only when they are the same text.
+// Identity and normalization — the same neighbourhood, the same instruction and the same
+// task are different questions (review C9, F04, then N01):
+//   • specDigest (EXACT IDENTITY) — NO normalization at all: a digest of the spec's code
+//     units. The v2 key still collapsed whitespace and folded Unicode NFC, so `return "a  b"`
+//     and `return "a b"` shared one key and an exact hit served the two-space string for a
+//     one-space request (review N01). Whitespace inside a literal is data, indentation is
+//     structure (Python, YAML, a Makefile tab), a regex's spaces are its pattern, and composed
+//     and decomposed Unicode are different strings to a program — no rewrite, however
+//     "harmless", may sit at the as-is boundary. Stored as hex (`body.keyHash`), which the
+//     ledger's own NFC/LF canonicalization of claim text cannot fold.
+//   • specKey (IDENTITY TEXT) — the spec as given: what the near tier sketches (the sketch is
+//     whitespace- and case-insensitive by construction) and the semantic guard compares.
 //   • normalizeSpec (SHAPE) — volatile literals and identifiers become typed placeholders,
-//     so those two specs still land in one near-NEIGHBOURHOOD and the adapt tier can offer
-//     the artifact as a verified starting point ("generate only the delta").
-// Similarity (the near tier's MinHash over the identity key, or an embedding cosine) finds
+//     so specs that differ only in those still land in one near-NEIGHBOURHOOD and the adapt
+//     tier can offer the artifact as a verified starting point ("generate only the delta").
+// Similarity (the near tier's MinHash over the identity text, or an embedding cosine) finds
 // NEIGHBOURS; it never by itself authorizes serving code as-is: a near candidate must also
-// pass the semantic guard (same operators, numbers, literals, identifiers, paths and
-// polarity words), else it is only offered at the adapt tier, for review.
-// Both tokenizers are Unicode-aware: the ASCII `\w` trim erased every Arabic (or Chinese,
-// or Greek) word, so any two non-ASCII specs normalized to "" and collided as exact.
+// pass the semantic guard (same operators, numbers, literals, identifiers, paths, polarity
+// words and code layout), else it is only offered at the adapt tier, for review. So a spec
+// that differs from a verified one only in whitespace reaches near at best — and not even
+// that when the whitespace sits in a literal, a code block or beside a code token.
+// The tokenizers are Unicode-aware: the ASCII `\w` trim erased every Arabic (or Chinese, or
+// Greek) word, so any two non-ASCII specs normalized to "" and collided as exact.
 // ---------------------------------------------------------------------------
 
-/** The identity-key format version. v1 keys (pre-F04) were lossy, so they never exact-hit. */
-export const KEY_VERSION = 2;
+/** The identity-key format version. v1 keys (pre-F04) were lossy; v2 (pre-N01) collapsed
+ *  whitespace and folded NFC. Neither ever reaches the exact tier again. */
+export const KEY_VERSION = 3;
 
 const NUM_RE = /^-?\d[\d.,_]*$/;
 const PATH_RE = /[\\/]|\.(?:m?[jt]sx?|py|go|rs|java|rb|json|ya?ml|toml|md|css|html)$/i;
@@ -67,10 +84,18 @@ const IDENT_RE = /^(?:[a-z][a-z0-9]*[A-Z]|[A-Z][a-z0-9]+[A-Z]|\w+_\w+|\w+\.\w+)\
 // marks of any script, plus the code punctuation the classifiers below key on.
 const TRIM_RE = /^[^\p{L}\p{N}\p{M}_"'`./\\-]+|[^\p{L}\p{N}\p{M}_"'`./\\-]+$/gu;
 
-/** Identity normalization: NFC + whitespace runs collapsed + ends trimmed — nothing else. The
- *  exact key: two specs match here only when they are the SAME text. */
+/** The identity TEXT of a spec: the spec exactly as given (review N01). */
 export function specKey(text) {
-  return String(text).normalize("NFC").trim().split(/\s+/).filter(Boolean).join(" ");
+  return String(text ?? "");
+}
+
+/** The EXACT identity (review N01): sha256 over the spec's UTF-16 code units — lossless for
+ *  every JS string, lone surrogates included, so two specs share it only when they are the
+ *  same string. @param {unknown} text @returns {string} hex */
+export function specDigest(text) {
+  return createHash("sha256")
+    .update(Buffer.from(String(text ?? ""), "utf16le"))
+    .digest("hex");
 }
 
 /** Deterministic, pure spec SHAPE normalization (unit-tested surface). */
@@ -90,15 +115,18 @@ export function normalizeSpec(text) {
     .join(" ");
 }
 
-/** The cache keys: `exact` (identity key + graph-slice context), `keySketch` (what the near
- *  tier measures) and `sketch` (the shape form the adapt tier and the LSH prefilter use). */
+/** The cache keys: `digest` (the exact identity), `exact` (identity + graph-slice context),
+ *  `keySketch` (what the near tier measures) and `sketch` (the shape form the adapt tier and
+ *  the LSH prefilter use). */
 export function fingerprint(spec, slice = "") {
   const norm = normalizeSpec(spec);
   const key = specKey(spec);
+  const digest = specDigest(spec);
   return {
     norm,
     key,
-    exact: contentHash(`${key}\u0000${slice}`),
+    digest,
+    exact: contentHash(`${digest}\u0000${slice}`),
     sketch: sketch(norm),
     keySketch: sketch(key),
   };
@@ -142,26 +170,41 @@ export function artifactClaim(
     iface = [],
     deps = [],
     depContracts = {},
+    depSources = {},
     code,
     lang = "",
     form = "function",
   },
   t = 0,
 ) {
+  // The ledger stores claim text NFC- and LF-normalized. For inline CODE that is a silent
+  // rewrite of the verified bytes (a CRLF inside a string literal, a decomposed "é"), so it
+  // is refused, with the lossless alternative named (review N01).
+  if (typeof code?.inline === "string" && !storesVerbatim(code.inline))
+    return {
+      ok: false,
+      reason:
+        "inline code has CRLF line endings or non-NFC Unicode, which the ledger's canonical storage would rewrite — mint it as a file pointer ({path, sha256}) so the verified bytes are the served bytes",
+    };
   return mintClaim({
     kind: "artifact",
     body: {
       code: code ?? {},
-      // name → fingerprint of the dependency's declaration at mint time (review F05): a
-      // same-name dependency whose signature changed invalidates the artifact.
+      // name → fingerprint of the dependency's declaration at mint time (review F05/N08): a
+      // dependency whose contract changed invalidates the artifact; `null` = not established
+      // at mint (revalidation then says unknown, never valid). `depSources` pins the module
+      // each name was imported from, so a same-name symbol elsewhere is never compared.
       ...(Object.keys(depContracts).length ? { depContracts: sortedObject(depContracts) } : {}),
+      ...(Object.keys(depSources).length ? { depSources: sortedObject(depSources) } : {}),
       deps: [...deps].sort(),
       form,
       iface: [...iface].sort(),
-      // `key` is the LOSSLESS identity form (exact + near); `spec` stays the SHAPE form (adapt
-      // and the LSH prefilter). A pre-C9 artifact has no key and can only reach adapt; a
-      // pre-F04 key (no keyV) was lossy and never reaches exact.
+      // `keyHash` is the exact identity (review N01), `key` the identity text the near tier
+      // and the semantic guard read, `spec` the SHAPE form (adapt and the LSH prefilter). A
+      // pre-C9 artifact has no key and can only reach adapt; a key from an older version
+      // (keyV < 3) was lossy and never reaches exact.
       key: specKey(spec),
+      keyHash: specDigest(spec),
       keyV: KEY_VERSION,
       lang,
       slice,
@@ -206,36 +249,182 @@ export function mintArtifact(dir, fields, { evidence, t = 0 } = {}) {
 const sortedObject = (o) =>
   Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
 
+// ---------------------------------------------------------------------------
+// Dependency contracts (review F05, then N08). A caller relies on a dependency's DECLARATION —
+// its name, parameters (destructured keys, defaults and nested patterns included), modifiers
+// and annotations — so that is what is fingerprinted. The v1 scanner cut the declaration at
+// its first `{` or `=>`, which for `function calc({a})` is the destructuring brace: both
+// `calc({a})` and `calc({b})` hashed as `export function calc(`, and an artifact whose
+// dependency changed its contract kept serving as valid. Now the declaration is read WHOLE
+// (the atlas knows where each definition ends), lexed — comments dropped, whitespace between
+// tokens ignored, string literals kept verbatim — and only the BODY is cut: the final
+// top-level block of a function, what follows a top-level `=>`, what follows a Python `def`'s
+// colon. A class, type or plain value has no body to cut: all of it is the contract. And the
+// dependency is the definition the artifact's own import BINDS to (its module identity, from
+// the atlas's structural import resolution), never whichever same-name symbol sorts first.
+// Whatever cannot be established — an unknown extent, a name defined in several files with no
+// import binding to choose one — is null: "unknown", so the hit requires revalidation.
+// ---------------------------------------------------------------------------
+
+/** The contract format. Contracts recorded in another format are never compared: unknown. */
+export const CONTRACT_VERSION = 2;
+const CONTRACT_PREFIX = `v${CONTRACT_VERSION}:`;
+
+/** Split source into contract tokens: identifiers/numbers, string literals (verbatim, their
+ *  whitespace included), and punctuation, with `=>`, `->`, `...` kept whole. Comments and
+ *  inter-token whitespace are dropped, so a reformat never changes a contract. Deterministic
+ *  on any input — an odd construct (a regex, a Rust lifetime) still yields stable tokens.
+ *  @param {string} text @param {"js"|"py"} lang */
+function contractTokens(text, lang) {
+  const toks = [];
+  const n = text.length;
+  const hashComments = lang === "py";
+  let i = 0;
+  while (i < n) {
+    const c = text[i];
+    if (/\s/.test(c)) i += 1;
+    else if (hashComments ? c === "#" : c === "/" && text[i + 1] === "/") {
+      const nl = text.indexOf("\n", i);
+      i = nl < 0 ? n : nl;
+    } else if (!hashComments && c === "/" && text[i + 1] === "*") {
+      const close = text.indexOf("*/", i + 2);
+      i = close < 0 ? n : close + 2;
+    } else if (c === '"' || c === "'" || c === "`") {
+      const triple = lang === "py" && text.startsWith(c.repeat(3), i);
+      let j = i + (triple ? 3 : 1);
+      if (triple) {
+        const close = text.indexOf(c.repeat(3), j);
+        j = close < 0 ? n : close + 3;
+      } else {
+        while (j < n && text[j] !== c) j += text[j] === "\\" ? 2 : 1;
+        j = Math.min(n, j + 1);
+      }
+      toks.push(text.slice(i, j));
+      i = j;
+    } else if (/[\p{L}\p{N}_$]/u.test(c)) {
+      let j = i + 1;
+      while (j < n && /[\p{L}\p{N}_$]/u.test(text[j])) j += 1;
+      toks.push(text.slice(i, j));
+      i = j;
+    } else {
+      const op = ["...", "=>", "->"].find((o) => text.startsWith(o, i)) ?? c;
+      toks.push(op);
+      i += op.length;
+    }
+  }
+  return toks;
+}
+
+const OPEN = new Set(["(", "[", "{"]);
+const CLOSE = new Set([")", "]", "}"]);
+
+/** Whether a `const` declaration's value is a function (arrow or function expression) — then
+ *  its body is cut like a function's; any other value IS the contract. */
+function isFunctionValue(toks) {
+  const eq = toks.indexOf("=");
+  if (eq < 0) return false;
+  let k = eq + 1;
+  if (toks[k] === "async") k += 1;
+  if (toks[k] === "function") return true;
+  let depth = 0;
+  for (let i = k; i < toks.length; i++) {
+    if (OPEN.has(toks[i])) depth += 1;
+    else if (CLOSE.has(toks[i])) depth -= 1;
+    else if (toks[i] === "=>" && depth === 0) return true;
+    else if (depth === 0 && (toks[i] === ";" || toks[i] === ",")) return false;
+  }
+  return false;
+}
+
+/** The contract part of one declaration's tokens: everything but a function's body. */
+function declarationHead(toks, kind, lang) {
+  if (kind === "class" || kind === "type") return toks;
+  if (lang === "py") {
+    let depth = 0;
+    let params = false;
+    for (let i = 0; i < toks.length; i++) {
+      if (OPEN.has(toks[i])) {
+        depth += 1;
+        if (toks[i] === "(") params = true;
+      } else if (CLOSE.has(toks[i])) depth -= 1;
+      else if (toks[i] === ":" && depth === 0 && params) return toks.slice(0, i + 1);
+    }
+    return toks;
+  }
+  if (kind === "const" && !isFunctionValue(toks)) return toks;
+  let depth = 0;
+  for (let i = 0; i < toks.length; i++) {
+    if (OPEN.has(toks[i])) depth += 1;
+    else if (CLOSE.has(toks[i])) depth -= 1;
+    else if (toks[i] === "=>" && depth === 0) return toks.slice(0, i + 1);
+  }
+  // A block body is the declaration's FINAL top-level `{…}` (a return-type literal before it
+  // stays in the head); no final block means no body here (an overload): all of it.
+  let end = toks.length - 1;
+  if (toks[end] === ";") end -= 1;
+  if (toks[end] !== "}") return toks;
+  depth = 0;
+  for (let i = end; i >= 0; i--) {
+    if (toks[i] === "}") depth += 1;
+    else if (toks[i] === "{" && --depth === 0) return toks.slice(0, i);
+  }
+  return toks;
+}
+
 /**
- * A dependency's contract fingerprint: the hash of its DECLARATION as the source reads now
- * (the declaration line through the opening brace/arrow, whitespace-normalized) — what a
- * caller relies on. `null` when the atlas does not know the symbol or the file is unreadable.
- * With several same-name definitions the first by (file, line) is used, deterministically.
+ * A dependency's contract, or why none can be given.
+ * @param {string} root @param {any} atlas @param {string} name
+ * @param {string|null} file the module the artifact's import binds `name` to (null: unbound)
+ * @returns {{sig: string}|{gone: string}|{unknown: string}}
+ */
+function contractOf(root, atlas, name, file) {
+  const cands = (atlas?.symbols ?? []).filter(
+    (x) => (x.name === name || x.qname === name) && !x.local,
+  );
+  const files = [...new Set(cands.map((x) => x.file))];
+  if (file && !files.includes(file)) return { gone: `no longer defined in ${file}` };
+  if (!file && files.length !== 1)
+    return {
+      unknown: files.length
+        ? `defined in ${files.length} files and no import binding says which`
+        : "not in the atlas",
+    };
+  const where = file ?? files[0];
+  let text;
+  try {
+    text = readFileSync(join(root, where), "utf8");
+  } catch {
+    return { unknown: `${where} is unreadable` };
+  }
+  const lines = text.split(/\r?\n/);
+  const lang = /\.pyi?$/.test(where) ? "py" : "js";
+  const parts = [];
+  // Every same-file definition of the name (TS overloads), in source order.
+  for (const sym of cands.filter((x) => x.file === where).sort((a, b) => a.line - b.line)) {
+    if (!sym.line || !sym.endLine || sym.endLine < sym.line)
+      return { unknown: `the extent of ${name} in ${where} is not known` };
+    const decl = lines.slice(sym.line - 1, sym.endLine).join("\n");
+    const head = declarationHead(contractTokens(decl, lang), sym.kind, lang);
+    if (!head.length) return { unknown: `the declaration of ${name} is empty` };
+    parts.push([sym.kind ?? "", head]);
+  }
+  return { sig: `${CONTRACT_PREFIX}${contentHash(JSON.stringify(parts)).slice(0, 16)}` };
+}
+
+/**
+ * A dependency's contract fingerprint (review F05/N08): a hash of its whole declaration minus
+ * its body (see above), prefixed with the contract version. `file` pins the definition the
+ * caller's import binds to; without it the name must be defined in exactly one file. `null`
+ * when the contract cannot be established — the caller must then treat it as unknown.
  * @param {string} root
  * @param {any} atlas
  * @param {string} name
+ * @param {{file?: string|null}} [opts]
  * @returns {string|null}
  */
-export function depContract(root, atlas, name) {
-  const sym = (atlas?.symbols ?? [])
-    .filter((x) => x.name === name || x.qname === name)
-    .sort((a, b) =>
-      a.file < b.file ? -1 : a.file > b.file ? 1 : (a.line ?? 0) - (b.line ?? 0),
-    )[0];
-  if (!sym?.file || !sym.line) return null;
-  let text;
-  try {
-    text = readFileSync(join(root, sym.file), "utf8");
-  } catch {
-    return null;
-  }
-  const decl = text
-    .split(/\r?\n/)
-    .slice(sym.line - 1, sym.line + 5)
-    .join(" ");
-  const cut = decl.search(/\{|=>/);
-  const head = (cut >= 0 ? decl.slice(0, cut) : decl).replace(/\s+/g, " ").trim();
-  return head ? contentHash(`${sym.kind ?? ""}\u0000${head}`).slice(0, 16) : null;
+export function depContract(root, atlas, name, { file = null } = {}) {
+  const r = contractOf(root, atlas, name, file);
+  return "sig" in r ? r.sig : null;
 }
 
 /**
@@ -278,11 +467,22 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
     if (deps.length) unknown.push("dependencies (no fresh atlas)");
   } else {
     for (const d of deps) if (!atlasHas(atlas, d)) missing.push(d);
+    const sources = artifact?.body?.depSources ?? {};
     for (const [name, sig] of Object.entries(artifact?.body?.depContracts ?? {})) {
       if (missing.includes(name)) continue;
-      const now = root ? depContract(root, atlas, name) : null;
-      if (now === null) unknown.push(`contract of ${name}`);
-      else if (now !== sig) changed.push(name);
+      if (typeof sig !== "string" || !sig.startsWith(CONTRACT_PREFIX)) {
+        unknown.push(
+          `contract of ${name} (${typeof sig === "string" ? "recorded in an older format" : "not established at mint"})`,
+        );
+        continue;
+      }
+      if (!root) {
+        unknown.push(`contract of ${name} (no repo root)`);
+        continue;
+      }
+      const now = contractOf(root, atlas, name, sources[name] ?? null);
+      if ("unknown" in now) unknown.push(`contract of ${name} (${now.unknown})`);
+      else if ("gone" in now || now.sig !== sig) changed.push(name);
     }
   }
   if (missing.length) problems.push(`missing ${missing.join(", ")}`);
@@ -328,7 +528,7 @@ export function lookup(
   spec,
   { slice = "", atlas = null, nowDay = 0, sim = null, root = null } = {},
 ) {
-  const { key, sketch: qs, keySketch: qk } = fingerprint(spec, slice);
+  const { key, digest, sketch: qs, keySketch: qk } = fingerprint(spec, slice);
   const reasons = [];
   const invalidated = [];
   const artifacts = claims.filter(
@@ -364,14 +564,13 @@ export function lookup(
     invalidated,
   });
 
-  // 1. exact: the same task (LOSSLESS identity key, current key version), same graph-slice
-  //    context. An empty key is not an identity, so a spec that normalizes to nothing never
-  //    matches anything.
+  // 1. exact: the same task, byte for byte (the digest of the spec as given, current key
+  //    version), same graph-slice context. A blank spec is not an identity: it never matches.
   for (const c of artifacts) {
     if (
-      key &&
+      key.trim() &&
       c.body.keyV === KEY_VERSION &&
-      c.body.key === key &&
+      c.body.keyHash === digest &&
       (c.body.slice ?? "") === slice &&
       proved(c, "exact")
     ) {
@@ -541,10 +740,27 @@ const EXPORT_RES = [
 ];
 const IMPORT_RE = /import\s+\{([^}]+)\}\s+from\s+["']\.{1,2}\//g;
 
+/** The files a file's named imports BIND to, by imported name (review N08): the atlas resolves
+ *  each import structurally (relative spec → file → that file's definition), so this is the
+ *  module identity of the dependency, not a global name guess. @returns {Map<string, Set<string>>} */
+function importBindings(atlas, relPath) {
+  const nodes = new Map((atlas?.nodes ?? []).map((n) => [n.id, n]));
+  const out = new Map();
+  for (const e of atlas?.edges ?? []) {
+    if (e.kind !== "imports" || !e.resolved || nodes.get(e.source)?.file !== relPath) continue;
+    const def = nodes.get(e.target);
+    if (!def?.file || def.kind === "module") continue;
+    if (!out.has(def.name)) out.set(def.name, new Set());
+    out.get(def.name).add(def.file);
+  }
+  return out;
+}
+
 /**
  * The verifiable pointer + structural facts of a real file: `{path, sha256}`, exports, the
- * codebase symbols it imports, and — given an atlas — each dependency's contract
- * fingerprint, so a later signature change invalidates the artifact (review F05).
+ * codebase symbols it imports, and — given an atlas — each dependency's contract fingerprint
+ * and the module it is imported from, so a later contract change invalidates the artifact
+ * (review F05/N08). A dependency whose contract cannot be established is recorded as `null`.
  * @param {string} root
  * @param {string} relPath
  * @param {{atlas?: any}} [opts]
@@ -563,18 +779,26 @@ export function describeFile(root, relPath, { atlas = null } = {}) {
         .filter(Boolean),
     );
   const uniqueDeps = [...new Set(deps)];
-  /** @type {Record<string, string>} */
+  /** @type {Record<string, string|null>} */
   const depContracts = {};
-  if (atlas)
+  /** @type {Record<string, string>} */
+  const depSources = {};
+  if (atlas) {
+    const bound = importBindings(atlas, relPath);
     for (const d of uniqueDeps) {
-      const sig = depContract(root, atlas, d);
-      if (sig) depContracts[d] = sig;
+      const files = [...(bound.get(d) ?? [])];
+      // One bound module pins the definition; none (or an aliased pair) falls back to a name
+      // that must be unique repo-wide — else the contract is recorded as not established.
+      if (files.length === 1) depSources[d] = files[0];
+      depContracts[d] = depContract(root, atlas, d, { file: depSources[d] ?? null });
     }
+  }
   return {
     code: { path: relPath, sha256: contentHash(text) },
     iface: [...new Set(iface)],
     deps: uniqueDeps,
     depContracts,
+    depSources,
     lang: relPath.split(".").pop() ?? "",
   };
 }

@@ -23,6 +23,8 @@
  *   CITATION.cff (version + date-released), landing/index.html (display string),
  *   ROADMAP.md ("## Now" marker version, so `forge docs check`'s roadmap-freshness
  *   guard never trails a release this same script just cut),
+ *   docs/status/claims.json (every claim assessed on "unreleased" code is stamped with the
+ *   release that ships it — the registry is a release artifact) + its generated table,
  *   CHANGELOG.md ([Unreleased] rotated under "## [X.Y.Z] - <date>" + compare links).
  *
  * Prints ONLY the new version on stdout (diagnostics go to stderr) so callers can
@@ -34,6 +36,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHANGELOG_PAGE } from "../src/changelog_page.js";
 import { renderFile } from "../src/docs_render.js";
+import {
+  README_PATH,
+  REGISTRY_PATH,
+  renderTable,
+  spliceReadme,
+  stampRelease,
+} from "./claims-status.mjs";
 
 // ---------------------------------------------------------------------------
 // Pure version math
@@ -352,6 +361,21 @@ export function applyBump(root, currentVersion, newVersion, date) {
   if (roadmap !== null) {
     const updated = bumpRoadmapNow(roadmap, newVersion);
     if (updated !== roadmap) write(roadmapRel, updated);
+  }
+
+  // The claim registry is a release artifact (review suggestion 5): claims assessed on
+  // unreleased code now name the release that ships them, and the status table follows.
+  const claims = readIfExists(path.join(root, REGISTRY_PATH));
+  if (claims !== null) {
+    const stamped = stampRelease(claims, newVersion);
+    if (stamped !== claims) {
+      write(REGISTRY_PATH, stamped);
+      const readme = readIfExists(path.join(root, README_PATH));
+      if (readme !== null) {
+        const next = spliceReadme(readme.replace(/\r\n/g, "\n"), renderTable(JSON.parse(stamped)));
+        if (next !== readme) write(README_PATH, next);
+      }
+    }
   }
 
   const clRel = "CHANGELOG.md";

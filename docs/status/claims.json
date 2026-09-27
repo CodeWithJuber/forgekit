@@ -1,5 +1,5 @@
 {
-  "$comment": "The claim/status registry. Edit this file, then run `node scripts/claims-status.mjs` to regenerate the table in docs/status/README.md; `--check` fails CI-style on drift. source_commit is the commit each status was assessed against; after a fix lands, re-assess the claim and update both status and source_commit.",
+  "$comment": "The claim/status registry. Edit this file, then run `node scripts/claims-status.mjs` to regenerate the table in docs/status/README.md; `--check` fails CI-style on drift. source_commit is the commit each status was assessed against and assessed_release the release that ships that commit (\"unreleased\" until one does: scripts/bump.mjs stamps it when it cuts a release, and a checkout with release tags fails the check on a stale one). counterexamples link the review findings that tested a claim. After a fix lands, re-assess the claim and update status, source_commit, assessed_release and the counterexample's resolution together.",
   "as_of": "2026-09-26",
   "statuses": {
     "implemented": "the code exists and does what the claim says; tests exercise it",
@@ -16,6 +16,7 @@
       "component": "Python impact oracle (research/python-prototypes/impact_oracle)",
       "version": "v1, as shipped",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/empirical-refutation/README.md",
@@ -30,6 +31,7 @@
       "component": "Python impact oracle (research/python-prototypes/impact_oracle)",
       "version": "v1, as shipped",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -44,6 +46,7 @@
       "component": "Python impact oracle (research/python-prototypes/impact_oracle)",
       "version": "v2, repaired (in-tree, 49 tests)",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -58,6 +61,7 @@
       "component": "Python impact oracle (research/python-prototypes/impact_oracle)",
       "version": "v2, repaired",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "research/empirical-refutation/README.md",
@@ -71,6 +75,7 @@
       "component": "Python impact oracle (research/python-prototypes/impact_oracle)",
       "version": "v2",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "research/python-prototypes/impact_oracle/tests/test_repair_fixes.py",
@@ -82,8 +87,9 @@
       "id": "node-impact-fixture-quality",
       "claim": "forge impact scores precision 0.17, recall 1.00, F1 0.28 on six hand-labelled cases from this repository.",
       "component": "Node code graph (src/atlas.js, forge impact)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "measured",
       "evidence": [
         "reports/benchmarks.md",
@@ -97,6 +103,7 @@
       "component": "Old tiered router (research/python-prototypes/router_gate)",
       "version": "July 2026 prototype, thresholds tuned on 30 tasks",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/python-prototypes/router_gate/eval_results.json",
@@ -110,6 +117,7 @@
       "component": "Old tiered router (research/python-prototypes/router_gate)",
       "version": "as evaluated (replication archive)",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -124,6 +132,7 @@
       "component": "Old tiered router (research/python-prototypes/router_gate)",
       "version": "as evaluated (replication archive)",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -138,6 +147,7 @@
       "component": "Old tiered router's assumption gate (research/python-prototypes/router_gate)",
       "version": "as evaluated (replication archive)",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -152,6 +162,7 @@
       "component": "Old tiered router evaluation labels",
       "version": "as evaluated (replication archive)",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "research/empirical-refutation/replication_package.tar.gz",
@@ -165,6 +176,7 @@
       "component": "Tiered router (src/route.js, forge route)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "src/route.js",
@@ -178,6 +190,7 @@
       "component": "Universal router (src/router, forge route universal)",
       "version": "fit on 150 dev issues (harness-bench run 4), not the shipped prior",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "reported",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
@@ -191,6 +204,7 @@
       "component": "Universal router (src/router, forge route universal)",
       "version": "dev fit of 150 tasks (holdout_eval.mjs), router code of d2abfa6 and aedddf5",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "bench/universal-router/holdout_eval.mjs",
@@ -205,6 +219,7 @@
       "component": "Universal router (src/router, forge route universal)",
       "version": "dev fit of 150 tasks (holdout_eval.mjs), router code of d2abfa6 and aedddf5",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "bench/universal-router/holdout_eval.mjs",
@@ -219,6 +234,7 @@
       "component": "Universal router prior (data/router_prior.json)",
       "version": "fitted 2026-09-22, k=1, scale 4",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "measured",
       "evidence": [
         "bench/universal-router/README.md",
@@ -235,6 +251,7 @@
       "component": "Universal router prior (data/router_prior.json)",
       "version": "fitted 2026-09-22",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "data/router_prior.json",
@@ -247,8 +264,9 @@
       "id": "universal-router-target-guarantee",
       "claim": "The target:p objective guarantees a success rate of at least p.",
       "component": "Universal router (src/router, forge route universal)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "refuted",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
@@ -260,8 +278,9 @@
       "id": "universal-router-budget-contract",
       "claim": "The budget:B objective returns a cascade whose expected cost is at most B, and says so explicitly when none exists.",
       "component": "Universal router (src/router, forge route universal)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "partial",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
@@ -273,8 +292,9 @@
       "id": "universal-router-cascade-cost-independence",
       "claim": "A later cascade attempt costs the same in expectation whether or not earlier attempts failed.",
       "component": "Universal router cost model (src/router/policy.js)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "refuted",
       "evidence": [
         "bench/universal-router/README.md",
@@ -287,8 +307,9 @@
       "id": "route-outcome-provenance",
       "claim": "Outcomes recorded with forge route outcome are verified results.",
       "component": "Universal router outcome log (src/router/index.js)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "partial",
       "evidence": [
         "src/router/index.js",
@@ -303,6 +324,7 @@
       "component": "Cost model (docs/plans/substrate-v2/05-cost-model.md)",
       "version": "plan, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "docs/plans/substrate-v2/05-cost-model.md",
@@ -316,6 +338,7 @@
       "component": "Substrate v2 plan",
       "version": "v0.5.0",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -330,6 +353,7 @@
       "component": "Ledger (src/ledger.js, src/ledger_store.js)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -344,6 +368,7 @@
       "component": "Ledger sync (src/ledger_sync.js)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -356,8 +381,9 @@
       "id": "phase-p3-reuse-cache",
       "claim": "P3: the reuse cache serves an artifact only while its evidence holds, and refuses a stale one.",
       "component": "Reuse cache (src/reuse.js, forge reuse)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -371,8 +397,9 @@
       "id": "phase-p4-context-assembly",
       "claim": "P4: context assembly never exceeds its token budget and reports a computed missing set.",
       "component": "Context assembly (src/context.js, forge context)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "partial",
       "evidence": [
         "docs/plans/substrate-v2/04-context-assembly.md",
@@ -387,6 +414,7 @@
       "component": "Loop closure (src/diagnose.js, src/imagine.js)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -401,6 +429,7 @@
       "component": "UI checks (src/uicheck.js, forge uicheck)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -415,6 +444,7 @@
       "component": "Dashboard (src/dash.js, forge dash)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -429,6 +459,7 @@
       "component": "Cost evaluation (src/cost_report.js, forge cost --stages)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "partial",
       "evidence": [
         "reports/cost-eval.md",
@@ -441,8 +472,9 @@
       "id": "context-completeness",
       "claim": "forge context COMPLETE means every required item was delivered as content within the (estimated) token budget.",
       "component": "Context assembly (src/context.js, forge context)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "implemented",
       "evidence": [
         "src/context.js",
@@ -456,8 +488,9 @@
       "id": "verify-pass-binding",
       "claim": "A forge verify PASS is bound to the code state that was tested (HEAD, staged and unstaged diffs, untracked non-ignored files) and covers every declared suite.",
       "component": "Verification (src/verify.js, forge verify)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "implemented",
       "evidence": [
         "src/verify.js",
@@ -471,8 +504,9 @@
       "id": "ledger-evidence-independence",
       "claim": "A claim's confidence rises only with independent evidence for that claim.",
       "component": "Ledger (src/ledger_store.js, src/ledger_bridge.js)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "partial",
       "evidence": [
         "src/ledger.js",
@@ -487,8 +521,9 @@
       "id": "reuse-exact-identity",
       "claim": "An exact reuse hit serves an artifact minted for the same specification (up to whitespace and Unicode normalization), and only while its bytes still match.",
       "component": "Reuse cache (src/reuse.js)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "implemented",
       "evidence": [
         "src/reuse.js",
@@ -501,8 +536,9 @@
       "id": "imagine-sandbox",
       "claim": "forge imagine --run executes the selected tests in a sandbox.",
       "component": "Consequence simulation (src/imagine.js, forge imagine)",
-      "version": "master after 1.4.3 (unreleased)",
+      "version": "1.5.0",
       "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
+      "assessed_release": "1.5.0",
       "status": "refuted",
       "evidence": [
         "src/imagine.js",
@@ -516,6 +552,7 @@
       "component": "Config compiler (src/sync.js, src/emit)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/INTEGRATIONS.md",
@@ -530,6 +567,7 @@
       "component": "Ledger (src/ledger.js)",
       "version": "1.4.3",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "implemented",
       "evidence": [
         "docs/adr/0006-proof-carrying-memory.md",
@@ -543,6 +581,7 @@
       "component": "Formal synthesis, Theorem D",
       "version": "HTML edition, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/formal-synthesis/substrate_synthesis.html",
@@ -557,6 +596,7 @@
       "component": "Formal synthesis, Theorem D",
       "version": "HTML edition, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/formal-synthesis/substrate_synthesis.html",
@@ -570,6 +610,7 @@
       "component": "Formal synthesis, Eq. 5",
       "version": "HTML edition, corrected 2026-09-21",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/formal-synthesis/substrate_synthesis.html",
@@ -583,6 +624,7 @@
       "component": "Formal synthesis, section 5.4",
       "version": "HTML edition, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "research/formal-synthesis/substrate_synthesis.html"
@@ -595,6 +637,7 @@
       "component": "Cognitive-substrate theory (white paper, synthesis)",
       "version": "HTML editions, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/cognitive-substrate/cognitive_substrate_whitepaper.html",
@@ -609,6 +652,7 @@
       "component": "Cognitive-substrate theory",
       "version": "HTML editions, corrected 2026-09-26",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "hypothesis",
       "evidence": [
         "research/README.md",
@@ -623,6 +667,7 @@
       "component": "Formal synthesis, section 14",
       "version": "HTML edition, corrected 2026-09-21",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "refuted",
       "evidence": [
         "research/formal-synthesis/substrate_synthesis.html",
@@ -636,6 +681,7 @@
       "component": "External evidence (METR, arXiv:2507.09089)",
       "version": "2025 study",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "reported",
       "evidence": [
         "research/cognitive-substrate/evidence/evidence_map.md",
@@ -650,6 +696,7 @@
       "component": "External evidence (OpenAI, 2026-02-23)",
       "version": "2026-02-23 analysis",
       "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
+      "assessed_release": "1.4.3",
       "status": "reported",
       "evidence": [
         "https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/",

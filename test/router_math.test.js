@@ -245,7 +245,7 @@ test("F12: choose() reports infeasibility explicitly instead of a silent least-b
   assert.equal(r.minimumExpectedCost, 1);
   assert.match(r.reason, /infeasible: no cascade's expected cost fits the budget/);
   assert.equal(
-    r.maxPossibleCost,
+    r.estimatedCostIfAllAttemptsRun,
     r.seq.reduce((s, m) => s + [1, 2][m], 0),
   );
   const t = choose(nodes, [1, 2], [0, 1], parseObjective("target:0.999"), 2);
@@ -254,5 +254,8 @@ test("F12: choose() reports infeasibility explicitly instead of a silent least-b
   const ok = choose(nodes, [1, 2], [0, 1], parseObjective("budget:5"), 2);
   assert.equal(ok.feasible, true);
   assert.equal(ok.budgetMet, true);
-  assert.ok(ok.maxPossibleCost >= ok.cost, "the worst case bounds the expectation");
+  assert.ok(
+    ok.estimatedCostIfAllAttemptsRun >= ok.cost,
+    "running every attempt costs at least the expectation",
+  );
 });

@@ -25,7 +25,8 @@ served — the cache prunes itself by ground truth.
 
 ```
 artifact.body := {
-  key:        IDENTITY-normalized task text (case/whitespace/punctuation only),
+  key:        the task text as given (IDENTITY text; see §2),
+  keyHash:    sha256 of the task text's code units — the EXACT identity (key version 3),
   spec:       SHAPE-normalized task specification text,
   sketch:     MinHash sketch of spec (for near-match),
   slice:      sha256 of the atlas graph slice the artifact touches,   // context key
@@ -41,8 +42,11 @@ artifact.body := {
 **Normalization comes in two forms**, because "the same task" and "the same
 neighbourhood" are different questions:
 
-- **identity** (`key`): Unicode-aware tokens, lowercased, edge punctuation dropped,
-  whitespace collapsed — and NOTHING else. Identifiers, paths and numbers stay verbatim.
+- **identity** (`key`, `keyHash`): the task text exactly as given. An earlier identity form
+  lowercased and trimmed punctuation (review F04), and its successor still collapsed
+  whitespace and folded NFC, so `return "a  b"` exact-hit `return "a b"` (review N01). The
+  exact tier now compares `keyHash`, a digest of the text's code units, and nothing is
+  normalized at that boundary; similarity search stays layout-blind.
 - **shape** (`spec`): identity plus typed placeholders for identifiers, paths, numbers and
   string literals (`⟨ident⟩`, `⟨path⟩`, `⟨num⟩`, `⟨str⟩`).
 

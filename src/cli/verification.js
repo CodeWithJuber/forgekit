@@ -112,8 +112,25 @@ HANDLERS.verify = async (argv) => {
         cov.uncovered.length ? ` — no verdict for ${cov.uncovered.join(", ")}` : ""
       }${cov.excluded.length ? ` (${cov.excluded.length} excluded)` : ""}`,
     );
+  // Coverage strength (review N03): a verdict read from a package's own run is not the same
+  // evidence as one inferred from a recognized recursive root command, or declared by config.
+  const bases = Object.values(cov?.basis ?? {});
+  if (bases.some((b) => b !== "measured")) {
+    const n = (b) => bases.filter((x) => x === b).length;
+    const how = [`${n("measured")} measured`];
+    if (n("inferred"))
+      how.push(`${n("inferred")} inferred from \`${cov.rootRun?.command ?? "the root command"}\``);
+    if (n("declared")) how.push(`${n("declared")} declared (${cov.declared ?? "config"})`);
+    console.log(`  coverage basis:   ${how.join(" · ")}`);
+  }
   if (t.mutated)
     console.log("  ! the code changed while the tests ran — the verdict is not bound to it");
+  // Scope of the fingerprint (review N05): what it could not bind, and what the repo declared
+  // outside the verified code.
+  if (t.unbound?.length) console.log(`  ! not bound by the fingerprint: ${t.unbound.join(", ")}`);
+  const external = r.provenance.event?.external ?? [];
+  if (external.length)
+    console.log(`  outside the proof: ${external.join(", ")} (declared in verify.external)`);
   console.log(`  symbols checked:  ${r.provenance.symbolsChecked}`);
   if (r.unknown.length)
     console.log(

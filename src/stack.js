@@ -327,8 +327,9 @@ const MONO_MAX_DEPTH = 3; // deepest nested dir considered (e.g. apps/web, packa
 const MONO_SCAN_BUDGET = 200; // hard ceiling on dirs stat-ed — bounds cost on large trees
 const MONO_MAX_ROOTS = 50; // most nested package roots surfaced
 
-// Zero-dep: pull the `packages:` list from a pnpm-workspace.yaml. Ignores negations (`!…`).
-function parsePnpmPackages(text) {
+// Zero-dep: pull the `packages:` list from a pnpm-workspace.yaml. Negations (`!…`) are
+// dropped unless `negations` is set (membership needs them: `!packages/legacy` is NOT run).
+function parsePnpmPackages(text, { negations = false } = {}) {
   const out = [];
   let inBlock = false;
   for (const raw of text.split(/\r?\n/)) {
@@ -341,7 +342,7 @@ function parsePnpmPackages(text) {
     const m = /^\s*-\s*(.+?)\s*$/.exec(line);
     if (m) {
       const v = m[1].trim().replace(/^["']|["']$/g, "");
-      if (v && !v.startsWith("!")) out.push(v);
+      if (v && (negations || !v.startsWith("!"))) out.push(v);
     } else if (/^\S/.test(line)) {
       inBlock = false; // a new top-level key ends the list
     }
@@ -427,16 +428,442 @@ export function matchesWorkspaceGlob(glob, rel) {
   return new RegExp(`^${re}$`).test(stripTrailingSlashes(rel));
 }
 
-// A root test script that runs EVERY workspace's suite itself — so a nested package that is a
-// declared workspace member is covered by the root run and must not be run twice.
-const RECURSIVE_TEST_RE =
-  /(?:^|\s)(?:--workspaces|-ws|--recursive|-r)(?:\s|$)|\bworkspaces\s+foreach\b|\bturbo\s+(?:run\s+)?test\b|\blerna\s+run\s+test\b|\bnx\s+run-many\b/;
+/**
+ * Is `rel` a member of a workspace glob list? Included by some positive glob and excluded by
+ * no `!negation` — the way npm, yarn and pnpm read their lists. Pure.
+ * @param {string[]} globs @param {string} rel
+ */
+export function isWorkspaceMember(globs, rel) {
+  let member = false;
+  for (const g of globs) {
+    if (typeof g !== "string") continue;
+    if (g.startsWith("!")) {
+      if (matchesWorkspaceGlob(g.slice(1), rel)) return false;
+    } else if (!member && matchesWorkspaceGlob(g, rel)) member = true;
+  }
+  return member;
+}
 
-/** Whether the root's declared test script runs every declared workspace's tests. Pure
- *  w.r.t. the tree (reads package.json). */
+// ---------------------------------------------------------------------------
+// Recursive workspace test runs (review N03). A root `test` script covers the workspaces only
+// when it PROVABLY runs every member's own `test` script and that run's failure reaches the
+// script's exit status. The old check matched a flag token anywhere in the text, so Node's
+// preload flag (`node -r ./setup.cjs --test`) read as `pnpm -r`: a failing workspace was never
+// executed and verify said PASS. The script is now read as shell STRUCTURE — commands split at
+// `&&` `||` `;` `|` `&`, quotes resolved, each command's executable identified through
+// env/cross-env/npx/exec wrappers — and only a known, UNFILTERED recursive run of `test`
+// counts:
+//   npm test|run test --workspaces|-ws        no -w/--workspace/--prefix
+//   pnpm -r|--recursive test|run test         no --filter/-F/--resume-from/-C/-w/--no-bail
+//   yarn workspaces run test (v1)
+//   yarn workspaces foreach [-A|-W] [run] test  no --include/--exclude/--since/--from/-R/--no-private
+//   turbo run test [other tasks]              no --filter/-F/--affected/--since/--scope/--dry-run/--continue
+//   lerna run test                            no --scope/--ignore/--since/--no-private/--no-bail
+//   nx run-many -t test                       no --projects/-p/--exclude
+// — directly or through at most four `npm run <root script>` hops. Its status must reach the
+// script's: the last command of its pipeline, in the script's final list, not backgrounded,
+// with no `||` right before it or anywhere after it. Anything else — including a construct
+// this reader does not model (`$VAR`, `$(…)`, subshells, here-docs) — is NOT established, and
+// the planner runs each workspace suite in its own directory; only `verify.workspaces:
+// "root"` can declare otherwise. Which packages the run reaches is read from the tool's OWN
+// workspace list (npm/yarn: package.json, pnpm: pnpm-workspace.yaml, lerna: lerna.json),
+// negations included.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a package-script command line the way `sh` splits it — for RECOGNITION only, nothing
+ * is executed. Each command is its words (quotes and backslashes resolved, redirections
+ * dropped) plus the control operator that follows it (`&&`, `||`, `;`, `|`, `&`, or null at
+ * the end). `null` when the line uses a construct this reader does not model: parameter
+ * expansion, command substitution, subshells or `{ }` groups, here-docs, a dangling quote.
+ * @param {string} line
+ * @returns {{words: string[], op: string|null}[]|null}
+ */
+export function shellCommands(line) {
+  const s = String(line);
+  /** @type {{words: string[], op: string|null}[]} */
+  const cmds = [];
+  /** @type {string[]} */
+  let words = [];
+  /** @type {string|null} */
+  let word = null; // null = no word in progress, so an empty quoted "" is still a word
+  let quoted = false;
+  let redirect = false; // the next word is a redirection target, not an argument
+  const endWord = () => {
+    if (word === null) return true;
+    const w = word;
+    word = null;
+    if (!quoted && (w === "{" || w === "}")) return false; // a `{ …; }` group
+    quoted = false;
+    if (redirect) redirect = false;
+    else words.push(w);
+    return true;
+  };
+  const endCommand = (op) => {
+    if (!endWord() || redirect) return false; // `>` with no target
+    if (!words.length) return op === ";" || op === "\n" || op === null; // blank line / trailing `;`
+    cmds.push({ words, op: op === "\n" ? ";" : op });
+    words = [];
+    return true;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'") {
+      const j = s.indexOf("'", i + 1);
+      if (j < 0) return null;
+      word = (word ?? "") + s.slice(i + 1, j);
+      quoted = true;
+      i = j;
+    } else if (c === '"') {
+      let out = "";
+      let j = i + 1;
+      for (; j < s.length && s[j] !== '"'; j++) {
+        if (s[j] === "$" || s[j] === "`") return null;
+        if (s[j] === "\\" && j + 1 < s.length && '"\\$`\n'.includes(s[j + 1])) out += s[++j];
+        else out += s[j];
+      }
+      if (j >= s.length) return null;
+      word = (word ?? "") + out;
+      quoted = true;
+      i = j;
+    } else if (c === "\\") {
+      if (i + 1 >= s.length) return null;
+      if (s[i + 1] !== "\n") {
+        word = (word ?? "") + s[i + 1];
+        quoted = true;
+      }
+      i += 1;
+    } else if (c === "$" || c === "`" || c === "(" || c === ")") return null;
+    else if (c === "#" && word === null) {
+      while (i + 1 < s.length && s[i + 1] !== "\n") i += 1; // a comment runs to end of line
+    } else if (c === "\n") {
+      if (!endCommand("\n")) return null;
+    } else if (c === " " || c === "\t" || c === "\r") {
+      if (!endWord()) return null;
+    } else if (c === "<" || c === ">") {
+      // Redirection. A pending all-digit word is its fd (`2>`), not an argument.
+      if (word !== null && /^\d+$/.test(word) && !quoted) word = null;
+      else if (!endWord()) return null;
+      if (redirect) return null;
+      if (c === "<" && s[i + 1] === "<") return null; // here-doc
+      if (s[i + 1] === ">" || s[i + 1] === "&" || s[i + 1] === "|") i += 1;
+      redirect = true;
+    } else if (c === "&" || c === "|" || c === ";") {
+      const two = s.slice(i, i + 2);
+      if (c === "&" && s[i + 1] === ">") {
+        if (!endWord()) return null; // `&>file` — a redirection, not an operator
+        i += s[i + 2] === ">" ? 2 : 1;
+        redirect = true;
+        continue;
+      }
+      if (two === ";;") return null;
+      const op = two === "&&" || two === "||" ? two : two === "|&" ? "|" : c;
+      if (op.length === 2 || two === "|&") i += 1;
+      if (!endCommand(op)) return null;
+    } else {
+      word = (word ?? "") + c;
+    }
+  }
+  if (!endCommand(null)) return null;
+  const last = cmds[cmds.length - 1];
+  if (last && (last.op === "&&" || last.op === "||" || last.op === "|")) return null; // dangling
+  if (last?.op === ";") last.op = null;
+  return cmds;
+}
+
+/**
+ * The commands whose exit status reaches the whole line's (no `set -e` modelled): those in
+ * the FINAL list (after the last `;`/`&`), last in their pipeline (no `pipefail`), with no
+ * `||` right before them (they might be skipped on success) or anywhere after them (their
+ * failure would be absorbed). A backgrounded final command reaches nothing.
+ * @param {{words: string[], op: string|null}[]} cmds
+ */
+function statusCarriers(cmds) {
+  if (!cmds.length || cmds[cmds.length - 1].op === "&") return [];
+  let start = 0;
+  for (let i = 0; i < cmds.length - 1; i++)
+    if (cmds[i].op === ";" || cmds[i].op === "&") start = i + 1;
+  const list = cmds.slice(start);
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].op === "|") continue; // not the last command of its pipeline
+    let first = i;
+    while (first > 0 && list[first - 1].op === "|") first -= 1;
+    if (first > 0 && list[first - 1].op === "||") continue;
+    if (list.slice(i).some((x) => x.op === "||")) continue;
+    out.push(list[i]);
+  }
+  return out;
+}
+
+const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// Wrappers whose job is to find and run another binary.
+const TOOL_BINS = new Set(["turbo", "lerna", "nx"]);
+const NPX_OK = new Set([
+  "--yes",
+  "-y",
+  "--no",
+  "--no-install",
+  "--quiet",
+  "-q",
+  "--prefer-offline",
+]);
+/** `./node_modules/.bin/turbo.cmd` → `turbo`. */
+const binName = (w) =>
+  String(w)
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.(?:cmd|exe|ps1|js|cjs|mjs)$/i, "");
+
+/** Strip env assignments and runner wrappers (env, cross-env, npx, bunx, npm exec, pnpm/yarn
+ *  exec|dlx, `yarn turbo`) down to the executable that does the work. `null` when a wrapper
+ *  is used in a way that could change what runs (`npx -c`, `npm exec --workspaces`…). */
+function unwrapCommand(words) {
+  const w = [...words];
+  for (let hop = 0; hop < 6; hop++) {
+    while (w.length && ENV_ASSIGN.test(w[0])) w.shift();
+    if (!w.length || w[0] === "!") return null; // `! cmd` inverts the status
+    const bin = binName(w[0]);
+    const next = w[1];
+    if (bin === "env" || bin === "cross-env") {
+      w.shift();
+      while (w.length && w[0].startsWith("-")) {
+        if (w[0] === "-u" || w[0] === "--unset") w.shift();
+        w.shift();
+      }
+      continue;
+    }
+    if (bin === "npx" || bin === "bunx" || (bin === "bun" && next === "x")) {
+      w.shift();
+      if (bin === "bun") w.shift();
+      while (w.length && w[0].startsWith("-")) {
+        const o = w.shift();
+        if (o === "-p" || o === "--package") w.shift();
+        else if (o === "--") break;
+        else if (!NPX_OK.has(o) && !o.startsWith("--package=")) return null;
+      }
+      continue;
+    }
+    if (bin === "npm" && (next === "exec" || next === "x")) {
+      w.splice(0, 2);
+      while (w.length && w[0].startsWith("-")) {
+        const o = w.shift();
+        if (o === "--") break;
+        if (!NPX_OK.has(o) && !o.startsWith("--package=")) return null;
+      }
+      continue;
+    }
+    if ((bin === "pnpm" || bin === "yarn") && (next === "exec" || next === "dlx")) {
+      w.splice(0, 2);
+      if (w[0] === "--") w.shift();
+      if (w[0]?.startsWith("-")) return null;
+      continue;
+    }
+    if ((bin === "pnpm" || bin === "yarn") && next && TOOL_BINS.has(binName(next))) {
+      w.shift();
+      continue;
+    }
+    return { bin, args: w.slice(1), words: w };
+  }
+  return null;
+}
+
+// Options that make a run cover a SUBSET of the workspaces, another root, or not propagate
+// every failure — any of them and the run is not a whole-workspace verdict.
+const NPM_NARROW = /^(?:-w|--workspace|-C|--prefix)(?:=|$)/;
+const PNPM_NARROW =
+  /^(?:--filter|-F|--filter-prod|--resume-from|-C|--dir|-w|--workspace-root|--test-pattern|--changed-files-ignore-pattern|--no-bail)(?:=|$)/;
+const YARN_NARROW = /^(?:--include|--exclude|--since|--from|--recursive|--no-private)(?:=|$)/;
+const TURBO_NARROW =
+  /^(?:--filter|-F|--affected|--since|--scope|--ignore|--dry-run|--dry|--graph|--continue|--cwd)(?:=|$)/;
+const LERNA_NARROW =
+  /^(?:--scope|--ignore|--since|--no-private|--no-bail|--exclude-dependents|--include-merged-tags)(?:=|$)/;
+const NX_NARROW =
+  /^(?:--projects|-p|--exclude|--affected|--base|--head|--files|--uncommitted|--untracked)(?:=|$)/;
+const TEST_ALIASES = new Set(["test", "t", "tst"]);
+const RUN_ALIASES = new Set(["run", "run-script", "rum", "urn"]);
+// pnpm builtins that are not script names (`pnpm <script>` runs a root script otherwise).
+const PNPM_BUILTINS = new Set(
+  "add install i update up remove rm link unlink import rebuild prune fetch patch audit list ls outdated why exec dlx create publish pack store root bin setup init env deploy config start".split(
+    " ",
+  ),
+);
+
+/** Positional words of an argv, stopping at `--` (what follows belongs to the script). */
+const positionals = (args, narrow) => {
+  const pos = [];
+  for (const a of args) {
+    if (a === "--") break;
+    if (narrow?.test(a)) return null;
+    if (!a.startsWith("-")) pos.push(a);
+  }
+  return pos;
+};
+const optionWords = (args) => {
+  const i = args.indexOf("--");
+  return i < 0 ? args : args.slice(0, i);
+};
+
+/**
+ * One command → a recognized recursive test run, a root-script hop to follow, or null.
+ * @param {{bin: string, args: string[]}} cmd
+ * @returns {{tool: string}|{follow: string}|null}
+ */
+function recognizeCommand({ bin, args }) {
+  const opts = optionWords(args);
+  if (bin === "npm") {
+    const pos = positionals(args, NPM_NARROW);
+    if (!pos) return null;
+    let recursive = false;
+    for (const a of opts) {
+      if (a === "--workspaces" || a === "-ws" || a === "--workspaces=true") recursive = true;
+      else if (a === "--no-workspaces" || a === "--workspaces=false") recursive = false;
+    }
+    const [sub, script] = pos;
+    if (TEST_ALIASES.has(sub)) return recursive ? { tool: "npm" } : null;
+    if (RUN_ALIASES.has(sub) && script)
+      return recursive ? (script === "test" ? { tool: "npm" } : null) : { follow: script };
+    return null;
+  }
+  if (bin === "pnpm") {
+    let pos = positionals(args, PNPM_NARROW);
+    if (!pos) return null;
+    let recursive = opts.includes("-r") || opts.includes("--recursive");
+    if (["recursive", "multi", "m"].includes(pos[0])) {
+      recursive = true;
+      pos = pos.slice(1);
+    }
+    const [sub, script] = pos;
+    if (TEST_ALIASES.has(sub)) return recursive ? { tool: "pnpm" } : null;
+    if ((sub === "run" || sub === "run-script") && script)
+      return recursive ? (script === "test" ? { tool: "pnpm" } : null) : { follow: script };
+    if (!recursive && sub && !PNPM_BUILTINS.has(sub)) return { follow: sub };
+    return null;
+  }
+  if (bin === "yarn") {
+    if (args[0] === "workspaces" && args[1] === "run")
+      return args[2] === "test" ? { tool: "yarn" } : null; // yarn 1: every workspace, no filters
+    if (args[0] === "workspaces" && args[1] === "foreach") {
+      let i = 2;
+      for (; i < args.length && args[i].startsWith("-"); i++) {
+        const a = args[i];
+        if (YARN_NARROW.test(a)) return null;
+        if (/^-[A-Za-z]+$/.test(a) && a.includes("R")) return null; // a bundle holding -R
+        if (a === "-j" || a === "--jobs") i += 1;
+      }
+      const script = args[i] === "run" ? args[i + 1] : args[i];
+      return script === "test" ? { tool: "yarn" } : null;
+    }
+    const pos = positionals(args, null);
+    if (pos?.[0] === "run" && pos[1]) return { follow: pos[1] };
+    if (pos?.[0] && !["workspace", "workspaces", "install", "add", "remove"].includes(pos[0]))
+      return { follow: pos[0] };
+    return null;
+  }
+  if (bin === "bun") {
+    const pos = positionals(args, /^(?:--filter|-F|--cwd)(?:=|$)/);
+    if (pos?.[0] === "run" && pos[1]) return { follow: pos[1] };
+    return null;
+  }
+  if (bin === "turbo") {
+    if (args[0] !== "run" && args[0] !== "test") return null;
+    const tasks = positionals(args[0] === "run" ? args.slice(1) : args, TURBO_NARROW);
+    return tasks?.includes("test") ? { tool: "turbo" } : null;
+  }
+  if (bin === "lerna") {
+    const pos = positionals(args, LERNA_NARROW);
+    return pos?.[0] === "run" && pos[1] === "test" ? { tool: "lerna" } : null;
+  }
+  if (bin === "nx") {
+    if (args[0] !== "run-many") return null;
+    const targets = [];
+    for (let i = 1; i < opts.length; i++) {
+      const a = opts[i];
+      if (NX_NARROW.test(a)) return null;
+      const eq = /^(?:--targets?|-t)=(.*)$/.exec(a);
+      if (eq) targets.push(...eq[1].split(","));
+      else if (a === "-t" || a === "--target" || a === "--targets")
+        while (i + 1 < opts.length && !opts[i + 1].startsWith("-"))
+          targets.push(...opts[++i].split(","));
+    }
+    return targets.map((t) => t.trim()).includes("test") ? { tool: "nx" } : null;
+  }
+  return null;
+}
+
+const MAX_SCRIPT_HOPS = 4;
+
+/**
+ * The recursive workspace test run a root `test` script performs, if one is ESTABLISHED:
+ * `{tool, command}` for the recognized invocation (`command` is its words, re-joined), else
+ * null. Pure — `scripts` is the root package.json's `scripts`, used to follow
+ * `npm run <script>` hops (at most four, cycles refused).
+ * @param {string} script
+ * @param {{scripts?: Record<string, unknown>}} [opts]
+ * @returns {{tool: string, command: string}|null}
+ */
+export function recursiveTestInvocation(script, { scripts = {} } = {}) {
+  const seen = new Set(["test"]);
+  const walk = (line, hops) => {
+    const cmds = shellCommands(line);
+    if (!cmds) return null;
+    for (const c of statusCarriers(cmds)) {
+      const cmd = unwrapCommand(c.words);
+      if (!cmd) continue;
+      const r = recognizeCommand(cmd);
+      if (r && "tool" in r) return { tool: r.tool, command: cmd.words.join(" ") };
+      if (r && "follow" in r) {
+        const next = scripts?.[r.follow];
+        if (typeof next !== "string" || seen.has(r.follow) || hops >= MAX_SCRIPT_HOPS) continue;
+        seen.add(r.follow);
+        const inner = walk(next, hops + 1);
+        if (inner) return inner;
+      }
+    }
+    return null;
+  };
+  return typeof script === "string" ? walk(script, 0) : null;
+}
+
+/** The workspace list a tool actually iterates, negations kept (review N03). */
+function toolWorkspaceGlobs(root, tool) {
+  const pkg = readJson(root, "package.json");
+  const ws = pkg?.workspaces;
+  const pkgGlobs = (Array.isArray(ws) ? ws : Array.isArray(ws?.packages) ? ws.packages : []).filter(
+    (g) => typeof g === "string",
+  );
+  const yaml = read(root, "pnpm-workspace.yaml");
+  const pnpmGlobs = yaml == null ? null : parsePnpmPackages(yaml, { negations: true });
+  if (tool === "npm" || tool === "yarn") return pkgGlobs;
+  if (tool === "pnpm") return pnpmGlobs ?? [];
+  if (tool === "lerna") {
+    const lerna = readJson(root, "lerna.json");
+    if (Array.isArray(lerna?.packages) && lerna.packages.length)
+      return lerna.packages.filter((g) => typeof g === "string");
+  }
+  return pnpmGlobs ?? pkgGlobs; // turbo, nx and lerna ≥7 follow the package manager's list
+}
+
+/**
+ * The root's recursive workspace test run, when one is ESTABLISHED from its declared `test`
+ * script (see recursiveTestInvocation): the tool, the recognized command, and the workspace
+ * globs that tool iterates (negations included — check with isWorkspaceMember). Null when
+ * the script is absent, masked, or not a recognized unfiltered recursive run.
+ * @param {string} root
+ * @returns {{tool: string, command: string, globs: string[]}|null}
+ */
+export function recursiveTestRun(root) {
+  const pkg = readJson(root, "package.json");
+  const script = declaredTestScript(pkg);
+  if (!script) return null;
+  const run = recursiveTestInvocation(script, { scripts: pkg?.scripts ?? {} });
+  return run ? { ...run, globs: toolWorkspaceGlobs(root, run.tool) } : null;
+}
+
+/** Whether the root's declared test script is an ESTABLISHED recursive run of every
+ *  workspace's tests (back-compat boolean over recursiveTestRun). */
 export function rootTestCoversWorkspaces(root) {
-  const script = declaredTestScript(readJson(root, "package.json"));
-  return !!script && RECURSIVE_TEST_RE.test(script);
+  return recursiveTestRun(root) !== null;
 }
 
 /**

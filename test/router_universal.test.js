@@ -1,6 +1,6 @@
 // Universal router: registry as data, provider filtering, outcome recording and Bayesian refit.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +12,7 @@ import {
   routeUniversal,
 } from "../src/router/index.js";
 import { loadRegistry, servableBy } from "../src/router/registry.js";
+import { readVerifyEvents, VERIFY_EVENT_VERSION, verifyEventMac } from "../src/verify.js";
 
 const project = () => {
   const d = mkdtempSync(join(tmpdir(), "forge-router-"));
@@ -154,6 +155,125 @@ test("A01: an attempt id makes recording idempotent; replayed/corrupt rows never
   assert.equal(readOutcomes.lastInvalid, 2);
 });
 
+// Review N06/N07: provenance is earned from an AUTHENTICATED verifier event, never read from a
+// label. Events are written here directly — MAC'd under a throwaway evidence key — so the
+// tests control authenticity without spawning a test run.
+const withEvidenceHome = (home, fn) => {
+  const old = process.env.FORGE_HOME;
+  process.env.FORGE_HOME = home;
+  try {
+    return fn();
+  } finally {
+    if (old === undefined) delete process.env.FORGE_HOME;
+    else process.env.FORGE_HOME = old;
+  }
+};
+/** Append a verifier event to `d`'s log, MAC'd under the current key unless `sign` is false. */
+const logEvent = (d, event, { sign = true } = {}) => {
+  const e = { v: VERIFY_EVENT_VERSION, verifier: "forge verify", ...event };
+  const mac = sign ? verifyEventMac(e) : null;
+  appendFileSync(
+    join(d, ".forge", "verify-events.jsonl"),
+    `${JSON.stringify(mac ? { ...e, mac } : e)}\n`,
+  );
+};
+const outcome = (d, extra = {}) => ({
+  task: "t",
+  model: loadRegistry(d).models[0].id,
+  features: new Array(12).fill(0),
+  ...extra,
+});
+
+test("N06: with no evidence key, an unsigned event is reported but never authenticated", () => {
+  const d = project();
+  const noKey = join(d, "not-a-dir");
+  writeFileSync(noKey, "a regular file: no key can be read or created below it");
+  withEvidenceHome(noKey, () => {
+    logEvent(d, { runId: "invented-run", status: "PASS" }, { sign: false });
+    const [e] = readVerifyEvents(d);
+    assert.equal(e.runId, "invented-run", "the event exists…");
+    assert.equal(e.authenticated, false, "…but it is not authenticated");
+    const row = recordOutcome(d, outcome(d, { passed: true, verifyRunId: "invented-run" }));
+    assert.equal(row.provenance, "self-reported", "degraded mode continues, unauthenticated");
+    assert.match(row.provenanceNote, /not authenticated/);
+    assert.equal(readOutcomes(d)[0].provenance, "self-reported");
+  });
+});
+
+test("N06: a signed event with a matching verdict still earns verify-event, and survives reload", () => {
+  const d = project();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "run-1", status: "PASS" });
+    logEvent(d, { runId: "unsigned", status: "PASS" }, { sign: false });
+    const events = readVerifyEvents(d);
+    assert.deepEqual(
+      events.map((e) => [e.runId, e.authenticated, e.authScope]),
+      [
+        ["run-1", true, "event"],
+        ["unsigned", false, null],
+      ],
+    );
+    const row = recordOutcome(d, outcome(d, { passed: true, verifyRunId: "run-1" }));
+    assert.equal(row.provenance, "verify-event");
+    assert.equal(
+      recordOutcome(d, outcome(d, { passed: true, verifyRunId: "unsigned" })).provenance,
+      "self-reported",
+    );
+    const read = readOutcomes(d);
+    assert.deepEqual(
+      read.map((o) => o.provenance),
+      ["verify-event", "self-reported"],
+    );
+    assert.equal(fitRouter(d).provenance.local.verifiedOutcomes, 1);
+  });
+});
+
+test("N07: forged labels, missing runs, verdict mismatch and replay never count as verified", () => {
+  const d = project();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "pass-run", status: "PASS" });
+    logEvent(d, { runId: "fail-run", status: "FAIL" });
+    const honest = recordOutcome(
+      d,
+      outcome(d, { passed: true, verifyRunId: "pass-run", attemptId: "honest" }),
+    );
+    assert.equal(honest.provenance, "verify-event");
+    assert.throws(
+      () =>
+        recordOutcome(d, outcome(d, { passed: true, verifyRunId: "pass-run", attemptId: "again" })),
+      /already backs attempt honest/,
+      "one verifier run backs one outcome",
+    );
+    // Hand-written rows claiming the trusted label (the file is user-editable).
+    const path = join(d, ".forge", "route_outcomes.jsonl");
+    const forged = (over) => `${JSON.stringify({ ...honest, ...over })}\n`;
+    appendFileSync(
+      path,
+      forged({ attemptId: "no-run", verifyRunId: "does-not-exist" }) +
+        forged({ attemptId: "mismatch", verifyRunId: "fail-run" }) + // FAIL run, row says pass
+        forged({ attemptId: "replay" }), // a second attempt citing pass-run
+    );
+    const read = readOutcomes(d);
+    assert.deepEqual(
+      read.map((o) => [o.attemptId, o.provenance]),
+      [
+        ["honest", "verify-event"],
+        ["no-run", "self-reported"],
+        ["mismatch", "self-reported"],
+        ["replay", "self-reported"],
+      ],
+    );
+    assert.equal(readOutcomes.lastDowngraded, 3);
+    assert.match(read[3].provenanceNote, /already backs attempt honest/);
+    assert.equal(
+      fitRouter(d).provenance.local.verifiedOutcomes,
+      1,
+      "the fitter counts derived labels",
+    );
+    assert.deepEqual(fitRouter(d).provenance.local.verifiedFields, ["passed"]);
+  });
+});
+
 test("F12: an unreachable budget is INFEASIBLE, with the cheapest cost and an explicit fallback", () => {
   const d = project();
   const r = routeUniversal(d, TASK, { objective: "budget:0.0000001" });
@@ -163,7 +283,8 @@ test("F12: an unreachable budget is INFEASIBLE, with the cheapest cost and an ex
   assert.ok(r.minimumExpectedCost > 0.0000001);
   assert.match(r.reason, /budget/);
   assert.ok(r.fallback.cascade.length >= 1, "the least-bad cascade is still available, labeled");
-  assert.ok(r.fallback.maxPossibleCost >= r.fallback.expectedCost);
+  assert.ok(r.fallback.estimatedCostIfAllAttemptsRun >= r.fallback.expectedCost);
+  assert.equal(r.fallback.maxPossibleCost, undefined, "the misleading name is gone");
 });
 
 test("A07: a recommended model no provider serves is labeled advice only, never presented as callable", () => {

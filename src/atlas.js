@@ -20,8 +20,9 @@ import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 
 // Bumped whenever extraction or resolution changes shape: an atlas.json or per-file cache
 // from an older version is rebuilt, never trusted (v2 stored unresolved import specifiers;
-// v3 filed every tsconfig path-alias import as an external package).
-export const ATLAS_VERSION = 4;
+// v3 filed every tsconfig path-alias import as an external package; v4 symbols carried no
+// definition extent, `endLine`).
+export const ATLAS_VERSION = 5;
 
 const JS_RULES = [
   {
@@ -661,16 +662,17 @@ function extractFile(path, root, preRead) {
         file: rel,
         line,
       };
-      symbols.push({
+      const sym = {
         name,
         kind,
         file: rel,
         line,
         id: node.id,
         qname: node.qname,
-      });
+      };
+      symbols.push(sym);
       nodes.push(node);
-      defs.push({ node, pos, kind });
+      defs.push({ node, sym, pos, kind });
       edges.push({
         source: mod.id,
         target: node.id,
@@ -691,6 +693,18 @@ function extractFile(path, root, preRead) {
     const at = (ownStart.get(d.node) ?? d.pos) - 1;
     const parent = at >= 0 ? scopeAt(at) : null;
     if (parent && parent.node !== d.node && parent.end >= d.pos) d.node.local = true;
+  }
+  // Definition EXTENTS (review N04/N08): the last line each definition spans, when its scope
+  // is known. Context delivery needs it to tell a whole definition from its first lines, and
+  // a dependency contract needs it to read a declaration whole. A JS declaration with no
+  // brace body (an overload, `declare function`, a `type` alias) ends with its statement.
+  // Locality is mirrored onto the symbol: a nested helper is never a cross-file dependency.
+  const endOf = new Map(scopes.map((sc) => [sc.node, sc.end]));
+  for (const d of defs) {
+    let end = endOf.get(d.node);
+    if (end === undefined && lex === "js") end = statementEnd(code, d.pos + d.node.name.length);
+    if (end !== undefined) d.node.endLine = d.sym.endLine = lines.at(Math.max(d.pos, end));
+    if (d.node.local) d.sym.local = true;
   }
 
   // Inheritance edges — `class X extends Y` (JS/TS) and `class X(Base, …)` (Python). Without

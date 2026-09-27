@@ -215,9 +215,11 @@ HANDLERS.ledger = async (argv) => {
       rt.learned
         ? `  retention: idle cut-off ${rt.cutoff} d = the longest idle stretch any claim came back from (${rt.comebacks} comebacks, typical gap ${rt.typicalGap} d; usage log spans ${rt.usageSpan} d)`
         : `  retention: not learned — ${rt.reason}`,
-      d?.boundary != null
-        ? `  duplicates: boundary ${d.boundary.toFixed(2)} (two components beat one: BIC ${d.bic2?.toFixed(1)} < ${d.bic1?.toFixed(1)}) · ${d.groups.length} group(s)`
-        : `  duplicates: none — ${d?.compared ? `one component fits the ${d.compared} nearest-neighbour similarities better` : "fewer than two claims of one kind are still live to compare"}`,
+      `  duplicates: ${d?.groups.length ?? 0} exact group(s) · ${
+        d?.boundary != null
+          ? `near-duplicate boundary ${d.boundary.toFixed(2)} (two components beat one: BIC ${d.bic2?.toFixed(1)} < ${d.bic1?.toFixed(1)})`
+          : `no near-duplicate boundary — ${d?.compared ? `one component fits the ${d.compared} nearest-neighbour similarities better` : "fewer than two claims of one kind are still live to compare"}`
+      }`,
       "",
       `  archive: ${r.archive.length}`,
     ];
@@ -232,6 +234,19 @@ HANDLERS.ledger = async (argv) => {
       );
       for (const c of conflicts.slice(0, 10))
         lines.push(`    ${c.a.slice(0, 12)} ↔ ${c.b.slice(0, 12)}  ${c.conflicts}`);
+    }
+    // Near-duplicates are never archived (review N02): similarity cannot see a swapped role,
+    // direction or number, or a detail one of them adds. A person merges them.
+    const proposed = d?.proposed ?? [];
+    if (proposed.length) {
+      lines.push(
+        "",
+        `  kept both — near-duplicates (retract one if they say the same thing): ${proposed.length}`,
+      );
+      for (const p of proposed.slice(0, 10))
+        lines.push(
+          `    ${p.a.slice(0, 12)} ↔ ${p.b.slice(0, 12)}  similarity ${p.similarity.toFixed(2)}`,
+        );
     }
     lines.push(
       "",

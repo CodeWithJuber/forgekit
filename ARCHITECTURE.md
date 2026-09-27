@@ -148,7 +148,7 @@ The completeness gate on the retrieval side is `forge context "<task>"`: it pins
 required-knowledge set for the edit (`R(edit)`), downgrades items along a compression ladder
 before dropping anything, fills the rest of the budget with a value-density heuristic (no
 approximation guarantee), and reports the _computed missing set_ — the inputs it could not
-assemble — plus pending reads and truncations. Its "complete" means syntactically delivered
+assemble — plus pending reads, partially shown definitions and truncations. Its "complete" means syntactically delivered
 within an estimated token budget, not semantically sufficient
 ([plan 04 §7](docs/plans/substrate-v2/04-context-assembly.md#7-status-2026-09-26--partial)). That missing set is exactly what the substrate pipeline's context stage reads
 to decide whether an edit is safe to start. Surface: `forge reuse query | mint | stats`.
@@ -558,10 +558,10 @@ forgekit/
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify, local usage log
-    ledger_retention.js   # retention learned from the ledger's own history: archive never-served claims, idle ones past the longest observed comeback, and BIC-detected near-duplicates (`ledger compact`)
+    ledger_retention.js   # retention learned from the ledger's own history: archive never-served claims, idle ones past the longest observed comeback, and exact duplicates; BIC-detected near-duplicates are only proposed (`ledger compact`)
     ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
     ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
-    learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge duplicates, drop only ledger-refuted (dormant/retracted/attic) lessons; no model call
+    learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge exact duplicates, propose near-duplicates, drop only lessons whose exact ledger claim is refuted (dormant/retracted/attic); no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) coverage, compression ladder, computed missing-set
@@ -646,7 +646,7 @@ flowchart LR
   scripts["scripts<br/>5 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 286 --> src
+  test -- 290 --> src
   bench -- 12 --> src
   scripts -- 5 --> src
   examples -- 4 --> src

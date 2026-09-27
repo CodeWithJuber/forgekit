@@ -145,30 +145,41 @@ const TOPICS = [
   "api keys rotate every ninety days via the secrets operator",
 ];
 
-test("duplicateGroups: near-duplicates collapse to one survivor; distinct facts are untouched", () => {
+test("duplicateGroups: exact duplicates collapse to one survivor; near-duplicates are only proposed", () => {
   const dir = tmp();
   const base = "the payments service retries failed webhooks three times with backoff";
-  const dupA = fact("wh1", base, 1);
-  const dupB = fact("wh2", `${base} and jitter`, 2);
-  const dupC = fact("wh3", `in production ${base}`, 3);
-  for (const c of [dupA, dupB, dupC, ...TOPICS.map((t, i) => fact(`t${i}`, t, 1))])
+  const twinA = fact("wh1", base, 1);
+  const twinB = fact("wh1b", `${base}.`, 2); // the same statement (trailing punctuation only)
+  // Review N02: each of these ADDS a detail — archiving it as a duplicate would lose it.
+  const jitter = fact("wh2", `${base} and jitter`, 3);
+  const scoped = fact("wh3", `in production ${base}`, 4);
+  for (const c of [twinA, twinB, jitter, scoped, ...TOPICS.map((t, i) => fact(`t${i}`, t, 1))])
     putClaim(dir, c);
   const r = duplicateGroups(loadClaims(dir), 10);
-  assert.ok(r.boundary != null, "the similarity distribution has a duplicate mode");
-  assert.equal(r.groups.length, 1, JSON.stringify(r.groups));
-  const g = r.groups[0];
-  assert.deepEqual([g.keep, ...g.drop.map((d) => d.id)].sort(), [dupA.id, dupB.id, dupC.id].sort());
-  assert.equal(g.keep, dupA.id, "equal val and evidence: the earliest minted survives");
-  for (const d of g.drop) assert.ok(d.similarity >= /** @type {number} */ (r.boundary));
-  // A ledger of distinct facts has no duplicate mode at all.
+  assert.deepEqual(
+    r.groups.map((g) => [g.keep, g.drop.map((d) => d.id)]),
+    [[twinA.id, [twinB.id]]],
+    "equal val and evidence: the earliest minted twin survives",
+  );
+  assert.ok(r.boundary != null, "the similarity distribution has a near-duplicate mode");
+  const inPair = (id) => r.proposed.some((p) => p.a === id || p.b === id);
+  assert.ok(inPair(jitter.id) && inPair(scoped.id), JSON.stringify(r.proposed));
+  for (const p of r.proposed) assert.ok(p.similarity >= /** @type {number} */ (r.boundary));
+  const plan = retentionPlan(loadClaims(dir), new Map(), 10, { duplicates: true });
+  assert.deepEqual(
+    plan.archive.map((a) => [a.id, a.cause, a.survivor]),
+    [[twinB.id, "duplicate", twinA.id]],
+    "only the exact twin is archived; near-duplicates stay live",
+  );
+  // A ledger of distinct facts has neither.
   const clean = tmp();
   for (const [i, t] of TOPICS.entries()) putClaim(clean, fact(`t${i}`, t, 1));
-  assert.deepEqual(duplicateGroups(loadClaims(clean), 10).groups, []);
+  const none = duplicateGroups(loadClaims(clean), 10);
+  assert.deepEqual([none.groups, none.proposed], [[], []]);
 });
 
-test("duplicateGroups: a chain A–B–C drops only what is close to the survivor itself", () => {
-  // B contains A's text and C's text; A and C share nothing. Union-find links all three, but
-  // C is no duplicate of the survivor A, so only B goes.
+test("duplicateGroups: a near-duplicate chain A–B–C is proposed pair by pair, never archived", () => {
+  // B contains A's text and C's text; A and C share nothing.
   const words =
     "amber birch cedar delta ember fjord grove heron inlet juniper kelp larch maple nectar".split(
       " ",
@@ -186,13 +197,10 @@ test("duplicateGroups: a chain A–B–C drops only what is close to the survivo
   ];
   const r = duplicateGroups(claims, 10);
   assert.ok(r.boundary != null);
-  assert.equal(r.groups.length, 1, JSON.stringify(r.groups));
-  assert.equal(r.groups[0].keep, "a");
-  assert.deepEqual(
-    r.groups[0].drop.map((d) => d.id),
-    ["b"],
-    "c is not a duplicate of a — it stays",
-  );
+  assert.deepEqual(r.groups, [], "none of them is the same statement as another");
+  const pairs = r.proposed.map((p) => `${p.a}-${p.b}`);
+  assert.ok(pairs.includes("a-b"), JSON.stringify(pairs));
+  assert.ok(!pairs.includes("a-c"), "a and c share nothing");
 });
 
 test("duplicateGroups: claims of different kinds are never grouped", () => {

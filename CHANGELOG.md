@@ -6,6 +6,107 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Fixes for the eight findings of the 2026-09-27 follow-up review (N01–N08) and its suggestions.
+The review's reproduction script (`reproduce_remaining.mjs --assert-fixed`) and the original
+review's script (`original-reproduce.mjs --assert-fixed`) both pass.
+
+### Fixed
+
+- **Node's `-r` preload flag no longer passes as a recursive workspace run (N03).** A root
+  `test` script covered the workspaces whenever a flag like `-r` or `--workspaces` appeared
+  anywhere in it, so `node -r ./setup.cjs --test` skipped a failing workspace and `forge verify`
+  said PASS. The script is now read as shell structure: commands, quotes, wrappers
+  (`env`, `cross-env`, `npx`, `pnpm exec`) and exit-status flow. Only a recognized, unfiltered
+  recursive run of every member's `test` script counts: `npm test --workspaces`, `pnpm -r test`,
+  `yarn workspaces foreach -A run test`, `turbo run test`, `lerna run test` or
+  `nx run-many -t test`, directly or through `npm run` hops. Filters (`--filter`, `--scope`,
+  `-w`), masked or backgrounded runs and look-alike flags on other tools cover nothing, and each
+  package then runs its own suite. Membership is read from the tool's own workspace list,
+  `!` negations included, and a Python or Go suite inside a workspace is never inferred from an
+  npm-style run.
+- **Exact reuse is byte-exact (N01).** The exact key collapsed whitespace and folded Unicode,
+  so an artifact minted for `return "a  b"` was served as-is for `return "a b"`. The exact tier
+  now compares a digest of the spec's code units (key version 3), with nothing normalized at
+  that boundary. Whitespace inside literals, tabs and newlines, escapes, indentation and
+  composed vs decomposed characters all count. Artifacts keyed before v3 never exact-hit.
+  Inline code that the ledger's canonical storage would rewrite (CRLF, non-NFC text) is refused
+  at mint instead of being silently folded.
+- **A dependency's whole declaration is its contract (N08).** The contract hash stopped at the
+  first `{`, so `calc({a})` and `calc({b})` hashed the same and an artifact whose dependency
+  changed kept serving as valid. The declaration is now read whole (the atlas records each
+  definition's extent) and lexed, and only the body is cut. Destructured keys, defaults, nested
+  patterns, return annotations, overload sets and a value's definition all count; comments and
+  reformatting do not. The dependency is the definition the artifact's own import binds to, not
+  the first same-name symbol by file order. A contract that cannot be established (an
+  ambiguous name, an older format) is reported unknown, never valid.
+- **Similar rules are never merged or dropped (N02).** Lesson consolidation merged
+  near-duplicates that passed the semantic guard, but "Allow admins and deny guests…" and "Deny
+  admins and allow guests…" share every token. Now only exact duplicates merge (the same
+  statement up to whitespace and trailing punctuation). Near-duplicates are kept and listed as
+  `proposed` for a person to merge. A lesson is dropped only when a ledger claim with exactly
+  its text is refuted; one that merely resembles a refuted claim is kept and `flagged`.
+  `forge ledger compact` follows the same rule: it archives exact duplicates only and lists
+  near-duplicates for review.
+- **An unsigned verifier event never earns verified provenance (N06).** When no evidence key
+  could be read or created, `readVerifyEvents` accepted any unsigned line, and `forge route
+  outcome --verify-run` labelled the outcome `verify-event`. Events now carry a derived
+  `authenticated` flag, false for every event when no key is available. An outcome citing an
+  unauthenticated event is still recorded, but as self-reported with a `provenanceNote`.
+- **An edited provenance label counts for nothing (N07).** `readOutcomes` trusted the stored
+  `provenance` field. It now re-derives every row's provenance from the authenticated events:
+  a missing or unauthenticated run, a verdict mismatch, or a second attempt citing the same run
+  reads as self-reported, and is counted in `readOutcomes.lastDowngraded`. One verifier run
+  backs one outcome, and the fitter's verified counter uses only derived labels.
+- **A long function is delivered whole or not at all (N04).** A context span that showed lines
+  1–41 of a 103-line function counted the definition as delivered and reported COMPLETE. A span
+  or head now covers a definition only when it shows the whole definition. A cut one stays a
+  pending read and is named under `partial`, with the lines shown and the lines it spans. Small
+  definitions are still delivered within a small budget.
+- **Code in a nested repository is bound by the fingerprint (N05).** An untracked embedded
+  repository was bound by path only, so a test could rewrite code it imported from there and the
+  stamp still matched. Nested repositories and submodule working trees are now bound by their
+  own HEAD, diffs and untracked files, recursively, and the review's mutation fixture is
+  INCOMPLETE. Code that still cannot be bound is listed as `unbound` in the result and the
+  verifier event, and it turns a PASS into INCOMPLETE.
+
+### Added
+
+- **`verify.external`** in `.forge/forge.config.json`: paths deliberately outside the verified
+  code, such as a vendored checkout or a nested repository you do not own. They are excluded
+  from the fingerprint, and every verifier event records them.
+- **Coverage basis in `forge verify`.** Each package's verdict is labelled `measured` (its own
+  suite ran), `inferred` (from a recognized recursive root command, named in `rootRun`) or
+  `declared` (`verify.workspaces: "root"`), and the CLI prints a `coverage basis` line.
+- **Verifier event contract v2.** The event's MAC now covers every field in canonical form:
+  suites, coverage and its basis, pre/post state, unbound paths, declared external paths and
+  the environment. Previously it covered only the run id, verdict and code state. Readers see
+  `authScope` (`event` or, for v1 events, `verdict`).
+- **The claim registry is a release artifact.** Every claim now records `assessed_release`,
+  the release that ships its assessed commit, and can link review `counterexamples`.
+  `scripts/bump.mjs` stamps claims marked `unreleased` with the version it cuts. With release
+  tags present, `node scripts/claims-status.mjs --check` fails on a stale `unreleased` or on a
+  release that does not contain the assessed commit. Twelve entries still read "master after
+  1.4.3 (unreleased)"; they now name 1.5.0, the release that shipped them.
+- **Property tests along semantic boundaries.** Seeded families for quoted whitespace and code
+  points, subject and number swaps, look-alike and filtered workspace commands, destructured
+  parameters, and a missing evidence key.
+
+### Changed
+
+- **`maxPossibleCost` is now `estimatedCostIfAllAttemptsRun`.** It sums each attempt's expected
+  cost, so it was never a bound on what a run can bill. The CLI says "an estimated $X if every
+  attempt runs". Consumers of the `forge route universal --json` field need the new name.
+- **Formats that changed rebuild or re-verify on their own.** The atlas (version 5) records
+  definition extents, the code-state fingerprint is `manifest-v3`, reuse keys are version 3 and
+  dependency contracts are `v2:`. A stamp from the older fingerprint no longer verifies, so
+  re-run `forge verify`.
+- **The semantic guard compares code layout and stops folding Unicode.** Fenced blocks,
+  indented code lines and unusual spacing beside a code token are compared verbatim, and
+  literals, identifiers and paths are compared by code point.
+- **The research executive summary marks its 2026-09-26 correction in place.** The "cannot be
+  prompted or tooled away" thesis is labelled too broad, and the whitepaper PDF is labelled as
+  the pre-correction edition.
+
 ## [1.7.2] - 2026-09-26
 
 ### Changed

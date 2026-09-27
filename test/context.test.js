@@ -191,6 +191,95 @@ test("F03: a definition below line 100 is delivered by a span, or stays pending 
   assert.ok(mid.truncated.some((t) => t.id === "def:src/calc.js" && t.totalLines > 200));
 });
 
+// Review N04: a definition is delivered only WHOLE — declaration through its last line.
+test("N04: a long function shown only in part is never delivered — it stays pending and is named partial", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  // The review's fixture: a 103-line function whose `return` is its 102nd line.
+  writeFileSync(
+    join(root, "src", "calc.js"),
+    `export function computeTax(x) {\n${"  // padding inside function\n".repeat(100)}  return x * 0.123456789;\n}\n`,
+  );
+  const atlas = buildAtlas({ root });
+  for (const budget of [100, 200, 400, 800]) {
+    const r = assemble(root, "update computeTax", { atlas, budget, claims: [] });
+    const delivered = r.block.includes("return x *");
+    assert.ok(!r.ok || delivered, `budget ${budget}: ok without the body's end`);
+    if (!delivered) {
+      assert.ok(r.pending.includes("def:computeTax"), `budget ${budget}`);
+      assert.ok(!r.covered.includes("def:computeTax"), `budget ${budget}`);
+    }
+  }
+  const r = assemble(root, "update computeTax", { atlas, budget: 400, claims: [] });
+  assert.deepEqual(r.partial, [{ key: "def:computeTax", shown: [1, 41], definition: [1, 103] }]);
+  assert.match(renderContext(r), /only lines 1-41 shown of a definition spanning 1-103/);
+  // Given room for the whole body, it is delivered.
+  const roomy = assemble(root, "update computeTax", { atlas, budget: 2000, claims: [] });
+  assert.equal(roomy.ok, true);
+  assert.ok(roomy.block.includes("return x *"));
+});
+
+test("N04: a small definition deep in a big file is still delivered whole within budget", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  const padding = Array.from({ length: 150 }, (_, i) => `// padding line ${i}`).join("\n");
+  writeFileSync(
+    join(root, "src", "calc.js"),
+    `${padding}\nexport function calcTotal(items) {\n  return items.length;\n}\n${padding}\n`,
+  );
+  const atlas = buildAtlas({ root });
+  const r = assemble(root, "change calcTotal", { atlas, budget: 120, claims: [] });
+  assert.equal(r.ok, true, JSON.stringify({ pending: r.pending, sel: r.selection }));
+  assert.deepEqual(r.partial, []);
+  assert.ok(r.block.includes("return items.length"));
+});
+
+test("N04: the first-25-lines head covers a definition only when it holds the whole of it", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  const body = Array.from({ length: 30 }, (_, i) => `  const v${i} = ${i};`).join("\n");
+  const tail = Array.from({ length: 200 }, (_, i) => `// tail ${i}`).join("\n");
+  writeFileSync(
+    join(root, "src", "calc.js"),
+    `// header\nexport function setupState() {\n${body}\n  return v29;\n}\n${tail}\n`,
+  );
+  const atlas = buildAtlas({ root });
+  // A budget that fits the head (~132 tokens) but not the whole function: the head cuts it at
+  // line 25.
+  const head = assemble(root, "change setupState", { atlas, budget: 200, claims: [] });
+  const sel = head.selection.find((s) => s.id === "def:src/calc.js");
+  assert.equal(sel?.gran, "head", JSON.stringify(head.selection));
+  assert.ok(!head.covered.includes("def:setupState"));
+  assert.deepEqual(head.partial, [{ key: "def:setupState", shown: [1, 25], definition: [2, 34] }]);
+});
+
+test("N04: without a known extent, only the whole file delivers a definition", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  const padding = Array.from({ length: 100 }, (_, i) => `// padding line ${i}`).join("\n");
+  writeFileSync(
+    join(root, "src", "calc.js"),
+    `export function fooBar() {\n  return 1;\n}\n${padding}\n`,
+  );
+  const built = buildAtlas({ root });
+  // An atlas from an extractor that recorded no extent (e.g. an older cache).
+  const atlas = {
+    ...built,
+    symbols: built.symbols.map(({ endLine: _e, ...s }) => s),
+    nodes: built.nodes.map(({ endLine: _e, ...n }) => n),
+  };
+  // Room for a 41-line span, not the 104-line file: the span shows all of fooBar, but with no
+  // recorded end it cannot claim to.
+  const r = assemble(root, "change fooBar", { atlas, budget: 400, claims: [] });
+  assert.ok(!r.covered.includes("def:fooBar"), JSON.stringify(r.selection));
+  assert.ok(r.pending.includes("def:fooBar"));
+  assert.deepEqual(
+    r.partial.map((p) => p.definition),
+    [[1, null]],
+    "the extent is unknown",
+  );
+});
+
 test("F03: dependents beyond the listed twelve stay visible as omitted", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-context-"));
   mkdirSync(join(root, "src"), { recursive: true });

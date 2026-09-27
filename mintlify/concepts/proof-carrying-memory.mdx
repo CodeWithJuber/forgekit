@@ -104,9 +104,10 @@ Add `--personal` for the per-user ledger.
 when its evidence still holds. Its confidence must be above the floor, its file must be
 byte-identical to what was verified, and its dependencies must still resolve with the same
 declarations. Otherwise it falls through to generation and mints a fresh claim on the way
-back. An exact hit needs the same text (only whitespace is ignored). A near hit must also
-agree on operators, numbers, literals, identifiers, paths and negation, so `age >= 18` is
-never served for `age <= 18`.
+back. An exact hit needs the same text, byte for byte: no whitespace or Unicode
+normalization, because the spaces in `"a  b"` or a Python block's indentation are data. A
+near hit must also agree on operators, numbers, literals, identifiers, paths, negation and
+code layout, so `age >= 18` is never served for `age <= 18`.
 
 One event is one vote. Abbreviations of one commit count once. A reworded lesson inherits
 trust only when the rewrite is equivalent. Similar-but-opposite rules are reported as
