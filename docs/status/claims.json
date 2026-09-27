@@ -280,7 +280,7 @@
       "component": "Universal router (src/router, forge route universal)",
       "version": "1.5.0",
       "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "partial",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
@@ -321,7 +321,7 @@
       "component": "Universal router outcome log (src/router/index.js)",
       "version": "derived provenance, verifier event contract v2",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "partial",
       "evidence": [
         "src/router/index.js",
@@ -417,7 +417,7 @@
       "component": "Reuse cache (src/reuse.js, forge reuse)",
       "version": "reuse key v3, dependency contracts v2",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "implemented",
       "evidence": [
         "docs/plans/substrate-v2/00-overview.md",
@@ -455,7 +455,7 @@
       "component": "Context assembly (src/context.js, forge context)",
       "version": "context assembly with definition extents (atlas v5)",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "partial",
       "evidence": [
         "docs/plans/substrate-v2/04-context-assembly.md",
@@ -547,7 +547,7 @@
       "component": "Context assembly (src/context.js, forge context)",
       "version": "context assembly with definition extents (atlas v5)",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "implemented",
       "evidence": [
         "src/context.js",
@@ -580,7 +580,7 @@
       "component": "Verification (src/verify.js, forge verify)",
       "version": "fingerprint manifest-v3, verifier event contract v2",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "implemented",
       "evidence": [
         "src/verify.js",
@@ -640,7 +640,7 @@
       "component": "Consolidation and compaction (src/learn_consolidate.js, src/ledger_retention.js)",
       "version": "exact-statement merging",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "implemented",
       "evidence": [
         "src/learn_consolidate.js",
@@ -670,7 +670,7 @@
       "component": "Reuse cache (src/reuse.js)",
       "version": "reuse key v3, dependency contracts v2",
       "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.3",
       "status": "implemented",
       "evidence": [
         "src/reuse.js",
