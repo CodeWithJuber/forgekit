@@ -2,6 +2,7 @@
 // (scripts/claims-status.mjs): validation rules, table rendering, --check drift detection on a
 // throwaway checkout, and the repository's own registry staying valid and in sync.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -13,10 +14,12 @@ import {
   END,
   README_PATH,
   REGISTRY_PATH,
+  releaseProblems,
   renderTable,
   run,
   STATUSES,
   spliceReadme,
+  stampRelease,
   validateRegistry,
 } from "../scripts/claims-status.mjs";
 
@@ -29,6 +32,7 @@ const claim = (over = {}) => ({
   component: "example component",
   version: "1.0.0",
   source_commit: SHA,
+  assessed_release: "1.4.3",
   status: "measured",
   evidence: ["evidence/result.md"],
   notes: "",
@@ -216,4 +220,72 @@ test("table cells escape backslashes before pipes (a trailing backslash cannot u
   assert.equal(cell("a\\|b"), "a\\\\\\|b");
   assert.equal(cell("ends with \\"), "ends with \\\\");
   assert.equal(cell("two\nlines"), "two lines");
+});
+
+// Review 2026-09-27, suggestion 5: the registry is a release artifact.
+test("assessed_release is a release or 'unreleased'; counterexamples are well-formed links", () => {
+  const ok = { claims: [claim({ assessed_release: "unreleased" })] };
+  assert.deepEqual(validateRegistry(ok), []);
+  const problems = validateRegistry({
+    claims: [
+      claim({ id: "a", assessed_release: "master after 1.4.3 (unreleased)" }),
+      claim({
+        id: "b",
+        counterexamples: [{ review: "2026-09-27", id: "N01", resolution: "maybe" }],
+      }),
+      claim({ id: "c", counterexamples: "N01" }),
+    ],
+  });
+  assert.ok(problems.some((p) => /\(a\): assessed_release must be a release version/.test(p)));
+  assert.ok(problems.some((p) => /\(b\): counterexamples must be/.test(p)));
+  assert.ok(problems.some((p) => /\(c\): counterexamples must be/.test(p)));
+  const linked = claim({
+    counterexamples: [{ review: "2026-09-27", id: "N01", resolution: "fixed" }],
+  });
+  assert.deepEqual(validateRegistry({ claims: [linked] }), []);
+  assert.match(renderTable({ claims: [linked] }), /Review counterexamples: 2026-09-27 N01 fixed\./);
+  assert.match(renderTable({ claims: [linked] }), /\| 1\.4\.3 · `d2abfa69` \|/);
+});
+
+test("with release tags, a stale 'unreleased' and a release that lacks the commit are problems", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-claims-git-"));
+  try {
+    const g = (...args) =>
+      execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
+    g("init");
+    g("config", "user.email", "t@t.t");
+    g("config", "user.name", "t");
+    g("commit", "--allow-empty", "-m", "one");
+    const one = g("rev-parse", "HEAD");
+    const base = { claims: [claim({ source_commit: one, assessed_release: "unreleased" })] };
+    assert.equal(releaseProblems(root, base), null, "no tags: the check cannot run");
+    g("tag", "v1.0.0");
+    g("commit", "--allow-empty", "-m", "two");
+    const two = g("rev-parse", "HEAD");
+    const problems = releaseProblems(root, {
+      claims: [
+        claim({ id: "stale", source_commit: one, assessed_release: "unreleased" }),
+        claim({ id: "fresh", source_commit: two, assessed_release: "unreleased" }),
+        claim({ id: "shipped", source_commit: one, assessed_release: "1.0.0" }),
+        claim({ id: "too-early", source_commit: two, assessed_release: "1.0.0" }),
+        claim({ id: "no-tag", source_commit: one, assessed_release: "9.9.9" }),
+      ],
+    });
+    assert.deepEqual(
+      problems.map((p) => p.split(":")[0]),
+      ["stale", "too-early", "no-tag"],
+    );
+    assert.match(problems[0], /shipped in v1\.0\.0/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("stampRelease rewrites only unreleased assessments, keeping the file's layout", () => {
+  const text =
+    '{\n  "a": { "assessed_release": "unreleased" },\n  "b": { "assessed_release": "1.2.3" }\n}\n';
+  assert.equal(
+    stampRelease(text, "1.3.0"),
+    '{\n  "a": { "assessed_release": "1.3.0" },\n  "b": { "assessed_release": "1.2.3" }\n}\n',
+  );
 });

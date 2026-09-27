@@ -3,8 +3,10 @@ import { test } from "node:test";
 import {
   criticalFeatures,
   describeConflicts,
+  layoutFeatures,
   sameSemantics,
   semanticConflicts,
+  statementKey,
   trimEdges,
 } from "../src/semantic_guard.js";
 
@@ -60,6 +62,8 @@ test("semantic guard: features are extracted per class; literals are not re-scan
   assert.deepEqual(f.identifiers, ["listUsers"]);
   assert.deepEqual(f.paths, ["src/api/users.ts"]);
   assert.deepEqual(f.polarity, ["not"]);
+  // symbols in document order, an operator with its operands; prose punctuation is not one
+  assert.deepEqual(f.symbols, ["src / api", "api / users", ".", "listUsers >= 25"]);
   assert.deepEqual(criticalFeatures(""), {
     operators: [],
     numbers: [],
@@ -67,6 +71,9 @@ test("semantic guard: features are extracted per class; literals are not re-scan
     identifiers: [],
     paths: [],
     polarity: [],
+    layout: [],
+    symbols: [],
+    format: [],
   });
 });
 
@@ -108,4 +115,125 @@ test("trimEdges equals the edge-punctuation regex it replaced, in linear time", 
   const t0 = performance.now();
   assert.equal(trimEdges(hostile), hostile);
   assert.ok(performance.now() - t0 < 1000, "linear, not quadratic");
+});
+
+// Review 2026-09-27: the new layout and statement-key scans must stay linear on hostile text —
+// a `[…]+$` regex over a long punctuation run took over a minute on 200k characters.
+test("layoutFeatures and statementKey are linear on long punctuation runs", () => {
+  const run = ".".repeat(200000);
+  const t0 = performance.now();
+  assert.ok(layoutFeatures(`x ${run}a  b`).length > 0);
+  assert.equal(statementKey(`a${run}b${run}`), `a${run}b${run}`, "a run of dots is not a period");
+  assert.ok(semanticConflicts(`x ${run}a  b`, `x ${run}a b`).length > 0);
+  assert.ok(performance.now() - t0 < 2000, "linear, not quadratic");
+});
+
+test("the literal scanner, symbols and spelling scale linearly on hostile input", () => {
+  // Measured as SCALING, not wall-clock: 4× the input takes about 4× the time when the work is
+  // linear and 16× when it is quadratic, on a fast machine or a slow CI runner alike.
+  const same = (text) => [text, `${text} z`];
+  const ids = (prefix, n) => Array.from({ length: n / 6 }, (_, k) => `${prefix}X${k}`).join(" ");
+  const cases = {
+    "unmatched typographic openers": (n) => same("“".repeat(n)),
+    "ASCII openers with no closer on a long line": (n) => same("'a ".repeat(n)),
+    "backtick runs of every length": (n) => {
+      const out = [];
+      for (let k = 1, len = 0; len < n; k++, len += k + 3) out.push("`".repeat(k));
+      return same(out.join(" x "));
+    },
+    "one long symbol run": (n) => same("+".repeat(n)),
+    "format characters in one token": (n) => same(`x${"\u200b".repeat(n)}y`),
+    "one long word": (n) => same("a".repeat(n)),
+    "thousands of differing identifiers": (n) => [ids("a", n), ids("b", n)],
+  };
+  const time = ([a, b]) => {
+    const t0 = performance.now();
+    semanticConflicts(a, b);
+    return performance.now() - t0;
+  };
+  for (const [name, make] of Object.entries(cases)) {
+    time(make(2000)); // warm the JIT up
+    const small = time(make(20000));
+    const large = time(make(80000));
+    assert.ok(
+      large < 10 * small + 50,
+      `${name}: ${small.toFixed(1)} ms → ${large.toFixed(1)} ms for 4× the input`,
+    );
+  }
+});
+
+// Review N01 round 2: every pair the adversarial review served as "near" — each must conflict.
+const ROUND2 = [
+  ['return "a  b"', 'return "a b"', "literals"],
+  ["Split the log fields on “ ”", "Split the log fields on “\t”", "literals"],
+  ["Keep the header “Last Name  First Name”", "Keep the header “Last Name First Name”", "literals"],
+  ["Keep «a  b» as is", "Keep «a b» as is", "literals"],
+  [
+    "Don't reformat the CSV header 'Last Name  First Name'",
+    "Don't reformat the CSV header 'Last Name First Name'",
+    "literals",
+  ],
+  ["wrap it in ``a  b``", "wrap it in ``a b``", "literals"],
+  ["x + 1", "x - 1", "symbols"],
+  ["i += 1", "i -= 1", "symbols"],
+  ["a * b", "a / b", "symbols"],
+  ["a & b", "a | b", "symbols"],
+  ["i++", "i--", "symbols"],
+  ["compute a - b now", "compute b - a now", "symbols"],
+  ["cd ..", "cd .", "symbols"],
+  ["go test ./...", "go test ./", "symbols"],
+  ["in seed scripts call create!", "in seed scripts call create", "symbols"],
+  ["retry 3 then 5 times", "retry 5 then 3 times", "numbers"],
+  ["if x:\n    a()\n    b()", "if x:\n    a()\nb()", "layout"],
+  ["Reset the cache:\nrm -rf .cache\nnpm ci", "Reset the cache: rm -rf .cache npm ci", "layout"],
+  ["build: deps\n\tgo build ./cmd/server", "build: deps\n    go build ./cmd/server", "layout"],
+  ["return\n{a: 1}", "return {a: 1}", "layout"],
+  ["a\r\nb", "a\nb", "layout"],
+  ["Name    Age", "Name Age", "layout"],
+  ["line one  \nline two", "line one\nline two", "layout"],
+  ["use the function named parse", "use the function named Parse", "spelling"],
+  ["call the h\u0430ndler", "call the handler", "spelling"],
+  ["call ｐａｒｓｅ now", "call parse now", "spelling"],
+  ["call pa\u200brse now", "call parse now", "format"],
+  ["call parse\u200d now", "call parse now", "format"],
+];
+
+test("N01 round 2: literals, symbols, order, layout and spelling all separate a near pair", () => {
+  for (const [a, b, kind] of ROUND2) {
+    const conflicts = semanticConflicts(a, b);
+    assert.ok(
+      conflicts.some((c) => c.kind === kind),
+      `${JSON.stringify(a)} / ${JSON.stringify(b)}: ${describeConflicts(conflicts) || "no conflict"}`,
+    );
+    assert.deepEqual(semanticConflicts(a, a), [], "a text never conflicts with itself");
+  }
+});
+
+test("N01 round 2: an order-only difference is named as one", () => {
+  const [c] = semanticConflicts("move 1 then 2", "move 2 then 1");
+  assert.equal(c.kind, "numbers");
+  assert.equal(c.order, true);
+  assert.match(describeConflicts([c]), /numbers \(order\): 1 2 ≠ 2 1/);
+});
+
+test("N02 round 2: the statement key folds only edge whitespace and one sentence period", () => {
+  for (const [a, b] of [
+    ["Run tests.", "Run tests"],
+    ["  Pin node to 20.  ", "Pin node to 20"],
+  ])
+    assert.equal(statementKey(a), statementKey(b), `${a} / ${b}`);
+  for (const [a, b] of [
+    ["go test ./...", "go test ./"],
+    ["call save!", "call save"],
+    ["cd ..", "cd ."],
+    ["git add .", "git add .."],
+    ["start with ;", "start with !"],
+    ["use #!", "use #"],
+    ["use foo().", "use foo()"],
+    ["a  b", "a b"],
+    ["a\tb", "a b"],
+    ["a\nb", "a b"],
+    ["Run it", "run it"],
+  ])
+    assert.notEqual(statementKey(a), statementKey(b), `${a} / ${b}`);
 });

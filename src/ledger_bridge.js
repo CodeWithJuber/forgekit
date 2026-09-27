@@ -116,7 +116,9 @@ export function recordLessonEvent(root, lesson, ev = {}) {
 }
 
 // The narrow equivalence rule for carrying evidence across a rewrite (review F07): the two
-// texts differ at most in case, whitespace and punctuation, AND the semantic guard finds no
+// texts differ at most in a sentence's opening capital, prose punctuation and edge whitespace
+// (plainText folds more; the semantic guard's spelling and layout checks then refuse a case
+// change inside a sentence or an extra space), AND the guard finds no
 // behaviour-bearing difference (polarity, operators, numbers, literals, identifiers, paths).
 const plainText = (s) =>
   String(s ?? "")
@@ -128,7 +130,7 @@ const sameText = (a, b) => plainText(a) === plainText(b) && sameSemantics(a, b);
 
 /**
  * Whether a lesson rewrite keeps the lesson's MEANING by the narrow, verifiable rule: both
- * `whatWentWrong` and `correctedBehavior` equal up to case/whitespace/punctuation, with no
+ * `whatWentWrong` and `correctedBehavior` equal up to a sentence's capital and punctuation, with no
  * semantic-guard conflict. Anything else is a different proposition.
  * @param {object} before
  * @param {object} after

@@ -218,7 +218,8 @@ from a fresh repository graph.
 - **Budgeted context assembly.** Definitions, direct dependants, sibling tests, and trusted
   lessons are selected under a token budget. Missing required context becomes a question
   rather than invented context. Coverage is syntactic — delivered, not proven sufficient — token
-  counts are estimates, and a file that only fits as a "read this" pointer stays a pending read.
+  counts are estimates, a file that only fits as a "read this" pointer stays a pending read,
+  and a definition counts as delivered only when its whole body is.
 - **Model-tier recommendation.** A deterministic rubric combines task text and repository
   signals. An optional LLM proposal can only lower the tier, confidence-gated and bounded; a
   vote for a higher tier is never applied automatically — it is recorded as an advisory

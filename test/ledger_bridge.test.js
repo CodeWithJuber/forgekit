@@ -149,7 +149,7 @@ test("F07: a contradictory rewrite of a TRUSTED lesson keeps no serving confiden
   assert.ok(val(rewritten, 3) < 0.6, "below the 0.6 serving floor");
 });
 
-test("F07: an EQUIVALENT rewrite (case/whitespace/punctuation only) carries its evidence", () => {
+test("F07: an EQUIVALENT rewrite (a sentence's capital and punctuation only) carries its evidence", () => {
   const root = tmp();
   const before = newLesson(
     {

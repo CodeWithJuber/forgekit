@@ -6,6 +6,178 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Fixes for the eight findings of the 2026-09-27 follow-up review (N01–N08) and its suggestions.
+The review's reproduction script (`reproduce_remaining.mjs --assert-fixed`) and the original
+review's script (`original-reproduce.mjs --assert-fixed`) both pass. An adversarial re-review
+of these fixes then found further counterexamples in each area; they are fixed here as well
+("round 2" below).
+
+### Fixed
+
+- **Node's `-r` preload flag no longer passes as a recursive workspace run (N03).** A root
+  `test` script covered the workspaces whenever a flag like `-r` or `--workspaces` appeared
+  anywhere in it, so `node -r ./setup.cjs --test` skipped a failing workspace and `forge verify`
+  said PASS. The script is now read as shell structure: commands, quotes, wrappers
+  (`env`, `cross-env`, `npx`, `pnpm exec`) and exit-status flow. Only a recognized, unfiltered
+  recursive run of every member's `test` script counts: `npm test --workspaces`, `pnpm -r test`,
+  `yarn workspaces foreach -A run test`, `turbo run test`, `lerna run test` or
+  `nx run-many -t test`, directly or through `npm run` hops. Filters (`--filter`, `--scope`,
+  `-w`), masked or backgrounded runs and look-alike flags on other tools cover nothing, and each
+  package then runs its own suite. Membership is read from the tool's own workspace list,
+  `!` negations included, and a Python or Go suite inside a workspace is never inferred from an
+  npm-style run.
+  - Round 2: options are now checked against a per-tool allowlist, so `--help`, `--dry-run`,
+    `--prefi=…` (which npm expands to `--prefix`) and `--tag test` no longer pass, and anything
+    after `--` (forwarded into every member's script) is not a whole run.
+  - Round 2: a script that uses a state-changing shell builtin (`cd`, `exit`, `trap`,
+    `export`…), or sets a package-tool variable such as `npm_config_workspace`, is not
+    recognized, and a hop that passes arguments to the script it names is not followed.
+  - Round 2: configuration that narrows the run is honoured. That covers `.npmrc` and
+    environment `workspace`/`filter`/`script-shell`, lerna `command.run` filters, `.nxignore`,
+    a redefined nx `test` target, and turbo per-package tasks.
+  - Round 2: cached results are no longer credited. turbo needs `--force` (or `cache: false`
+    for `test`), and nx and lerna need `--skip-nx-cache`.
+  - Round 2: membership follows the package manager in use. Negations exclude anything they
+    might match (`!**/test/**`, `!pkg/{a,b}`). yarn members need a `version`. A member with its
+    own nx project config, or a test script that masks failures, runs on its own. A root suite
+    that does not run the test script (Bun's own `bun test`) infers nothing.
+  - Round 2: a pnpm-workspace.yaml comment at column 0 no longer ends the list. A recognized
+    run that was not credited is reported with the reason.
+- **Exact reuse is byte-exact (N01).** The exact key collapsed whitespace and folded Unicode,
+  so an artifact minted for `return "a  b"` was served as-is for `return "a b"`. The exact tier
+  now compares a digest of the spec's code units (key version 3), with nothing normalized at
+  that boundary. Whitespace inside literals, tabs and newlines, escapes, indentation and
+  composed vs decomposed characters all count. Artifacts keyed before v3 never exact-hit.
+  Inline code that the ledger's canonical storage would rewrite (CRLF, non-NFC text) is refused
+  at mint instead of being silently folded.
+  - Round 2: the near tier no longer serves an artifact whose key is from an older version or
+    was stored normalized (`keyVerbatim`).
+  - Round 2: its semantic guard now also compares operators with their operands (`x + 1` vs
+    `x - 1`, `a - b` vs `b - a`) and typographic and backtick literals (“a  b”, ``a  b``).
+    Features are compared in document order, and every whitespace run other than one space
+    counts (line breaks, indentation, tabs, CRLF, fixed-width columns). So do spelling
+    (`parse` vs `Parse`, fullwidth or Cyrillic look-alikes) and invisible format characters.
+- **A dependency's whole declaration is its contract (N08).** The contract hash stopped at the
+  first `{`, so `calc({a})` and `calc({b})` hashed the same and an artifact whose dependency
+  changed kept serving as valid. The declaration is now read whole (the atlas records each
+  definition's extent) and lexed, and only the body is cut. Destructured keys, defaults, nested
+  patterns, return annotations, overload sets and a value's definition all count; comments and
+  reformatting do not. The dependency is the definition the artifact's own import binds to, not
+  the first same-name symbol by file order. A contract that cannot be established (an
+  ambiguous name, an older format) is reported unknown, never valid.
+  - Round 2: every import form now records a dependency, through the resolver the atlas uses
+    (tsconfig path aliases and Python imports included). A named import binds its defining
+    module, followed through re-export barrels. A default, namespace or side-effect import,
+    `require` or `import()` records the whole module's digest (`moduleDeps`), and an
+    unresolved relative import keeps the artifact unknown.
+  - Round 2: these all count now. An export alias (`export { impl as calc }`) or an alias const
+    counts as its target, and a dropped export as a change. Decorators, a keyword on the line
+    above the name and regex literals are part of the declaration, and an arrow inside a type
+    no longer cuts it. A dependency file edited since the atlas was built reads as unknown.
+- **Similar rules are never merged or dropped (N02).** Lesson consolidation merged
+  near-duplicates that passed the semantic guard, but "Allow admins and deny guests…" and "Deny
+  admins and allow guests…" share every token. Now only exact duplicates merge. Near-duplicates
+  are kept and listed as `proposed` for a person to merge. A lesson is dropped only when a
+  ledger claim with exactly its text is refuted; one that merely resembles a refuted claim is
+  kept and `flagged`. `forge ledger compact` follows the same rule: it archives exact
+  duplicates only and lists near-duplicates for review.
+  - Round 2: "exact" now means the same text up to its own edge whitespace and one sentence
+    period after a word. Inner whitespace, `!`, `;` and runs of dots are no longer folded:
+    `go test ./...` is not `./`, and `save!` is not `save`.
+  - Round 2: two facts with different names, or two lessons with different triggers, are never
+    duplicates.
+  - Round 2: a lesson is dropped only when every claim with its text is refuted; a live copy
+    elsewhere keeps it, flagged. A small ledger still reports near-duplicates.
+- **An unsigned verifier event never earns verified provenance (N06).** When no evidence key
+  could be read or created, `readVerifyEvents` accepted any unsigned line, and `forge route
+  outcome --verify-run` labelled the outcome `verify-event`. Events now carry a derived
+  `authenticated` flag, false for every event when no key is available. An outcome citing an
+  unauthenticated event is still recorded, but as self-reported with a `provenanceNote`. Round
+  2: an event holding a non-finite number (a stored `1e999`) is never authenticated.
+- **An edited provenance label counts for nothing (N07).** `readOutcomes` trusted the stored
+  `provenance` field. It now re-derives every row's provenance from the authenticated events:
+  a missing or unauthenticated run, a verdict mismatch, or a second attempt citing the same run
+  reads as self-reported, and is counted in `readOutcomes.lastDowngraded`. One verifier run
+  backs one outcome, and the fitter's verified counter uses only derived labels.
+  - Round 2: a verifier event records its checkout, so an events file copied from another
+    checkout backs nothing.
+  - Round 2: an outcome records the code state it was recorded against, and a run backs it only
+    if it finished on that code, so an old PASS cannot back a later attempt.
+  - Round 2: a legacy row's content key can no longer alias an attempt id.
+- **A long function is delivered whole or not at all (N04).** A context span that showed lines
+  1–41 of a 103-line function counted the definition as delivered and reported COMPLETE. A span
+  or head now covers a definition only when it shows the whole definition. A cut one stays a
+  pending read and is named under `partial`, with the lines shown and the lines it spans. Small
+  definitions are still delivered within a small budget.
+  - Round 2: definition extents now hold for generic constraints and TypeScript return-type
+    literals, overload sets, Go `interface{}`/`struct{}` result types, multi-line template
+    constants, Ruby `end`, Python `"""` and `\` continuations at column 0, and apostrophes in
+    JSX text. An extent whose brackets do not nest cleanly, or that crosses a preprocessor
+    branch, is unknown.
+  - Round 2: a file edited since the atlas was built is delivered whole or not at all.
+- **Code in a nested repository is bound by the fingerprint (N05).** An untracked embedded
+  repository was bound by path only, so a test could rewrite code it imported from there and the
+  stamp still matched. Nested repositories and submodule working trees are now bound by their
+  own HEAD, diffs and untracked files, recursively, and the review's mutation fixture is
+  INCOMPLETE. Code that still cannot be bound is listed as `unbound` in the result and the
+  verifier event, and it turns a PASS into INCOMPLETE.
+  - Round 2: gitlinks in the index (a repo committed with `git add inner`, no `.gitmodules`
+    entry) are bound too. `.gitmodules` is read by git's own parser, and a registered path that
+    is missing is `unbound`.
+  - Round 2: a nested repository is read under the outer repository's `verify` config and its
+    committed `.gitignore` only. Its own forge config and `.git/info/exclude` no longer hide its
+    files.
+  - Round 2: reading its state never runs its `core.fsmonitor` command.
+- **A `script-shell` that is not a shell no longer passes (round 2).** With `script-shell=/bin/true`
+  in the project `.npmrc` (or the environment), every npm/pnpm script exits 0 without running.
+  Such suites are now INCOMPLETE, with the reason.
+
+### Added
+
+- **`verify.external`** in `.forge/forge.config.json`: paths deliberately outside the verified
+  code, such as a vendored checkout or a nested repository you do not own. They are excluded
+  from the fingerprint, and every verifier event records them.
+- **Coverage basis in `forge verify`.** Each package's verdict is labelled `measured` (its own
+  suite ran), `inferred` (from a recognized recursive root command, named in `rootRun`) or
+  `declared` (`verify.workspaces: "root"`), and the CLI prints a `coverage basis` line. A
+  recognized root command that was not credited is reported as `rootRunRefused`, with the
+  reason.
+- **Verifier event contract v2.** The event's MAC now covers every field in canonical form:
+  suites, coverage and its basis, pre/post state, unbound paths, declared external paths, the
+  checkout and the environment. Previously it covered only the run id, verdict and code state.
+  Readers see `authScope` (`event` or, for v1 events, `verdict`) and `inCheckout`.
+- **The claim registry is a release artifact.** Every claim now records `assessed_release`,
+  the release that ships its assessed commit, and can link review `counterexamples`.
+  `scripts/bump.mjs` stamps claims marked `unreleased` with the version it cuts. With release
+  tags present, `node scripts/claims-status.mjs --check` fails on a stale `unreleased` or on a
+  release that does not contain the assessed commit. Twelve entries still read "master after
+  1.4.3 (unreleased)"; they now name 1.5.0, the release that shipped them.
+- **Property tests along semantic boundaries.** Seeded families for quoted whitespace and code
+  points, subject and number swaps, look-alike and filtered workspace commands, destructured
+  parameters, and a missing evidence key.
+
+### Changed
+
+- **`maxPossibleCost` is now `estimatedCostIfAllAttemptsRun`.** It sums each attempt's expected
+  cost, so it was never a bound on what a run can bill. The CLI says "an estimated $X if every
+  attempt runs". Consumers of the `forge route universal --json` field need the new name.
+- **Formats that changed rebuild or re-verify on their own.** The atlas (version 5) records
+  definition extents, the code-state fingerprint is `manifest-v3`, reuse keys are version 3 and
+  dependency contracts are `v2:`. A stamp from the older fingerprint no longer verifies, so
+  re-run `forge verify`.
+- **Older provenance no longer counts as verified.** Outcomes backed by events from before this
+  release now read as self-reported, because those events name no checkout. Re-run
+  `forge verify` to earn `verify-event` again.
+- **The semantic guard compares layout, symbols, order and spelling, and stops folding
+  Unicode.** Fenced blocks and every whitespace run other than one space are compared verbatim.
+  Literals, identifiers and paths are compared by code point, and every feature is compared in
+  document order.
+- **A Bun project's test script runs as `bun run test`.** `bun test` is Bun's own test runner
+  and never ran `scripts.test`.
+- **The research executive summary marks its 2026-09-26 correction in place.** The "cannot be
+  prompted or tooled away" thesis is labelled too broad, and the whitepaper PDF is labelled as
+  the pre-correction edition.
+
 ## [1.7.2] - 2026-09-26
 
 ### Changed

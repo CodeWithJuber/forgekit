@@ -4,20 +4,25 @@
 // send every lesson to a model with "DROP anything … contradicted" and rewrite the store
 // from its answer: pruning memory by the model's own judgment, which the research rejects
 // (white paper §3, memory residual gap; §7.1, val = validity from an external oracle).
-// Here nothing is judged, reworded or invented:
-//  - MERGE: an exact duplicate (normalized text) or a near-duplicate (MinHash Jaccard ≥ τ,
-//    the ledger's own consolidation threshold, ledger.clusters) within one project
-//    collapses into its first occurrence — but only when the semantic guard finds no
-//    behaviour-bearing difference (review F16): "Enable authentication…" and "Disable
-//    authentication…" overlap almost entirely and are OPPOSITE rules, so they are kept apart
-//    and reported as a conflict for a person to resolve.
-//  - DROP: only on ledger ground truth. A lesson is dropped when its best-matching ledger
-//    claim (lesson/fact, Jaccard ≥ τ against claimText, and not reversed by polarity,
-//    operators, numbers or literals) is dormant (ledger.isDormant: its oracle-evidenced val
-//    fell below DORMANT_VAL and no confirmation restored it) or retracted (tombstoned). An
-//    ARCHIVED claim is not a refuted one (review F15): the attic also holds claims archived for
-//    idleness or as duplicates, so an attic claim refutes only when its own logs say so
-//    (tombstone/dormant), and a deduplicated one defers to the claim that survived it.
+// Here nothing is judged, reworded or invented — and similarity never deletes a rule:
+//  - MERGE: only an EXACT duplicate within one project collapses into its first occurrence:
+//    the same text up to whitespace and trailing sentence punctuation, with the semantic
+//    guard confirming that no literal or code layout depended on that difference (review
+//    N02). A near-duplicate (MinHash Jaccard ≥ τ) is NOT merged: "Allow admins and deny
+//    guests…" and "Deny admins and allow guests…" share every token, polarity words
+//    included, so no token-level check can tell them apart — relational reversals (who gets
+//    which action), swapped numbers (read timeout 5 s / write 30 s) and moved negation scope
+//    all look identical to it. Both lessons are KEPT and the pair is reported as a
+//    `proposed` grouping for a person to merge by hand; a pair whose tokens do conflict
+//    ("Enable…" / "Disable…", review F16) is reported as a conflict instead.
+//  - DROP: only on ledger ground truth, and only for the SAME rule. A lesson is dropped when
+//    a ledger claim (lesson/fact) with exactly its text (same equality as MERGE) is dormant
+//    (ledger.isDormant: its oracle-evidenced val fell below DORMANT_VAL and no confirmation
+//    restored it) or retracted (tombstoned). A refuted claim that is merely SIMILAR does not
+//    drop anything — it may be the opposite rule — so the lesson is kept and `flagged` for
+//    review. An ARCHIVED claim is not a refuted one (review F15): the attic also holds claims
+//    archived for idleness or as duplicates, so an attic claim refutes only when its own logs
+//    say so (tombstone/dormant), and a deduplicated one defers to the claim that survived it.
 //    A lesson with no matching claim is KEPT: absence of evidence is not refutation.
 // Claims are matched only within the lesson's project (a repo whose directory name is the
 // project), so a lesson refuted in one repo is not dropped from another.
@@ -39,9 +44,9 @@ import { claimText, isDormant, jaccard, sketch } from "./ledger.js";
 import { archiveRecord, getClaimByPrefix, loadClaims, repoLedger } from "./ledger_store.js";
 import {
   describeConflicts,
-  FLIP_KINDS,
-  sameSemantics,
+  sameStatement,
   semanticConflicts,
+  statementKey,
 } from "./semantic_guard.js";
 import { epochDay } from "./util.js";
 
@@ -53,13 +58,6 @@ export const GENERAL = "General";
  *  reads USERPROFILE instead, so a Git Bash HOME that differs from USERPROFILE made this
  *  path read a different folder than the one the lessons were written to. */
 export const learnedDir = () => join(process.env.HOME || homedir(), ".claude", "skills", "learned");
-
-const norm = (s) =>
-  String(s)
-    .toLowerCase()
-    .replace(/[`*_"'.,;:!?()[\]{}]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 
 /**
  * Parse learned-lesson markdown into `{project, text}` entries. Understands both shapes:
@@ -124,13 +122,18 @@ function refutation(claim, nowDay, byId = new Map(), depth = 0) {
 }
 
 /**
- * Consolidate deterministically: merge duplicates, drop only ledger-refuted lessons.
+ * Consolidate deterministically: merge exact duplicates, drop only lessons whose exact ledger
+ * claim is refuted, and REPORT (never act on) similarity: `proposed` near-duplicates to merge
+ * by hand, `conflicts` for similar pairs that differ in a behaviour-bearing token, `flagged`
+ * lessons that resemble a refuted claim.
  * @param {Learned[]} entries
  * @param {{claims?: LedgerClaim[], nowDay?: number, tau?: number}} [opts] each claim may
  *   carry `project` (the repo directory name); a claim without one matches any project.
  * @returns {{kept: Learned[], merged: {text: string, into: string}[],
  *   dropped: {project: string, text: string, claim: string, reason: string}[],
- *   conflicts: {project: string, text: string, other: string, conflicts: string}[]}}
+ *   conflicts: {project: string, text: string, other: string, conflicts: string}[],
+ *   proposed: {project: string, text: string, similar: string, similarity: number}[],
+ *   flagged: {project: string, text: string, claim: string, reason: string}[]}}
  */
 export function consolidateLearned(
   entries,
@@ -145,59 +148,82 @@ export function consolidateLearned(
       s: sketch(claimText(c)),
       why: refutation(c, nowDay, byId),
     }));
-  /** @type {(Learned & {s: any, n: string})[]} */
+  /** @type {(Learned & {s: any})[]} */
   const kept = [];
   const merged = [];
   const dropped = [];
   /** @type {{project: string, text: string, other: string, conflicts: string}[]} */
   const conflicts = [];
+  /** @type {{project: string, text: string, similar: string, similarity: number}[]} */
+  const proposed = [];
+  /** @type {{project: string, text: string, claim: string, reason: string}[]} */
+  const flagged = [];
+  const claimRef = (c) => String(c.id ?? "").slice(0, 12);
   for (const e of entries) {
     const text = String(e.text || "").trim();
     if (!text) continue;
     const project = e.project || GENERAL;
     const s = sketch(text);
-    const n = norm(text);
-    // Similar is not the same (F16): a close pair that differs in polarity, operators,
-    // numbers, literals, identifiers or paths is two rules — keep both, report the conflict.
-    let dup = null;
-    for (const k of kept) {
-      if (k.project !== project || (k.n !== n && jaccard(k.s, s) < tau)) continue;
-      const differs = semanticConflicts(k.text, text);
-      if (!differs.length) {
-        dup = k;
-        break;
-      }
-      conflicts.push({ project, text, other: k.text, conflicts: describeConflicts(differs) });
-    }
+    const dup = kept.find((k) => k.project === project && sameStatement(k.text, text));
     if (dup) {
       merged.push({ text, into: dup.text });
       continue;
     }
-    let best = null;
+    // Similar is not the same (F16/N02): a close pair is reported, never merged — as a
+    // conflict when a behaviour-bearing token differs, else as a proposal to review.
+    for (const k of kept) {
+      if (k.project !== project) continue;
+      const j = jaccard(k.s, s);
+      if (j < tau && statementKey(k.text) !== statementKey(text)) continue;
+      const differs = semanticConflicts(k.text, text);
+      if (differs.length)
+        conflicts.push({ project, text, other: k.text, conflicts: describeConflicts(differs) });
+      else proposed.push({ project, text, similar: k.text, similarity: Number(j.toFixed(2)) });
+    }
+    /** @type {typeof usable} */
+    const exact = [];
+    let near = null;
     for (const u of usable) {
       if (u.c.project && project !== GENERAL && u.c.project !== project) continue;
+      if (sameStatement(u.text, text)) {
+        exact.push(u);
+        continue;
+      }
       const j = jaccard(u.s, s);
-      // A claim saying the OPPOSITE (a flipped polarity/operator/number/literal) is not this
-      // lesson's evidence, however similar the words.
-      if (j >= tau && (!best || j > best.j) && sameSemantics(u.text, text, { kinds: FLIP_KINDS }))
-        best = { ...u, j };
+      if (u.why && j >= tau && (!near || j > near.j)) near = { ...u, j };
     }
-    if (best?.why) {
-      dropped.push({
-        project,
-        text,
-        claim: String(best.c.id ?? "").slice(0, 12),
-        reason: best.why,
-      });
+    // Dropped only when EVERY claim with exactly its text is refuted (review N02 round 2):
+    // one repo's retraction does not outvote another repo's live, oracle-confirmed claim —
+    // the disagreement is flagged for a person instead.
+    const refuted = exact.filter((u) => u.why);
+    if (refuted.length && refuted.length === exact.length) {
+      dropped.push({ project, text, claim: claimRef(refuted[0].c), reason: refuted[0].why ?? "" });
       continue;
     }
-    kept.push({ project, text, s, n });
+    if (refuted.length) {
+      const live = exact.find((u) => !u.why);
+      flagged.push({
+        project,
+        text,
+        claim: claimRef(refuted[0].c),
+        reason: `${refuted[0].why} — kept: claim ${live ? claimRef(live.c) : "?"} with the same text is live`,
+      });
+    } else if (!exact.length && near)
+      flagged.push({
+        project,
+        text,
+        claim: claimRef(near.c),
+        reason: `similar (${near.j.toFixed(2)}) to a claim ${near.why} — kept: it may be the opposite rule`,
+      });
+    kept.push({ project, text, s });
   }
   return {
     kept: kept.map(({ project, text }) => ({ project, text })),
     merged,
     dropped,
     conflicts,
+    proposed,
+    flagged,
   };
 }
 
@@ -271,7 +297,7 @@ export function consolidateDir({
     ...(existsSync(join(dir, "CONSOLIDATED.md")) ? ["CONSOLIDATED.md"] : []),
     ...monthly,
   ];
-  const none = { kept: [], merged: [], dropped: [], conflicts: [] };
+  const none = { kept: [], merged: [], dropped: [], conflicts: [], proposed: [], flagged: [] };
   if (!inputs.length) return { ok: true, row: "nothing", dir, inputs, ...none };
   const entries = inputs.flatMap((f) => parseLearned(readFileSync(join(dir, f), "utf8")));
   if (!entries.length) return { ok: true, row: "empty", dir, inputs, ...none };
@@ -308,6 +334,22 @@ export function renderReport(r) {
       lines.push(
         `    ! [${c.project}] ${c.text.slice(0, 60)} ↔ ${c.other.slice(0, 60)} — ${c.conflicts}`,
       );
+  }
+  const proposed = r.proposed ?? [];
+  if (proposed.length) {
+    lines.push(
+      `  kept both — similar, merge by hand if they are the same rule: ${proposed.length}`,
+    );
+    for (const p of proposed.slice(0, 20))
+      lines.push(
+        `    ~ [${p.project}] ${p.text.slice(0, 60)} ↔ ${p.similar.slice(0, 60)} (${p.similarity})`,
+      );
+  }
+  const flagged = r.flagged ?? [];
+  if (flagged.length) {
+    lines.push(`  kept — resemble a refuted ledger claim (review): ${flagged.length}`);
+    for (const f of flagged.slice(0, 20))
+      lines.push(`    ? [${f.project}] ${f.text.slice(0, 80)} — ${f.reason} (claim ${f.claim})`);
   }
   return lines.join("\n");
 }

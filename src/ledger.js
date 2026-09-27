@@ -95,6 +95,10 @@ export const DORMANT_VAL = 0.35;
  *   - Non-string values: numbers, booleans and null serialize as JSON.stringify does.
  */
 const canonText = (s) => s.normalize("NFC").replace(/\r\n/g, "\n");
+/** Whether the ledger stores this string byte for byte — canonicalization is the identity on
+ *  it. Content that must survive storage EXACTLY (an inline code artifact, review N01) is
+ *  checked with this rather than silently NFC/LF-folded on write. @param {string} s */
+export const storesVerbatim = (s) => canonText(String(s)) === String(s);
 // The rule BEFORE the CRLF fold. A claim minted on a CRLF checkout carries the old address
 // in its FILENAME, and recomputing it under the new rule made the file fail its own address
 // check: the claim did not degrade, it vanished — loadClaims returned nothing for it. The

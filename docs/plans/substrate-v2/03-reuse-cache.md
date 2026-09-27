@@ -25,7 +25,8 @@ served — the cache prunes itself by ground truth.
 
 ```
 artifact.body := {
-  key:        IDENTITY-normalized task text (case/whitespace/punctuation only),
+  key:        the task text as given (IDENTITY text; see §2),
+  keyHash:    sha256 of the task text's code units — the EXACT identity (key version 3),
   spec:       SHAPE-normalized task specification text,
   sketch:     MinHash sketch of spec (for near-match),
   slice:      sha256 of the atlas graph slice the artifact touches,   // context key
@@ -41,8 +42,13 @@ artifact.body := {
 **Normalization comes in two forms**, because "the same task" and "the same
 neighbourhood" are different questions:
 
-- **identity** (`key`): Unicode-aware tokens, lowercased, edge punctuation dropped,
-  whitespace collapsed — and NOTHING else. Identifiers, paths and numbers stay verbatim.
+- **identity** (`key`, `keyHash`): the task text exactly as given. An earlier identity form
+  lowercased and trimmed punctuation (review F04), and its successor still collapsed
+  whitespace and folded NFC, so `return "a  b"` exact-hit `return "a b"` (review N01). The
+  exact tier now compares `keyHash`, a digest of the text's code units, and nothing is
+  normalized at that boundary; similarity search stays layout-blind. The near tier compares
+  the stored `key` with the semantic guard, so it requires a key of the current version
+  that the ledger stored verbatim (`keyVerbatim`: no CRLF or non-NFC text to fold).
 - **shape** (`spec`): identity plus typed placeholders for identifiers, paths, numbers and
   string literals (`⟨ident⟩`, `⟨path⟩`, `⟨num⟩`, `⟨str⟩`).
 
@@ -82,10 +88,17 @@ reuse(x):
 
 1. `val(artifact) ≥ 0.6` — the proof-carrying floor; contradicted artifacts stop serving
    automatically via the write-back band.
-2. **Revalidation against the current atlas:** every symbol in `deps` still resolves
-   (`atlas.has()`), and nothing in the current graph shadows `interface`. A cache serving
-   code whose dependencies vanished is worse than a miss. Structural revalidation emits a
-   `graph.reval` outcome (w = 0.5) — so even serving keeps evidence fresh.
+2. **Revalidation against the current atlas:** every dependency the artifact's imports bind
+   to is unchanged. A named import records its defining module's declaration contract
+   (`depContracts`, pinned by `depSources`, followed through re-exports); a default, namespace
+   or side-effect import, `require` or `import()` records the whole module's digest
+   (`moduleDeps`). A changed contract, a dropped export or a changed module invalidates; a
+   dependency file edited since the atlas was built, or an import that did not resolve at
+   mint, is unknown. (Conservative by design: a class's or an object literal's contract
+   includes its method bodies, so a body-only edit there also invalidates.) A cache serving
+   code whose dependencies vanished is worse than a miss.
+   Structural revalidation emits a `graph.reval` outcome (w = 0.5) — so even serving keeps
+   evidence fresh.
 3. Secret scan on serve (paranoia; artifacts were already scanned at mint).
 
 **After serving:** the reuse event enters `informed(action)` — if the reused code is then

@@ -18,6 +18,7 @@ import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  CONSOLIDATE_TAU,
   consolidateDir,
   consolidateLearned,
   learnedDir,
@@ -25,7 +26,7 @@ import {
   parseLearned,
   renderConsolidated,
 } from "../src/learn_consolidate.js";
-import { isDormant, mintClaim, outcomeRecord } from "../src/ledger.js";
+import { isDormant, jaccard, mintClaim, outcomeRecord, sketch } from "../src/ledger.js";
 import {
   appendEvidence,
   loadClaims,
@@ -90,23 +91,141 @@ test("parseLearned reads the session-learner and consolidated shapes", () => {
   ]);
 });
 
-test("duplicates merge; nothing is dropped without ledger evidence", () => {
+test("exact duplicates merge; near-duplicates are kept and proposed; nothing dropped without evidence", () => {
+  const ALWAYS = FLAKY.replace("Run", "Always run");
   const r = consolidateLearned(
     [
       { project: "shop", text: FLAKY },
-      { project: "shop", text: `${FLAKY}.` }, // exact after normalization
-      { project: "shop", text: FLAKY.replace("Run", "Always run") }, // near-duplicate
+      { project: "shop", text: `${FLAKY}.` }, // exact: one trailing sentence period only
+      { project: "shop", text: `  ${FLAKY} ` }, // exact: the text's own edge whitespace
+      // review N02 round 2: whitespace INSIDE a statement is never folded (a double space
+      // can be data) — a near-duplicate, kept and reported, never merged
+      { project: "shop", text: FLAKY.replace(" before", "   before") },
+      { project: "shop", text: ALWAYS }, // near-duplicate — review N02: proposed, not merged
       { project: "blog", text: FLAKY }, // another project keeps its own copy
       { project: "shop", text: TRIVIA }, // "trivial" is not a reason to delete
     ],
     { claims: [] },
   );
+  const SPACED = FLAKY.replace(" before", "   before");
   assert.deepEqual(
     r.kept.map((k) => `${k.project}: ${k.text}`),
-    [`shop: ${FLAKY}`, `blog: ${FLAKY}`, `shop: ${TRIVIA}`],
+    [`shop: ${FLAKY}`, `shop: ${SPACED}`, `shop: ${ALWAYS}`, `blog: ${FLAKY}`, `shop: ${TRIVIA}`],
   );
   assert.equal(r.merged.length, 2);
+  assert.deepEqual(
+    r.proposed.map((p) => [p.text, p.similar]),
+    [[ALWAYS, FLAKY]],
+  );
+  assert.deepEqual(
+    r.conflicts.map((c) => [c.text, c.other, c.conflicts.split(":")[0]]),
+    [
+      [SPACED, FLAKY, "layout"],
+      [ALWAYS, SPACED, "layout"],
+    ],
+    "the spaced copy differs in layout from both",
+  );
   assert.equal(r.dropped.length, 0, "no claim matched, so nothing is refuted");
+});
+
+// Review N02: a token-level guard cannot see WHICH action applies to WHICH subject. These pairs
+// share every behaviour-bearing token (polarity words included) and mean different things.
+// Each shares a long instruction tail, so it clears the similarity threshold the old
+// consolidation merged at (asserted below) — similarity alone must never collapse them.
+const TAIL =
+  " for every incoming webhook request before processing the payload or allowing the request to access any internal application service or write changes to durable storage in the production environment";
+const WEBHOOK = ` access${TAIL}`;
+const SWAPS = [
+  // the review's counterexample: a permission subject/action swap
+  [`Allow admins and deny guests${WEBHOOK}`, `Deny admins and allow guests${WEBHOOK}`],
+  // source/destination
+  [
+    `Copy snapshots from staging to archive${TAIL}`,
+    `Copy snapshots from archive to staging${TAIL}`,
+  ],
+  // swapped numeric bindings
+  [
+    `Use a 5s read timeout and 30s write timeout${TAIL}`,
+    `Use a 30s read timeout and 5s write timeout${TAIL}`,
+  ],
+  // moved negation scope
+  [
+    `Do not retry payments and log declines${TAIL}`,
+    `Retry payments and do not log declines${TAIL}`,
+  ],
+];
+const similarity = (a, b) => jaccard(sketch(a), sketch(b));
+
+test("N02: role, direction, number and negation-scope swaps are never merged", () => {
+  for (const [a, b] of SWAPS) {
+    assert.ok(similarity(a, b) >= CONSOLIDATE_TAU, `precondition — near-duplicates: ${a}`);
+    const r = consolidateLearned(
+      [
+        { project: "ops", text: a },
+        { project: "ops", text: b },
+      ],
+      { claims: [] },
+    );
+    assert.deepEqual(
+      r.kept.map((k) => k.text),
+      [a, b],
+      `both rules survive: ${a.slice(0, 44)}…`,
+    );
+    assert.equal(r.merged.length, 0);
+    assert.equal(r.proposed.length + r.conflicts.length, 1, "the pair is surfaced for review");
+  }
+});
+
+test("N02: true paraphrases are PROPOSED for merging (recommendation), never merged unseen", () => {
+  const PARAPHRASES = [
+    [`Validate the signature header${TAIL}`, `Always validate the signature header${TAIL}`],
+    [`Check the request signature${TAIL}`, `Check the request's signature${TAIL}`],
+  ];
+  for (const [a, b] of PARAPHRASES) {
+    assert.ok(similarity(a, b) >= CONSOLIDATE_TAU, `precondition — near-duplicates: ${b}`);
+    const r = consolidateLearned(
+      [
+        { project: "ops", text: a },
+        { project: "ops", text: b },
+      ],
+      { claims: [] },
+    );
+    assert.equal(r.kept.length, 2);
+    assert.deepEqual(
+      r.proposed.map((p) => p.text),
+      [b],
+      `recommended for review: ${b.slice(0, 44)}…`,
+    );
+  }
+});
+
+test("N02: whitespace inside a literal is not a duplicate's whitespace", () => {
+  const r = consolidateLearned(
+    [
+      { project: "ops", text: 'Join the CSV fields with the separator "a  b" in every export' },
+      { project: "ops", text: 'Join the CSV fields with the separator "a b" in every export' },
+    ],
+    { claims: [] },
+  );
+  assert.equal(r.kept.length, 2);
+  assert.equal(r.merged.length, 0);
+  assert.match(r.conflicts[0]?.conflicts ?? "", /literals/);
+});
+
+test("N02: a refuted SIMILAR claim never drops a lesson — it is kept and flagged", () => {
+  const [allow, deny] = SWAPS[0];
+  const refuted = repoWith("shop", allow, { refute: true });
+  const r = consolidateLearned([{ project: "shop", text: deny }], {
+    claims: ledgerClaimsFor([refuted.root]),
+    nowDay: 102,
+  });
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [deny],
+  );
+  assert.equal(r.dropped.length, 0);
+  assert.equal(r.flagged.length, 1);
+  assert.match(r.flagged[0].reason, /may be the opposite rule/);
 });
 
 test("a lesson is dropped only when its matching ledger claim is dormant or retracted", () => {
@@ -243,6 +362,31 @@ test("F16: opposite rules stay two claims, with the conflict exposed; exact dupl
   assert.equal(r.merged.length, 1, "the exact duplicate still merges deterministically");
   assert.equal(r.conflicts.length, 1);
   assert.match(r.conflicts[0].conflicts, /polarity: enable ≠ disable/i);
+});
+
+test("N02 round 2: a lesson is dropped only when EVERY claim with its exact text is refuted", () => {
+  const retracted = repoWith("shop", RETRY, { retract: true });
+  const live = repoWith("blog", RETRY); // another repo holds the same rule live
+  const both = ledgerClaimsFor([retracted.root, live.root]);
+  const r = consolidateLearned([{ project: "General", text: RETRY }], {
+    claims: both,
+    nowDay: 102,
+  });
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [RETRY],
+    "one repo's retraction does not outvote a live claim",
+  );
+  assert.equal(r.dropped.length, 0);
+  assert.equal(r.flagged.length, 1);
+  assert.match(r.flagged[0].reason, /retracted .* kept: claim \w+ with the same text is live/);
+  // With the live copy gone too, it is dropped.
+  const only = ledgerClaimsFor([retracted.root]);
+  const r2 = consolidateLearned([{ project: "General", text: RETRY }], {
+    claims: only,
+    nowDay: 102,
+  });
+  assert.equal(r2.dropped.length, 1);
 });
 
 test("F16: a refuted OPPOSITE claim does not drop a lesson", () => {

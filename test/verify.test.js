@@ -538,6 +538,166 @@ test("F01: the stamp's signature binds the fingerprint scheme (old-scheme stamps
 });
 
 // ---------------------------------------------------------------------------
+// N05: nested repositories are bound by their own code state; what cannot be bound is never a
+// silent PASS.
+// ---------------------------------------------------------------------------
+
+/** A committed git repo at `dir` holding `files`. */
+const repoAt = (dir, files) => {
+  mkdirSync(dir, { recursive: true });
+  const g = (...args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  g("init");
+  g("config", "user.email", "t@t.t");
+  g("config", "user.name", "t");
+  for (const [f, text] of Object.entries(files)) writeFileSync(join(dir, f), text);
+  g("add", "-A");
+  g("commit", "-m", "init");
+  return dir;
+};
+
+test("N05: an untracked nested repository is bound by its own HEAD, diff and untracked files", () => {
+  const root = committedRepo();
+  const inner = repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  const s0 = computeCodeState(root);
+  assert.equal(s0.unbound, undefined, "the nested repo is bound, not merely listed");
+  writeFileSync(join(inner, "subject.cjs"), "module.exports = 0;\n"); // the review's mutation
+  const s1 = computeCodeState(root);
+  assert.notEqual(s1.dirtyHash, s0.dirtyHash, "an edit inside the nested repo is a code change");
+  writeFileSync(join(inner, "subject.cjs"), "module.exports = 1;\n");
+  assert.notEqual(computeCodeState(root).dirtyHash, s1.dirtyHash, "…and so is the next one");
+  writeFileSync(join(inner, "new.cjs"), "");
+  const s2 = computeCodeState(root);
+  execFileSync("git", ["add", "-A"], { cwd: inner, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "x"], { cwd: inner, stdio: "ignore" });
+  assert.notEqual(computeCodeState(root).dirtyHash, s2.dirtyHash, "its HEAD is bound too");
+});
+
+test("N05: a submodule's working tree is bound — every edit, not one '-dirty' flag", () => {
+  const root = committedRepo();
+  const src = repoAt(join(mkdtempSync(join(tmpdir(), "forge-sub-")), "lib"), {
+    "lib.cjs": "module.exports = 1;\n",
+  });
+  execFileSync(
+    "git",
+    ["-c", "protocol.file.allow=always", "submodule", "add", "-q", src, "vendor/lib"],
+    { cwd: root, stdio: "ignore" },
+  );
+  execFileSync("git", ["commit", "-qm", "sub"], { cwd: root, stdio: "ignore" });
+  const clean = computeCodeState(root);
+  assert.equal(clean.unbound, undefined);
+  writeFileSync(join(root, "vendor", "lib", "lib.cjs"), "module.exports = 2;\n");
+  const once = computeCodeState(root);
+  writeFileSync(join(root, "vendor", "lib", "lib.cjs"), "module.exports = 3;\n");
+  const twice = computeCodeState(root);
+  assert.notEqual(once.dirtyHash, clean.dirtyHash);
+  assert.notEqual(
+    twice.dirtyHash,
+    once.dirtyHash,
+    "git diff shows both as '-dirty'; the state does not",
+  );
+  // A submodule that is not checked out is an empty directory: nothing to bind, nothing unbound.
+  const fresh = committedRepo();
+  mkdirSync(join(fresh, "vendor", "lib"), { recursive: true });
+  writeFileSync(
+    join(fresh, ".gitmodules"),
+    '[submodule "lib"]\n\tpath = vendor/lib\n\turl = ../lib\n',
+  );
+  assert.equal(computeCodeState(fresh).unbound, undefined);
+});
+
+test("N05 round 2: a gitlink with no .gitmodules entry, and every .gitmodules spelling, is bound", () => {
+  // `git add inner` of an embedded repo: a gitlink in the index, no .gitmodules at all.
+  const root = committedRepo();
+  const inner = repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  execFileSync("git", ["add", "inner"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-qm", "gitlink"], { cwd: root, stdio: "ignore" });
+  const s0 = computeCodeState(root);
+  assert.equal(s0.unbound, undefined);
+  writeFileSync(join(inner, "subject.cjs"), "module.exports = 0;\n");
+  assert.notEqual(computeCodeState(root).dirtyHash, s0.dirtyHash, "the gitlink's tree is bound");
+  // .gitmodules spellings git reads (inline comments, quotes, key case) are read by git itself.
+  for (const line of [
+    "path = vendor/lib ; pinned",
+    "path = vendor/lib # note",
+    'path = "vendor/lib"',
+    "Path = vendor/lib",
+  ]) {
+    const r = committedRepo();
+    const lib = repoAt(join(r, "vendor", "lib"), { "lib.cjs": "module.exports = 1;\n" });
+    writeFileSync(join(r, ".gitmodules"), `[submodule "lib"]\n\t${line}\n\turl = ../lib\n`);
+    const before = computeCodeState(r);
+    writeFileSync(join(lib, "lib.cjs"), "module.exports = 2;\n");
+    assert.notEqual(computeCodeState(r).dirtyHash, before.dirtyHash, line);
+  }
+  // A registered submodule whose directory is gone cannot be bound: never silently skipped.
+  const gone = committedRepo();
+  writeFileSync(join(gone, ".gitmodules"), '[submodule "x"]\n\tpath = vendor/x\n\turl = ../x\n');
+  assert.deepEqual(computeCodeState(gone).unbound, ["vendor/x/"]);
+});
+
+test("N05 round 2: a nested repo cannot exclude its own files from the outer proof", () => {
+  const root = committedRepo();
+  const inner = repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  // its private exclude file and its own forge config are not the outer repo's declarations
+  writeFileSync(join(inner, ".git", "info", "exclude"), "*\n");
+  mkdirSync(join(inner, ".forge"), { recursive: true });
+  writeFileSync(
+    join(inner, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { generated: ["**"] } }),
+  );
+  writeFileSync(join(inner, "added.cjs"), "module.exports = 1;\n");
+  const s0 = computeCodeState(root);
+  writeFileSync(join(inner, "added.cjs"), "module.exports = 2;\n");
+  assert.notEqual(computeCodeState(root).dirtyHash, s0.dirtyHash);
+});
+
+test("N05: the review's fixture — a test mutating nested-repo code is never a PASS", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node --test check.test.cjs");
+  writeFileSync(
+    join(root, "check.test.cjs"),
+    "const {test}=require('node:test');const fs=require('node:fs');const assert=require('node:assert/strict');" +
+      "test('read nested source then mutate',()=>{assert.equal(require('./inner/subject.cjs'),42);fs.writeFileSync('inner/subject.cjs','module.exports = 0;\\n')});\n",
+  );
+  repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE", r.tests.output);
+  assert.equal(r.tests.mutated, true);
+  assert.notEqual(r.provenance.event.post.dirtyHash, r.provenance.event.pre.dirtyHash);
+});
+
+test("N05: code the fingerprint cannot bind makes a PASS INCOMPLETE; verify.external declares it", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript("node --test");
+  writeFileSync(
+    join(root, "ok.test.cjs"),
+    "const { test } = require('node:test');\ntest('ok', () => {});\n",
+  );
+  // Repositories nested past the followed depth cannot be bound.
+  let dir = root;
+  for (const name of ["a", "b", "c", "d"]) {
+    dir = join(dir, name);
+    repoAt(dir, { "x.txt": name });
+  }
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE");
+  assert.deepEqual(r.tests.unbound, ["a/b/c/d/"]);
+  assert.match(r.tests.output, /cannot bind: a\/b\/c\/d\//);
+  assert.deepEqual(r.provenance.event.pre.unbound, ["a/b/c/d/"], "carried into the evidence");
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { external: ["a"] } }),
+  );
+  const declared = verify({ targetRoot: root });
+  assert.equal(declared.tests.status, "PASS", declared.tests.output);
+  assert.deepEqual(declared.provenance.event.external, ["a"], "the declared boundary is recorded");
+  assert.equal(declared.provenance.event.pre.unbound, undefined);
+});
+
+// ---------------------------------------------------------------------------
 // F10: a verdict is bound to the bytes it TESTED — a mutation during the run is INCOMPLETE.
 // ---------------------------------------------------------------------------
 
@@ -639,6 +799,133 @@ test("F08: a recursive root script covers declared workspaces once (no duplicate
   assert.equal(plan.suites.length, 1, "only the root suite runs");
   assert.deepEqual(plan.suites[0].covers, [".", "packages/bad"], "…and it covers the workspace");
   assert.equal(plan.coverage.rootCoversWorkspaces, true);
+  assert.equal(plan.coverage.basis["packages/bad"], "inferred", "N03: labelled as inferred");
+});
+
+test("N03: Node's preload flag `-r` is not a recursive workspace run — the failing member runs", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  // The review's counterexample: the root script preloads a setup file with `node -r`.
+  const root = monorepo({ rootScript: "node -r ./setup.cjs --test root.test.cjs" });
+  writeFileSync(join(root, "setup.cjs"), "// a normal Node preload\n");
+  const plan = planSuites(root);
+  assert.equal(plan.coverage.rootCoversWorkspaces, false);
+  assert.equal(plan.coverage.rootRun, undefined);
+  assert.deepEqual(plan.coverage.basis, { ".": "measured", "packages/bad": "measured" });
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "FAIL", "the nested failure is executed and reported");
+  assert.equal(r.tests.executed.find((s) => s.cwd === "packages/bad")?.status, "FAIL");
+});
+
+test("N03 round 2: configuration, caches and member rules narrow what a recursive run reaches", () => {
+  const mono = (rootScript, files = {}) => {
+    const root = monorepo({ rootScript });
+    for (const [f, text] of Object.entries(files)) {
+      mkdirSync(join(root, f, ".."), { recursive: true });
+      writeFileSync(join(root, f), text);
+    }
+    return planSuites(root);
+  };
+  const inferred = (plan) => plan.coverage.basis["packages/bad"] === "inferred";
+  assert.equal(inferred(mono("npm test --workspaces")), true, "the baseline is inferred");
+  // configuration that narrows the run
+  const npmrc = mono("npm test --workspaces", { ".npmrc": "workspace=packages/good\n" });
+  assert.equal(inferred(npmrc), false);
+  assert.match(npmrc.coverage.rootRunRefused.reason, /\.npmrc sets workspace/);
+  // a cache that may REPLAY an earlier result
+  const turbo = { "turbo.json": JSON.stringify({ tasks: { test: {} } }) };
+  const cached = mono("turbo run test", turbo);
+  assert.equal(inferred(cached), false);
+  assert.match(cached.coverage.rootRunRefused.reason, /replay a cached test result/);
+  assert.equal(inferred(mono("turbo run test --force", turbo)), true);
+  assert.equal(
+    inferred(mono("turbo run test", { "turbo.json": '{"tasks":{"test":{"cache":false}}}' })),
+    true,
+  );
+  assert.equal(
+    inferred(mono("turbo run test --force", { "turbo.json": '{"tasks":{"good#test":{}}}' })),
+    false,
+    "a package-specific task list",
+  );
+  assert.equal(inferred(mono("nx run-many -t test")), false, "nx without --skip-nx-cache");
+  assert.equal(
+    inferred(mono("nx run-many -t test --skip-nx-cache", { ".nxignore": "packages/bad\n" })),
+    false,
+  );
+  assert.equal(
+    inferred(mono("nx run-many -t test --skip-nx-cache", { "packages/bad/project.json": "{}" })),
+    false,
+    "a project.json can redefine the target",
+  );
+  assert.equal(
+    inferred(
+      mono("lerna run test --skip-nx-cache", {
+        "lerna.json": JSON.stringify({ command: { run: { ignore: "bad" } } }),
+      }),
+    ),
+    false,
+  );
+  // yarn 1 skips a member with no version
+  assert.equal(inferred(mono("yarn workspaces run test")), false);
+  // a member whose own script masks a failure is run on its own
+  const masked = mono("npm test --workspaces", {
+    "packages/bad/package.json": JSON.stringify({
+      name: "bad",
+      scripts: { test: 'node -e "process.exit(1)" || true' },
+    }),
+  });
+  assert.equal(inferred(masked), false);
+  // a package manager shim in node_modules/.bin would run instead of the real one
+  assert.equal(inferred(mono("npm test --workspaces", { "node_modules/.bin/npm": "" })), false);
+});
+
+test("N03 round 2: a root runner that never runs scripts.test infers nothing", () => {
+  const root = monorepo({ rootScript: "npm test --workspaces" });
+  writeFileSync(join(root, "bun.lockb"), "");
+  const plan = planSuites(root);
+  assert.deepEqual(
+    plan.suites.find((x) => x.cwd === ".")?.runner?.args,
+    ["run", "test"],
+    "a bun project runs its test SCRIPT (`bun run test`), not Bun's own runner",
+  );
+  assert.equal(plan.coverage.basis["packages/bad"], "inferred");
+});
+
+test("N03 round 2: a script-shell that is not a shell makes npm suites INCOMPLETE", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript('node -e "process.exit(1)"');
+  writeFileSync(join(root, ".npmrc"), "script-shell=/bin/true\n");
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE");
+  assert.match(r.tests.executed[0].output, /script-shell is \/bin\/true/);
+});
+
+test("N03: a recognized run covers only the members of the tool's OWN list (negations too)", () => {
+  const root = monorepo({ rootScript: "pnpm -r test", workspaces: ["apps/*"] });
+  writeFileSync(
+    join(root, "pnpm-workspace.yaml"),
+    "packages:\n  - 'packages/*'\n  - '!packages/legacy'\n",
+  );
+  for (const name of ["web", "legacy"]) {
+    mkdirSync(join(root, "packages", name), { recursive: true });
+    writeFileSync(
+      join(root, "packages", name, "package.json"),
+      JSON.stringify({ name, scripts: { test: "node --test" } }),
+    );
+  }
+  // A Python package inside a workspace directory: `pnpm -r test` never runs pytest.
+  mkdirSync(join(root, "packages", "py"), { recursive: true });
+  writeFileSync(join(root, "packages", "py", "pyproject.toml"), "[tool.pytest.ini_options]\n");
+  const plan = planSuites(root);
+  assert.deepEqual(plan.coverage.rootRun, { tool: "pnpm", command: "pnpm -r test" });
+  const byCwd = (cwd) => plan.suites.filter((s) => s.cwd === cwd).map((s) => s.label);
+  assert.ok(plan.suites[0].covers.includes("packages/web"), "a member rides on the root run");
+  assert.equal(plan.coverage.basis["packages/web"], "inferred");
+  assert.ok(byCwd("packages/legacy").length, "a negated package runs its own suite");
+  assert.equal(plan.coverage.basis["packages/legacy"], "measured");
+  assert.ok(byCwd("packages/py").length, "a non-script suite is never inferred from `pnpm -r`");
+  assert.equal(plan.coverage.basis["packages/py"], "measured");
 });
 
 test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/fixtures skip", {
@@ -670,6 +957,9 @@ test("F08: verify.workspaces=root is an explicit coverage declaration; exclude/f
   const declared = planSuites(root);
   assert.equal(declared.suites.length, 1);
   assert.ok(declared.suites[0].covers.includes("packages/bad"));
+  // N03: a declaration is labelled as one — never as a measured or inferred verdict.
+  assert.equal(declared.coverage.basis["packages/bad"], "declared");
+  assert.equal(declared.coverage.declared, "verify.workspaces=root");
 });
 
 test("F08: a nested suite forge cannot execute leaves its package uncovered → INCOMPLETE", {
@@ -730,11 +1020,24 @@ test("A01: verify records an immutable, MAC'd verifier event", { skip: NO_NPM_SP
   const events = readVerifyEvents(root);
   assert.equal(events.length, 1);
   assert.equal(events[0].runId, e.runId);
-  // A hand-edited event line (verdict flipped) is not read back as evidence.
+  assert.equal(events[0].authenticated, true);
+  assert.equal(events[0].authScope, "event", "a v2 event's MAC covers every field");
+  // A hand-edited event line is read back, but never as authenticated evidence — whichever
+  // field was edited (review suggestion 2: the MAC covers the whole event, not a subset).
   const path = join(root, ".forge", "verify-events.jsonl");
-  const forged = { ...JSON.parse(readFileSync(path, "utf8").trim()), status: "FAIL" };
-  writeFileSync(path, `${JSON.stringify(forged)}\n`);
-  assert.equal(readVerifyEvents(root).length, 0);
+  const line = JSON.parse(readFileSync(path, "utf8").trim());
+  for (const edit of [
+    { status: "FAIL" },
+    { suites: [{ ...line.suites[0], exitCode: 1 }] },
+    { coverage: { ...line.coverage, required: [] } },
+    { environment: { ...line.environment, node: "v0.0.0" } },
+    { status: "FAIL", authenticated: true, authScope: "event" }, // derived: never read from file
+  ]) {
+    writeFileSync(path, `${JSON.stringify({ ...line, ...edit })}\n`);
+    const [read] = readVerifyEvents(root);
+    assert.equal(read.authenticated, false, JSON.stringify(edit));
+    assert.equal(read.authScope, null);
+  }
 });
 
 test("F10: interpreter caches written by a test run are not a code mutation", {

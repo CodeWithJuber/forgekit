@@ -21,9 +21,10 @@
 // the least-bad cascade is still computed, but the result says `feasible: false` with a
 // `reason`, `budgetMet: false` for a budget objective, and `minimumExpectedCost` — the caller
 // must choose to fall back; nothing reads as "within budget". A budget constrains EXPECTED
-// cost only: `maxPossibleCost` (every attempt in the cascade runs) is the worst case, and the
-// ACTUAL charge is whatever the attempts cost — enforce a hard cap at execution time if one is
-// promised. The cost formula also assumes an attempt's cost does not depend on earlier
+// cost only. `estimatedCostIfAllAttemptsRun` is the sum of every attempt's EXPECTED cost —
+// a modeled figure for the path where each stage runs, not a bound on what a stochastic run can
+// bill (it was called `maxPossibleCost`, which overstated it). The ACTUAL charge is whatever the
+// attempts cost — enforce a hard cap at execution time if one is promised. The cost formula also assumes an attempt's cost does not depend on earlier
 // attempts having failed (E[cost_i | earlier failed, x] = E[cost_i | x]); hard residual tasks
 // may cost more, so treat expected cost as an estimate under that assumption.
 
@@ -113,7 +114,7 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
   const targetMet = target === null ? null : best.p >= target - eps;
   const budgetMet = objective.kind === "budget" ? best.cost <= objective.budget + eps : null;
   const minimumExpectedCost = Math.min(...single.map((x) => x.cost));
-  const maxPossibleCost = best.seq.reduce((sum, m) => sum + costs[m], 0);
+  const estimatedCostIfAllAttemptsRun = best.seq.reduce((sum, m) => sum + costs[m], 0);
   const feasible = targetMet !== false && budgetMet !== false;
   const reason = feasible
     ? undefined
@@ -128,7 +129,7 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
     feasible,
     ...(reason ? { reason } : {}),
     minimumExpectedCost,
-    maxPossibleCost,
+    estimatedCostIfAllAttemptsRun,
     bestSingle: { model: bestSingle.m, p: bestSingle.p, cost: bestSingle.cost },
     evaluated,
   };

@@ -18,12 +18,27 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { build as buildAtlas } from "../src/atlas.js";
 import { assemble } from "../src/context.js";
+import { consolidateLearned } from "../src/learn_consolidate.js";
 import { evidenceEvents, outcomeRecord, val } from "../src/ledger.js";
 import { repoLedger } from "../src/ledger_store.js";
-import { describeFile, mintArtifact, reusePeek } from "../src/reuse.js";
+import {
+  artifactClaim,
+  depContract,
+  describeFile,
+  fingerprint,
+  lookup,
+  mintArtifact,
+  reusePeek,
+} from "../src/reuse.js";
 import { choose, parseObjective } from "../src/router/policy.js";
 import { semanticConflicts } from "../src/semantic_guard.js";
-import { computeCodeState } from "../src/verify.js";
+import { recursiveTestInvocation } from "../src/stack.js";
+import {
+  computeCodeState,
+  readVerifyEvents,
+  VERIFY_EVENT_VERSION,
+  verifyEventMac,
+} from "../src/verify.js";
 
 // mulberry32 — the same seeded PRNG the benchmark fixtures use.
 const prng = (seed) => {
@@ -154,7 +169,10 @@ test("property: a budget is never reported met when it is not, and infeasibility
       assert.ok(r.minimumExpectedCost > budget - 1e-12, `trial ${trial}`);
       assert.match(r.reason, /infeasible/);
     }
-    assert.ok(r.maxPossibleCost >= r.cost - 1e-12, "the worst case bounds the expectation");
+    assert.ok(
+      r.estimatedCostIfAllAttemptsRun >= r.cost - 1e-12,
+      "running every attempt costs at least the expectation",
+    );
   }
 });
 
@@ -288,5 +306,232 @@ test("property: an artifact is never served after any edit, move or deletion of 
     rmSync(join(root, "clamp2.js"), { force: true });
     writeFileSync(join(root, "clamp.js"), body);
     assert.equal(served(), "exact", `trial ${trial}: the verified bytes serve again`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Review 2026-09-27 (suggestion 3): the same properties, along the SEMANTIC boundaries the
+// follow-up review crossed — generators that represent quoted whitespace, binding swaps,
+// command-option ambiguity, destructured parameters and a degraded evidence key, rather than
+// only safe transformations. Each family widens one finding (N01, N02, N03, N08, N06).
+// ---------------------------------------------------------------------------------------
+
+const pickFrom = (rand) => (xs) => xs[Math.floor(rand() * xs.length)];
+/** A verified in-memory artifact for `spec` (two confirming test runs). */
+const provenArtifact = (spec) => {
+  const c = artifactClaim({ spec, code: { inline: "export const x = 1;" } }, 0).claim;
+  c.evidence = [0, 1].map((i) => ({
+    oracle: "test.run",
+    result: "confirm",
+    ref: `git:${String(i).repeat(8)}`,
+    author: "ci",
+    t: 0,
+    w: 0.8,
+    h: `${i}`.repeat(64),
+  }));
+  return c;
+};
+
+test("property (N01): whitespace or a code point inside a quoted literal is never served as-is", () => {
+  const rand = prng(20260927);
+  const pick = pickFrom(rand);
+  const words = ["alpha", "beta", "gamma", "delta", "caf\u00e9", "ok"];
+  const edits = [
+    (s) => s.replace(" ", "  "), // one space → two (the review's case)
+    (s) => s.replace(" ", "\t"), // an embedded tab
+    (s) => s.replace(" ", "\n"), // an embedded newline
+    (s) => `${s} `, // a trailing space inside the quotes
+    (s) => s.replace("\u00e9", "e\u0301"), // composed → decomposed
+  ];
+  let checked = 0;
+  for (let i = 0; i < 80; i++) {
+    const q = pick(['"', "'", "`"]);
+    const inner = `${pick(words)} ${pick(words)}`;
+    const edited = pick(edits)(inner);
+    if (edited === inner) continue;
+    const tail = ` from the ${pick(words)} formatter`;
+    const minted = `return ${q}${inner}${q}${tail}`;
+    const asked = `return ${q}${edited}${q}${tail}`;
+    assert.notEqual(fingerprint(minted).exact, fingerprint(asked).exact, asked);
+    const r = lookup([provenArtifact(minted)], asked, { nowDay: 0 });
+    assert.ok(r.tier === "adapt" || r.tier === "miss", `${JSON.stringify(asked)} got ${r.tier}`);
+    assert.equal(lookup([provenArtifact(minted)], minted, { nowDay: 0 }).tier, "exact");
+    checked++;
+  }
+  assert.ok(checked >= 60, `only ${checked} cases generated`);
+});
+
+test("property (N02): swapping which subject gets which action or value never merges two rules", () => {
+  const rand = prng(20260928);
+  const pick = pickFrom(rand);
+  const cap = (w) => w[0].toUpperCase() + w.slice(1);
+  const TAIL =
+    " for every incoming webhook request before processing the payload or allowing the request to access any internal application service or write changes to durable storage in the production environment";
+  const roles = ["admins", "guests", "owners", "auditors", "bots", "members", "vendors"];
+  const poles = [
+    ["allow", "deny"],
+    ["enable", "disable"],
+    ["include", "exclude"],
+    ["show", "hide"],
+  ];
+  for (let i = 0; i < 40; i++) {
+    const [x, y] = shuffle(rand, roles);
+    const [p, q] = pick(poles);
+    const n = [5, 10, 30, 60, 120];
+    const [n1, n2] = shuffle(rand, n);
+    const pair = pick([
+      [`${cap(p)} ${x} and ${q} ${y}${TAIL}`, `${cap(p)} ${y} and ${q} ${x}${TAIL}`],
+      [
+        `Use a ${n1}s read timeout and ${n2}s write timeout${TAIL}`,
+        `Use a ${n2}s read timeout and ${n1}s write timeout${TAIL}`,
+      ],
+    ]);
+    const r = consolidateLearned(
+      pair.map((text) => ({ project: "p", text })),
+      { claims: [] },
+    );
+    assert.equal(r.merged.length, 0, pair[1]);
+    assert.equal(r.kept.length, 2, pair[1]);
+  }
+});
+
+test("property (N03): a look-alike flag on another tool, or a filter on a workspace run, never covers the workspaces", () => {
+  const rand = prng(20260929);
+  const pick = pickFrom(rand);
+  const wrappers = ["", "cross-env CI=1 ", "npx ", "FOO=1 ", "env NODE_ENV=test "];
+  const tools = ["node", "mocha", "jest", "vitest", "tsx", "c8", "nyc", "ava", "tap"];
+  const lookAlikes = ["-r", "--recursive", "-ws", "--workspaces", "-w", "--filter=web", "-F"];
+  for (let i = 0; i < 80; i++) {
+    const args = shuffle(rand, [pick(lookAlikes), "./setup.cjs", "--test", "test/"]);
+    const cmd = `${pick(wrappers)}${pick(tools)} ${args.join(" ")}`;
+    assert.equal(recursiveTestInvocation(cmd), null, cmd);
+  }
+  const RUNS = {
+    npm: ["npm test --workspaces", ["-w web", "--workspace=web", "--prefix pkg"]],
+    pnpm: ["pnpm -r test", ["--filter web", "-F web", "--resume-from web"]],
+    turbo: ["turbo run test", ["--filter=web", "-F web", "--affected", "--dry-run"]],
+    lerna: ["lerna run test", ["--scope web", "--ignore web", "--since main"]],
+    nx: ["nx run-many -t test", ["-p web", "--projects=web", "--exclude web"]],
+  };
+  for (let i = 0; i < 80; i++) {
+    const [run, filters] = RUNS[pick(Object.keys(RUNS))];
+    const words = run.split(" ");
+    words.splice(1 + Math.floor(rand() * words.length), 0, pick(filters));
+    const wrapped = `${pick(wrappers)}${words.join(" ")}`;
+    assert.equal(recursiveTestInvocation(wrapped), null, wrapped);
+    assert.ok(recursiveTestInvocation(`${pick(wrappers)}${run}`), `${run} unfiltered is a run`);
+  }
+});
+
+test("property (N08): changing a destructured key, default or nesting changes the contract; a reformat never does", () => {
+  const rand = prng(20260930);
+  const pick = pickFrom(rand);
+  const keys = ["a", "b", "c", "id", "name", "opts", "limit"];
+  const lits = ["1", "2", '"x"', '"x y"', "null", "[]"];
+  /** A random destructuring pattern, as tokens-with-structure (so it can be mutated). */
+  const gen = (depth) =>
+    shuffle(rand, keys)
+      .slice(0, 1 + Math.floor(rand() * 3))
+      .map((k) => {
+        const r = rand();
+        if (depth > 0 && r < 0.25) return { k, nest: gen(depth - 1) };
+        if (r < 0.6) return { k, def: pick(lits) };
+        return { k };
+      });
+  const show = (fields, sp) =>
+    `{${sp}${fields
+      .map((f) =>
+        f.nest ? `${f.k}:${sp}${show(f.nest, sp)}` : f.def ? `${f.k}${sp}=${sp}${f.def}` : f.k,
+      )
+      .join(`,${sp}`)}${sp}}`;
+  /** One semantic mutation: rename a key, change a default, add or drop a field. */
+  const mutate = (fields) => {
+    const out = structuredClone(fields);
+    const f = out[Math.floor(rand() * out.length)];
+    const m = pick(["rename", "default", "add", "drop"]);
+    if (m === "rename") f.k = `${f.k}2`;
+    else if (m === "default") f.def = f.def === "1" ? "2" : "1";
+    else if (m === "add") out.push({ k: "extra" });
+    else if (out.length > 1) out.splice(out.indexOf(f), 1);
+    else f.k = `${f.k}3`;
+    return out;
+  };
+  const root = mkdtempSync(join(tmpdir(), "forge-prop-contract-"));
+  const contractOf = (params) => {
+    writeFileSync(join(root, "dep.js"), `export function calc(${params}) {\n  return 1;\n}\n`);
+    return depContract(root, buildAtlas({ root }), "calc");
+  };
+  try {
+    for (let i = 0; i < 25; i++) {
+      const fields = gen(2);
+      const base = contractOf(show(fields, ""));
+      assert.match(base ?? "", /^v2:/, show(fields, ""));
+      const spaced = contractOf(`/* args */ ${show(fields, pick([" ", "  ", "\n    "]))}`);
+      assert.equal(spaced, base, `a reformat is not a contract change: ${show(fields, " ")}`);
+      let changed = mutate(fields);
+      // A mutation must be VISIBLE in the source (a default on a nested field is not rendered).
+      while (show(changed, " ") === show(fields, " ")) changed = mutate(fields);
+      assert.notEqual(
+        contractOf(show(changed, " ")),
+        base,
+        `${show(fields, " ")} → ${show(changed, " ")}`,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("property (N06): with no evidence key nothing is authenticated; with one, any edited field unauthenticates", () => {
+  const rand = prng(20261001);
+  const pick = pickFrom(rand);
+  const old = process.env.FORGE_HOME;
+  const root = mkdtempSync(join(tmpdir(), "forge-prop-events-"));
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  const log = join(root, ".forge", "verify-events.jsonl");
+  const event = () => ({
+    v: VERIFY_EVENT_VERSION,
+    runId: `run-${Math.floor(rand() * 1e9)}`,
+    status: pick(["PASS", "FAIL", "INCOMPLETE"]),
+    suites: [{ label: "npm test", cwd: ".", covers: ["."], status: "PASS", exitCode: 0 }],
+    coverage: { required: ["."], basis: { ".": "measured" } },
+    pre: { scheme: "manifest-v3", head: "a".repeat(40), dirtyHash: "b".repeat(64) },
+    post: { head: "a".repeat(40), dirtyHash: "b".repeat(64) },
+    environment: { node: "v22", platform: "linux", arch: "x64", digest: "c".repeat(16) },
+  });
+  /** Every leaf path of an object. */
+  const leaves = (o, at = []) =>
+    Object.entries(o).flatMap(([k, v]) =>
+      v && typeof v === "object" ? leaves(v, [...at, k]) : [[...at, k]],
+    );
+  try {
+    const noKey = join(root, "not-a-dir");
+    writeFileSync(noKey, "a regular file: no key can be read or created below it");
+    process.env.FORGE_HOME = noKey;
+    const unsigned = Array.from({ length: 10 }, event);
+    writeFileSync(
+      log,
+      unsigned.map((e) => JSON.stringify({ ...e, mac: verifyEventMac(e) })).join("\n"),
+    );
+    assert.ok(readVerifyEvents(root).every((e) => e.authenticated === false));
+    process.env.FORGE_HOME = mkdtempSync(join(tmpdir(), "forge-prop-key-"));
+    for (let i = 0; i < 40; i++) {
+      const e = event();
+      const signed = { ...e, mac: verifyEventMac(e) };
+      writeFileSync(log, JSON.stringify(signed));
+      assert.equal(readVerifyEvents(root)[0].authenticated, true);
+      const path = pick(leaves(e));
+      const edited = structuredClone(signed);
+      let o = edited;
+      for (const k of path.slice(0, -1)) o = o[k];
+      const k = path[path.length - 1];
+      o[k] = typeof o[k] === "number" ? o[k] + 1 : `${o[k]}x`;
+      writeFileSync(log, JSON.stringify(edited));
+      assert.equal(readVerifyEvents(root)[0].authenticated, false, `edited ${path.join(".")}`);
+    }
+  } finally {
+    if (old === undefined) delete process.env.FORGE_HOME;
+    else process.env.FORGE_HOME = old;
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -1,6 +1,7 @@
 // Universal router: registry as data, provider filtering, outcome recording and Bayesian refit.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +13,13 @@ import {
   routeUniversal,
 } from "../src/router/index.js";
 import { loadRegistry, servableBy } from "../src/router/registry.js";
+import {
+  checkoutId,
+  computeCodeState,
+  readVerifyEvents,
+  VERIFY_EVENT_VERSION,
+  verifyEventMac,
+} from "../src/verify.js";
 
 const project = () => {
   const d = mkdtempSync(join(tmpdir(), "forge-router-"));
@@ -154,6 +162,246 @@ test("A01: an attempt id makes recording idempotent; replayed/corrupt rows never
   assert.equal(readOutcomes.lastInvalid, 2);
 });
 
+// Review N06/N07: provenance is earned from an AUTHENTICATED verifier event, never read from a
+// label. Events are written here directly — MAC'd under a throwaway evidence key — so the
+// tests control authenticity without spawning a test run.
+const withEvidenceHome = (home, fn) => {
+  const old = process.env.FORGE_HOME;
+  process.env.FORGE_HOME = home;
+  try {
+    return fn();
+  } finally {
+    if (old === undefined) delete process.env.FORGE_HOME;
+    else process.env.FORGE_HOME = old;
+  }
+};
+/** A project that is a git checkout with one commit: verifier events bind to its code state. */
+const gitProject = () => {
+  const d = project();
+  const g = (...a) => execFileSync("git", a, { cwd: d, stdio: "ignore" });
+  writeFileSync(join(d, ".gitignore"), ".forge/\n");
+  writeFileSync(join(d, "a.js"), "export const a = 1;\n");
+  g("init");
+  g("add", ".");
+  g(
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-m",
+    "init",
+  );
+  return d;
+};
+/** Append a verifier event to `d`'s log, MAC'd under the current key unless `sign` is false.
+ *  By default the event names `d`'s checkout and finishes on its current code state, as a run
+ *  of `forge verify` there would. */
+const logEvent = (d, event, { sign = true } = {}) => {
+  const s = computeCodeState(d);
+  const e = {
+    v: VERIFY_EVENT_VERSION,
+    verifier: "forge verify",
+    checkout: checkoutId(d),
+    pre: { scheme: s.scheme, head: s.head, dirtyHash: s.dirtyHash },
+    post: { head: s.head, dirtyHash: s.dirtyHash },
+    ...event,
+  };
+  const mac = sign ? verifyEventMac(e) : null;
+  appendFileSync(
+    join(d, ".forge", "verify-events.jsonl"),
+    `${JSON.stringify(mac ? { ...e, mac } : e)}\n`,
+  );
+};
+const outcome = (d, extra = {}) => ({
+  task: "t",
+  model: loadRegistry(d).models[0].id,
+  features: new Array(12).fill(0),
+  ...extra,
+});
+
+test("N06: with no evidence key, an unsigned event is reported but never authenticated", () => {
+  const d = project();
+  const noKey = join(d, "not-a-dir");
+  writeFileSync(noKey, "a regular file: no key can be read or created below it");
+  withEvidenceHome(noKey, () => {
+    logEvent(d, { runId: "invented-run", status: "PASS" }, { sign: false });
+    const [e] = readVerifyEvents(d);
+    assert.equal(e.runId, "invented-run", "the event exists…");
+    assert.equal(e.authenticated, false, "…but it is not authenticated");
+    const row = recordOutcome(d, outcome(d, { passed: true, verifyRunId: "invented-run" }));
+    assert.equal(row.provenance, "self-reported", "degraded mode continues, unauthenticated");
+    assert.match(row.provenanceNote, /not authenticated/);
+    assert.equal(readOutcomes(d)[0].provenance, "self-reported");
+  });
+});
+
+test("N06: a signed event with a matching verdict still earns verify-event, and survives reload", () => {
+  const d = gitProject();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "run-1", status: "PASS" });
+    logEvent(d, { runId: "unsigned", status: "PASS" }, { sign: false });
+    const events = readVerifyEvents(d);
+    assert.deepEqual(
+      events.map((e) => [e.runId, e.authenticated, e.authScope]),
+      [
+        ["run-1", true, "event"],
+        ["unsigned", false, null],
+      ],
+    );
+    const row = recordOutcome(d, outcome(d, { passed: true, verifyRunId: "run-1" }));
+    assert.equal(row.provenance, "verify-event");
+    assert.equal(
+      recordOutcome(d, outcome(d, { passed: true, verifyRunId: "unsigned" })).provenance,
+      "self-reported",
+    );
+    const read = readOutcomes(d);
+    assert.deepEqual(
+      read.map((o) => o.provenance),
+      ["verify-event", "self-reported"],
+    );
+    assert.equal(fitRouter(d).provenance.local.verifiedOutcomes, 1);
+  });
+});
+
+test("N07: forged labels, missing runs, verdict mismatch and replay never count as verified", () => {
+  const d = gitProject();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "pass-run", status: "PASS" });
+    logEvent(d, { runId: "fail-run", status: "FAIL" });
+    const honest = recordOutcome(
+      d,
+      outcome(d, { passed: true, verifyRunId: "pass-run", attemptId: "honest" }),
+    );
+    assert.equal(honest.provenance, "verify-event");
+    assert.throws(
+      () =>
+        recordOutcome(d, outcome(d, { passed: true, verifyRunId: "pass-run", attemptId: "again" })),
+      /already backs attempt honest/,
+      "one verifier run backs one outcome",
+    );
+    // Hand-written rows claiming the trusted label (the file is user-editable).
+    const path = join(d, ".forge", "route_outcomes.jsonl");
+    const forged = (over) => `${JSON.stringify({ ...honest, ...over })}\n`;
+    appendFileSync(
+      path,
+      forged({ attemptId: "no-run", verifyRunId: "does-not-exist" }) +
+        forged({ attemptId: "mismatch", verifyRunId: "fail-run" }) + // FAIL run, row says pass
+        forged({ attemptId: "replay" }), // a second attempt citing pass-run
+    );
+    const read = readOutcomes(d);
+    assert.deepEqual(
+      read.map((o) => [o.attemptId, o.provenance]),
+      [
+        ["honest", "verify-event"],
+        ["no-run", "self-reported"],
+        ["mismatch", "self-reported"],
+        ["replay", "self-reported"],
+      ],
+    );
+    assert.equal(readOutcomes.lastDowngraded, 3);
+    assert.match(read[3].provenanceNote, /already backs attempt honest/);
+    assert.equal(
+      fitRouter(d).provenance.local.verifiedOutcomes,
+      1,
+      "the fitter counts derived labels",
+    );
+    assert.deepEqual(fitRouter(d).provenance.local.verifiedFields, ["passed"]);
+  });
+});
+
+test("N07 round 2: a run backs an attempt only in its own checkout, on the same code", () => {
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    // An events file copied from another checkout (same machine key) backs nothing here.
+    const a = gitProject();
+    const b = gitProject();
+    logEvent(a, { runId: "from-a", status: "PASS" });
+    mkdirSync(join(b, ".forge"), { recursive: true });
+    writeFileSync(
+      join(b, ".forge", "verify-events.jsonl"),
+      readFileSync(join(a, ".forge", "verify-events.jsonl")),
+    );
+    const [copied] = readVerifyEvents(b);
+    assert.equal(copied.authenticated, true, "the MAC still verifies…");
+    assert.equal(copied.inCheckout, false, "…but it names another checkout");
+    const row = recordOutcome(b, outcome(b, { passed: true, verifyRunId: "from-a" }));
+    assert.equal(row.provenance, "self-reported");
+    assert.match(row.provenanceNote, /not recorded in this checkout/);
+    assert.equal(readOutcomes(b)[0].provenance, "self-reported");
+
+    // A PASS on old code never backs an attempt recorded after the code changed.
+    const d = gitProject();
+    logEvent(d, { runId: "old-pass", status: "PASS" });
+    writeFileSync(join(d, "a.js"), "export const a = 2; // the attempt that failed\n");
+    const stale = recordOutcome(d, outcome(d, { passed: true, verifyRunId: "old-pass" }));
+    assert.equal(stale.provenance, "self-reported");
+    assert.match(stale.provenanceNote, /verified other code/);
+    // …while a run on the attempt's own code does.
+    logEvent(d, { runId: "new-pass", status: "PASS" });
+    assert.equal(
+      recordOutcome(d, outcome(d, { passed: true, verifyRunId: "new-pass" })).provenance,
+      "verify-event",
+    );
+    // An edited row cannot re-point its code state at another run's: the event decides.
+    const path = join(d, ".forge", "route_outcomes.jsonl");
+    const rows = readFileSync(path, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    writeFileSync(path, `${JSON.stringify({ ...rows[0], codeState: undefined })}\n`);
+    assert.equal(readOutcomes(d)[0].provenance, "self-reported");
+  });
+});
+
+test("N07 round 2: a legacy row's content key and an attemptId never alias one attempt", () => {
+  const d = gitProject();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "run-1", status: "PASS" });
+    const code = computeCodeState(d);
+    const codeState = { scheme: code.scheme, head: code.head, dirtyHash: code.dirtyHash };
+    const model = loadRegistry(d).models[0].id;
+    const legacy = {
+      task: "0123456789abcdef",
+      model,
+      passed: true,
+      features: new Array(12).fill(0),
+      verifyRunId: "run-1",
+      codeState,
+    };
+    const { createHash } = /** @type {any} */ (globalThis).process.getBuiltinModule("node:crypto");
+    const key = `row:${createHash("sha256").update(JSON.stringify(legacy)).digest("hex")}`;
+    const alias = { ...legacy, attemptId: key, task: "fedcba9876543210" };
+    writeFileSync(
+      join(d, ".forge", "route_outcomes.jsonl"),
+      `${JSON.stringify(legacy)}\n${JSON.stringify(alias)}\n`,
+    );
+    assert.deepEqual(
+      readOutcomes(d).map((o) => o.provenance),
+      ["verify-event", "self-reported"],
+      "one verifier run backs one attempt",
+    );
+    assert.equal(fitRouter(d).provenance.local.verifiedOutcomes, 1);
+  });
+});
+
+test("N06 round 2: an event holding a non-finite number is never authenticated", () => {
+  const d = gitProject();
+  withEvidenceHome(mkdtempSync(join(tmpdir(), "forge-key-")), () => {
+    logEvent(d, { runId: "ok", status: "PASS", exitCode: 0 });
+    // A signed null stored as 1e999 parses to Infinity; its canonical form is not the signed one.
+    const line = readFileSync(join(d, ".forge", "verify-events.jsonl"), "utf8").trim();
+    const forged = line.replace('"exitCode":0', '"exitCode":1e999');
+    appendFileSync(join(d, ".forge", "verify-events.jsonl"), `${forged}\n`);
+    assert.deepEqual(
+      readVerifyEvents(d).map((e) => e.authenticated),
+      [true, false],
+    );
+    assert.equal(verifyEventMac({ v: VERIFY_EVENT_VERSION, runId: "x", n: Infinity }), null);
+  });
+});
+
 test("F12: an unreachable budget is INFEASIBLE, with the cheapest cost and an explicit fallback", () => {
   const d = project();
   const r = routeUniversal(d, TASK, { objective: "budget:0.0000001" });
@@ -163,7 +411,8 @@ test("F12: an unreachable budget is INFEASIBLE, with the cheapest cost and an ex
   assert.ok(r.minimumExpectedCost > 0.0000001);
   assert.match(r.reason, /budget/);
   assert.ok(r.fallback.cascade.length >= 1, "the least-bad cascade is still available, labeled");
-  assert.ok(r.fallback.maxPossibleCost >= r.fallback.expectedCost);
+  assert.ok(r.fallback.estimatedCostIfAllAttemptsRun >= r.fallback.expectedCost);
+  assert.equal(r.fallback.maxPossibleCost, undefined, "the misleading name is gone");
 });
 
 test("A07: a recommended model no provider serves is labeled advice only, never presented as callable", () => {

@@ -17,13 +17,24 @@
 > *Corrected 2026-09-21* after an external review: the repair was previously called "a narrow win",
 > and the whitepaper's HTML edition now also marks each refuted claim in place. The whitepaper PDF
 > predates those corrections.
+>
+> *Corrected 2026-09-26*: the thesis below, that a frozen model "cannot" remember, learn,
+> imagine or self-correct and that prompting or tools "cannot" supply these, is broader than
+> the gaps it rests on. Examples, retrieved facts and feedback do change a frozen model's
+> behaviour within a context. What it lacks is durable state across independent invocations,
+> an unbounded context, automatic parameter updates, and reliable self-verification without
+> external evidence. The substrate is one tested way to supply persistence and verification,
+> not the only possible one; CoALA and Reflexion are prior art. The claim registry
+> ([`docs/status/README.md`](../../docs/status/README.md)) tracks the first statement as refuted
+> (`frozen-model-cannot-adapt`) and the necessity of this architecture as a hypothesis
+> (`external-architecture-necessity`).
 
 ---
 
 # A Cognitive Substrate for Coding Agents — Deliverable Package
 ### Theory → Evidence → Build-Map edition (v2)
 
-**One-line thesis:** The faculties a coding agent lacks — memory, learning, imagination, self-correction, impact-awareness — are not gaps in the model's *knowledge* but structural consequences of what a frozen transformer *is* (a stateless map `y = f_θ(x)`, fixed weights, bounded window). They cannot be prompted or tooled away; they can only be supplied by **re-wrapping the input→process→output loop** into a closed, stateful cycle around the frozen model.
+**One-line thesis:** The faculties a coding agent lacks — memory, learning, imagination, self-correction, impact-awareness — are not gaps in the model's *knowledge* but structural consequences of what a frozen transformer *is* (a stateless map `y = f_θ(x)`, fixed weights, bounded window). They cannot be prompted or tooled away; they can only be supplied by **re-wrapping the input→process→output loop** into a closed, stateful cycle around the frozen model. *[Corrected 2026-09-26: too broad as worded; see the status note above.]*
 
 > *Corrected 2026-09-26:* the thesis above is broader than its argument. Frozen weights rule out
 > weight updates during use, not all adaptation: examples, retrieved facts and feedback in the
@@ -45,7 +56,7 @@
 ## What's in this package
 
 ### 1. The white paper (core deliverable) — 48 pp
-- **`cognitive_substrate_whitepaper.pdf`** / **`cognitive_substrate_whitepaper.html`** — the full study, 13 sections + 3 appendices, 7 figures.
+- **`cognitive_substrate_whitepaper.pdf`** (historical, pre-correction edition) / **`cognitive_substrate_whitepaper.html`** (corrected in place) — the full study, 13 sections + 3 appendices, 7 figures.
   - **§1–3** the root cause and the five faculties (from v1): *why* each faculty is structurally absent (P1 statelessness, P2 frozen weights, P3 bounded context), each grounded in the real literature.
   - **§4 Evidence** *(new)* — the twelve statistics, re-grounded. 5 confirmed, 5 vendor-reported, 2 unverifiable.
   - **§5** the Qur'anic epistemic lens — design framing/ethics, never technical authority.

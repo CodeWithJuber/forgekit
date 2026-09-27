@@ -3,11 +3,17 @@
  * The claim/status registry, checked and rendered (node stdlib only).
  *
  * `docs/status/claims.json` records every load-bearing headline the project makes — what is
- * claimed, which component and version it is about, the commit it was assessed against, its
- * status, and the evidence behind it. This script keeps three things honest:
+ * claimed, which component and version it is about, the commit it was assessed against, the
+ * RELEASE that assessment belongs to, its status, the evidence behind it, and the review
+ * counterexamples that tested it. This script keeps three things honest:
  *
  *   1. the registry itself: required fields, a closed set of statuses, unique ids, a commit
- *      that looks like one, and evidence paths that exist in the repository;
+ *      that looks like one, an assessed release that is a version or "unreleased", well-formed
+ *      counterexample links, and evidence paths that exist in the repository — and, when the
+ *      checkout has release tags, that every assessed release really contains the assessed
+ *      commit and no claim still says "unreleased" about a commit that has shipped (the
+ *      registry is a RELEASE artifact: `scripts/bump.mjs` stamps "unreleased" claims with the
+ *      version it cuts);
  *   2. the status table in `docs/status/README.md`, which is generated from the registry
  *      between the CLAIMS:BEGIN / CLAIMS:END markers and never edited by hand;
  *   3. the research copies under `docs/cognitive-substrate/`, which must stay byte-identical
@@ -21,6 +27,7 @@
  *
  * Exit codes: 0 ok · 1 invalid registry or drift · 2 usage error.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -36,10 +43,14 @@ export const REQUIRED_FIELDS = [
   "component",
   "version",
   "source_commit",
+  "assessed_release",
   "status",
   "evidence",
   "notes",
 ];
+
+/** How a review counterexample linked to a claim was resolved. */
+export const RESOLUTIONS = ["fixed", "open", "scoped"];
 
 export const REGISTRY_PATH = "docs/status/claims.json";
 export const README_PATH = "docs/status/README.md";
@@ -73,6 +84,8 @@ export const COPY_PAIRS = [
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 const COMMIT_RE = /^[0-9a-f]{7,40}$/;
 const URL_RE = /^https?:\/\//;
+const RELEASE_RE = /^\d+\.\d+\.\d+$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -101,7 +114,15 @@ export function validateRegistry(registry, { root = null } = {}) {
     for (const f of REQUIRED_FIELDS) {
       if (!(f in c)) errors.push(`${where}: missing required field "${f}"`);
     }
-    for (const f of ["id", "claim", "component", "version", "source_commit", "status"]) {
+    for (const f of [
+      "id",
+      "claim",
+      "component",
+      "version",
+      "source_commit",
+      "assessed_release",
+      "status",
+    ]) {
       if (f in c && (typeof c[f] !== "string" || !c[f].trim())) {
         errors.push(`${where}: "${f}" must be a non-empty string`);
       }
@@ -121,6 +142,31 @@ export function validateRegistry(registry, { root = null } = {}) {
       if (!COMMIT_RE.test(c.source_commit)) {
         errors.push(`${where}: source_commit must be 7-40 lowercase hex characters`);
       }
+    }
+    if (
+      typeof c.assessed_release === "string" &&
+      c.assessed_release &&
+      c.assessed_release !== "unreleased" &&
+      !RELEASE_RE.test(c.assessed_release)
+    ) {
+      errors.push(`${where}: assessed_release must be a release version (X.Y.Z) or "unreleased"`);
+    }
+    if ("counterexamples" in c) {
+      const ok =
+        Array.isArray(c.counterexamples) &&
+        c.counterexamples.every(
+          (x) =>
+            x &&
+            typeof x === "object" &&
+            DATE_RE.test(String(x.review ?? "")) &&
+            typeof x.id === "string" &&
+            x.id.trim() &&
+            RESOLUTIONS.includes(x.resolution),
+        );
+      if (!ok)
+        errors.push(
+          `${where}: counterexamples must be an array of {review: YYYY-MM-DD, id, resolution: ${RESOLUTIONS.join("|")}}`,
+        );
     }
     if ("evidence" in c) {
       if (!Array.isArray(c.evidence) || c.evidence.length === 0) {
@@ -143,6 +189,84 @@ export function validateRegistry(registry, { root = null } = {}) {
   });
   return errors;
 }
+
+/**
+ * Cross-check each claim's `assessed_release` against the checkout's release tags: a claim
+ * marked "unreleased" whose source commit has since shipped is stale (record the release), and
+ * a claim naming a release must name one whose tag exists and contains its source commit.
+ * Returns null when the check cannot run — no git, or no `v*` tags (a shallow CI clone) — and
+ * skips a claim whose commit is not in this clone.
+ * @param {string} root
+ * @param {any} registry a valid registry
+ * @returns {string[]|null}
+ */
+export function releaseProblems(root, registry) {
+  const g = (args) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  const ok = (args) => {
+    try {
+      g(args);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let tags;
+  try {
+    tags = new Set(g(["tag", "--list", "v*"]).split("\n").filter(Boolean));
+  } catch {
+    return null;
+  }
+  if (!tags.size) return null;
+  const firstRelease = new Map();
+  const shippedIn = (commit) => {
+    if (!firstRelease.has(commit)) {
+      let first = null;
+      try {
+        first =
+          g(["tag", "--contains", commit, "--list", "v*", "--sort=v:refname"])
+            .split("\n")
+            .filter(Boolean)[0] ?? null;
+      } catch {}
+      firstRelease.set(commit, first);
+    }
+    return firstRelease.get(commit);
+  };
+  const problems = [];
+  for (const c of registry.claims) {
+    if (!ok(["cat-file", "-e", `${c.source_commit}^{commit}`])) continue;
+    const at = c.source_commit.slice(0, 12);
+    if (c.assessed_release === "unreleased") {
+      const first = shippedIn(c.source_commit);
+      if (first)
+        problems.push(
+          `${c.id}: assessed_release is "unreleased", but its source commit ${at} shipped in ${first} — record the release`,
+        );
+    } else if (!tags.has(`v${c.assessed_release}`)) {
+      problems.push(
+        `${c.id}: assessed_release ${c.assessed_release} has no v${c.assessed_release} tag`,
+      );
+    } else if (!ok(["merge-base", "--is-ancestor", c.source_commit, `v${c.assessed_release}`])) {
+      problems.push(
+        `${c.id}: release ${c.assessed_release} does not contain its source commit ${at}`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Stamp every claim assessed on unreleased code with the release that ships it — what
+ * `scripts/bump.mjs` does when it cuts `version`. Text-level, so the file's layout survives.
+ * @param {string} text claims.json
+ * @param {string} version
+ */
+export const stampRelease = (text, version) =>
+  text.replace(/("assessed_release":\s*)"unreleased"/g, `$1"${version}"`);
 
 /** Escape a value for a single Markdown table cell: backslashes first, then the pipes a
  *  cell cannot contain (escaping only the pipes would let a trailing `\` undo the escape). */
@@ -180,12 +304,17 @@ export function renderTable(registry) {
     `${claims.length} claims — ${counts.map(([s, n]) => `${s} ${n}`).join(" · ")}.`,
     `Assessed against commit${commits.length > 1 ? "s" : ""} ${commits.map((c) => `\`${c.slice(0, 12)}\``).join(", ")}${registry.as_of ? ` (as of ${registry.as_of})` : ""}.`,
     "",
-    "| ID | Status | Claim | Component · version | Evidence | Notes |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| ID | Status | Assessed | Claim | Component · version | Evidence | Notes |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const c of claims) {
+    // Review counterexamples are linked, not buried in prose: `2026-09-27 N01 fixed; …`.
+    const tested = (c.counterexamples ?? []).map((x) => `${x.review} ${x.id} ${x.resolution}`);
+    const notes = tested.length
+      ? `Review counterexamples: ${tested.join("; ")}. ${c.notes}`
+      : c.notes;
     lines.push(
-      `| \`${cell(c.id)}\` | **${cell(c.status)}** | ${cell(c.claim)} | ${cell(c.component)} · ${cell(c.version)} | ${c.evidence.map(evidenceLink).join("<br>")} | ${cell(c.notes)} |`,
+      `| \`${cell(c.id)}\` | **${cell(c.status)}** | ${cell(c.assessed_release)} · \`${cell(c.source_commit.slice(0, 8))}\` | ${cell(c.claim)} | ${cell(c.component)} · ${cell(c.version)} | ${c.evidence.map(evidenceLink).join("<br>")} | ${cell(notes)} |`,
     );
   }
   return lines.join("\n");
@@ -290,6 +419,12 @@ export function run(argv, io = {}) {
   const problems = validateRegistry(registry, { root });
   if (problems.length) {
     for (const p of problems) error(`registry: ${p}`);
+    return 1;
+  }
+  const releases = releaseProblems(root, registry);
+  if (releases === null) log("release check skipped: no v* tags in this checkout");
+  else if (releases.length) {
+    for (const p of releases) error(`registry: ${p}`);
     return 1;
   }
 
