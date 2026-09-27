@@ -183,6 +183,16 @@ export function maskCode(text, ext) {
       continue;
     }
     // ---- strings ------------------------------------------------------------------
+    // In JS a quote glued to an identifier (`You're`, `5"`) never opens a string — only a
+    // keyword may precede one directly (`return"x"`) — so it is JSX text, not a literal
+    // that would mask the rest of the line (review N04).
+    if (lang === "js" && (ch === "'" || ch === '"') && inWord && !REGEX_KEYWORDS.has(word)) {
+      i += 1;
+      prev = ch;
+      word = "";
+      inWord = false;
+      continue;
+    }
     if (ch === '"' || ch === "'") {
       if (lang === "py" && text.startsWith(ch.repeat(3), i)) {
         let j = i + 3;

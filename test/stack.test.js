@@ -231,7 +231,6 @@ const RECURSIVE = [
   ["npm test --workspaces --if-present", "npm"],
   ["npm run test -ws", "npm"],
   ["npm --workspaces test", "npm"],
-  ["npm test --workspaces -- --workspace=a", "npm"], // after `--` it is the scripts' argument
   ["pnpm -r test", "pnpm"],
   ["pnpm --recursive run test", "pnpm"],
   ["pnpm recursive test", "pnpm"],
@@ -249,6 +248,12 @@ const RECURSIVE = [
   ["npm run build && npm test --workspaces", "npm"],
   ["cross-env CI=1 turbo run test", "turbo"],
   ["FOO=1 npm test -ws > log.txt 2>&1", "npm"],
+  // round 2: options known to change nothing about which members run, or whether they fail
+  ["pnpm -r --no-bail test", "pnpm"],
+  ["turbo run test --force --continue", "turbo"],
+  ["TURBO_FORCE=1 turbo run test", "turbo"],
+  ["lerna run test --no-bail --skip-nx-cache", "lerna"],
+  ["nx run-many -t test --skip-nx-cache --parallel=3", "nx"],
 ];
 
 const NOT_RECURSIVE = [
@@ -262,6 +267,29 @@ const NOT_RECURSIVE = [
   // filtered runs: a subset is not every member
   "npm test --workspace=a",
   "npm test -w packages/a -ws",
+  // round 2 — options are ALLOWLISTED: anything unknown, and anything after `--` (forwarded
+  // into every member's script), is not a whole run
+  "npm test --workspaces -- --workspace=a",
+  "npm test --workspaces --help",
+  "npm test --workspaces --version",
+  "npm test --workspaces --script-shell=true",
+  "npm test --workspaces --prefi=other", // npm expands it to --prefix
+  "npm run --workspaces --if-present --tag test lint", // `test` is --tag's value
+  "pnpm --help -r test",
+  "pnpm -r test --filter web", // forwarded to the scripts
+  "yarn workspaces run test --grep x",
+  "yarn workspaces foreach -A --dry-run run test",
+  "yarn workspaces foreach -An run test",
+  "nx run-many -t test --graph=stdout",
+  "turbo run --cache-dir test lint", // runs `lint`
+  "lerna run --profile-location test lint",
+  // round 2 — a builtin changes what later commands do; a tool variable narrows the run
+  "cd packages/good && npm test --workspaces",
+  "trap 'exit 0' EXIT; npm test --workspaces",
+  "node --test root.test.cjs && exit 0; npm test --workspaces",
+  "export npm_config_workspace=packages/good && npm test --workspaces",
+  "npm_config_workspace=packages/good npm test --workspaces",
+  "npm_config_filter=good pnpm -r test",
   "pnpm -r --filter web test",
   "pnpm -r -F web test",
   "pnpm --filter=web -r test",
@@ -287,8 +315,6 @@ const NOT_RECURSIVE = [
   "npm test --workspaces &",
   "node --test || npm test --workspaces",
   "! npm test -ws",
-  "pnpm -r --no-bail test",
-  "turbo run test --continue",
   // constructs the reader does not model are not established
   "npm test --workspaces $EXTRA",
   "(npm test -ws)",
@@ -316,7 +342,13 @@ test("N03: `npm run <script>` hops are followed (bounded, cycles refused)", () =
   assert.deepEqual(recursiveTestInvocation(scripts.test, { scripts }), {
     tool: "turbo",
     command: "turbo run test",
+    bypass: false,
   });
+  // A hop that passes arguments appends them to the followed script: never followed.
+  const narrowed = { test: "npm run test:ws -- -w packages/good", "test:ws": "npm test -ws" };
+  assert.equal(recursiveTestInvocation(narrowed.test, { scripts: narrowed }), null);
+  const yarnHop = { test: "yarn test:ws --workspace=packages/good", "test:ws": "npm test -ws" };
+  assert.equal(recursiveTestInvocation(yarnHop.test, { scripts: yarnHop }), null);
   assert.equal(recursiveTestInvocation("npm run a", { scripts }), null, "a cycle");
   const deep = { test: "npm run h1", h1: "npm run h2", h2: "npm run h3", h3: "npm run h4" };
   deep.h4 = "npm run h5";

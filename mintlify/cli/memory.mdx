@@ -68,10 +68,11 @@ Add `--personal` for the per-user ledger.
 
 Evidence counts once per event: four spellings of one commit (`git:` plus 7, 8, 9 or 40
 characters) are one vote, and a resolvable abbreviation is stored under the full id.
-A reworded lesson inherits its predecessor's evidence only when the rewrite is equivalent up
-to case, whitespace and punctuation; otherwise it starts at the prior and records what it
-supersedes. `compact` archives a duplicate only when it makes the same statement (equal up
-to whitespace and trailing punctuation). Near-duplicates are listed for a human to merge,
+A reworded lesson inherits its predecessor's evidence only when the rewrite keeps the same
+words in the same order, up to a sentence's opening capital and its punctuation; otherwise it starts at the prior and records what it
+supersedes. `compact` archives a duplicate only when it makes the same statement: equal up
+to its edge whitespace and one sentence period, with the same fact name, lesson trigger and
+scope. Near-duplicates are listed for a human to merge,
 never archived: similarity cannot tell "allow admins, deny guests" from "deny admins, allow
 guests". "Enable X" and "Disable X" are listed as conflicts. Every archived claim records
 why it went to the attic (`tombstoned`, `dormant`, `idle` or `duplicate`); archived is not
@@ -91,12 +92,23 @@ forge reuse stats                          # cache stats
   `"a  b"`, indentation and Unicode code points all count, as do case, operators and
   punctuation, so `age >= 18` and `age <= 18` never share a key. Inline code that the
   ledger's storage would rewrite (CRLF, non-NFC text) is refused at mint: use `--file`.
-- **Near must also agree on behaviour.** A reworded match whose operators, numbers,
-  literals, identifiers, paths, negation or code layout differ drops to `adapt`, with a
-  note naming the difference.
-- **Checked where it is served.** An artifact whose file changed or was deleted since it
-  was minted, or whose dependency's declaration changed, is not served. Without an atlas to
-  check against, a hit is marked `NOT revalidated` (`requiresRevalidation: true`).
+- **Near must also agree on behaviour.** A reworded match drops to `adapt`, with a note
+  naming the difference, when anything behaviour-bearing differs, in content or in order:
+  operators with their operands, numbers, literals (typographic quotes included),
+  identifiers, paths, negation, any whitespace other than one space, spelling (case,
+  look-alike letters) or invisible characters. A key from an older version, or one the
+  ledger stored normalized, never reaches near.
+- **Its dependencies are what its imports bind to.** A named import records its defining
+  module's declaration, followed through re-exports and export aliases. A default,
+  namespace or side-effect import, `require` or `import()` records the whole module's
+  digest.
+- **Checked where it is served.** These are not served:
+  - an artifact whose file changed or was deleted since it was minted;
+  - one whose dependency's declaration or export changed;
+  - one where a module it depends on as a whole changed.
+
+  Without an atlas to check against, a hit is marked `NOT revalidated`
+  (`requiresRevalidation: true`).
 
 ## `forge handoff`
 

@@ -153,7 +153,10 @@ test("N01: inline code the ledger would rewrite (CRLF, non-NFC) is refused, neve
 test("N01: an artifact keyed before v3 never reaches the exact tier", () => {
   const c = verified(SPEC);
   const v2 = { ...c, body: { ...c.body, keyV: 2 } };
-  assert.equal(lookup([v2], SPEC, { nowDay: 0 }).tier, "near");
+  // …nor near: an older key was stored lossy, so the guard cannot compare it (held at adapt)
+  const r = lookup([v2], SPEC, { nowDay: 0 });
+  assert.equal(r.tier, "adapt");
+  assert.match(r.reasons.join("\n"), /recorded by an older version/);
   const unhashed = { ...c, body: { ...c.body, keyHash: undefined } };
   assert.notEqual(lookup([unhashed], SPEC, { nowDay: 0 }).tier, "exact");
 });
@@ -198,9 +201,13 @@ test("lookup: exact tier — the same text and slice, proof attached", () => {
   const r = lookup([verified(SPEC)], SPEC, { nowDay: 0 });
   assert.equal(r.tier, "exact");
   assert.equal(r.jaccard, 1);
-  // N01: a whitespace-only rewrite of prose is no longer the same key — it reaches near.
-  const spaced = lookup([verified(SPEC)], ` ${SPEC.replace(" ", "\n  ")} `, { nowDay: 0 });
-  assert.equal(spaced.tier, "near");
+  // N01: the spec's own edge whitespace is not identity to the near tier, so the same text
+  // with spaces around it reaches near…
+  assert.equal(lookup([verified(SPEC)], ` ${SPEC} `, { nowDay: 0 }).tier, "near");
+  // …but whitespace INSIDE it can be data (a line break, an indentation): held at adapt.
+  const spaced = lookup([verified(SPEC)], SPEC.replace(" ", "\n  "), { nowDay: 0 });
+  assert.equal(spaced.tier, "adapt");
+  assert.match(spaced.reasons.join("\n"), /layout/);
   // No repo root and no atlas: the hit is returned, but never presented as checked (F05).
   assert.equal(r.revalidation.status, "unknown");
   assert.equal(r.requiresRevalidation, true);
@@ -533,6 +540,194 @@ test("N08: a value's contract is the value; an overload set is one contract", ()
     "export function over(a: string): void;\nexport function over(a: any) {\n  return a;\n}\n";
   const two = `export function over(a: number): void;\n${one}`;
   assert.notEqual(sig(one, "over"), sig(two, "over"), "an added overload changes the contract");
+});
+
+// Review N08 round 2: dependencies are what the imports BIND to, through every import form.
+/** A repo whose `answer.*` imports from dep modules; mint, edit, revalidate. */
+const bindFixture = (files, answer = "answer.js") => {
+  const root = tmp();
+  const write = (f, text) => {
+    mkdirSync(join(root, f, ".."), { recursive: true });
+    writeFileSync(join(root, f), text);
+  };
+  for (const [f, text] of Object.entries(files)) write(f, text);
+  const desc = describeFile(root, answer, { atlas: build({ root }) });
+  const art = artifactClaim({ spec: SPEC, ...desc }, 0).claim;
+  return {
+    desc,
+    now: () => revalidate(art, build({ root }), { root }),
+    after(edits) {
+      for (const [f, text] of Object.entries(edits)) write(f, text);
+      return revalidate(art, build({ root }), { root });
+    },
+  };
+};
+const DEP0 = "export function calc({ a }) {\n  return a;\n}\n";
+const DEP1 = "export function calc({ b }) {\n  return b;\n}\n";
+
+test("N08 round 2: every import form records what the code depends on", () => {
+  const cases = [
+    ["default", 'import calc from "./dep.js";\nexport const x = calc({ a: 1 });\n'],
+    ["namespace", 'import * as dep from "./dep.js";\nexport const x = dep.calc({ a: 1 });\n'],
+    ["require", 'const dep = require("./dep.js");\nmodule.exports = dep.calc({ a: 1 });\n'],
+    ["dynamic", 'export const x = import("./dep.js");\n'],
+    ["side effect", 'import "./dep.js";\nexport const x = 1;\n'],
+  ];
+  for (const [form, answer] of cases) {
+    const f = bindFixture({ "dep.js": DEP0, "answer.js": answer });
+    assert.equal(typeof f.desc.moduleDeps["dep.js"], "string", `${form}: a whole-module dep`);
+    assert.equal(f.now().status, "valid", form);
+    assert.equal(f.after({ "dep.js": DEP1 }).status, "invalid", `${form}: any change invalidates`);
+  }
+  // A named import through a re-export barrel binds the DEFINING module; the barrel is a
+  // whole-module dep, so re-pointing the re-export invalidates too.
+  const barrel = bindFixture({
+    "impl.js": DEP0,
+    "index.js": 'export { calc } from "./impl.js";\n',
+    "answer.js": 'import { calc } from "./index.js";\nexport const x = calc({ a: 1 });\n',
+  });
+  assert.deepEqual(barrel.desc.depSources, { calc: "impl.js" });
+  assert.equal(typeof barrel.desc.moduleDeps["index.js"], "string");
+  assert.equal(barrel.after({ "impl.js": DEP1 }).status, "invalid");
+  // tsconfig path aliases resolve like the atlas resolves them
+  const aliased = bindFixture(
+    {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+      }),
+      "src/dep.ts": DEP0,
+      "src/answer.ts": 'import { calc } from "@/dep";\nexport const x = calc({ a: 1 });\n',
+    },
+    "src/answer.ts",
+  );
+  assert.deepEqual(aliased.desc.depSources, { calc: "src/dep.ts" });
+  assert.equal(aliased.after({ "src/dep.ts": DEP1 }).status, "invalid");
+  // Python: a from-import binds the defining module
+  const py = bindFixture(
+    {
+      "dep.py": "def calc(a, b=1):\n    return a\n",
+      "answer.py": "from dep import calc\n\nANSWER = calc(1)\n",
+    },
+    "answer.py",
+  );
+  assert.deepEqual(py.desc.depSources, { calc: "dep.py" });
+  assert.equal(py.after({ "dep.py": "def calc(a, b=2):\n    return a\n" }).status, "invalid");
+  // An unresolved relative CODE import is recorded, so the artifact is never "valid"
+  const missing = bindFixture({
+    "answer.js": 'import { calc } from "./nowhere.js";\nexport const x = calc();\n',
+  });
+  assert.equal(missing.desc.moduleDeps["./nowhere.js"], null);
+  assert.equal(missing.now().status, "unknown");
+});
+
+test("N08 round 2: an export alias, an alias const and a dropped export are contract changes", () => {
+  const answer = 'import { calc } from "./dep.js";\nexport const x = calc({ a: 1 });\n';
+  const alias = bindFixture({
+    "dep.js":
+      "function impl({ a }) {\n  return a;\n}\nfunction other(x, y) {\n  return x;\n}\nexport { impl as calc };\n",
+    "a.js": "export function calc(x) {\n  return x;\n}\n", // an unrelated same-name definition
+    "answer.js": answer,
+  });
+  assert.equal(alias.now().status, "valid");
+  const repointed = alias.after({
+    "dep.js":
+      "function impl({ a }) {\n  return a;\n}\nfunction other(x, y) {\n  return x;\n}\nexport { other as calc };\n",
+  });
+  assert.equal(repointed.status, "invalid", "the export now binds another function");
+  const constAlias = bindFixture({
+    "dep.js": "function impl({ a }) {\n  return a;\n}\nexport const calc = impl;\n",
+    "answer.js": answer,
+  });
+  assert.equal(
+    constAlias.after({
+      "dep.js": "function impl({ b }) {\n  return b;\n}\nexport const calc = impl;\n",
+    }).status,
+    "invalid",
+    "an alias's contract is its target's",
+  );
+  const dropped = bindFixture({
+    "dep.js": "function calc({ a }) {\n  return a;\n}\nexport { calc };\n",
+    "answer.js": answer,
+  });
+  assert.equal(
+    dropped.after({
+      "dep.js": "function calc({ a }) {\n  return a;\n}\nexport { calc as compute };\n",
+    }).status,
+    "invalid",
+    "no longer exported under the imported name",
+  );
+});
+
+test("N08 round 2: decorators, split keywords, regex literals and arrows in types are contract", () => {
+  const root = tmp();
+  const sig = (src, name, file = "dep.ts") => {
+    writeFileSync(join(root, file), src);
+    return depContract(root, build({ root }), name);
+  };
+  const differ = (a, b, name, why, file) =>
+    assert.notEqual(sig(a, name, file), sig(b, name, file), why);
+  differ(
+    '@Component({ selector: "a" })\nexport class Widget {\n  x = 1;\n}\n',
+    '@Component({ selector: "b" })\nexport class Widget {\n  x = 1;\n}\n',
+    "Widget",
+    "a decorator line above the name",
+  );
+  differ(
+    "export function\ncalc({ a }) {\n  return a;\n}\n",
+    "export async function\ncalc({ a }) {\n  return a;\n}\n",
+    "calc",
+    "a keyword on the line above the name",
+  );
+  differ(
+    "export function calc(re = /[/*]/, a = 1) {\n  return a;\n}\n",
+    "export function calc(re = /[/*]/, a = 2) {\n  return a;\n}\n",
+    "calc",
+    "a regex literal is a literal, never the start of a comment",
+  );
+  differ(
+    "export function calc(): () => number {\n  return () => 1;\n}\n",
+    "export function calc(): () => string {\n  return () => 1;\n}\n",
+    "calc",
+    "an arrow inside a return type does not cut the declaration",
+  );
+  differ(
+    "const noop = () => 0; export function calc(a) {\n  return a;\n}\n",
+    "const noop = () => 0; export function calc(a, b) {\n  return a;\n}\n",
+    "calc",
+    "an earlier arrow on the name's line belongs to another statement",
+  );
+  differ(
+    "@dataclass\nclass Point:\n    x: int\n",
+    "@dataclass(frozen=True)\nclass Point:\n    x: int\n",
+    "Point",
+    "a Python decorator",
+    "dep.py",
+  );
+});
+
+test("N08 round 2: a dependency edited since the atlas was built is unknown, never valid", () => {
+  const root = tmp();
+  writeFileSync(join(root, "dep.js"), DEP0);
+  writeFileSync(
+    join(root, "answer.js"),
+    'import { calc } from "./dep.js";\nexport const x = calc({ a: 1 });\n',
+  );
+  const atlas = build({ root });
+  const art = artifactClaim({ spec: SPEC, ...describeFile(root, "answer.js", { atlas }) }, 0).claim;
+  writeFileSync(join(root, "dep.js"), `// moved down\n\n${DEP1}`);
+  const rv = revalidate(art, atlas, { root }); // the OLD atlas: its lines describe other text
+  assert.equal(rv.status, "unknown");
+  assert.match(rv.unknown.join("\n"), /changed since the atlas was built/);
+});
+
+test("N01 round 2: a key the ledger stores normalized never reaches the near tier", () => {
+  const crlf = "keep the CRLF line\r\nand this one";
+  const c = verified(crlf);
+  assert.equal(c.body.keyVerbatim, false);
+  const r = lookup([c], crlf.replace("\r\n", "\n"), { nowDay: 0 });
+  assert.equal(r.tier, "adapt");
+  assert.match(r.reasons.join("\n"), /stored normalized/);
+  assert.equal(verified(SPEC).body.keyVerbatim, true);
 });
 
 // --- helpers ----------------------------------------------------------------------------

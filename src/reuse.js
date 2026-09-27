@@ -7,8 +7,8 @@
 // ground truth, not by an LRU.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { has as atlasHas } from "./atlas.js";
+import { extname, join } from "node:path";
+import { has as atlasHas, indexedText } from "./atlas.js";
 import { claimSim, simLabel } from "./embed.js";
 import {
   isDormant,
@@ -22,6 +22,16 @@ import {
 } from "./ledger.js";
 import { appendEvidence, loadClaims, putClaim, readEvidence, repoLedger } from "./ledger_store.js";
 import { record as recordMetric } from "./metrics.js";
+import {
+  jsImports,
+  lexOf,
+  loadPathAliases,
+  maskCode,
+  pyImports,
+  pyModuleIndex,
+  resolvePyImport,
+  resolveSpec,
+} from "./scope.js";
 import { describeConflicts, semanticConflicts } from "./semantic_guard.js";
 import { contentHash, gitAuthor } from "./util.js";
 
@@ -171,6 +181,7 @@ export function artifactClaim(
     deps = [],
     depContracts = {},
     depSources = {},
+    moduleDeps = {},
     code,
     lang = "",
     form = "function",
@@ -196,6 +207,9 @@ export function artifactClaim(
       // each name was imported from, so a same-name symbol elsewhere is never compared.
       ...(Object.keys(depContracts).length ? { depContracts: sortedObject(depContracts) } : {}),
       ...(Object.keys(depSources).length ? { depSources: sortedObject(depSources) } : {}),
+      // module → content digest for what the code depends on as a WHOLE (a default or
+      // namespace import, a require, a re-exporting module); `null` = unresolved at mint.
+      ...(Object.keys(moduleDeps).length ? { moduleDeps: sortedObject(moduleDeps) } : {}),
       deps: [...deps].sort(),
       form,
       iface: [...iface].sort(),
@@ -206,6 +220,9 @@ export function artifactClaim(
       key: specKey(spec),
       keyHash: specDigest(spec),
       keyV: KEY_VERSION,
+      // Whether `key` survives the ledger's canonical storage (NFC, LF) as written. When it
+      // does not, the stored key is a folded copy the near tier cannot compare (review N01).
+      keyVerbatim: storesVerbatim(specKey(spec)),
       lang,
       slice,
       spec: normalizeSpec(spec),
@@ -270,73 +287,113 @@ const sortedObject = (o) =>
 export const CONTRACT_VERSION = 2;
 const CONTRACT_PREFIX = `v${CONTRACT_VERSION}:`;
 
-/** Split source into contract tokens: identifiers/numbers, string literals (verbatim, their
- *  whitespace included), and punctuation, with `=>`, `->`, `...` kept whole. Comments and
- *  inter-token whitespace are dropped, so a reformat never changes a contract. Deterministic
- *  on any input — an odd construct (a regex, a Rust lifetime) still yields stable tokens.
- *  @param {string} text @param {"js"|"py"} lang */
-function contractTokens(text, lang) {
+const IDENT_START = /[\p{L}\p{N}_$]/u;
+
+/** Split source into contract tokens on its MASKED form (the lexer every structural reader
+ *  shares, review N08): comments are dropped, whitespace between tokens is ignored, and a
+ *  string, template or regex literal is one token holding its RAW source (whitespace and
+ *  escapes included). A regex like `/[/*]/` is a literal, never the start of a comment.
+ *  Deterministic on any input. @param {string} text @param {string} ext */
+function contractTokens(text, ext) {
+  const code = maskCode(text, ext);
+  const lang = lexOf(ext);
   const toks = [];
-  const n = text.length;
-  const hashComments = lang === "py";
+  const n = code.length;
   let i = 0;
   while (i < n) {
-    const c = text[i];
-    if (/\s/.test(c)) i += 1;
-    else if (hashComments ? c === "#" : c === "/" && text[i + 1] === "/") {
-      const nl = text.indexOf("\n", i);
-      i = nl < 0 ? n : nl;
-    } else if (!hashComments && c === "/" && text[i + 1] === "*") {
-      const close = text.indexOf("*/", i + 2);
-      i = close < 0 ? n : close + 2;
-    } else if (c === '"' || c === "'" || c === "`") {
-      const triple = lang === "py" && text.startsWith(c.repeat(3), i);
-      let j = i + (triple ? 3 : 1);
-      if (triple) {
-        const close = text.indexOf(c.repeat(3), j);
-        j = close < 0 ? n : close + 3;
-      } else {
-        while (j < n && text[j] !== c) j += text[j] === "\\" ? 2 : 1;
-        j = Math.min(n, j + 1);
-      }
-      toks.push(text.slice(i, j));
-      i = j;
-    } else if (/[\p{L}\p{N}_$]/u.test(c)) {
-      let j = i + 1;
-      while (j < n && /[\p{L}\p{N}_$]/u.test(text[j])) j += 1;
-      toks.push(text.slice(i, j));
-      i = j;
-    } else {
-      const op = ["...", "=>", "->"].find((o) => text.startsWith(o, i)) ?? c;
-      toks.push(op);
-      i += op.length;
+    const c = code[i];
+    if (/\s/.test(c)) {
+      i += 1;
+      continue;
     }
+    if (c === '"' || c === "'" || c === "`") {
+      const delim = lang === "py" && code.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
+      const close = code.indexOf(delim, i + delim.length);
+      // Masking blanked a literal's content: a quote whose run to the next one is not blank
+      // was code (an apostrophe in JSX text), not a literal. A template may hold code (its
+      // `${…}` parts) and runs to its closing backtick.
+      if (close >= 0 && (c === "`" || !code.slice(i + delim.length, close).trim())) {
+        toks.push(text.slice(i, close + delim.length));
+        i = close + delim.length;
+        continue;
+      }
+    }
+    if (c === "/" && lang === "js") {
+      const close = code.indexOf("/", i + 1);
+      if (close > i + 1 && !code.slice(i + 1, close).trim() && text.slice(i + 1, close).trim()) {
+        let j = close + 1;
+        while (j < n && /[a-z]/i.test(code[j])) j += 1; // flags
+        toks.push(text.slice(i, j));
+        i = j;
+        continue;
+      }
+    }
+    if (IDENT_START.test(c)) {
+      let j = i + 1;
+      while (j < n && IDENT_START.test(code[j])) j += 1;
+      toks.push(code.slice(i, j));
+      i = j;
+      continue;
+    }
+    const op = ["...", "=>", "->"].find((o) => code.startsWith(o, i)) ?? c;
+    toks.push(op);
+    i += op.length;
   }
   return toks;
 }
 
 const OPEN = new Set(["(", "[", "{"]);
 const CLOSE = new Set([")", "]", "}"]);
+const isIdent = (t) => typeof t === "string" && /^[\p{L}_$][\p{L}\p{N}_$]*$/u.test(t);
 
-/** Whether a `const` declaration's value is a function (arrow or function expression) — then
- *  its body is cut like a function's; any other value IS the contract. */
-function isFunctionValue(toks) {
-  const eq = toks.indexOf("=");
-  if (eq < 0) return false;
-  let k = eq + 1;
-  if (toks[k] === "async") k += 1;
-  if (toks[k] === "function") return true;
+/** Index of the token closing the bracket group opened at `from` (-1 when unbalanced). */
+function groupEnd(toks, from) {
   let depth = 0;
-  for (let i = k; i < toks.length; i++) {
+  for (let i = from; i < toks.length; i++) {
     if (OPEN.has(toks[i])) depth += 1;
-    else if (CLOSE.has(toks[i])) depth -= 1;
-    else if (toks[i] === "=>" && depth === 0) return true;
-    else if (depth === 0 && (toks[i] === ";" || toks[i] === ",")) return false;
+    else if (CLOSE.has(toks[i]) && --depth === 0) return i;
   }
-  return false;
+  return -1;
 }
 
-/** The contract part of one declaration's tokens: everything but a function's body. */
+/** The value's arrow in a `const` declaration: `= [async] [<…>] (…)[: T] =>` or
+ *  `= [async] x =>` — the index of that `=>`, or -1 when the value is not an arrow function
+ *  (a conditional holding arrows is a plain value: all of it is the contract). */
+function valueArrow(toks) {
+  const eq = toks.indexOf("=");
+  if (eq < 0) return -1;
+  let k = eq + 1;
+  if (toks[k] === "async") k += 1;
+  if (isIdent(toks[k]) && toks[k + 1] === "=>") return k + 1;
+  if (toks[k] === "<") {
+    let angle = 0;
+    for (; k < toks.length; k++) {
+      if (toks[k] === "<") angle += 1;
+      else if (toks[k] === ">" && --angle === 0) break;
+    }
+    k += 1;
+  }
+  if (toks[k] !== "(") return -1;
+  k = groupEnd(toks, k);
+  if (k < 0) return -1;
+  if (toks[k + 1] === "=>") return k + 1;
+  if (toks[k + 1] !== ":") return -1;
+  // a return type, then the arrow: brackets and generic `<…>` are skipped
+  let depth = 0;
+  let angle = 0;
+  for (let i = k + 2; i < toks.length; i++) {
+    const t = toks[i];
+    if (OPEN.has(t)) depth += 1;
+    else if (CLOSE.has(t)) depth -= 1;
+    else if (depth === 0 && t === "<") angle += 1;
+    else if (depth === 0 && t === ">" && angle > 0) angle -= 1;
+    else if (depth === 0 && angle === 0 && t === "=>") return i;
+    else if (depth === 0 && angle === 0 && (t === ";" || t === "," || t === "=")) return -1;
+  }
+  return -1;
+}
+
+/** The contract part of one declaration's tokens: all of it but a function's body. */
 function declarationHead(toks, kind, lang) {
   if (kind === "class" || kind === "type") return toks;
   if (lang === "py") {
@@ -351,19 +408,20 @@ function declarationHead(toks, kind, lang) {
     }
     return toks;
   }
-  if (kind === "const" && !isFunctionValue(toks)) return toks;
-  let depth = 0;
-  for (let i = 0; i < toks.length; i++) {
-    if (OPEN.has(toks[i])) depth += 1;
-    else if (CLOSE.has(toks[i])) depth -= 1;
-    else if (toks[i] === "=>" && depth === 0) return toks.slice(0, i + 1);
+  if (kind === "const") {
+    const arrow = valueArrow(toks);
+    if (arrow >= 0) return toks.slice(0, arrow + 1);
+    const eq = toks.indexOf("=");
+    const fn = toks[eq + 1] === "async" ? eq + 2 : eq + 1;
+    if (eq < 0 || toks[fn] !== "function") return toks; // a plain value IS the contract
   }
   // A block body is the declaration's FINAL top-level `{…}` (a return-type literal before it
-  // stays in the head); no final block means no body here (an overload): all of it.
+  // stays in the head); no final block means no body here (an overload): all of it. An arrow
+  // inside a function's return type (`(): () => void {`) is type, never a cut.
   let end = toks.length - 1;
   if (toks[end] === ";") end -= 1;
   if (toks[end] !== "}") return toks;
-  depth = 0;
+  let depth = 0;
   for (let i = end; i >= 0; i--) {
     if (toks[i] === "}") depth += 1;
     else if (toks[i] === "{" && --depth === 0) return toks.slice(0, i);
@@ -371,18 +429,99 @@ function declarationHead(toks, kind, lang) {
   return toks;
 }
 
+const escapeRe = (s) => s.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+
+/** Where a definition's declaration text starts: its own statement on the name's line (text
+ *  before an earlier `;`, `{` or `}` there is another statement — review N08: an arrow in it
+ *  cut the parameters out of the contract), extended upward over decorator lines (multi-line
+ *  `@x({…})` groups included) and keyword-only lines (`export`, `async`… split onto their own
+ *  line). @returns {{top:number, col:number}} 0-based line, column on that line */
+function declarationStart(mlines, li, name, kind, lang) {
+  const n = escapeRe(name);
+  const pat =
+    lang === "py"
+      ? new RegExp(`\\b(?:def|class)\\s+${n}(?![\\w$])`)
+      : kind === "function"
+        ? new RegExp(`\\bfunction(?:\\s*\\*\\s*|\\s+)${n}(?![\\w$])`)
+        : kind === "class"
+          ? new RegExp(`\\bclass\\s+${n}(?![\\w$])`)
+          : kind === "const"
+            ? new RegExp(`\\b(?:const|let|var)\\s+${n}(?![\\w$])`)
+            : new RegExp(`(?<![\\w$])${n}(?![\\w$])`);
+  const line = mlines[li] ?? "";
+  const m = pat.exec(line);
+  let col = 0;
+  if (m) for (let k = m.index - 1; k >= 0 && !col; k--) if (";{}".includes(line[k])) col = k + 1;
+  let top = li;
+  while (top > 0) {
+    let t = mlines[top - 1].trim();
+    if (!t) break;
+    if (t.endsWith("*")) t = t.slice(0, -1).trimEnd(); // `function*` split from its name
+    if (DECL_KEYWORDS.test(t)) {
+      top -= 1;
+      continue;
+    }
+    const open = decoratorStart(mlines, top - 1);
+    if (open < 0) break;
+    top = open;
+  }
+  return { top, col: top === li ? col : 0 };
+}
+
+const DECL_KEYWORDS =
+  /^(?:export|default|async|declare|abstract|public|private|protected|static|readonly|override|function|class|const|let|var|def)(?:\s+(?:export|default|async|declare|abstract|public|private|protected|static|readonly|override|function|class|const|let|var|def))*$/;
+
+/** The first line of the decorator ending at line `k` (brackets balanced back to a line that
+ *  starts with `@`), or -1 when line `k` ends no decorator. */
+function decoratorStart(mlines, k) {
+  let balance = 0;
+  for (let j = k; j >= 0 && j > k - 40; j--) {
+    for (const ch of mlines[j]) {
+      if (ch === "(" || ch === "[" || ch === "{") balance += 1;
+      else if (ch === ")" || ch === "]" || ch === "}") balance -= 1;
+    }
+    if (balance > 0) return -1;
+    if (balance === 0) return mlines[j].trim().startsWith("@") ? j : -1;
+  }
+  return -1;
+}
+
+/** Named exports of a JS module: exported name → local binding. `null` when its exports are
+ *  not declarative (CommonJS assignments, `export =`): then any defined name may be exported.
+ *  @param {string} code masked code */
+function jsExportMap(code) {
+  if (/\bmodule\.exports\b|(?<![\w$.])exports\.[\w$]+\s*=|\bexport\s*=(?!=)/.test(code))
+    return null;
+  /** @type {Map<string, string>} */
+  const map = new Map();
+  const DECL =
+    /\bexport\s+(?!default\b)(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function(?:\s*\*\s*|\s+)|class\s+|const\s+enum\s+|(?:const|let|var|enum|interface|type|namespace)\s+)([A-Za-z_$][\w$]*)/g;
+  for (const m of code.matchAll(DECL)) map.set(m[1], m[1]);
+  for (const m of code.matchAll(/\bexport\s*(?:type\s*)?\{([^}]*)\}(?!\s*from\b)/g))
+    for (const part of m[1].split(",")) {
+      const mm = part
+        .trim()
+        .replace(/^type\s+/, "")
+        .match(/^([\w$]+)(?:\s+as\s+([\w$]+))?$/);
+      if (mm) map.set(mm[2] || mm[1], mm[1]);
+    }
+  return map;
+}
+
+const langOf = (file) => (/\.pyi?$/.test(file) ? "py" : "js");
+
 /**
  * A dependency's contract, or why none can be given.
- * @param {string} root @param {any} atlas @param {string} name
+ * @param {string} root @param {any} atlas @param {string} name the name as the module EXPORTS it
  * @param {string|null} file the module the artifact's import binds `name` to (null: unbound)
  * @returns {{sig: string}|{gone: string}|{unknown: string}}
  */
 function contractOf(root, atlas, name, file) {
-  const cands = (atlas?.symbols ?? []).filter(
-    (x) => (x.name === name || x.qname === name) && !x.local,
+  const top = (x) => !x.local;
+  const named = (atlas?.symbols ?? []).filter(
+    (x) => (x.name === name || x.qname === name) && top(x),
   );
-  const files = [...new Set(cands.map((x) => x.file))];
-  if (file && !files.includes(file)) return { gone: `no longer defined in ${file}` };
+  const files = [...new Set(named.map((x) => x.file))];
   if (!file && files.length !== 1)
     return {
       unknown: files.length
@@ -394,20 +533,68 @@ function contractOf(root, atlas, name, file) {
   try {
     text = readFileSync(join(root, where), "utf8");
   } catch {
-    return { unknown: `${where} is unreadable` };
+    return file ? { gone: `${where} no longer exists` } : { unknown: `${where} is unreadable` };
   }
-  const lines = text.split(/\r?\n/);
-  const lang = /\.pyi?$/.test(where) ? "py" : "js";
+  // The atlas's line numbers and extents locate definitions only in the text it indexed.
+  if (!indexedText(atlas, where, text))
+    return { unknown: `${where} changed since the atlas was built (rebuild it)` };
+  const ext = extname(where);
+  const lang = langOf(where);
+  const code = maskCode(text, ext);
   const parts = [];
-  // Every same-file definition of the name (TS overloads), in source order.
-  for (const sym of cands.filter((x) => x.file === where).sort((a, b) => a.line - b.line)) {
-    if (!sym.line || !sym.endLine || sym.endLine < sym.line)
-      return { unknown: `the extent of ${name} in ${where} is not known` };
-    const decl = lines.slice(sym.line - 1, sym.endLine).join("\n");
-    const head = declarationHead(contractTokens(decl, lang), sym.kind, lang);
-    if (!head.length) return { unknown: `the declaration of ${name} is empty` };
-    parts.push([sym.kind ?? "", head]);
+  // What the import binds: the module's export of `name` (an `export { impl as calc }` binds
+  // `calc` to `impl`), so a re-pointed or dropped export is a changed contract, never valid.
+  let binding = name;
+  if (lang === "js") {
+    // A module with declarative exports that no longer exports the name breaks the import.
+    const exported = jsExportMap(code);
+    if (exported && !exported.has(name)) return { gone: `${where} no longer exports ${name}` };
+    binding = exported?.get(name) ?? name;
+    if (binding !== name) parts.push(["export", name, binding]);
   }
+  const raw = text.split("\n");
+  const mlines = code.split("\n");
+  const inFile = (atlas?.symbols ?? []).filter((x) => x.file === where && top(x));
+  const imported = new Set(
+    lang === "js" ? jsImports(code, text).flatMap((imp) => imp.names.map((x) => x.local)) : [],
+  );
+  const seen = new Set();
+  /** @returns {string|null} why the contract is unknown ("" — the name is not defined) */
+  const add = (id, depth) => {
+    if (seen.has(id)) return null;
+    seen.add(id);
+    const defs = inFile.filter((x) => x.name === id).sort((a, b) => a.line - b.line);
+    if (!defs.length) return "";
+    // Every same-file definition of the name (TS overloads), in source order.
+    for (const sym of defs) {
+      if (!sym.line || !sym.endLine || sym.endLine < sym.line)
+        return `the extent of ${id} in ${where} is not known`;
+      const { top: from, col } = declarationStart(mlines, sym.line - 1, id, sym.kind, lang);
+      const decl = [raw[from].slice(col), ...raw.slice(from + 1, sym.endLine)].join("\n");
+      const toks = contractTokens(decl, ext);
+      const head = declarationHead(toks, sym.kind, lang);
+      if (!head.length) return `the declaration of ${id} is empty`;
+      parts.push([sym.kind ?? "", head]);
+      // `const calc = impl` is an alias: the contract is impl's too (same file, ≤3 hops). An
+      // alias of an IMPORTED binding cannot be established from this module: unknown.
+      if (sym.kind === "const" && lang === "js") {
+        const eq = toks.indexOf("=");
+        const value = toks.slice(eq + 1).filter((t) => t !== ";");
+        const alias = value.length && value.every((t, k) => (k % 2 ? t === "." : isIdent(t)));
+        if (eq >= 0 && alias && imported.has(value[0]))
+          return `${binding} aliases ${value[0]}, which ${where} imports from another module`;
+        if (eq >= 0 && alias && inFile.some((x) => x.name === value[0])) {
+          if (depth >= 3) return `the alias chain of ${binding} is too long`;
+          const why = add(value[0], depth + 1);
+          if (why) return why;
+        }
+      }
+    }
+    return null;
+  };
+  const why = add(binding, 0);
+  if (why === "") return { gone: `no longer defined in ${where}` };
+  if (why) return { unknown: why };
   return { sig: `${CONTRACT_PREFIX}${contentHash(JSON.stringify(parts)).slice(0, 16)}` };
 }
 
@@ -433,8 +620,10 @@ export function depContract(root, atlas, name, { file = null } = {}) {
  * against what exists NOW:
  *   - its file (a `{path, sha256}` pointer) must exist with the SAME content digest — a proof
  *     of old bytes does not validate the current file, and a deleted file is not reusable;
- *   - every dependency must still resolve in the atlas, and every dependency contract recorded
- *     at mint must still match the current declaration (same name, changed signature ⇒ stale).
+ *   - every dependency must still resolve, every dependency contract recorded at mint must
+ *     still match the current declaration (same name, changed signature ⇒ stale), and every
+ *     module the code depends on as a whole (`moduleDeps`: a default or namespace import, a
+ *     `require`, a module that is only re-exported) must still hold the same bytes.
  * `status` is "valid", "invalid" (with `problems`) or "unknown": no repo root means the file
  * could not be checked, and no fresh atlas means the dependencies could not — UNKNOWN, never
  * silently "ok". Inline artifacts carry their own code and need no file check.
@@ -449,13 +638,17 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
   const deps = artifact?.body?.deps ?? [];
   const problems = [];
   const unknown = [];
+  const read = (rel) => {
+    try {
+      return readFileSync(join(/** @type {string} */ (root), rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
   if (code.path) {
     if (!root) unknown.push(`file ${code.path} (no repo root to check it against)`);
     else {
-      let text = null;
-      try {
-        text = readFileSync(join(root, code.path), "utf8");
-      } catch {}
+      const text = read(code.path);
       if (text === null) problems.push(`file ${code.path} no longer exists`);
       else if (code.sha256 && contentHash(text) !== code.sha256)
         problems.push(`file ${code.path} changed since it was verified`);
@@ -463,11 +656,13 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
   }
   const missing = [];
   const changed = [];
+  const sources = artifact?.body?.depSources ?? {};
   if (!atlas) {
     if (deps.length) unknown.push("dependencies (no fresh atlas)");
   } else {
-    for (const d of deps) if (!atlasHas(atlas, d)) missing.push(d);
-    const sources = artifact?.body?.depSources ?? {};
+    // A bound dependency's existence is its contract's question (an aliased export has no
+    // atlas symbol of its own name); an unbound one must still resolve by name.
+    for (const d of deps) if (!(d in sources) && !atlasHas(atlas, d)) missing.push(d);
     for (const [name, sig] of Object.entries(artifact?.body?.depContracts ?? {})) {
       if (missing.includes(name)) continue;
       if (typeof sig !== "string" || !sig.startsWith(CONTRACT_PREFIX)) {
@@ -483,6 +678,15 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
       const now = contractOf(root, atlas, name, sources[name] ?? null);
       if ("unknown" in now) unknown.push(`contract of ${name} (${now.unknown})`);
       else if ("gone" in now || now.sig !== sig) changed.push(name);
+    }
+  }
+  for (const [file, sha] of Object.entries(artifact?.body?.moduleDeps ?? {})) {
+    if (typeof sha !== "string") unknown.push(`import ${file} (not resolved at mint)`);
+    else if (!root) unknown.push(`module ${file} (no repo root)`);
+    else {
+      const text = read(file);
+      if (text === null) problems.push(`module ${file} no longer exists`);
+      else if (contentHash(text) !== sha) changed.push(`module ${file}`);
     }
   }
   if (missing.length) problems.push(`missing ${missing.join(", ")}`);
@@ -612,13 +816,21 @@ export function lookup(
     .sort((a, b) => b.v - a.v || (a.c.id < b.c.id ? -1 : 1));
   // F04: similarity found a neighbour; the semantic guard decides whether it is the same
   // instruction. Any behaviour-bearing difference holds the candidate at adapt.
+  // A key from an older version was stored lossy, and a key the ledger stored folded (CRLF,
+  // non-NFC) is not the text that was verified: neither can be compared, so neither is near.
   for (const x of ranked) {
     if (!x.near) continue;
-    const conflicts = semanticConflicts(spec, x.c.body.key ?? "");
-    if (!conflicts.length) continue;
+    const held =
+      x.c.body.keyV !== KEY_VERSION
+        ? "its key was recorded by an older version"
+        : x.c.body.keyVerbatim !== true
+          ? "its key was stored normalized (CRLF or non-NFC text), so it cannot be compared as written"
+          : "";
+    const conflicts = held ? [] : semanticConflicts(spec, x.c.body.key ?? "");
+    if (!held && !conflicts.length) continue;
     x.near = false;
     reasons.push(
-      `near ${x.c.id.slice(0, 8)} held at adapt — differs in ${describeConflicts(conflicts)}`,
+      `near ${x.c.id.slice(0, 8)} held at adapt — ${held || `differs in ${describeConflicts(conflicts)}`}`,
     );
   }
 
@@ -642,7 +854,8 @@ export function lookup(
     if (!proved(x.c, "adapt")) continue;
     // adapt injects the artifact as a starting point: its FILE must still be the verified
     // bytes (a deleted/changed file is no starting point); its deps are the delta's problem.
-    const rv = revalidate({ ...x.c, body: { ...x.c.body, deps: [], depContracts: {} } }, null, {
+    const body = { ...x.c.body, deps: [], depContracts: {}, moduleDeps: {} };
+    const rv = revalidate({ ...x.c, body }, null, {
       root,
     });
     if (rv.status === "invalid") {
@@ -733,72 +946,195 @@ export function reusePeek(root, spec, { slice = "", atlas = null, nowDay = 0 } =
 // the structural facts from a real file (regex tier, same honesty as the atlas).
 // ---------------------------------------------------------------------------
 
-const EXPORT_RES = [
-  /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
-  /export\s+(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g,
-  /export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,
-];
-const IMPORT_RE = /import\s+\{([^}]+)\}\s+from\s+["']\.{1,2}\//g;
+// Code imports that must resolve in the repo; an unresolved `./styles.css` is an asset.
+const CODE_SPEC = /(?:^|\/)[^/.]*$|\.(?:[cm]?[jt]sx?|py)$/;
+const MAX_REEXPORT_HOPS = 3;
 
-/** The files a file's named imports BIND to, by imported name (review N08): the atlas resolves
- *  each import structurally (relative spec → file → that file's definition), so this is the
- *  module identity of the dependency, not a global name guess. @returns {Map<string, Set<string>>} */
-function importBindings(atlas, relPath) {
-  const nodes = new Map((atlas?.nodes ?? []).map((n) => [n.id, n]));
-  const out = new Map();
-  for (const e of atlas?.edges ?? []) {
-    if (e.kind !== "imports" || !e.resolved || nodes.get(e.source)?.file !== relPath) continue;
-    const def = nodes.get(e.target);
-    if (!def?.file || def.kind === "module") continue;
-    if (!out.has(def.name)) out.set(def.name, new Set());
-    out.get(def.name).add(def.file);
+/**
+ * What a file's imports bind to (review N08). Each import is resolved structurally — the
+ * resolver the atlas and `forge scope` share: relative specifiers, tsconfig path aliases,
+ * Python relative and absolute imports — never by a repo-wide name guess:
+ *   - a NAMED import whose target module defines (and exports) the name is a symbol
+ *     dependency: its contract is fingerprinted and pinned to that module (`depSources`);
+ *     through a re-export (`export { calc } from "./impl"`, `export *`, a Python `__init__`
+ *     that imports it) the definition is followed up to three hops, and every module passed
+ *     through is a whole-module dependency, so re-pointing the re-export invalidates too;
+ *   - everything else — a default, namespace or side-effect import, `require`, `import()`, a
+ *     Python `import pkg.mod`, a name the module defines in a form forge does not index — is a
+ *     whole-module dependency: its content digest (`moduleDeps`);
+ *   - a relative code import that resolves to no file is recorded unresolved (`null`), so
+ *     revalidation says unknown, never valid.
+ * @param {string} root @param {string} relPath @param {any} atlas
+ */
+function importDeps(root, relPath, atlas) {
+  const files = new Set(Object.keys(atlas?.fileHashes ?? {}));
+  /** @type {Set<string>} */
+  const deps = new Set();
+  /** @type {Record<string, string|null>} */
+  const depContracts = {};
+  /** @type {Record<string, string>} */
+  const depSources = {};
+  /** @type {Record<string, string|null>} */
+  const moduleDeps = {};
+  const textOf = new Map();
+  const read = (rel) => {
+    if (!textOf.has(rel)) {
+      let t = null;
+      try {
+        t = readFileSync(join(root, rel), "utf8");
+      } catch {}
+      textOf.set(rel, t);
+    }
+    return textOf.get(rel);
+  };
+  const wholeModule = (rel) => {
+    const t = read(rel);
+    moduleDeps[rel] = t === null ? null : contentHash(t);
+  };
+  const defined = (rel, name) =>
+    (atlas?.symbols ?? []).some((x) => x.file === rel && x.name === name && !x.local);
+  const aliases = loadPathAliases(root);
+  const pyIndex = pyModuleIndex(files);
+  /**
+   * @typedef {{target: string|null, spec: string, code: boolean,
+   *   names: {imported: string, local: string}[], whole: boolean, reexport: boolean}} ImportDep
+   */
+  /** Imports of one module, resolved. @param {string} rel @returns {ImportDep[]} */
+  const importsOf = (rel) => {
+    const t = read(rel);
+    if (t === null) return [];
+    const ext = extname(rel);
+    const code = maskCode(t, ext);
+    if (lexOf(ext) === "py") {
+      /** @type {ImportDep[]} */
+      const out = [];
+      for (const imp of pyImports(code)) {
+        const hits = resolvePyImport(rel, imp, pyIndex);
+        if (!hits.length && imp.level > 0)
+          out.push({
+            target: null,
+            spec: `${".".repeat(imp.level)}${imp.module}`,
+            code: true,
+            names: [],
+            whole: true,
+            reexport: false,
+          });
+        for (const h of hits)
+          out.push({
+            target: h.file,
+            spec: h.file,
+            code: true,
+            names: h.names.filter((x) => x.imported !== "*"),
+            whole: !h.names.length || h.names.some((x) => x.imported === "*"),
+            reexport: true, // a Python module re-exports whatever it imports
+          });
+      }
+      return out;
+    }
+    if (lexOf(ext) !== "js") return [];
+    return jsImports(code, t).map((imp) => {
+      const target = resolveSpec(rel, imp.spec, files, aliases);
+      const named = imp.names.filter((x) => x.imported !== "default" && x.imported !== "*");
+      return {
+        target,
+        spec: imp.spec,
+        code: imp.spec.startsWith(".") && CODE_SPEC.test(imp.spec),
+        names: target ? named : [],
+        whole: !named.length || named.length < imp.names.length,
+        reexport: imp.form === "reexport",
+      };
+    });
+  };
+  /** The module defining `name` as exported by `rel`, following re-exports; every module
+   *  passed through is recorded whole. @returns {{file:string, name:string}|null} */
+  const bind = (rel, name, hops) => {
+    const t = read(rel);
+    if (t === null) return null;
+    const ext = extname(rel);
+    if (lexOf(ext) === "js") {
+      const exported = jsExportMap(maskCode(t, ext));
+      const local = exported ? exported.get(name) : name;
+      if (local !== undefined && defined(rel, local)) return { file: rel, name };
+    } else if (defined(rel, name)) return { file: rel, name };
+    if (hops >= MAX_REEXPORT_HOPS) return null;
+    for (const imp of importsOf(rel)) {
+      if (!imp.target || !imp.reexport) continue;
+      const via = imp.names.find((x) => (x.local ?? x.imported) === name);
+      const next = via
+        ? bind(imp.target, via.imported, hops + 1)
+        : imp.whole
+          ? bind(imp.target, name, hops + 1)
+          : null;
+      if (next) {
+        wholeModule(rel); // the re-export itself is part of what the import binds to
+        return next;
+      }
+    }
+    return null;
+  };
+  for (const imp of importsOf(relPath)) {
+    if (!imp.target) {
+      if (imp.code) moduleDeps[imp.spec] = null;
+      continue;
+    }
+    if (imp.whole) wholeModule(imp.target);
+    for (const x of imp.names) {
+      const hit = bind(imp.target, x.imported, 0);
+      if (!hit) {
+        wholeModule(imp.target);
+        continue;
+      }
+      if (depSources[hit.name] && depSources[hit.name] !== hit.file) {
+        // one name bound to two modules: neither contract alone describes it
+        wholeModule(hit.file);
+        wholeModule(depSources[hit.name]);
+        continue;
+      }
+      deps.add(hit.name);
+      depSources[hit.name] = hit.file;
+      depContracts[hit.name] = depContract(root, atlas, hit.name, { file: hit.file });
+    }
   }
-  return out;
+  return { deps: [...deps], depContracts, depSources, moduleDeps };
 }
 
 /**
- * The verifiable pointer + structural facts of a real file: `{path, sha256}`, exports, the
- * codebase symbols it imports, and — given an atlas — each dependency's contract fingerprint
- * and the module it is imported from, so a later contract change invalidates the artifact
- * (review F05/N08). A dependency whose contract cannot be established is recorded as `null`.
+ * The verifiable pointer + structural facts of a real file: `{path, sha256}`, its exports, and
+ * — given an atlas — what its imports bind to (see importDeps): each symbol dependency's
+ * contract fingerprint and module, and each whole-module dependency's content digest, so a
+ * later change to any of them invalidates the artifact (review F05/N08). A dependency whose
+ * contract cannot be established is recorded as `null`. Without an atlas nothing can be
+ * resolved: the named imports are listed, and revalidation says the dependencies are unknown.
  * @param {string} root
  * @param {string} relPath
  * @param {{atlas?: any}} [opts]
  */
 export function describeFile(root, relPath, { atlas = null } = {}) {
-  const abs = join(root, relPath);
-  const text = readFileSync(abs, "utf8");
-  const iface = [];
-  for (const re of EXPORT_RES) for (const m of text.matchAll(re)) iface.push(m[1]);
-  const deps = [];
-  for (const m of text.matchAll(IMPORT_RE))
-    deps.push(
-      ...m[1]
-        .split(",")
-        .map((s) => s.trim().split(/\s+as\s+/)[0])
-        .filter(Boolean),
-    );
-  const uniqueDeps = [...new Set(deps)];
-  /** @type {Record<string, string|null>} */
-  const depContracts = {};
-  /** @type {Record<string, string>} */
-  const depSources = {};
-  if (atlas) {
-    const bound = importBindings(atlas, relPath);
-    for (const d of uniqueDeps) {
-      const files = [...(bound.get(d) ?? [])];
-      // One bound module pins the definition; none (or an aliased pair) falls back to a name
-      // that must be unique repo-wide — else the contract is recorded as not established.
-      if (files.length === 1) depSources[d] = files[0];
-      depContracts[d] = depContract(root, atlas, d, { file: depSources[d] ?? null });
-    }
-  }
+  const text = readFileSync(join(root, relPath), "utf8");
+  const ext = extname(relPath);
+  const code = maskCode(text, ext);
+  const iface = lexOf(ext) === "js" ? [...(jsExportMap(code)?.keys() ?? [])] : [];
+  const bound = atlas
+    ? importDeps(root, relPath, atlas)
+    : {
+        deps: [
+          ...new Set(
+            (lexOf(ext) === "js" ? jsImports(code, text) : [])
+              .flatMap((imp) => imp.names.map((x) => x.imported))
+              .filter((x) => x !== "default" && x !== "*"),
+          ),
+        ],
+        depContracts: {},
+        depSources: {},
+        moduleDeps: {},
+      };
   return {
     code: { path: relPath, sha256: contentHash(text) },
-    iface: [...new Set(iface)],
-    deps: uniqueDeps,
-    depContracts,
-    depSources,
+    iface: [...new Set(iface)].sort(),
+    deps: bound.deps.sort(),
+    depContracts: bound.depContracts,
+    depSources: bound.depSources,
+    moduleDeps: bound.moduleDeps,
     lang: relPath.split(".").pop() ?? "",
   };
 }

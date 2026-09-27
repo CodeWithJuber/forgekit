@@ -167,7 +167,11 @@ counted as delivering a definition that sat below line 100 of that file (F03). P
   pending read (review N04: a 103-line function delivered as lines 1–41 used to count as covered).
   A definition with no known extent is delivered only by the whole file. The span ladder offers
   whole definitions first, so a small definition deep in a large file is still delivered within
-  a small budget.
+  a small budget. An extent is recorded only when the atlas can trust it: its brackets must nest
+  cleanly across the whole file and the definition, and it must not cross a preprocessor branch.
+  Generic constraints, return-type literals, overload sets, Go result types, Ruby `end` and
+  Python strings and continuations are read correctly. A file edited since the atlas was built
+  is not the text the atlas indexed, so it too is delivered only whole.
 - **Truncation is visible.** A dependents list cut at 12 entries names the omitted entries in
   `truncated`.
 - **Selection is a heuristic.** Optional items are chosen greedily by value density (score ÷

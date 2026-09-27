@@ -149,7 +149,7 @@ test("duplicateGroups: exact duplicates collapse to one survivor; near-duplicate
   const dir = tmp();
   const base = "the payments service retries failed webhooks three times with backoff";
   const twinA = fact("wh1", base, 1);
-  const twinB = fact("wh1b", `${base}.`, 2); // the same statement (trailing punctuation only)
+  const twinB = fact("wh1", `${base}.`, 2); // the same fact: its name, one trailing period
   // Review N02: each of these ADDS a detail — archiving it as a duplicate would lose it.
   const jitter = fact("wh2", `${base} and jitter`, 3);
   const scoped = fact("wh3", `in production ${base}`, 4);
@@ -176,6 +176,39 @@ test("duplicateGroups: exact duplicates collapse to one survivor; near-duplicate
   for (const [i, t] of TOPICS.entries()) putClaim(clean, fact(`t${i}`, t, 1));
   const none = duplicateGroups(loadClaims(clean), 10);
   assert.deepEqual([none.groups, none.proposed], [[], []]);
+});
+
+test("N02 round 2: a fact's name, a lesson's trigger and code-bearing punctuation are identity", () => {
+  const lesson = (text, files, t) =>
+    mintClaim({
+      kind: "lesson",
+      body: { whatWentWrong: text, correctedBehavior: text, trigger: { files } },
+      provenance: { author: "tester" },
+      t,
+    }).claim;
+  const dir = tmp();
+  const claims = [
+    fact("read-timeout", "30 seconds", 1), // the review's pair: same text, two facts
+    fact("write-timeout", "30 seconds", 2),
+    lesson("Run the migration twice", ["migrations/**"], 3),
+    lesson("Run the migration twice", ["warehouse/dbt/**"], 4),
+    fact("tests", "Run the tests with go test ./...", 5), // statementKey kept `./...` apart
+    fact("tests", "Run the tests with go test ./", 6),
+    fact("seed", "In seed scripts always call create!", 7), // `create!` is not `create`
+    fact("seed", "In seed scripts always call create", 8),
+  ];
+  for (const c of claims) putClaim(dir, c);
+  const r = duplicateGroups(loadClaims(dir), 10);
+  assert.deepEqual(r.groups, [], "none of these is an exact duplicate of another");
+  const plan = retentionPlan(loadClaims(dir), new Map(), 10, { duplicates: true });
+  assert.deepEqual(plan.archive, [], "nothing is archived");
+  // Too few claims to fit a boundary: the near pairs are still REPORTED above the fixed floor.
+  const few = tmp();
+  for (const c of claims.slice(4)) putClaim(few, c);
+  const f = duplicateGroups(loadClaims(few), 10);
+  assert.equal(f.boundary, null);
+  assert.equal(f.reportFloor, 0.8);
+  assert.equal(f.proposed.length + f.conflicts.length, 2, JSON.stringify(f));
 });
 
 test("duplicateGroups: a near-duplicate chain A–B–C is proposed pair by pair, never archived", () => {

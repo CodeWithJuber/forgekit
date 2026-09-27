@@ -18,8 +18,9 @@
 //    F1 was tried first: it archived a claim used every 3 days on the day it fell due.)
 //    The rule only switches on once the usage log spans longer than that gap. Before
 //    then, "not used again" only means "use was not recorded".
-//  - GROUP exact duplicates of one kind — the same statement up to whitespace and trailing
-//    punctuation (semantic_guard.sameStatement) — and archive all but one. NEAR-duplicates
+//  - GROUP exact duplicates of one kind — the same statement up to its edge whitespace and
+//    one sentence period (semantic_guard.sameStatement), with the same fact name, lesson
+//    trigger and scope — and archive all but one. NEAR-duplicates
 //    are only PROPOSED (review N02): each claim's nearest-neighbour similarity is modelled as
 //    one Gaussian or two (hard split, Otsu), BIC picks the model, and a two-component fit
 //    yields a boundary (where the two posteriors are equal) above which pairs are reported for
@@ -102,6 +103,34 @@ export function learnIdleCutoff(histories, nowDay, { usageSince = null } = {}) {
 /** What a claim ASSERTS, for the semantic guard: a fact's text (its name is a unique label,
  *  not part of the statement), otherwise the claim's retrievable text. */
 const statementOf = (c) => (c.kind === "fact" ? String(c.body?.text ?? "") : claimText(c));
+
+/** Stable JSON (sorted keys), so identity never depends on key order. */
+const stable = (v) =>
+  Array.isArray(v)
+    ? `[${v.map(stable).join(",")}]`
+    : v && typeof v === "object"
+      ? `{${Object.keys(v)
+          .sort()
+          .map((k) => `${JSON.stringify(k)}:${stable(v[k])}`)
+          .join(",")}}`
+      : JSON.stringify(v ?? null);
+
+/** What makes two claims the SAME claim besides their statement (review N02 round 2): a fact's
+ *  NAME ("30 seconds" as read-timeout and as write-timeout are two facts), a lesson's TRIGGER
+ *  (the files, keywords and symbols it fires on — one rule for migrations/** and one for
+ *  warehouse/dbt/** are two rules), and every claim's SCOPE. */
+const identityOf = (c) =>
+  stable([
+    c.kind ?? "",
+    c.kind === "fact" ? (c.body?.name ?? "") : "",
+    c.kind === "lesson" ? (c.body?.trigger ?? null) : null,
+    c.scope ?? null,
+  ]);
+
+/** With too few claims to fit a boundary (≤5 nearest-neighbour similarities, or all equal),
+ *  near-duplicates are still REPORTED above this Jaccard — the reuse cache's near bar.
+ *  Reporting only: nothing is archived by it. */
+const REPORT_FLOOR = 0.8;
 
 /** Log-likelihood of xs under N(mu, v). */
 const gaussLL = (xs, mu, v) =>
@@ -188,7 +217,10 @@ export function similarityBoundary(xs, k = SKETCH_K) {
  * near-duplicate a person may merge. Both stay live either way.
  * @param {Claim[]} claims live (servable) claims
  * @param {number} nowDay
- * @returns {{boundary: number | null, bic1?: number, bic2?: number | null, compared: number,
+ * With too few similarities to fit a boundary, pairs above a fixed floor are still reported
+ * (`reportFloor`, review N02 round 2) — reporting only, never archiving.
+ * @returns {{boundary: number | null, reportFloor?: number, bic1?: number, bic2?: number | null,
+ *   compared: number,
  *   groups: {keep: string, drop: {id: string, similarity: number}[]}[],
  *   conflicts: {a: string, b: string, similarity: number, conflicts: string}[],
  *   proposed: {a: string, b: string, similarity: number}[]}}
@@ -233,16 +265,18 @@ export function duplicateGroups(claims, nowDay) {
   const conflicts = [];
   /** @type {{a: string, b: string, similarity: number}[]} */
   const proposed = [];
+  // No fitted boundary for lack of data (not because one component won): the fixed floor.
+  const report = fit.boundary ?? (fit.bic2 == null ? REPORT_FLOOR : null);
   for (const p of pairs) {
     const a = statementOf(p.i.c);
     const b = statementOf(p.j.c);
-    if (sameStatement(a, b)) {
+    if (identityOf(p.i.c) === identityOf(p.j.c) && sameStatement(a, b)) {
       for (const it of [p.i, p.j]) if (!parent.has(it.c.id)) parent.set(it.c.id, it.c.id);
       parent.set(find(p.i.c.id), find(p.j.c.id));
       close.set(pairKey(p.i.c.id, p.j.c.id), p.sim);
       continue;
     }
-    if (fit.boundary == null || p.sim < fit.boundary) continue;
+    if (report == null || p.sim < report) continue;
     const differs = semanticConflicts(a, b);
     if (differs.length)
       conflicts.push({
@@ -290,6 +324,7 @@ export function duplicateGroups(claims, nowDay) {
   const byPair = (x, y) => (x.a < y.a ? -1 : x.a > y.a ? 1 : x.b < y.b ? -1 : 1);
   return {
     boundary: fit.boundary,
+    ...(fit.boundary == null && report != null ? { reportFloor: report } : {}),
     bic1: fit.bic1,
     bic2: fit.bic2,
     compared: nn.length,

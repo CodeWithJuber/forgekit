@@ -96,22 +96,34 @@ test("exact duplicates merge; near-duplicates are kept and proposed; nothing dro
   const r = consolidateLearned(
     [
       { project: "shop", text: FLAKY },
-      { project: "shop", text: `${FLAKY}.` }, // exact: trailing sentence punctuation only
-      { project: "shop", text: `  ${FLAKY.replace(" before", "   before")} ` }, // exact: whitespace
+      { project: "shop", text: `${FLAKY}.` }, // exact: one trailing sentence period only
+      { project: "shop", text: `  ${FLAKY} ` }, // exact: the text's own edge whitespace
+      // review N02 round 2: whitespace INSIDE a statement is never folded (a double space
+      // can be data) — a near-duplicate, kept and reported, never merged
+      { project: "shop", text: FLAKY.replace(" before", "   before") },
       { project: "shop", text: ALWAYS }, // near-duplicate — review N02: proposed, not merged
       { project: "blog", text: FLAKY }, // another project keeps its own copy
       { project: "shop", text: TRIVIA }, // "trivial" is not a reason to delete
     ],
     { claims: [] },
   );
+  const SPACED = FLAKY.replace(" before", "   before");
   assert.deepEqual(
     r.kept.map((k) => `${k.project}: ${k.text}`),
-    [`shop: ${FLAKY}`, `shop: ${ALWAYS}`, `blog: ${FLAKY}`, `shop: ${TRIVIA}`],
+    [`shop: ${FLAKY}`, `shop: ${SPACED}`, `shop: ${ALWAYS}`, `blog: ${FLAKY}`, `shop: ${TRIVIA}`],
   );
   assert.equal(r.merged.length, 2);
   assert.deepEqual(
     r.proposed.map((p) => [p.text, p.similar]),
     [[ALWAYS, FLAKY]],
+  );
+  assert.deepEqual(
+    r.conflicts.map((c) => [c.text, c.other, c.conflicts.split(":")[0]]),
+    [
+      [SPACED, FLAKY, "layout"],
+      [ALWAYS, SPACED, "layout"],
+    ],
+    "the spaced copy differs in layout from both",
   );
   assert.equal(r.dropped.length, 0, "no claim matched, so nothing is refuted");
 });
@@ -350,6 +362,31 @@ test("F16: opposite rules stay two claims, with the conflict exposed; exact dupl
   assert.equal(r.merged.length, 1, "the exact duplicate still merges deterministically");
   assert.equal(r.conflicts.length, 1);
   assert.match(r.conflicts[0].conflicts, /polarity: enable ≠ disable/i);
+});
+
+test("N02 round 2: a lesson is dropped only when EVERY claim with its exact text is refuted", () => {
+  const retracted = repoWith("shop", RETRY, { retract: true });
+  const live = repoWith("blog", RETRY); // another repo holds the same rule live
+  const both = ledgerClaimsFor([retracted.root, live.root]);
+  const r = consolidateLearned([{ project: "General", text: RETRY }], {
+    claims: both,
+    nowDay: 102,
+  });
+  assert.deepEqual(
+    r.kept.map((k) => k.text),
+    [RETRY],
+    "one repo's retraction does not outvote a live claim",
+  );
+  assert.equal(r.dropped.length, 0);
+  assert.equal(r.flagged.length, 1);
+  assert.match(r.flagged[0].reason, /retracted .* kept: claim \w+ with the same text is live/);
+  // With the live copy gone too, it is dropped.
+  const only = ledgerClaimsFor([retracted.root]);
+  const r2 = consolidateLearned([{ project: "General", text: RETRY }], {
+    claims: only,
+    nowDay: 102,
+  });
+  assert.equal(r2.dropped.length, 1);
 });
 
 test("F16: a refuted OPPOSITE claim does not drop a lesson", () => {

@@ -605,6 +605,52 @@ test("N05: a submodule's working tree is bound — every edit, not one '-dirty' 
   assert.equal(computeCodeState(fresh).unbound, undefined);
 });
 
+test("N05 round 2: a gitlink with no .gitmodules entry, and every .gitmodules spelling, is bound", () => {
+  // `git add inner` of an embedded repo: a gitlink in the index, no .gitmodules at all.
+  const root = committedRepo();
+  const inner = repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  execFileSync("git", ["add", "inner"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-qm", "gitlink"], { cwd: root, stdio: "ignore" });
+  const s0 = computeCodeState(root);
+  assert.equal(s0.unbound, undefined);
+  writeFileSync(join(inner, "subject.cjs"), "module.exports = 0;\n");
+  assert.notEqual(computeCodeState(root).dirtyHash, s0.dirtyHash, "the gitlink's tree is bound");
+  // .gitmodules spellings git reads (inline comments, quotes, key case) are read by git itself.
+  for (const line of [
+    "path = vendor/lib ; pinned",
+    "path = vendor/lib # note",
+    'path = "vendor/lib"',
+    "Path = vendor/lib",
+  ]) {
+    const r = committedRepo();
+    const lib = repoAt(join(r, "vendor", "lib"), { "lib.cjs": "module.exports = 1;\n" });
+    writeFileSync(join(r, ".gitmodules"), `[submodule "lib"]\n\t${line}\n\turl = ../lib\n`);
+    const before = computeCodeState(r);
+    writeFileSync(join(lib, "lib.cjs"), "module.exports = 2;\n");
+    assert.notEqual(computeCodeState(r).dirtyHash, before.dirtyHash, line);
+  }
+  // A registered submodule whose directory is gone cannot be bound: never silently skipped.
+  const gone = committedRepo();
+  writeFileSync(join(gone, ".gitmodules"), '[submodule "x"]\n\tpath = vendor/x\n\turl = ../x\n');
+  assert.deepEqual(computeCodeState(gone).unbound, ["vendor/x/"]);
+});
+
+test("N05 round 2: a nested repo cannot exclude its own files from the outer proof", () => {
+  const root = committedRepo();
+  const inner = repoAt(join(root, "inner"), { "subject.cjs": "module.exports = 42;\n" });
+  // its private exclude file and its own forge config are not the outer repo's declarations
+  writeFileSync(join(inner, ".git", "info", "exclude"), "*\n");
+  mkdirSync(join(inner, ".forge"), { recursive: true });
+  writeFileSync(
+    join(inner, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { generated: ["**"] } }),
+  );
+  writeFileSync(join(inner, "added.cjs"), "module.exports = 1;\n");
+  const s0 = computeCodeState(root);
+  writeFileSync(join(inner, "added.cjs"), "module.exports = 2;\n");
+  assert.notEqual(computeCodeState(root).dirtyHash, s0.dirtyHash);
+});
+
 test("N05: the review's fixture — a test mutating nested-repo code is never a PASS", {
   skip: NO_NPM_SPAWN,
 }, () => {
@@ -769,6 +815,90 @@ test("N03: Node's preload flag `-r` is not a recursive workspace run — the fai
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "FAIL", "the nested failure is executed and reported");
   assert.equal(r.tests.executed.find((s) => s.cwd === "packages/bad")?.status, "FAIL");
+});
+
+test("N03 round 2: configuration, caches and member rules narrow what a recursive run reaches", () => {
+  const mono = (rootScript, files = {}) => {
+    const root = monorepo({ rootScript });
+    for (const [f, text] of Object.entries(files)) {
+      mkdirSync(join(root, f, ".."), { recursive: true });
+      writeFileSync(join(root, f), text);
+    }
+    return planSuites(root);
+  };
+  const inferred = (plan) => plan.coverage.basis["packages/bad"] === "inferred";
+  assert.equal(inferred(mono("npm test --workspaces")), true, "the baseline is inferred");
+  // configuration that narrows the run
+  const npmrc = mono("npm test --workspaces", { ".npmrc": "workspace=packages/good\n" });
+  assert.equal(inferred(npmrc), false);
+  assert.match(npmrc.coverage.rootRunRefused.reason, /\.npmrc sets workspace/);
+  // a cache that may REPLAY an earlier result
+  const turbo = { "turbo.json": JSON.stringify({ tasks: { test: {} } }) };
+  const cached = mono("turbo run test", turbo);
+  assert.equal(inferred(cached), false);
+  assert.match(cached.coverage.rootRunRefused.reason, /replay a cached test result/);
+  assert.equal(inferred(mono("turbo run test --force", turbo)), true);
+  assert.equal(
+    inferred(mono("turbo run test", { "turbo.json": '{"tasks":{"test":{"cache":false}}}' })),
+    true,
+  );
+  assert.equal(
+    inferred(mono("turbo run test --force", { "turbo.json": '{"tasks":{"good#test":{}}}' })),
+    false,
+    "a package-specific task list",
+  );
+  assert.equal(inferred(mono("nx run-many -t test")), false, "nx without --skip-nx-cache");
+  assert.equal(
+    inferred(mono("nx run-many -t test --skip-nx-cache", { ".nxignore": "packages/bad\n" })),
+    false,
+  );
+  assert.equal(
+    inferred(mono("nx run-many -t test --skip-nx-cache", { "packages/bad/project.json": "{}" })),
+    false,
+    "a project.json can redefine the target",
+  );
+  assert.equal(
+    inferred(
+      mono("lerna run test --skip-nx-cache", {
+        "lerna.json": JSON.stringify({ command: { run: { ignore: "bad" } } }),
+      }),
+    ),
+    false,
+  );
+  // yarn 1 skips a member with no version
+  assert.equal(inferred(mono("yarn workspaces run test")), false);
+  // a member whose own script masks a failure is run on its own
+  const masked = mono("npm test --workspaces", {
+    "packages/bad/package.json": JSON.stringify({
+      name: "bad",
+      scripts: { test: 'node -e "process.exit(1)" || true' },
+    }),
+  });
+  assert.equal(inferred(masked), false);
+  // a package manager shim in node_modules/.bin would run instead of the real one
+  assert.equal(inferred(mono("npm test --workspaces", { "node_modules/.bin/npm": "" })), false);
+});
+
+test("N03 round 2: a root runner that never runs scripts.test infers nothing", () => {
+  const root = monorepo({ rootScript: "npm test --workspaces" });
+  writeFileSync(join(root, "bun.lockb"), "");
+  const plan = planSuites(root);
+  assert.deepEqual(
+    plan.suites.find((x) => x.cwd === ".")?.runner?.args,
+    ["run", "test"],
+    "a bun project runs its test SCRIPT (`bun run test`), not Bun's own runner",
+  );
+  assert.equal(plan.coverage.basis["packages/bad"], "inferred");
+});
+
+test("N03 round 2: a script-shell that is not a shell makes npm suites INCOMPLETE", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = fixtureWithTestScript('node -e "process.exit(1)"');
+  writeFileSync(join(root, ".npmrc"), "script-shell=/bin/true\n");
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "INCOMPLETE");
+  assert.match(r.tests.executed[0].output, /script-shell is \/bin\/true/);
 });
 
 test("N03: a recognized run covers only the members of the tool's OWN list (negations too)", () => {

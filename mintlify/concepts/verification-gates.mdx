@@ -64,8 +64,13 @@ script covers the workspaces in one run only when forge establishes, from its sh
 structure, an unfiltered recursive run of every member's `test` script whose failure reaches
 the exit status (`npm test --workspaces`, `pnpm -r test`, `turbo run test`, …). Filters,
 masked runs and look-alike flags such as Node's preload `node -r` cover nothing, and each
-package then runs its own suite. `coverage basis` labels every verdict `measured`,
-`inferred` or `declared`. Tune it under `verify` in `.forge/forge.config.json`:
+package then runs its own suite. Nothing that could narrow or replay the run is credited:
+options are allowlisted per tool, a script that changes shell state (`cd`, `exit`, `trap`) or
+sets `npm_config_*` is refused, `.npmrc`/lerna/nx/turbo config that filters the run is
+honoured, and turbo needs `--force` and nx/lerna `--skip-nx-cache` so a cached result is
+never replayed. `coverage basis` labels every verdict `measured`, `inferred` or `declared`,
+and a root command that was recognized but not credited is printed with the reason. Tune it
+under `verify` in `.forge/forge.config.json`:
 
 ```json
 { "verify": { "workspaces": "auto", "exclude": ["packages/legacy"], "generated": ["coverage/**"], "external": ["vendor/upstream"] } }
@@ -75,14 +80,16 @@ package then runs its own suite. `coverage basis` labels every verdict `measured
 tree (HEAD, staged and unstaged diffs, and each untracked file's path, mode, size and
 content hash), taken before **and** after the run. If the code changed while the tests ran
 (a formatter, a generator, another agent), the result is `INCOMPLETE` with
-`mutated: true`. Nested repositories and submodules are bound by their own state, so a test
-that rewrites code it imports from one is caught. Code the fingerprint cannot bind makes the
-result `INCOMPLETE` unless the repo declares it under `verify.external`. Interpreter caches
-and the `generated` paths never count as a change.
-Each run also appends an event to `.forge/verify-events.jsonl` (run id, verifier version,
-suites, coverage, pre/post state, environment). Its machine-local MAC covers every field, so
-an edited event reads back as unauthenticated. Without an evidence key nothing is
-authenticated. `forge route outcome --verify-run <id>` can cite an authenticated event.
+`mutated: true`. Nested repositories, submodules and gitlinks are bound by their own state,
+read under the outer repository's config, so a test that rewrites code it imports from one is
+caught. Code the fingerprint cannot bind makes the result `INCOMPLETE` unless the repo
+declares it under `verify.external`. Interpreter caches and the `generated` paths never count
+as a change.
+Each run also appends an event to `.forge/verify-events.jsonl` (run id, checkout, verifier
+version, suites, coverage, pre/post state, environment). Its machine-local MAC covers every
+field, so an edited event reads back as unauthenticated. Without an evidence key nothing is
+authenticated. `forge route outcome --verify-run <id>` can cite an authenticated event from
+this checkout that finished on the code the outcome is recorded against.
 
 ## The hallucinated-symbol flag — `forge atlas has`
 

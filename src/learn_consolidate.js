@@ -180,22 +180,35 @@ export function consolidateLearned(
         conflicts.push({ project, text, other: k.text, conflicts: describeConflicts(differs) });
       else proposed.push({ project, text, similar: k.text, similarity: Number(j.toFixed(2)) });
     }
-    let exact = null;
+    /** @type {typeof usable} */
+    const exact = [];
     let near = null;
     for (const u of usable) {
       if (u.c.project && project !== GENERAL && u.c.project !== project) continue;
       if (sameStatement(u.text, text)) {
-        if (!exact || (u.why && !exact.why)) exact = u;
+        exact.push(u);
         continue;
       }
       const j = jaccard(u.s, s);
       if (u.why && j >= tau && (!near || j > near.j)) near = { ...u, j };
     }
-    if (exact?.why) {
-      dropped.push({ project, text, claim: claimRef(exact.c), reason: exact.why });
+    // Dropped only when EVERY claim with exactly its text is refuted (review N02 round 2):
+    // one repo's retraction does not outvote another repo's live, oracle-confirmed claim —
+    // the disagreement is flagged for a person instead.
+    const refuted = exact.filter((u) => u.why);
+    if (refuted.length && refuted.length === exact.length) {
+      dropped.push({ project, text, claim: claimRef(refuted[0].c), reason: refuted[0].why ?? "" });
       continue;
     }
-    if (!exact && near)
+    if (refuted.length) {
+      const live = exact.find((u) => !u.why);
+      flagged.push({
+        project,
+        text,
+        claim: claimRef(refuted[0].c),
+        reason: `${refuted[0].why} — kept: claim ${live ? claimRef(live.c) : "?"} with the same text is live`,
+      });
+    } else if (!exact.length && near)
       flagged.push({
         project,
         text,

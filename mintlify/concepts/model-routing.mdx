@@ -127,7 +127,8 @@ forge route universal "<task>" --provider anthropic    # only models you can cal
 - **Learning from your outcomes.** `forge route outcome` records one attempt, validated
   (known model, finite non-negative cost, the right feature length). It is self-reported
   unless `--verify-run <run id>` ties it to an authenticated `forge verify` run with the same
-  verdict, and one run backs one attempt. The label is re-derived from the verifier events on
+  verdict, from this checkout, that finished on the code the outcome is recorded against,
+  and one run backs one attempt. The label is re-derived from the verifier events on
   every read, so an edited label counts for nothing, and the event vouches for pass/fail
   only (never the model or the cost). `--attempt <id>` makes re-recording idempotent.
   `forge route fit` then updates the shipped prior with them.

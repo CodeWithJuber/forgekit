@@ -218,7 +218,9 @@ HANDLERS.ledger = async (argv) => {
       `  duplicates: ${d?.groups.length ?? 0} exact group(s) · ${
         d?.boundary != null
           ? `near-duplicate boundary ${d.boundary.toFixed(2)} (two components beat one: BIC ${d.bic2?.toFixed(1)} < ${d.bic1?.toFixed(1)})`
-          : `no near-duplicate boundary — ${d?.compared ? `one component fits the ${d.compared} nearest-neighbour similarities better` : "fewer than two claims of one kind are still live to compare"}`
+          : d?.reportFloor != null
+            ? `near-duplicates reported above ${d.reportFloor.toFixed(2)} (too few similarities to learn a boundary: ${d.compared})`
+            : `no near-duplicate boundary — ${d?.compared ? `one component fits the ${d.compared} nearest-neighbour similarities better` : "fewer than two claims of one kind are still live to compare"}`
       }`,
       "",
       `  archive: ${r.archive.length}`,

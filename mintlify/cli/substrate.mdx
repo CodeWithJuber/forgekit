@@ -105,7 +105,8 @@ reports the computed missing set.
 - **A pointer is not coverage.** An item that only fits as a `- read <file>` pointer is a
   `pending` read. A definition counts as delivered only whole, declaration through its last
   line: a span or 25-line head that cuts the body leaves it pending and names it under
-  `partial` (lines shown vs lines spanned).
+  `partial` (lines shown vs lines spanned). A definition whose extent the atlas cannot
+  trust, or in a file edited since the atlas was built, is delivered only by the whole file.
 - **Over budget is `INCOMPLETE`.** When even pointers do not fit, the result is
   `overflow: true`, `ok: false`, never a silent over-budget pass.
 

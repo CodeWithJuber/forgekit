@@ -129,3 +129,9 @@ test("the file graph covers Python imports and TypeScript NodeNext specifiers", 
   assert.ok(ts.edges.get("src/y.ts").has("src/x.ts"), "./x.js resolves to x.ts");
   assert.ok(ts.edges.get("src/z.ts").has("src/x.ts"), "export * from './x.js'");
 });
+
+test("maskCode: a quote glued to a word in JS is text (JSX), unless a keyword precedes it", () => {
+  const jsx = "return <p>You're in {x && (<b/>)}</p>;";
+  assert.equal(maskCode(jsx, ".jsx"), jsx, "nothing is masked: `You're` opens no string");
+  assert.equal(maskCode("return'abc';", ".js"), "return'   ';", "`return'…'` is a string");
+});

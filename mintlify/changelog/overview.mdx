@@ -30,6 +30,7 @@ CI when it falls behind, so it cannot drift from the release notes again.
 - **An edited provenance label counts for nothing (N07).**
 - **A long function is delivered whole or not at all (N04).**
 - **Code in a nested repository is bound by the fingerprint (N05).**
+- **A `script-shell` that is not a shell no longer passes (round 2).**
 
 **Added**
 
@@ -43,7 +44,9 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 - **`maxPossibleCost` is now `estimatedCostIfAllAttemptsRun`.**
 - **Formats that changed rebuild or re-verify on their own.**
-- **The semantic guard compares code layout and stops folding Unicode.**
+- **Older provenance no longer counts as verified.**
+- **The semantic guard compares layout, symbols, order and spelling, and stops folding Unicode.**
+- **A Bun project's test script runs as `bun run test`.**
 - **The research executive summary marks its 2026-09-26 correction in place.**
 
 [Full notes for Unreleased →](https://github.com/CodeWithJuber/forgekit/blob/HEAD/CHANGELOG.md#unreleased)

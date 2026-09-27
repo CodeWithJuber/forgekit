@@ -369,3 +369,92 @@ test("fail-open: undefined sccIndex/hazards produces identical output to basic i
     "same confidences",
   );
 });
+
+// Review N04/N08 round 2: an extent that cuts a definition short made `forge context` report
+// a one-line window as the whole function, and a dependency contract hash its first line only.
+test("N04 round 2: extents hold across generics, type literals, overloads and lexer blind spots", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-extents-"));
+  const w = (f, text) => {
+    mkdirSync(join(root, f, ".."), { recursive: true });
+    writeFileSync(join(root, f), text);
+  };
+  w(
+    "a.ts",
+    [
+      "export function calc<T extends { id: number }>(", // 1
+      "  x: T,",
+      "): number {",
+      "  return 1;",
+      "}", // 5
+      "export async function loadUser(id: string): Promise<{ name: string }> {", // 6
+      "  return db.get(id);",
+      "}", // 8
+      "export function load(id: string): User;", // 9: an overload set is one definition
+      "export function load(id: number): User;",
+      "export function load(id: any): User {",
+      "  return id;",
+      "}", // 13
+      "export const QUERY = `", // 14
+      "  SELECT 1",
+      "`;", // 16
+      "export function* gen() {", // 17
+      "  yield 1;",
+      "}", // 19
+      "export const typed: Calc = (a) => {", // 20
+      "  return a;",
+      "};", // 22
+    ].join("\n"),
+  );
+  w(
+    "b.go",
+    "package x\n\nfunc F() map[string]interface{} {\n\treturn nil\n}\n\nfunc G() <-chan struct{} {\n\treturn nil\n}\n",
+  );
+  w(
+    "c.rb",
+    "class Foo < Bar\n  def a\n    1\n  rescue StandardError\n    2\n  end\n\n  def b = 3\nend\n",
+  );
+  w(
+    "d.py",
+    'class C:\n    """doc\n"""\n    def m(self):\n        x = 1 + \\\n2\n        return x\n\nasync def fetch(u):\n    return u\n',
+  );
+  w(
+    "e.jsx",
+    "export function Banner({ isAdmin }) {\n  return (\n    <p>\n      You're in {isAdmin && (\n        <b>admin</b>\n      )}\n    </p>\n  );\n}\n",
+  );
+  w(
+    "f.c",
+    "int f(int x) {\n  if (x) {\n#ifdef A\n    a();\n  }\n#else\n    b();\n  }\n#endif\n  return 0;\n}\n",
+  );
+  const extent = (file, name) =>
+    build({ root })
+      .symbols.filter((s) => s.file === file && s.name === name)
+      .map((s) => [s.line, s.endLine ?? null]);
+  assert.deepEqual(extent("a.ts", "calc"), [[1, 5]], "a generic constraint's `{` is not the body");
+  assert.deepEqual(extent("a.ts", "loadUser"), [[6, 8]], "a return type's `{` is not the body");
+  assert.deepEqual(
+    extent("a.ts", "load"),
+    [
+      [9, 13],
+      [10, 13],
+      [11, 13],
+    ],
+    "every overload signature spans the implementation",
+  );
+  assert.deepEqual(
+    extent("a.ts", "QUERY"),
+    [[14, 16]],
+    "a template literal's newline ends nothing",
+  );
+  assert.deepEqual(extent("a.ts", "gen"), [[17, 19]], "a generator is a definition");
+  assert.deepEqual(extent("a.ts", "typed"), [[20, 22]], "a typed const is a definition");
+  assert.deepEqual(extent("b.go", "F"), [[3, 5]], "`interface{}` in a Go result type");
+  assert.deepEqual(extent("b.go", "G"), [[7, 9]], "`<-chan struct{}` in a Go result type");
+  assert.deepEqual(extent("c.rb", "Foo"), [[1, 9]], "a Ruby class ends at its own `end`");
+  assert.deepEqual(extent("c.rb", "a"), [[2, 6]], "…a def's `rescue` is part of it");
+  assert.deepEqual(extent("c.rb", "b"), [[8, 8]], "…an endless def is one line");
+  assert.equal(extent("d.py", "C")[0][1] >= 7, true, 'a closing `"""` at column 0 ends no scope');
+  assert.equal(extent("d.py", "m")[0][1] >= 7, true, "a `\\` continuation at column 0 ends no def");
+  assert.deepEqual(extent("d.py", "fetch"), [[9, 11]], "`async def` is a definition");
+  assert.deepEqual(extent("e.jsx", "Banner"), [[1, 9]], "an apostrophe in JSX text is not a quote");
+  assert.deepEqual(extent("f.c", "f"), [[1, null]], "no extent is read across #ifdef branches");
+});

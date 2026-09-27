@@ -219,6 +219,28 @@ test("N04: a long function shown only in part is never delivered — it stays pe
   assert.ok(roomy.block.includes("return x *"));
 });
 
+test("N04 round 2: a stale atlas locates nothing — the edited file is delivered whole or not at all", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  mkdirSync(join(root, "src"), { recursive: true });
+  const fn = "export function computeTax(x) {\n  return x * 0.2;\n}\n";
+  writeFileSync(join(root, "src", "tax.js"), `${fn}${"// tail\n".repeat(40)}`);
+  const atlas = buildAtlas({ root });
+  // 30 lines are added ABOVE the function after the atlas was built: its recorded lines 1-3
+  // now hold constants, not the function.
+  const consts = Array.from({ length: 30 }, (_, i) => `export const K${i} = ${i};`).join("\n");
+  writeFileSync(join(root, "src", "tax.js"), `${consts}\n${fn}${"// tail\n".repeat(40)}`);
+  for (const budget of [60, 140, 300]) {
+    const r = assemble(root, "update computeTax", { atlas, budget, claims: [] });
+    assert.ok(
+      !r.covered.includes("def:computeTax") || r.block.includes("return x * 0.2"),
+      `budget ${budget}: a window located by the stale atlas never counts as the definition`,
+    );
+  }
+  const roomy = assemble(root, "update computeTax", { atlas, budget: 4000, claims: [] });
+  assert.ok(roomy.covered.includes("def:computeTax"), "the whole current file still delivers it");
+  assert.ok(roomy.block.includes("return x * 0.2"));
+});
+
 test("N04: a small definition deep in a big file is still delivered whole within budget", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-context-"));
   mkdirSync(join(root, "src"), { recursive: true });

@@ -698,14 +698,33 @@ covers the workspaces in one run only when forge can establish that it runs ever
 own `test` script. It reads the script as shell commands and recognizes an unfiltered
 recursive run whose failure reaches the script's exit status: `npm test --workspaces`,
 `pnpm -r test`, `yarn workspaces foreach -A run test`, `turbo run test`, `lerna run test` or
-`nx run-many -t test`, directly or through `npm run` hops. A filtered run (`--filter`,
-`--scope`, `-w`), a masked or backgrounded one, and a look-alike flag such as Node's preload
-`node -r` cover nothing: each package then runs its own suite. Only members of that tool's
-own workspace list count, `!` negations included. The `coverage basis` line says what each
-package's verdict rests on: `measured` (its own suite ran), `inferred` (the recognized root
-command) or `declared` (`workspaces: "root"`). Fixture and test-data packages are never
-required. A test runner that is
-only a devDependency is not an obligation either; `forge stack` lists it as `available`.
+`nx run-many -t test`, directly or through `npm run` hops that pass no arguments. A filtered
+run (`--filter`, `--scope`, `-w`), a masked or backgrounded one, and a look-alike flag such as
+Node's preload `node -r` cover nothing: each package then runs its own suite. The rest is
+conservative too:
+- Options are allowlisted per tool. An unknown one (`--help`, `--dry-run`, an abbreviation
+  npm would expand) is not credited, and neither are words after `--`, which are forwarded
+  into every member's script.
+- A script that changes shell state (`cd`, `exit`, `trap`, `export`…) or sets a
+  package-tool variable (`npm_config_*`) is not credited.
+- Configuration that narrows the run is honoured: `.npmrc` or environment
+  `workspace`/`filter`/`script-shell`, lerna `command.run` filters, `.nxignore`, a
+  redefined nx `test` target, and turbo per-package tasks.
+- A cached result is not a run: turbo needs `--force` (or `cache: false` for `test`), and nx
+  and lerna need `--skip-nx-cache`.
+- Only members of that tool's own workspace list count, read for the package manager in use.
+  A `!` negation excludes anything it might match. A yarn member needs a `version`. A member
+  with its own nx project config, or whose test script masks failures, runs on its own.
+
+The `coverage basis` line says what each package's verdict rests on: `measured` (its own
+suite ran), `inferred` (the recognized root command) or `declared` (`workspaces: "root"`). A
+recognized root command that was not credited is printed as `root run not credited`, with the
+reason. forge trusts the repository's own tooling: a shim that replaces the package manager
+or the test runner is outside what it checks (one in `node_modules/.bin` shadowing
+npm/pnpm/yarn is refused). A `script-shell` that is not a shell (`/bin/true`) makes npm and
+pnpm suites `INCOMPLETE`. Fixture and test-data packages are never required. A test runner
+that is only a devDependency is not an obligation either; `forge stack` lists it as
+`available`.
 Tune this per repo under `verify` in `.forge/forge.config.json`:
 
 ```json
@@ -724,9 +743,14 @@ Tune this per repo under `verify` in `.forge/forge.config.json`:
 tree: HEAD, the staged and unstaged diffs, and each untracked file's path, mode, size and
 content hash. The fingerprint is taken before AND after the run. If something changed the code
 while the tests ran (a formatter, a code generator, another agent), the result is `INCOMPLETE`
-with `mutated: true`, and the stamp names the pre-run state. A nested repository (an untracked
-embedded repo, or a submodule's working tree) is bound by its own HEAD, diffs and untracked
-files, recursively, so a test that rewrites code it imports from one is caught too.
+with `mutated: true`, and the stamp names the pre-run state. A nested repository is bound by
+its own HEAD, diffs and untracked files, recursively, so a test that rewrites code it imports
+from one is caught too. That covers an untracked embedded repo, a gitlink committed with
+`git add inner`, and a submodule's working tree (read with git's own `.gitmodules` parser).
+It is read under the OUTER repository's `verify` config and its own committed `.gitignore`.
+Its forge config and `.git/info/exclude` cannot hide its files, and its `core.fsmonitor`
+command is never run. Gitignored files, the outer repository's or a nested one's, are not
+code state.
 Interpreter caches (`__pycache__`, `.pytest_cache`, …) and the `generated` paths never count
 as a change. An untracked file that cannot be read makes the state unbindable; it is never
 silently skipped. Code the fingerprint still cannot bind (repositories nested more than three
@@ -736,15 +760,18 @@ declaration excludes it from the fingerprint and is recorded in every verifier e
 written before this fingerprint (scheme `manifest-v3`) no longer verify: re-run
 `forge verify`.
 
-Every run also appends one event to `.forge/verify-events.jsonl`: the run id, the verifier
-and its version, the suites, the coverage and its basis, the pre- and post-run state
-(unbound paths included), and an environment digest. The event is never rewritten. Its
-machine-local MAC (event contract v2) covers every one of those fields in canonical form, so
-no field a reader relies on can be edited without the event reading back as unauthenticated.
-Readers mark each event `authenticated` or not; without an evidence key (an unwritable state
-directory) nothing is authenticated, and an unsigned event never counts as verified evidence.
-Events from contract v1 authenticated only the run id, verdict and code state. `forge route
-outcome --verify-run <run id>` ties a routing outcome to an authenticated event.
+Every run also appends one event to `.forge/verify-events.jsonl`: the run id, the checkout it
+ran in, the verifier and its version, the suites, the coverage and its basis, the pre- and
+post-run state (unbound paths included), and an environment digest. The event is never
+rewritten. Its machine-local MAC (event contract v2) covers every one of those fields in
+canonical form, so no field a reader relies on can be edited without the event reading back
+as unauthenticated (a non-finite number, which has no canonical form, never authenticates).
+Readers mark each event `authenticated` or not, and `inCheckout` when it also names this
+checkout. Without an evidence key (an unwritable state directory) nothing is authenticated,
+and an unsigned event never counts as verified evidence. Events from contract v1
+authenticated only the run id, verdict and code state. `forge route outcome --verify-run
+<run id>` ties a routing outcome to an authenticated event from this checkout that finished
+on the code the outcome is recorded against.
 
 **`forge verify --deep` — multi-lens consensus.** The deep mode runs a table of
 independent lenses over the same diff — the test suite, unknown symbols, atlas
@@ -1034,14 +1061,15 @@ Forge ledger — compact (every cut-off learned from this ledger)  [dry run]
 **The three archive rules:**
 - **Never served:** a tombstoned or dormant claim goes at once, because retrieval never serves it.
 - **Idle too long:** a live claim goes once it has been idle longer than any claim here has ever been idle and then used again. Until the usage log covers that long, no live claim is archived.
-- **Duplicates:** claims of one kind that make the same statement (equal up to whitespace and trailing punctuation) keep one survivor, the one with the highest val; the others go.
-- **Near-duplicates are never archived.** Each claim's similarity to its closest claim of the same kind is modelled as one group or two, and BIC decides which fits. When two groups fit, pairs above the boundary are listed under `kept both — near-duplicates` for a person to merge. Similarity cannot see which subject gets which action ("allow admins and deny guests" vs "deny admins and allow guests"), a swapped number, or the detail one claim adds, so it only proposes.
+- **Duplicates:** claims of one kind that make the same statement keep one survivor, the one with the highest val; the others go. "The same" means equal up to the text's own edge whitespace and one sentence period after a word, with the same fact name, lesson trigger and scope: `go test ./...` is not `go test ./`, and two facts named `read-timeout` and `write-timeout` are two facts.
+- **Near-duplicates are never archived.** Each claim's similarity to its closest claim of the same kind is modelled as one group or two, and BIC decides which fits. When two groups fit, pairs above the boundary are listed under `kept both — near-duplicates` for a person to merge; a ledger too small to fit (five similarities or fewer) still lists pairs above a fixed 0.8. Similarity cannot see which subject gets which action ("allow admins and deny guests" vs "deny admins and allow guests"), a swapped number, or the detail one claim adds, so it only proposes.
 
 **Where use comes from:** forge writes `.forge/ledger/.usage.jsonl`, a gitignored local log. It records each claim that the session lesson block, pre-edit lessons, the déjà-vu advisory, `ledger query` or the MCP query served.
 
 **Similar is not the same.** A near-duplicate pair that also differs in something that
-changes behaviour (operators, numbers and units, quoted literals, identifiers, paths,
-negation, or code layout) is printed under `kept apart — similar but conflicting` instead,
+changes behaviour (operators and symbols with their operands, numbers and units, quoted
+literals, identifiers, paths, negation, whitespace other than one space, spelling, or the
+order of any of these) is printed under `kept apart — similar but conflicting` instead,
 so a human can retract the wrong one: "Enable authentication…" and "Disable
 authentication…" are never merged, however similar their words.
 
@@ -1132,8 +1160,8 @@ tooling migrates.
 
 Verified code becomes an `artifact` claim keyed by its task text; a lookup walks exact →
 near → adapt → miss. An artifact serves **only while its proof holds**: confidence above the
-0.6 floor, its file unchanged since it was minted, and every declared dependency still in
-the atlas with the same declaration.
+0.6 floor, its file unchanged since it was minted, and every dependency its imports bind to
+unchanged.
 
 - **Exact means the same text, byte for byte.** The key is a digest of the spec as given:
   nothing is normalized, because whitespace inside `"a  b"`, a Python block's indentation, a
@@ -1142,14 +1170,33 @@ the atlas with the same declaration.
   never share a key. Artifacts minted before key version 3 never hit exact. Inline code the
   ledger's storage would rewrite (CRLF line endings, non-NFC text) is refused at mint; mint
   it from a file instead.
-- **Near must also agree on behaviour.** A reworded match is offered as `near` only when
-  the two specs share their operators, numbers, literals, identifiers, paths, negation and
-  code layout (fenced blocks, indented code lines, and unusual spacing beside a code token
-  are compared verbatim). Otherwise it drops to `adapt`, with a note naming what differs.
-- **Checked where it is served.** An artifact whose file was edited or deleted since it was
-  minted is not served. When a dependency's declaration changed, it is not served either.
+- **Near must also agree on behaviour.** A reworded match is offered as `near` only when the
+  two specs agree, in the same order, on these:
+  - operators and symbols, with their operands (`x + 1` vs `x - 1`, `a - b` vs `b - a`);
+  - numbers, identifiers, paths and negation;
+  - literals, typographic and backtick quotes included (“a  b”, ``a  b``);
+  - every whitespace run other than one space (line breaks, indentation, tabs, CRLF, columns);
+  - spelling (`parse` vs `Parse`, fullwidth or Cyrillic look-alikes) and invisible format
+    characters.
+
+  Otherwise it drops to `adapt`, with a note naming what differs. An artifact whose key comes
+  from an older version, or was stored normalized (CRLF or non-NFC text), never reaches near.
+- **Its dependencies are what its imports bind to.** `forge reuse mint --file` resolves every
+  import the way the atlas does, tsconfig path aliases and Python imports included:
+  - A named import records its defining module's declaration contract, followed through
+    re-export barrels. An export alias or an alias const counts as its target.
+  - A default, namespace or side-effect import, `require` or `import()` records the whole
+    module's digest, and so does any barrel passed through.
+  - An unresolved relative import keeps the artifact unknown.
+- **Checked where it is served.** These are not served:
+  - an artifact whose file was edited or deleted since it was minted;
+  - one whose dependency's declaration changed, or that is no longer exported under the
+    imported name;
+  - one where a module it depends on as a whole changed.
+
   With no atlas to check against, the hit is marked `NOT revalidated` (`requiresRevalidation:
-  true` in `--json`), never presented as checked.
+  true` in `--json`), never presented as checked. A dependency file edited since the atlas was
+  built also reads as unknown.
 
 ```console
 $ forge reuse query "debounce user input before firing search"

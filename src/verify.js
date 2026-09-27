@@ -14,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { arch, homedir, platform } from "node:os";
@@ -22,11 +23,12 @@ import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js
 import { BRAND } from "./brand.js";
 import { readForgeConfig } from "./repo_config.js";
 import {
+  analyzeRecursiveTestRun,
   detectRunners,
   detectStack,
-  isWorkspaceMember,
   matchesWorkspaceGlob,
-  recursiveTestRun,
+  reachesWorkspace,
+  scriptShellProblem,
 } from "./stack.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
@@ -44,8 +46,13 @@ export function findUnknownSymbols(atlas, symbols) {
 // with a big pending change hash identically, so a stale PASS survived later edits.
 const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 /** @param {string[]} args @param {string} cwd — THROWS on any git error / overflow. */
+// A repository's `core.fsmonitor` is a COMMAND git runs: reading a nested repository's state
+// must never execute that repository's configuration (review N05 round 2), so every read here
+// turns it off. stderr is never echoed (an unborn HEAD is a state, not an error to print).
+const GIT_SAFE = ["-c", "core.fsmonitor=false"];
+
 function gitStrict(args, cwd) {
-  return execFileSync("git", args, {
+  return execFileSync("git", [...GIT_SAFE, ...args], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -55,7 +62,12 @@ function gitStrict(args, cwd) {
 
 function git(args, cwd) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: GIT_MAX_BUFFER });
+    return execFileSync("git", [...GIT_SAFE, ...args], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: GIT_MAX_BUFFER,
+    });
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge verify git: ${err?.message ?? err}\n`);
@@ -215,10 +227,12 @@ const NESTED_DEPTH = 3;
  * @param {string} cwd @param {string} rel @param {string} type @param {number} depth
  * @returns {{record: any[], unbound?: string[]}}
  */
-function nestedRecord(cwd, rel, type, depth) {
+function nestedRecord(cwd, rel, type, depth, config) {
   const dir = rel.replace(/\/+$/, "");
   const abs = join(cwd, dir);
-  // An uninitialized submodule is an empty directory: there is no code there to bind.
+  // An uninitialized submodule is an empty directory: there is no code there to bind. A
+  // registered one whose directory is GONE is not bound either (review N05 round 2).
+  if (!existsSync(abs)) return { record: [type, rel, "missing"], unbound: [`${dir}/`] };
   let empty = false;
   try {
     empty = readdirSync(abs).length === 0;
@@ -226,7 +240,9 @@ function nestedRecord(cwd, rel, type, depth) {
   if (empty) return { record: [type, rel, "empty"] };
   if (depth >= NESTED_DEPTH || !existsSync(join(abs, ".git")))
     return { record: [type, rel, null], unbound: [`${dir}/`] };
-  const inner = computeCodeState(abs, { depth: depth + 1 });
+  // The OUTER repository's declarations govern (rebased to the nested root): a nested repo's
+  // own forge config cannot exclude its files from the outer proof (review N05 round 2).
+  const inner = computeCodeState(abs, { depth: depth + 1, config: rebaseConfig(config, dir) });
   if (typeof inner.dirtyHash !== "string")
     return { record: [type, rel, null], unbound: [`${dir}/`] };
   return {
@@ -245,9 +261,9 @@ function nestedRecord(cwd, rel, type, depth) {
  * @param {string} cwd @param {string} rel @param {number} depth
  * @returns {{record: any[], unbound?: string[]}}
  */
-function manifestRecord(cwd, rel, depth) {
+function manifestRecord(cwd, rel, depth, config) {
   const abs = join(cwd, rel);
-  if (rel.endsWith("/")) return nestedRecord(cwd, rel, "repo", depth);
+  if (rel.endsWith("/")) return nestedRecord(cwd, rel, "repo", depth, config);
   const st = lstatSync(abs);
   if (st.isSymbolicLink()) return { record: ["symlink", rel, readlinkSync(abs)] };
   if (!st.isFile()) return { record: ["other", rel], unbound: [rel] };
@@ -257,20 +273,45 @@ function manifestRecord(cwd, rel, depth) {
   return { record: ["file", rel, mode, st.size, digest] };
 }
 
-/** Submodule paths declared in `.gitmodules` (their working trees are other repositories). */
+/**
+ * Every submodule path — each a working tree of another repository: the index's gitlinks
+ * (mode 160000 — a repo committed with `git add inner` has one and no `.gitmodules` entry) and
+ * the paths `.gitmodules` declares, read by git's own config parser (quoted values, inline
+ * comments, any key case: review N05 round 2 — a hand-rolled reader skipped
+ * `path = vendor/lib ; pinned` and left the submodule unbound).
+ * @param {string} cwd
+ */
 function submodulePaths(cwd) {
-  let text = "";
-  try {
-    text = readFileSync(join(cwd, ".gitmodules"), "utf8");
-  } catch {
-    return [];
+  const out = new Set();
+  for (const entry of gitStrict(["ls-files", "-s", "-z"], cwd).split("\0")) {
+    const m = /^160000 [0-9a-f]+ \d\t(.+)$/.exec(entry);
+    if (m) out.add(m[1]);
   }
-  const out = [];
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*path\s*=(.*)$/.exec(line);
-    if (m?.[1].trim()) out.push(m[1].trim());
-  }
-  return [...new Set(out)].sort();
+  if (existsSync(join(cwd, ".gitmodules")))
+    for (const entry of git(
+      ["config", "-f", ".gitmodules", "-z", "--get-regexp", "^submodule\\..*\\.path$"],
+      cwd,
+    ).split("\0")) {
+      const nl = entry.indexOf("\n");
+      const path = nl < 0 ? "" : entry.slice(nl + 1).replace(/\/+$/, "");
+      if (path) out.add(path);
+    }
+  return [...out].sort();
+}
+
+/** The outer repository's verify declarations, as they apply INSIDE the nested repository at
+ *  `dir`: patterns under `dir/` rebased, `**`-anchored ones kept, the rest dropped. */
+function rebaseConfig(config, dir) {
+  if (!config) return undefined;
+  const rebase = (list) =>
+    list.flatMap((g) =>
+      g.startsWith(`${dir}/`) ? [g.slice(dir.length + 1)] : g.startsWith("**/") ? [g] : [],
+    );
+  return {
+    ...config,
+    generated: rebase(config.generated),
+    external: rebase(config.external),
+  };
 }
 
 /**
@@ -302,17 +343,18 @@ function submodulePaths(cwd) {
  * error or an over-size output hashes as "cannot bind", never as the empty diff). Pure w.r.t.
  * the tree — reads git + files, writes nothing.
  * @param {string} [cwd]
- * @param {{depth?: number}} [opts] nesting depth (internal: nested repositories recurse)
+ * @param {{depth?: number, config?: ReturnType<typeof verifyConfig>}} [opts] nesting depth and
+ *   the governing config (internal: nested repositories recurse under the outer config)
  * @returns {{head: string|null, dirtyHash: string|null, gitAvailable: boolean, scheme: string,
  *   unbound?: string[], external?: string[], unbindable?: string}}
  */
-export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
+export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given } = {}) {
   const scheme = CODE_STATE_SCHEME;
   try {
     if (git(["rev-parse", "--is-inside-work-tree"], cwd).trim() !== "true")
       return { head: null, dirtyHash: null, gitAvailable: false, scheme };
-    const head = git(["rev-parse", "HEAD"], cwd).trim() || null;
-    const config = verifyConfig(cwd);
+    const head = git(["rev-parse", "--verify", "-q", "HEAD"], cwd).trim() || null;
+    const config = given ?? verifyConfig(cwd);
     const generated = [...BUILTIN_GENERATED, ...config.generated];
     const external = config.external;
     // Generated outputs (built-in caches + what the repo declared) and declared-external paths
@@ -326,10 +368,11 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
     // Exclude forge's OWN state dir: writing provenance.json / session files must never
     // perturb the fingerprint the stamp is bound to (self-reference), and it's ignored in
     // real repos anyway — this keeps the hash stable even if a user forgot to gitignore it.
-    const untracked = gitStrict(
-      ["ls-files", "--others", "--exclude-standard", "-z", ...untrackedSpec],
-      cwd,
-    )
+    // A nested repository's untracked files are read with its COMMITTED .gitignore files
+    // only — never its private `.git/info/exclude` or a global excludes file, which would
+    // silently hide its code from the outer proof (review N05 round 2).
+    const ignore = depth > 0 ? ["--exclude-per-directory=.gitignore"] : ["--exclude-standard"];
+    const untracked = gitStrict(["ls-files", "--others", ...ignore, "-z", ...untrackedSpec], cwd)
       .split("\0")
       .filter((f) => f && !f.startsWith(".forge/"))
       .sort();
@@ -360,7 +403,7 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
     for (const f of untracked) {
       let rec;
       try {
-        rec = manifestRecord(cwd, f, depth);
+        rec = manifestRecord(cwd, f, depth, config);
       } catch (err) {
         return {
           head,
@@ -380,8 +423,8 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
       external.some((g) => matchesWorkspaceGlob(g, p) || p.startsWith(`${g.replace(/\/+$/, "")}/`));
     const subs = [];
     for (const p of submodulePaths(cwd)) {
-      if (isExternal(p) || !existsSync(join(cwd, p))) continue;
-      const rec = nestedRecord(cwd, p, "submodule", depth);
+      if (isExternal(p)) continue;
+      const rec = nestedRecord(cwd, p, "submodule", depth, config);
       if (rec.unbound) unbound.push(...rec.unbound);
       subs.push(JSON.stringify(rec.record));
     }
@@ -439,6 +482,9 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0 } = {}) {
  *   was recognized as a recursive run reaching it (inferred), or `verify.workspaces: "root"`
  *   says so (declared)
  * @property {{tool: string, command: string}} [rootRun]  the recognized recursive root command
+ * @property {{tool: string, command: string, reason: string}} [rootRunRefused]  a recognized
+ *   recursive root command that is NOT credited (configuration or a cache narrows it, or the
+ *   root suite does not run the script) — its members were measured instead
  * @property {string} [declared]             the declaration behind "declared" coverage
  * @property {boolean} [truncated]           the package scan was a sample (non-git fallback)
  */
@@ -635,7 +681,11 @@ function nestedPackages(root, stack) {
 // The package managers whose `<pm> test` runner is a package's own `scripts.test` — the one
 // suite a recursive workspace run executes for it (a pytest or go suite beside it is not).
 const SCRIPT_RUNNERS = new Set(["npm", "pnpm", "yarn", "bun"]);
-const isScriptRunner = (r) => SCRIPT_RUNNERS.has(r?.bin) && r?.args?.[0] === "test";
+// A runner that executes the package's `scripts.test` — `bun test` is Bun's own runner and
+// does not; `bun run test` does.
+const isScriptRunner = (r) =>
+  SCRIPT_RUNNERS.has(r?.bin) &&
+  (r.bin === "bun" ? r.args?.[0] === "run" && r.args?.[1] === "test" : r.args?.[0] === "test");
 // Weakest link first: what a package's verdict ultimately rests on (review N03, suggestion 4).
 const BASIS_ORDER = ["declared", "inferred", "measured"];
 
@@ -665,7 +715,11 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     ? stack.testRunners
     : parseRunnerStrings(stack?.testCommands ?? []);
   const workspaces = stack?.workspaces ?? [];
-  const run = recursiveTestRun(root);
+  // A recursive root script only covers a package when the ROOT suite actually executes that
+  // script (review N03 round 2: a root `bun test` ran Bun's runner, never `npm test -ws`).
+  const analysis = analyzeRecursiveTestRun(root);
+  const established = analysis && !("refused" in analysis) ? analysis : null;
+  const run = established && rootRunners.some(isScriptRunner) ? established : null;
   const declaredRoot = config.workspaces === "root";
   /** @type {{cwd: string, runner: any, label: string, covers: string[]}[]} */
   const nested = [];
@@ -692,7 +746,9 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     } catch {}
     if (!runners.length) continue; // declares no suite — nothing is owed for it
     required.push(pkg);
-    const reached = !!run && isWorkspaceMember(run.globs, pkg);
+    // Reached: a member the tool iterates AND runs, whose own script does not mask a failure
+    // (`… || true` passes under the root run too — it is run on its own and reported).
+    const reached = !!run && reachesWorkspace(root, run, pkg) && !maskedTestScript(join(root, pkg));
     const bases = new Set();
     for (const r of runners) {
       if (declaredRoot) bases.add("declared");
@@ -724,6 +780,23 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
       rootCoversWorkspaces: !!run || declaredRoot,
       basis,
       ...(run ? { rootRun: { tool: run.tool, command: run.command } } : {}),
+      ...(analysis && "refused" in analysis
+        ? {
+            rootRunRefused: {
+              tool: analysis.tool,
+              command: analysis.command,
+              reason: analysis.refused,
+            },
+          }
+        : established && !run
+          ? {
+              rootRunRefused: {
+                tool: established.tool,
+                command: established.command,
+                reason: "the root suite does not run the package's test script",
+              },
+            }
+          : {}),
       ...(declaredRoot ? { declared: "verify.workspaces=root" } : {}),
       ...(scan.truncated ? { truncated: true } : {}),
     },
@@ -765,9 +838,16 @@ function runTests(cwd, { plan = planSuites(cwd) } = {}) {
   const executed = [];
   /** @type {string[]} */
   const notExecuted = [];
+  // A script-shell that is not a shell (`script-shell=/bin/true` in .npmrc) turns every npm
+  // or pnpm script into a no-op that exits 0 — no verdict can come from running one.
+  const shell = scriptShellProblem(cwd);
   for (const { cwd: rel, runner: r, label, covers } of plan.suites) {
     const dir = rel === "." ? cwd : join(cwd, rel);
     const where = { cwd: rel, covers };
+    if (shell && (r?.bin === "npm" || r?.bin === "pnpm")) {
+      executed.push({ label, status: "INCOMPLETE", ...where, exitCode: null, output: shell });
+      continue;
+    }
     const masked = maskedTestScript(dir);
     if (masked && r?.bin && r.bin !== "pytest") {
       // The package script swallows its own failures — running it can only produce a
@@ -904,10 +984,13 @@ function environmentDigest() {
  */
 export const VERIFY_EVENT_VERSION = 2;
 // Fields a READER derives (readVerifyEvents) — never signed, never trusted from the file.
-const DERIVED_EVENT_FIELDS = new Set(["mac", "authenticated", "authScope"]);
+const DERIVED_EVENT_FIELDS = new Set(["mac", "authenticated", "authScope", "inCheckout"]);
 
-/** Deterministic JSON: keys sorted at every depth, undefined dropped. */
+/** Deterministic JSON: keys sorted at every depth, undefined dropped. A non-finite number has
+ *  no JSON form (`Infinity` would print as `null`, so a stored `1e999` would verify as a signed
+ *  `null` — review N06 round 2): it throws, and such an event is never authenticated. */
 const canonicalJson = (v) => {
+  if (typeof v === "number" && !Number.isFinite(v)) throw new Error("non-finite number");
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
   if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
   const keys = Object.keys(v)
@@ -937,15 +1020,36 @@ export const verifyEventMac = (event) => {
   const signed = Object.fromEntries(
     Object.entries(event ?? {}).filter(([k]) => !DERIVED_EVENT_FIELDS.has(k)),
   );
-  return evidenceMac([`verify-event/v${VERIFY_EVENT_VERSION}`, canonicalJson(signed)]);
+  try {
+    return evidenceMac([`verify-event/v${VERIFY_EVENT_VERSION}`, canonicalJson(signed)]);
+  } catch {
+    return null; // not representable canonically: never authenticated
+  }
 };
 
 /**
- * This checkout's verifier events (`.forge/verify-events.jsonl`), newest last, each with two
+ * The identity of a checkout for verifier events (review N07 round 2): a digest of its real
+ * path. Every v2 event records the checkout it ran in, inside the MAC, so an events file
+ * copied into another checkout — or a checkout moved elsewhere — names a checkout that is not
+ * this one, and its runs back nothing here.
+ * @param {string} root
+ */
+export function checkoutId(root) {
+  let real = root;
+  try {
+    real = realpathSync(root);
+  } catch {}
+  return createHash("sha256").update(`forge-checkout\0${real}`).digest("hex").slice(0, 16);
+}
+
+/**
+ * This checkout's verifier events (`.forge/verify-events.jsonl`), newest last, each with three
  * DERIVED fields that are never read from the file:
  *   - `authenticated` — its MAC verifies under this machine's evidence key;
  *   - `authScope` — what that MAC covers: "event" (every field, v2), "verdict" (run id,
- *     verdict and code state only, v1), or null when not authenticated.
+ *     verdict and code state only, v1), or null when not authenticated;
+ *   - `inCheckout` — it is authenticated AND names this checkout (checkoutId) — an event
+ *     copied from another checkout, or from before events named theirs, is not.
  * Existence is not authenticity (review N06): with no key available (an unreadable or
  * unwritable state dir) NOTHING is authenticated — an unsigned line is reported, never
  * promoted into verified evidence. Lines that do not parse or name no run are skipped.
@@ -960,6 +1064,7 @@ export function readVerifyEvents(root) {
     return [];
   }
   const out = [];
+  const here = checkoutId(root);
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let e;
@@ -975,6 +1080,7 @@ export function readVerifyEvents(root) {
       ...e,
       authenticated,
       authScope: authenticated ? (e.v === 1 ? "verdict" : "event") : null,
+      inCheckout: authenticated && e.v !== 1 && e.checkout === here,
     });
   }
   return out;
@@ -1085,6 +1191,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   const event = {
     v: VERIFY_EVENT_VERSION,
     runId,
+    checkout: checkoutId(targetRoot),
     verifier: `${BRAND.cli} verify`,
     verifierVersion: BRAND.version,
     startedAt,

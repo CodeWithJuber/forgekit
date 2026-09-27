@@ -251,7 +251,7 @@ export function applyDistillation(root, lessonId, distilled) {
     correctedBehavior: distilled.correctedBehavior,
   };
   // A model rewrite is a PROPOSAL (review F07): unless it is equivalent by the narrow rule
-  // (same text up to case/whitespace/punctuation, no semantic conflict), the lesson's earned
+  // (same words in the same order, up to a sentence's capital and its punctuation — no semantic conflict), the lesson's earned
   // standing does not carry over to the new wording — it restarts as a candidate that has to
   // earn its own confirmations. What it earned before stays inspectable in provenance and on
   // the ledger's superseded parent claim.

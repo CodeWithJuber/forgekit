@@ -26,12 +26,14 @@ export const ATLAS_VERSION = 5;
 
 const JS_RULES = [
   {
-    re: /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+    // `function name`, `function* name`, `function *name` (a generator is a function too)
+    re: /(?:export\s+)?(?:async\s+)?\bfunction(?:\s*\*\s*|\s+)([A-Za-z_$][\w$]*)/g,
     kind: "function",
   },
   { re: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, kind: "class" },
   {
-    re: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g,
+    // an optional TS annotation (`const calc: Calc = …`), bounded so the scan stays linear
+    re: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]{1,200}?)?=(?!=)/g,
     kind: "const",
   },
 ];
@@ -52,7 +54,7 @@ export const RULES = {
   ".mjs": JS_RULES,
   ".cjs": JS_RULES,
   ".py": [
-    { re: /^\s*def\s+([A-Za-z_]\w*)/gm, kind: "function" },
+    { re: /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/gm, kind: "function" },
     { re: /^\s*class\s+([A-Za-z_]\w*)/gm, kind: "class" },
   ],
   ".go": [
@@ -423,20 +425,61 @@ function depthsAt(code, positions) {
 
 const MAX_HEADER = 4096; // chars between a definition's name and its body's `{`
 
+/** Whether the `{` at `j` sits in TYPE position (after `:` `|` `&` `,` `<` `(` `?` or `=>`):
+ *  a TS object-type literal, not a body. */
+function inTypePosition(code, j) {
+  let k = j - 1;
+  while (k >= 0 && /\s/.test(code[k])) k -= 1;
+  const p = code[k];
+  return ":|&,<(?".includes(p) || (p === ">" && code[k - 1] === "=");
+}
+
+// A Go result type can hold braces of its own: `interface{}`, `map[string]struct{}`,
+// `<-chan struct{}` — the function's body is the brace after them.
+const GO_TYPE_BRACE = /\b(?:interface|struct)\s*$/;
+
 // The body of a definition in a brace language: the first `{` after its name at bracket
 // depth 0, before `limit` (the next definition's line). A `;`, `}`, `=` (Kotlin/C#
 // expression body) or an unbalanced `)` first means a declaration with no body here.
-function braceBody(code, from, limit, close) {
+// Generic brackets count as depth (review N08: `calc<T extends { id: number }>(…) {` took the
+// constraint's `{` for the body and ended the definition on its first line), and in a TS
+// return type (`): { x: number } {`, `): Promise<{…}> {`) a `{` in type position is the type.
+function braceBody(code, from, limit, close, lex = "", kind = "") {
+  const goResult = lex === "go" && kind === "function";
   let depth = 0;
+  let angle = 0;
+  let params = false; // the parameter list has closed
+  let returnType = false;
   for (let j = from; j < limit; j++) {
     const c = code[j];
     if (c === "(" || c === "[") depth += 1;
     else if (c === ")" || c === "]") {
       depth -= 1;
       if (depth < 0) return -1;
+      if (depth === 0 && c === ")") params = true;
     } else if (depth === 0) {
-      if (c === "{") return close[j];
-      if (c === ";" || c === "}" || c === "=") return -1;
+      if (c === "<" && lex !== "go")
+        angle += 1; // Go generics use `[…]`; `<-` is a channel
+      else if (c === ">" && angle > 0 && code[j - 1] !== "=" && code[j - 1] !== "-")
+        angle = Math.max(0, angle - 1);
+      else if (c === "{") {
+        if (
+          angle > 0 ||
+          (returnType && inTypePosition(code, j)) ||
+          (goResult && GO_TYPE_BRACE.test(code.slice(Math.max(from, j - 12), j)))
+        ) {
+          const end = close[j];
+          if (end < 0) return -1;
+          j = end; // a type literal: skip it whole
+          continue;
+        }
+        return close[j];
+      } else if (angle > 0)
+        continue; // inside generics: `=`, `;`… belong to the type
+      else if (lex === "js" && params && c === ":") returnType = true;
+      else if (c === "=" && returnType && code[j + 1] === ">")
+        j += 1; // `=>` in a return type
+      else if (c === ";" || c === "}" || c === "=") return -1;
     }
   }
   return -1;
@@ -445,13 +488,22 @@ function braceBody(code, from, limit, close) {
 // A line ending in one of these (or the next line starting with one of CONT_START)
 // continues the statement — JS automatic semicolon insertion, approximated.
 const CONT_END = new Set([..."=+-*/%&|^!~?:,([{<>"]);
-const CONT_START = new Set([...".?:,=&|*%^+->"]);
+// `(`, `[` and a template open continue the line before them too: ASI never inserts a `;`
+// there (`compute\n(10)` is one call — review N08).
+const CONT_START = new Set([...".?:,=&|*%^+->([`"]);
 
-/** End offset of the top-level JS statement starting at `from` (a const initializer). */
+/** End offset of the top-level JS statement starting at `from` (a const initializer). A
+ *  template literal's newlines never end it (masked code keeps its backticks). */
 function statementEnd(code, from) {
   let depth = 0;
+  let template = false;
   for (let j = from; j < code.length; j++) {
     const c = code[j];
+    if (c === "`") {
+      template = !template;
+      continue;
+    }
+    if (template) continue;
     if (c === "(" || c === "[" || c === "{") depth += 1;
     else if (c === ")" || c === "]" || c === "}") {
       depth -= 1;
@@ -470,6 +522,36 @@ function statementEnd(code, from) {
   return code.length;
 }
 
+// A C-family preprocessor conditional can hold one brace per branch; no extent is read
+// across one.
+const PREPROCESSOR_BRANCH = /^[ \t]*#[ \t]*(?:if|ifdef|ifndef|elif|else)\b/m;
+const OPENER_OF = { ")": "(", "]": "[", "}": "{" };
+
+/**
+ * Whether an extent's masked window — from the definition's name to its end — nests
+ * cleanly: every closer meets its own opener and nothing opened inside is left open. A
+ * lexer blind spot breaks this (an apostrophe in JSX text masks a `{` to the line's end, so
+ * a later `)}` closes the function early — review N04); such an extent is unknown, never
+ * guessed.
+ * @param {string} code masked code
+ * @param {number} from
+ * @param {number} end inclusive
+ * @param {string} lex
+ */
+function extentNests(code, from, end, lex) {
+  const last = Math.min(end, code.length - 1);
+  if (lex === "c" && PREPROCESSOR_BRANCH.test(code.slice(from, last + 1))) return false;
+  const stack = [];
+  for (let i = from; i <= last; i++) {
+    const c = code[i];
+    if (c === "(" || c === "[" || c === "{") stack.push(c);
+    else if (c === ")" || c === "]" || c === "}") {
+      if (stack.pop() !== OPENER_OF[c]) return false;
+    }
+  }
+  return stack.length === 0;
+}
+
 /** Python def/class extents by indentation (continuation lines inside brackets skipped). */
 function pyScopes(code, defs, lines) {
   const byLine = new Map();
@@ -482,12 +564,25 @@ function pyScopes(code, defs, lines) {
   const out = [];
   const open = [];
   let paren = 0;
+  // The delimiter of a triple-quoted string still open at a line's start: such a line is
+  // string content (masked blank, or its closing `"""` at column 0), never a dedent that
+  // ends the scope (review N08).
+  let triple = "";
+  let joined = false; // the previous line ended in a `\` continuation
   const { starts } = lines;
   for (let li = 0; li < starts.length; li++) {
     const s = starts[li];
     const e = li + 1 < starts.length ? starts[li + 1] : code.length;
     const text = code.slice(s, e);
-    if (paren === 0 && text.trim()) {
+    const inString = triple !== "" || joined;
+    for (let k = 0; k < text.length; k++) {
+      const q = text.startsWith('"""', k) ? '"""' : text.startsWith("'''", k) ? "'''" : "";
+      if (!q) continue;
+      if (!triple) triple = q;
+      else if (triple === q) triple = "";
+      k += 2;
+    }
+    if (paren === 0 && !inString && text.trim()) {
       const indent = text.length - text.trimStart().length;
       while (open.length && indent <= open[open.length - 1].indent) {
         const o = open.pop();
@@ -499,8 +594,44 @@ function pyScopes(code, defs, lines) {
       if (ch === "(" || ch === "[" || ch === "{") paren += 1;
       else if (ch === ")" || ch === "]" || ch === "}") paren = Math.max(0, paren - 1);
     }
+    joined = /\\\r?\n?$/.test(text);
   }
   for (const o of open) out.push({ start: o.start, end: code.length, node: o.node });
+  return out;
+}
+
+// Ruby: a `def`/`class`/`module` ends at the `end` on its own indentation (the conventional
+// layout); `rescue`/`ensure`/`else` at that indentation belong to a def. A one-line or
+// endless def ends on its line. No such `end` → no extent (review N04: owning code "up to
+// the next definition" ended a class at its first method).
+const RB_ONE_LINE =
+  /\bend\s*$|^\s*def\s+(?:self\.)?[A-Za-z_]\w*[!?]?(?:\s+|\([^)]*\)\s*)=(?![=~>])/;
+function rbScopes(code, defs, lines) {
+  const { starts } = lines;
+  const lineAt = (li) =>
+    code.slice(starts[li], li + 1 < starts.length ? starts[li + 1] - 1 : code.length);
+  const out = [];
+  for (const d of defs) {
+    const li = lines.at(d.pos) - 1;
+    const head = lineAt(li);
+    const indent = head.length - head.trimStart().length;
+    if (RB_ONE_LINE.test(head)) {
+      out.push({ start: d.pos, end: starts[li] + head.length, node: d.node });
+      continue;
+    }
+    for (let k = li + 1; k < starts.length; k++) {
+      const t = lineAt(k);
+      const body = t.trimStart();
+      if (!body) continue;
+      const ind = t.length - body.length;
+      if (ind > indent) continue;
+      if (ind === indent && /^end\b/.test(body))
+        out.push({ start: d.pos, end: starts[k] + t.length, node: d.node });
+      else if (ind === indent && d.kind === "function" && /^(?:rescue|ensure|else)\b/.test(body))
+        continue;
+      break;
+    }
+  }
   return out;
 }
 
@@ -514,14 +645,7 @@ function pyScopes(code, defs, lines) {
 function containerScopes(code, defs, lex, lines) {
   const containers = defs.filter((d) => CONTAINER_KINDS.has(d.kind));
   if (lex === "py") return pyScopes(code, containers, lines);
-  if (lex === "rb") {
-    // `def … end` — no braces to match: a definition owns code up to the next one.
-    return containers.map((d, k) => ({
-      start: d.pos,
-      end: k + 1 < containers.length ? containers[k + 1].pos - 1 : code.length,
-      node: d.node,
-    }));
-  }
+  if (lex === "rb") return rbScopes(code, containers, lines);
   const close = closingBraces(code);
   const constDepth =
     lex === "js"
@@ -543,7 +667,7 @@ function containerScopes(code, defs, lex, lines) {
     const from = d.pos + d.node.name.length;
     if (CONTAINER_KINDS.has(d.kind)) {
       const limit = Math.max(from, Math.min(limitOf[k], from + MAX_HEADER));
-      const end = braceBody(code, from, limit, close);
+      const end = braceBody(code, from, limit, close, lex, d.kind);
       if (end > 0) out.push({ start: d.pos, end, node: d.node });
     } else if (d.kind === "const" && constDepth.get(d.pos) === 0) {
       out.push({ start: d.pos, end: statementEnd(code, from), node: d.node });
@@ -699,12 +823,26 @@ function extractFile(path, root, preRead) {
   // a dependency contract needs it to read a declaration whole. A JS declaration with no
   // brace body (an overload, `declare function`, a `type` alias) ends with its statement.
   // Locality is mirrored onto the symbol: a nested helper is never a cross-file dependency.
+  // An extent is only recorded when its window nests cleanly (see extentNests); a TS
+  // overload group is one definition, from its first signature to the implementation's end.
+  // A file whose masked code doesn't nest as a whole has a lexer blind spot somewhere; its
+  // mis-paired brackets can make any window look balanced, so none of its extents is read.
   const endOf = new Map(scopes.map((sc) => [sc.node, sc.end]));
+  const fileNests = extentNests(code, 0, code.length - 1, lex);
   for (const d of defs) {
     let end = endOf.get(d.node);
     if (end === undefined && lex === "js") end = statementEnd(code, d.pos + d.node.name.length);
-    if (end !== undefined) d.node.endLine = d.sym.endLine = lines.at(Math.max(d.pos, end));
+    if (end !== undefined && fileNests && extentNests(code, d.pos, end, lex))
+      d.node.endLine = d.sym.endLine = lines.at(Math.max(d.pos, end));
     if (d.node.local) d.sym.local = true;
+  }
+  if (lex === "js") {
+    for (let k = defs.length - 2; k >= 0; k--) {
+      const [a, b] = [defs[k], defs[k + 1]];
+      if (a.kind !== "function" || b.kind !== "function" || a.node.name !== b.node.name) continue;
+      if (endOf.has(a.node)) continue; // a has a body of its own: not a signature
+      a.node.endLine = a.sym.endLine = b.node.endLine; // undefined when the body's is unknown
+    }
   }
 
   // Inheritance edges — `class X extends Y` (JS/TS) and `class X(Base, …)` (Python). Without
@@ -1044,6 +1182,19 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
  * build()'s OWN walk/eligibility (never a second extension list). Skipped when the graph
  * was capped (files were dropped, so a size diff is expected, not staleness).
  */
+/**
+ * Whether `text` is exactly the content the atlas indexed for `rel` — only then do its line
+ * numbers and definition extents locate anything in it. A file edited after the build (a
+ * stale atlas) is not indexed text: a consumer must treat its extents as unknown (review N04:
+ * `forge context` delivered lines 1-13 of a file that had grown 30 lines above the function
+ * and reported the function covered).
+ * @param {any} atlas @param {string} rel @param {string} text
+ */
+export function indexedText(atlas, rel, text) {
+  const h = atlas?.fileHashes?.[rel];
+  return typeof h === "string" && h === hash(text);
+}
+
 export function isStale(root, atlas) {
   if (!atlas?.fileHashes || atlas.version !== ATLAS_VERSION) return true;
   const indexed = new Set(Object.keys(atlas.fileHashes));

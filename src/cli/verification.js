@@ -123,6 +123,12 @@ HANDLERS.verify = async (argv) => {
     if (n("declared")) how.push(`${n("declared")} declared (${cov.declared ?? "config"})`);
     console.log(`  coverage basis:   ${how.join(" · ")}`);
   }
+  // A recursive root command that was recognized but not credited (review N03 round 2): the
+  // members were run one by one, and this says why.
+  if (cov?.rootRunRefused)
+    console.log(
+      `  root run not credited: \`${cov.rootRunRefused.command}\` — ${cov.rootRunRefused.reason} (members run on their own)`,
+    );
   if (t.mutated)
     console.log("  ! the code changed while the tests ran — the verdict is not bound to it");
   // Scope of the fingerprint (review N05): what it could not bind, and what the repo declared

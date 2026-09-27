@@ -11,7 +11,7 @@
 // fit the budget says so instead of claiming completion (review F02).
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { has as atlasHas, query as atlasQuery, impact } from "./atlas.js";
+import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
 import { claimText, val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { referencedEntities } from "./preflight.js";
@@ -160,13 +160,17 @@ function windowCoverage(defs, from, to) {
  * {key, kind: "def"|"file"|"tests", line?, endLine?}. Ordered largest → smallest; a variant
  * that is not smaller than the previous one is skipped.
  */
-function fileItem(root, rel, { needs, source, score }) {
+function fileItem(root, rel, { needs, source, score }, atlas = null) {
   const text = readRel(root, rel);
   if (text === null) return null;
   const lines = text.split("\n");
   const total = lines.length;
   const keys = needs.map((n) => n.key);
-  const defs = needs.filter((n) => n.kind === "def" && Number.isFinite(n.line));
+  // Definition lines and extents come from the atlas and locate a definition only in the text
+  // it indexed: in a file edited since (a stale atlas) no window is known to show one, so only
+  // the whole file covers it.
+  const located = indexedText(atlas, rel, text);
+  const defs = located ? needs.filter((n) => n.kind === "def" && Number.isFinite(n.line)) : [];
   const variants = [variant("full", `// ${rel}\n${text}`, keys)];
   const windowed = (gran, label, from, to) => {
     const { covers, partial } = windowCoverage(defs, from, to);
@@ -323,7 +327,7 @@ export function assemble(
     }
   }
   for (const [rel, f] of files) {
-    const it = fileItem(root, rel, f);
+    const it = fileItem(root, rel, f, atlas);
     if (it) items.push(it);
   }
   // Optional extras: trusted scope-matching facts (nice-to-have, never required).
