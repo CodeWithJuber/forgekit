@@ -136,11 +136,34 @@ export function literalSpans(s) {
     none.set(kind, upTo);
     i += 1;
   };
+  // The current line's end, found once per line: `indexOf` from every quote re-scanned the
+  // rest of a long unbroken line each time.
+  let eol = -1;
+  // Every backtick run by length, in order, with a forward-only cursor per length: an opener's
+  // closer is the next run of its length, found without rescanning the text.
+  /** @type {Map<number, number[]>} */
+  const runs = new Map();
+  for (let k = 0; k < n; ) {
+    if (s[k] !== "`") {
+      k += 1;
+      continue;
+    }
+    let m = k;
+    while (m < n && s[m] === "`") m += 1;
+    const at = runs.get(m - k);
+    if (at) at.push(k);
+    else runs.set(m - k, [k]);
+    k = m;
+  }
+  /** @type {Map<number, number>} */
+  const cursor = new Map();
   while (i < n) {
     const c = s[i];
     if ((c === '"' || c === "'") && !wordAt(s, i - 1)) {
-      let eol = s.indexOf("\n", i);
-      if (eol < 0) eol = n;
+      if (eol < i) {
+        eol = s.indexOf("\n", i);
+        if (eol < 0) eol = n;
+      }
       if ((none.get(c) ?? -1) >= eol) {
         i += 1;
         continue;
@@ -163,29 +186,15 @@ export function literalSpans(s) {
     if (c === "`") {
       let k = i;
       while (k < n && s[k] === "`") k += 1;
-      const kind = `\`${k - i}`;
-      let end = -1;
-      if ((none.get(kind) ?? -1) < n)
-        for (let j = k; j < n; ) {
-          if (s[j] !== "`") {
-            j += 1;
-            continue;
-          }
-          let m = j;
-          while (m < n && s[m] === "`") m += 1;
-          if (m - j === k - i) {
-            end = m;
-            break;
-          }
-          j = m;
-        }
-      if (end < 0) {
-        none.set(kind, n);
-        i = k;
-      } else {
-        spans.push([i, end]);
-        i = end;
-      }
+      const len = k - i;
+      const at = runs.get(len) ?? [];
+      let x = cursor.get(len) ?? 0;
+      while (x < at.length && at[x] <= i) x += 1;
+      cursor.set(len, x);
+      if (x < at.length) {
+        spans.push([i, at[x] + len]);
+        i = at[x] + len;
+      } else i = k; // no closing run of this length: the backticks are text
       continue;
     }
     const closers = TYPO_CLOSERS.get(c);
@@ -430,6 +439,12 @@ function spellingsOf(masked) {
  *   symbols: string[], format: string[]}}
  */
 export function criticalFeatures(text) {
+  return analyze(text).features;
+}
+
+/** A text's features and its masked form (literals and fences replaced by marks), computed
+ *  once — semanticConflicts reads both for each side. */
+function analyze(text) {
   const s = String(text ?? "");
   const { fences, rest } = splitFences(s);
   // Literals are compared whole; they are masked before the rest is scanned so a quoted ">="
@@ -463,7 +478,7 @@ export function criticalFeatures(text) {
         `${cf.map((ch) => `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`).join(" ")} in ${JSON.stringify(tok)}`,
       );
   }
-  return {
+  const features = {
     operators,
     numbers,
     literals,
@@ -474,6 +489,7 @@ export function criticalFeatures(text) {
     symbols: symbolRuns(masked),
     format,
   };
+  return { features, masked };
 }
 
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -530,13 +546,14 @@ export const FLIP_KINDS = /** @type {const} */ ([
  * @returns {{kind: string, a: string[], b: string[], order?: boolean}[]}
  */
 export function semanticConflicts(a, b, { kinds = ALL_KINDS } = {}) {
-  const fa = criticalFeatures(a);
-  const fb = criticalFeatures(b);
+  const A = analyze(a);
+  const B = analyze(b);
+  const [fa, fb] = [A.features, B.features];
   const out = [];
   for (const kind of kinds) {
     if (kind === "spelling") {
-      const sa = spellingsOf(maskLiterals(splitFences(a).rest).masked);
-      const sb = spellingsOf(maskLiterals(splitFences(b).rest).masked);
+      const sa = spellingsOf(A.masked);
+      const sb = spellingsOf(B.masked);
       const onlyA = [];
       const onlyB = [];
       for (const [key, forms] of sa) {
@@ -554,8 +571,10 @@ export function semanticConflicts(a, b, { kinds = ALL_KINDS } = {}) {
       out.push({ kind, a: xa, b: xb, order: true });
       continue;
     }
-    const onlyA = xa.filter((x) => !xb.includes(x));
-    const onlyB = xb.filter((x) => !xa.includes(x));
+    // Set lookups: a pairwise `includes` was quadratic in the number of features.
+    const [inA, inB] = [new Set(xa), new Set(xb)];
+    const onlyA = xa.filter((x) => !inB.has(x));
+    const onlyB = xb.filter((x) => !inA.has(x));
     out.push({ kind, a: onlyA.length ? onlyA : xa, b: onlyB.length ? onlyB : xb });
   }
   return out;

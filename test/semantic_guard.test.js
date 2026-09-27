@@ -128,19 +128,38 @@ test("layoutFeatures and statementKey are linear on long punctuation runs", () =
   assert.ok(performance.now() - t0 < 2000, "linear, not quadratic");
 });
 
-test("the literal scanner, symbols and spelling are linear on hostile input", () => {
-  const n = 100000;
-  const t0 = performance.now();
-  for (const hostile of [
-    "“".repeat(n), // unmatched typographic openers
-    "'a ".repeat(n), // ASCII openers with no closer on the line
-    Array.from({ length: 400 }, (_, k) => "`".repeat(k + 1)).join(" x "), // unmatched runs
-    "+".repeat(n), // one long symbol run
-    `x${"\u200b".repeat(n)}y`, // format characters in one token
-    "a".repeat(n), // one long word
-  ])
-    semanticConflicts(hostile, `${hostile} z`);
-  assert.ok(performance.now() - t0 < 4000, "linear, not quadratic");
+test("the literal scanner, symbols and spelling scale linearly on hostile input", () => {
+  // Measured as SCALING, not wall-clock: 4× the input takes about 4× the time when the work is
+  // linear and 16× when it is quadratic, on a fast machine or a slow CI runner alike.
+  const same = (text) => [text, `${text} z`];
+  const ids = (prefix, n) => Array.from({ length: n / 6 }, (_, k) => `${prefix}X${k}`).join(" ");
+  const cases = {
+    "unmatched typographic openers": (n) => same("“".repeat(n)),
+    "ASCII openers with no closer on a long line": (n) => same("'a ".repeat(n)),
+    "backtick runs of every length": (n) => {
+      const out = [];
+      for (let k = 1, len = 0; len < n; k++, len += k + 3) out.push("`".repeat(k));
+      return same(out.join(" x "));
+    },
+    "one long symbol run": (n) => same("+".repeat(n)),
+    "format characters in one token": (n) => same(`x${"\u200b".repeat(n)}y`),
+    "one long word": (n) => same("a".repeat(n)),
+    "thousands of differing identifiers": (n) => [ids("a", n), ids("b", n)],
+  };
+  const time = ([a, b]) => {
+    const t0 = performance.now();
+    semanticConflicts(a, b);
+    return performance.now() - t0;
+  };
+  for (const [name, make] of Object.entries(cases)) {
+    time(make(2000)); // warm the JIT up
+    const small = time(make(20000));
+    const large = time(make(80000));
+    assert.ok(
+      large < 10 * small + 50,
+      `${name}: ${small.toFixed(1)} ms → ${large.toFixed(1)} ms for 4× the input`,
+    );
+  }
 });
 
 // Review N01 round 2: every pair the adversarial review served as "near" — each must conflict.
