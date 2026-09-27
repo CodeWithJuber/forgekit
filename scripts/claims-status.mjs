@@ -190,17 +190,33 @@ export function validateRegistry(registry, { root = null } = {}) {
   return errors;
 }
 
+/** Compare two `x.y.z` versions numerically (a pre-release suffix is ignored). */
+export function compareVersions(a, b) {
+  const parts = (v) =>
+    String(v)
+      .split(/[.+-]/)
+      .slice(0, 3)
+      .map((n) => Number.parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
 /**
  * Cross-check each claim's `assessed_release` against the checkout's release tags: a claim
  * marked "unreleased" whose source commit has since shipped is stale (record the release), and
  * a claim naming a release must name one whose tag exists and contains its source commit.
  * Returns null when the check cannot run — no git, or no `v*` tags (a shallow CI clone) — and
- * skips a claim whose commit is not in this clone.
+ * skips a claim whose commit is not in this clone. A checkout can also carry only SOME tags (a
+ * branch fetched without `--tags`): a release newer than every tag present but not newer than
+ * the code's own package.json version cannot be checked there — it is listed in `unchecked`
+ * (fetch the tags to check it), not reported as a problem.
  * @param {string} root
  * @param {any} registry a valid registry
+ * @param {{unchecked?: string[]}} [opts] receives the claims that could not be checked
  * @returns {string[]|null}
  */
-export function releaseProblems(root, registry) {
+export function releaseProblems(root, registry, { unchecked = [] } = {}) {
   const g = (args) =>
     execFileSync("git", args, {
       cwd: root,
@@ -222,6 +238,14 @@ export function releaseProblems(root, registry) {
     return null;
   }
   if (!tags.size) return null;
+  const newest = [...tags]
+    .map((t) => t.slice(1))
+    .sort(compareVersions)
+    .at(-1);
+  let version = null;
+  try {
+    version = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version ?? null;
+  } catch {}
   const firstRelease = new Map();
   const shippedIn = (commit) => {
     if (!firstRelease.has(commit)) {
@@ -247,9 +271,15 @@ export function releaseProblems(root, registry) {
           `${c.id}: assessed_release is "unreleased", but its source commit ${at} shipped in ${first} — record the release`,
         );
     } else if (!tags.has(`v${c.assessed_release}`)) {
-      problems.push(
-        `${c.id}: assessed_release ${c.assessed_release} has no v${c.assessed_release} tag`,
-      );
+      const untagged =
+        typeof version === "string" &&
+        compareVersions(c.assessed_release, newest) > 0 &&
+        compareVersions(c.assessed_release, version) <= 0;
+      if (untagged) unchecked.push(`${c.id} (${c.assessed_release})`);
+      else
+        problems.push(
+          `${c.id}: assessed_release ${c.assessed_release} has no v${c.assessed_release} tag`,
+        );
     } else if (!ok(["merge-base", "--is-ancestor", c.source_commit, `v${c.assessed_release}`])) {
       problems.push(
         `${c.id}: release ${c.assessed_release} does not contain its source commit ${at}`,
@@ -421,12 +451,18 @@ export function run(argv, io = {}) {
     for (const p of problems) error(`registry: ${p}`);
     return 1;
   }
-  const releases = releaseProblems(root, registry);
+  /** @type {string[]} */
+  const unchecked = [];
+  const releases = releaseProblems(root, registry, { unchecked });
   if (releases === null) log("release check skipped: no v* tags in this checkout");
   else if (releases.length) {
     for (const p of releases) error(`registry: ${p}`);
     return 1;
   }
+  if (unchecked.length)
+    log(
+      `release check incomplete: ${unchecked.length} claim(s) name a release newer than this checkout's tags — \`git fetch --tags\` to check ${unchecked.join(", ")}`,
+    );
 
   let failed = false;
   const readmeFile = path.join(root, README_PATH);

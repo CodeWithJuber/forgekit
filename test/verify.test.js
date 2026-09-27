@@ -879,6 +879,49 @@ test("N03 round 2: configuration, caches and member rules narrow what a recursiv
   assert.equal(inferred(mono("npm test --workspaces", { "node_modules/.bin/npm": "" })), false);
 });
 
+test("Q02: a local program named like npm never covers the workspaces; a declaration stays declared", () => {
+  // The review's fixture: `./tools/npm` only exits 0, and `packages/bad` fails on its own.
+  const root = monorepo({ rootScript: "./tools/npm test --workspaces" });
+  mkdirSync(join(root, "tools"), { recursive: true });
+  writeFileSync(join(root, "tools", "npm"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const plan = planSuites(root);
+  assert.equal(plan.coverage.rootCoversWorkspaces, false);
+  assert.equal(plan.coverage.rootRun, undefined, "no recognized run is recorded");
+  assert.deepEqual(plan.coverage.basis, { ".": "measured", "packages/bad": "measured" });
+  assert.ok(
+    plan.suites.some((x) => x.cwd === "packages/bad"),
+    "the member runs on its own",
+  );
+  assert.equal(plan.coverage.rootRunRefused?.command, "./tools/npm test --workspaces");
+  assert.match(
+    plan.coverage.rootRunRefused?.reason ?? "",
+    /`\.\/tools\/npm` is a program named by its path, not npm itself/,
+  );
+  // An explicit declaration still covers the member — labelled as the declaration it is.
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ verify: { workspaces: "root" } }),
+  );
+  const declared = planSuites(root);
+  assert.equal(declared.coverage.basis["packages/bad"], "declared");
+  assert.equal(declared.coverage.declared, "verify.workspaces=root");
+  assert.equal(declared.coverage.rootRun, undefined, "never recorded as a recognized run");
+});
+
+test("Q02: the review's fixture verifies FAIL — the member's own failure decides", {
+  skip: NO_NPM_SPAWN,
+}, () => {
+  const root = monorepo({ rootScript: "./tools/npm test --workspaces" });
+  mkdirSync(join(root, "tools"), { recursive: true });
+  writeFileSync(join(root, "tools", "npm"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "FAIL", JSON.stringify(r.tests.executed));
+  assert.equal(r.tests.executed.find((s) => s.cwd === ".")?.status, "PASS", "the stub exits 0");
+  assert.equal(r.tests.executed.find((s) => s.cwd === "packages/bad")?.status, "FAIL");
+  assert.equal(r.tests.coverage.basis["packages/bad"], "measured");
+});
+
 test("N03 round 2: a root runner that never runs scripts.test infers nothing", () => {
   const root = monorepo({ rootScript: "npm test --workspaces" });
   writeFileSync(join(root, "bun.lockb"), "");

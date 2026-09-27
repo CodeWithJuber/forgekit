@@ -48,7 +48,12 @@ neighbourhood" are different questions:
   exact tier now compares `keyHash`, a digest of the text's code units, and nothing is
   normalized at that boundary; similarity search stays layout-blind. The near tier compares
   the stored `key` with the semantic guard, so it requires a key of the current version
-  that the ledger stored verbatim (`keyVerbatim`: no CRLF or non-NFC text to fold).
+  that the ledger stored verbatim (`keyVerbatim`: no CRLF or non-NFC text to fold). The
+  guard's `binding` kind (review Q01) also compares what each polarity or direction word
+  applies to, so "Allow admins and deny guests" and "Deny admins and allow guests", which
+  share every token, are held at adapt. No token check establishes that two texts mean the
+  same, so every hit states what it establishes: `semanticEquivalence` is `"identical"` only
+  for exact and `"unverified"` for near and adapt, which also carry `requiresReview: true`.
 - **shape** (`spec`): identity plus typed placeholders for identifiers, paths, numbers and
   string literals (`⟨ident⟩`, `⟨path⟩`, `⟨num⟩`, `⟨str⟩`).
 

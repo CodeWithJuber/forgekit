@@ -4,8 +4,8 @@
 // Everything is data: SIGNATURES maps a dependency/marker to a label, so widening coverage
 // is adding a row, never editing logic. Fail-safe — an unreadable or absent manifest is
 // skipped, never thrown.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stripTrailingSlashes } from "./util.js";
 
 const read = (root, rel) => {
@@ -622,7 +622,42 @@ const CACHE_BYPASS_ENV = new Map([
   ["TURBO_FORCE", "turbo"],
   ["NX_SKIP_NX_CACHE", "nx"],
 ]);
+// Variables a recognized command line may set — an ALLOWLIST, like the options (review Q02).
+// Any other can change which program a name runs (PATH), what it loads (LD_PRELOAD,
+// NODE_OPTIONS=--require), where it reads its configuration (HOME), or which members it runs.
+const INERT_ENV = new Set([
+  "CI",
+  "NODE_ENV",
+  "FORCE_COLOR",
+  "NO_COLOR",
+  "TZ",
+  "LANG",
+  "LC_ALL",
+  "DEBUG",
+  "DO_NOT_TRACK",
+  "NX_DAEMON",
+  "NX_NO_CLOUD",
+  "TURBO_TELEMETRY_DISABLED",
+]);
+// NODE_OPTIONS flags that neither load code nor soften a failure.
+const INERT_NODE_OPTION =
+  /^--(?:(?:max[-_]old[-_]space[-_]size|max[-_]semi[-_]space[-_]size|stack[-_]trace[-_]limit)=\d+|experimental-vm-modules|no-warnings|no-deprecation|trace-warnings|trace-deprecation|trace-uncaught|enable-source-maps|unhandled-rejections=(?:strict|throw))$/;
 const TRUTHY = new Set(["1", "true"]);
+
+/** Whether a NODE_OPTIONS value holds only inert flags. */
+const inertNodeOptions = (value) =>
+  String(value)
+    .split(/\s+/)
+    .every((o) => !o || INERT_NODE_OPTION.test(o));
+
+/** Why a variable set on the command line keeps a run from being established, or null. */
+function envProblem(name, value) {
+  if (INERT_ENV.has(name) || CACHE_BYPASS_ENV.has(name)) return null;
+  if (name === "NODE_OPTIONS" && inertNodeOptions(value)) return null;
+  if (/^path(?:ext)?$/i.test(name)) return `sets ${name}, which changes the program a name runs`;
+  if (TOOL_ENV.test(name)) return `sets ${name}, which can narrow or redirect the run`;
+  return `sets ${name}, which is not a variable known to leave the run unchanged`;
+}
 // Shell builtins that change what LATER commands do — the directory (`cd packages/good && npm
 // test --workspaces` runs one workspace), the exit status (`trap 'exit 0' EXIT`, `… && exit
 // 0; …`), the environment, the meaning of a name. A script holding any is not a recognized
@@ -635,6 +670,8 @@ const STATEFUL_BUILTINS = new Set(
 );
 // Wrappers whose job is to find and run another binary.
 const TOOL_BINS = new Set(["turbo", "lerna", "nx"]);
+// npx/bunx/npm exec options that change nothing about which binary runs. `-p`/`--package`
+// is not one: it picks the package that provides the binary (review Q02).
 const NPX_OK = new Set([
   "--yes",
   "-y",
@@ -644,21 +681,65 @@ const NPX_OK = new Set([
   "-q",
   "--prefer-offline",
 ]);
-/** `./node_modules/.bin/turbo.cmd` → `turbo`. */
-const binName = (w) =>
+// Programs a project installs as a dependency, and the package whose binary each must be. A
+// bare name finds them through the script's PATH (node_modules/.bin first); the same install
+// may be spelled out as `node_modules/.bin/<name>`. Package managers and system programs are
+// never project binaries (runProblem refuses a copy in node_modules/.bin).
+const INSTALLED_BINS = new Map([
+  ["turbo", "turbo"],
+  ["nx", "nx"],
+  ["lerna", "lerna"],
+  ["cross-env", "cross-env"],
+  ["bun", "bun"],
+  ["bunx", "bun"],
+]);
+
+/**
+ * The program a command word names, as far as recognition may rely on it (review Q02). A bare
+ * name is the program of that name the script's PATH resolves — runProblem checks that nothing
+ * in the project shadows it. `node_modules/.bin/<tool>` (optionally `./`-prefixed, or its
+ * Windows `.cmd`/`.ps1` shim) is that same installed tool spelled out. Any other path —
+ * `./tools/npm`, `./scripts/pnpm.js`, `/usr/bin/env` — is a program whose behaviour is
+ * unknown, whatever its basename: null.
+ * @param {string} word
+ * @returns {string|null}
+ */
+function commandIdentity(word) {
+  const w = String(word);
+  if (!/[\\/]/.test(w)) return w;
+  const m = /^(?:\.[\\/])?node_modules[\\/]\.bin[\\/]([^\\/]+?)(?:\.cmd|\.ps1)?$/i.exec(w);
+  return m && INSTALLED_BINS.has(m[1]) ? m[1] : null;
+}
+
+/** The name a word's basename suggests (`./tools/npm.cmd` → `npm`) — used only to explain a
+ *  refusal, never to recognize a program. */
+const suggestedName = (w) =>
   String(w)
     .split(/[\\/]/)
     .pop()
-    .replace(/\.(?:cmd|exe|ps1|js|cjs|mjs)$/i, "");
+    ?.replace(/\.(?:cmd|exe|ps1|bat|js|cjs|mjs)$/i, "") ?? "";
 
-/** Strip env assignments and runner wrappers (env, cross-env, npx, bunx, npm exec, pnpm/yarn
- *  exec|dlx, `yarn turbo`) down to the executable that does the work, with the variables the
- *  command line sets. `null` when a wrapper is used in a way that could change what runs
- *  (`npx -c`, `npm exec --workspaces`…) or a tool-namespaced variable is set. */
-function unwrapCommand(words) {
+/**
+ * Strip env assignments and runner wrappers (env, cross-env, npx, bunx, npm exec, pnpm/yarn
+ * exec|dlx, `yarn turbo`) down to the program that does the work: its identity (`bin`), its
+ * arguments, the variables the command line sets, and `bins` — every program the line relies
+ * on, wrappers first, for runProblem's shadow checks. `null` when a wrapper is used in a way
+ * that could change what runs (`npx -c`, `npx -p pkg`, `env -C dir`, `npm exec
+ * --workspaces`…), a word names an unknown program (commandIdentity), or a variable outside
+ * the allowlist is set. `explain` relaxes the last two and records the first such reason as
+ * `note` instead — for a refusal message only.
+ * @param {string[]} words
+ * @param {boolean} [explain]
+ * @returns {{bin: string, args: string[], words: string[], env: Map<string, string>, bins: string[], note: string|null}|null}
+ */
+function unwrapCommand(words, explain = false) {
   const w = [...words];
   /** @type {Map<string, string>} */
   const env = new Map();
+  /** @type {string[]} */
+  const bins = [];
+  /** @type {string|null} */
+  let note = null;
   const assign = () => {
     while (w.length && ENV_ASSIGN.test(w[0])) {
       const word = /** @type {string} */ (w.shift());
@@ -666,16 +747,29 @@ function unwrapCommand(words) {
       env.set(word.slice(0, eq), word.slice(eq + 1));
     }
   };
+  /** @param {string} word */
+  const identify = (word) => {
+    const id = commandIdentity(word);
+    if (id !== null || !explain) return id;
+    const name = suggestedName(word);
+    note ??= `\`${word}\` is a program named by its path, not ${name} itself: only a bare name or a node_modules/.bin install is recognized`;
+    return name;
+  };
   for (let hop = 0; hop < 6; hop++) {
     assign();
     if (!w.length || w[0] === "!") return null; // `! cmd` inverts the status
-    const bin = binName(w[0]);
+    const bin = identify(w[0]);
+    if (bin === null) return null;
+    bins.push(bin);
     const next = w[1];
     if (bin === "env" || bin === "cross-env") {
       w.shift();
+      // `env -u NAME` only removes a variable; `-i`, `-C`/`--chdir`, `-S`… change the
+      // environment or the directory the command runs in. cross-env takes no options.
       while (w.length && w[0].startsWith("-")) {
-        if (w[0] === "-u" || w[0] === "--unset") w.shift();
-        w.shift();
+        if (bin === "env" && (w[0] === "-u" || w[0] === "--unset") && w.length > 1) w.splice(0, 2);
+        else if (bin === "env" && w[0].startsWith("--unset=")) w.shift();
+        else return null;
       }
       continue;
     }
@@ -684,9 +778,8 @@ function unwrapCommand(words) {
       if (bin === "bun") w.shift();
       while (w.length && w[0].startsWith("-")) {
         const o = /** @type {string} */ (w.shift());
-        if (o === "-p" || o === "--package") w.shift();
-        else if (o === "--") break;
-        else if (!NPX_OK.has(o) && !o.startsWith("--package=")) return null;
+        if (o === "--") break;
+        if (!NPX_OK.has(o)) return null;
       }
       continue;
     }
@@ -695,7 +788,7 @@ function unwrapCommand(words) {
       while (w.length && w[0].startsWith("-")) {
         const o = /** @type {string} */ (w.shift());
         if (o === "--") break;
-        if (!NPX_OK.has(o) && !o.startsWith("--package=")) return null;
+        if (!NPX_OK.has(o)) return null;
       }
       continue;
     }
@@ -705,13 +798,22 @@ function unwrapCommand(words) {
       if (w[0]?.startsWith("-")) return null;
       continue;
     }
-    if ((bin === "pnpm" || bin === "yarn") && next && TOOL_BINS.has(binName(next))) {
+    // `yarn turbo run test`: the package manager runs the installed tool, named bare.
+    if (
+      (bin === "pnpm" || bin === "yarn") &&
+      next !== undefined &&
+      TOOL_BINS.has(explain ? suggestedName(next) : next)
+    ) {
       w.shift();
       continue;
     }
-    for (const name of env.keys())
-      if (TOOL_ENV.test(name) && !CACHE_BYPASS_ENV.has(name)) return null;
-    return { bin, args: w.slice(1), words: w, env };
+    for (const [name, value] of env) {
+      const why = envProblem(name, value);
+      if (!why) continue;
+      if (!explain) return null;
+      note ??= `the command line ${why}`;
+    }
+    return { bin, args: w.slice(1), words: w, env, bins, note };
   }
   return null;
 }
@@ -933,37 +1035,71 @@ const MAX_SCRIPT_HOPS = 4;
 const firstWord = (c) => c.words.find((w) => !ENV_ASSIGN.test(w)) ?? "";
 
 /**
- * The recursive workspace test run a root `test` script performs, if one is ESTABLISHED:
- * `{tool, command, bypass}` for the recognized invocation (`command` is its words, re-joined;
- * `bypass` — the command itself disables the tool's result cache: `turbo --force`,
- * `--skip-nx-cache`, `TURBO_FORCE=1`), else null. Pure — `scripts` is the root package.json's
- * `scripts`, used to follow `npm run <script>` hops (at most four, cycles refused).
+ * Walk a root `test` script for a recognized recursive run (see recursiveTestInvocation).
+ * `explain` walks it with commandIdentity and the variable allowlist relaxed, carrying the
+ * first reason they would have refused as `note` — so a script that is NOT established can
+ * still say why (review Q02).
  * @param {string} script
- * @param {{scripts?: Record<string, unknown>}} [opts]
- * @returns {{tool: string, command: string, bypass: boolean}|null}
+ * @param {Record<string, unknown>} scripts
+ * @param {boolean} explain
+ * @returns {{tool: string, command: string, bypass: boolean, bins: string[], note: string|null}|null}
  */
-export function recursiveTestInvocation(script, { scripts = {} } = {}) {
+function walkTestScript(script, scripts, explain) {
   const seen = new Set(["test"]);
-  const walk = (line, hops) => {
+  /**
+   * @param {string} line
+   * @param {number} hops
+   * @param {string[]} trail  programs relied on by the hops that led here
+   * @param {string|null} why
+   * @returns {{tool: string, command: string, bypass: boolean, bins: string[], note: string|null}|null}
+   */
+  const walk = (line, hops, trail, why) => {
     const cmds = shellCommands(line);
     if (!cmds) return null;
     if (cmds.some((c) => STATEFUL_BUILTINS.has(firstWord(c)))) return null;
     for (const c of statusCarriers(cmds)) {
-      const cmd = unwrapCommand(c.words);
+      const cmd = unwrapCommand(c.words, explain);
       if (!cmd) continue;
       const r = recognizeCommand(cmd);
-      if (r && "tool" in r) return { tool: r.tool, command: cmd.words.join(" "), bypass: r.bypass };
+      const bins = [...trail, ...cmd.bins];
+      const note = why ?? cmd.note;
+      if (r && "tool" in r)
+        return {
+          tool: r.tool,
+          command: cmd.words.join(" "),
+          bypass: r.bypass,
+          bins: [...new Set(bins)],
+          note,
+        };
       if (r && "follow" in r) {
         const next = scripts?.[r.follow];
         if (typeof next !== "string" || seen.has(r.follow) || hops >= MAX_SCRIPT_HOPS) continue;
         seen.add(r.follow);
-        const inner = walk(next, hops + 1);
+        const inner = walk(next, hops + 1, bins, note);
         if (inner) return inner;
       }
     }
     return null;
   };
-  return typeof script === "string" ? walk(script, 0) : null;
+  return typeof script === "string" ? walk(script, 0, [], null) : null;
+}
+
+/**
+ * The recursive workspace test run a root `test` script performs, if one is ESTABLISHED:
+ * `{tool, command, bypass, bins}` for the recognized invocation (`command` is its words,
+ * re-joined; `bypass` — the command itself disables the tool's result cache: `turbo --force`,
+ * `--skip-nx-cache`, `TURBO_FORCE=1`; `bins` — every program the line relies on, wrappers and
+ * hops included, each named bare or as its node_modules/.bin install), else null. A program
+ * named by any other path (`./tools/npm`) is unknown whatever its basename (review Q02). Pure —
+ * `scripts` is the root package.json's `scripts`, used to follow `npm run <script>` hops (at
+ * most four, cycles refused).
+ * @param {string} script
+ * @param {{scripts?: Record<string, unknown>}} [opts]
+ * @returns {{tool: string, command: string, bypass: boolean, bins: string[]}|null}
+ */
+export function recursiveTestInvocation(script, { scripts = {} } = {}) {
+  const run = walkTestScript(script, scripts, false);
+  return run && { tool: run.tool, command: run.command, bypass: run.bypass, bins: run.bins };
 }
 
 /** JSON with comments and trailing commas (turbo.json, nx.json), read by a linear scanner. */
@@ -1072,29 +1208,143 @@ function toolWorkspaceLists(root, tool) {
   return pnpmGlobs ? [pkgGlobs, pnpmGlobs] : [pkgGlobs];
 }
 
+// cmd.exe — npm's script shell on Windows — looks in the working directory before PATH,
+// trying each PATHEXT extension: an `npm.cmd` in the package root runs instead of npm.
+const WINDOWS_EXEC_EXT = [
+  ".com",
+  ".exe",
+  ".bat",
+  ".cmd",
+  ".vbs",
+  ".vbe",
+  ".js",
+  ".jse",
+  ".wsf",
+  ".wsh",
+  ".msc",
+];
+const PACKAGE_MANAGERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn"]);
+
+/**
+ * Why the program a bare name runs in the root's scripts may not be that tool (review Q02), or
+ * null: a same-named executable in the package root (Windows runs it first), or the first
+ * node_modules/.bin entry on the script's PATH — npm puts the package's own and every parent
+ * directory's there, in that order — that is not the binary of the tool's own installed
+ * package. Package managers and system programs are never project binaries, so any copy there
+ * shadows them.
+ * @param {string} root
+ * @param {string} bin
+ * @returns {string|null}
+ */
+function shadowProblem(root, bin) {
+  for (const ext of WINDOWS_EXEC_EXT)
+    if (existsSync(join(root, `${bin}${ext}`)))
+      return `${bin}${ext} in the package root shadows ${bin} (Windows runs the working directory's copy first)`;
+  for (let dir = resolve(root); ; ) {
+    const shim = ["", ".cmd", ".ps1"]
+      .map((suffix) => join(dir, "node_modules", ".bin", `${bin}${suffix}`))
+      .find((file) => existsSync(file));
+    if (shim) {
+      const shown = relative(root, shim).split(sep).join("/");
+      const pkg = INSTALLED_BINS.get(bin);
+      if (!pkg)
+        return `${shown} shadows ${PACKAGE_MANAGERS.has(bin) ? "the package manager" : bin}`;
+      const manifest = readJson(dir, `node_modules/${pkg}/package.json`);
+      const declared = typeof manifest?.bin === "string" ? { [pkg]: manifest.bin } : manifest?.bin;
+      const own = manifest?.name === pkg && typeof declared?.[bin] === "string";
+      return own && linksInto(shim, join(dir, "node_modules", pkg))
+        ? null
+        : `${shown} is not the ${pkg} package's own binary`;
+    }
+    const up = dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
+}
+
+/** The value on the first line `key` starts (a yarn config file): comment, whitespace and
+ *  surrounding quotes removed. */
+function configValue(text, key) {
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const m = key.exec(line);
+    if (!m) continue;
+    const value = line.slice(m[0].length).split(/\s#/)[0].trim();
+    return value.replace(/^(["'])(.*)\1$/, "$2");
+  }
+  return null;
+}
+
+/** Whether a node_modules/.bin entry that is a symlink resolves inside `pkgDir` (a shim
+ *  script — pnpm's, or a Windows .cmd — is not a link, and is taken as installed). */
+function linksInto(shim, pkgDir) {
+  try {
+    if (!lstatSync(shim).isSymbolicLink()) return true;
+    const base = realpathSync(pkgDir);
+    return realpathSync(shim).startsWith(base + sep);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why a package manager the run relies on may not be a released one (review Q02), or null:
+ * yarn pointed at a file other than a release `yarn set version` installs (`.yarnrc.yml`
+ * `yarnPath`, yarn 1's `.yarnrc` `yarn-path`), or `packageManager` fetching the manager from a
+ * URL instead of the registry.
+ * @param {string} root
+ * @param {string[]} bins
+ * @returns {string|null}
+ */
+function managerSourceProblem(root, bins) {
+  if (bins.includes("yarn")) {
+    const configured = [
+      { file: ".yarnrc.yml", key: /^yarnPath:/ },
+      { file: ".yarnrc", key: /^yarn-path[ \t]/ },
+    ]
+      .map(({ file, key }) => ({ file, path: configValue(read(root, file), key) }))
+      .find((c) => c.path);
+    if (configured && !/^(?:\.\/)?\.yarn\/releases\/yarn-[\w.+-]+\.c?js$/.test(configured.path))
+      return `${configured.file} points yarn at ${configured.path}, not a release in .yarn/releases`;
+  }
+  const declared = readJson(root, "package.json")?.packageManager;
+  const m =
+    typeof declared === "string" ? /^([a-z]+)@([a-z][a-z0-9+.-]*:.*)$/i.exec(declared) : null;
+  if (m && bins.includes(m[1]))
+    return `packageManager fetches ${m[1]} from ${m[2].split("#")[0]}, not a registry release`;
+  return null;
+}
+
 /**
  * Why a recognized recursive run is still not a whole, fresh run, or null (review N03 round
- * 2): configuration or environment that narrows it, and tool caches that REPLAY an earlier
- * result (turbo caches `test` by default; nx and lerna may) unless disabled.
+ * 2): a program it relies on that a project file shadows or a configured source replaces
+ * (review Q02), configuration or environment that narrows it, and tool caches that REPLAY an
+ * earlier result (turbo caches `test` by default; nx and lerna may) unless disabled.
  * @param {string} root
- * @param {{tool: string, bypass: boolean}} run
+ * @param {{tool: string, bypass: boolean, bins?: string[]}} run
  * @param {Record<string, string|undefined>} env
  * @returns {string|null}
  */
 function runProblem(root, run, env) {
-  // A package manager is not a project dependency: a copy in node_modules/.bin (which npm puts
-  // first on a script's PATH) is a shim the recognized command would run instead.
-  if (["npm", "pnpm", "yarn"].includes(run.tool))
-    for (const suffix of ["", ".cmd", ".ps1"])
-      if (existsSync(join(root, "node_modules", ".bin", `${run.tool}${suffix}`)))
-        return `node_modules/.bin/${run.tool}${suffix} shadows the package manager`;
+  const bins = run.bins ?? [run.tool];
+  for (const bin of bins) {
+    const shadow = shadowProblem(root, bin);
+    if (shadow) return shadow;
+  }
+  const source = managerSourceProblem(root, bins);
+  if (source) return source;
   for (const [k, v] of Object.entries(env)) {
     const m = /^npm_config_(.+)$/i.exec(k);
-    if (m && v != null && NARROWING_NPM_CONFIG.has(m[1].toLowerCase().replaceAll("_", "-")))
+    const key = m?.[1].toLowerCase().replaceAll("_", "-");
+    if (m && v != null && key && NARROWING_NPM_CONFIG.has(key))
       return `the environment sets ${k}, which can narrow the run`;
+    if (key === "node-options" && v != null && !inertNodeOptions(v))
+      return `the environment sets ${k}, which can load code into every script the run starts`;
   }
-  for (const key of npmrcKeys(root).keys())
+  const npmrc = npmrcKeys(root);
+  for (const key of npmrc.keys())
     if (NARROWING_NPM_CONFIG.has(key)) return `.npmrc sets ${key}, which can narrow the run`;
+  if (!inertNodeOptions(npmrc.get("node-options") ?? ""))
+    return ".npmrc sets node-options, which can load code into every script the run starts";
   if (run.tool === "turbo") {
     const turbo = readJsonc(root, "turbo.json");
     const tasks = turbo?.tasks ?? turbo?.pipeline;
@@ -1108,6 +1358,9 @@ function runProblem(root, run, env) {
   if (run.tool === "nx" || run.tool === "lerna") {
     if (existsSync(join(root, ".nxignore"))) return ".nxignore hides projects from nx";
     const nx = readJsonc(root, "nx.json");
+    // Nx plugins infer targets: `test` may then run a plugin's command, not the member's script.
+    if (Array.isArray(nx?.plugins) && nx.plugins.length)
+      return "nx.json plugins can define each project's test target";
     const td = nx?.targetDefaults?.test;
     if (td && Object.keys(td).some((k) => !["dependsOn", "inputs", "outputs", "cache"].includes(k)))
       return "nx.json redefines the test target (targetDefaults.test)";
@@ -1153,8 +1406,14 @@ export function analyzeRecursiveTestRun(root, { env = process.env } = {}) {
   const pkg = readJson(root, "package.json");
   const script = declaredTestScript(pkg);
   if (!script) return null;
-  const run = recursiveTestInvocation(script, { scripts: pkg?.scripts ?? {} });
-  if (!run) return null;
+  const scripts = pkg?.scripts ?? {};
+  const run = recursiveTestInvocation(script, { scripts });
+  if (!run) {
+    // Not established. When it would be but for a program named by its path or a variable set
+    // on the command line, say so (review Q02) — the members then run on their own.
+    const near = walkTestScript(script, scripts, true);
+    return near?.note ? { refused: near.note, tool: near.tool, command: near.command } : null;
+  }
   const problem = runProblem(root, run, env);
   if (problem) return { refused: problem, tool: run.tool, command: run.command };
   const lists = toolWorkspaceLists(root, run.tool);
@@ -1218,10 +1477,25 @@ export function scriptShellProblem(root, env = process.env) {
   const fromEnv = Object.entries(env).find(([k]) => /^npm_config_script_shell$/i.test(k))?.[1];
   const shell = fromEnv ?? npmrcKeys(root).get("script-shell");
   if (!shell) return null;
-  const base = binName(shell.trim().split(/\s+/)[0]).toLowerCase();
-  return KNOWN_SHELLS.has(base)
-    ? null
-    : `script-shell is ${shell} (${fromEnv ? "environment" : ".npmrc"}) — not a shell that runs the script as written`;
+  const first = shell.trim().split(/\s+/)[0];
+  const base = (first.split(/[\\/]/).pop() ?? "").replace(/\.exe$/i, "").toLowerCase();
+  // A shell's name on a project file is not a shell (review Q02): a relative path, or an
+  // absolute one inside the project, names a program the project supplies.
+  const pathed = /[\\/]/.test(first);
+  const inProject = pathed && (!/^(?:[A-Za-z]:)?[\\/]/.test(first) || isWithin(root, first));
+  if (KNOWN_SHELLS.has(base) && !inProject) return null;
+  const why = inProject
+    ? "a program inside the project"
+    : "not a shell that runs the script as written";
+  return `script-shell is ${shell} (${fromEnv ? "environment" : ".npmrc"}) — ${why}`;
+}
+
+/** Whether an absolute path (on this platform) lies inside `root`. */
+function isWithin(root, path) {
+  if (!isAbsolute(path)) return false;
+  const base = resolve(root);
+  const target = resolve(path);
+  return target === base || target.startsWith(base.endsWith(sep) ? base : base + sep);
 }
 
 /**

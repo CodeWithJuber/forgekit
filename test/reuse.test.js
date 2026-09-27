@@ -241,6 +241,52 @@ test("lookup: near tier for a reworded spec; adapt tier for a related one; miss 
   assert.equal(lookup(cache, "write a css dark mode toggle", { nowDay: 0 }).tier, "miss");
 });
 
+test("Q01: only an exact hit establishes equivalence; every other hit requires review", () => {
+  const cache = [verified(SPEC)];
+  const exact = lookup(cache, SPEC, { nowDay: 0 });
+  assert.equal(exact.semanticEquivalence, "identical");
+  assert.equal(exact.requiresReview, false);
+  const near = lookup(cache, SPEC.replace("sliding window fallback", "sliding window backup"), {
+    nowDay: 0,
+  });
+  assert.equal(near.tier, "near");
+  assert.equal(near.semanticEquivalence, "unverified", "similar is not the same task");
+  assert.equal(near.requiresReview, true);
+  const adapt = lookup(
+    cache,
+    SPEC.replace("and sliding window fallback", "plus prometheus metrics exporters"),
+    { nowDay: 0 },
+  );
+  assert.equal(adapt.tier, "adapt");
+  assert.equal(adapt.semanticEquivalence, "unverified");
+  assert.equal(adapt.requiresReview, true);
+  const miss = lookup(cache, "write a css dark mode toggle", { nowDay: 0 });
+  assert.equal(miss.semanticEquivalence, undefined, "a miss serves nothing to review");
+  assert.equal(miss.requiresReview, undefined);
+});
+
+test("Q01: a reversed permission or a swapped source/destination is held at adapt", () => {
+  // The review's fixture: every token kept, two subjects swapped (MinHash 0.83 — near).
+  const tail =
+    " access to every incoming webhook request before processing the payload or allowing the request to access any internal application service or write changes to durable storage in the production environment. Apply this rule consistently across all endpoints and log every decision together with the request identifier and timestamp for later audit.";
+  const pairs = [
+    [`Allow admins and deny guests${tail}`, `Deny admins and allow guests${tail}`],
+    [
+      `Copy the nightly backup from staging to production${tail}`,
+      `Copy the nightly backup from production to staging${tail}`,
+    ],
+  ];
+  for (const [minted, query] of pairs) {
+    const r = lookup([verified(minted)], query, { nowDay: 0 });
+    assert.equal(r.tier, "adapt", query.slice(0, 60));
+    assert.match(r.reasons.join("\n"), /held at adapt — differs in binding/);
+    assert.equal(r.semanticEquivalence, "unverified");
+    assert.equal(r.requiresReview, true);
+    // the exact text still exact-hits
+    assert.equal(lookup([verified(minted)], minted, { nowDay: 0 }).tier, "exact");
+  }
+});
+
 test("lookup: exact hits are slice-scoped — a different graph context falls through to near", () => {
   const cache = [verified(SPEC, { slice: "ctx-A" })];
   const r = lookup(cache, SPEC, { slice: "ctx-B", nowDay: 0 });

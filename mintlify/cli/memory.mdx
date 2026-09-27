@@ -92,12 +92,18 @@ forge reuse stats                          # cache stats
   `"a  b"`, indentation and Unicode code points all count, as do case, operators and
   punctuation, so `age >= 18` and `age <= 18` never share a key. Inline code that the
   ledger's storage would rewrite (CRLF, non-NFC text) is refused at mint: use `--file`.
-- **Near must also agree on behaviour.** A reworded match drops to `adapt`, with a note
+- **Only exact establishes the same task.** Every hit carries `semanticEquivalence`
+  (`"identical"` for exact, `"unverified"` for near and adapt) and `requiresReview` (`true`
+  for every non-exact hit). A near hit is a similar task, not a proven equivalent: review it
+  against yours before reusing it.
+- **Near must also agree on behaviour.** A similar spec drops to `adapt`, with a note
   naming the difference, when anything behaviour-bearing differs, in content or in order:
   operators with their operands, numbers, literals (typographic quotes included),
-  identifiers, paths, negation, any whitespace other than one space, spelling (case,
-  look-alike letters) or invisible characters. A key from an older version, or one the
-  ledger stored normalized, never reaches near.
+  identifiers, paths, negation, what each polarity or direction word applies to ("allow
+  admins, deny guests" vs "deny admins, allow guests"; "from staging to production" vs the
+  reverse), any whitespace other than one space, spelling (case, look-alike letters) or
+  invisible characters. A key from an older version, or one the ledger stored normalized,
+  never reaches near.
 - **Its dependencies are what its imports bind to.** A named import records its defining
   module's declaration, followed through re-exports and export aliases. A default,
   namespace or side-effect import, `require` or `import()` records the whole module's

@@ -37,12 +37,20 @@ script covers the workspaces in one run only when forge establishes, from its sh
 structure, an unfiltered recursive run of every member's `test` script whose failure reaches
 the exit status (`npm test --workspaces`, `pnpm -r test`, `turbo run test`, …). Filters,
 masked runs and look-alike flags such as Node's preload `node -r` cover nothing, and each
-package then runs its own suite. Nothing that could narrow or replay the run is credited:
-options are allowlisted per tool, a script that changes shell state (`cd`, `exit`, `trap`) or
-sets `npm_config_*` is refused, `.npmrc`/lerna/nx/turbo config that filters the run is
-honoured, and turbo needs `--force` and nx/lerna `--skip-nx-cache` so a cached result is
-never replayed. `coverage basis` labels every verdict `measured`, `inferred` or `declared`,
-and a root command that was recognized but not credited is printed with the reason. Tune it
+package then runs its own suite. A tool counts only by its bare name or its own
+`node_modules/.bin` install: a program named by any other path (`./tools/npm`) is unknown,
+whatever its name. Nothing that could narrow, replace or replay the run is credited:
+- options are allowlisted per tool, and so are the variables the command sets (`PATH`,
+  `LD_PRELOAD` or `npm_config_*` are refused);
+- a script that changes shell state (`cd`, `exit`, `trap`) is refused;
+- a shim of the tool (a package manager in `node_modules/.bin`, another package's binary, a
+  same-named Windows executable in the root, a `yarnPath` outside `.yarn/releases/`) is
+  refused;
+- `.npmrc`/lerna/nx/turbo config that filters the run is honoured;
+- turbo needs `--force` and nx/lerna `--skip-nx-cache`, so a cached result is never replayed.
+
+`coverage basis` labels every verdict `measured`, `inferred` or `declared`, and a root
+command that was not credited is printed with the reason. Tune it
 under `verify` in `.forge/forge.config.json`:
 
 ```json

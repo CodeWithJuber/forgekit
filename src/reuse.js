@@ -711,8 +711,11 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
  * null for that candidate (missing vector), MinHash Jaccard with NEAR_J/ADAPT_J is the
  * per-candidate fallback — a partially-embedded ledger never loses lexical recall.
  * Similarity alone never serves code as-is (review F04): a near candidate whose operators,
- * numbers, literals, identifiers, paths or polarity words differ from the query is held at
- * the adapt tier (a starting point to review), with the conflict named in `reasons`.
+ * numbers, literals, identifiers, paths, polarity words or their bindings differ from the
+ * query is held at the adapt tier (a starting point to review), with the conflict named in
+ * `reasons`. And similarity never establishes equivalence (review Q01): every hit carries
+ * `semanticEquivalence` — "identical" for exact (the byte-identical spec), "unverified" for
+ * near and adapt — and `requiresReview`, true for every non-exact hit.
  * Every hit is revalidated at the serving boundary (review F05, see revalidate): an
  * `invalid` artifact is never served; an `unknown` one is returned with
  * `requiresRevalidation: true` — never presented as checked.
@@ -722,6 +725,7 @@ export function revalidate(artifact, atlas, { root = null } = {}) {
  *          sim?:((query:any, claim:any)=>number|null)|null}} opts
  * @returns {{tier:"exact"|"near"|"adapt"|"miss", artifact?:any, jaccard?:number,
  *            similarity?:number, simBackend?:string, revalidation?:object,
+ *            semanticEquivalence?:"identical"|"unverified", requiresReview?:boolean,
  *            requiresRevalidation?:boolean, reasons:string[], sim?:string,
  *            invalidated?:{id:string, missing:string[], changed:string[], problems:string[]}[]}}
  *            `sim` is stamped by reuseQuery/reusePeek (the backend label the CLI prints);
@@ -758,10 +762,19 @@ export function lookup(
     reasons.push(`${why} ${c.id.slice(0, 8)} failed revalidation: ${rv.problems.join("; ")}`);
     return null;
   };
+  // Review Q01: only the exact tier ESTABLISHES that the task is the one the artifact was
+  // verified for (the same spec, byte for byte). A near or adapt hit is a similar candidate —
+  // no check here can establish that two texts mean the same — so it is always marked as one
+  // that requires review, with its equivalence unverified. `revalidation` is a separate
+  // question: whether the artifact and its dependencies still hold, not whether it fits.
   const served = (tier, c, rv, extra = {}) => ({
     tier,
     artifact: c,
     ...extra,
+    semanticEquivalence: /** @type {"identical"|"unverified"} */ (
+      tier === "exact" ? "identical" : "unverified"
+    ),
+    requiresReview: tier !== "exact",
     revalidation: rv,
     ...(rv.status === "valid" ? {} : { requiresRevalidation: true }),
     reasons,
@@ -796,7 +809,7 @@ export function lookup(
     const qBands = new Set(bandKeys(qs));
     pool = artifacts.filter((c) => bandKeys(shapeOf(c)).some((k) => qBands.has(k)));
   }
-  // near compares IDENTITY (same names, reworded prose); adapt compares SHAPE too, so
+  // near compares IDENTITY (same names, similar prose); adapt compares SHAPE too, so
   // `add pagination to listOrders` can still be offered the listUsers artifact as a
   // starting point — the tier that says "generate only the delta" — but never as-is.
   const measure = (c) => {

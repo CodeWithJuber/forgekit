@@ -502,6 +502,9 @@ HANDLERS.reuse = async (argv) => {
             sim: r.sim,
             revalidation: r.revalidation?.status,
             requiresRevalidation: r.requiresRevalidation === true,
+            ...(r.tier === "miss"
+              ? {}
+              : { semanticEquivalence: r.semanticEquivalence, requiresReview: r.requiresReview }),
             reasons: r.reasons,
           },
           null,
@@ -520,9 +523,13 @@ HANDLERS.reuse = async (argv) => {
         `    claim ${a.id.slice(0, 12)} — \`forge ledger blame ${a.id.slice(0, 8)}\` for its proof`,
       );
       if (r.tier === "near")
-        console.log("    near tier: a reworded match — review the diff before reusing it as-is");
+        console.log(
+          "    near tier: a similar task, equivalence unverified — review it against yours before reusing",
+        );
       if (r.tier === "adapt")
-        console.log("    adapt tier: inject as a verified starting point, generate only the delta");
+        console.log(
+          "    adapt tier: a verified starting point for a similar task — generate only the delta, and review it",
+        );
       if (r.requiresRevalidation)
         console.log(
           `    NOT revalidated: ${(r.revalidation?.unknown ?? []).join(", ")} — check before use`,
