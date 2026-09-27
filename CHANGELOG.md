@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-09-27
+
 Fixes for the two findings of the 2026-09-27 recheck of v1.7.3 (Q01, Q02). The recheck
 confirmed that all eight N01–N08 reproduction cases are closed; its scripts
 (`reproduce_remaining.mjs`, `original-reproduce.mjs` and `edge-probes.mjs`, each with
@@ -3435,7 +3437,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.4...HEAD
+[1.7.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.0...v1.7.1

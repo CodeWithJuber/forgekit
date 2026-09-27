@@ -580,7 +580,7 @@
       "component": "Verification (src/verify.js, forge verify)",
       "version": "fingerprint manifest-v3, verifier event contract v2",
       "source_commit": "cf890405dc9f45b99cc87304efc857ef9921addd",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.4",
       "status": "implemented",
       "evidence": [
         "src/verify.js",
@@ -645,7 +645,7 @@
       "component": "Consolidation and compaction (src/learn_consolidate.js, src/ledger_retention.js)",
       "version": "exact-statement merging",
       "source_commit": "cf890405dc9f45b99cc87304efc857ef9921addd",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.4",
       "status": "implemented",
       "evidence": [
         "src/learn_consolidate.js",
@@ -713,7 +713,7 @@
       "component": "Reuse cache (src/reuse.js) and semantic guard (src/semantic_guard.js)",
       "version": "reuse key v3, guard binding kind",
       "source_commit": "cf890405dc9f45b99cc87304efc857ef9921addd",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.7.4",
       "status": "implemented",
       "evidence": [
         "src/reuse.js",
