@@ -378,6 +378,10 @@ export function substrateCheck(
             }
           : undefined,
         jaccard: r.jaccard,
+        // Q01: only exact is the same task; near/adapt are similar candidates to review.
+        ...(r.tier === "miss"
+          ? {}
+          : { semanticEquivalence: r.semanticEquivalence, requiresReview: r.requiresReview }),
         // F05: "unknown" (no fresh atlas) is not "checked" — say so rather than imply it.
         ...(r.requiresRevalidation ? { requiresRevalidation: true } : {}),
       };
@@ -633,14 +637,15 @@ export function renderSubstrate(result) {
   if (result.route.reasons.length) lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
   if (result.reuse && result.reuse.tier !== "miss") {
     const a = result.reuse.artifact;
-    // exact = the same text; near = a reworded neighbour (review the diff); adapt = a starting
-    // point only. None is re-verified against the current tree unless revalidation says so.
+    // exact = the same text; near = a similar task, equivalence unverified (review it);
+    // adapt = a starting point only (review Q01). None is re-verified against the current tree
+    // unless revalidation says so.
     const how =
       result.reuse.tier === "exact"
         ? "start from it, don't regenerate"
         : result.reuse.tier === "near"
-          ? "reworded match — review the diff before reusing"
-          : "a starting point only — generate the delta";
+          ? "a similar task, equivalence unverified — review it against this one before reusing"
+          : "a starting point only — generate the delta, and review it";
     lines.push(
       "",
       `  reuse: ${result.reuse.tier.toUpperCase()} hit — verified ${a?.form ?? "artifact"}${a?.path ? ` at ${a.path}` : ""} (\`forge ledger show ${a?.id.slice(0, 8)}\`) — ${how}${

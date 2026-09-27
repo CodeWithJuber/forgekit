@@ -705,11 +705,24 @@ conservative too:
 - Options are allowlisted per tool. An unknown one (`--help`, `--dry-run`, an abbreviation
   npm would expand) is not credited, and neither are words after `--`, which are forwarded
   into every member's script.
-- A script that changes shell state (`cd`, `exit`, `trap`, `export`…) or sets a
-  package-tool variable (`npm_config_*`) is not credited.
+- A tool is recognized by its bare name, the program the script's PATH finds, or as its own
+  install under `node_modules/.bin`. Any other path (`./tools/npm`, `./scripts/pnpm.js`,
+  `/usr/bin/env`) is an unknown program whatever its name, and is never credited.
+- A script that changes shell state (`cd`, `exit`, `trap`, `export`…) is not credited, and
+  the command may set only variables known to change neither the program nor the run (`CI`,
+  `NODE_ENV`, `FORCE_COLOR`, `NODE_OPTIONS` with memory or warning flags, the cache-bypass
+  variables…). `PATH`, `LD_PRELOAD`, `HOME`, `npm_config_*` and anything else are refused, and
+  so are wrapper options that pick the binary or the directory (`npx -p`, `env -C`).
+- A bare name must not be shadowed. The first `node_modules/.bin` entry on the script's PATH
+  (the package's own, then each parent directory's) must be the binary of the tool's own
+  installed package, and a symlink must resolve into it. A copy of a package manager or a
+  system program there is a shim. A same-named executable in the package root (`npm.cmd`)
+  counts too, because Windows runs it first. yarn must be a release: a `yarnPath` outside
+  `.yarn/releases/`, or a `packageManager` fetched from a URL, is refused.
 - Configuration that narrows the run is honoured: `.npmrc` or environment
-  `workspace`/`filter`/`script-shell`, lerna `command.run` filters, `.nxignore`, a
-  redefined nx `test` target, and turbo per-package tasks.
+  `workspace`/`filter`/`script-shell`, a `node-options` that loads code, lerna `command.run`
+  filters, `.nxignore`, a redefined nx `test` target or nx plugins (which can define it), and
+  turbo per-package tasks.
 - A cached result is not a run: turbo needs `--force` (or `cache: false` for `test`), and nx
   and lerna need `--skip-nx-cache`.
 - Only members of that tool's own workspace list count, read for the package manager in use.
@@ -718,11 +731,11 @@ conservative too:
 
 The `coverage basis` line says what each package's verdict rests on: `measured` (its own
 suite ran), `inferred` (the recognized root command) or `declared` (`workspaces: "root"`). A
-recognized root command that was not credited is printed as `root run not credited`, with the
-reason. forge trusts the repository's own tooling: a shim that replaces the package manager
-or the test runner is outside what it checks (one in `node_modules/.bin` shadowing
-npm/pnpm/yarn is refused). A `script-shell` that is not a shell (`/bin/true`) makes npm and
-pnpm suites `INCOMPLETE`. Fixture and test-data packages are never required. A test runner
+root command that was not credited, including one that names a program by its path, is
+printed as `root run not credited`, with the reason. Beyond these checks forge trusts the
+installed tools themselves: it does not audit what a genuine package's binary or the test
+runner does. A `script-shell` that is not a shell (`/bin/true`), or that is a program inside
+the project, makes npm and pnpm suites `INCOMPLETE`. Fixture and test-data packages are never required. A test runner
 that is only a devDependency is not an obligation either; `forge stack` lists it as
 `available`.
 Tune this per repo under `verify` in `.forge/forge.config.json`:
@@ -1170,10 +1183,20 @@ unchanged.
   never share a key. Artifacts minted before key version 3 never hit exact. Inline code the
   ledger's storage would rewrite (CRLF line endings, non-NFC text) is refused at mint; mint
   it from a file instead.
-- **Near must also agree on behaviour.** A reworded match is offered as `near` only when the
+- **Only exact establishes the same task.** Every hit carries `semanticEquivalence`:
+  `"identical"` for an exact hit, `"unverified"` for near and adapt. It also carries
+  `requiresReview`, `true` for every non-exact hit. A near hit is a similar task that no check
+  has shown to mean the same thing: review it against yours before reusing it.
+  `revalidation` answers a different question, namely whether the artifact and its
+  dependencies still hold.
+- **Near must also agree on behaviour.** A similar spec is offered as `near` only when the
   two specs agree, in the same order, on these:
   - operators and symbols, with their operands (`x + 1` vs `x - 1`, `a - b` vs `b - a`);
   - numbers, identifiers, paths and negation;
+  - what each polarity, negation or direction word applies to. "Allow admins and deny
+    guests" vs "Deny admins and allow guests", or "from staging to production" vs "from
+    production to staging", conflict on `binding`, and so does the same set of words in a
+    different order;
   - literals, typographic and backtick quotes included (“a  b”, ``a  b``);
   - every whitespace run other than one space (line breaks, indentation, tabs, CRLF, columns);
   - spelling (`parse` vs `Parse`, fullwidth or Cyrillic look-alikes) and invisible format
@@ -1203,6 +1226,7 @@ $ forge reuse query "debounce user input before firing search"
   sim: minhash
   NEAR hit (similarity 0.87) — module at src/lib/debounce.js
     claim 9c41d2ab77e0 — `forge ledger blame 9c41d2ab` for its proof
+    near tier: a similar task, equivalence unverified — review it against yours before reusing
 
 $ forge reuse query "quantum blockchain"
   sim: minhash

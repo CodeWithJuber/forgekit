@@ -398,7 +398,7 @@ test("property (N02): swapping which subject gets which action or value never me
 test("property (N03): a look-alike flag on another tool, or a filter on a workspace run, never covers the workspaces", () => {
   const rand = prng(20260929);
   const pick = pickFrom(rand);
-  const wrappers = ["", "cross-env CI=1 ", "npx ", "FOO=1 ", "env NODE_ENV=test "];
+  const wrappers = ["", "cross-env CI=1 ", "npx ", "CI=1 ", "env NODE_ENV=test "];
   const tools = ["node", "mocha", "jest", "vitest", "tsx", "c8", "nyc", "ava", "tap"];
   const lookAlikes = ["-r", "--recursive", "-ws", "--workspaces", "-w", "--filter=web", "-F"];
   for (let i = 0; i < 80; i++) {
@@ -420,6 +420,30 @@ test("property (N03): a look-alike flag on another tool, or a filter on a worksp
     const wrapped = `${pick(wrappers)}${words.join(" ")}`;
     assert.equal(recursiveTestInvocation(wrapped), null, wrapped);
     assert.ok(recursiveTestInvocation(`${pick(wrappers)}${run}`), `${run} unfiltered is a run`);
+  }
+  // Q02: the same runs through a program named by a path count only when the path is the
+  // root's node_modules/.bin install of a tool a project installs — never by basename — and a
+  // PATH override never counts.
+  const dirs = [
+    "./tools/",
+    "tools/",
+    "/usr/local/bin/",
+    "./node_modules/.bin/",
+    "../node_modules/.bin/",
+  ];
+  const exts = ["", ".js", ".cjs", ".cmd", ".exe"];
+  for (let i = 0; i < 80; i++) {
+    const [run] = RUNS[pick(Object.keys(RUNS))];
+    const [tool, ...rest] = run.split(" ");
+    const [dir, ext] = [pick(dirs), pick(exts)];
+    const named = `${pick(wrappers)}${dir}${tool}${ext} ${rest.join(" ")}`;
+    const installed =
+      dir === "./node_modules/.bin/" &&
+      ["turbo", "nx", "lerna"].includes(tool) &&
+      ["", ".cmd"].includes(ext);
+    assert.equal(recursiveTestInvocation(named) !== null, installed, named);
+    const overridden = `PATH=${dir.slice(0, -1)}:/usr/bin ${run}`;
+    assert.equal(recursiveTestInvocation(overridden), null, overridden);
   }
 });
 

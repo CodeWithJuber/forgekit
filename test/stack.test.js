@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  analyzeRecursiveTestRun,
   detectStack,
   isWorkspaceMember,
   recursiveTestInvocation,
   recursiveTestRun,
+  scriptShellProblem,
   shellCommands,
 } from "../src/stack.js";
 
@@ -247,7 +249,14 @@ const RECURSIVE = [
   ["nx run-many --target=test --all", "nx"],
   ["npm run build && npm test --workspaces", "npm"],
   ["cross-env CI=1 turbo run test", "turbo"],
-  ["FOO=1 npm test -ws > log.txt 2>&1", "npm"],
+  ["CI=1 npm test -ws > log.txt 2>&1", "npm"],
+  // Q02: the tool's installed binary may be spelled out; inert variables and `env -u` are fine
+  ["node_modules/.bin/nx run-many -t test", "nx"],
+  [String.raw`'.\node_modules\.bin\lerna.cmd' run test`, "lerna"],
+  ["yarn turbo run test", "turbo"],
+  ["pnpm exec turbo run test", "turbo"],
+  ["NODE_OPTIONS='--max-old-space-size=4096 --experimental-vm-modules' turbo run test", "turbo"],
+  ["env -u DEBUG NODE_ENV=test npm test --workspaces", "npm"],
   // round 2: options known to change nothing about which members run, or whether they fail
   ["pnpm -r --no-bail test", "pnpm"],
   ["turbo run test --force --continue", "turbo"],
@@ -319,6 +328,38 @@ const NOT_RECURSIVE = [
   "npm test --workspaces $EXTRA",
   "(npm test -ws)",
   'npx -c "turbo run test"',
+  // Q02 — a program named by a path is unknown, whatever its basename: the review's fixture,
+  // other project files, system paths, another package's node_modules, and shims of package
+  // managers (never project binaries)
+  "./tools/npm test --workspaces",
+  "tools/npm test --workspaces",
+  "./scripts/pnpm.js -r test",
+  "/usr/local/bin/npm test --workspaces",
+  "'C:\\tools\\npm.cmd' test --workspaces",
+  "npm.cmd test --workspaces",
+  "./node_modules/.bin/npm test --workspaces",
+  "packages/app/node_modules/.bin/turbo run test",
+  "../node_modules/.bin/turbo run test",
+  "./tools/cross-env CI=1 npm test --workspaces",
+  "/usr/bin/env npm test --workspaces",
+  "npx ./tools/turbo run test",
+  "yarn ./tools/turbo run test",
+  // Q02 — variables are ALLOWLISTED: PATH and anything that loads code or moves config
+  "PATH=./tools:/usr/bin npm test --workspaces",
+  "env PATH=./tools npm test --workspaces",
+  "cross-env PATH=./tools npm test --workspaces",
+  "LD_PRELOAD=./exit0.so npm test --workspaces",
+  "NODE_OPTIONS=--require=./exit0.cjs npm test --workspaces",
+  "NODE_OPTIONS='-r ./exit0.cjs' turbo run test",
+  "NODE_OPTIONS=--unhandled-rejections=none npm test --workspaces",
+  "HOME=./cfg npm test --workspaces",
+  "FOO=1 npm test -ws",
+  // Q02 — wrapper options that pick the binary, the directory or the environment
+  "npx -p fake-turbo turbo run test",
+  "npx --package=./tools/turbo turbo run test",
+  "env -i npm test --workspaces",
+  "env -C packages/good npm test --workspaces",
+  "env --chdir=packages/good npm test --workspaces",
 ];
 
 test("N03: known unfiltered recursive runs are recognized, with their tool", () => {
@@ -343,7 +384,11 @@ test("N03: `npm run <script>` hops are followed (bounded, cycles refused)", () =
     tool: "turbo",
     command: "turbo run test",
     bypass: false,
+    bins: ["npm", "turbo"],
   });
+  // Q02: a hop through a program named by its path is not followed.
+  const local = { test: "./tools/npm run test:ws", "test:ws": "npm test -ws" };
+  assert.equal(recursiveTestInvocation(local.test, { scripts: local }), null);
   // A hop that passes arguments appends them to the followed script: never followed.
   const narrowed = { test: "npm run test:ws -- -w packages/good", "test:ws": "npm test -ws" };
   assert.equal(recursiveTestInvocation(narrowed.test, { scripts: narrowed }), null);
@@ -386,4 +431,208 @@ test("N03: membership honours the tool's own list and its negations", () => {
     ["packages/*", "!packages/legacy"],
     "pnpm reads its yaml, not package.json",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Q02: a run is credited to a tool only when the program that runs IS that tool.
+// ---------------------------------------------------------------------------
+
+/** A workspace root whose test script is `script`, with `files` beside it. */
+const workspaceRoot = (script, files = {}) => {
+  const root = tmp();
+  const pkg = files["package.json"] ?? { workspaces: ["packages/*"], scripts: { test: script } };
+  writeFileSync(join(root, "package.json"), JSON.stringify(pkg));
+  for (const [rel, text] of Object.entries(files)) {
+    if (rel === "package.json") continue;
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  }
+  return root;
+};
+
+test("Q02: a program named by its path is explained as not credited, never recognized", () => {
+  const r = analyzeRecursiveTestRun(workspaceRoot("./tools/npm test --workspaces"));
+  assert.equal(r?.tool, "npm");
+  assert.equal(r?.command, "./tools/npm test --workspaces");
+  assert.match(r?.refused ?? "", /`\.\/tools\/npm` is a program named by its path, not npm itself/);
+  const hop = analyzeRecursiveTestRun(
+    workspaceRoot("", {
+      "package.json": {
+        workspaces: ["packages/*"],
+        scripts: { test: "./scripts/pnpm.js run all", all: "pnpm -r test" },
+      },
+    }),
+  );
+  assert.match(
+    hop?.refused ?? "",
+    /`\.\/scripts\/pnpm\.js` is a program named by its path, not pnpm itself/,
+  );
+  const path = analyzeRecursiveTestRun(workspaceRoot("PATH=./tools:/usr/bin npm test -ws"));
+  assert.match(path?.refused ?? "", /the command line sets PATH, which changes the program/);
+  const tool = analyzeRecursiveTestRun(workspaceRoot("npm_config_workspace=a npm test -ws"));
+  assert.match(tool?.refused ?? "", /sets npm_config_workspace, which can narrow/);
+  // what is no run at all stays unexplained
+  assert.equal(analyzeRecursiveTestRun(workspaceRoot("./tools/check --all")), null);
+  assert.equal(analyzeRecursiveTestRun(workspaceRoot("node --test")), null);
+});
+
+test("Q02: a bare name must not be shadowed by a project file", () => {
+  const refused = (script, files) => analyzeRecursiveTestRun(workspaceRoot(script, files))?.refused;
+  assert.equal(refused("npm test --workspaces", {}), undefined, "the baseline is established");
+  // cmd.exe runs the package root's copy before the PATH's
+  assert.match(
+    refused("npm test --workspaces", { "npm.cmd": "@exit /b 0" }),
+    /npm\.cmd in the package root shadows npm/,
+  );
+  assert.match(refused("cross-env CI=1 npm test -ws", { "cross-env.bat": "" }), /cross-env\.bat/);
+  // package managers and system programs are never project binaries
+  assert.match(
+    refused("npx --yes npm test -ws", { "node_modules/.bin/npx": "" }),
+    /shadows the package manager/,
+  );
+  assert.match(
+    refused("env CI=1 npm test -ws", { "node_modules/.bin/env": "" }),
+    /node_modules\/\.bin\/env shadows env/,
+  );
+  // an installed tool's binary must be its own package's
+  const turbo = {
+    "turbo.json": JSON.stringify({ tasks: { test: { cache: false } } }),
+    "node_modules/.bin/turbo": "#!/bin/sh\nexit 0\n",
+  };
+  assert.match(
+    refused("turbo run test", turbo),
+    /node_modules\/\.bin\/turbo is not the turbo package's own binary/,
+  );
+  const fake = {
+    "node_modules/turbo/package.json": JSON.stringify({ name: "not-turbo", bin: { turbo: "x" } }),
+  };
+  assert.match(
+    refused("turbo run test", { ...turbo, ...fake }),
+    /not the turbo package's own binary/,
+  );
+  const real = {
+    "node_modules/turbo/package.json": JSON.stringify({
+      name: "turbo",
+      bin: { turbo: "bin/turbo" },
+    }),
+  };
+  assert.equal(refused("turbo run test", { ...turbo, ...real }), undefined);
+  assert.equal(refused("./node_modules/.bin/turbo run test", { ...turbo, ...real }), undefined);
+});
+
+test("Q02: a node_modules/.bin link must resolve into the tool's own package", {
+  skip: process.platform === "win32" && "symlinks need elevation on Windows",
+}, () => {
+  const turbo = JSON.stringify({ tasks: { test: { cache: false } } });
+  const real = JSON.stringify({ name: "turbo", bin: { turbo: "bin/turbo" } });
+  const linked = (target) => {
+    const root = workspaceRoot("turbo run test --force", {
+      "turbo.json": turbo,
+      "node_modules/turbo/package.json": real,
+      "node_modules/turbo/bin/turbo": "",
+      "tools/fake-turbo": "#!/bin/sh\nexit 0\n",
+    });
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    symlinkSync(target, join(root, "node_modules", ".bin", "turbo"));
+    return analyzeRecursiveTestRun(root, { env: {} })?.refused;
+  };
+  assert.equal(linked("../turbo/bin/turbo"), undefined, "npm's own link");
+  assert.match(linked("../../tools/fake-turbo") ?? "", /not the turbo package's own binary/);
+});
+
+test("Q02: nx plugins can redefine the test target — the members run on their own", () => {
+  const refused = (nx) =>
+    analyzeRecursiveTestRun(
+      workspaceRoot("nx run-many -t test --skip-nx-cache", { "nx.json": JSON.stringify(nx) }),
+      { env: {} },
+    )?.refused;
+  assert.equal(refused({}), undefined);
+  assert.match(refused({ plugins: ["@nx/jest/plugin"] }) ?? "", /nx\.json plugins/);
+});
+
+test("Q02: the script PATH's parent directories are checked, and node-options must be inert", () => {
+  // npm puts every parent directory's node_modules/.bin on a script's PATH, after the package's
+  const outer = tmp();
+  const root = join(outer, "repo");
+  mkdirSync(root);
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ workspaces: ["packages/*"], scripts: { test: "npm test --workspaces" } }),
+  );
+  mkdirSync(join(outer, "node_modules", ".bin"), { recursive: true });
+  writeFileSync(join(outer, "node_modules", ".bin", "npm"), "#!/bin/sh\nexit 0\n");
+  assert.match(
+    analyzeRecursiveTestRun(root, { env: {} })?.refused ?? "",
+    /\.\.\/node_modules\/\.bin\/npm shadows the package manager/,
+  );
+  // a tool hoisted to a parent is fine when it is that tool's own package
+  const turbo = { "turbo.json": JSON.stringify({ tasks: { test: { cache: false } } }) };
+  writeFileSync(join(root, "turbo.json"), turbo["turbo.json"]);
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ workspaces: ["packages/*"], scripts: { test: "turbo run test" } }),
+  );
+  writeFileSync(join(outer, "node_modules", ".bin", "turbo"), "");
+  assert.match(
+    analyzeRecursiveTestRun(root, { env: {} })?.refused ?? "",
+    /not the turbo package's/,
+  );
+  mkdirSync(join(outer, "node_modules", "turbo"));
+  writeFileSync(
+    join(outer, "node_modules", "turbo", "package.json"),
+    JSON.stringify({ name: "turbo", bin: { turbo: "bin/turbo" } }),
+  );
+  assert.equal(analyzeRecursiveTestRun(root, { env: {} })?.refused, undefined);
+  // node-options preloads code into every script npm starts: only inert flags are allowed
+  const refused = (npmrc, env = {}) =>
+    analyzeRecursiveTestRun(workspaceRoot("npm test --workspaces", { ".npmrc": npmrc }), { env })
+      ?.refused;
+  assert.equal(refused("node-options=--max-old-space-size=4096\n"), undefined);
+  assert.match(refused("node-options=--require ./exit0.cjs\n"), /\.npmrc sets node-options/);
+  assert.match(
+    refused("", { npm_config_node_options: "--import=./exit0.mjs" }),
+    /environment sets npm_config_node_options/,
+  );
+});
+
+test("Q02: yarn must be a release — yarnPath elsewhere, or a packageManager URL, is refused", () => {
+  const refused = (files) =>
+    analyzeRecursiveTestRun(workspaceRoot("yarn workspaces foreach -A run test", files))?.refused;
+  assert.equal(refused({}), undefined);
+  assert.equal(refused({ ".yarnrc.yml": "yarnPath: .yarn/releases/yarn-4.5.0.cjs\n" }), undefined);
+  assert.equal(refused({ ".yarnrc": 'yarn-path ".yarn/releases/yarn-1.22.22.cjs"\n' }), undefined);
+  assert.match(
+    refused({ ".yarnrc.yml": "yarnPath: tools/yarn.cjs # pinned\n" }),
+    /\.yarnrc\.yml points yarn at tools\/yarn\.cjs, not a release/,
+  );
+  const url = {
+    "package.json": {
+      workspaces: ["packages/*"],
+      packageManager: "yarn@https://example.invalid/yarn.tgz#sha1.x",
+      scripts: { test: "yarn workspaces foreach -A run test" },
+    },
+  };
+  assert.match(
+    refused(url),
+    /packageManager fetches yarn from https:\/\/example\.invalid\/yarn\.tgz/,
+  );
+  // a pinned registry release with its integrity hash is fine
+  const pinned = {
+    ...url,
+    "package.json": { ...url["package.json"], packageManager: "yarn@4.5.0+sha512.abc" },
+  };
+  assert.equal(refused(pinned), undefined);
+});
+
+test("Q02: a script-shell that is a project file is not a shell", () => {
+  const root = tmp();
+  const shell = (value) => {
+    writeFileSync(join(root, ".npmrc"), `script-shell=${value}\n`);
+    return scriptShellProblem(root, {});
+  };
+  assert.equal(shell("/bin/bash"), null);
+  assert.equal(shell("bash"), null);
+  assert.match(shell("./tools/bash") ?? "", /a program inside the project/);
+  assert.match(shell(join(root, "tools", "sh")) ?? "", /a program inside the project/);
+  assert.match(shell("/bin/true") ?? "", /not a shell that runs the script as written/);
 });

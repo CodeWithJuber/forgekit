@@ -62,6 +62,7 @@ test("semantic guard: features are extracted per class; literals are not re-scan
   assert.deepEqual(f.identifiers, ["listUsers"]);
   assert.deepEqual(f.paths, ["src/api/users.ts"]);
   assert.deepEqual(f.polarity, ["not"]);
+  assert.deepEqual(f.bindings, ['not→"ADMIN >= 1"'], "a relation binds a quoted literal too");
   // symbols in document order, an operator with its operands; prose punctuation is not one
   assert.deepEqual(f.symbols, ["src / api", "api / users", ".", "listUsers >= 25"]);
   assert.deepEqual(criticalFeatures(""), {
@@ -71,6 +72,7 @@ test("semantic guard: features are extracted per class; literals are not re-scan
     identifiers: [],
     paths: [],
     polarity: [],
+    bindings: [],
     layout: [],
     symbols: [],
     format: [],
@@ -145,6 +147,12 @@ test("the literal scanner, symbols and spelling scale linearly on hostile input"
     "format characters in one token": (n) => same(`x${"\u200b".repeat(n)}y`),
     "one long word": (n) => same("a".repeat(n)),
     "thousands of differing identifiers": (n) => [ids("a", n), ids("b", n)],
+    // Q01 bindings: every negator bound to one word; the same words, rearranged
+    "relation words bound to one word": (n) => same(`${"not ".repeat(n / 4)}x`),
+    "a long rearrangement": (n) => {
+      const words = Array.from({ length: n / 8 }, (_, k) => `w${k % 97}`);
+      return [`allow ${words.join(" ")} deny`, `deny ${words.join(" ")} allow`];
+    },
   };
   const time = ([a, b]) => {
     const t0 = performance.now();
@@ -210,8 +218,8 @@ test("N01 round 2: literals, symbols, order, layout and spelling all separate a 
 });
 
 test("N01 round 2: an order-only difference is named as one", () => {
-  const [c] = semanticConflicts("move 1 then 2", "move 2 then 1");
-  assert.equal(c.kind, "numbers");
+  const c = semanticConflicts("move 1 then 2", "move 2 then 1").find((x) => x.kind === "numbers");
+  assert.ok(c);
   assert.equal(c.order, true);
   assert.match(describeConflicts([c]), /numbers \(order\): 1 2 ≠ 2 1/);
 });
@@ -236,4 +244,67 @@ test("N02 round 2: the statement key folds only edge whitespace and one sentence
     ["Run it", "run it"],
   ])
     assert.notEqual(statementKey(a), statementKey(b), `${a} / ${b}`);
+});
+
+// Review Q01: opposite requirements that keep every token — a subject bound to the opposite
+// permission, a source swapped with its destination — must never pass as a near match.
+const Q01_TAIL =
+  " access to every incoming webhook request before processing the payload or allowing the request to access any internal application service or write changes to durable storage in the production environment.";
+const REVERSALS = [
+  // the review's fixture
+  [`Allow admins and deny guests${Q01_TAIL}`, `Deny admins and allow guests${Q01_TAIL}`],
+  // reworded as well as reversed: not the same words, still the opposite binding
+  [
+    "Allow admins and deny guests access to every webhook",
+    "Deny admins and allow guests access to all webhooks",
+  ],
+  ["Grant `admin` write access and block `guest`", "Block `admin` and grant `guest` write access"],
+  ["Allow admins, not guests, to publish posts", "Allow guests, not admins, to publish posts"],
+  // source and destination
+  [
+    "Copy the nightly backup from staging to production and verify the checksum",
+    "Copy the nightly backup from production to staging and verify the checksum",
+  ],
+  [
+    "Move production data into staging before the release",
+    "Move staging data into production before the release",
+  ],
+  ["Upload the report to S3 after the build", "Upload the report from S3 after the build"],
+  // roles swapped with no polarity word at all: the same words, rearranged
+  ["The reviewer approves the author's change", "The author approves the reviewer's change"],
+];
+
+test("Q01: a permission-subject or source/destination swap conflicts on binding", () => {
+  for (const [a, b] of REVERSALS) {
+    const conflicts = semanticConflicts(a, b);
+    assert.ok(
+      conflicts.some((c) => c.kind === "binding"),
+      `${a} / ${b}: ${describeConflicts(conflicts) || "no conflict"}`,
+    );
+    assert.equal(sameSemantics(a, b), false);
+    assert.deepEqual(semanticConflicts(a, a), []);
+  }
+  assert.match(
+    describeConflicts(semanticConflicts(...REVERSALS[0])),
+    /binding: allow→admins deny→guests ≠ deny→admins allow→guests/,
+  );
+  assert.match(
+    describeConflicts(semanticConflicts(...REVERSALS[4])),
+    /binding: from→staging to→production ≠ from→production to→staging/,
+  );
+});
+
+test("Q01: a rewording that keeps each binding is not a binding conflict", () => {
+  for (const [a, b] of [
+    ["Do not allow guests to publish", "Deny guests to publish"], // a negated pole is its opposite
+    [
+      "Add pagination to the listUsers endpoint with a page size of 25",
+      "Add pagination to the listUsers endpoint, page size 25",
+    ],
+    ["Allow admins to delete posts", "Allow the admins to delete any posts"],
+  ])
+    assert.ok(
+      !semanticConflicts(a, b).some((c) => c.kind === "binding"),
+      `${a} / ${b}: ${describeConflicts(semanticConflicts(a, b))}`,
+    );
 });

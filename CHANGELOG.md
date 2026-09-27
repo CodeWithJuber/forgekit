@@ -6,6 +6,57 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Fixes for the two findings of the 2026-09-27 recheck of v1.7.3 (Q01, Q02). The recheck
+confirmed that all eight N01–N08 reproduction cases are closed; its scripts
+(`reproduce_remaining.mjs`, `original-reproduce.mjs` and `edge-probes.mjs`, each with
+`--assert-fixed`) all pass.
+
+### Fixed
+
+- **A local program named like a package manager no longer covers the workspaces (Q02).** A
+  root `test` script of `./tools/npm test --workspaces` was credited as npm's recursive run
+  because the recognizer read only the file's basename, so a stub that exited 0 hid a failing
+  workspace behind a PASS. A tool is now recognized only by its bare name (the program the
+  script's PATH finds) or as its own install under `node_modules/.bin`. Any other path, such as
+  `./tools/npm`, `./scripts/pnpm.js` or `/usr/bin/env`, is an unknown program whatever its
+  name, so the members run on their own. `forge verify` reports the root run as "not credited"
+  and names the program.
+  - A command line may set only variables known to change neither the program nor the run
+    (`CI`, `NODE_ENV`, `FORCE_COLOR`, `NODE_OPTIONS` with memory or warning flags…). `PATH`,
+    `LD_PRELOAD`, `HOME`, a `NODE_OPTIONS` preload and any other variable keep the run from
+    being credited.
+  - Wrapper options that pick the binary, the directory or the environment are refused:
+    `npx -p`/`--package`, `env -i`, `env -C`/`--chdir`, and options on `cross-env`.
+  - A bare name must not be shadowed. The first `node_modules/.bin` entry on the script's PATH
+    (the package's own, then each parent directory's) must be the tool's own package's binary,
+    and a symlink must resolve into that package. A package manager or system program there is
+    a shim. On Windows, a same-named executable in the package root (`npm.cmd`) runs first, so
+    it counts as a shadow too.
+  - yarn must be a release: a `yarnPath` (or yarn 1's `yarn-path`) outside `.yarn/releases/`,
+    or a `packageManager` that fetches the manager from a URL, is refused.
+  - `.npmrc` and environment `node-options` must be inert, a `script-shell` that is a program
+    inside the project is not a shell, and nx plugins, which can redefine each project's `test`
+    target, make nx and lerna runs run the members on their own.
+  - A `verify.workspaces: "root"` declaration still covers every member and is still labelled
+    `declared`.
+- **A near reuse hit is no longer presented as the same task (Q01).** "Deny admins and allow
+  guests…" near-hit an artifact verified for "Allow admins and deny guests…" (MinHash 0.83),
+  and the CLI called it a "reworded match".
+  - Every hit now says what it establishes. `semanticEquivalence` is `"identical"` for an
+    exact hit (the byte-identical spec) and `"unverified"` for near and adapt, and
+    `requiresReview` is `true` for every non-exact hit. `forge reuse query --json` and the gate's
+    reuse summary carry both fields, and the CLI and gate describe a near hit as "a similar
+    task, equivalence unverified".
+  - The semantic guard adds a `binding` conflict kind. Each polarity, negation or direction
+    word binds to the next content word of its clause. Two texts conflict when a word both bind
+    is bound to opposite relations (allow→admins vs deny→admins, from→staging vs to→staging), or
+    when they use exactly the same words in a different order. Permission-subject swaps,
+    source/destination swaps and role swaps are therefore held at `adapt`. Consolidation and
+    compaction list such pairs as conflicts rather than proposals.
+- **The claims check no longer fails in a checkout that lacks newer release tags.** A claim
+  naming a release newer than every local tag, and not newer than `package.json`'s version, is
+  reported as unchecked, with a hint to run `git fetch --tags`, instead of failing the check.
+
 ## [1.7.3] - 2026-09-27
 
 Fixes for the eight findings of the 2026-09-27 follow-up review (N01–N08) and its suggestions.

@@ -430,13 +430,159 @@ function spellingsOf(masked) {
   return map;
 }
 
+// ---------------------------------------------------------------------------------------
+// Relational binding (review Q01). "Allow admins and deny guests…" and "Deny admins and allow
+// guests…" hold the same tokens — the same polarity words, the same names — and score as
+// near-identical; what differs is WHICH word each polarity or direction word applies to. Each
+// relation word (a negator, a pole of an antonym pair, a direction preposition) is bound to
+// the next content word of its clause, a quoted literal included. Two texts conflict on
+// `binding` when
+//   1. a word both texts bind is bound to OPPOSITE relations (allow→admins vs deny→admins,
+//      from→staging vs to→staging; a negator bound to the same word flips its poles), or
+//   2. they use exactly the same words in a different order — a rearrangement, which can swap
+//      who is allowed, or source and destination, without changing a single token.
+// A token heuristic, not a parser: it holds known reversals back from the near tier. It
+// cannot establish that two texts mean the same — nothing in this module can — which is why
+// every non-exact reuse hit is a candidate that requires review (reuse.js), never an
+// equivalent.
+// ---------------------------------------------------------------------------------------
+
+/** word → every [relation class, pole] it expresses (antonym pairs, then direction). */
+const RELATION_POLES = new Map();
+/** @param {Iterable<string>} words @param {string} cls @param {number} pole */
+const addPoles = (words, cls, pole) => {
+  for (const w of words) RELATION_POLES.set(w, [...(RELATION_POLES.get(w) ?? []), [cls, pole]]);
+};
+ANTONYM_PAIRS.forEach(([a, b], i) => {
+  addPoles(a, `p${i}`, 0);
+  addPoles(b, `p${i}`, 1);
+});
+addPoles(["from"], "direction", 0);
+addPoles(["to", "into", "onto", "toward", "towards"], "direction", 1);
+// Function words passed over when looking for the word a relation applies to.
+const BIND_SKIP = new Set(
+  (
+    "a an the all any every each some only just also both either its it their them they our " +
+    "your his her my this that these those same other such be is are was were been being am " +
+    "do does did have has had will would shall should can could might of for with by at in as " +
+    "per via about up down out"
+  ).split(" "),
+);
+// Words that end the phrase a pending relation can apply to.
+const CLAUSE_WORDS = new Set(
+  "and or but then while whereas unless except if when so yet".split(" "),
+);
+const isNegator = (w) => NEGATORS.has(w) || NEGATED_CONTRACTION.test(w);
+const CLAUSE_END = new Set([...",;:.!?"]);
+const CLOSING = new Set([..."\"'”’)]"]);
+
+/**
+ * The words of a masked text (lower-cased, a possessive `'s` dropped; a literal is its own
+ * text) and each relation
+ * word's binding `rel→object`, both in document order.
+ * @param {string} masked
+ * @param {string[]} literals
+ * @returns {{words: string[], bindings: {rel: string, obj: string}[]}}
+ */
+function relationsOf(masked, literals) {
+  /** @type {string[]} */
+  const words = [];
+  /** @type {{rel: string, obj: string}[]} */
+  const bindings = [];
+  /** @type {string[]} */
+  let pending = [];
+  let lit = 0;
+  for (const raw of masked.split(/\s+/u)) {
+    if (!raw) continue;
+    const marks = [...raw].filter((ch) => ch === LIT).length;
+    const quoted = marks ? literals.slice(lit, lit + marks).join(" ") : "";
+    lit += marks;
+    // a possessive names the same party: "the author's change" binds `author`
+    const word =
+      quoted ||
+      trimEdges(raw.replaceAll(FENCE, ""))
+        .toLowerCase()
+        .replace(/['’]s$/u, "");
+    if (!word || !/[\p{L}\p{N}]/u.test(word)) {
+      pending = []; // a dash, a bare symbol: the phrase ends
+      continue;
+    }
+    words.push(word);
+    if (!quoted && (isNegator(word) || RELATION_POLES.has(word))) pending.push(word);
+    else if (!quoted && CLAUSE_WORDS.has(word)) pending = [];
+    else if (quoted || !BIND_SKIP.has(word)) {
+      for (const rel of pending) bindings.push({ rel, obj: word });
+      pending = [];
+    }
+    let end = raw.length;
+    while (end > 0 && CLOSING.has(raw[end - 1])) end -= 1;
+    if (end > 0 && CLAUSE_END.has(raw[end - 1])) pending = []; // `admins,` ends the phrase
+  }
+  return { words, bindings };
+}
+
+/** Each bound word's relation classes, with the pole a negator on the same word flips. */
+function relationSignatures(bindings) {
+  /** @type {Map<string, string[]>} */
+  const byObj = new Map();
+  for (const { rel, obj } of bindings) {
+    const rels = byObj.get(obj);
+    if (rels) rels.push(rel);
+    else byObj.set(obj, [rel]);
+  }
+  /** @type {Map<string, Set<string>>} */
+  const out = new Map();
+  for (const [obj, rels] of byObj) {
+    const flip = rels.filter(isNegator).length % 2;
+    const sig = new Set();
+    for (const rel of rels)
+      for (const [cls, pole] of RELATION_POLES.get(rel) ?? []) sig.add(`${cls}:${pole ^ flip}`);
+    out.set(obj, sig);
+  }
+  return out;
+}
+
+/**
+ * The `binding` conflict between two texts' relations (see above), or null.
+ * @param {{words: string[], bindings: {rel: string, obj: string}[]}} A
+ * @param {{words: string[], bindings: {rel: string, obj: string}[]}} B
+ * @returns {{kind: string, a: string[], b: string[], order?: boolean}|null}
+ */
+function bindingConflict(A, B) {
+  const shown = (bs) => bs.map((x) => `${x.rel}→${x.obj}`);
+  // 1. a word both bind, bound to opposite poles of one relation
+  const [sa, sb] = [relationSignatures(A.bindings), relationSignatures(B.bindings)];
+  const opposed = new Set();
+  const opposite = (x, y) =>
+    [...x].some((k) => !y.has(k) && y.has(`${k.slice(0, -1)}${1 - Number(k.slice(-1))}`));
+  for (const [obj, x] of sa) {
+    const y = sb.get(obj);
+    if (y && (opposite(x, y) || opposite(y, x))) opposed.add(obj);
+  }
+  if (opposed.size)
+    return {
+      kind: "binding",
+      a: shown(A.bindings.filter((x) => opposed.has(x.obj))),
+      b: shown(B.bindings.filter((x) => opposed.has(x.obj))),
+    };
+  // 2. the same words, rearranged
+  if (sameList(A.words, B.words) || !sameList(sorted(A.words), sorted(B.words))) return null;
+  let i = 0;
+  while (A.words[i] === B.words[i]) i += 1;
+  let j = 0;
+  while (A.words[A.words.length - 1 - j] === B.words[B.words.length - 1 - j]) j += 1;
+  const span = (ws) => ws.slice(i, ws.length - j);
+  const clip = (ws) => (ws.length > 12 ? [...ws.slice(0, 12), "…"] : ws);
+  return { kind: "binding", a: clip(span(A.words)), b: clip(span(B.words)), order: true };
+}
+
 /**
  * The behaviour-carrying features of a text, each in DOCUMENT ORDER (review N01 round 2:
  * sorted lists made `a - b` and `b - a`, or two swapped indented lines, the same text).
  * @param {string} text
  * @returns {{operators: string[], numbers: string[], literals: string[],
- *   identifiers: string[], paths: string[], polarity: string[], layout: string[],
- *   symbols: string[], format: string[]}}
+ *   identifiers: string[], paths: string[], polarity: string[], bindings: string[],
+ *   layout: string[], symbols: string[], format: string[]}}
  */
 export function criticalFeatures(text) {
   return analyze(text).features;
@@ -478,6 +624,7 @@ function analyze(text) {
         `${cf.map((ch) => `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`).join(" ")} in ${JSON.stringify(tok)}`,
       );
   }
+  const relations = relationsOf(masked, literals);
   const features = {
     operators,
     numbers,
@@ -485,11 +632,12 @@ function analyze(text) {
     identifiers,
     paths,
     polarity: sorted(polarity),
+    bindings: relations.bindings.map((x) => `${x.rel}→${x.obj}`),
     layout: [...fences.map((f) => `fence ${JSON.stringify(f)}`), ...whitespaceItems(masked)],
     symbols: symbolRuns(masked),
     format,
   };
-  return { features, masked };
+  return { features, masked, relations };
 }
 
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -517,6 +665,7 @@ export function polarityFlip(a, b) {
  *  a rewrite that names a new identifier or path is more specific, not the opposite). */
 export const ALL_KINDS = /** @type {const} */ ([
   "polarity",
+  "binding",
   "operators",
   "numbers",
   "literals",
@@ -529,6 +678,7 @@ export const ALL_KINDS = /** @type {const} */ ([
 ]);
 export const FLIP_KINDS = /** @type {const} */ ([
   "polarity",
+  "binding",
   "operators",
   "numbers",
   "literals",
@@ -551,6 +701,11 @@ export function semanticConflicts(a, b, { kinds = ALL_KINDS } = {}) {
   const [fa, fb] = [A.features, B.features];
   const out = [];
   for (const kind of kinds) {
+    if (kind === "binding") {
+      const c = bindingConflict(A.relations, B.relations);
+      if (c) out.push(c);
+      continue;
+    }
     if (kind === "spelling") {
       const sa = spellingsOf(A.masked);
       const sb = spellingsOf(B.masked);

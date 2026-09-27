@@ -11,6 +11,7 @@ import {
   BEGIN,
   cell,
   checkCopies,
+  compareVersions,
   END,
   README_PATH,
   REGISTRY_PATH,
@@ -276,6 +277,45 @@ test("with release tags, a stale 'unreleased' and a release that lacks the commi
       ["stale", "too-early", "no-tag"],
     );
     assert.match(problems[0], /shipped in v1\.0\.0/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a checkout with only older release tags leaves newer releases unchecked, not failing", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-claims-partial-"));
+  try {
+    const g = (...args) =>
+      execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
+    g("init");
+    g("config", "user.email", "t@t.t");
+    g("config", "user.name", "t");
+    g("commit", "--allow-empty", "-m", "one");
+    const one = g("rev-parse", "HEAD");
+    g("tag", "v1.0.0");
+    // the code is 1.2.0, but this clone never fetched v1.1.0 or v1.2.0
+    writeFileSync(join(root, "package.json"), JSON.stringify({ version: "1.2.0" }));
+    const unchecked = [];
+    const problems = releaseProblems(
+      root,
+      {
+        claims: [
+          claim({ id: "fetched", source_commit: one, assessed_release: "1.0.0" }),
+          claim({ id: "not-fetched", source_commit: one, assessed_release: "1.2.0" }),
+          claim({ id: "future", source_commit: one, assessed_release: "1.3.0" }),
+          claim({ id: "never-tagged", source_commit: one, assessed_release: "0.9.0" }),
+        ],
+      },
+      { unchecked },
+    );
+    assert.deepEqual(
+      problems.map((p) => p.split(":")[0]),
+      ["future", "never-tagged"],
+      "a release newer than the code, or older than a tag present, is still a problem",
+    );
+    assert.deepEqual(unchecked, ["not-fetched (1.2.0)"]);
+    assert.ok(compareVersions("1.10.0", "1.9.9") > 0);
+    assert.equal(compareVersions("1.7.3", "1.7.3"), 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
