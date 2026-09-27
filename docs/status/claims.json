@@ -320,7 +320,7 @@
       "claim": "Outcomes recorded with forge route outcome are verified results.",
       "component": "Universal router outcome log (src/router/index.js)",
       "version": "derived provenance, verifier event contract v2",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "partial",
       "evidence": [
@@ -328,7 +328,7 @@
         "test/router_universal.test.js",
         "docs/UNIVERSAL_ROUTING.md"
       ],
-      "notes": "Re-assessed on 2699aa0: N06 (with no evidence key, an unsigned verifier event earned verify-event) and N07 (an edited provenance label was read as verified) are regression and seeded property tests. Provenance is derived on every read from verifier events whose MAC verifies under this machine's key, whose pass/fail verdict matches, and which back no other attempt; the stored label is informational. The event vouches for the verdict only: model and cost stay self-reported. Without --verify-run a row is self-reported, which is the default, so the claim holds only for rows recorded that way. At d2abfa6 it was refuted (caller-entered, replayable).",
+      "notes": "Re-assessed on a6be83c: N06 (with no evidence key, an unsigned verifier event earned verify-event) and N07 (an edited provenance label was read as verified) are regression and seeded property tests, and so are the counterexamples an internal adversarial re-review of 2699aa0 found: an events file copied from another checkout, an old PASS backing a later attempt on other code, a legacy row's content key aliasing an attempt id, and a non-finite number in a signed event. Provenance is derived on every read from verifier events whose MAC verifies under this machine's key, that name this checkout, that finished on the code the outcome was recorded against, whose pass/fail verdict matches, and that back no other attempt; the stored label is informational. The event vouches for the verdict only: model and cost stay self-reported. Without --verify-run a row is self-reported, which is the default, so the claim holds only for rows recorded that way. At d2abfa6 it was refuted (caller-entered, replayable).",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -416,7 +416,7 @@
       "claim": "P3: the reuse cache serves an artifact only while its evidence holds, and refuses a stale one.",
       "component": "Reuse cache (src/reuse.js, forge reuse)",
       "version": "reuse key v3, dependency contracts v2",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "implemented",
       "evidence": [
@@ -425,7 +425,7 @@
         "test/reuse.test.js",
         "test/trust_properties.test.js"
       ],
-      "notes": "Re-assessed on 2699aa0: the acceptance counterexamples found at d2abfa6 (F04, F05) and at 1.7.1 (N01 exact identity collapsing whitespace inside literals; N08 destructured dependency contracts) are repaired with regression and seeded property tests.",
+      "notes": "Re-assessed on a6be83c: the acceptance counterexamples found at d2abfa6 (F04, F05), at 1.7.1 (N01 exact identity collapsing whitespace inside literals; N08 destructured dependency contracts) and by an internal adversarial re-review of 2699aa0 (near-tier guard gaps, missed import forms, export aliases) are repaired with regression and seeded property tests.",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -454,7 +454,7 @@
       "claim": "P4: context assembly never exceeds its token budget and reports a computed missing set.",
       "component": "Context assembly (src/context.js, forge context)",
       "version": "context assembly with definition extents (atlas v5)",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "partial",
       "evidence": [
@@ -462,7 +462,7 @@
         "docs/plans/substrate-v2/00-overview.md",
         "src/context.js"
       ],
-      "notes": "Re-assessed on 2699aa0: the rendered block never exceeds the budget (a seeded property test over 50 budgets), overflow and pending reads are reported, a pointer is not coverage (F02, F03), and a definition is delivered only whole (N04). Still partial: tokens are a chars/3.6 estimate; selection is a value-density heuristic with no approximation guarantee; the ambient hook does not assemble context; ok means syntactically delivered.",
+      "notes": "Re-assessed on a6be83c: the rendered block never exceeds the budget (a seeded property test over 50 budgets), overflow and pending reads are reported, a pointer is not coverage (F02, F03), and a definition is delivered only whole (N04, and the extent counterexamples of an internal adversarial re-review of 2699aa0). Still partial: tokens are a chars/3.6 estimate; selection is a value-density heuristic with no approximation guarantee; the ambient hook does not assemble context; ok means syntactically delivered.",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -546,7 +546,7 @@
       "claim": "forge context COMPLETE means every required item was delivered as content within the (estimated) token budget, every required definition whole.",
       "component": "Context assembly (src/context.js, forge context)",
       "version": "context assembly with definition extents (atlas v5)",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "implemented",
       "evidence": [
@@ -555,7 +555,7 @@
         "test/trust_properties.test.js",
         "docs/plans/substrate-v2/04-context-assembly.md"
       ],
-      "notes": "Re-assessed on 2699aa0: N04 (lines 1-41 of a 103-line function counted as a delivered definition) is a regression test; a span or head now covers a definition only when it shows the whole extent the atlas records, and a cut one stays pending and is listed in `partial`. A definition with no known extent is delivered only by the whole file. Tokens are a chars/3.6 estimate of the rendered block, not a tokenizer count; COMPLETE means syntactically delivered, and whether the content suffices for the edit is not measured. At d2abfa6 the stronger wording was refuted.",
+      "notes": "Re-assessed on a6be83c: N04 (lines 1-41 of a 103-line function counted as a delivered definition) is a regression test, and so are the extent counterexamples an internal adversarial re-review of 2699aa0 found (generic constraints, return-type literals, overloads, Go result types, template constants, Ruby classes, Python strings and continuations, JSX apostrophes, preprocessor branches, a stale atlas). A span or head covers a definition only when it shows the whole extent the atlas records and trusts, and a cut one stays pending and is listed in `partial`. A definition with no trusted extent, or in a file edited since the atlas was built, is delivered only by the whole file. Tokens are a chars/3.6 estimate of the rendered block, not a tokenizer count; COMPLETE means syntactically delivered, and whether the content suffices for the edit is not measured. At d2abfa6 the stronger wording was refuted.",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -579,7 +579,7 @@
       "claim": "A forge verify PASS is bound to the code state that was tested (HEAD, staged and unstaged diffs, untracked non-ignored files) and covers every declared suite.",
       "component": "Verification (src/verify.js, forge verify)",
       "version": "fingerprint manifest-v3, verifier event contract v2",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "implemented",
       "evidence": [
@@ -588,7 +588,7 @@
         "test/trust_properties.test.js",
         "docs/GUIDE.md"
       ],
-      "notes": "Re-assessed on 2699aa0: N03 (Node's `-r` preload flag read as a recursive workspace run, so a failing workspace never ran) and N05 (a test rewrote code it imported from an untracked nested repository without changing the fingerprint) are regression tests, and a seeded property test covers look-alike and filtered workspace commands. A root script covers the workspaces only when it is a recognized, unfiltered recursive run whose failure reaches its exit status; each package's verdict is labelled measured, inferred or declared. Nested repositories and submodules are bound by their own code state; code that still cannot be bound makes a PASS INCOMPLETE unless declared in verify.external, which every verifier event records. Scope: gitignored files, declared verify.generated outputs and interpreter caches are not bound; an unreadable untracked file makes the state unbindable. At d2abfa6 this claim was refuted.",
+      "notes": "Re-assessed on a6be83c: N03 (Node's `-r` preload flag read as a recursive workspace run, so a failing workspace never ran) and N05 (a test rewrote code it imported from an untracked nested repository without changing the fingerprint) are regression tests, and so are the counterexamples an internal adversarial re-review of 2699aa0 found: unknown options, shell builtins, narrowing configuration and environment, replayed tool caches, negation shapes, yarn and nx member rules, Bun's own runner, gitlinks without .gitmodules, a nested repository's own config and excludes, and a script-shell that is not a shell. A root script covers the workspaces only when it is a recognized, unfiltered, uncached recursive run whose failure reaches its exit status and nothing narrows it; each package's verdict is labelled measured, inferred or declared. Nested repositories, submodules and gitlinks are bound by their own code state under the outer config; code that still cannot be bound makes a PASS INCOMPLETE unless declared in verify.external, which every verifier event records. Scope: gitignored files, declared verify.generated outputs and interpreter caches are not bound; forge trusts the repository's own tooling (a replaced test runner or tool binary is outside the check); an unreadable untracked file makes the state unbindable. At d2abfa6 this claim was refuted.",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -639,7 +639,7 @@
       "claim": "Lesson consolidation and ledger compaction never merge, archive or drop a rule because it is similar to another: only the same statement is merged, and only a refuted claim with exactly a lesson's text drops it.",
       "component": "Consolidation and compaction (src/learn_consolidate.js, src/ledger_retention.js)",
       "version": "exact-statement merging",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "implemented",
       "evidence": [
@@ -662,14 +662,14 @@
           "resolution": "fixed"
         }
       ],
-      "notes": "Assessed on 2699aa0: N02 (\"Allow admins and deny guests\" and \"Deny admins and allow guests\" with a shared tail merged into one rule, the token-level guard seeing no conflict) is a regression test, with subject, direction, number and negation-scope swaps, and a seeded property test over role and value swaps. Near-duplicates are kept and listed as proposed; similar pairs that differ in a behaviour-bearing token are listed as conflicts; a lesson resembling a refuted claim is kept and flagged. A person merges what similarity proposes. Scope: statement equality ignores whitespace runs and trailing sentence punctuation only, with the semantic guard confirming no literal or code layout depended on them."
+      "notes": "Re-assessed on a6be83c: N02 (\"Allow admins and deny guests\" and \"Deny admins and allow guests\" with a shared tail merged into one rule, the token-level guard seeing no conflict) is a regression test, with subject, direction, number and negation-scope swaps, and a seeded property test over role and value swaps; so are the counterexamples an internal adversarial re-review of 2699aa0 found (statement keys that folded `./...` into `./`, `save!` into `save` and inner whitespace; facts with different names and lessons with different triggers archived as duplicates; one repo's retraction outvoting a live copy). Near-duplicates are kept and listed as proposed; similar pairs that differ in a behaviour-bearing token are listed as conflicts; a lesson resembling a refuted claim is kept and flagged. A person merges what similarity proposes. Scope: the same statement is the same text up to its edge whitespace and one sentence period after a word, with the same fact name, lesson trigger and scope."
     },
     {
       "id": "reuse-exact-identity",
       "claim": "An exact reuse hit serves an artifact minted for the byte-identical specification, and only while its bytes and dependency contracts still match.",
       "component": "Reuse cache (src/reuse.js)",
       "version": "reuse key v3, dependency contracts v2",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
+      "source_commit": "a6be83cac57b8b728c6a9b2e14430f2b7186c20b",
       "assessed_release": "unreleased",
       "status": "implemented",
       "evidence": [
@@ -677,7 +677,7 @@
         "test/reuse.test.js",
         "test/trust_properties.test.js"
       ],
-      "notes": "Re-assessed on 2699aa0: N01 (a spec differing only in whitespace inside a literal exact-hit, the key having collapsed whitespace and folded NFC) and N08 (a destructured-parameter change left the dependency contract unchanged, and same-name symbols resolved by file order) are regression tests, and seeded property tests cover quoted whitespace, code points and destructured parameters. The exact tier compares a digest of the spec's code units; near needs the semantic guard, which compares code layout; a contract hashes the whole declaration minus its body, bound to the module the artifact imports. Scope: inline code the ledger would rewrite (CRLF, non-NFC) is refused at mint; contracts need an atlas with definition extents, otherwise the hit is marked requiresRevalidation. At d2abfa6 this claim was refuted.",
+      "notes": "Re-assessed on a6be83c: N01 (a spec differing only in whitespace inside a literal exact-hit, the key having collapsed whitespace and folded NFC) and N08 (a destructured-parameter change left the dependency contract unchanged, and same-name symbols resolved by file order) are regression tests, and so are the counterexamples an internal adversarial re-review of 2699aa0 found: near hits on older or normalized keys; operator, order, whitespace, spelling and typographic-literal differences the guard missed; dependencies missed or mis-bound through default, namespace, require, dynamic, aliased and re-exported imports. Seeded property tests cover quoted whitespace, code points and destructured parameters. The exact tier compares a digest of the spec's code units; near needs a current, verbatim-stored key and the semantic guard; a named import's contract hashes its defining declaration minus the body, and any other import records the module's digest. Scope: inline code the ledger would rewrite (CRLF, non-NFC) is refused at mint; contracts need a fresh atlas with definition extents, otherwise the hit is marked requiresRevalidation; a class's or object literal's contract includes its method bodies (conservative). At d2abfa6 this claim was refuted.",
       "counterexamples": [
         {
           "review": "2026-09-26",
