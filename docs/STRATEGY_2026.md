@@ -9,7 +9,7 @@ Status: **proposal** — open a Discussion to argue with it.
 
 ## 1. Where we stand (v1.7.4)
 
-An honest inventory, from a full review of the repo (799 files, 136 test files,
+An honest inventory, from a full review of the repo (799 files, 130 test files,
 Node 20/22 + Windows/Git-Bash CI matrix, CodeQL, Scorecard, semver releases):
 
 **Strengths**
