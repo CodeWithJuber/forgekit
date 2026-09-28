@@ -158,9 +158,13 @@ export const COMMANDS = {
   impact: {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
-    usage: "forge impact <symbol|file> [--json] [--basic]",
+    usage: "forge impact <symbol|file> [--json] [--basic] [--all-relations]",
     flags: [
       { flag: "--json", desc: "machine-readable report" },
+      {
+        flag: "--all-relations",
+        desc: "also walk sibling and forward relations (recall instrument; much larger, noisier answer)",
+      },
       {
         flag: "--basic",
         desc: "skip hazard-aware enhancements (fixed threshold, no SCC expansion)",

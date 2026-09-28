@@ -12,7 +12,7 @@ Forgekit emits configuration for ten coding tools, plus MCP configuration for Ro
    call it.
 4. **Enforcement** — some of that code can *block* an action, not just advise.
 
-Each cell says how the claim is backed (as of 1.4.3, commit `d2abfa6`; checked 2026-09-26 against
+Each cell says how the claim is backed (as of 1.8.0; checked 2026-09-28 against
 `src/emit/*.js`, `src/sync.js`, `src/init.js`, `hooks/hooks.json` and the tests):
 
 | Label | Meaning |
@@ -52,7 +52,7 @@ On Claude Code the guards run automatically, and four can stop or pause an actio
 | Guard | Event | What it can do | Default |
 |---|---|---|---|
 | `protect-paths` | PreToolUse (writes, shell, reads) | deny a tool call on secrets, credential stores and destructive commands; fails closed when it cannot reach a verdict | on |
-| `cost-budget` | PreToolUse | pause for the user (`permissionDecision: "ask"`) once the day's spend passes `FORGE_COST_CEILING` (default $10); it asks, and never blocks by itself | on |
+| `cost-budget` | PreToolUse | on every 100th tool call, checks `forge budget`: past the alert threshold it nudges with context; over budget it asks (soft, the default); with `--hard` it denies the call — an opt-in circuit breaker. Falls back to the historic `FORGE_COST_CEILING` check when `forge` is not on PATH | on |
 | completion gate | Stop | block "done" once per session when code changed without test evidence or a doc/state record | on (`FORGE_STOPGATE=0` disables) |
 | substrate gate | UserPromptSubmit / pre-edit | block a vacuous task or an edit into a very large dependent set | off unless `FORGE_ENFORCE=1` |
 
