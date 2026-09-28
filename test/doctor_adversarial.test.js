@@ -9,6 +9,11 @@ import { adversarialProbes } from "../src/doctor_adversarial.js";
 
 const guardsDir = join(BRAND.root, "global", "guards");
 const byLabel = (results) => Object.fromEntries(results.map((r) => [r.label, r]));
+// Faking $HOME does not move os.homedir() on Windows (it reads USERPROFILE),
+// so the fake-home bypass tests are POSIX-only — same convention as the
+// forge-stub guard tests.
+const noFakeHomeSkip =
+  process.platform === "win32" && "fake $HOME does not move os.homedir() on win32";
 const ATTACK_IDS = [
   "sed-inplace",
   "heredoc-write",
@@ -69,7 +74,7 @@ test("missing guard binary yields na probes, never a throw", () => {
   for (const r of results) assert.equal(r.status, "na");
 });
 
-test("bypassPermissions in settings.json is a fail", () => {
+test("bypassPermissions in settings.json is a fail", { skip: noFakeHomeSkip }, () => {
   const home = mkdtempSync(join(tmpdir(), "forge-adv-home-"));
   mkdirSync(join(home, ".claude"), { recursive: true });
   writeFileSync(
@@ -124,7 +129,10 @@ test("doctor({adversarial:true}) runs the attack suite, not the health checks", 
   );
 });
 
-test("doctor({adversarial:true}) with a bypass configured reports failed=1", () => {
+test(
+  "doctor({adversarial:true}) with a bypass configured reports failed=1",
+  { skip: noFakeHomeSkip },
+  () => {
   const home = mkdtempSync(join(tmpdir(), "forge-adv-fail-home-"));
   mkdirSync(join(home, ".claude"), { recursive: true });
   writeFileSync(
