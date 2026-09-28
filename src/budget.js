@@ -31,16 +31,45 @@ const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const STATE_REL = ".forge/budget-state.json";
 
 /**
+ * A validated budget: per-day and per-task (session) ceilings in USD, the alert
+ * fraction, and whether the circuit breaker blocks (hard) or asks (soft).
+ * @typedef {object} Budget
+ * @property {number|null|undefined} [daily]
+ * @property {number|null|undefined} [perTask]
+ * @property {number} alertAt
+ * @property {boolean} hard
+ */
+
+/**
+ * One side of an evaluation: a spend measured against its limit.
+ * `state` is "unlimited" (no budget), "unknown" (no measurable spend), "ok",
+ * "alert" (past alertAt), or "over". alert/over imply measured spend+limit.
+ * @typedef {object} BudgetLimb
+ * @property {number|null} limit
+ * @property {number|null} spend
+ * @property {number|null} ratio
+ * @property {"unlimited"|"unknown"|"ok"|"alert"|"over"} state
+ */
+
+/**
  * Validate a budget patch. Pure. Accepts a partial object; every present key is
  * checked and the clean budget returned. `null` clears a key.
  * @param {unknown} patch
- * @returns {{ok:true, budget:{daily?:number|null, perTask?:number|null, alertAt:number, hard:boolean}}|{ok:false, errors:string[]}}
+ * @returns {{ok:true, budget:Budget}|{ok:false, errors:string[]}}
  */
 export function validateBudget(patch) {
   const errors = [];
-  const p = patch && typeof patch === "object" ? patch : {};
+  const p = /** @type {Record<string, unknown>} */ (
+    patch && typeof patch === "object" ? patch : {}
+  );
+  /**
+   * @param {unknown} v
+   * @param {string} name
+   * @returns {number|null|undefined}
+   */
   const num = (v, name) => {
-    if (v === undefined || v === null) return v;
+    if (v === undefined) return undefined;
+    if (v === null) return null;
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0)
       errors.push(`${name} must be a positive number (got ${JSON.stringify(v)})`);
@@ -91,6 +120,7 @@ export function readBudget(root = process.cwd()) {
   // Env override for the daily ceiling (historic behavior; documented precedence).
   const envDaily = process.env.FORGE_COST_CEILING;
   let daily = b.daily ?? null;
+  /** @type {"env"|"config"|"default"|"none"} */
   let dailySource = daily != null ? "config" : "none";
   if (envDaily !== undefined && envDaily !== "") {
     const n = Number(envDaily);
@@ -124,7 +154,9 @@ export function readBudget(root = process.cwd()) {
  */
 export function writeBudget(root, patch) {
   const v = validateBudget(patch);
-  if (!v.ok) return { ok: false, errors: v.errors };
+  // NB: `v.ok === false`, not `!v.ok` — the latter doesn't narrow a JSDoc
+  // discriminated union under checkJs.
+  if (v.ok === false) return { ok: false, errors: v.errors };
   try {
     const res = writeForgeConfig(root, (cfg) => {
       // `undefined` = leave the key alone; `null` = clear it. Spreading the raw
@@ -310,13 +342,11 @@ const money = (n) => `$${n.toFixed(2)}`;
 
 /**
  * Evaluate spend against the budget. Pure.
- * @param {{dailySpend:number|null, taskSpend:number|null,
- *   budget:{daily:number|null, perTask:number|null, alertAt:number, hard:boolean}}} opts
- * @returns {{daily:{limit:number|null, spend:number|null, ratio:number|null, state:string},
- *   task:{limit:number|null, spend:number|null, ratio:number|null, state:string}|null,
- *   decision:"allow"|"ask"|"deny", notes:string[]}}
+ * @param {{dailySpend:number|null, taskSpend:number|null, budget:Budget}} opts
+ * @returns {{daily:BudgetLimb, task:BudgetLimb|null, decision:"allow"|"ask"|"deny", notes:string[]}}
  */
 export function evaluateBudget({ dailySpend, taskSpend, budget }) {
+  /** @type {(spend:number|null, limit:number|null|undefined)=>BudgetLimb} */
   const limb = (spend, limit) => {
     if (limit == null) return { limit, spend, ratio: null, state: "unlimited" };
     if (spend == null) return { limit, spend, ratio: null, state: "unknown" };
@@ -327,13 +357,17 @@ export function evaluateBudget({ dailySpend, taskSpend, budget }) {
   const daily = limb(dailySpend, budget.daily);
   const task = budget.perTask != null ? limb(taskSpend, budget.perTask) : null;
   const notes = [];
-  for (const [name, l] of [["day", daily], ...(task ? [["task", task]] : [])]) {
+  /** @type {{name:string, limb:BudgetLimb}[]} */
+  const limbs = [{ name: "day", limb: daily }, ...(task ? [{ name: "task", limb: task }] : [])];
+  for (const { name, limb: l } of limbs) {
+    // alert/over imply measured spend and limit; the guard keeps the types honest.
+    if (l.state !== "alert" && l.state !== "over") continue;
+    if (l.spend == null || l.limit == null || l.ratio == null) continue;
     if (l.state === "alert")
       notes.push(
         `${name} spend ${money(l.spend)} is at ${Math.round(l.ratio * 100)}% of the ${money(l.limit)} budget`,
       );
-    else if (l.state === "over")
-      notes.push(`${name} spend ${money(l.spend)} exceeds the ${money(l.limit)} budget`);
+    else notes.push(`${name} spend ${money(l.spend)} exceeds the ${money(l.limit)} budget`);
   }
   const over = [daily, task].some((l) => l?.state === "over");
   const decision = over ? (budget.hard ? "deny" : "ask") : "allow";
@@ -342,16 +376,19 @@ export function evaluateBudget({ dailySpend, taskSpend, budget }) {
 
 /** The guard-facing verdict: decision + one actionable reason line.
  *  @param {ReturnType<typeof evaluateBudget>} ev
- *  @param {{daily:number|null, perTask:number|null, hard:boolean}} budget */
+ *  @param {Budget} budget */
 export function verdictReason(ev, budget) {
-  const overLimbs = [
-    ev.daily.state === "over" && ["day", ev.daily],
-    ev.task?.state === "over" && ["task", ev.task],
-  ].filter(Boolean);
+  /** @type {{name:string, limb:BudgetLimb}[]} */
+  const overLimbs = [];
+  if (ev.daily.state === "over") overLimbs.push({ name: "day", limb: ev.daily });
+  if (ev.task?.state === "over") overLimbs.push({ name: "task", limb: ev.task });
   if (!overLimbs.length) return "";
-  const parts = overLimbs.map(
-    ([name, l]) => `${name} spend ${money(l.spend)} > ${money(l.limit)} budget`,
-  );
+  const parts = [];
+  for (const { name, limb } of overLimbs) {
+    // "over" implies measured spend and limit; the guard keeps the types honest.
+    if (limb.spend == null || limb.limit == null) continue;
+    parts.push(`${name} spend ${money(limb.spend)} > ${money(limb.limit)} budget`);
+  }
   const fix = budget.hard
     ? "Raise it with `forge budget set --daily <n>`, or `forge budget clear`."
     : "Continue, switch to a cheaper model, scope the task, or raise the budget with `forge budget set --daily <n>`.";
