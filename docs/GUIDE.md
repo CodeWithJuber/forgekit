@@ -32,7 +32,7 @@ Every command is real and wired. Grouped by what it does:
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge verify` · `forge precommit`                                                        |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                         |
-| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge models`                                                                                                 |
+| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide` |
 <!-- forge:render:command-groups:end -->
 
