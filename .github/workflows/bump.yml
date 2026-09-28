@@ -1,18 +1,24 @@
-# Auto-release. Two ways in:
-#   1. Merge to master (push) -> "auto" bump from conventional commits since the last tag.
-#      A chore/docs-only merge is a graceful skip (bump.mjs exits 3), so nothing publishes
-#      unless a feat/fix/perf/breaking change actually landed.
-#   2. Actions -> "Bump version" -> Run workflow -> pick auto/patch/minor/major by hand.
+# Auto-release, branch-protection compatible. Two phases:
 #
-# Either way scripts/bump.mjs bumps every version field (package.json, package-lock.json,
-# both plugin manifests, CITATION.cff, landing page) + rotates CHANGELOG, then this workflow
-# commits "chore(release): vX.Y.Z", tags vX.Y.Z, and pushes commit + tag.
+#   Phase 1 — propose: a push to master (or a manual dispatch) runs "auto" bump from
+#     conventional commits since the last tag. A chore/docs-only merge is a graceful
+#     skip (bump.mjs exits 3), so nothing publishes unless a feat/fix/perf/breaking
+#     change actually landed. Otherwise scripts/bump.mjs bumps every version field
+#     (package.json, package-lock.json, both plugin manifests, CITATION.cff, landing
+#     page) + rotates CHANGELOG, and this workflow commits "chore(release): vX.Y.Z"
+#     to branch release/vX.Y.Z and opens a PR (no auto-merge — the maintainer merges
+#     it, same Karo convention as every other PR).
+#   Phase 2 — finalize: the push that MERGES a release PR is detected via the merge
+#     commit's 2nd parent ("chore(release): vX.Y.Z"). The workflow tags the merge
+#     commit vX.Y.Z and dispatches release.yml on the tag.
 #
-# Pushing the v* tag is what normally triggers release.yml — but pushes made with the default
-# GITHUB_TOKEN deliberately do NOT trigger other workflows (GitHub's recursion guard). So this
-# workflow also dispatches release.yml on the new tag explicitly, which needs `actions: write`.
-# That same recursion guard is why the release commit this workflow pushes does NOT re-trigger
-# the push path below (no infinite loop); the actor/subject guard is belt-and-suspenders.
+# Why two phases: branch protection (required status checks, enforce_admins) rejects
+# direct pushes of the release commit to master (GH006 — the checks haven't run on
+# that commit yet). The release PR lets the required checks run first; the merge is
+# then an ordinary protected-branch merge. Pushing the v* tag is what normally
+# triggers release.yml — but pushes made with the default GITHUB_TOKEN deliberately
+# do NOT trigger other workflows (GitHub's recursion guard). So the finalize phase
+# also dispatches release.yml on the new tag explicitly, which needs `actions: write`.
 name: Bump version
 
 on:
@@ -30,29 +36,52 @@ on:
           - minor
           - major
 
-permissions:
-  contents: write # push the release commit + tag
-  actions: write # dispatch release.yml on the new tag
-
 concurrency:
   group: bump
   cancel-in-progress: false
 
 jobs:
-  # Never tag a tree that fails the FULL quality gate (not just tests) — P0-11.
+  # Detect whether this push merged a release PR: a merge commit whose 2nd parent
+  # is "chore(release): vX.Y.Z". API-based so no checkout is needed.
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_version: ${{ steps.d.outputs.release_version }}
+    steps:
+      - id: d
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          VER=""
+          PARENTS="$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq '.parents | length')"
+          if [ "$PARENTS" = "2" ]; then
+            P2="$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq '.parents[1].sha')"
+            SUBJ="$(gh api "repos/${{ github.repository }}/commits/$P2" --jq '.commit.message' | head -n 1)"
+            case "$SUBJ" in
+              "chore(release): v"*) VER="${SUBJ#chore(release): v}" ;;
+            esac
+          fi
+          echo "release_version=$VER" >> "$GITHUB_OUTPUT"
+          if [ -n "$VER" ]; then echo "::notice::Release-PR merge detected: v$VER"; fi
+
+  # Never cut a release from a tree that fails the FULL quality gate (not just tests).
+  # Skipped for release merges — the merge commit already passed every required check.
   gate:
-    if: >-
-      github.actor != 'github-actions[bot]' &&
-      !startsWith(github.event.head_commit.message, 'chore(release):')
+    needs: detect
+    if: detect.outputs.release_version == ''
     uses: ./.github/workflows/reusable-quality-gate.yml
 
-  bump:
-    needs: gate
+  # Phase 1: compute the release and propose it as a PR.
+  propose:
+    needs: [detect, gate]
+    if: detect.outputs.release_version == ''
     runs-on: ubuntu-latest
-    # Never react to our own release commit (belt-and-suspenders behind GitHub's recursion guard).
-    if: >-
-      github.actor != 'github-actions[bot]' &&
-      !startsWith(github.event.head_commit.message, 'chore(release):')
+    permissions:
+      contents: write # push the release branch
+      pull-requests: write # open / close release PRs
     steps:
       - uses: actions/checkout@v7
         with:
@@ -83,19 +112,21 @@ jobs:
             echo "::error::bump.mjs failed (exit $code)"
             exit "$code"
           fi
-      - name: Commit, tag, push
+      - name: Commit to release branch + open PR
         if: steps.bump.outputs.release == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Orphan-tag guard: a partial prior run (bump committed + tagged, then the push or a
-          # later step died) can leave vX.Y.Z already present locally or on origin. `git tag`
-          # would then die with a bare "fatal: tag 'vX.Y.Z' already exists", wedging EVERY
-          # future auto-release with a cryptic error. Detect it first and fail with an operator
-          # runbook instead. We do NOT auto-delete the tag — clobbering a release tag in CI is
-          # too dangerous; a human must remove the orphan deliberately.
+          BRANCH="release/v$VERSION"
+          # Orphan-tag guard: a partial prior run can leave vX.Y.Z already present on
+          # origin (tag pushed, then a later step died). `git tag` would then die with
+          # a bare "fatal: tag 'vX.Y.Z' already exists", wedging EVERY future release
+          # with a cryptic error. Detect it first and fail with an operator runbook
+          # instead. We do NOT auto-delete the tag — clobbering a release tag in CI
+          # is too dangerous; a human must remove the orphan deliberately.
           if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null 2>&1 \
             || git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
             echo "::error::Release wedged: tag v$VERSION already exists (orphaned partial run). An operator must delete it: git push origin :refs/tags/v$VERSION, then re-run."
@@ -103,11 +134,77 @@ jobs:
           fi
           git add -A
           git commit -m "chore(release): v$VERSION"
-          git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin "HEAD:${{ github.ref_name }}" "v$VERSION"
-      - name: Trigger the release workflow on the new tag
-        if: steps.bump.outputs.release == 'true'
+          # Force-push: a pending release PR accumulates later merges (the version is
+          # recomputed from all commits since the last tag each run).
+          git push --force origin "HEAD:$BRANCH"
+          if [ -z "$(gh pr list --base master --state open --json headRefName --jq '.[].headRefName' | grep -x "$BRANCH" || true)" ]; then
+            NOTES="$(VERSION="$VERSION" node -e '
+              const fs = require("fs");
+              const lines = fs.readFileSync("CHANGELOG.md", "utf8").split("\n");
+              const v = process.env.VERSION;
+              const out = [];
+              let on = false;
+              for (const l of lines) {
+                if (l.startsWith("## [" + v + "]")) { on = true; continue; }
+                if (on && l.startsWith("## [")) break;
+                if (on) out.push(l);
+              }
+              console.log(out.join("\n").trim());
+            ')"
+            gh pr create --base master --head "$BRANCH" \
+              --title "chore(release): v$VERSION" \
+              --body "Automated release PR — merge it to cut the release. Tagging \`v$VERSION\` and the GitHub Release happen automatically on merge (finalize phase).
+
+          ## v$VERSION
+
+          $NOTES"
+          else
+            echo "::notice::Release PR for v$VERSION is already open — branch updated."
+          fi
+          # Close superseded release PRs (a breaking change after a pending minor, etc.).
+          for pr in $(gh pr list --base master --state open --json number,headRefName \
+              --jq --arg b "$BRANCH" '.[] | select(.headRefName | startswith("release/v")) | select(.headRefName != $b) | .number'); do
+            gh pr close "$pr" --comment "Superseded by the newer release PR for \`$BRANCH\`."
+          done
+
+  # Phase 2: this push merged a release PR — tag the merge commit and cut the release.
+  finalize:
+    needs: detect
+    if: detect.outputs.release_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the tag, delete the release branch
+      actions: write # dispatch release.yml on the new tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Tag the release merge + trigger the release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.bump.outputs.version }}
-        run: gh workflow run release.yml --ref "v$VERSION"
+          VERSION: ${{ detect.outputs.release_version }}
+        run: |
+          # Defense in depth: re-verify the 2nd parent really is the release commit.
+          P2_SUBJ="$(git log -1 --format=%s HEAD^2)"
+          case "$P2_SUBJ" in
+            "chore(release): v$VERSION") ;;
+            *) echo "::error::2nd parent is '$P2_SUBJ', not 'chore(release): v$VERSION' — refusing to tag."; exit 1 ;;
+          esac
+          # Never clobber an existing tag.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists — refusing to clobber. Delete it deliberately, then re-run."
+            exit 1
+          fi
+          # The merged tree must actually be the release: version fields agree with the tag.
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG" != "v$VERSION" ]; then
+            echo "::error::package.json says $PKG but the release merge is v$VERSION — refusing to tag."
+            exit 1
+          fi
+          git tag -a "v$VERSION" -m "v$VERSION" HEAD
+          git push origin "v$VERSION"
+          git push origin --delete "release/v$VERSION" || true
+          gh workflow run release.yml --ref "v$VERSION"
