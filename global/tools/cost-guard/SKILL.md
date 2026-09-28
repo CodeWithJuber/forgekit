@@ -33,6 +33,9 @@ deliberately.
 - `forge cost` shows real per-day spend; **`forge cost --stages`** shows the
   measured per-stage savings (gate / cache / route / context) from
   `.forge/metrics.jsonl` — a stage with no events says "no data", never a default.
+- `forge budget set --daily 10 --per-task 2` caps spend before it happens: the cost
+  guard alerts at 80% (configurable) and, over budget, asks you — or blocks with
+  `--hard` (opt-in circuit breaker). `forge budget status` is the live meter.
 - `forge reuse query "<spec>"` before regenerating: a hit is verified code you
   already paid for.
 

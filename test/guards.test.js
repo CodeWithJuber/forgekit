@@ -257,6 +257,92 @@ test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
   assert.equal(r.code, 0);
 });
 
+// The `forge budget check` integration: the guard is a thin translator — the verdict
+// comes from `forge budget`, so these stub `forge` and assert the translation only.
+// The counter file is pre-seeded at 99 so this call is #100 (the throttled check).
+// The stub uses `printf '%s'` (not a format string) so `$`/`%` in reasons stay literal.
+function runCostBudgetWithForgeVerdict(decision, reason) {
+  const bin = pathWithoutTimeout([
+    "bash",
+    "sh",
+    "cat",
+    "sed",
+    "head",
+    "tr",
+    "mkdir",
+    "rmdir",
+    "find",
+    "dirname",
+  ]);
+  const sid = `t-verdict-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const body = `decision: ${decision}\nreason: ${reason}\n`.replace(/'/g, `'\\''`);
+  writeFileSync(join(bin, "forge"), `#!/bin/sh\nprintf '%s' '${body}'\n`);
+  chmodSync(join(bin, "forge"), 0o755);
+  const tmp = mkdtempSync(join(tmpdir(), "forge-costverdict-"));
+  writeFileSync(join(tmp, `forge-count-${sid}`), "99\n");
+  const r = spawnSync(join(bin, "bash"), [join(guards, "cost-budget.sh")], {
+    input: JSON.stringify({ session_id: sid, tool_name: "Bash", tool_input: { command: "ls" } }),
+    env: { PATH: bin, TMPDIR: tmp },
+    encoding: "utf8",
+  });
+  return r;
+}
+
+test("cost-budget translates a `forge budget check` deny verdict (opt-in breaker)", () => {
+  const r = runCostBudgetWithForgeVerdict(
+    "deny",
+    "forge budget: day spend $15.00 > $10.00 budget.",
+  );
+  assert.equal(r.status, 0, "the guard exits 0; the decision rides in the JSON");
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /\$15\.00/);
+});
+
+test("cost-budget translates a `forge budget check` ask verdict (soft default)", () => {
+  const r = runCostBudgetWithForgeVerdict("ask", "forge budget: day spend $15.00 > $10.00 budget.");
+  assert.equal(r.status, 0);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.hookSpecificOutput.permissionDecision, "ask");
+});
+
+test("cost-budget translates a `forge budget check` context nudge", () => {
+  const r = runCostBudgetWithForgeVerdict(
+    "context",
+    "day spend $8.50 is at 85% of the $10.00 budget",
+  );
+  assert.equal(r.status, 0);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "a nudge never decides");
+  assert.match(out.hookSpecificOutput.additionalContext, /85%/);
+});
+
+test("cost-budget without forge on PATH skips the budget check entirely", () => {
+  const bin = pathWithoutTimeout([
+    "bash",
+    "sh",
+    "cat",
+    "sed",
+    "head",
+    "tr",
+    "mkdir",
+    "rmdir",
+    "find",
+    "dirname",
+  ]);
+  const sid = `t-noforge-${Date.now()}`;
+  const tmp = mkdtempSync(join(tmpdir(), "forge-costnof-"));
+  writeFileSync(join(tmp, `forge-count-${sid}`), "99\n");
+  const r = spawnSync(join(bin, "bash"), [join(guards, "cost-budget.sh")], {
+    input: JSON.stringify({ session_id: sid, tool_name: "Bash", tool_input: { command: "ls" } }),
+    env: { PATH: bin, TMPDIR: tmp },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0);
+  // No forge and no ccusage on this minimal PATH → no spend verdict at all.
+  assert.doesNotMatch(r.stdout, /permissionDecision/);
+});
+
 test("lean-guard is non-blocking outside a git repo (exit 0)", () => {
   const r = runGuard("lean-guard.sh", {}, { cwd: tmpdir() });
   assert.equal(r.code, 0);

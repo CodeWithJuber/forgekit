@@ -10,6 +10,7 @@ import { BRAND } from "./brand.js";
 // every handler shares are defined once in ./cli/shared.js.
 import memoryHandlers from "./cli/memory.js";
 import routingHandlers from "./cli/routing.js";
+import budgetHandlers from "./cli/budget.js";
 import { bar, heading, paint, table } from "./cli/shared.js";
 import verificationHandlers from "./cli/verification.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
@@ -60,7 +61,7 @@ function printHelp() {
 // Command dispatch table: name → async handler `(argv, cmd) => …`. Populated at module
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
-const HANDLERS = { ...memoryHandlers, ...verificationHandlers, ...routingHandlers };
+const HANDLERS = { ...memoryHandlers, ...verificationHandlers, ...routingHandlers, ...budgetHandlers };
 
 async function run(argv) {
   const [cmd] = argv;
