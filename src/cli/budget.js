@@ -27,7 +27,12 @@ function parseFlags(argv, known) {
     const eq = a.indexOf("=");
     const key = (eq === -1 ? a : a.slice(0, eq)).slice(2);
     if (!known.includes(key)) throw new Error(`unknown flag: --${key}`);
-    out[key] = eq === -1 ? (argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined ? true : argv[++i]) : a.slice(eq + 1);
+    out[key] =
+      eq === -1
+        ? argv[i + 1]?.startsWith("--") || argv[i + 1] === undefined
+          ? true
+          : argv[++i]
+        : a.slice(eq + 1);
   }
   return out;
 }
@@ -54,11 +59,17 @@ async function cmdSet(root, argv) {
   const b = res.budget;
   if (f.json) return console.log(JSON.stringify(b, null, 2));
   heading(`${BRAND.brand} budget — updated\n`);
-  console.log(`  daily     ${b.daily != null ? money(b.daily) : "unlimited"}${b.dailySource === "env" ? "  (FORGE_COST_CEILING overrides the config)" : ""}`);
+  console.log(
+    `  daily     ${b.daily != null ? money(b.daily) : "unlimited"}${b.dailySource === "env" ? "  (FORGE_COST_CEILING overrides the config)" : ""}`,
+  );
   console.log(`  per-task  ${b.perTask != null ? money(b.perTask) : "not set"}`);
   console.log(`  alert at  ${Math.round(b.alertAt * 100)}% of a budget`);
-  console.log(`  breaker   ${b.hard ? "HARD — tool calls are blocked over budget" : "soft — the guard asks you over budget"}`);
-  console.log(paint("\n  the cost guard enforces this on every tool call (checked 1/100 calls)", "dim"));
+  console.log(
+    `  breaker   ${b.hard ? "HARD — tool calls are blocked over budget" : "soft — the guard asks you over budget"}`,
+  );
+  console.log(
+    paint("\n  the cost guard enforces this on every tool call (checked 1/100 calls)", "dim"),
+  );
 }
 
 async function cmdStatus(root, argv) {
@@ -69,7 +80,16 @@ async function cmdStatus(root, argv) {
   if (f.json)
     return console.log(
       JSON.stringify(
-        { budget, spend, sessions, evaluation: evaluateBudget({ dailySpend: spend.amount, taskSpend: null, budget }) },
+        {
+          budget,
+          spend,
+          sessions,
+          evaluation: evaluateBudget({
+            dailySpend: spend.amount,
+            taskSpend: null,
+            budget,
+          }),
+        },
         null,
         2,
       ),
@@ -92,7 +112,9 @@ async function cmdCheck(root, argv) {
   const decision = ev.decision === "allow" && ev.notes.length ? "context" : ev.decision;
   const reason = ev.decision === "allow" ? ev.notes.join("; ") : verdictReason(ev, budget);
   if (f.json)
-    return console.log(JSON.stringify({ decision, reason, evaluation: ev, spend, budget }, null, 2));
+    return console.log(
+      JSON.stringify({ decision, reason, evaluation: ev, spend, budget }, null, 2),
+    );
   console.log(`decision: ${decision}`);
   console.log(`reason: ${reason}`);
 }
@@ -125,7 +147,12 @@ HANDLERS.budget = async (argv) => {
     throw new Error(`unknown subcommand: ${sub} — set | status | clear | check`);
   } catch (e) {
     console.error(`  ${BRAND.cli} budget: ${e.message}`);
-    console.error(paint(`  usage: ${BRAND.cli} budget set --daily 10 --per-task 2 [--alert-at 0.8] [--hard|--soft]`, "dim"));
+    console.error(
+      paint(
+        `  usage: ${BRAND.cli} budget set --daily 10 --per-task 2 [--alert-at 0.8] [--hard|--soft]`,
+        "dim",
+      ),
+    );
     process.exitCode = 1;
   }
 };

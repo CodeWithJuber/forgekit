@@ -281,7 +281,11 @@ function runCostBudgetWithForgeVerdict(decision, reason) {
   const tmp = mkdtempSync(join(tmpdir(), "forge-costverdict-"));
   writeFileSync(join(tmp, `forge-count-${sid}`), "99\n");
   const r = spawnSync(join(bin, "bash"), [join(guards, "cost-budget.sh")], {
-    input: JSON.stringify({ session_id: sid, tool_name: "Bash", tool_input: { command: "ls" } }),
+    input: JSON.stringify({
+      session_id: sid,
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+    }),
     env: { PATH: bin, TMPDIR: tmp },
     encoding: "utf8",
   });
@@ -334,7 +338,11 @@ test("cost-budget without forge on PATH skips the budget check entirely", () => 
   const tmp = mkdtempSync(join(tmpdir(), "forge-costnof-"));
   writeFileSync(join(tmp, `forge-count-${sid}`), "99\n");
   const r = spawnSync(join(bin, "bash"), [join(guards, "cost-budget.sh")], {
-    input: JSON.stringify({ session_id: sid, tool_name: "Bash", tool_input: { command: "ls" } }),
+    input: JSON.stringify({
+      session_id: sid,
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+    }),
     env: { PATH: bin, TMPDIR: tmp },
     encoding: "utf8",
   });
@@ -366,7 +374,10 @@ test("cortex.sh stop (detached) processes the REAL session from the Stop payload
       encoding: "utf8",
     });
   for (let i = 0; i < 3; i++)
-    hook("capture", { tool_name: "Edit", tool_input: { file_path: "src/a.js" } });
+    hook("capture", {
+      tool_name: "Edit",
+      tool_input: { file_path: "src/a.js" },
+    });
   hook("prompt", { prompt: "that's wrong, undo it" });
   const sessions = join(root, ".forge", "sessions");
   const log = join(sessions, `${sid}.jsonl`);
@@ -486,12 +497,19 @@ test("protect-paths protects the credential stores and Read itself (B6)", () => 
   // holds a literal token.
   const token = () => "//registry.npmjs.org/:_authToken=npm_abc123";
   for (const command of ["cat ~/.netrc", "cat .npmrc", "echo x > ~/.git-credentials"]) {
-    const d = protectPathsDecision({ toolName: "Bash", command, readText: token });
+    const d = protectPathsDecision({
+      toolName: "Bash",
+      command,
+      readText: token,
+    });
     assert.equal(d.block, true, command);
   }
   // …and an ordinary source file is still untouched.
   assert.equal(
-    runGuard("protect-paths.sh", { tool_name: "Read", tool_input: { file_path: "src/a.js" } }).code,
+    runGuard("protect-paths.sh", {
+      tool_name: "Read",
+      tool_input: { file_path: "src/a.js" },
+    }).code,
     0,
   );
 });
@@ -504,13 +522,19 @@ test("protect-paths parses the payload with a real parser, not a regex (B6)", ()
     'echo "hello world" && cat .env',
     'git diff -- ".env"',
   ]) {
-    const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command } });
+    const r = runGuard("protect-paths.sh", {
+      tool_name: "Bash",
+      tool_input: { command },
+    });
     assert.equal(r.code, 2, `must block: ${command}`);
   }
   // A LARGE command used to lose its deny to SIGPIPE: `printf | grep -q` under pipefail
   // reported failure when grep exited early, so the rule "did not match".
   const big = `cat .env\n${Array.from({ length: 20000 }, (_, i) => `# note ${i}`).join("\n")}`;
-  const r = runGuard("protect-paths.sh", { tool_name: "Bash", tool_input: { command: big } });
+  const r = runGuard("protect-paths.sh", {
+    tool_name: "Bash",
+    tool_input: { command: big },
+  });
   assert.equal(r.code, 2, "a 200 KB command still blocks");
 });
 
@@ -536,7 +560,9 @@ const noTimeoutSkip = process.platform === "win32" && "symlinked PATH (Git Bash 
 function pathWithoutTimeout(tools) {
   const bin = mkdtempSync(join(tmpdir(), "forge-notimeout-"));
   for (const t of tools) {
-    const real = execFileSync("bash", ["-c", `command -v ${t}`], { encoding: "utf8" }).trim();
+    const real = execFileSync("bash", ["-c", `command -v ${t}`], {
+      encoding: "utf8",
+    }).trim();
     symlinkSync(real, join(bin, t));
   }
   symlinkSync(process.execPath, join(bin, "node"));
@@ -589,7 +615,10 @@ test("session-learner calls the model on a PATH with no timeout (stock macOS)", 
   writeFileSync(transcript, '{"type":"user","message":"rename the module"}\n');
   const lockDir = mkdtempSync(join(tmpdir(), "forge-learner-lock-"));
   const r = spawnSync(join(bin, "bash"), [join(guards, "session-learner.sh")], {
-    input: JSON.stringify({ transcript_path: transcript, cwd: join(home, "shop") }),
+    input: JSON.stringify({
+      transcript_path: transcript,
+      cwd: join(home, "shop"),
+    }),
     env: {
       PATH: bin,
       HOME: home,

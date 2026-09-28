@@ -17,7 +17,7 @@
 // - The circuit breaker (`hard: true`) is strictly opt-in. The default is the historic
 //   behavior: over budget ASKS the human, exactly like FORGE_COST_CEILING always did.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { estimateSpendFromLogs } from "./cost_report.js";
 import { readForgeConfig, writeForgeConfig } from "./repo_config.js";
@@ -42,7 +42,8 @@ export function validateBudget(patch) {
   const num = (v, name) => {
     if (v === undefined || v === null) return v;
     const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) errors.push(`${name} must be a positive number (got ${JSON.stringify(v)})`);
+    if (!Number.isFinite(n) || n <= 0)
+      errors.push(`${name} must be a positive number (got ${JSON.stringify(v)})`);
     return n;
   };
   const daily = num(p.daily, "daily");
@@ -55,7 +56,8 @@ export function validateBudget(patch) {
   }
   let hard = false;
   if (p.hard !== undefined && p.hard !== null) {
-    if (typeof p.hard !== "boolean") errors.push(`hard must be a boolean (got ${JSON.stringify(p.hard)})`);
+    if (typeof p.hard !== "boolean")
+      errors.push(`hard must be a boolean (got ${JSON.stringify(p.hard)})`);
     else hard = p.hard;
   }
   if (errors.length) return { ok: false, errors };
@@ -78,7 +80,14 @@ export function readBudget(root = process.cwd()) {
     cfg = {};
   }
   const valid = validateBudget(cfg);
-  const b = valid.ok ? valid.budget : { daily: undefined, perTask: undefined, alertAt: DEFAULT_ALERT_AT, hard: false };
+  const b = valid.ok
+    ? valid.budget
+    : {
+        daily: undefined,
+        perTask: undefined,
+        alertAt: DEFAULT_ALERT_AT,
+        hard: false,
+      };
   // Env override for the daily ceiling (historic behavior; documented precedence).
   const envDaily = process.env.FORGE_COST_CEILING;
   let daily = b.daily ?? null;
@@ -102,7 +111,8 @@ export function readBudget(root = process.cwd()) {
     alertAt: b.alertAt,
     hard: b.hard,
     dailySource,
-    configured: (cfg && typeof cfg === "object" && Object.keys(cfg).length > 0) || dailySource === "env",
+    configured:
+      (cfg && typeof cfg === "object" && Object.keys(cfg).length > 0) || dailySource === "env",
   };
 }
 
@@ -188,7 +198,14 @@ export function parseCcusageDaily(text) {
 export function readSpend({ root = process.cwd(), runCcusage, estimateFn } = {}) {
   const at = new Date().toISOString();
   try {
-    const run = runCcusage ?? (() => execFileSync("ccusage", ["daily", "--json"], { encoding: "utf8", stdio: "pipe", timeout: 15000 }));
+    const run =
+      runCcusage ??
+      (() =>
+        execFileSync("ccusage", ["daily", "--json"], {
+          encoding: "utf8",
+          stdio: "pipe",
+          timeout: 15000,
+        }));
     const amount = parseCcusageDaily(run());
     if (amount != null) return { amount, source: "ccusage", at };
   } catch {
@@ -197,7 +214,12 @@ export function readSpend({ root = process.cwd(), runCcusage, estimateFn } = {})
   try {
     const est = (estimateFn ?? estimateSpendFromLogs)({ root });
     if (est && Number.isFinite(est.totalCost) && est.totalCost > 0)
-      return { amount: est.totalCost, source: "estimate", at, complete: est.complete !== false };
+      return {
+        amount: est.totalCost,
+        source: "estimate",
+        at,
+        complete: est.complete !== false,
+      };
   } catch {
     // ignore — unknown spend below
   }
@@ -274,7 +296,8 @@ export function listSessions(root, spend) {
   return Object.entries(sessions).map(([sid, s]) => ({
     sid,
     baseline: Number.isFinite(s?.baseline) ? s.baseline : null,
-    spend: s && Number.isFinite(s.baseline) && spend != null ? Math.max(0, spend - s.baseline) : null,
+    spend:
+      s && Number.isFinite(s.baseline) && spend != null ? Math.max(0, spend - s.baseline) : null,
     at: Number(s?.at) || 0,
   }));
 }
@@ -306,7 +329,9 @@ export function evaluateBudget({ dailySpend, taskSpend, budget }) {
   const notes = [];
   for (const [name, l] of [["day", daily], ...(task ? [["task", task]] : [])]) {
     if (l.state === "alert")
-      notes.push(`${name} spend ${money(l.spend)} is at ${Math.round(l.ratio * 100)}% of the ${money(l.limit)} budget`);
+      notes.push(
+        `${name} spend ${money(l.spend)} is at ${Math.round(l.ratio * 100)}% of the ${money(l.limit)} budget`,
+      );
     else if (l.state === "over")
       notes.push(`${name} spend ${money(l.spend)} exceeds the ${money(l.limit)} budget`);
   }
@@ -319,9 +344,14 @@ export function evaluateBudget({ dailySpend, taskSpend, budget }) {
  *  @param {ReturnType<typeof evaluateBudget>} ev
  *  @param {{daily:number|null, perTask:number|null, hard:boolean}} budget */
 export function verdictReason(ev, budget) {
-  const overLimbs = [ev.daily.state === "over" && ["day", ev.daily], ev.task?.state === "over" && ["task", ev.task]].filter(Boolean);
+  const overLimbs = [
+    ev.daily.state === "over" && ["day", ev.daily],
+    ev.task?.state === "over" && ["task", ev.task],
+  ].filter(Boolean);
   if (!overLimbs.length) return "";
-  const parts = overLimbs.map(([name, l]) => `${name} spend ${money(l.spend)} > ${money(l.limit)} budget`);
+  const parts = overLimbs.map(
+    ([name, l]) => `${name} spend ${money(l.spend)} > ${money(l.limit)} budget`,
+  );
   const fix = budget.hard
     ? "Raise it with `forge budget set --daily <n>`, or `forge budget clear`."
     : "Continue, switch to a cheaper model, scope the task, or raise the budget with `forge budget set --daily <n>`.";
@@ -340,14 +370,27 @@ export function renderBudgetStatus({ budget, spend, sessions }) {
     const filled = Math.min(20, Math.round(ratio * 20));
     return `[${"#".repeat(filled)}${"-".repeat(20 - filled)}] ${Math.round(ratio * 100)}%`;
   };
-  const spendTxt = spend.amount == null ? "unknown" : `${money(spend.amount)}${spend.source ? ` (${spend.source})` : ""}`;
-  const ev = evaluateBudget({ dailySpend: spend.amount, taskSpend: null, budget });
-  lines.push(`  today  ${spendTxt} of ${money(budget.daily)} ${bar(ev.daily.ratio)}  [${ev.daily.state}]`);
+  const spendTxt =
+    spend.amount == null
+      ? "unknown"
+      : `${money(spend.amount)}${spend.source ? ` (${spend.source})` : ""}`;
+  const ev = evaluateBudget({
+    dailySpend: spend.amount,
+    taskSpend: null,
+    budget,
+  });
+  lines.push(
+    `  today  ${spendTxt} of ${money(budget.daily)} ${bar(ev.daily.ratio)}  [${ev.daily.state}]`,
+  );
   if (budget.perTask != null) {
     lines.push(`  per-task budget ${money(budget.perTask)} — session spend:`);
-    if (!sessions.length) lines.push("    (no sessions tracked yet — the guard records one per session)");
+    if (!sessions.length)
+      lines.push("    (no sessions tracked yet — the guard records one per session)");
     for (const s of sessions.slice(0, 8)) {
-      const st = s.spend == null ? "unknown" : `${money(s.spend)} ${bar(budget.perTask ? s.spend / budget.perTask : null)}`;
+      const st =
+        s.spend == null
+          ? "unknown"
+          : `${money(s.spend)} ${bar(budget.perTask ? s.spend / budget.perTask : null)}`;
       lines.push(`    ${s.sid.slice(0, 12)}  ${st}`);
     }
     if (sessions.length > 8) lines.push(`    …and ${sessions.length - 8} more`);
@@ -357,7 +400,9 @@ export function renderBudgetStatus({ budget, spend, sessions }) {
   lines.push(
     "",
     `  alert at ${Math.round(budget.alertAt * 100)}% · breaker: ${budget.hard ? "HARD (blocks tool calls over budget)" : "soft (asks you over budget)"} · daily source: ${budget.dailySource}`,
-    spend.amount == null ? "  spend is unknown — install ccusage for precise tracking: npm i -g ccusage" : "",
+    spend.amount == null
+      ? "  spend is unknown — install ccusage for precise tracking: npm i -g ccusage"
+      : "",
   );
   return lines.filter((l) => l !== "").join("\n");
 }

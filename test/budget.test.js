@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -55,7 +55,8 @@ test("validateBudget: non-positive / non-numeric money is refused", () => {
 });
 
 test("validateBudget: alertAt must be strictly between 0 and 1", () => {
-  for (const bad of [0, 1, 1.5, -0.1, "soon"]) assert.equal(validateBudget({ alertAt: bad }).ok, false);
+  for (const bad of [0, 1, 1.5, -0.1, "soon"])
+    assert.equal(validateBudget({ alertAt: bad }).ok, false);
   assert.equal(validateBudget({ alertAt: 0.5 }).ok, true);
 });
 
@@ -225,15 +226,21 @@ test("listSessions: reports each session's spend against today's total", () => {
   sessionBaseline(root, "b", 5.0);
   const list = listSessions(root, 7.0);
   assert.equal(list.length, 2);
-  assert.deepEqual(
-    Object.fromEntries(list.map((s) => [s.sid, s.spend])),
-    { a: 5.0, b: 2.0 },
-  );
+  assert.deepEqual(Object.fromEntries(list.map((s) => [s.sid, s.spend])), {
+    a: 5.0,
+    b: 2.0,
+  });
 });
 
 // --- evaluateBudget: the pure decision table ----------------------------------
 
-const B = (over = {}) => ({ daily: 10, perTask: 2, alertAt: 0.8, hard: false, ...over });
+const B = (over = {}) => ({
+  daily: 10,
+  perTask: 2,
+  alertAt: 0.8,
+  hard: false,
+  ...over,
+});
 
 test("evaluateBudget: comfortably under → allow, no notes", () => {
   const ev = evaluateBudget({ dailySpend: 3, taskSpend: 0.5, budget: B() });
@@ -252,7 +259,11 @@ test("evaluateBudget: at the alert threshold → allow with a nudge note", () =>
 test("evaluateBudget: over budget, soft → ask; hard → deny", () => {
   const ask = evaluateBudget({ dailySpend: 12, taskSpend: 0.5, budget: B() });
   assert.equal(ask.decision, "ask");
-  const deny = evaluateBudget({ dailySpend: 12, taskSpend: 0.5, budget: B({ hard: true }) });
+  const deny = evaluateBudget({
+    dailySpend: 12,
+    taskSpend: 0.5,
+    budget: B({ hard: true }),
+  });
   assert.equal(deny.decision, "deny");
 });
 
@@ -269,13 +280,21 @@ test("evaluateBudget: unknown spend never alerts or blocks", () => {
 });
 
 test("evaluateBudget: no per-task budget → task is null, not zero", () => {
-  const ev = evaluateBudget({ dailySpend: 3, taskSpend: 99, budget: B({ perTask: null }) });
+  const ev = evaluateBudget({
+    dailySpend: 3,
+    taskSpend: 99,
+    budget: B({ perTask: null }),
+  });
   assert.equal(ev.task, null);
   assert.equal(ev.decision, "allow");
 });
 
 test("verdictReason: names the breached budget and the fix; empty when fine", () => {
-  const ev = evaluateBudget({ dailySpend: 12, taskSpend: 0.5, budget: B({ hard: true }) });
+  const ev = evaluateBudget({
+    dailySpend: 12,
+    taskSpend: 0.5,
+    budget: B({ hard: true }),
+  });
   const r = verdictReason(ev, B({ hard: true }));
   assert.match(r, /\$12\.00/);
   assert.match(r, /\$10\.00/);
@@ -330,7 +349,9 @@ test("CLI: budget set refuses a negative daily without touching config", () => {
 test("CLI: budget check prints the guard protocol", () => {
   const root = tmp();
   run(["budget", "set", "--daily", "10"], root);
-  const r = run(["budget", "check", "--session-id", "s1"], root, { PATH: noBin() });
+  const r = run(["budget", "check", "--session-id", "s1"], root, {
+    PATH: noBin(),
+  });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^decision: (allow|context|ask|deny)$/m);
   assert.match(r.stdout, /^reason: /m);
