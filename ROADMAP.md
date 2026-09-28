@@ -12,7 +12,7 @@ The *why* behind this roadmap — review findings, the Sept 2026 pain landscape,
 beta-to-prod plan, and the team-brain + JEV roadmaps — lives in
 [docs/STRATEGY_2026.md](./docs/STRATEGY_2026.md).
 
-## Now (`master`, v1.8.0)
+## Now (`master`, v1.9.0)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
 routing, entropy secret detection, noisy-OR goal-drift over paths **and** the identifiers a file
