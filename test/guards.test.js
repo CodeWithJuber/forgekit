@@ -258,9 +258,14 @@ test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
 });
 
 // The `forge budget check` integration: the guard is a thin translator — the verdict
-// comes from `forge budget`, so these stub `forge` and assert the translation only.
-// The counter file is pre-seeded at 99 so this call is #100 (the throttled check).
+// comes from `forge budget`, so these stub `forge` (a POSIX `#!/bin/sh` script) and
+// assert the translation only. The counter file is pre-seeded at 99 so this call is
+// #100 (the throttled check).
 // The stub uses `printf '%s'` (not a format string) so `$`/`%` in reasons stay literal.
+// POSIX-only: a shell-script `forge` stub can't execute on Windows (no shebang support),
+// and the symlinked PATH needs elevation there — same reason the forge_timeout tests
+// skip on win32.
+const noForgeStubSkip = process.platform === "win32" && "shell-script forge stub (POSIX only)";
 function runCostBudgetWithForgeVerdict(decision, reason) {
   const bin = pathWithoutTimeout([
     "bash",
@@ -292,7 +297,7 @@ function runCostBudgetWithForgeVerdict(decision, reason) {
   return r;
 }
 
-test("cost-budget translates a `forge budget check` deny verdict (opt-in breaker)", () => {
+test("cost-budget translates a `forge budget check` deny verdict (opt-in breaker)", { skip: noForgeStubSkip }, () => {
   const r = runCostBudgetWithForgeVerdict(
     "deny",
     "forge budget: day spend $15.00 > $10.00 budget.",
@@ -303,14 +308,14 @@ test("cost-budget translates a `forge budget check` deny verdict (opt-in breaker
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /\$15\.00/);
 });
 
-test("cost-budget translates a `forge budget check` ask verdict (soft default)", () => {
+test("cost-budget translates a `forge budget check` ask verdict (soft default)", { skip: noForgeStubSkip }, () => {
   const r = runCostBudgetWithForgeVerdict("ask", "forge budget: day spend $15.00 > $10.00 budget.");
   assert.equal(r.status, 0);
   const out = JSON.parse(r.stdout);
   assert.equal(out.hookSpecificOutput.permissionDecision, "ask");
 });
 
-test("cost-budget translates a `forge budget check` context nudge", () => {
+test("cost-budget translates a `forge budget check` context nudge", { skip: noForgeStubSkip }, () => {
   const r = runCostBudgetWithForgeVerdict(
     "context",
     "day spend $8.50 is at 85% of the $10.00 budget",
@@ -321,7 +326,7 @@ test("cost-budget translates a `forge budget check` context nudge", () => {
   assert.match(out.hookSpecificOutput.additionalContext, /85%/);
 });
 
-test("cost-budget without forge on PATH skips the budget check entirely", () => {
+test("cost-budget without forge on PATH skips the budget check entirely", { skip: noForgeStubSkip }, () => {
   const bin = pathWithoutTimeout([
     "bash",
     "sh",
