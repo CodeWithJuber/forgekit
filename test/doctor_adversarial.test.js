@@ -129,10 +129,9 @@ test("doctor({adversarial:true}) runs the attack suite, not the health checks", 
   );
 });
 
-test(
-  "doctor({adversarial:true}) with a bypass configured reports failed=1",
-  { skip: noFakeHomeSkip },
-  () => {
+test("doctor({adversarial:true}) with a bypass configured reports failed=1", {
+  skip: noFakeHomeSkip,
+}, () => {
   const home = mkdtempSync(join(tmpdir(), "forge-adv-fail-home-"));
   mkdirSync(join(home, ".claude"), { recursive: true });
   writeFileSync(
