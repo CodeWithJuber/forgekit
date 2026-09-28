@@ -32,7 +32,7 @@ Every command is real and wired. Grouped by what it does:
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge verify` · `forge precommit`                                                        |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                         |
-| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge models`                                                                                                 |
+| **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide` |
 <!-- forge:render:command-groups:end -->
 
@@ -1610,6 +1610,31 @@ figure and has been withdrawn (see the plan's cost model, §2).
 
 Plain `forge cost` remains the per-day spend view via `ccusage`.
 
+### `forge budget` — spend budgets and the circuit breaker
+
+`forge cost` tells you what you spent; `forge budget` decides what happens when
+spending runs hot. Budgets live in `.forge/forge.config.json` under the `budget` key:
+
+```console
+$ forge budget set --daily 10 --per-task 2 --hard
+$ forge budget status
+Forge budget — spend vs budget
+
+  today  $6.40 (ccusage) of $10.00 [#############-------] 64%  [ok]
+  per-task budget $2.00 — session spend:
+    a1b2c3d4e5f6  $1.10 [###########---------] 55%
+  ...
+  alert at 80% · breaker: HARD (blocks tool calls over budget) · daily source: config
+```
+
+The cost guard (`global/guards/cost-budget.sh`) checks the budget on every 100th tool
+call via `forge budget check --session-id <sid>`: past the alert threshold it nudges
+with context; over budget it **asks** you (soft, the default — the historic
+`FORGE_COST_CEILING` behavior); with `--hard` it **denies** the call — a real circuit
+breaker, strictly opt-in. `FORGE_COST_CEILING` still overrides `budget.daily` when set.
+A day or task with no measurable spend is reported as unknown and never triggers an
+alert or a block.
+
 **Reading any cost number.** A figure is only comparable when it states: the currency and the
 date of the prices; whether it is actual spend or a counterfactual (tokens repriced at another
 model's price are a counterfactual, not an observed saving); which attempts it includes (first
@@ -1635,6 +1660,7 @@ full rule: [substrate-v2 plan 05 §3](plans/substrate-v2/05-cost-model.md#3-acce
 | `forge integrations`             | Opt-in third-party MCP servers (e.g. `context7`, no longer installed by default). `integrations add <name>` prints the package, its network behaviour, and the files it touches, then writes only with `--yes`, into the MCP config of the tools `forge init` recorded (every tool when none are); the install is recorded in `.forge/forge.config.json` (`mcp.integrations`), so every later sync keeps emitting it. A same-name server you configured yourself is never overwritten unless you pass `--adopt` (recorded under `mcp.adopted`). `integrations remove <name>` reverses the add — it deletes only forge-owned entries/blocks/files and is a no-op when nothing is installed. |
 | `forge brain` / `forge remember` | Portable project memory inlined into `AGENTS.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `forge budget`                   | Cost governance: `set --daily 10 --per-task 2 [--alert-at 0.8] [--hard\|--soft]` writes budgets to `.forge/forge.config.json`; `status` is the spend meter; the cost guard alerts at the threshold and, over budget, asks (soft, default) or blocks (`--hard`, opt-in circuit breaker).                                                                                                                                                                                                                                                                                                                                                                     |
 | `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines (binary files get the credential-format grammars only, not the entropy leg). `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode.                                                                                                                                                                                                                                                                                                     |

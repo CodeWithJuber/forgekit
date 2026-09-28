@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
+import budgetHandlers from "./cli/budget.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
 import memoryHandlers from "./cli/memory.js";
@@ -60,7 +61,12 @@ function printHelp() {
 // Command dispatch table: name → async handler `(argv, cmd) => …`. Populated at module
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
-const HANDLERS = { ...memoryHandlers, ...verificationHandlers, ...routingHandlers };
+const HANDLERS = {
+  ...memoryHandlers,
+  ...verificationHandlers,
+  ...routingHandlers,
+  ...budgetHandlers,
+};
 
 async function run(argv) {
   const [cmd] = argv;

@@ -93,6 +93,40 @@ export const COMMANDS = {
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
+  budget: {
+    summary:
+      "cost governance — per-day and per-task spend budgets, alert threshold, and an opt-in circuit breaker the cost guard enforces",
+    usage:
+      "forge budget set --daily 10 --per-task 2 [--alert-at 0.8] [--hard|--soft] | forge budget status [--json] | forge budget clear [--daily|--per-task] | forge budget check --session-id <sid>",
+    flags: [
+      {
+        flag: "--daily <n>",
+        desc: "per-day spend budget in USD. FORGE_COST_CEILING overrides it when set; unset, the historic $10/day soft ceiling applies.",
+      },
+      {
+        flag: "--per-task <n>",
+        desc: "per-task (session) spend budget in USD — the guard snapshots spend at session start and measures the delta.",
+      },
+      {
+        flag: "--alert-at <0–1>",
+        desc: "warn when spend reaches this fraction of a budget (default 0.8).",
+      },
+      {
+        flag: "--hard",
+        desc: "circuit breaker: tool calls are BLOCKED past a budget (deny). Default is soft: the guard asks you.",
+      },
+      {
+        flag: "--soft",
+        desc: "revert to soft mode (ask, never block).",
+      },
+    ],
+    examples: [
+      "forge budget set --daily 10 --per-task 2",
+      "forge budget set --hard",
+      "forge budget status",
+      "forge budget clear",
+    ],
+  },
   models: {
     summary:
       "each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from",
@@ -268,7 +302,7 @@ export const GROUPS = {
   ],
   Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
   Quality: ["scan", "spec", "harden", "radar"],
-  Config: ["brand", "atlas", "stack", "integrations", "cost", "models"],
+  Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [
     "taste",
     "uicheck",

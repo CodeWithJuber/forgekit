@@ -1,6 +1,6 @@
 ---
 title: "Config commands"
-description: "Providers, cost, model resolution, dashboards, brand, atlas, stack, and opt-in MCP integrations: config, cost, models, dash, brand, atlas, stack, report, tools, integrations."
+description: "Providers, cost, budgets, model resolution, dashboards, brand, atlas, stack, and opt-in MCP integrations: config, cost, budget, models, dash, brand, atlas, stack, report, tools, integrations."
 ---
 
 The Config group covers providers, observability, the code graph, and stack detection.
@@ -28,6 +28,23 @@ forge cost --stages        # measured per-stage cost factors
   Reports **measured stages only** — a stage with no events says "no data", never a
   default.
 </Note>
+
+## `forge budget`
+
+Cost governance — per-day and per-task spend budgets, an alert threshold, and an
+opt-in circuit breaker, all enforced by the cost guard.
+
+```bash
+forge budget set --daily 10 --per-task 2   # budgets in USD
+forge budget set --hard                     # circuit breaker: block tool calls over budget
+forge budget status                         # the spend meter
+forge budget clear                          # remove the budgets
+```
+
+The guard checks the budget on every 100th tool call: past the alert threshold (default
+80%) it nudges with context; over budget it **asks** you (soft, the default); with
+`--hard` it **denies** the call. A day with no measurable spend is reported as unknown
+and never triggers an alert or a block.
 
 ## `forge models`
 

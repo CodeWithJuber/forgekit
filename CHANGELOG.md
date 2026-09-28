@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge budget` — cost governance.** Per-day and per-task (session) spend budgets,
+  an alert threshold, and an opt-in circuit breaker, all stored in
+  `.forge/forge.config.json` (`budget` key). `forge budget set --daily 10 --per-task 2
+  [--alert-at 0.8] [--hard|--soft]`; `forge budget status` is the spend meter (ccusage
+  when installed, else the Claude log estimate, else honestly "unknown");
+  `forge budget clear` removes budgets. The cost guard now enforces them via
+  `forge budget check --session-id <sid>` on every 100th tool call: past the alert
+  threshold it nudges with context; over budget it asks (soft, the default — the
+  historic `FORGE_COST_CEILING` behavior); with `--hard` it denies the call.
+  `FORGE_COST_CEILING` still overrides `budget.daily` when set. Unknown spend never
+  alerts or blocks.
+
 ## [1.7.4] - 2026-09-27
 
 Fixes for the two findings of the 2026-09-27 recheck of v1.7.3 (Q01, Q02). The recheck
