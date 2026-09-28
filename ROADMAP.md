@@ -8,6 +8,10 @@ This is where it is headed.
 Direction, not promises — shaped by the two field reports this project is grounded in
 (the SDLC pain-point map and the ecosystem landscape). Open a Discussion to weigh in.
 
+The *why* behind this roadmap — review findings, the Sept 2026 pain landscape, the
+beta-to-prod plan, and the team-brain + JEV roadmaps — lives in
+[docs/STRATEGY_2026.md](./docs/STRATEGY_2026.md).
+
 ## Now (`master`, v1.7.4)
 
 The substrate is fully graded — decision math replaces every keyword heuristic: exemplar k-NN
