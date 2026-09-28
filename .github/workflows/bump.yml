@@ -71,13 +71,13 @@ jobs:
   # Skipped for release merges — the merge commit already passed every required check.
   gate:
     needs: detect
-    if: detect.outputs.release_version == ''
+    if: needs.detect.outputs.release_version == ''
     uses: ./.github/workflows/reusable-quality-gate.yml
 
   # Phase 1: compute the release and propose it as a PR.
   propose:
     needs: [detect, gate]
-    if: detect.outputs.release_version == ''
+    if: needs.detect.outputs.release_version == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the release branch
@@ -170,7 +170,7 @@ jobs:
   # Phase 2: this push merged a release PR — tag the merge commit and cut the release.
   finalize:
     needs: detect
-    if: detect.outputs.release_version != ''
+    if: needs.detect.outputs.release_version != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the tag, delete the release branch
@@ -185,7 +185,7 @@ jobs:
       - name: Tag the release merge + trigger the release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ detect.outputs.release_version }}
+          VERSION: ${{ needs.detect.outputs.release_version }}
         run: |
           # Defense in depth: re-verify the 2nd parent really is the release commit.
           P2_SUBJ="$(git log -1 --format=%s HEAD^2)"
