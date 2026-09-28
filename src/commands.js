@@ -50,14 +50,18 @@ export const COMMANDS = {
   },
   doctor: {
     summary: "health-check installed tools, guards, MCP auth, and config drift",
-    usage: "forge doctor [--fix]",
+    usage: "forge doctor [--fix] [--adversarial]",
     flags: [
       {
         flag: "--fix",
         desc: "auto-repair safely fixable findings, then re-check",
       },
+      {
+        flag: "--adversarial",
+        desc: "attack our own hooks with real payloads — rerouting attacks, malformed hook JSON, the permissions-bypass hole — and report the score",
+      },
     ],
-    examples: ["forge doctor", "forge doctor --fix"],
+    examples: ["forge doctor", "forge doctor --fix", "forge doctor --adversarial"],
   },
   tools:
     "primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)",

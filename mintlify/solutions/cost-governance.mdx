@@ -1,0 +1,37 @@
+---
+title: "Cost governance"
+description: "Per-day and per-task spend budgets for agent runs, with an alert threshold and an opt-in hard circuit breaker. Unknown spend never blocks."
+---
+
+The #1 churn driver for agent coding tools is billing opacity — a run that
+quietly burns $40 while you watch the spinner. Forge treats spend as a
+first-class guardrail.
+
+<img src="/images/cost-governance.gif" alt="forge budget demo: setting a $10/day, $2/task budget with the hard breaker on, inspecting it with budget status, and asking the guard for a verdict with budget check — unknown spend returns allow, never blocks" />
+
+## How it works
+
+```bash
+forge budget set --daily 10 --per-task 2 --alert-at 0.8 --hard
+forge budget status
+forge budget check --session-id <sid>
+```
+
+- **Two limbs** — a per-day ceiling and a per-task (session) ceiling. The guard
+  snapshots spend at session start and measures the delta.
+- **Alert threshold** — past `--alert-at` (default 80%) the guard nudges the
+  agent with context instead of nagging every call (spend is checked 1 in 100
+  tool calls).
+- **Opt-in hard breaker** — `--hard` turns over-budget from "ask" into "deny".
+  Without it, over-budget is advice, never a block.
+- **The honesty rule** — unknown spend never alerts and never blocks. No
+  telemetry, no verdict; the command says so plainly.
+
+`FORGE_COST_CEILING` overrides the daily budget when set; unset, a historic
+$10/day soft ceiling applies.
+
+## Try it
+
+The [cost-governance example](https://github.com/CodeWithJuber/forgekit/tree/master/examples/cost-governance)
+runs the whole flow in a scratch directory — set a budget, inspect it, and ask
+the guard for a verdict, exactly as the agent sees it mid-run.

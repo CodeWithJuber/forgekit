@@ -59,3 +59,24 @@ the extra rules reach every emitted tool's config (AGENTS.md, CLAUDE.md, Cursor,
 [`cortex-demo.mjs`](./cortex-demo.mjs) is a runnable script that walks the self-correcting
 learned-lessons loop (`forge cortex`) — how a lesson earns confidence from independent oracles
 and decays out when it stops holding up.
+
+## Pain-point solutions
+
+Each pain point Forge solves gets a self-contained example: a scenario you run
+in a scratch directory, with the exact commands and what to look at. New
+solutions ship with a new example — one pain point per release.
+
+| Example | Pain point | What it shows |
+|---|---|---|
+| [cost-governance](cost-governance/) | runaway agent spend | per-task budgets, spend alerts, the `--hard` circuit breaker |
+| [adversarial-doctor](adversarial-doctor/) | guardrails you can't trust | `forge doctor --adversarial` fuzzes Forge's own hooks |
+
+Conventions every example follows:
+
+- works in a scratch dir (`mktemp -d`) — nothing touches your real setup
+- `README.md` has copy-paste steps; `demo.sh` is the same steps as a script
+- `demo.gif` is rendered from captured real CLI output
+  (`scripts/make-*.py`) into `mintlify/images/` and linked from the example —
+  never hand-drawn
+
+To add one, copy [`_template/`](_template/) and fill in the blanks.

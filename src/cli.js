@@ -481,9 +481,11 @@ HANDLERS.sync = async () => {
 HANDLERS.doctor = async (argv) => {
   const { doctor } = await import("./doctor.js");
   const fix = argv.includes("--fix");
+  const adversarial = argv.includes("--adversarial");
   const { results, failed, repairs, health } = doctor({
     targetRoot: process.cwd(),
     fix,
+    adversarial,
   });
   if (argv.includes("--json")) {
     console.log(JSON.stringify({ results, failed, repairs, health }, null, 2));
@@ -496,7 +498,10 @@ HANDLERS.doctor = async (argv) => {
     fail: paint("✗", "err"),
     na: paint("–", "dim"), // not built/applicable — neutral, never a failure
   };
-  heading(`${BRAND.brand} doctor\n`);
+  heading(`${BRAND.brand} doctor${adversarial ? " — adversarial" : ""}\n`);
+  if (adversarial && !argv.includes("--json")) {
+    console.log("  attacking our own hooks with real payloads — a blocked attack is good news.\n");
+  }
   if (fix) {
     if (repairs.length) {
       console.log("  repairs:");
@@ -511,10 +516,14 @@ HANDLERS.doctor = async (argv) => {
   }
   for (const r of results) console.log(`  ${icon[r.status]} ${r.label.padEnd(16)} ${r.note}`);
   // Subsystem health in the standard vocabulary (P1-06) — a degraded control stays visible.
-  const healthLine = Object.entries(health)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("  ");
-  console.log(`\n  health: ${healthLine}`);
+  // Adversarial mode runs the attack suite, not the subsystem checks, so there is no
+  // health line to report (every key would read UNAVAILABLE and mislead).
+  if (!adversarial) {
+    const healthLine = Object.entries(health)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("  ");
+    console.log(`\n  health: ${healthLine}`);
+  }
   console.log(
     `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
   );

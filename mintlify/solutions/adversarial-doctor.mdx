@@ -1,0 +1,48 @@
+---
+title: "Adversarial doctor"
+description: "forge doctor --adversarial attacks Forge's own hooks with real payloads — rerouting attacks, malformed hook JSON, the permissions-bypass hole — and reports the score."
+---
+
+Guardrail claims without self-test are hollow. `forge doctor --adversarial`
+fuzzes Forge's own hooks with real payloads fired at the real guard binaries —
+no mocks. The verdict you see is the verdict an agent's tool call would get.
+
+<img src="/images/adversarial-doctor.gif" alt="forge doctor --adversarial attacking its own hooks: seven rerouting attacks blocked, two benign controls allowed, malformed JSON denied fail-closed, three honest warnings, and both permission-bypass probes clean — all clear" />
+
+## The three attack classes
+
+**1. Rerouting.** Can a tool call smuggle a secret-file write past the hook
+via `sed -i`, a heredoc redirect, `tee`, an append to `authorized_keys`, or a
+`cp`/`mv` exfiltration? Every one of these must be blocked (exit 2) — and the
+benign controls (`grep -rn process.env src`, `cat .env.example`) must still
+pass. A guard that blocks everything is not a guard, it is a wall.
+
+**2. Malformed hook JSON.** Truncated bytes and garbage must be denied —
+fail-closed. Wrong-shape payloads (empty stdin, `{}`, a string where the
+object belongs) are currently allowed: not attacker-reachable through the real
+hook protocol, so they report as `!` warnings rather than failures — but they
+are reported, not hidden, because a pipeline that swallowed stdin would
+silently disable the guard.
+
+**3. The permissions-bypass hole.** A bypassed permission layer makes every
+hook advisory at best. Two probes detect it: persistently, via
+`permissions.defaultMode: "bypassPermissions"` in `~/.claude/settings.json`;
+and live, by scanning the ancestor process tree for
+`--dangerously-skip-permissions`.
+
+## Reading the score
+
+- `✓` — attack blocked, control allowed, bypass absent. Good news.
+- `!` — robustness gap worth knowing about, not attacker-reachable.
+- `✗` — attacker-reachable bypass or an active permission bypass. Exit code 1.
+
+```bash
+forge doctor --adversarial          # the attack matrix
+forge doctor --adversarial --json   # machine-readable, for CI
+```
+
+## Try it
+
+The [adversarial-doctor example](https://github.com/CodeWithJuber/forgekit/tree/master/examples/adversarial-doctor)
+runs the suite and then simulates the permissions-bypass hole, so you can see
+a `fail` with your own eyes.
