@@ -1,15 +1,15 @@
 # Forgekit Product Strategy — September 2026
 
 > From beta to production: what we are, what hurts out there, and what to build next.
-> Companion to [ROADMAP.md](./ROADMAP.md) (what ships, in what order) and
+> Companion to [ROADMAP.md](../ROADMAP.md) (what ships, in what order) and
 > [research/cognitive-substrate/sources/painpoints_report.md](../research/cognitive-substrate/sources/painpoints_report.md)
 > (the mid-2026 field report). This document is the *why*.
 
 Status: **proposal** — open a Discussion to argue with it.
 
-## 1. Where we stand (v1.7.4)
+## 1. Where we stand (v1.8.0)
 
-An honest inventory, from a full review of the repo (799 files, 130 test files,
+An honest inventory, from a full review of the repo (699 files, 131 test files,
 Node 20/22 + Windows/Git-Bash CI matrix, CodeQL, Scorecard, semver releases):
 
 **Strengths**
@@ -105,7 +105,7 @@ Priority: Kimi emitter → correction mining → CRDT merge → relay → dashbo
 
 ## 7. Prioritized build list
 
-1. **Cost governance:** per-task budgets, spend alerts, circuit breaker. (Pain #1 — the biggest churn driver; nobody ships it because it's against vendors' incentives.)
+1. **Cost governance:** per-task budgets, spend alerts, circuit breaker. (Pain #1 — the biggest churn driver; nobody ships it because it's against vendors' incentives.) ✅ **Shipped in v1.8.0** — `forge budget set/status/clear/check` plus cost-budget guard enforcement (PR #176).
 2. **`forge doctor --adversarial`:** fuzz our own hooks (sed/heredoc rerouting, malformed hook JSON, the `--dangerously-skip-permissions` hole). Guardrail claims without self-test are hollow.
 3. **Multi-agent collision primitives:** presence + lane-ownership conventions. (Pain #7.)
 4. **Loop-breaker with budget axis:** diagnose.js k-rule + JEV nuance triage + cost circuit breaker ("this run burned $X, stop").
@@ -121,7 +121,7 @@ Priority: Kimi emitter → correction mining → CRDT merge → relay → dashbo
 
 ## Appendix: sources
 
-- Repo review: full tree @ v1.7.4 (2026-09-27) — README, package.json, `src/`, `test/` (136 files), `.github/workflows/`, releases.
+- Repo review: full tree @ v1.8.0 (2026-09-28) — README, package.json, `src/`, `test/` (131 files), `.github/workflows/`, releases.
 - `research/cognitive-substrate/sources/painpoints_report.md` (mid-2026 field report) and `stack_landscape.md`.
 - Fresh pain-point research, 2026-09-27/28: Reddit (r/ClaudeCode, r/vibecoding, r/cursor), X/Threads AI-dev accounts, Hacker News, GitHub issues (anthropics/claude-code, openai/codex, MoonshotAI/kimi-cli, github/copilot-cli), GitHub Community Discussions, vibewatch digests, Google GTIG Sept 2026 report.
 - JEV: `src/jev.js` (builds on `src/adjudicate.js`'s `llmEnabled`) + call sites in `src/route.js`, `src/preflight.js`.

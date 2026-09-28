@@ -126,5 +126,17 @@
   },
   "markdown": {
     "schema": false
+  },
+  "seo": {
+    "metatags": {
+      "og:title": "forgekit \u2014 reliability infrastructure for AI coding agents",
+      "og:description": "Evidence-linked memory, blast-radius analysis, guardrails, and cost governance for Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw.",
+      "og:image": "/images/og-image.png",
+      "og:type": "website",
+      "twitter:card": "summary_large_image",
+      "twitter:title": "forgekit \u2014 reliability infrastructure for AI coding agents",
+      "twitter:description": "Evidence-linked memory, blast-radius analysis, guardrails, and cost governance for AI coding agents.",
+      "twitter:image": "/images/og-image.png"
+    }
   }
 }

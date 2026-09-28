@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Product strategy.** `docs/STRATEGY_2026.md` (PR #175): the September 2026 strategy —
+  repo review, uniqueness/moat analysis, the AI-coding-agent pain landscape, the beta→prod
+  graduation plan, team-brain and JEV-adapter roadmaps, and the 7-item prioritized build list.
+
 ## [1.8.0] - 2026-09-28
 
 ### Added

@@ -23,7 +23,7 @@ Loaded every session. Keep short — long files get ignored. Prune ruthlessly.
 - Ask before: force-push, history rewrite, `rm -rf`, dropping DB tables, or touching production.
 
 ## Memory
-- The `memory-keeper` skill records durable, cross-session facts to `~/.claude/memory/`.
+- The `recall` skill records durable, cross-session facts to `~/.claude/memory/`.
 - Save only what's non-obvious and lasting (env quirks, decisions, gotchas). Never save secrets or PII.
 
 ## Tools
