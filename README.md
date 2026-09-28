@@ -628,6 +628,7 @@ not an AI application deployment.
 | --- | --- |
 | [`ONBOARDING.md`](ONBOARDING.md) | Five-minute setup and design principles |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full command reference, worked examples, MCP schemas, and honest limits |
+| [`examples/`](examples/) | Runnable pain-point solution demos (cost governance, adversarial doctor) — each with copy-paste steps, a demo script, and a GIF |
 | [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) | Per-tool behaviour: config emission, MCP registration, automatic hooks, blocking — and how each is tested |
 | [`docs/UNIVERSAL_ROUTING.md`](docs/UNIVERSAL_ROUTING.md) | The cross-provider router: model, shipped prior, evidence status and modeling limits |
 | [`docs/status/`](docs/status/README.md) | Machine-readable status of every load-bearing claim (generated table) |

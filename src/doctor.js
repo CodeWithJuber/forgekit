@@ -41,7 +41,18 @@ const fail = (label, note = "") => ({ status: "fail", label, note });
 // failing — it must not render as ACTIVE (RA-19) and never counts toward failed totals.
 const na = (label, note = "") => ({ status: "na", label, note });
 
+import { adversarialProbes } from "./doctor_adversarial.js";
 import { hasBin } from "./util.js";
+
+/**
+ * The adversarial suite is a separate mode: real attack payloads against the
+ * real guard binaries. Results use the same {status,label,note} vocabulary so
+ * the CLI renders them unchanged.
+ * @param {{forgeHome?: string, guardsDir?: string}} probes
+ */
+function adversarialResults({ guardsDir }) {
+  return adversarialProbes({ guardsDir });
+}
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 const readJsonSafe = (p) => {
@@ -875,17 +886,23 @@ export function repairFailure(detail) {
  * gitattributes / sync / chmod — all safe, no-op if already applied), then every check re-runs
  * so the returned `results` reflect the repaired state. Unsafe findings (provider keys, MCP,
  * pricing, gateway) carry no descriptor and stay report-only.
- * @param {{targetRoot?: string, fix?: boolean, settingsPath?: string, forgeHome?: string, guardsDir?: string}} [opts]
+ * With `adversarial:true`, the normal health checks are replaced by the attack suite from
+ * doctor_adversarial.js — real payloads fired at the real guard binaries. Read-only by
+ * nature: adversarial findings carry no repair descriptors.
+ * @param {{targetRoot?: string, fix?: boolean, adversarial?: boolean, settingsPath?: string, forgeHome?: string, guardsDir?: string}} [opts]
  */
 export function doctor({
   targetRoot = process.cwd(),
   fix = false,
+  adversarial = false,
   settingsPath,
   forgeHome,
   guardsDir,
 } = {}) {
   const probes = { forgeHome, guardsDir };
-  let results = runChecks(targetRoot, settingsPath, probes);
+  let results = adversarial
+    ? adversarialResults(probes)
+    : runChecks(targetRoot, settingsPath, probes);
   const repairs = [];
   if (fix) {
     for (const r of results) {

@@ -1,0 +1,32 @@
+---
+title: "Solutions: the pain points Forge solves"
+description: "One pain point per release, each with a runnable example and a demo. What Forge fixes about AI coding agents, shown — not claimed."
+---
+
+AI coding agents fail in predictable ways: runaway spend, guardrails nobody
+tests, memory that rots, loops that burn money. Forge ships one solution per
+release — each with a runnable example in `examples/` and a demo below.
+
+<CardGroup cols={2}>
+  <Card title="Cost governance" icon="coins" href="/solutions/cost-governance">
+    Per-day and per-task spend budgets with an opt-in hard circuit breaker.
+    Unknown spend never blocks — the honesty rule.
+  </Card>
+  <Card title="Adversarial doctor" icon="shield-halved" href="/solutions/adversarial-doctor">
+    `forge doctor --adversarial` fuzzes Forge's own hooks: rerouting attacks,
+    malformed payloads, the permissions-bypass hole.
+  </Card>
+</CardGroup>
+
+## How solutions ship
+
+Every solution follows the same contract, so you can trust the pattern even
+before you trust any single feature:
+
+1. **One pain point per release** — prioritized from real-world agent failures
+   (see `docs/STRATEGY_2026.md` §7), never a grab-bag.
+2. **Runnable example** — `examples/<name>/` with copy-paste steps that run in
+   a scratch directory. No API keys, no cloud.
+3. **Demo GIF** — rendered from captured real CLI output, never hand-drawn.
+4. **Adversarial proof where it matters** — guardrail claims ship with the
+   attacks that tried to break them (`forge doctor --adversarial`).

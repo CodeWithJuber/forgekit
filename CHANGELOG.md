@@ -8,6 +8,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`forge doctor --adversarial` — attack our own hooks.** The strategy's build-list
+  item #2: 16 probes fire real payloads at the real `protect-paths` guard binary
+  (`src/doctor_adversarial.js`, no mocks). Seven rerouting attacks (sed `-i`,
+  heredoc redirect, `tee`, `authorized_keys` append, `cp`/`mv` exfiltration,
+  plain secret read) are blocked; two benign controls still pass; truncated and
+  garbage hook JSON is denied fail-closed; three wrong-shape payloads (empty
+  stdin, `{}`, string `tool_input`) report as robustness warnings; two probes
+  detect the `--dangerously-skip-permissions` hole (persistent
+  `permissions.defaultMode: bypassPermissions` in settings, and the live flag in
+  the ancestor process tree). Exit code 1 on any attacker-reachable bypass.
+- **Pain-point solution system.** `examples/` is now the home of runnable,
+  per-release solution demos: new `examples/cost-governance/` and
+  `examples/adversarial-doctor/` (README + idempotent `demo.sh` + GIF), an
+  `examples/_template/` for the next one, and a "Pain-point solutions" index in
+  `examples/README.md`. New Mintlify **Solutions** tab (`solutions/overview`,
+  `solutions/cost-governance`, `solutions/adversarial-doctor`) with demo GIFs
+  rendered from captured real CLI output (`scripts/make-cost-gif.py`,
+  `scripts/make-doctor-gif.py`).
 - **Product strategy.** `docs/STRATEGY_2026.md` (PR #175): the September 2026 strategy —
   repo review, uniqueness/moat analysis, the AI-coding-agent pain landscape, the beta→prod
   graduation plan, team-brain and JEV-adapter roadmaps, and the 7-item prioritized build list.
