@@ -106,9 +106,26 @@ forge impact verifyToken                 # 2. which files will this edit probabl
 forge verify                             # 3. did the change pass the suites that actually ran?
 ```
 
+## See it in action
+
+Real terminal recordings of the actual CLI — nothing mocked:
+
+![forge verify catching a hallucinated dependency](.github/assets/forgekit-verify.gif)
+
+`forge verify` on a change that imports a package that doesn't exist: it flags the hallucinated dependency (`frobnicator` — not in the codebase) and blocks the push.
+
+![forge precommit refusing a staged secret](.github/assets/forgekit-precommit.gif)
+
+A fake secret staged with `git add`: `forge precommit` spots the credential-like line and refuses the commit before it ever happens.
+
+![forge recall — memory across sessions](.github/assets/forgekit-memory.gif)
+
+Cross-session memory: `forge recall add` saves a durable fact (`deploy-window`), `forge recall list` reads it back — memory that survives across agent sessions.
+
 ## Contents
 
 - [60-second quickstart](#60-second-quickstart)
+- [See it in action](#see-it-in-action)
 - [Why Forgekit exists](#why-forgekit-exists)
 - [How the loop works](#how-the-loop-works)
 - [Core capabilities](#core-capabilities)
