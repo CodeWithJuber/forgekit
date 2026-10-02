@@ -5,6 +5,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Filesystem- and id-safe slug. Unicode-aware: letters, marks and digits of ANY script
@@ -90,6 +92,17 @@ export function git(root, args) {
   } catch {
     return "";
   }
+}
+
+/** Forge's per-user home: `FORGE_HOME` when set (tests and recall-load.sh rely on it), else the
+ *  XDG state dir (`$XDG_STATE_HOME/forgekit`, default `~/.local/state/forgekit`). Never inside
+ *  the install/source tree (P0-03). The ONE recipe: recall, the evidence key and the user-level
+ *  config all live under it.
+ *  @returns {string} */
+export function userStateDir() {
+  if (process.env.FORGE_HOME) return process.env.FORGE_HOME;
+  const xdg = process.env.XDG_STATE_HOME;
+  return xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
 }
 
 /** Parse a JSON file, returning null on a missing/corrupt file instead of throwing —

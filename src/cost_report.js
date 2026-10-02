@@ -215,11 +215,16 @@ export const routeRef = (task) => contentHash(String(task)).slice(0, 12);
 /** Record one routed generation with its tier and real token counts. `escalateTo` is the
  *  routing verdict's ADVISORY escalation target (a proposer voted higher and was not
  *  applied) — recorded so a later EXTERNAL failure can name the tier instead of guessing.
+ *  `mode` and `policy` (the names of the unattended-policy steps that moved the tier, e.g.
+ *  `risk-floor`) ride along only for an unattended route; never the task text.
  *  @param {string} root
  *  @param {{tier?: string, tokensIn?: number, tokensOut?: number, ref?: string,
- *           escalateTo?: string}} [opts] */
-export function recordRoute(root, { tier, tokensIn, tokensOut, ref, escalateTo } = {}) {
-  return record(root, { stage: "route", tier, tokensIn, tokensOut, ref, escalateTo });
+ *           escalateTo?: string, mode?: string, policy?: string[]}} [opts] */
+export function recordRoute(
+  root,
+  { tier, tokensIn, tokensOut, ref, escalateTo, mode, policy } = {},
+) {
+  return record(root, { stage: "route", tier, tokensIn, tokensOut, ref, escalateTo, mode, policy });
 }
 
 /**

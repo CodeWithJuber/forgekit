@@ -164,17 +164,27 @@ HANDLERS.route = async (argv) => {
   }
   const json = argv.includes("--json");
   const apply = argv.includes("--apply");
-  const providerIdx = argv.indexOf("--provider");
-  const providerName = providerIdx >= 0 ? argv[providerIdx + 1] : undefined;
-  const FLAGS = new Set(["--json", "--apply"]);
+  const allowTop = argv.includes("--allow-top");
+  const readOnly = argv.includes("--read-only");
+  const flagValue = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
+  const providerName = flagValue("--provider");
+  const mode = /** @type {"conservative"|"unattended"|undefined} */ (flagValue("--mode"));
+  const FLAGS = new Set(["--json", "--apply", "--allow-top", "--read-only"]);
+  const VALUED = new Set(["--provider", "--mode"]);
   const task = argv
     .slice(1)
-    .filter((a, i) => !FLAGS.has(a) && a !== "--provider" && argv[i] !== "--provider")
+    .filter((a, i) => !FLAGS.has(a) && !VALUED.has(a) && !VALUED.has(argv[i]))
     .join(" ");
   if (!task) {
     console.error(
-      'usage: forge route "<task>" [--apply] [--provider <name>] [--json]   |   forge route gateway',
+      'usage: forge route "<task>" [--mode conservative|unattended] [--read-only] [--allow-top] [--apply] [--provider <name>] [--json]   |   forge route gateway',
     );
+    process.exitCode = 1;
+    return;
+  }
+  const { ROUTE_MODES, resolveRoutePolicy } = await import("../orchestration.js");
+  if (mode !== undefined && !ROUTE_MODES.includes(mode)) {
+    console.error(`  --mode expects ${ROUTE_MODES.join(" | ")}`);
     process.exitCode = 1;
     return;
   }
@@ -187,8 +197,25 @@ HANDLERS.route = async (argv) => {
       return;
     }
   }
-  const rec = r.routeTask(process.cwd(), task);
+  const policy = resolveRoutePolicy(process.cwd());
+  const rec = r.routeTask(process.cwd(), task, {
+    policy,
+    mode,
+    writesCode: !readOnly,
+    allowTop,
+  });
   r.meterRoute(process.cwd(), task, rec);
+  // The policy block a lead agent reads from --json: the final tier key (generic: haiku / sonnet /
+  // opus / fable — map it to your tool's model names), the mode, and every step that moved it.
+  const routing = rec.policy ?? {
+    key: rec.key,
+    base: rec.key,
+    mode: mode ?? policy.mode,
+    steps: [],
+    risk: [],
+    writesCode: !readOnly,
+    topTier: { gate: policy.topTier, allowTop, allowed: false },
+  };
   // The recommendation is a tier (a model family); its concrete id and price are resolved here,
   // in the command — routeTask stays network-free because the hooks run it. BOTH output modes
   // resolve, so a script reading --json never sees a different model than the text prints.
@@ -201,7 +228,7 @@ HANDLERS.route = async (argv) => {
   const price = resolveTierPrice(rec.key, { ...opts, resolved });
   if (json) {
     // `model` stays the snapshot row (its shape is public); `resolved` is what would be called.
-    console.log(JSON.stringify({ ...rec, resolved, price }, null, 2));
+    console.log(JSON.stringify({ ...rec, policy: routing, resolved, price }, null, 2));
   } else {
     heading(`${BRAND.brand} route — cheapest capable model\n`);
     const name =
@@ -218,6 +245,9 @@ HANDLERS.route = async (argv) => {
     );
     console.log(
       `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
+    );
+    console.log(
+      `    mode: ${routing.mode} · tier key: ${routing.key}${routing.steps.length ? ` (policy: ${routing.steps.map((s) => s.step).join(", ")})` : ""}`,
     );
   }
   if (apply) {

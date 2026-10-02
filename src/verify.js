@@ -17,7 +17,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { arch, homedir, platform } from "node:os";
+import { arch, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
@@ -30,6 +30,7 @@ import {
   reachesWorkspace,
   scriptShellProblem,
 } from "./stack.js";
+import { userStateDir } from "./util.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -88,10 +89,7 @@ function git(args, cwd) {
 // unforgeability needs a signer the agent cannot reach (CI, or a helper process holding the
 // key) — see the review's B7 note.
 function evidenceKeyPath() {
-  if (process.env.FORGE_HOME) return join(process.env.FORGE_HOME, "evidence.key");
-  const xdg = process.env.XDG_STATE_HOME;
-  const base = xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
-  return join(base, "evidence.key");
+  return join(userStateDir(), "evidence.key");
 }
 
 /**

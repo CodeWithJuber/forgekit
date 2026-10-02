@@ -88,6 +88,7 @@ row is confirmed against vendor docs.
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`             | Emits `AGENTS.md`; doctor flags any shadowing legacy file             |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`         | Emits a rules file plus the Forge MCP server config                   |
 | **OpenClaw**       | execution-folder `AGENTS.md`; MCP registry is global          | Relies on root `AGENTS.md`; writes `.openclaw/mcp.json` to apply once |
+| **Kimi Code**      | `AGENTS.md` merged from project root to working dir           | Relies on root `AGENTS.md`; no extra file, MCP or hooks               |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.json`,
 `.vscode/mcp.json`) rather than a rules file.

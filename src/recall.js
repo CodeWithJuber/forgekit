@@ -2,7 +2,6 @@
 // index. Refuses to persist secrets. Consolidation is deterministic (exact-dupe
 // prune) — honest: no model call, so it can't hallucinate a "merged" memory.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 // The merged read helper (P2 read flip).
 import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
@@ -17,15 +16,12 @@ export function defaultStore() {
   // otherwise the XDG state dir — NEVER inside the install/source tree (P0-03). The old
   // default (~/.forge) was symlinked by install.sh into the clone, leaking personal facts
   // into the repo working tree.
-  if (process.env.FORGE_HOME) return join(process.env.FORGE_HOME, "recall");
-  const xdg = process.env.XDG_STATE_HOME;
-  const base = xdg ? join(xdg, "forgekit") : join(homedir(), ".local", "state", "forgekit");
-  return join(base, "recall");
+  return join(userStateDir(), "recall");
 }
 
 const factsDir = (store) => join(store, "facts");
 
-import { ledgerOnly, slug as slugify } from "./util.js";
+import { ledgerOnly, slug as slugify, userStateDir } from "./util.js";
 
 export function add(store, name, body) {
   if (hasSecret(`${name}\n${body}`)) {

@@ -1,0 +1,83 @@
+---
+title: "Agent orchestration"
+description: "Rules for a lead agent running many sub-agents, and model routing for agents nobody watches — each rule and gate switchable per repo or globally."
+---
+
+When a lead agent runs several coding sub-agents, most of the cost is each agent re-reading
+its own context while it waits, not new work. Forge ships an **orchestration rule pack** that
+`forge sync` writes into every tool's config, and a **routing policy** for unattended agents.
+
+## What one session showed
+
+A lead agent ran 7 sub-agents in parallel against one shared end-to-end test environment.
+In about 4.5 hours the session used about 857M tokens, and about 98% were cache re-reads.
+
+- Agents waiting on a shared lock polled logs about every 10 minutes, each time re-reading a
+  250–300k-token context. One agent ran 506 turns for about 5k output tokens.
+- More agents ran than the shared environment could serve, so most of them queued.
+- The most expensive model tier was hand-picked for routine work: about 140M tokens.
+- The lead's own long context was re-read on every notification.
+
+What worked: background runs with completion notifications instead of polling, a cap on
+parallel agents, heavy e2e in CI with only fast checks locally, a fresh small sub-agent per
+task, and models picked by `forge route` with a risk floor and the top tier only on opt-in.
+A double-charge race in payment code was caught only by a lead reviewing the money diff, so
+the quality gates stay.
+
+## The rules
+
+| Id | Default | What it asks |
+| --- | --- | --- |
+| `orch.no-polling` | on | Background long runs, wait for the completion signal, no sleep/poll loops; read results with `tail`/`grep`. |
+| `orch.parallel-cap` | on, N = 2 | At most N parallel agents, and never more than the scarcest shared resource can serve. |
+| `orch.ci-heavy-checks` | on | Full e2e/integration suites in CI; locally only typecheck, lint and unit tests of touched code. |
+| `orch.fresh-subagents` | on | One small task per fresh sub-agent; a concise report back, not a transcript. |
+| `orch.route-models` | on | Pick each agent's model with `forge route`; never the top tier by default. |
+| `orch.risk-review` | on | Money, auth, secrets, migrations or security changes: tests in the same change plus a lead review. |
+| `orch.isolated-env` | on | Unavoidable local e2e: serialise behind a lock, or separate ports and database per agent. |
+| `orch.lean-lead` | on | The lead keeps notification replies short and does not re-read large files or logs. |
+
+The rules land in `AGENTS.md`, so every tool that reads it gets them: Codex, Cursor, Copilot,
+Windsurf/Devin, Zed, OpenClaw and **Kimi Code** natively, Claude Code through its
+`@AGENTS.md` import, Gemini through `context.fileName`, Aider through `read:`, and Continue
+through its own rules file.
+
+<Note>
+  **Kimi Code reads `AGENTS.md` itself.** Its docs describe `${KIMI_AGENTS_MD}` as the merged
+  `AGENTS.md` content from the project root to the working directory, including
+  `.kimi/AGENTS.md` ([kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)).
+  Forge therefore writes no Kimi-specific file.
+</Note>
+
+## Switch rules on and off
+
+```bash
+forge orchestration                         # state, source layer, rationale
+forge orchestration off orch.parallel-cap   # this repo
+forge orchestration off all --global        # every repo on this machine
+forge orchestration set parallelCap 3
+forge sync                                  # re-emit
+```
+
+The repo's `.forge/forge.config.json` wins over the user-level `forge.config.json` (in Forge's
+per-user state directory), key by key. In a shared repo, prefer per-repo settings so the
+committed `AGENTS.md` matches for everyone.
+
+## Routing for unattended agents
+
+```bash
+forge route "add a refund endpoint" --mode unattended --json
+forge route "map the auth module" --mode unattended --read-only
+forge orchestration set route.mode unattended
+```
+
+Unattended mode raises the tier on a confident proposer vote, starts code-writing tasks at
+mid, keeps money/auth/secrets/migrations/security tasks on the premium tier, and allows the top
+tier only with `--allow-top` and a top deterministic score. Conservative mode, the default, is
+unchanged. Without the optional Jev proposer everything runs on the deterministic score. See
+[Model routing](/concepts/model-routing) for the steps.
+
+<Warning>
+  These rules are instructions, not hooks: an agent can ignore them. The risk floor is a
+  keyword match and can miss or over-flag; adjust `route.riskCategories` per repo.
+</Warning>

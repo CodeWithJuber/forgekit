@@ -23,6 +23,7 @@ import {
 import { dirname, join } from "node:path";
 import { BRAND } from "./brand.js";
 import { ensureGitignoreBlock } from "./gitignore.js";
+import { userStateDir } from "./util.js";
 
 const FORGE_CONFIG_REL = ".forge/forge.config.json";
 const LEGACY_CONFIG_REL = ".forge/config.json";
@@ -41,6 +42,7 @@ const DETECT = [
   { tool: "windsurf", marker: ".windsurf" },
   { tool: "roo", marker: ".roo" },
   { tool: "openclaw", marker: ".openclaw" },
+  { tool: "kimi", marker: ".kimi" },
 ];
 
 /** Tool names accepted by `forge tools <name>`. Kept in lockstep with the emit targets
@@ -57,6 +59,7 @@ export const KNOWN_TOOLS = [
   "windsurf",
   "roo",
   "openclaw",
+  "kimi",
 ];
 
 // Every on-disk sign that a repo already uses a tool — the evidence `forge init` needs to
@@ -75,11 +78,18 @@ const TOOL_MARKERS = {
   windsurf: [".windsurf", ".windsurfrules", ".devin"],
   roo: [".roo", ".roomodes"],
   openclaw: [".openclaw"],
+  kimi: [".kimi"],
 };
 
 // Names people type for a tool whose canonical key differs.
 /** @type {Record<string, string>} */
-const TOOL_ALIASES = { copilot: "vscode", devin: "windsurf", "claude-code": "claude" };
+const TOOL_ALIASES = {
+  copilot: "vscode",
+  devin: "windsurf",
+  "claude-code": "claude",
+  "kimi-cli": "kimi",
+  "kimi-code": "kimi",
+};
 
 /**
  * Every tool this repo already shows signs of using (KNOWN_TOOLS order). Pure read.
@@ -138,6 +148,7 @@ const TOOL_KEYS = [
   ["windsurf", /^Windsurf/],
   ["roo", /^Roo/],
   ["openclaw", /^OpenClaw/],
+  ["kimi", /^Kimi/],
 ];
 
 const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);
@@ -228,15 +239,69 @@ export function writeForgeConfig(root, mutator) {
   if (legacy.status === "corrupt") warnCorrupt(legacyConfigPath(root));
   const draft = { ...legacy.data, ...unified.data };
   const next = mutator(draft) ?? draft;
+  atomicWriteConfig(path, next, unified.status === "ok");
+  return { ok: true, path, config: next };
+}
+
+/**
+ * ME-13: back up an existing valid config before overwriting, then write via a temp file +
+ * atomic rename (same pattern as mergeSettings) so a crash mid-write can never truncate it.
+ * A first write (no existing file) needs no backup.
+ * @param {string} path
+ * @param {Record<string, any>} next
+ * @param {boolean} hadValid the file existed and parsed
+ */
+function atomicWriteConfig(path, next, hadValid) {
   mkdirSync(dirname(path), { recursive: true });
-  // ME-13: back up an existing valid config before overwriting, then write via a temp file
-  // + atomic rename (same pattern as mergeSettings) so a crash mid-write can never truncate
-  // the unified config. First write (no existing file) needs no backup.
-  if (unified.status === "ok" && existsSync(path))
-    copyFileSync(path, `${path}.forge-bak-${stamp()}`);
+  if (hadValid && existsSync(path)) copyFileSync(path, `${path}.forge-bak-${stamp()}`);
   const tmp = `${path}.forge-tmp-${process.pid}`;
   writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
   renameSync(tmp, path);
+}
+
+// ---------------------------------------------------------------------------
+// User-level (global) config: `<userStateDir>/forge.config.json` — the same file name and
+// rules as the repo file, one level up. It holds defaults a person wants in every repo
+// (today: the `orchestration` and `route` keys); a repo's own `.forge/forge.config.json`
+// overrides it key by key (see src/orchestration.js). Same invariants: reads never throw and
+// report corruption, writes refuse to replace a corrupt file.
+// ---------------------------------------------------------------------------
+
+/** Path of the user-level config. Follows FORGE_HOME / XDG_STATE_HOME like every per-user file. */
+export const userConfigPath = () => join(userStateDir(), "forge.config.json");
+
+/**
+ * Read the user-level config. Never throws; a corrupt file is reported, not treated as absent.
+ * @returns {Record<string, any> & {corrupt?: true, path?: string}}
+ */
+export function readUserConfig() {
+  const path = userConfigPath();
+  const file = readConfigFile(path);
+  if (file.status !== "corrupt") return file.data;
+  warnCorrupt(path);
+  return { corrupt: true, path };
+}
+
+/**
+ * Read-modify-write of the user-level config via `mutator(cfg)`; unknown keys round-trip.
+ * Refuses (bytes preserved) when the existing file is corrupt JSON.
+ * @param {(cfg: Record<string, any>) => Record<string, any>|undefined} mutator
+ * @returns {{ok:true, path:string, config:Record<string, any>}|{ok:false, path:string, reason:string}}
+ */
+export function writeUserConfig(mutator) {
+  const path = userConfigPath();
+  const file = readConfigFile(path);
+  if (file.status === "corrupt") {
+    warnCorrupt(path);
+    return {
+      ok: false,
+      path,
+      reason: `${path} is not valid JSON — refusing to overwrite (fix or delete it)`,
+    };
+  }
+  const draft = { ...file.data };
+  const next = mutator(draft) ?? draft;
+  atomicWriteConfig(path, next, file.status === "ok");
   return { ok: true, path, config: next };
 }
 

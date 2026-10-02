@@ -71,7 +71,8 @@
                 "pages": [
                   "guides/zero-config-onboarding",
                   "guides/team-memory",
-                  "guides/radar-deps"
+                  "guides/radar-deps",
+                  "guides/agent-orchestration"
                 ]
               }
             ]

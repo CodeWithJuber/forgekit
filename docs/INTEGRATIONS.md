@@ -36,6 +36,7 @@ Each cell says how the claim is backed (as of 1.8.0; checked 2026-09-28 against
 | **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | not supported in the agent |
 | **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | not supported in the agent |
 | **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | not supported in the agent |
+| **Kimi Code** | root `AGENTS.md`, merged by Kimi from the project root to the working directory ([kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) — tested (emission) | not supported (not verified for a repo-local file) | not supported | not supported in the agent |
 | **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
 | **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
 

@@ -31,7 +31,8 @@ for the full list.
   Brand stored as **one token** (the `brand` key in `brand.json`); rebrand = 1 edit.
 - **Distributable id = `forgekit`** (npm package + marketplace id) — fixed even if
   the brand token changes, so a rename never breaks install.
-- **Scope = full multi-tool day 1** — ten tools plus MCP, from one canonical source.
+- **Scope = full multi-tool day 1** — ten tools plus MCP, from one canonical source (eleven
+  since Kimi Code joined as an `AGENTS.md` reader).
 - **Install = all three channels** (plugin + hardened installer + npm CLI), all
   three pointing at the _same_ tree ("one tree, three front doors").
 - **Own `lean` + `atlas`** — as _thin layers over proven primitives_, not
@@ -299,6 +300,18 @@ System One model judges but does not author prose.
 Provenance records which proposer answered
 (`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
 
+**Routing policy and the orchestration pack (`src/route_policy.js`, `src/orchestration.js`).**
+`routeTask` keeps the conservative reconcile above as its default and only behaviour unless the
+policy's mode is `unattended`. Then a pure post-step (`applyRoutePolicy`) runs on the tier the
+reconcile picked: a confidence-gated vote raise (premium at p ≥ 0.9 → premium tier; mid-or-higher
+at p ≥ 0.5 → at least mid), a writes-code floor (mid), a keyword risk floor (premium tier for
+money/auth/secrets/migrations/security) and a top-tier gate (`never | explicit | auto`; the top
+tier needs the deterministic score at its cutoff, never a vote). Each step is returned in
+`policy.steps` and `provenance.policy`, and metered by name only. The same module resolves the
+orchestration rule pack (`source/orchestration.json`), which `sync` appends to the canonical
+rules; both read defaults < the user-level `forge.config.json` (in the per-user state dir) <
+the repo's `.forge/forge.config.json`. Rationale and evidence: [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md).
+
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
 confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
@@ -483,7 +496,7 @@ guards through `${CLAUDE_PROJECT_DIR}`.
 
 ## Verified cross-tool emit matrix
 
-_(All rows confirmed against vendor docs.)_ Forge emits config for **ten tools**, plus
+_(All rows confirmed against vendor docs.)_ Forge emits config for **eleven tools**, plus
 an **MCP server** for Roo Code and VS Code.
 
 | Tool               | Native target                                                            | How Forge emits                                                                                        |
@@ -498,6 +511,7 @@ an **MCP server** for Roo Code and VS Code.
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
+| **Kimi Code**      | `AGENTS.md` merged from project root to working dir (`${KIMI_AGENTS_MD}`, [kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) | Rely on root `AGENTS.md`; no `.kimi/AGENTS.md` copy (it would be merged twice), no MCP or hooks claimed |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
@@ -555,7 +569,9 @@ forgekit/
     cli.js                # init | sync | doctor | substrate | ledger | reuse | … (`forge --help` for all)
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
-    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue) + mcp
+    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi) + mcp
+    orchestration.js      # orchestration rule pack + routing policy config: defaults < user-level < repo config, on/off per rule
+    route_policy.js       # unattended routing policy (pure): vote raise, writes-code floor, risk floor, top-tier gate
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify, local usage log
     ledger_retention.js   # retention learned from the ledger's own history: archive never-served claims, idle ones past the longest observed comeback, and exact duplicates; BIC-detected near-duplicates are only proposed (`ledger compact`)
@@ -578,6 +594,7 @@ forgekit/
   source/
     rules.json            # THE canonical rules source (git · testing · security · style)
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
+    orchestration.json    # agent-orchestration rule pack (ids, text, rationale, defaults) + unattended routing defaults
     mcp.json              # MCP server definitions emitted into each tool
   global/                 # installs into ~/.forge, symlinked into ~/.claude
     tools/ crew/ guards/ rules/ recall/ taste/ statusline.sh settings.template.json
@@ -637,8 +654,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>137 files"]
-  src["src<br/>123 files"]
+  test["test<br/>140 files"]
+  src["src<br/>127 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>9 files"]
@@ -646,7 +663,7 @@ flowchart LR
   global["global<br/>5 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 294 --> src
+  test -- 304 --> src
   bench -- 12 --> src
   scripts -- 5 --> src
   examples -- 4 --> src

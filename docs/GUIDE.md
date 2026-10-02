@@ -29,7 +29,7 @@ Every command is real and wired. Grouped by what it does:
 | Group                   | Commands                                                                                                                                                                                             |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core**                | `forge init` · `forge sync` · `forge doctor` · `forge tools` · `forge catalog` · `forge docs` · `forge update` · `forge config`                                                                      |
-| **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge verify` · `forge precommit`                                                        |
+| **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge verify` · `forge precommit`                                |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                         |
 | **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                |
@@ -237,6 +237,51 @@ Being in the registry does not make a model callable. Add its id under `provider
 `--attempt <id>` makes recording idempotent. The label is re-derived from the verifier events
 every time outcomes are read, so editing it in the file changes nothing. The model, its evidence status and its limits:
 [docs/UNIVERSAL_ROUTING.md](UNIVERSAL_ROUTING.md).
+
+**Unattended agents — `--mode unattended`.** The default mode is conservative: a model's vote
+for a higher tier is reported, never applied. For an agent nobody watches (no cheap retry
+loop), `forge route "<task>" --mode unattended` adds four steps on top of the tier above, and
+reports each in `--json` under `policy.steps`:
+
+1. a proposer's `premium` vote at p ≥ 0.9 raises to the premium tier, a `mid`-or-higher vote at
+   p ≥ 0.5 to at least mid (a vote without a probability never raises);
+2. a task that writes code starts at mid (`--read-only` lets exploration stay cheap);
+3. a task naming money, auth, secrets, migrations or security is never below the premium tier;
+4. the top tier only with `--allow-top` and the deterministic score at its cutoff
+   (`route.topTier`: `never` | `explicit` | `auto`); votes and floors stop one tier below it.
+
+```console
+$ forge route "add a refund endpoint for payments" --mode unattended
+  → Opus 4.8  (complex, …)
+    …
+    mode: unattended · tier key: opus (policy: writes-code-floor, risk-floor)
+```
+
+`key` in `--json` is the generic tier key (`haiku` / `sonnet` / `opus` / `fable`) a lead agent
+maps to its own tool's model names. Set the mode once with
+`forge orchestration set route.mode unattended` (see below). Without `FORGE_LLM=1` and
+`TYPESAFE_API_KEY` there is no vote, and the floors and gate run on the deterministic score.
+
+### `forge orchestration` — rules for a lead running many agents
+
+`forge sync` emits an **Agent orchestration** section into `AGENTS.md` (and so into every tool):
+no polling, a parallel-agent cap (default 2), heavy suites in CI, fresh small sub-agents with
+short reports, models picked with `forge route`, tests plus lead review for risky changes,
+isolated e2e environments, and a lean lead. Each rule ends with its stable id.
+
+```console
+$ forge orchestration                         # rules + routing settings, and which layer set each
+$ forge orchestration off orch.parallel-cap   # this repo (.forge/forge.config.json)
+$ forge orchestration off all --global        # every repo (<state dir>/forge.config.json)
+$ forge orchestration off pack                # drop the whole section here
+$ forge orchestration set parallelCap 3
+$ forge orchestration set route.topTier never --global
+$ forge sync                                  # switched-off rules leave AGENTS.md
+```
+
+The project file wins over the global one, key by key. The minimal profile leaves the pack out
+unless `orchestration.enabled` is set to `true`. Rules, defaults, evidence and the Kimi Code
+finding: [docs/ORCHESTRATION.md](ORCHESTRATION.md).
 
 ### `forge models` — what each tier resolves to
 
@@ -945,9 +990,9 @@ and leaves the recorded `tools` set alone).
 - `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
   auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
   `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`,
-  `.openclaw/`) and which targets are currently gitignored.
+  `.openclaw/`, `.kimi/`) and which targets are currently gitignored.
 - `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
-  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw`) as this repo's primary tool in
+  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw` · `kimi`) as this repo's primary tool in
   `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
   (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
   emitted artifacts. Your own `.gitignore` lines are never touched, and the shared

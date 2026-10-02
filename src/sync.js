@@ -13,16 +13,19 @@ import continueTool from "./emit/continue.js";
 import copilot from "./emit/copilot.js";
 import cursor from "./emit/cursor.js";
 import gemini from "./emit/gemini.js";
+import kimi from "./emit/kimi.js";
 import { emitMcp } from "./emit/mcp.js";
 import openclaw from "./emit/openclaw.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
+import { orchestrationSection } from "./orchestration.js";
 import {
   KNOWN_TOOLS,
   LEGACY_PROFILES,
   parseTools,
   readForgeConfig,
+  readUserConfig,
   rowToolKey,
 } from "./repo_config.js";
 
@@ -37,6 +40,7 @@ const MODULES = [
   aider,
   continueTool,
   openclaw,
+  kimi,
 ];
 
 // Soft budget: Codex hard-truncates at 32 KiB, Windsurf caps ~12k chars. Warn early.
@@ -125,7 +129,8 @@ function readLegacyRules(targetRoot) {
  *      (including the deprecated legacy names web-app/backend-service/library/regulated,
  *      which warn once per process) behaves as `standard`, the full source pack (RA-14).
  *   2. disableSections — drop sections by id or title.
- *   3. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
+ *   3. orchestration — the agent-orchestration pack, rule by rule as configured (orchestration.js).
+ *   4. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
  */
 function loadRules(targetRoot) {
   const cfg = loadConfig(targetRoot);
@@ -146,6 +151,15 @@ function loadRules(targetRoot) {
     const drop = new Set(cfg.disableSections);
     base.sections = (base.sections || []).filter((s) => !drop.has(s.id) && !drop.has(s.title));
   }
+  // The orchestration pack (source/orchestration.json): appended after the profile/disable
+  // step, with each rule's on/off resolved from the user-level and repo configs. The minimal
+  // profile leaves it out unless a config turns it on; `disableSections` drops it like any
+  // other section.
+  const orch = orchestrationSection(targetRoot, { global: readUserConfig(), project: cfg });
+  const dropped =
+    Array.isArray(cfg.disableSections) &&
+    (cfg.disableSections.includes(orch?.id) || cfg.disableSections.includes(orch?.title));
+  if (orch && !dropped) base.sections = [...(base.sections || []), orch];
   const legacy = readLegacyRules(targetRoot);
   if (legacy.sections.length) base.sections = [...(base.sections || []), ...legacy.sections];
   if (Array.isArray(cfg.rules) && cfg.rules.length) {

@@ -1,0 +1,133 @@
+{
+  "id": "orchestration",
+  "title": "Agent orchestration",
+  "intro": "Rules for a lead agent that runs sub-agents, and for unattended agents. Each rule has a stable id; turn one off with `forge orchestration off <id>` (per repo, or --global), then `forge sync`.",
+  "params": { "parallelCap": 2 },
+  "rules": [
+    {
+      "id": "orch.no-polling",
+      "default": true,
+      "text": "Start long commands (test suites, builds, e2e runs) in the background and wait for the completion signal. Never write sleep or poll loops; read results with `tail`/`grep`, not by re-reading whole logs.",
+      "rationale": "Every poll re-reads the agent's whole context. In the session behind this pack, agents waiting on a shared lock polled every ~10 minutes against a 250–300k-token context: one agent ran 506 turns for ~5k output tokens."
+    },
+    {
+      "id": "orch.parallel-cap",
+      "default": true,
+      "text": "Run at most {parallelCap} agents in parallel, and never more than the scarcest shared resource (test environment, ports, database, CI runners) can serve at once. Queue the rest.",
+      "rationale": "Agents beyond what the shared resource can serve do no work; they wait, and waiting agents re-read their context. Seven agents on one e2e environment mostly queued."
+    },
+    {
+      "id": "orch.ci-heavy-checks",
+      "default": true,
+      "text": "Run full e2e and integration suites in CI. Locally, run only fast checks (typecheck, lint, unit tests of the code you touched) before pushing.",
+      "rationale": "A heavy suite on a shared local environment serialises every agent behind it. CI runners queue the work without holding an agent's context open."
+    },
+    {
+      "id": "orch.fresh-subagents",
+      "default": true,
+      "text": "Give each sub-agent one small task and a fresh context. Hand back a concise report (what changed, checks run, open items), not a transcript.",
+      "rationale": "A small fresh context is cheap to re-read; a long one is re-read on every turn. A concise report keeps the lead's context small too."
+    },
+    {
+      "id": "orch.route-models",
+      "default": true,
+      "text": "Pick each agent's model with `forge route \"<task>\" --json` (add `--mode unattended` for agents nobody watches). Never start at the top tier by default.",
+      "rationale": "Hand-picking the most expensive tier for routine work cost ~140M tokens in one session. Routing picks the cheapest capable tier, with floors for risky work."
+    },
+    {
+      "id": "orch.risk-review",
+      "default": true,
+      "text": "Changes touching money, auth, secrets, migrations or security ship with tests in the same change and a lead review of the diff. UI-only tests may follow later.",
+      "rationale": "Cheaper routing must not lower quality where mistakes are costly: a double-charge race in payment code was caught only by a lead reviewing the money diff."
+    },
+    {
+      "id": "orch.isolated-env",
+      "default": true,
+      "text": "If local e2e is unavoidable, serialise it behind a lock or give each agent its own ports and database.",
+      "rationale": "Agents sharing one environment overwrite each other's state, and the resulting flaky failures look like real bugs."
+    },
+    {
+      "id": "orch.lean-lead",
+      "default": true,
+      "text": "As lead, keep replies to completion notifications short and do not re-read large files or logs; read the sub-agent's report.",
+      "rationale": "The lead's context is re-read on every notification; each large file it pulls in is paid for again on every later turn."
+    }
+  ],
+  "route": {
+    "mode": "conservative",
+    "raiseConfidence": 0.9,
+    "midConfidence": 0.5,
+    "topTier": "explicit",
+    "writesCodeFloor": true,
+    "riskFloor": true,
+    "riskCategories": {
+      "money": [
+        "payment",
+        "payout",
+        "billing",
+        "invoice",
+        "refund",
+        "charge",
+        "checkout",
+        "subscription",
+        "wallet",
+        "pricing",
+        "currency",
+        "transaction"
+      ],
+      "auth": [
+        "auth",
+        "authentication",
+        "authorization",
+        "login",
+        "logout",
+        "signup",
+        "password",
+        "session",
+        "oauth",
+        "sso",
+        "jwt",
+        "mfa",
+        "2fa",
+        "permission",
+        "rbac",
+        "identity"
+      ],
+      "secrets": [
+        "secret",
+        "api key",
+        "private key",
+        "credential",
+        "access token",
+        "refresh token",
+        "encryption key",
+        "keystore",
+        "vault",
+        ".env"
+      ],
+      "migrations": [
+        "migration",
+        "migrate",
+        "schema change",
+        "alter table",
+        "drop table",
+        "drop column",
+        "backfill"
+      ],
+      "security": [
+        "security",
+        "vulnerability",
+        "cve",
+        "exploit",
+        "xss",
+        "csrf",
+        "ssrf",
+        "sql injection",
+        "injection",
+        "sanitize",
+        "encryption",
+        "cors"
+      ]
+    }
+  }
+}

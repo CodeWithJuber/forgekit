@@ -223,7 +223,12 @@ but never past a hard floor:
   picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on at
   routing time: it is recorded against the task, and `forge diagnose --task "<task>"` names it
   once the same failure signature has recurred `THRASH_K` times — a real external check
-  failing, which is the only thing that may buy a bigger model (§5.1);
+  failing, which is the only thing that may buy a bigger model (§5.1). The one exception is
+  opt-in: with `route.mode: "unattended"` (or `forge route --mode unattended`) a vote with
+  p(premium) ≥ 0.9 raises to the premium tier and a mid-or-higher vote with p ≥ 0.5 to at least
+  mid, because an agent nobody watches has no cheap retry loop; that mode also adds a
+  writes-code floor, a keyword risk floor and a top-tier gate, each reported in
+  `policy.steps` (see [docs/ORCHESTRATION.md](../ORCHESTRATION.md));
 - **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
   with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
   guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness
