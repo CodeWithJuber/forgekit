@@ -18,11 +18,21 @@
   <img src="docs/assets/demo.gif" alt="Demo: forge budget — set a spend budget, check the meter, clear it" width="880">
 </p>
 
-**A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis, and
-explicit verification around coding agents.** Forgekit is a Node.js CLI and MCP server with no
-runtime dependencies. You author project rules once, and it emits native configuration for Claude
+**Your coding agent forgets. Forgekit remembers — outside the model, in plain git.**
+
+Forgekit is a Node.js CLI and MCP server (zero runtime dependencies) that gives your AI coding
+tools a reliability layer: **shared memory** that survives sessions and teammates,
+**blast-radius analysis** before you edit, and **verification gates** after. You author project
+rules once, and it emits native configuration for Claude
 Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue and OpenClaw (plus MCP
 configuration for Roo and VS Code). Claude Code is the most deeply exercised integration.
+
+<p align="center">
+  ⭐ <a href="https://github.com/CodeWithJuber/forgekit">Star it</a>
+  · 📦 <code>npm install -g @codewithjuber/forgekit</code>
+  · 🚀 <a href="#60-second-quickstart">60-second quickstart</a>
+  · 📖 <a href="docs/GUIDE.md">Full guide</a>
+</p>
 
 It does three jobs:
 
@@ -96,9 +106,26 @@ forge impact verifyToken                 # 2. which files will this edit probabl
 forge verify                             # 3. did the change pass the suites that actually ran?
 ```
 
+## See it in action
+
+Real terminal recordings of the actual CLI — nothing mocked:
+
+![forge verify catching a hallucinated dependency](.github/assets/forgekit-verify.gif)
+
+`forge verify` on a change that imports a package that doesn't exist: it flags the hallucinated dependency (`frobnicator` — not in the codebase) and blocks the push.
+
+![forge precommit refusing a staged secret](.github/assets/forgekit-precommit.gif)
+
+A fake secret staged with `git add`: `forge precommit` spots the credential-like line and refuses the commit before it ever happens.
+
+![forge recall — memory across sessions](.github/assets/forgekit-memory.gif)
+
+Cross-session memory: `forge recall add` saves a durable fact (`deploy-window`), `forge recall list` reads it back — memory that survives across agent sessions.
+
 ## Contents
 
 - [60-second quickstart](#60-second-quickstart)
+- [See it in action](#see-it-in-action)
 - [Why Forgekit exists](#why-forgekit-exists)
 - [How the loop works](#how-the-loop-works)
 - [Core capabilities](#core-capabilities)
@@ -116,20 +143,37 @@ forge verify                             # 3. did the change pass the suites tha
 - [White paper](#white-paper)
 - [Public site](#public-site)
 - [Documentation](#documentation)
+- [Your next step](#your-next-step)
 - [Community and support](#community-and-support)
 
 ## Why Forgekit exists
 
-Individual model calls do not reliably retain what a team learned in earlier sessions, know
-the dependency impact of a proposed edit, or enforce project rules after context is lost.
-Coding tools also expect different instruction and configuration formats.
+The pain it kills — and the mechanism that kills it:
 
-Forgekit supplies an external reliability layer:
-
-- project knowledge is stored outside the model and retrieved with provenance;
-- likely change impact is estimated from a repository graph;
-- pre-action and post-action checks run as deterministic code;
-- one canonical source is compiled into each supported tool's native format.
+- **You fixed this bug last month. The agent just re-introduced it.** Lessons die when a
+  session compacts. Forgekit stores them in the repository as evidence-referenced memory: only
+  tests, CI, or a human raise a claim's confidence, and wrong lessons decay out instead of
+  ossifying. `forge ledger query "token validation"` finds what the team already knows —
+  teammates get it by pulling. (Memory persists outside the model; it doesn't guarantee the
+  agent reads it — retrieval is budget-bounded, and missing context becomes a question, not
+  invented context.)
+- **The "safe" rename broke twelve files you never opened.** `forge impact <symbol>` shows
+  the predicted blast radius before you edit, including coupled files you never named. It is
+  heuristic — a regex-derived graph, not a sound call graph — so treat the output as advisory
+  and an empty result as "unknown", not "safe".
+- **"Done" with no test evidence.** A completion gate blocks a session's "done" when code
+  moved without test evidence or a doc/state artifact — and hands back the repair checklist
+  (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
+  session snapshot, `forge decide` records choices so no session re-decides them). On Claude
+  Code this runs automatically.
+- **Rules that die at context compaction.** Guardrails — protected paths, cost budget,
+  doom-loop detection, secret redaction — run as deterministic hooks, not prose in a prompt.
+  They survive compaction the way `CLAUDE.md` does not. (Ambient hooks are the Claude Code
+  integration; other tools get config and instructions. The substrate is advisory by default;
+  set `FORGE_ENFORCE=1` to block only its strongest signals.)
+- **One rulebook, ten tools.** Author your rules once; Forge emits each tool's native config,
+  plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain files in git,
+  no server to run.
 
 ## How the loop works
 
@@ -643,6 +687,27 @@ Current implementation truth for optional embeddings is `src/embed.js`: use an `
 `https://` endpoint, or `cmd:<command>`. A bare `FORGE_EMBED=1` is not a valid provider
 configuration. Benchmark comparison prose that describes MinHash-only behavior is historical and
 does not supersede the current source and tests.
+
+## Your next step
+
+Sixty seconds, three commands, and your agent tooling gets a memory:
+
+```bash
+npm install -g @codewithjuber/forgekit
+forge init      # emit native config for the tools this repo uses
+forge doctor    # verify providers, hooks, and MCP wiring
+```
+
+Then try it on your own repo:
+
+```bash
+forge impact <symbol>     # what will this edit probably touch?
+forge ledger query "..."  # what does the team already know about this area?
+forge verify              # did the change pass the suites that actually ran?
+```
+
+- **Found a gap or a wrong answer?** [Open an issue](https://github.com/CodeWithJuber/forgekit/issues) — the project's own rule is _a number is an assumption until measured_.
+- **Using it in your workflow?** ⭐ [Star the repo](https://github.com/CodeWithJuber/forgekit) and tell us what it caught.
 
 ## Community and support
 
