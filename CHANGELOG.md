@@ -33,6 +33,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.kimi/`). Kimi Code reads `AGENTS.md` natively, merged from the project root to the working
   directory, so Forge writes no Kimi-specific file.
 
+## [1.9.1] - 2026-09-29
+
+### Fixed
+
+- use needs.detect.outputs in bump.yml job conditions
+
 ## [1.9.0] - 2026-09-28
 
 ### Added
@@ -3506,7 +3512,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.4...v1.8.0
 [1.7.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.7.3...v1.7.4
