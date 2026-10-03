@@ -90,15 +90,15 @@ the research programme's dated corrections explain the difference.
   when code moved without test evidence or a doc or state artifact (a UI-only change owes
   a design record or a UI check instead of a unit test), with the repair checklist as
   the answer.
-- **One config for 10 tools.** Author your rules once; Forge emits each tool's native
+- **One config for 11 tools.** Author your rules once; Forge emits each tool's native
   config, plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain
   files in git, no server.
 
 ## Which tools does Forge feed?
 
-Forge emits config for **ten tools**, plus an MCP server for Roo Code and VS Code:
-Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, and
-OpenClaw. Each reads the same rules from its own native file.
+Forge emits config for **eleven tools**, plus an MCP server for Roo Code and VS Code:
+Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, OpenClaw,
+and Kimi Code. Each reads the same rules from its own native file.
 
 The only MCP server wired by default is Forge's own (`src/cortex_mcp.js`) — the substrate
 checks and memory reads. Third-party MCP servers such as `context7` are **opt-in** and

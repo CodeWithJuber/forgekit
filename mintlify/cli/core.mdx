@@ -33,7 +33,7 @@ idempotent, marker-guarded, and never clobbers user entries.
 
 | Flag                  | What it does                                                                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--tools <list>`      | Agent tools to emit config for, comma-separated (`claude`, `cursor`, `gemini`, `codex`, `zed`, `vscode`, `aider`, `continue`, `windsurf`, `roo`, `openclaw`) or `all`. An unknown name aborts before anything is written. |
+| `--tools <list>`      | Agent tools to emit config for, comma-separated (`claude`, `cursor`, `gemini`, `codex`, `zed`, `vscode`, `aider`, `continue`, `windsurf`, `roo`, `openclaw`, `kimi`) or `all`. An unknown name aborts before anything is written. |
 | `--profile <name>`    | Pick the policy profile for this repo. Accepts `minimal` or `standard` (default). An invalid value aborts before any scaffold, `.forge/` write, or merge.  |
 | `--no-settings`       | Skip the global `~/.claude/settings.json` merge entirely — only the per-repo config is written.                                                            |
 | `--remove-settings`   | Reverse a past settings merge. Forge-shaped hooks, permissions, statusline, and the `_forge` marker are removed; a timestamped backup is written first, and your own entries are preserved. Also invoked by `install.sh --uninstall`. |

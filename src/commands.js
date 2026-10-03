@@ -17,7 +17,7 @@ export const COMMANDS = {
     flags: [
       {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",
@@ -157,8 +157,58 @@ export const COMMANDS = {
   },
   preflight: "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
-  route:
-    "recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes",
+  route: {
+    summary:
+      "recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes",
+    usage:
+      'forge route "<task>" [--mode conservative|unattended] [--read-only] [--allow-top] [--apply] [--provider <name>] [--json]   |   forge route gateway | calibrate | universal …',
+    flags: [
+      {
+        flag: "--mode <conservative|unattended>",
+        desc: "conservative (default) never raises the tier on a model's vote; unattended applies the vote raise, the writes-code and risk floors and the top-tier gate. Default from `route.mode` in the config (forge orchestration set route.mode …)",
+      },
+      {
+        flag: "--read-only",
+        desc: "unattended: the task only reads/explores, so it may stay on the cheapest tier (otherwise a code-writing task starts at mid)",
+      },
+      {
+        flag: "--allow-top",
+        desc: "unattended: allow the top tier — still only when the deterministic score reaches its cutoff, never from a vote (route.topTier: explicit)",
+      },
+      { flag: "--apply", desc: "write the recommended model into the active tool's settings" },
+      { flag: "--provider <name>", desc: "switch the active provider first" },
+      {
+        flag: "--json",
+        desc: "machine-readable: `key` is the generic tier key (haiku/sonnet/opus/fable); `policy` lists mode, steps, risk matches and the top-tier gate",
+      },
+    ],
+    examples: [
+      'forge route "fix a typo in the readme"',
+      'forge route "add a refund endpoint" --mode unattended --json',
+      'forge route "map the auth module" --mode unattended --read-only',
+      "forge route gateway",
+    ],
+  },
+  orchestration: {
+    summary:
+      "agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global",
+    usage:
+      "forge orchestration [list] [--json]   |   forge orchestration on|off <rule-id|all|pack> [--global]   |   forge orchestration set <key> <value> [--global]",
+    flags: [
+      {
+        flag: "--global",
+        desc: "write the user-level config (<state dir>/forge.config.json) instead of this repo's .forge/forge.config.json; the repo's value wins where both are set",
+      },
+      { flag: "--json", desc: "machine-readable state (list only)" },
+    ],
+    examples: [
+      "forge orchestration",
+      "forge orchestration off orch.parallel-cap",
+      "forge orchestration set parallelCap 3",
+      "forge orchestration set route.mode unattended --global",
+      "forge orchestration set route.topTier never",
+    ],
+  },
   impact: {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
@@ -305,6 +355,7 @@ export const GROUPS = {
     "scope",
     "context",
     "route",
+    "orchestration",
     "verify",
     "precommit",
   ],

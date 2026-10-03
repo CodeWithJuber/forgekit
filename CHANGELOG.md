@@ -6,6 +6,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent orchestration rule pack.** `forge sync` now emits an "Agent orchestration" section
+  (`source/orchestration.json`) into `AGENTS.md`, and so into every tool: no polling
+  (`orch.no-polling`), a parallel-agent cap (`orch.parallel-cap`, default 2), heavy suites in
+  CI (`orch.ci-heavy-checks`), fresh small sub-agents with short reports
+  (`orch.fresh-subagents`), models picked with `forge route` (`orch.route-models`), tests plus
+  lead review for money/auth/secrets/migrations/security changes (`orch.risk-review`), isolated
+  local e2e (`orch.isolated-env`) and a lean lead (`orch.lean-lead`). Built from one measured
+  multi-agent session where ~98% of ~857M tokens were context re-reads
+  ([docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)).
+- **`forge orchestration list | on | off | set`.** Switch each rule (or `all`, or the whole
+  `pack`) and the routing settings per repo (`.forge/forge.config.json`) or `--global` (a new
+  user-level `forge.config.json` in Forge's per-user state directory); the repo wins, key by
+  key. A switched-off rule leaves `AGENTS.md` on the next `forge sync`.
+- **`forge route --mode unattended`.** For agents nobody watches: a proposer vote at
+  p(premium) ≥ 0.9 raises to the premium tier and a mid-or-higher vote at p ≥ 0.5 to at least
+  mid; a code-writing task starts at mid (`--read-only` for exploration); money, auth, secrets,
+  migrations and security tasks never go below the premium tier (keyword lists overridable);
+  the top tier needs `--allow-top` and the deterministic score at its cutoff
+  (`route.topTier: never | explicit | auto`). `--json` adds a `policy` block with the generic
+  tier key and every step; metrics record the mode and step names, never task text. The
+  default `conservative` mode is unchanged.
+- **Kimi Code target.** `kimi` joins the tool list (`forge init --tools kimi`, detected from
+  `.kimi/`). Kimi Code reads `AGENTS.md` natively, merged from the project root to the working
+  directory, so Forge writes no Kimi-specific file.
+
 ## [1.9.1] - 2026-09-29
 
 ### Fixed

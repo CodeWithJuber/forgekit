@@ -12,10 +12,12 @@ import { choice, jevEnabled, systemOne } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
 import { printableLine } from "./model_catalog.js";
-import { describeResolution, MODELS, resolveTierModel } from "./model_tiers.js";
+import { describeResolution, MODELS, resolveTierModel, TIER_ORDER } from "./model_tiers.js";
+import { resolveRoutePolicy } from "./orchestration.js";
 import { preflightRepo, referencedEntities } from "./preflight.js";
 import { promotionGate } from "./promote.js";
 import { activeProvider, envModelOverride } from "./providers.js";
+import { applyRoutePolicy } from "./route_policy.js";
 import { clamp01, epochDay } from "./util.js";
 
 // ---------------------------------------------------------------------------
@@ -583,6 +585,11 @@ export function complexityJev(task, { llm, call } = {}) {
  * @param {number} [opts.minConfidence] p(band) a vote needs before it may move the tier
  * @param {number} [opts.signalFloor]
  * @param {number} [opts.ambiguity] precomputed information-gap (skips a duplicate preflight pass)
+ * @param {ReturnType<typeof resolveRoutePolicy>} [opts.policy] routing policy (default: resolved
+ *   from the user-level + repo config; see src/orchestration.js)
+ * @param {"conservative"|"unattended"} [opts.mode] overrides the policy's mode for this call
+ * @param {boolean} [opts.writesCode] unattended: the task writes code (default true)
+ * @param {boolean} [opts.allowTop] unattended: explicit opt-in to the top tier
  */
 export function routeTask(
   root,
@@ -597,6 +604,10 @@ export function routeTask(
     minConfidence = ROUTE_MIN_CONFIDENCE,
     signalFloor = 0.4,
     ambiguity,
+    policy,
+    mode,
+    writesCode = true,
+    allowTop = false,
   } = {},
 ) {
   const { symbols, files } = referencedEntities(task);
@@ -644,8 +655,39 @@ export function routeTask(
     strongSignal: rubric.strongTopicSignal,
     signalFloor,
   });
-  const { score, path } = verdict;
-  const recommended = recommend(score, norm);
+  const { score } = verdict;
+  let { path } = verdict;
+  let recommended = recommend(score, norm);
+  // Routing policy (src/route_policy.js). Conservative mode changes nothing, so the result below
+  // is exactly the router's historical output; unattended mode applies the vote raise, the
+  // writes-code and risk floors and the top-tier gate, and every step is reported.
+  const pol = policy ?? resolveRoutePolicy(root);
+  const effective = mode && mode !== pol.mode ? { ...pol, mode } : pol;
+  /** @type {ReturnType<typeof applyRoutePolicy>|null} */
+  let applied = null;
+  let escalateTo = verdict.escalateTo;
+  if (effective.mode === "unattended") {
+    applied = applyRoutePolicy({
+      key: recommended.key,
+      detTop: detScore >= TIER_CUTOFFS.opus,
+      vote: proposal ? { band: proposal.band, confidence: proposalConfidence(proposal) } : null,
+      task,
+      writesCode,
+      allowTop,
+      policy: effective,
+    });
+    if (applied.key !== recommended.key)
+      recommended = {
+        key: applied.key,
+        model: MODELS[applied.key],
+        tier: MODELS[applied.key].tier,
+        reasons: recommended.reasons,
+      };
+    if (applied.steps.some((s) => s.step === "vote-raise")) path = "llm-raised";
+    // The advisory escalation target only means something while it is above the routed tier.
+    if (escalateTo && TIER_ORDER.indexOf(escalateTo) <= TIER_ORDER.indexOf(applied.key))
+      escalateTo = undefined;
+  }
   const modelOvr = envModelOverride();
   return {
     score,
@@ -659,13 +701,16 @@ export function routeTask(
           direction: path.replace("llm-", ""),
           provider: proposal.provider ?? "text",
           ...(proposal.confidence != null ? { confidence: proposal.confidence } : {}),
-          ...(verdict.escalateTo ? { escalateTo: verdict.escalateTo } : {}),
+          ...(escalateTo ? { escalateTo } : {}),
           ...(verdict.overruledBy ? { overruledBy: verdict.overruledBy } : {}),
           ...(verdict.floored ? { floored: true } : {}),
         }
       : null,
-    provenance: { path },
+    provenance: applied
+      ? { path, mode: applied.mode, policy: applied.steps.map((s) => s.step) }
+      : { path },
     ...recommended,
+    ...(applied ? { policy: applied } : {}),
     modelOverride: modelOvr || undefined,
     reasons: [
       ...new Set([
@@ -674,10 +719,13 @@ export function routeTask(
         ...(path === "llm-lowered"
           ? [`model judged ${proposal.band} (lowered): ${proposal.reason}`]
           : []),
-        ...(path === "llm-raise-deferred"
+        ...(path === "llm-raise-deferred" && escalateTo
           ? [
-              `model judged ${proposal.band} — not applied; advisory only: ${verdict.escalateTo} is the target if a check on the output fails (nothing escalates automatically; \`forge diagnose --task\` uses it at the thrash threshold)`,
+              `model judged ${proposal.band} — not applied; advisory only: ${escalateTo} is the target if a check on the output fails (nothing escalates automatically; \`forge diagnose --task\` uses it at the thrash threshold)`,
             ]
+          : []),
+        ...(applied
+          ? applied.steps.map((s) => `${s.step}: ${s.from} → ${s.to} (${s.reason})`)
           : []),
       ]),
     ],
@@ -699,7 +747,8 @@ export function routeTask(
  * threshold — name that tier instead of guessing one. Nothing reads it before then.
  * @param {string} root
  * @param {string} task
- * @param {{tier?: string, llm?: {escalateTo?: string}|null}} rec the routeTask result
+ * @param {{tier?: string, llm?: {escalateTo?: string}|null,
+ *   provenance?: {mode?: string, policy?: string[]}}} rec the routeTask result
  */
 export function meterRoute(root, task, rec) {
   try {
@@ -707,6 +756,9 @@ export function meterRoute(root, task, rec) {
       tier: rec?.tier,
       ref: routeRef(task),
       ...(rec?.llm?.escalateTo ? { escalateTo: rec.llm.escalateTo } : {}),
+      ...(rec?.provenance?.mode
+        ? { mode: rec.provenance.mode, policy: rec.provenance.policy ?? [] }
+        : {}),
     });
   } catch {}
 }

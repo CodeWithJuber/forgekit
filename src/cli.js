@@ -10,6 +10,7 @@ import budgetHandlers from "./cli/budget.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
 import memoryHandlers from "./cli/memory.js";
+import orchestrationHandlers from "./cli/orchestration.js";
 import routingHandlers from "./cli/routing.js";
 import { bar, heading, paint, table } from "./cli/shared.js";
 import verificationHandlers from "./cli/verification.js";
@@ -66,6 +67,7 @@ const HANDLERS = {
   ...verificationHandlers,
   ...routingHandlers,
   ...budgetHandlers,
+  ...orchestrationHandlers,
 };
 
 async function run(argv) {

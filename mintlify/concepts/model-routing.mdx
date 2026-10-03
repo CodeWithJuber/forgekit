@@ -28,6 +28,34 @@ under an overlap-similarity metric with a confidence gate — not a keyword look
   genuinely needs it.
 </Note>
 
+## Unattended agents — `--mode unattended`
+
+The default mode is **conservative**: a model's vote for a higher tier is reported, never
+applied, because a person can retry on a stronger tier after a check fails. An agent nobody
+watches has no cheap retry loop, so `forge route "<task>" --mode unattended` (or
+`route.mode: "unattended"` via `forge orchestration set`) adds four steps:
+
+<Steps>
+  <Step title="Vote raise">
+    A proposer's `premium` vote at p ≥ 0.9 raises to the premium tier; a `mid`-or-higher vote
+    at p ≥ 0.5 raises to at least mid. A vote with no probability never raises.
+  </Step>
+  <Step title="Writes-code floor">
+    A task that writes code starts at mid. `--read-only` lets exploration stay cheap.
+  </Step>
+  <Step title="Risk floor">
+    Money, auth, secrets, migrations or security in the task: never below the premium tier.
+  </Step>
+  <Step title="Top-tier gate">
+    `route.topTier: explicit` (default) allows the top tier only with `--allow-top` and the
+    deterministic score at its cutoff; `never` and `auto` are the other settings. Votes and
+    floors stop one tier below it.
+  </Step>
+</Steps>
+
+`--json` reports the generic tier key (`key`: haiku / sonnet / opus / fable) and every step
+under `policy.steps`. Details: [Agent orchestration](/guides/agent-orchestration).
+
 ## Optional typed proposer — TypeSafe Jev
 
 The rubric is the judge; an optional **proposer** layer can refine it. With `FORGE_LLM=1`
