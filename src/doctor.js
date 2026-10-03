@@ -15,6 +15,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { NO_BASH_HINT, resolveBash } from "../global/guards/run.mjs";
+import { resolveAdvisor } from "./advisor.js";
 import { isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
@@ -726,6 +727,41 @@ function checkProvider(out, targetRoot) {
   }
 }
 
+// Claude Code's advisor tool (src/advisor.js): say which model advises which, from the repo's
+// config and Claude Code's own settings, and whether the pairing or an environment variable
+// stops it from ever being attached — the two silent ways a configured advisor does nothing.
+// Report-only: a pairing is the user's choice, never auto-repaired.
+function checkAdvisor(out, targetRoot, settingsPath) {
+  let s;
+  try {
+    s = resolveAdvisor(targetRoot, { settingsPath });
+  } catch {
+    return;
+  }
+  if (!s.model) {
+    out.push(
+      na(
+        "advisor",
+        s.forgeConfigured
+          ? `off (${s.source} config)`
+          : `not configured — \`${BRAND.cli} advisor set opus\` pairs a stronger model for decision points`,
+      ),
+    );
+    return;
+  }
+  const where = `${s.model} (${s.source})`;
+  if (s.disabled) {
+    out.push(warn("advisor", `${where} — ${s.disabled.reason}`));
+    return;
+  }
+  const p = s.pairing;
+  if (!p) return;
+  if (p.ok === true) out.push(ok("advisor", `${where} — ${p.reason}`));
+  else if (p.ok === false)
+    out.push(warn("advisor", `${where} — ${p.reason}; see \`${BRAND.cli} advisor pairings\``));
+  else out.push(ok("advisor", `${where} — ${p.reason}`));
+}
+
 // Custom-gateway model mapping: stock Anthropic ids can 404 on a self-hosted gateway that
 // serves its own names. Surface the tier→gateway-model remap so the user can VERIFY it (and
 // pin explicit ids if a family scored wrong). Only speaks for a non-default gateway base URL —
@@ -836,6 +872,7 @@ function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   checkSettings(results, settingsPath, targetRoot);
   checkProvider(results, targetRoot);
   checkGateway(results);
+  checkAdvisor(results, targetRoot, settingsPath);
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);

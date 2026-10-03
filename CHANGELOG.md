@@ -6,6 +6,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge advisor` — Claude Code's advisor tool, configured once and pairing-checked.** The
+  advisor is a second, typically stronger model the main model consults at decision points
+  (before committing to an approach, when an error keeps recurring, before declaring done); Claude
+  Code enables it through the `advisorModel` settings key and accepts it only when it ranks at or
+  above the session's main model. `forge advisor set <model|off> [--global]` stores the choice in
+  `.forge/forge.config.json` (or the user-level `forge.config.json`); `forge sync` emits it as
+  `advisorModel` into the repo's `.claude/settings.json` (every other key preserved, removed again
+  on `off`) and appends an **Advisor** section to `AGENTS.md` — when to consult it, when not to,
+  and that the evidence outranks its guidance, six rules with stable ids
+  (`advisor.before-approach`, `advisor.recurring-error`, `advisor.before-done`, `advisor.risk`,
+  `advisor.evidence-wins`, `advisor.not-for-trivia`; `forge advisor rule on|off`). `--global`
+  writes `~/.claude/settings.json` directly, the file `/advisor` saves to, with the same GLOBAL
+  disclosure `forge init` gives. `forge advisor status | pairings [<main>] | check <main> <advisor>`
+  answer the pairing before a session starts (`check` exits 1 when Claude Code would refuse it);
+  Haiku and pre-advisor models are refused at `set`, a model newer than the table is accepted with
+  a note. The ranking ships as data in `source/advisor.json` with the date it was verified against
+  the docs.
+- **The advisor at the moments the docs name.** The prompt-time substrate advisory adds one line
+  when an advisor is configured and the prompt is a decision point (under-specified, premium-tier,
+  or a money/auth/secrets/migrations/security task); the doom-loop advisory names the advisor when
+  the same failure recurs; `forge doctor` gains an `advisor` row that reports the pairing and warns
+  when `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, `DISABLE_TELEMETRY` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` keeps the advisor off whatever is configured.
+
 ## [1.10.0] - 2026-10-03
 
 ### Added

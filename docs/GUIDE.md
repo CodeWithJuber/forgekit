@@ -29,7 +29,7 @@ Every command is real and wired. Grouped by what it does:
 | Group                   | Commands                                                                                                                                                                                             |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core**                | `forge init` · `forge sync` · `forge doctor` · `forge tools` · `forge catalog` · `forge docs` · `forge update` · `forge config`                                                                      |
-| **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge verify` · `forge precommit`                                |
+| **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge advisor` · `forge verify` · `forge precommit`              |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                         |
 | **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                |
@@ -282,6 +282,59 @@ $ forge sync                                  # switched-off rules leave AGENTS.
 The project file wins over the global one, key by key. The minimal profile leaves the pack out
 unless `orchestration.enabled` is set to `true`. Rules, defaults, evidence and the Kimi Code
 finding: [docs/ORCHESTRATION.md](ORCHESTRATION.md).
+
+### `forge advisor` — a stronger second model at decision points
+
+Claude Code's [advisor tool](https://code.claude.com/docs/en/advisor) pairs the session's main
+model with a second, typically stronger model it consults at decision points — before committing
+to an approach, when an error keeps recurring, before declaring a task done. The advisor receives
+the whole conversation on every call and is billed at its own rate (its read is never cached), and
+Claude Code accepts an advisor only when it ranks at or above the main model: Haiku can call it
+but never act as one, a Sonnet 4.5 or Opus 4.5 main model does not support it at all, and a Fable
+main model takes only a Fable advisor. Claude Code's own `/advisor` saves a personal pick to
+`~/.claude/settings.json`; `forge advisor` makes the choice part of the repo's config, emits it,
+and checks the pairing first.
+
+```console
+$ forge advisor                              # advisor, main model, pairing verdict, the rule set and which layer set each
+$ forge advisor set opus                     # this repo: .forge/forge.config.json, then sync → .claude/settings.json + AGENTS.md
+$ forge advisor set fable --global           # every repo: the user-level forge.config.json → ~/.claude/settings.json
+$ forge advisor check sonnet opus            # ok | refused (exit 1) | unverified — for scripts and CI
+$ forge advisor pairings [claude-opus-4-8]   # the accepted-advisors table, or the row for one main model
+$ forge advisor rule off advisor.before-done # switch one rule of the Advisor section (or all)
+$ forge advisor off                          # advisorModel removed on the next sync; `reset` drops Forge's choice instead
+```
+
+What `forge sync` emits once an advisor is set: `advisorModel` in the repo's `.claude/settings.json`
+(every other key preserved; removed again on `off`), and an **Advisor** section in `AGENTS.md` —
+so every tool that reads it knows when to consult the advisor, when not to, and that the files
+and a failed step outrank its guidance. Each rule carries a stable id:
+
+| Id                        | Default | What it asks                                                                                      |
+| ------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `advisor.before-approach` | on      | Consult the advisor before committing to an approach on a multi-step task.                        |
+| `advisor.recurring-error` | on      | The same error after two attempts: stop and consult before trying again.                          |
+| `advisor.before-done`     | on      | Before declaring done, an independent check of the result against the request.                   |
+| `advisor.risk`            | on      | Consult before changing money, auth, secrets, migration or security code.                         |
+| `advisor.evidence-wins`   | on      | Guidance that contradicts the files or a failed step: surface the conflict, don't follow blindly. |
+| `advisor.not-for-trivia`  | on      | No consultation on short, well-specified tasks — every call re-reads the whole conversation.      |
+
+Precedence for the advisor: the repo's `.forge/forge.config.json` > the user-level
+`forge.config.json` > Claude Code's own `.claude/settings.local.json` > `.claude/settings.json` >
+`~/.claude/settings.json`. Only a Forge config layer emits the section, so a personal `/advisor`
+pick never reaches the shared `AGENTS.md`; a global Forge choice does (and lands in the user
+settings file, never in the committed project one). The main model the pairing is checked against
+is `ANTHROPIC_MODEL`, else Claude Code's settings, else the account default — then the verdict is
+"unverified" and Claude Code checks it at launch, as it does for any model newer than Forge's
+table (`source/advisor.json`, which records the date it was verified against the docs).
+
+Three more places the advisor shows up, all advisory: the prompt-time substrate advisory adds
+one line when an advisor is configured and the prompt is a decision point (under-specified, a
+premium-tier route, or a money/auth/secrets/migrations/security task); the doom-loop advisory
+names the advisor when the same failure recurs; `forge doctor` has an `advisor` row that reports
+the pairing and warns when `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` or a variable that turns
+Claude Code's feature-flag fetching off (`DISABLE_TELEMETRY`,
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) keeps it off whatever is configured.
 
 ### `forge models` — what each tier resolves to
 
@@ -2153,6 +2206,9 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_STOPGATE`                                               | `0` disables the Stop completion gate (code-without-docs block)                                                                                                                                                                         |
 | `FORGE_SESSION_ID`                                             | the agent session a CLI/MCP call belongs to; `forge anchor`/`forge lean`/`forge substrate` then measure only that session's changes (see `CLAUDE_CODE_SESSION_ID`)                                                                       |
 | `CLAUDE_CODE_SESSION_ID`                                       | Claude Code's session id, exported to its tools — the fallback when `FORGE_SESSION_ID` is unset                                                                                                                                          |
+| `CLAUDE_CODE_DISABLE_ADVISOR_TOOL`                             | Claude Code's kill switch for the advisor tool: `1` makes it ignore any `advisorModel`; `forge advisor` and `forge doctor` report it                                                                                                     |
+| `DISABLE_TELEMETRY` / `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | Claude Code variables that turn its feature-flag fetching off; the advisor needs it, so `forge advisor`/`forge doctor` report the advisor as off while either is set                                                                   |
+| `ANTHROPIC_DEFAULT_MODEL`                                      | Claude Code's last-resort main model (used only when nothing else selects one) — the main model `forge advisor` checks the pairing against when no settings file sets `model`                                                            |
 | `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                                                                                              |
 | `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                                                                                                           |
 | `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                                                                                                          |

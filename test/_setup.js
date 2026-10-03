@@ -29,7 +29,9 @@ const SCRUB =
 // Not prefix-matchable. FORCE_COLOR is the dangerous one: it OUTRANKS NO_COLOR in
 // src/fmt.js supportsColor(), so an exported FORCE_COLOR=1 defeats the explicit NO_COLOR=1
 // that test/radar.test.js passes to its spawned CLI.
-const SCRUB_EXACT = ["CLAUDECODE", "FORCE_COLOR", "NO_COLOR", "COLORTERM"];
+// DISABLE_TELEMETRY is Claude Code's, not prefix-matchable: src/advisor.js reads it as one of
+// the variables that keep the advisor tool off, so a developer's export must not reach a test.
+const SCRUB_EXACT = ["CLAUDECODE", "FORCE_COLOR", "NO_COLOR", "COLORTERM", "DISABLE_TELEMETRY"];
 
 for (const key of Object.keys(process.env)) if (SCRUB.test(key)) delete process.env[key];
 for (const key of SCRUB_EXACT) delete process.env[key];

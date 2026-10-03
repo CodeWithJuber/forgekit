@@ -258,13 +258,17 @@ export function detectDoomLoop(events, { threshold = 3 } = {}) {
 export function doomLoopAdvisory(events, opts = {}) {
   const r = detectDoomLoop(events, opts);
   if (!r.loop) return "";
+  // A configured advisor (Claude Code's advisor tool) is exactly for this moment; the caller
+  // passes the hint so this stays pure over the events.
+  const hint =
+    typeof opts.advisorHint === "string" && opts.advisorHint ? ` ${opts.advisorHint}` : "";
   const where = r.files.length ? ` around ${r.files.slice(0, 5).join(", ")}` : "";
   // Only claim edits were made when some were: with nothing edited between the runs, the
   // honest advice is "re-running is not a fix", not "different edits aren't fixing it".
   const what = r.files.length
     ? "Different edits aren't fixing it."
     : "Nothing was edited between the runs — re-running without changing anything cannot fix it.";
-  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. ${what} Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.`;
+  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. ${what} Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.${hint}`;
 }
 
 /** Drive the orchestrator from a session's events (called by the Stop hook). */

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 // forge — zero-dependency dispatcher. Works identically whether installed via the
 // npm bin, the hardened install.sh symlink, or the Claude Code plugin.
 import { BRAND } from "./brand.js";
+import advisorHandlers from "./cli/advisor.js";
 import budgetHandlers from "./cli/budget.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
@@ -68,6 +69,7 @@ const HANDLERS = {
   ...routingHandlers,
   ...budgetHandlers,
   ...orchestrationHandlers,
+  ...advisorHandlers,
 };
 
 async function run(argv) {
