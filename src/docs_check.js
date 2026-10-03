@@ -60,6 +60,13 @@ export function envVarsRead(root = BRAND.root) {
     const text = readFileSync(file, "utf8");
     for (const m of text.matchAll(/process\.env\.([A-Z_][A-Z0-9_]*)/g)) vars.add(m[1]);
     for (const m of text.matchAll(/process\.env\[["']([A-Z_][A-Z0-9_]*)["']\]/g)) vars.add(m[1]);
+    // An injected environment (`env = process.env` parameters, as in model_catalog.js and
+    // advisor.js) is the same contract — the same prefix rule as the guards below, so a
+    // function's own `env.PATH` never counts as forge surface.
+    for (const m of text.matchAll(
+      /\benv\.((?:FORGE|ANTHROPIC|LITELLM|OPENROUTER|ENABLE_CORTEX|TYPESAFE|CLAUDE)_[A-Z0-9_]*)/g,
+    ))
+      vars.add(m[1]);
   }
   const guards = join(root, "global", "guards");
   if (existsSync(guards)) {

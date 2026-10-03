@@ -72,7 +72,8 @@
                   "guides/zero-config-onboarding",
                   "guides/team-memory",
                   "guides/radar-deps",
-                  "guides/agent-orchestration"
+                  "guides/agent-orchestration",
+                  "guides/advisor"
                 ]
               }
             ]

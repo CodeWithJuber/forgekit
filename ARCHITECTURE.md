@@ -312,6 +312,20 @@ orchestration rule pack (`source/orchestration.json`), which `sync` appends to t
 rules; both read defaults < the user-level `forge.config.json` (in the per-user state dir) <
 the repo's `.forge/forge.config.json`. Rationale and evidence: [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md).
 
+**Advisor pairing (`src/advisor.js`, `source/advisor.json`).** Claude Code's advisor tool is a
+settings key (`advisorModel`) with a capability ranking behind it: an advisor must rank at or above
+the session's main model, Haiku never advises, and two environment variables keep it off whatever
+is set. Forge holds the ranking as data (every row the docs name, with the date it was verified)
+and three pure functions over it — `parseModel` (family and version from any id spelling, aliases
+resolved to the family's newest row), `checkPairing` (ok / refused / unverified, with the reason)
+and `acceptedAdvisors`. `resolveAdvisor` reads Forge's config layers over Claude Code's own
+settings files; `sync` emits the choice as `advisorModel` into the repo's `.claude/settings.json`
+(`src/emit/claude_settings.js`, the one key Forge owns there) and an "Advisor" rule section into
+`AGENTS.md`; `forge advisor set --global` writes the user settings file directly, the file
+`/advisor` itself saves to. The prompt-time advisory, the doom-loop advisory and `forge doctor`
+read the same resolution, so one configured advisor is named at exactly the moments the docs
+say to consult it.
+
 **Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
 model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
 confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
@@ -571,6 +585,7 @@ forgekit/
     doctor.js             # health checks
     emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi) + mcp
     orchestration.js      # orchestration rule pack + routing policy config: defaults < user-level < repo config, on/off per rule
+    advisor.js            # Claude Code advisor tool: pairing table (data) + check, config resolution over Claude settings, the Advisor section, hook nudges
     route_policy.js       # unattended routing policy (pure): vote raise, writes-code floor, risk floor, top-tier gate
     ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify, local usage log
@@ -595,6 +610,7 @@ forgekit/
     rules.json            # THE canonical rules source (git · testing · security · style)
     substrate.json        # cognitive-substrate defaults (thresholds, routing, llm knobs)
     orchestration.json    # agent-orchestration rule pack (ids, text, rationale, defaults) + unattended routing defaults
+    advisor.json          # advisor rule pack (ids, text, rationale) + the main/advisor pairing ranking, verified against the Claude Code docs
     mcp.json              # MCP server definitions emitted into each tool
   global/                 # installs into ~/.forge, symlinked into ~/.claude
     tools/ crew/ guards/ rules/ recall/ taste/ statusline.sh settings.template.json
@@ -654,8 +670,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>141 files"]
-  src["src<br/>127 files"]
+  test["test<br/>142 files"]
+  src["src<br/>130 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>10 files"]
@@ -663,7 +679,7 @@ flowchart LR
   global["global<br/>5 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 304 --> src
+  test -- 309 --> src
   bench -- 12 --> src
   scripts -- 5 --> src
   examples -- 4 --> src

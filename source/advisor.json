@@ -1,0 +1,136 @@
+{
+  "id": "advisor",
+  "title": "Advisor",
+  "intro": "A second, stronger model the main model consults at decision points. Each rule has a stable id; turn one off with `forge advisor rule off <id>` (per repo, or --global), then `forge sync`.",
+  "rules": [
+    {
+      "id": "advisor.before-approach",
+      "default": true,
+      "text": "Before committing to an approach on a multi-step task, consult the advisor and apply its guidance before editing.",
+      "rationale": "Plan quality decides the outcome of a long task while most of its turns are routine. One consultation before the first edit is cheaper than a wrong plan carried through every later turn."
+    },
+    {
+      "id": "advisor.recurring-error",
+      "default": true,
+      "text": "When the same error recurs after two attempts, stop and consult the advisor before trying again.",
+      "rationale": "A recurring failure means the diagnosis is wrong, not the patch. A fresh read of the whole transcript by a stronger model finds the cause; a third patch on the same diagnosis rarely does."
+    },
+    {
+      "id": "advisor.before-done",
+      "default": true,
+      "text": "Before declaring a task complete, consult the advisor for an independent check of the result against the request.",
+      "rationale": "The model that did the work is the worst judge of what it missed. An independent reviewer that sees the full conversation catches the dropped requirement and the untested path."
+    },
+    {
+      "id": "advisor.risk",
+      "default": true,
+      "text": "Consult the advisor before changing code that handles money, auth, secrets, migrations or security.",
+      "rationale": "Mistakes there are expensive and often silent in tests. A second opinion at the decision point costs one advisor call; a double-charge race or an auth bypass costs far more."
+    },
+    {
+      "id": "advisor.evidence-wins",
+      "default": true,
+      "text": "When the advisor's guidance contradicts what the files or a failed step show, surface the conflict instead of following the guidance blindly.",
+      "rationale": "The advisor reads the transcript, not the repository. Where its claim and the evidence disagree, the evidence is the fact and the disagreement is the finding to report."
+    },
+    {
+      "id": "advisor.not-for-trivia",
+      "default": true,
+      "text": "Do not consult the advisor on short, well-specified tasks: every call re-reads the whole conversation at the advisor's rate and its own read is never cached.",
+      "rationale": "The advisor adds little on a task with nothing to plan, and its full-transcript read is billed on every call. The three moments above are where it pays for itself."
+    }
+  ],
+  "ranking": {
+    "verified": "2026-10-03",
+    "source": "https://code.claude.com/docs/en/advisor#choose-an-advisor-model",
+    "note": "Claude Code ranks models by capability for the advisor role; an advisor must rank at or above the session's main model. Rows are the models the pairing table names, lowest rank first; the Mythos rows mirror the API's compatibility table (Mythos and Fable of one version rank equal). A family alias (sonnet, opus, fable) stands for that family's newest row. Haiku can call the advisor but never act as one.",
+    "rows": [
+      {
+        "family": "haiku",
+        "version": "4.5",
+        "rank": 0,
+        "label": "Haiku 4.5",
+        "advises": false
+      },
+      {
+        "family": "sonnet",
+        "version": "4.6",
+        "rank": 1,
+        "label": "Sonnet 4.6"
+      },
+      {
+        "family": "opus",
+        "version": "4.6",
+        "rank": 2,
+        "label": "Opus 4.6"
+      },
+      {
+        "family": "sonnet",
+        "version": "5",
+        "rank": 3,
+        "label": "Sonnet 5"
+      },
+      {
+        "family": "opus",
+        "version": "4.7",
+        "rank": 4,
+        "label": "Opus 4.7"
+      },
+      {
+        "family": "opus",
+        "version": "4.8",
+        "rank": 4,
+        "label": "Opus 4.8"
+      },
+      {
+        "family": "sonnet",
+        "version": "5.5",
+        "rank": 5,
+        "label": "Sonnet 5.5"
+      },
+      {
+        "family": "opus",
+        "version": "5",
+        "rank": 6,
+        "label": "Opus 5"
+      },
+      {
+        "family": "opus",
+        "version": "5.5",
+        "rank": 6,
+        "label": "Opus 5.5"
+      },
+      {
+        "family": "fable",
+        "version": "5",
+        "rank": 7,
+        "label": "Fable 5"
+      },
+      {
+        "family": "fable",
+        "version": "5.1",
+        "rank": 8,
+        "label": "Fable 5.1"
+      },
+      {
+        "family": "mythos",
+        "version": "5",
+        "rank": 7,
+        "label": "Mythos 5"
+      },
+      {
+        "family": "mythos",
+        "version": "5.1",
+        "rank": 8,
+        "label": "Mythos 5.1"
+      }
+    ],
+    "suggest": {
+      "haiku": "opus",
+      "sonnet": "opus",
+      "opus": "opus",
+      "fable": "fable",
+      "mythos": "mythos"
+    }
+  }
+}

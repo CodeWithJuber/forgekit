@@ -57,6 +57,25 @@ forge orchestration on|off <rule-id|all|pack> [--global]
 forge orchestration set <key> <value> [--global]   # parallelCap, route.mode, route.topTier, …
 ```
 
+## `forge advisor`
+
+Claude Code's [advisor tool](https://code.claude.com/docs/en/advisor): a stronger second model the
+main model consults at decision points. Set it once per repo or globally, emit it into Claude
+Code's settings and an **Advisor** section in `AGENTS.md`, and check the main/advisor pairing
+before Claude Code has to refuse it.
+
+```bash
+forge advisor [status] [--json]
+forge advisor set <model|off> [--global]        # sonnet | opus | fable | a full id such as claude-opus-5-5
+forge advisor off | reset [--global]
+forge advisor rule on|off <rule-id|all> [--global]
+forge advisor pairings [<main-model>] [--json]
+forge advisor check <main-model> <advisor-model>  # exit 1 when the pairing would be refused
+```
+
+See [Advisor pairing](/guides/advisor) for the pairing table, what is emitted where, and the
+environment variables that keep the advisor off.
+
 ## `forge impact`
 
 Hazard-aware blast radius — SCC-aware propagation and data-driven threshold from

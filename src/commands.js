@@ -209,6 +209,33 @@ export const COMMANDS = {
       "forge orchestration set route.topTier never",
     ],
   },
+  advisor: {
+    summary:
+      "Claude Code's advisor tool — a stronger second model consulted at decision points: set the advisor per repo (emitted into .claude/settings.json by sync, with an Advisor rule section in AGENTS.md) or --global, check a main/advisor pairing before Claude Code refuses it, list accepted pairings",
+    usage:
+      "forge advisor [status] [--json]   |   forge advisor set <model|off> [--global]   |   forge advisor off | reset [--global]   |   forge advisor rule on|off <rule-id|all> [--global]   |   forge advisor pairings [<main-model>]   |   forge advisor check <main-model> <advisor-model>",
+    flags: [
+      {
+        flag: "--global",
+        desc: "write the user-level config and ~/.claude/settings.json (what Claude Code's /advisor saves to) instead of this repo's .forge/forge.config.json and .claude/settings.json; the repo's value wins where both are set",
+      },
+      { flag: "--json", desc: "machine-readable state (status, pairings, check)" },
+    ],
+    env: [
+      "CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1  Claude Code ignores any advisorModel; status and doctor say so",
+      "DISABLE_TELEMETRY / CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC  turn feature-flag fetching off, which keeps the advisor off",
+      "ANTHROPIC_MODEL  the main model the pairing is checked against (else Claude Code's settings, else the account default)",
+    ],
+    examples: [
+      "forge advisor",
+      "forge advisor set opus",
+      "forge advisor set fable --global",
+      "forge advisor check sonnet opus",
+      "forge advisor pairings claude-opus-4-8",
+      "forge advisor rule off advisor.before-done",
+      "forge advisor off",
+    ],
+  },
   impact: {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
@@ -356,6 +383,7 @@ export const GROUPS = {
     "context",
     "route",
     "orchestration",
+    "advisor",
     "verify",
     "precommit",
   ],

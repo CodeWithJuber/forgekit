@@ -2,12 +2,14 @@
 // optional per-repo .forge/rules.json) into every tool's native config target.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { advisorSection } from "./advisor.js";
 import { brainBlock } from "./brain.js";
 import { BRAND } from "./brand.js";
 import { cortexBlock } from "./cortex.js";
 import * as shared from "./emit/_shared.js";
 import aider from "./emit/aider.js";
 import claude from "./emit/claude.js";
+import claudeSettings from "./emit/claude_settings.js";
 import codex from "./emit/codex.js";
 import continueTool from "./emit/continue.js";
 import copilot from "./emit/copilot.js";
@@ -36,6 +38,7 @@ const MODULES = [
   windsurf,
   zed,
   claude,
+  claudeSettings,
   gemini,
   aider,
   continueTool,
@@ -130,7 +133,8 @@ function readLegacyRules(targetRoot) {
  *      which warn once per process) behaves as `standard`, the full source pack (RA-14).
  *   2. disableSections — drop sections by id or title.
  *   3. orchestration — the agent-orchestration pack, rule by rule as configured (orchestration.js).
- *   4. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
+ *   4. advisor — the "Advisor" section, only when Forge's config names an advisor (advisor.js).
+ *   5. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
  */
 function loadRules(targetRoot) {
   const cfg = loadConfig(targetRoot);
@@ -160,6 +164,14 @@ function loadRules(targetRoot) {
     Array.isArray(cfg.disableSections) &&
     (cfg.disableSections.includes(orch?.id) || cfg.disableSections.includes(orch?.title));
   if (orch && !dropped) base.sections = [...(base.sections || []), orch];
+  // The advisor section (source/advisor.json): present only when a Forge config layer names an
+  // advisor model, so a personal `/advisor` pick never reaches the shared file. Same
+  // `disableSections` escape hatch as every other section.
+  const adv = advisorSection(targetRoot, { global: readUserConfig(), project: cfg });
+  const advDropped =
+    Array.isArray(cfg.disableSections) &&
+    (cfg.disableSections.includes(adv?.id) || cfg.disableSections.includes(adv?.title));
+  if (adv && !advDropped) base.sections = [...(base.sections || []), adv];
   const legacy = readLegacyRules(targetRoot);
   if (legacy.sections.length) base.sections = [...(base.sections || []), ...legacy.sections];
   if (Array.isArray(cfg.rules) && cfg.rules.length) {
@@ -340,6 +352,7 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
 
   const ctx = {
     targetRoot,
+    config: cfg,
     canonical,
     hash,
     bytes: agentsBytes,
@@ -359,7 +372,9 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
   for (const mod of MODULES) {
     if (!emits(rowToolKey(mod.tool))) continue;
     try {
-      report.push(mod.emit(ctx));
+      // An emitter with nothing to say for this repo returns null (no row), not a no-op row.
+      const row = mod.emit(ctx);
+      if (row) report.push(row);
     } catch (err) {
       report.push({
         tool: mod.tool,

@@ -157,7 +157,12 @@ async function main() {
   } else if (mode === "pre-edit") {
     // A doom loop (the same failure recurring) is the loudest thing to say — it means "stop",
     // so it takes precedence over lesson/risk advice.
-    const loop = doomLoopAdvisory(readSession(root, sid));
+    let advisorHint = "";
+    try {
+      const { doomLoopAdvisorHint } = await import("./advisor.js");
+      advisorHint = doomLoopAdvisorHint(root);
+    } catch {}
+    const loop = doomLoopAdvisory(readSession(root, sid), { advisorHint });
     const advice = loop || (await preEditAdvisory(root, hook.tool_input, today));
     const docs = await staleDocsAdvisory(root, hook.tool_input?.file_path);
     const currency = await currencyAdvisory(root, hook.tool_input?.file_path);
@@ -248,7 +253,23 @@ async function main() {
         const { dejaAdvisory } = await import("./deja.js");
         deja = dejaAdvisory(root, hook.prompt, today);
       } catch {}
-      const combined = [advisory, card, deja].filter(Boolean).join("\n\n");
+      // Advisor nudge (Claude Code's advisor tool): one line, only when an advisor is configured
+      // and this prompt is a decision point — under-specified, premium-tier, or a risk area.
+      let advisorLine = "";
+      try {
+        const { advisorNudge } = await import("./advisor.js");
+        const { resolveRoutePolicy } = await import("./orchestration.js");
+        const { riskMatches } = await import("./route_policy.js");
+        const risk = riskMatches(hook.prompt, resolveRoutePolicy(root).riskCategories).length > 0;
+        advisorLine = advisorNudge(root, { ...result, risk });
+      } catch {}
+      const combined = [
+        advisory ? [advisory, advisorLine].filter(Boolean).join("\n") : advisorLine,
+        card,
+        deja,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       if (combined) emit("UserPromptSubmit", combined);
     }
   }
