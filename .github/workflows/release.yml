@@ -1,60 +1,101 @@
-# Runs on a v* tag push, or via workflow_dispatch ON A TAG REF (bump.yml uses the
-# dispatch path because pushes made with the default GITHUB_TOKEN never trigger
-# other workflows). Flow: test -> assert tag == package.json version -> publish to
-# public npm (with provenance) -> cut a GitHub Release.
-#
-# npm publish is SKIPPED with a warning — not failed — when the NPM_TOKEN secret is
-# missing, so the GitHub Release is still created. Add an npm "Automation" token as
-# the NPM_TOKEN repo secret to enable publishing. See docs/RELEASING.md.
+# Tag pushes and bump.yml dispatches release the tagged commit. A manual dispatch
+# on master with release_tag can recover an existing tag using the latest workflow.
+# npm uses OIDC trusted publishing, with an optional granular NPM_TOKEN fallback.
+# See docs/RELEASING.md for the npm-side trust setup; never store an OTP in CI.
 name: Release
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch: # dispatched by bump.yml with --ref vX.Y.Z; must target a tag
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing v* tag to recover using this workflow (run on master)"
+        required: false
+        type: string
+        default: ""
 
-# A tag can arrive twice for the same version — the push (tags: v*) AND bump.yml's
-# explicit `gh workflow run release.yml --ref vX.Y.Z` dispatch. Serialize per-ref so
-# the two never race a double publish; the loser queues (never cancels a mid-publish).
+# Recovery and ordinary tag runs share the same lock, avoiding a double publish.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # Publish only after the FULL quality gate passes — not just `npm test` (P0-11).
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.target.outputs.tag }}
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Resolve the release tag
+        id: target
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          TAG="$REQUESTED_TAG"
+          if [ -n "$TAG" ]; then
+            if [ "$EVENT_NAME" != "workflow_dispatch" ] || [ "$REF_TYPE" != "branch" ] || [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+              echo "::error::Recovery must run on $DEFAULT_BRANCH with release_tag set to an existing v* tag."
+              exit 1
+            fi
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+          else
+            echo "::error::Release must target a v* tag, or run on $DEFAULT_BRANCH with release_tag set."
+            exit 1
+          fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::Invalid release tag: $TAG"; exit 1 ;;
+          esac
+          git check-ref-format "refs/tags/$TAG"
+          SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  # Recovery validates the tagged source, not the branch holding the fixed workflow.
   gate:
+    needs: resolve
     uses: ./.github/workflows/reusable-quality-gate.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
 
   release:
-    needs: gate
+    needs: [resolve, gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release
-      id-token: write # npm provenance (supply-chain attestation)
+      id-token: write # npm trusted publishing and provenance
     env:
-      # secrets are not directly usable in step `if:`, so surface presence here.
-      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
+      TAG: ${{ needs.resolve.outputs.tag }}
     steps:
-      - name: Assert this run targets a v* tag
-        if: github.ref_type != 'tag'
-        run: |
-          echo "::error::Release must run on a v* tag ref (got '${{ github.ref }}'). Use the 'Bump version' workflow to cut one."
-          exit 1
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # full history so release notes can diff from the last tag
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0 # release notes can diff from the last tag
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: "22.23.3"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
+          package-manager-cache: false
+      # Node 22 bundles npm 10, which cannot exchange GitHub OIDC credentials.
+      # Pin the publishing CLI independently; npm 12.2.0 requires Node >=22.22.2.
+      - name: Install npm with trusted publishing support
+        run: |
+          npm install --global npm@12.2.0 --registry=https://registry.npmjs.org
+          npm --version
       - run: npm ci
       - name: Assert tag matches package.json version
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
           PKG="v$(node -p "require('./package.json').version")"
           if [ "$TAG" != "$PKG" ]; then
@@ -62,31 +103,36 @@ jobs:
             exit 1
           fi
       - name: Publish to npm (with provenance)
-        if: env.HAS_NPM_TOKEN == 'true'
         env:
+          # npm tries OIDC first; this is only a fallback when trust is unavailable.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        # Idempotent: skip when the version is already on the registry, so re-running a
-        # wedged release (or the serialized second tag event) never dies on "cannot
-        # publish over the previously published version".
+          RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           PKG=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
-          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+          if npm view "$PKG@$VER" version --prefer-online >/dev/null 2>&1; then
             echo "::notice::$PKG@$VER is already on npm — skipping publish (idempotent re-run)."
           else
-            npm publish --provenance --access public
+            set +e
+            # npm provenance reads source SHA/ref from the process environment.
+            # Recovery checks out a tag while the workflow itself runs on master.
+            # Keep GITHUB_WORKFLOW_REF intact so the attestation identifies both
+            # the actual build workflow and the actual tagged package source.
+            GITHUB_SHA="$RELEASE_SHA" GITHUB_REF="refs/tags/$TAG" npm publish --provenance --access public 2>&1 | tee "$RUNNER_TEMP/npm-publish.log"
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" -ne 0 ]; then
+              if grep -q 'code EOTP' "$RUNNER_TEMP/npm-publish.log"; then
+                echo "::error::npm requested an OTP. Configure the npm trusted publisher for CodeWithJuber/forgekit, workflow release.yml, with direct npm publish allowed. Alternatively, replace NPM_TOKEN with a granular write token for this package with Bypass 2FA enabled (package settings must allow tokens). Never add an OTP secret or disable account 2FA. See docs/RELEASING.md."
+              else
+                echo "::error::npm publish failed. Check the registry error above and the npm trusted publisher settings (repository, workflow release.yml, and direct publish permission). See docs/RELEASING.md."
+              fi
+              exit "$status"
+            fi
           fi
-      - name: Skip npm publish (NPM_TOKEN not set)
-        if: env.HAS_NPM_TOKEN != 'true'
-        run: |
-          echo "::warning::NPM_TOKEN secret is not set — SKIPPING npm publish. The GitHub Release is still created. To publish, add an npm Automation token as the NPM_TOKEN repo secret (Settings -> Secrets and variables -> Actions) and re-run this workflow. See docs/RELEASING.md."
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        # --generate-notes builds notes from merged PRs/commits since the previous tag,
-        # so it works with lightweight OR annotated tags (unlike --notes-from-tag).
-        # Idempotent: skip if the Release already exists (re-run recovery).
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::notice::GitHub Release $TAG already exists — skipping creation."
@@ -96,12 +142,6 @@ jobs:
       - name: Verify the release loop closed (fail loudly on a wedge)
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        # H1 closed-loop check: a tag must produce BOTH a GitHub Release and (when
-        # publishing is enabled) an npm version. Historically release.yml could wedge
-        # after the tag landed and nothing alerted — orphan tags v0.22.2/v0.23.2/v0.24.0.
-        # This step turns that silent wedge into a red, notified job failure; re-running
-        # the workflow (steps above are idempotent) then completes whatever is missing.
         run: |
           fail=0
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -110,27 +150,19 @@ jobs:
             echo "::error::No GitHub Release exists for $TAG after the release job."
             fail=1
           fi
-          if [ "$HAS_NPM_TOKEN" = "true" ]; then
-            PKG=$(node -p "require('./package.json').name")
-            VER=$(node -p "require('./package.json').version")
-            # Up to 10 minutes, revalidating every time. v1.0.0 and v1.1.0 both shipped yet
-            # failed here after 60 s: their packuments' Last-Modified came 159 s and 252 s
-            # after the publish finished. The registry also serves packuments with
-            # max-age=300, and the publish step's `npm view` has just cached the pre-publish
-            # one, so without --prefer-online a retry can re-read it.
-            ok=0
-            for _ in $(seq 1 40); do
-              if npm view "$PKG@$VER" version --prefer-online >/dev/null 2>&1; then ok=1; break; fi
-              sleep 15
-            done
-            if [ "$ok" = "1" ]; then
-              echo "npm $PKG@$VER: present."
-            else
-              echo "::error::npm does not serve $PKG@$VER after publish (registry wedge?)."
-              fail=1
-            fi
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          # Registry packuments can lag publish and cache the pre-publish response.
+          ok=0
+          for _ in $(seq 1 40); do
+            if npm view "$PKG@$VER" version --prefer-online >/dev/null 2>&1; then ok=1; break; fi
+            sleep 15
+          done
+          if [ "$ok" = "1" ]; then
+            echo "npm $PKG@$VER: present."
           else
-            echo "::warning::NPM_TOKEN not set — verified the GitHub Release only, not npm."
+            echo "::error::npm does not serve $PKG@$VER after publish (registry wedge?)."
+            fail=1
           fi
           if [ "$fail" != "0" ]; then
             echo "::error::Release loop did NOT close for $TAG — do not treat it as shipped. Re-run this workflow to complete the missing artifact."

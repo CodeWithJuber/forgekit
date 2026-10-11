@@ -12,7 +12,7 @@ everything:
    *merges* a release PR is detected via the merge commit's 2nd parent — the workflow
    tags the merge commit `vX.Y.Z` and kicks off the release workflow on the new tag.
 2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: tests →
-   npm publish (with provenance, if `NPM_TOKEN` is set) → GitHub Release with
+   npm publish (with provenance, using OIDC or a granular token) → GitHub Release with
    auto-generated notes.
 
 The two phases exist because branch protection (required status checks,
@@ -85,20 +85,77 @@ Release. Verify:
 - npm: <https://www.npmjs.com/package/@codewithjuber/forgekit>
 - releases: <https://github.com/CodeWithJuber/forgekit/releases>
 
-## NPM_TOKEN setup (one-time, optional but recommended)
+## npm publishing setup (one-time)
 
-Publishing needs one repo secret:
+The release job installs **npm 12.2.0** on **Node 22.23.3**. The npm 10 CLI bundled
+with Node 22 cannot use trusted publishing. Publishing is always attempted and both
+npm and GitHub artifacts must be verified; an absent token no longer silently skips npm.
 
-1. Create an [npmjs.com](https://www.npmjs.com/) account that can publish to the
-   `@codewithjuber` scope.
-2. Generate an **Automation** access token (npm → Access Tokens → Generate → _Automation_).
-3. Add it as a repo secret: **Settings → Secrets and variables → Actions → New repository
-   secret**, name **`NPM_TOKEN`**.
+### Recommended: OIDC trusted publishing
 
-**Soft-skip behavior:** if `NPM_TOKEN` is missing, `release.yml` does **not** fail — it
-skips the npm publish with a loud warning and still creates the GitHub Release. Add the
-token later and re-run the workflow from the release tag: `npm publish` refuses to
-overwrite an existing version, so re-runs are safe and only the missing step takes effect.
+In [the package settings](https://www.npmjs.com/package/@codewithjuber/forgekit/access),
+add a **GitHub Actions** trusted publisher with these exact, case-sensitive values:
+
+| Setting | Value |
+| --- | --- |
+| Organization or user | `CodeWithJuber` |
+| Repository | `forgekit` |
+| Workflow filename | `release.yml` (filename only) |
+| Environment | Leave blank (the job does not use a GitHub environment) |
+| Allowed actions | Enable direct `npm publish` |
+
+The workflow already grants `id-token: write` to the publishing job and uses a
+GitHub-hosted runner. npm exchanges that identity for a short-lived publishing
+credential; **no `NPM_TOKEN` or OTP is required**. Setting `id-token: write` alone
+does not configure the package's trusted publisher.
+
+New trust configurations must complete their first successful publish within two
+days. If a dispatch initiated by `bump.yml` reports an OIDC workflow mismatch,
+check the caller identity against npm's
+[trusted publishing troubleshooting](https://docs.npmjs.com/trusted-publishers/#troubleshooting)
+and use the manual recovery dispatch below, which runs `release.yml` directly.
+
+### Temporary fallback: granular NPM_TOKEN
+
+If OIDC has not been configured, create a **granular access token** on npmjs.com
+with **Read and write** permission for `@codewithjuber/forgekit`, **Bypass 2FA**
+enabled, and a short expiration. The package's publishing settings must permit
+token-based publishing. Save it as the repository's Actions secret `NPM_TOKEN`.
+npm prefers OIDC and only falls back to the token when trusted publishing is unavailable.
+
+**`EOTP` is an authentication/configuration failure:** the registry is requiring
+a one-time password for the supplied credentials. Replacing YAML alone cannot
+change a token's permissions or the package's trust settings. Configure OIDC or
+replace the token as above. Do not disable account 2FA or save an authenticator
+code as a CI secret; it expires and cannot support unattended releases.
+
+Legacy **Automation** tokens were removed in November 2025. Direct publishing
+with granular tokens is scheduled to end in January 2027, so prefer OIDC.
+Sources: [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/),
+[npm CI/CD authentication](https://docs.npmjs.com/using-private-packages-in-a-ci-cd-workflow/),
+[npm access tokens](https://docs.npmjs.com/about-access-tokens/).
+
+## Recover a failed existing release with the updated workflow
+
+GitHub re-runs use the workflow at the original commit. Re-running the old
+`v1.12.1` job therefore still uses npm 10 and the old token-only publishing step.
+
+After merging the workflow fix and configuring npm authentication, select
+**Actions → Release → Run workflow → master**, and set **release_tag** to
+`v1.12.1`. The CLI equivalent is:
+
+```bash
+gh workflow run release.yml --ref master -f release_tag=v1.12.1
+```
+
+The resolver requires an existing `v*` tag, resolves its commit SHA, and passes
+that same SHA to both the full quality gate and the publishing checkout. Release
+notes and the tag/version assertion use the selected tag. The tag is not moved and
+the package version is not bumped. A version already present on npm is skipped,
+and a GitHub Release already present is retained, making recovery idempotent.
+Recovery and tag-triggered runs share the same concurrency lock.
+For provenance, the npm process receives the selected source SHA/ref while retaining
+the actual workflow identity, so recovery attests the tagged source rather than master.
 
 ## Local / manual usage
 
@@ -140,22 +197,22 @@ git tag -a "$V" -m "$V" && git push origin "$V"
   section. When `auto` finds nothing shippable it exits `3` (a graceful skip the
   auto-release workflow keys off), not a hard error — so a no-op merge never fails CI.
 - **Closed-loop verification**: `release.yml`'s final step asserts the tag produced BOTH
-  a GitHub Release and (when `NPM_TOKEN` is set) an npm version, and **fails the job** if
+  a GitHub Release and an npm version, and **fails the job** if
   either is missing. The publish and release-create steps are idempotent, so recovering a
-  wedged release is just re-running the workflow on the tag.
+  wedged release uses the recovery dispatch above.
 
 ## Orphan tags (v0.22.2, v0.23.2, v0.24.0)
 
 These three tags were cut before the closed-loop guard above existed and have **no
 GitHub Release and no npm version** — the release workflow wedged after the tag landed
 and nothing alerted. They are recorded here for transparency. To resolve one, either
-re-run `release.yml` on the tag (the idempotent steps will backfill the missing Release
-and, if `NPM_TOKEN` is set, the npm version) or delete the tag and note it here. This is
+use the recovery dispatch above (the idempotent steps will backfill the missing Release
+and npm version) or delete the tag and note it here. This is
 a repo-admin action, intentionally not automated.
 
 ## Related workflow secrets
 
-- `NPM_TOKEN` (above) — npm publish; missing = publish skipped, release still cut.
+- `NPM_TOKEN` (above) — optional granular publish token fallback; OIDC needs no secret.
 - `ADMIN_TOKEN` — only used by `repo-settings.yml` (repo description/topics/Discussions
   need a fine-grained PAT with _Administration: write_; the default `GITHUB_TOKEN`
   cannot get that scope). Missing = that workflow skips with a warning; the equivalent

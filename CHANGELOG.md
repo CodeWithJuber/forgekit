@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **npm release authentication:** upgrade the publishing CLI for OIDC trusted publishing,
+  keep an optional granular-token fallback, report OTP/setup failures clearly, and always
+  verify both npm and GitHub artifacts. Recover an existing tag with the current workflow
+  using the `release_tag` dispatch input, validating and publishing the same tagged commit.
+
 ## [1.12.1] - 2026-10-11
 
 ### Fixed
