@@ -12,7 +12,7 @@ everything:
    *merges* a release PR is detected via the merge commit's 2nd parent — the workflow
    tags the merge commit `vX.Y.Z` and kicks off the release workflow on the new tag.
 2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: tests →
-   npm publish (with provenance, using OIDC or a granular token) → GitHub Release with
+   npm publish (with provenance, via OIDC trusted publishing — no token) → GitHub Release with
    auto-generated notes.
 
 The two phases exist because branch protection (required status checks,
@@ -115,22 +115,25 @@ check the caller identity against npm's
 [trusted publishing troubleshooting](https://docs.npmjs.com/trusted-publishers/#troubleshooting)
 and use the manual recovery dispatch below, which runs `release.yml` directly.
 
-### Temporary fallback: granular NPM_TOKEN
+### No token fallback — do NOT set NPM_TOKEN
 
-If OIDC has not been configured, create a **granular access token** on npmjs.com
-with **Read and write** permission for `@codewithjuber/forgekit`, **Bypass 2FA**
-enabled, and a short expiration. The package's publishing settings must permit
-token-based publishing. Save it as the repository's Actions secret `NPM_TOKEN`.
-npm prefers OIDC and only falls back to the token when trusted publishing is unavailable.
+There is intentionally **no token fallback**. When a bearer token is configured
+(`NODE_AUTH_TOKEN` in the workflow or an `NPM_TOKEN` repo secret wired into it),
+npm authenticates with the token and **never attempts the OIDC exchange** — and npm
+now rejects 2FA-bypassing tokens for direct publishing (`EOTP`). A token therefore
+does not help; it actively breaks publishing. If an `NPM_TOKEN` secret exists from
+the old setup, **delete it** (repo Settings → Secrets and variables → Actions).
 
 **`EOTP` is an authentication/configuration failure:** the registry is requiring
-a one-time password for the supplied credentials. Replacing YAML alone cannot
-change a token's permissions or the package's trust settings. Configure OIDC or
-replace the token as above. Do not disable account 2FA or save an authenticator
-code as a CI secret; it expires and cannot support unattended releases.
+a one-time password, which means a token is still being sent or the package's
+trusted publisher is misconfigured. Check that no token is wired into
+`release.yml` and that the trusted publisher matches exactly (table above).
+Do not disable account 2FA or save an authenticator code as a CI secret; it
+expires and cannot support unattended releases.
 
 Legacy **Automation** tokens were removed in November 2025. Direct publishing
-with granular tokens is scheduled to end in January 2027, so prefer OIDC.
+with granular tokens is being restricted by npm, so OIDC trusted publishing is
+the only supported path.
 Sources: [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/),
 [npm CI/CD authentication](https://docs.npmjs.com/using-private-packages-in-a-ci-cd-workflow/),
 [npm access tokens](https://docs.npmjs.com/about-access-tokens/).
@@ -212,7 +215,9 @@ a repo-admin action, intentionally not automated.
 
 ## Related workflow secrets
 
-- `NPM_TOKEN` (above) — optional granular publish token fallback; OIDC needs no secret.
+- `NPM_TOKEN` — **must not exist**. A leftover secret from the old token setup will
+  break OIDC publishing if it ever gets wired back into `release.yml`; delete it
+  (repo Settings → Secrets and variables → Actions). OIDC needs no secret.
 - `ADMIN_TOKEN` — only used by `repo-settings.yml` (repo description/topics/Discussions
   need a fine-grained PAT with _Administration: write_; the default `GITHUB_TOKEN`
   cannot get that scope). Missing = that workflow skips with a warning; the equivalent

@@ -104,8 +104,13 @@ jobs:
           fi
       - name: Publish to npm (with provenance)
         env:
-          # npm tries OIDC first; this is only a fallback when trust is unavailable.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # OIDC trusted publishing ONLY. Do NOT add NODE_AUTH_TOKEN here: when a
+          # bearer token is configured, npm authenticates with it and never attempts
+          # the OIDC exchange — and npm now rejects 2FA-bypassing tokens for direct
+          # publishing (EOTP). The package's trusted publisher (npmjs.com package
+          # settings: organization CodeWithJuber, repository forgekit, workflow file
+          # release.yml, direct npm publish allowed) is the single publishing
+          # credential. See docs/RELEASING.md.
           RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           PKG=$(node -p "require('./package.json').name")
@@ -123,7 +128,7 @@ jobs:
             set -e
             if [ "$status" -ne 0 ]; then
               if grep -q 'code EOTP' "$RUNNER_TEMP/npm-publish.log"; then
-                echo "::error::npm requested an OTP. Configure the npm trusted publisher for CodeWithJuber/forgekit, workflow release.yml, with direct npm publish allowed. Alternatively, replace NPM_TOKEN with a granular write token for this package with Bypass 2FA enabled (package settings must allow tokens). Never add an OTP secret or disable account 2FA. See docs/RELEASING.md."
+                echo "::error::npm requested an OTP. A bearer token is still being sent (delete the NPM_TOKEN repo secret and any NODE_AUTH_TOKEN in this workflow) or the package's trusted publisher is misconfigured. Required: npmjs.com package settings → Trusted Publisher = GitHub Actions, organization CodeWithJuber, repository forgekit, workflow file release.yml, direct npm publish allowed. Never add an OTP secret or disable account 2FA. See docs/RELEASING.md."
               else
                 echo "::error::npm publish failed. Check the registry error above and the npm trusted publisher settings (repository, workflow release.yml, and direct publish permission). See docs/RELEASING.md."
               fi

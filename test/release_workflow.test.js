@@ -60,7 +60,6 @@ esac`,
     PATH: `${bin}${path.delimiter}${process.env.PATH}`,
     RUNNER_TEMP: dir,
     GITHUB_OUTPUT: path.join(dir, "outputs"),
-    NODE_AUTH_TOKEN: "",
     TAG: "v1.12.1",
     RELEASE_SHA: "c623e217404cc8956e8a951b4197c2b7f59dea0d",
     VIEW_STATUS: "1",
@@ -95,6 +94,13 @@ esac`,
 test("release attempts token-free publishing and preserves provenance", bashOnly, (t) => {
   const f = fixture(t);
   assert.doesNotMatch(step("Publish to npm (with provenance)"), /^\s+if:/m);
+  // A configured bearer token makes npm skip the OIDC exchange entirely, so the
+  // step must not set one as an env key — OIDC trusted publishing is the only path.
+  // (Mentions inside comments do not count.)
+  assert.doesNotMatch(
+    step("Publish to npm (with provenance)"),
+    /^ {10}(NODE_AUTH_TOKEN|NPM_TOKEN):/m,
+  );
   const result = f.run("Publish to npm (with provenance)");
   assert.equal(result.status, 0, result.stderr);
   assert.match(f.calls(), /publish --provenance --access public/);
@@ -121,7 +127,7 @@ test("EOTP fails despite tee succeeding and provides actionable setup", bashOnly
   assert.equal(result.status, 1);
   assert.match(result.stdout, /::error::npm requested an OTP/);
   assert.match(result.stdout, /trusted publisher/);
-  assert.match(result.stdout, /Bypass 2FA/);
+  assert.match(result.stdout, /delete the NPM_TOKEN repo secret/);
 });
 
 test("other npm errors retain their original failure status", bashOnly, (t) => {
