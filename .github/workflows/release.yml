@@ -86,7 +86,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.3"
-          registry-url: "https://registry.npmjs.org"
+          # NEVER set registry-url here: setup-node would write an _authToken
+          # placeholder into .npmrc and export NODE_AUTH_TOKEN, so npm would
+          # authenticate with the placeholder and never run the OIDC handshake —
+          # the registry then answers E404 on PUT (provenance still signs fine,
+          # which makes this look like a trust misconfiguration). The publish
+          # step pins --registry explicitly instead.
           package-manager-cache: false
       # Node 22 bundles npm 10, which cannot exchange GitHub OIDC credentials.
       # Pin the publishing CLI independently; npm 12.2.0 requires Node >=22.22.2.
@@ -118,12 +123,20 @@ jobs:
           if npm view "$PKG@$VER" version --prefer-online >/dev/null 2>&1; then
             echo "::notice::$PKG@$VER is already on npm — skipping publish (idempotent re-run)."
           else
+            # Fail fast if anything reintroduces token auth: npm would use the
+            # token and never attempt the OIDC exchange (E404 on PUT).
+            if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+              echo "::error::NODE_AUTH_TOKEN is set — it would shadow OIDC trusted publishing. Remove it (and registry-url from setup-node)."
+              exit 1
+            fi
             set +e
             # npm provenance reads source SHA/ref from the process environment.
             # Recovery checks out a tag while the workflow itself runs on master.
             # Keep GITHUB_WORKFLOW_REF intact so the attestation identifies both
             # the actual build workflow and the actual tagged package source.
-            GITHUB_SHA="$RELEASE_SHA" GITHUB_REF="refs/tags/$TAG" npm publish --provenance --access public 2>&1 | tee "$RUNNER_TEMP/npm-publish.log"
+            # --registry is pinned on the command because setup-node must not set
+            # registry-url (see above).
+            GITHUB_SHA="$RELEASE_SHA" GITHUB_REF="refs/tags/$TAG" npm publish --provenance --access public --registry=https://registry.npmjs.org 2>&1 | tee "$RUNNER_TEMP/npm-publish.log"
             status=${PIPESTATUS[0]}
             set -e
             if [ "$status" -ne 0 ]; then
