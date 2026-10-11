@@ -70,10 +70,12 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
             hooks: [
               {
                 type: "command",
+                // biome-ignore lint/suspicious/noTemplateCurlyInString: hook command template — ${CLAUDE_PLUGIN_ROOT} is expanded by Claude Code at runtime, must stay a literal string
                 command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt',
               },
               {
                 type: "command",
+                // biome-ignore lint/suspicious/noTemplateCurlyInString: hook command template — ${CLAUDE_PLUGIN_ROOT} is expanded by Claude Code at runtime, must stay a literal string
                 command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh preflight',
               },
             ],
@@ -84,6 +86,7 @@ test("mergeSettings deduplicates plugin-style and settings-style hooks", () => {
             hooks: [
               {
                 type: "command",
+                // biome-ignore lint/suspicious/noTemplateCurlyInString: hook command template — ${CLAUDE_PLUGIN_ROOT} is expanded by Claude Code at runtime, must stay a literal string
                 command: '"${CLAUDE_PLUGIN_ROOT}"/global/guards/lean-guard.sh',
               },
             ],
@@ -325,6 +328,7 @@ test("guardKey derives ONE identity from legacy shell-string AND exec-form spell
   assert.equal(guardKey(`bash '${base}/guards/cortex.sh' prompt`), key);
   assert.equal(guardKey(`bash ${base}/guards/cortex.sh prompt`), key);
   assert.equal(guardKey(`bash '/a b/with space/guards/cortex.sh' prompt`), key);
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: fixture asserts the literal placeholder text; a template literal would throw ReferenceError
   assert.equal(guardKey('"${CLAUDE_PLUGIN_ROOT}"/global/guards/cortex.sh prompt'), key);
   // Exec-form objects with the same basename+args reduce to the SAME key.
   assert.equal(
@@ -345,6 +349,7 @@ test("guardKey derives ONE identity from legacy shell-string AND exec-form spell
   assert.equal(
     guardKey({
       command: "bash",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: fixture asserts the literal placeholder text; a template literal would throw ReferenceError
       args: ["${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh", "prompt"],
     }),
     key,
@@ -455,6 +460,7 @@ test("guardKey: the launcher form yields the SAME identity — run.mjs or a `.sh
   });
   assert.equal(guardKey(launcherForm(base)), key);
   assert.equal(guardKey(launcherForm("~/.forge")), key);
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: fixture asserts the literal placeholder text; a template literal would throw ReferenceError
   assert.equal(guardKey(launcherForm("${CLAUDE_PLUGIN_ROOT}/global")), key);
   // An install prefix that merely CONTAINS ".sh" must not be mistaken for the guard.
   assert.equal(guardKey(launcherForm("/home/u/.shared/forge")), key);

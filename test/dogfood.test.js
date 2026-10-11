@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+// biome-ignore lint/suspicious/noTemplateCurlyInString: test title names the literal placeholder; not code
 test(".claude/settings.json wires only real, executable scripts via ${CLAUDE_PROJECT_DIR}", () => {
   const s = JSON.parse(readFileSync(join(repo, ".claude", "settings.json"), "utf8"));
   const hooks = Object.values(s.hooks)

@@ -220,6 +220,7 @@ test("launcher: guard args are forwarded (cortex.sh <mode> keeps exiting 0)", ()
   assert.equal(r.code, 0, r.err);
 });
 
+// biome-ignore lint/suspicious/noTemplateCurlyInString: test title names the literal placeholder; not code
 test("launcher + guards under a path WITH SPACES (as ${CLAUDE_PLUGIN_ROOT} may be): block exit 2, benign 0", () => {
   const base = mkdtempSync(join(tmpdir(), "forge launcher space-"));
   try {
