@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-10-11
+
 ### Fixed
 
 - **npm release authentication:** upgrade the publishing CLI for OIDC trusted publishing,
@@ -3585,7 +3587,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...HEAD
+[1.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.10.0...v1.11.0
