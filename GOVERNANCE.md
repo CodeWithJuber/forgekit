@@ -34,7 +34,8 @@ direction). You move up through sustained, trusted contribution; a maintainer in
 ## Bus factor
 
 To avoid a single point of failure, the project aims for **at least two admins** with publish
-rights and access to the release process (`NPM_TOKEN`). If you'd like to help maintain, say so
+rights and access to the release process (npm trusted-publisher admin on the package).
+If you'd like to help maintain, say so
 in a Discussion.
 
 ## Triage

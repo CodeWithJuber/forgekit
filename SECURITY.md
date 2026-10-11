@@ -76,8 +76,8 @@ report it.
   gitleaks (`security.yml`, blocking), and OSSF Scorecard (`scorecard.yml`).
 - Dependency updates land via Dependabot (7-day cooldown); the `dependency-review` job blocks
   PRs that introduce known-vulnerable or disallowed-license dependencies.
-- Releases publish from CI with npm provenance (OIDC) + a scoped `NPM_TOKEN` — never a
-  long-lived token in code.
+- Releases publish from CI with npm provenance via OIDC trusted publishing — no
+  publish token in CI at all.
 
 ## Standards mapping
 

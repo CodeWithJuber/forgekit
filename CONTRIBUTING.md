@@ -73,7 +73,7 @@ We'd rather give a clear "not now" than merge something that adds maintenance bu
 Releases are automatic: **merging a `feat`/`fix`/`perf`/breaking change to `master`
 cuts the release itself** (bump → tag → npm publish → GitHub Release); chore/docs-only
 merges skip cleanly. A manual **Actions → Bump version** dispatch is still available. The
-full runbook (and the one-time `NPM_TOKEN` setup) is in
+full runbook (and the one-time npm trusted-publisher setup) is in
 [docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Sign your work (DCO)
