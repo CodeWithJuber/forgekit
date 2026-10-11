@@ -2085,6 +2085,24 @@ re-emitted into every tool's native file with a content-hash header.
 Create `global/tools/<name>/SKILL.md` with `name` + `description` frontmatter. It's
 picked up by the plugin and by `forge catalog`.
 
+### Installable skill packs
+
+Three Agent Skills spec packs under `skills/` package forgekit's unique machinery as
+portable skills (fenced YAML frontmatter: `name`, `description`, `license`,
+`allowed-tools`; each `SKILL.md` stays short, detail lives in `references/`):
+
+| Pack                  | Covers                                                                    |
+| --------------------- | ------------------------------------------------------------------------- |
+| `skills/forge-verify/` | the turn ⊂ commit ⊂ PR gate lattice (`forge preflight` → `precommit` → `verify`) |
+| `skills/forge-impact/` | `forge impact` blast-radius analysis + reading its output                  |
+| `skills/forge-ledger/` | evidence-referenced memory lifecycle (`forge ledger`)                     |
+
+Install one with `cp -r skills/forge-<name> .claude/skills/` — no CLI install needed
+to read them. They ship in the npm tarball via the `skills` entry in
+`package.json` `files`, and `test/skills.test.js` pins the contract: Agent Skills
+frontmatter (including hyphenated keys like `allowed-tools`), `SKILL.md` under 500
+lines, every `references/` file linked and non-empty.
+
 ### Add a guard (enforced hook)
 
 Create `global/guards/<name>.sh` (source `_guardlib.sh` for the shared fields + the

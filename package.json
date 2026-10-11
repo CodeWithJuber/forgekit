@@ -37,6 +37,7 @@
     "data",
     "source",
     "global",
+    "skills",
     "templates",
     "hooks",
     ".claude-plugin",

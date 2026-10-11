@@ -115,7 +115,7 @@ function getBlastRadius(srcFiles) {
 
 // ── Tier 3: OpenRouter classification ──────────────────────────────────────
 
-async function classifyWithLLM(files, reason) {
+async function classifyWithLLM(files, _reason) {
   try {
     const cli = new URL("../../../skills/openrouter/bin/openrouter-chat", import.meta.url).pathname;
     if (!existsSync(cli)) return null;

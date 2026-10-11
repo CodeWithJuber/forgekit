@@ -87,6 +87,7 @@ test("docsCheck: env vars read by shell guards count as read (no false phantom)"
   const root = fixtureRoot((f) => ({
     ...f,
     "README.md": `${f["README.md"]}Tune FORGE_GUARD_KNOB for the guard.\n`,
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell fixture — ${FORGE_GUARD_KNOB} is expanded by bash at runtime; a template literal would throw ReferenceError
     "global/guards/g.sh": 'x="${FORGE_GUARD_KNOB:-10}"\n',
   }));
   const r = docsCheck({ root });

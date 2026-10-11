@@ -6,6 +6,34 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Formatter config attestation in the `format-on-edit` hook.** The PostToolUse hook
+  resolved formatter config from its own CWD and ran `ruff format` / `ruff check --fix`
+  with no config check at all — files outside the CWD were silently rewritten with
+  defaults (or the wrong project's config). The hook now walks up from the **edited
+  file's** directory, passes the config explicitly (`ruff --config` / `biome
+  --config-path`), logs the resolved path on every invocation, and skips with a logged
+  reason when no config exists — never `--write`/`--fix` on silent defaults.
+- **Release pipeline: `bump.yml` finalize now sets a git identity before tagging.**
+  `git tag -a` died with `fatal: empty ident name` (exit 128), wedging every release
+  since the two-phase flow landed (v1.9.1, v1.10.0, v1.11.0).
+- **Quality gate: biome 2.5.14 `noTemplateCurlyInString` false positives suppressed.**
+  `${...}` placeholders that must stay literal strings (expanded by Claude Code / the
+  shell at runtime) now carry `// biome-ignore` with reason; one genuinely unused
+  parameter renamed (`classifyWithLLM(files, _reason)`).
+
+### Added
+
+- **Installable skill packs: `skills/forge-verify`, `skills/forge-impact`,
+  `skills/forge-ledger`.** The verify gate lattice, change-impact analysis, and
+  evidence-referenced memory as Agent Skills spec packs (shipped in the npm tarball
+  via `files`); frontmatter parser accepts hyphenated keys (`allowed-tools`); pack
+  conformance covered by `test/skills.test.js`.
+- **ADR-0007: Git Data API pushes bypass git hooks.** Documents that Data API writes
+  bypass all local hooks, `forge harden` covers the commit path only, and the push
+  path needs its own in-path gate.
+
 ## [1.11.0] - 2026-10-03
 
 ### Added

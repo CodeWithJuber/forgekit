@@ -12,10 +12,13 @@ import { test } from "node:test";
 /** [file, launcher path as written, prefix every guard path must start with] */
 const MANIFESTS = [
   ["global/settings.template.json", "~/.forge/guards/run.mjs", "~/.forge/"],
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: manifest asserts literal ${CLAUDE_PLUGIN_ROOT} placeholders; template literals would throw ReferenceError
   ["hooks/hooks.json", "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs", "${CLAUDE_PLUGIN_ROOT}/"],
   [
     ".claude/settings.json",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: manifest asserts literal ${CLAUDE_PROJECT_DIR} placeholders; template literals would throw ReferenceError
     "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: manifest asserts literal ${CLAUDE_PROJECT_DIR} placeholders; template literals would throw ReferenceError
     "${CLAUDE_PROJECT_DIR}/",
   ],
 ];

@@ -90,7 +90,11 @@ const FORGE_GLOBAL = toPosix(join(BRAND.root, "global"));
  *  dedup only. */
 function isForgeCommand(hook) {
   const c = canonicalCommand(hook);
-  return c.includes(`${FORGE_GLOBAL}/`) || c.includes("${CLAUDE_PLUGIN_ROOT}/global/");
+  return (
+    c.includes(`${FORGE_GLOBAL}/`) ||
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal hook-config text matched verbatim, expanded by the shell/Claude at runtime, not by JS
+    c.includes("${CLAUDE_PLUGIN_ROOT}/global/")
+  );
 }
 
 /** True iff `hook` is the pre-ME-23 legacy shell-string form: one `command` string with NO

@@ -14,7 +14,8 @@ function frontmatter(md) {
   if (!m) return null;
   const fm = {};
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^(\w+):\s*(.*)$/);
+    // [\w-] — the Agent Skills spec keys include hyphenated names (allowed-tools).
+    const kv = line.match(/^([\w-]+):\s*(.*)$/);
     if (kv) fm[kv[1]] = kv[2];
   }
   return fm;
@@ -63,4 +64,30 @@ test("doc-sync crew agent declares frontmatter and never edits code", () => {
   assert.ok(fm?.description, "doc-sync has description");
   assert.match(md, /forge docs sync/);
   assert.match(md, /never edit code/i);
+});
+
+test("installable skill packs (skills/forge-*): Agent Skills frontmatter + progressive disclosure", () => {
+  // The wave-mismatch fix: forgekit's unique machinery packaged as installable SKILL.md
+  // packs (Anthropic Agent Skills spec) — copy into .claude/skills/, no CLI install needed
+  // to read them. Each SKILL.md stays under 500 lines; detail lives in references/.
+  const packs = {
+    "forge-verify": ["gate-lattice.md", "what-verify-checks.md"],
+    "forge-impact": ["reading-output.md", "thresholds.md"],
+    "forge-ledger": ["evidence-model.md", "subcommands.md"],
+  };
+  for (const [skill, refs] of Object.entries(packs)) {
+    const md = read(`skills/${skill}/SKILL.md`);
+    const fm = frontmatter(md);
+    assert.equal(fm?.name, skill, `${skill} frontmatter name`);
+    assert.ok(fm?.description?.length > 20, `${skill} has a useful description`);
+    assert.equal(fm?.license, "MIT", `${skill} declares license`);
+    assert.ok(fm?.["allowed-tools"], `${skill} declares allowed-tools`);
+    assert.ok(md.split("\n").length < 500, `${skill}/SKILL.md under 500 lines`);
+    assert.match(md, /cp -r skills\//, `${skill} documents the install one-liner`);
+    assert.match(md, /forge (verify|impact|ledger)/, `${skill} invokes the forge CLI`);
+    for (const ref of refs) {
+      assert.ok(md.includes(`references/${ref}`), `${skill} links references/${ref}`);
+      assert.doesNotMatch(read(`skills/${skill}/references/${ref}`), /^$/, `${ref} non-empty`);
+    }
+  }
 });

@@ -204,6 +204,11 @@ jobs:
             echo "::error::package.json says $PKG but the release merge is v$VERSION — refusing to tag."
             exit 1
           fi
+          # Annotated tags need a git identity; the checkout action does not set one, so
+          # `git tag -a` dies with `fatal: empty ident name` (exit 128). Same identity
+          # the propose phase uses.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v$VERSION" -m "v$VERSION" HEAD
           git push origin "v$VERSION"
           git push origin --delete "release/v$VERSION" || true
