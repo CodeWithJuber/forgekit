@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-10-12
+
+### Fixed
+
+- **npm publishing via OIDC trusted publishing only.** Removed the `NODE_AUTH_TOKEN`
+  fallback from the release workflow: when a bearer token is configured, npm never
+  attempts the OIDC exchange, and npm now rejects 2FA-bypassing tokens for direct
+  publishing (`EOTP`). Also removed `registry-url` from the release job's `setup-node`
+  step, which wrote an `_authToken` placeholder into `.npmrc` and exported
+  `NODE_AUTH_TOKEN`, shadowing OIDC the same way (`E404` on PUT). The publish step now
+  fails fast if a token is ever reintroduced, with regression tests guarding both
+  invariants. Docs updated to OIDC-only (no `NPM_TOKEN`).
+
 ## [1.12.2] - 2026-10-11
 
 ### Fixed
@@ -3587,7 +3600,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...HEAD
+[1.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.11.0...v1.12.0
