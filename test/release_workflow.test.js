@@ -101,6 +101,14 @@ test("release attempts token-free publishing and preserves provenance", bashOnly
     step("Publish to npm (with provenance)"),
     /^ {10}(NODE_AUTH_TOKEN|NPM_TOKEN):/m,
   );
+  // setup-node with registry-url writes an _authToken placeholder into .npmrc and
+  // exports NODE_AUTH_TOKEN, which shadows OIDC the same way (provenance signs,
+  // then PUT fails E404). The publish command pins --registry instead.
+  assert.doesNotMatch(workflow, /^\s+registry-url:/m);
+  assert.match(
+    step("Publish to npm (with provenance)"),
+    /--registry=https:\/\/registry\.npmjs\.org/,
+  );
   const result = f.run("Publish to npm (with provenance)");
   assert.equal(result.status, 0, result.stderr);
   assert.match(f.calls(), /publish --provenance --access public/);
