@@ -52,21 +52,32 @@ jobs:
   test:
     name: Test (Node ${{ matrix.node }})
     needs: smart-select
-    # Skip the full matrix for cosmetic changes (docs-only) — biome check in quality-gate covers it
-    if: needs.smart-select.outputs.tier != 'cosmetic'
+    # NOTE: no job-level `if:` here. A job-level skip prevents matrix expansion, so
+    # GitHub records the check as the literal "Test (Node ${{ matrix.node }})" and
+    # branch protection's required "Test (Node 20)"/"Test (Node 22)" contexts never
+    # appear — blocking every docs-only PR. The cosmetic skip lives INSIDE the steps
+    # instead, so the matrix always expands and the check names always resolve.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node: [20, 22]
     steps:
+      - name: Skip matrix for cosmetic changes
+        if: needs.smart-select.outputs.tier == 'cosmetic'
+        run: echo "Cosmetic (docs-only) change — test matrix skipped; biome check in quality-gate covers it."
       - uses: actions/checkout@v7
+        if: needs.smart-select.outputs.tier != 'cosmetic'
       - uses: actions/setup-node@v7
+        if: needs.smart-select.outputs.tier != 'cosmetic'
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        if: needs.smart-select.outputs.tier != 'cosmetic'
+        run: npm ci
       - name: Run selected tests
+        if: needs.smart-select.outputs.tier != 'cosmetic'
         run: |
           TIER="${{ needs.smart-select.outputs.tier }}"
           TESTS="${{ needs.smart-select.outputs.tests }}"
