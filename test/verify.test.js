@@ -1152,8 +1152,14 @@ test("classifySuiteFailure: a timed-out suite is named HUNG with its label", () 
 
 // Windows: same F10 mutation-detection sensitivity as demo.test.js (see note there).
 // The onProgress heartbeat is covered on Linux/macOS.
-const winSkipHeartbeat = process.platform === "win32" && "F10 mutation detection is git-environment-sensitive on Windows";
-test("verify: onProgress heartbeat fires per suite (does not disturb the verdict)", { skip: winSkipHeartbeat }, () => {
+const winSkipHeartbeat =
+  process.platform === "win32" && "F10 mutation detection is git-environment-sensitive on Windows";
+test(
+  "verify: onProgress heartbeat fires per suite (does not disturb the verdict)",
+  {
+    skip: winSkipHeartbeat,
+  },
+  () => {
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
