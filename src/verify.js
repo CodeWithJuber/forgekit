@@ -163,10 +163,11 @@ export function signProvenance(prov) {
  */
 export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
   const prov = receipt?.provenance;
+  /** @returns {{verdict: "CONFIRMED"|"STALE"|"REFUTED"|"UNVERIFIABLE"|"INVALID", signature: "VALID"|"INVALID"|"UNAVAILABLE", tree: "MATCHED"|"CHANGED"|"UNKNOWN", claim: object|null, reason: string}} */
   const noReceipt = (reason) => ({
-    verdict: "INVALID",
-    signature: "INVALID",
-    tree: "UNKNOWN",
+    verdict: /** @type {const} */ ("INVALID"),
+    signature: /** @type {const} */ ("INVALID"),
+    tree: /** @type {const} */ ("UNKNOWN"),
     claim: null,
     reason,
   });
@@ -180,6 +181,7 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
     );
 
   // 1. Authenticity: recompute the MAC over the receipt's own fields.
+  /** @type {"VALID"|"INVALID"|"UNAVAILABLE"} */
   let signature = "INVALID";
   const key = evidenceKey();
   if (!key) {
@@ -1278,7 +1280,7 @@ export function readVerifyEvents(root) {
  * version, per-suite cwd/command/verdict, package coverage, pre/post tree identity, timestamps
  * and an environment digest. The event is also appended to `.forge/verify-events.jsonl`, so
  * other evidence (router outcomes, ledger refs) can cite a run by id.
- * @param {{targetRoot?: string, base?: string}} [opts]
+ * @param {{targetRoot?: string, base?: string, onProgress?: (msg: string) => void}} [opts]
  * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
  *   changedFiles: string[], added: string}}
  *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER
