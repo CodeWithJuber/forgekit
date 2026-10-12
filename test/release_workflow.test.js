@@ -71,6 +71,10 @@ esac`,
     REF_NAME: "v1.12.1",
     EVENT_NAME: "push",
     DEFAULT_BRANCH: "master",
+    // Simulate a tag-triggered release: the OIDC identity must be the tag ref,
+    // not a branch (recovery-dispatch sets these to branch/master and must fail fast).
+    GITHUB_REF_TYPE: "tag",
+    GITHUB_REF_NAME: "v1.12.1",
   };
   return {
     dir,
