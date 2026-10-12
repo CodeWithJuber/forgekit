@@ -373,11 +373,16 @@ test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQU
   for (const h of hooks) {
     // The interpreter is `node`, never `bash`: an exec-form hook is a bare PATH lookup, and a
     // default Git for Windows install has git on PATH but NOT bash. args[0] is the portable
-    // launcher that finds bash; args[1] is the guard it runs.
+    // launcher that finds bash; args[1..2] are its `--event <Name>` (hook token budget);
+    // args[3] is the guard it runs.
     assert.equal(h.command, "node", "command is the launcher's interpreter, no path baked in");
-    assert.ok(Array.isArray(h.args) && h.args.length > 1, "launcher + guard path live in args[]");
+    assert.ok(
+      Array.isArray(h.args) && h.args.length > 3,
+      "launcher + event + guard live in args[]",
+    );
     assert.equal(h.args[0], `${base}/guards/run.mjs`, "args[0] is the resolved launcher");
-    const path = h.args[1];
+    assert.equal(h.args[1], "--event", "args[1] is the budget flag");
+    const path = h.args[3];
     // Resolved to the real install base, NOT the unmaterialized ~/.forge, and — the whole point
     // of exec form — carrying NO surrounding quote characters (spaces would just work).
     assert.ok(path.startsWith(`${base}/`), `args path resolved to the install base: ${path}`);
@@ -386,8 +391,13 @@ test("mergeSettings writes hooks in EXEC form — path in args[], resolved, UNQU
   }
   // The statusLine migrated to exec form too — through the same launcher.
   assert.equal(merged.statusLine.command, "node");
-  assert.deepEqual(merged.statusLine.args, [`${base}/guards/run.mjs`, `${base}/statusline.sh`]);
-  assert.doesNotMatch(merged.statusLine.args[1], /['"]/, "statusline args path unquoted");
+  assert.deepEqual(merged.statusLine.args, [
+    `${base}/guards/run.mjs`,
+    "--event",
+    "StatusLine",
+    `${base}/statusline.sh`,
+  ]);
+  assert.doesNotMatch(merged.statusLine.args[3], /['"]/, "statusline args path unquoted");
 });
 
 test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no quoting (ME-23)", () => {
@@ -405,8 +415,8 @@ test("resolveManagedPaths: a base path WITH A SPACE lands literally in args, no 
   assert.ok(cortexPrompt, "cortex prompt hook present");
   assert.deepEqual(
     cortexPrompt.args,
-    [`${base}/guards/run.mjs`, `${base}/guards/cortex.sh`, "prompt"],
-    "args are the literal resolved launcher + guard path + trailing arg, verbatim and unquoted",
+    [`${base}/guards/run.mjs`, "--event", "UserPromptSubmit", `${base}/guards/cortex.sh`, "prompt"],
+    "args are the literal resolved launcher + event + guard path + trailing arg, verbatim and unquoted",
   );
 });
 
@@ -442,10 +452,12 @@ test("an OLD shell-string install dedupes against the exec-form template and is 
     1,
     "no duplicate — the legacy hook deduped against the template",
   );
-  // ...and it was upgraded IN PLACE to exec form (launcher + resolved, unquoted args).
+  // ...and it was upgraded IN PLACE to exec form (launcher + event + resolved, unquoted args).
   assert.equal(promptHooks[0].command, "node");
   assert.deepEqual(promptHooks[0].args, [
     `${base}/guards/run.mjs`,
+    "--event",
+    "UserPromptSubmit",
     `${base}/guards/cortex.sh`,
     "prompt",
   ]);
@@ -480,12 +492,15 @@ test("a pre-launcher `bash` exec-form install that Forge OWNS is healed to the l
       .flatMap((e) => e.hooks || []);
   mergeSettings({ settingsPath });
   // Rewind every Forge entry to what v0.32 wrote on Windows: `bash <guard> [mode]`, no launcher
-  // — the exact form that dies with ENOENT when bash is not on PATH.
+  // and no --event pair — the exact form that dies with ENOENT when bash is not on PATH.
   const old = JSON.parse(readFileSync(settingsPath, "utf8"));
   const rewind = (h) => {
     if (h?.command === "node" && h.args?.[0] === `${base}/guards/run.mjs`) {
       h.command = "bash";
-      h.args = h.args.slice(1);
+      const args = h.args.slice(1);
+      const ei = args.indexOf("--event");
+      if (ei >= 0) args.splice(ei, 2);
+      h.args = args;
     }
   };
   for (const h of allHooks(old)) rewind(h);
@@ -506,7 +521,12 @@ test("a pre-launcher `bash` exec-form install that Forge OWNS is healed to the l
     assert.equal(h.command, "node", `healed: ${JSON.stringify(h)}`);
     assert.equal(h.args[0], `${base}/guards/run.mjs`);
   }
-  assert.deepEqual(healed.statusLine.args, [`${base}/guards/run.mjs`, `${base}/statusline.sh`]);
+  assert.deepEqual(healed.statusLine.args, [
+    `${base}/guards/run.mjs`,
+    "--event",
+    "StatusLine",
+    `${base}/statusline.sh`,
+  ]);
   // The ownership manifest followed, so uninstall matches — and removes — the NEW spelling.
   for (const o of healed._forgeOwned.added.hooks) assert.equal(o.command, "node");
   assert.equal(removeForgeSettings({ settingsPath }).action, "removed");
@@ -775,4 +795,24 @@ test("HI-09 init aborts on a corrupt forge.config.json — zero side effects (no
   assert.ok(!existsSync(join(root, "CLAUDE.md")), "no CLAUDE.md emitted");
   assert.ok(!existsSync(join(root, ".gitattributes")), "no .gitattributes appended");
   assert.ok(!existsSync(settingsPath), "settings never touched");
+});
+
+test("init warms the atlas cache by default (item 42) — first impact is warm", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-init-"));
+  writeFileSync(join(root, "a.js"), "export const x = 1;\n");
+  const r = init({ targetRoot: root, settingsPath: join(root, ".claude", "settings.json") });
+  assert.ok(existsSync(join(root, ".forge", "atlas.cache.json")), "atlas cache written");
+  assert.ok(r.warmed && r.warmed.error === undefined, "warmed reported without error");
+});
+
+test("init skips atlas warming with warm:false", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-init-"));
+  writeFileSync(join(root, "a.js"), "export const x = 1;\n");
+  const r = init({
+    targetRoot: root,
+    settingsPath: join(root, ".claude", "settings.json"),
+    warm: false,
+  });
+  assert.ok(!existsSync(join(root, ".forge", "atlas.cache.json")), "no atlas cache");
+  assert.equal(r.warmed, null);
 });

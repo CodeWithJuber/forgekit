@@ -9,6 +9,47 @@ const HANDLERS = {};
 
 HANDLERS.verify = async (argv) => {
   const json = argv.includes("--json");
+  // `forge verify --claim <receipt.json>` — check someone else's verification claim
+  // (a `forge verify --json` receipt): CONFIRMED / STALE / REFUTED with evidence.
+  const claimIdx = argv.indexOf("--claim");
+  if (claimIdx >= 0) {
+    const file = argv[claimIdx + 1];
+    const { verifyClaim } = await import("../verify.js");
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    if (!file || file.startsWith("-")) {
+      console.error(`usage: ${BRAND.cli} verify --claim <receipt.json>`);
+      process.exitCode = 1;
+      return;
+    }
+    let receipt;
+    try {
+      receipt = JSON.parse(readFileSync(resolve(process.cwd(), file), "utf8"));
+    } catch (e) {
+      console.error(`cannot read receipt ${file}: ${e.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    const r = verifyClaim(receipt, { cwd: process.cwd() });
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+    } else {
+      heading(`${BRAND.brand} verify --claim\n`);
+      const verdictLine =
+        r.verdict === "CONFIRMED"
+          ? paint("CONFIRMED", "ok")
+          : r.verdict === "STALE"
+            ? paint("STALE", "warn")
+            : paint(r.verdict, "err");
+      console.log(`  verdict:    ${verdictLine}`);
+      console.log(`  signature:  ${r.signature}   tree: ${r.tree}`);
+      if (r.claim?.runId) console.log(`  run:        ${r.claim.runId}`);
+      if (r.claim?.tests) console.log(`  claimed:    tests ${r.claim.tests}`);
+      console.log(`  reason:     ${r.reason}`);
+    }
+    if (r.verdict !== "CONFIRMED") process.exitCode = 1;
+    return;
+  }
   if (argv.includes("--deep")) {
     const { verifyDeep, LENSES } = await import("../consensus.js");
     // `--llm` opts the reviewer panel in for this run; otherwise FORGE_LLM decides.
@@ -76,7 +117,19 @@ HANDLERS.verify = async (argv) => {
     return;
   }
   const { verify } = await import("../verify.js");
-  const r = verify({ targetRoot: process.cwd() });
+  // Heartbeat (item 7): while a suite runs, stderr names it — a hung run shows
+  // WHERE it stopped. Silent under --json (machine-readable stdout stays clean).
+  const r = verify({
+    targetRoot: process.cwd(),
+    onProgress: json
+      ? undefined
+      : ({ label, phase, status }) =>
+          process.stderr.write(
+            phase === "start"
+              ? `  … running suite: ${label}\n`
+              : `  … suite ${label}: ${status}\n`,
+          ),
+  });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     if (!r.ok) process.exitCode = 1;
@@ -87,6 +140,8 @@ HANDLERS.verify = async (argv) => {
   // Honest four-state tests line (RA-09): "nothing ran" is never dressed up as a pass,
   // and a real run names the runner that actually executed.
   const t = r.tests;
+  // Granular NOT_CONFIGURED (item 41): name the missing subsystem + the exact fix.
+  const nc = t.status === "NOT_CONFIGURED" && t.notConfigured ? t.notConfigured : null;
   const testsLine =
     t.status === "PASS"
       ? `✓ pass (${t.runner ?? "project suite"})`
@@ -94,8 +149,12 @@ HANDLERS.verify = async (argv) => {
         ? `✗ FAIL (${t.runner ?? "project suite"})`
         : t.status === "INCOMPLETE"
           ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
-          : "— NOT CONFIGURED (no test runner detected)";
+          : `— NOT CONFIGURED (${nc?.reason ?? "no test runner detected"})`;
   console.log(`  tests:            ${testsLine}`);
+  if (nc) {
+    console.log(`  missing:          ${nc.detail}`);
+    console.log(`  fix:              ${nc.fix}`);
+  }
   // Per-suite honesty (HI-01): a polyglot repo runs every executable suite; name which
   // ones ran with what verdict, and which were detected but never executed.
   if (t.executed?.length)
@@ -153,6 +212,11 @@ HANDLERS.verify = async (argv) => {
   console.log(`\n  ${verdict}`);
   if (!r.ok) process.exitCode = 1;
   return;
+};
+
+HANDLERS["test-select"] = async (argv) => {
+  const { runTestSelect } = await import("../test_select.js");
+  return runTestSelect(argv);
 };
 
 HANDLERS.imagine = async (argv) => {
@@ -585,6 +649,27 @@ HANDLERS.uicheck = async (argv) => {
   console.log(`\n  ASSERT (deterministic): ${ASSERTABLE_CHECKS.map((c) => c.id).join(", ")}`);
   console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
   return;
+};
+
+HANDLERS.demo = async (argv) => {
+  // The README hero as a runnable: green → broken → green, with forge verify
+  // watching. Exits 0 only if the defect was actually caught (the middle step
+  // FAILED) and the fix verified — a demo that never fails proves nothing.
+  const { demo } = await import("../demo.js");
+  const json = argv.includes("--json");
+  heading(`${BRAND.brand} demo — the verification gate, live\n`);
+  const r = demo({ onStep: json ? undefined : (m) => console.log(`  ${m}`) });
+  for (const s of r.steps) console.log(`  ${s.name}: ${s.status}`);
+  if (json) {
+    console.log(JSON.stringify({ ok: r.ok, steps: r.steps }, null, 2));
+  } else {
+    console.log(
+      r.ok
+        ? `\n  The gate caught the defect and confirmed the fix.`
+        : `\n  DEMO FAILED — the gate did not behave as scripted (see steps above).`,
+    );
+  }
+  if (!r.ok) process.exitCode = 1;
 };
 
 export default HANDLERS;

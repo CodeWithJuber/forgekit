@@ -12,7 +12,9 @@ import {
   renderCommitGate,
   stagedAddedLines,
   stagedBinaryFiles,
+  stagedExecBitWarnings,
   stagedFiles,
+  stagedModes,
 } from "../src/commit_gate.js";
 import { fakeGithubPat } from "./_fixtures.js";
 
@@ -373,4 +375,58 @@ test("an XMP packet in a text sidecar passes too (public constant)", () => {
   git("add", "photo.xmp");
   const r = commitGate(root, { env: env() });
   assert.equal(r.allow, true, renderCommitGate(r));
+});
+
+// ── Exec-bit audit (P0-04): a shebang script staged 100644 loses its bit on API pushes ──
+
+test("stagedModes reads the staged diff modes, not the whole tree", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "run.sh"), "#!/bin/sh\necho hi\n");
+  git("add", "run.sh");
+  const modes = stagedModes(root);
+  assert.equal(modes.get("run.sh"), "100644");
+  assert.ok(!modes.has("a.js"), "committed-but-unstaged files are out of scope");
+});
+
+test("exec-bit: shebang script staged 100644 warns but never blocks", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "guard.sh"), "#!/usr/bin/env bash\necho guard\n");
+  writeFileSync(join(root, "plain.sh"), "echo no shebang\n");
+  git("add", "guard.sh", "plain.sh");
+  assert.deepEqual(stagedExecBitWarnings(root), ["guard.sh"]);
+  const r = commitGate(root, { env: env() });
+  const f = r.findings.find((f) => f.kind === "exec-bit");
+  assert.ok(f, "exec-bit finding present");
+  assert.equal(f.severity, "warn");
+  assert.ok(f.files.includes("guard.sh") && !f.files.includes("plain.sh"));
+  assert.match(renderCommitGate(r), /update-index --chmod=\+x/);
+  // warn-only: the commit is still allowed, in both modes
+  assert.equal(r.allow, true);
+  const blocked = commitGate(root, { env: env({ FORGE_COMMIT_GATE: "block" }) });
+  assert.equal(
+    blocked.findings.find((f) => f.kind === "exec-bit").severity,
+    "warn",
+    "exec-bit never escalates to block",
+  );
+});
+
+test("exec-bit: 100755 scripts and non-script files are silent", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "ok.sh"), "#!/bin/sh\necho ok\n");
+  writeFileSync(join(root, "note.txt"), "hello\n");
+  git("add", "ok.sh", "note.txt");
+  git("update-index", "--chmod=+x", "ok.sh");
+  assert.deepEqual(stagedExecBitWarnings(root), []);
+  const r = commitGate(root, { env: env() });
+  assert.ok(!r.findings.some((f) => f.kind === "exec-bit"));
+});
+
+test("exec-bit: losing the bit on a tracked guard warns (100755 → 100644)", () => {
+  const { root, git } = gitFixture();
+  writeFileSync(join(root, "guard.sh"), "#!/bin/sh\necho guard\n");
+  git("add", "guard.sh");
+  git("update-index", "--chmod=+x", "guard.sh");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "add guard");
+  git("update-index", "--chmod=-x", "guard.sh"); // staged mode change only
+  assert.deepEqual(stagedExecBitWarnings(root), ["guard.sh"]);
 });

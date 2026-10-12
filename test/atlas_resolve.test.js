@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -174,7 +174,12 @@ test("A6: extraction is linear — a 16k-line JS file plus a 16k-line Python fil
   const atlas = build({ root });
   const ms = Date.now() - t;
   // The O(n²) extractor took ~5 s here (19.6 s for the review's 16k-line file).
-  assert.ok(ms < 2500, `build took ${ms}ms`);
+  // Machine-scaled budget (item 19): the 2.5 s budget is calibrated for a 4-core
+  // dev machine; on fewer cores the SAME linear extractor is proportionally slower,
+  // so the budget scales with 4/cpus. The old extractor still fails it everywhere
+  // (its time scales with the machine too).
+  const budget = Math.ceil(2500 * Math.max(1, 4 / availableParallelism()));
+  assert.ok(ms < budget, `build took ${ms}ms (budget ${budget}ms on ${availableParallelism()} cores)`);
   assert.ok(
     atlas.edges.some((e) => e.kind === "calls" && e.resolved),
     "calls still resolve at scale",

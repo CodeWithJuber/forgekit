@@ -11,6 +11,7 @@ import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { renderDocs } from "./docs_render.js";
 import { TOOLS } from "./mcp_tools.js";
 import { allPricePairs } from "./model_tiers.js";
+import { KNOWN_TOOLS } from "./repo_config.js";
 import { git } from "./util.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
@@ -109,6 +110,51 @@ function checkRendered(root, issues) {
       check: "render",
       severity: f.strict ? "error" : "warn",
       detail: `${f.file}: generated ${f.why.join(" + ")} out of date — run \`${BRAND.cli} docs render\``,
+    });
+  }
+}
+
+/** The tool count a description claims ("one config for 12 tools") vs reality.
+ *  Exported pure so the drift regression test doesn't need a mutated brand.json. */
+export function descriptionToolCountDrift(description, toolCount) {
+  const m = /(\d+)\s+tools?\b/.exec(String(description ?? ""));
+  if (!m) return "names no tool count";
+  return Number(m[1]) === toolCount ? null : `says "${m[1]} tools" but there are ${toolCount}`;
+}
+
+/** Description field vs reality (item 48): the GitHub description once said "10 tools"
+ *  after Kimi made it 12 — count drift nobody noticed. brand.json `description` is the
+ *  canonical copy; this pins the tool count it names to KNOWN_TOOLS and requires the
+ *  package.json description to exist (the GitHub field itself is synced by hand/API). */
+function checkDescription(root, issues) {
+  const desc = BRAND.description;
+  if (!desc || typeof desc !== "string" || !desc.trim()) {
+    issues.push({
+      check: "description",
+      severity: "error",
+      detail: "brand.json has no `description` — the canonical repo description is missing",
+    });
+    return;
+  }
+  const drift = descriptionToolCountDrift(desc, KNOWN_TOOLS.length);
+  if (drift) {
+    issues.push({
+      check: "description",
+      severity: "error",
+      detail: `brand.json \`description\` ${drift} — update the count (and the GitHub description field to match)`,
+    });
+  }
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  } catch {
+    pkg = null;
+  }
+  if (!pkg?.description?.trim()) {
+    issues.push({
+      check: "description",
+      severity: "warn",
+      detail: "package.json has no description",
     });
   }
 }
@@ -634,6 +680,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
   const issues = [];
   checkCommands(docs, issues);
   checkRendered(root, issues);
+  checkDescription(root, issues);
   checkEnvVars(root, docs, issues);
   checkMcpTools(docs, issues);
   checkChangelog(root, issues);
@@ -650,6 +697,7 @@ export function docsCheck({ root = BRAND.root } = {}) {
     checked: [
       "commands",
       "render",
+      "description",
       "env-vars",
       "mcp-tools",
       "changelog",

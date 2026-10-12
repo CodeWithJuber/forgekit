@@ -395,8 +395,9 @@ test("B7: a hand-written provenance stamp is not test evidence", () => {
   const forged = { tests: { status: "PASS" }, codeState: computeCodeState(root) };
   const p = join(root, ".forge", "provenance.json");
   writeFileSync(p, JSON.stringify(forged));
-  const t = new Date(Date.now() + 5000);
-  utimesSync(p, t, t);
+  // Fresh per stamp: on a slow VM the first scenario can outlast a single shared
+  // future date, making the second scenario's stamp read older than its session.
+  utimesSync(p, new Date(Date.now() + 30000), new Date(Date.now() + 30000));
   const out = JSON.parse(stopGate(root, "b7a").stdout || "{}");
   assert.equal(out.decision, "block", "an unsigned stamp does not satisfy the strong leg");
 
@@ -409,7 +410,7 @@ test("B7: a hand-written provenance stamp is not test evidence", () => {
   const signed = signProvenance({ tests: { status: "PASS" }, codeState: computeCodeState(second) });
   const p2 = join(second, ".forge", "provenance.json");
   writeFileSync(p2, JSON.stringify(signed));
-  utimesSync(p2, t, t);
+  utimesSync(p2, new Date(Date.now() + 30000), new Date(Date.now() + 30000));
   assert.equal(
     stopGate(second, "b7a2").stdout.trim(),
     "",
@@ -497,12 +498,18 @@ test("UI-only: alone it blocks once with the UI checklist, not the unit-test one
 
 test("UI-only: a fresh uicheck PASS or a passing e2e run covers it; a stale one does not", () => {
   // uicheck stamp written after the final edit (what `forge uicheck design` does).
-  const t = new Date(Date.now() + 5000);
+  // The future date is computed FRESH at each stamp: on a slow VM the seconds between
+  // `start()` and the stamp write can exceed a single shared margin, and a stamp older
+  // than the session start reads as stale (item 19 — timing-sensitive tests).
+  const freshStamp = () => {
+    const t = new Date(Date.now() + 30000);
+    return [t, t];
+  };
   const a = uiFixture().root;
   start(a, "ui3");
   write(a, "ui3", "src/Hero.tsx", HERO_STYLED);
   assert.equal(recordUiCheck(a, { check: "design", pass: true, files: ["src/Hero.tsx"] }), true);
-  utimesSync(join(a, ".forge", "uicheck.json"), t, t);
+  utimesSync(join(a, ".forge", "uicheck.json"), ...freshStamp());
   assert.equal(stopGate(a, "ui3").stdout.trim(), "", "a fresh, signed uicheck PASS");
 
   // A design check of some OTHER file proves nothing about this change.
@@ -510,7 +517,7 @@ test("UI-only: a fresh uicheck PASS or a passing e2e run covers it; a stale one 
   start(other, "ui3b");
   write(other, "ui3b", "src/Hero.tsx", HERO_STYLED);
   recordUiCheck(other, { check: "design", pass: true, files: ["src/Unrelated.tsx"] });
-  utimesSync(join(other, ".forge", "uicheck.json"), t, t);
+  utimesSync(join(other, ".forge", "uicheck.json"), ...freshStamp());
   assert.equal(JSON.parse(stopGate(other, "ui3b").stdout).decision, "block", "wrong files");
 
   // A visual check renders the page: it covers the UI change.
@@ -518,7 +525,7 @@ test("UI-only: a fresh uicheck PASS or a passing e2e run covers it; a stale one 
   start(vis, "ui3c");
   write(vis, "ui3c", "src/Hero.tsx", HERO_STYLED);
   recordUiCheck(vis, { check: "visual", pass: true });
-  utimesSync(join(vis, ".forge", "uicheck.json"), t, t);
+  utimesSync(join(vis, ".forge", "uicheck.json"), ...freshStamp());
   assert.equal(stopGate(vis, "ui3c").stdout.trim(), "", "a fresh visual PASS");
 
   // A passing e2e run after the final edit, recorded by the capture hook.

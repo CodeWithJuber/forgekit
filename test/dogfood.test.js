@@ -25,15 +25,19 @@ test(".claude/settings.json wires only real, executable scripts via ${CLAUDE_PRO
       `interpreter is node (bash is not on PATH on Windows): ${JSON.stringify(h)}`,
     );
     assert.ok(
-      Array.isArray(h.args) && h.args.length >= 2,
-      `args = [launcher, guard, …]: ${JSON.stringify(h)}`,
+      Array.isArray(h.args) && h.args.length >= 4,
+      `args = [launcher, --event, Name, guard, …]: ${JSON.stringify(h)}`,
     );
-    for (const a of h.args.slice(0, 2))
-      assert.match(a, /\$\{CLAUDE_PROJECT_DIR\}/, `resolves through the project dir: ${a}`);
+    assert.match(
+      h.args[0],
+      /\$\{CLAUDE_PROJECT_DIR\}/,
+      `launcher resolves through the project dir`,
+    );
+    assert.equal(h.args[1], "--event", `launcher budget flag present: ${JSON.stringify(h)}`);
     // A wired script is either a global guard or a repo-local hook (e.g. the web
     // session-start install hook) — both must exist AND be executable.
-    const m = h.args[1].match(/\}\/((?:global\/guards|\.claude\/hooks)\/[\w-]+\.sh)/);
-    assert.ok(m, `args[1] references a guard or repo hook script: ${h.args[1]}`);
+    const m = h.args[3].match(/\}\/((?:global\/guards|\.claude\/hooks)\/[\w-]+\.sh)/);
+    assert.ok(m, `guard references a guard or repo hook script: ${h.args[3]}`);
     accessSync(join(repo, m[1]), constants.X_OK); // exists AND executable, else throws
   }
 });

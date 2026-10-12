@@ -199,15 +199,19 @@ test("launcher: a benign call is allowed — exit 0", () => {
   assert.equal(r.code, 0, r.err);
 });
 
-test("launcher: stdout passes through — SessionStart recall context reaches Claude", () => {
+test("launcher: stdout passes through — SessionStart recall INDEX reaches Claude (lazy recall)", () => {
   const home = mkdtempSync(join(tmpdir(), "forge-launcher-home-"));
   try {
     mkdirSync(join(home, "recall"), { recursive: true });
-    writeFileSync(join(home, "recall", "MEMORY.md"), "- SENTINEL-7f3a: launcher stdout works\n");
+    writeFileSync(
+      join(home, "recall", "MEMORY.md"),
+      "# Memory\n\n## Facts\n\n- SENTINEL-7f3a: full text stays on disk\n",
+    );
     const r = launch([join(guards, "recall-load.sh")], { env: envWith({ FORGE_HOME: home }) });
     assert.equal(r.code, 0, r.err);
-    assert.match(r.out, /Durable memory/);
-    assert.match(r.out, /SENTINEL-7f3a/);
+    assert.match(r.out, /## Facts/); // the index carries section headings …
+    assert.match(r.out, /Full text:/); // … and the on-demand pointer …
+    assert.doesNotMatch(r.out, /SENTINEL-7f3a/); // … but never the body text
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
