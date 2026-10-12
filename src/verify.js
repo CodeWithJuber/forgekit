@@ -1280,7 +1280,7 @@ export function readVerifyEvents(root) {
  * version, per-suite cwd/command/verdict, package coverage, pre/post tree identity, timestamps
  * and an environment digest. The event is also appended to `.forge/verify-events.jsonl`, so
  * other evidence (router outcomes, ledger refs) can cite a run by id.
- * @param {{targetRoot?: string, base?: string, onProgress?: (msg: string) => void}} [opts]
+ * @param {{targetRoot?: string, base?: string, onProgress?: (e: {label: string, phase: "start"|"done", status?: string}) => void}} [opts]
  * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
  *   changedFiles: string[], added: string}}
  *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER

@@ -162,7 +162,7 @@ const BLAST_RADIUS_ESCALATION = 10;
 
 /**
  * Run the tier pipeline over a changed-file list.
- * @param {{root?: string, files: string[]}} opts
+ * @param {{root?: string, files?: string[]}} opts
  * @returns {Promise<{tier: string, reason: string, tests: string[], lint: string[], typecheck: boolean, fullSuite: boolean}>}
  */
 export async function selectTests({ root = process.cwd(), files = [] } = {}) {

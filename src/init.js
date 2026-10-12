@@ -933,7 +933,7 @@ export function init({
     try {
       const t0 = Date.now();
       const atlas = buildAtlas({ root: targetRoot });
-      warmed = { files: atlas.files?.length ?? 0, ms: Date.now() - t0 };
+      warmed = { files: atlas.files ?? 0, ms: Date.now() - t0 };
     } catch (e) {
       warmed = { error: String(e?.message ?? e).slice(0, 120) };
     }
