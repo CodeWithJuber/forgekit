@@ -6,23 +6,25 @@
 // actually FAILED (a demo that never catches the defect proves nothing) and
 // the final step PASSED.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verify } from "./verify.js";
 
-const sh = (cmd, cwd) => execFileSync(cmd, { cwd, shell: "/bin/sh", stdio: "pipe" });
+// Portable: no shell (Windows Git Bash has no /bin/sh path). Each git command
+// is a direct spawn.
+const git = (args, cwd) => execFileSync("git", args, { cwd, stdio: "pipe" });
 
 function scaffold(root) {
-  sh("git init -q", root);
-  sh("git config user.email demo@forgekit.local", root);
-  sh("git config user.name 'forge demo'", root);
+  git(["init", "-q"], root);
+  git(["config", "user.email", "demo@forgekit.local"], root);
+  git(["config", "user.name", "forge demo"], root);
   writeFileSync(
     join(root, "package.json"),
     JSON.stringify({ name: "forge-demo", scripts: { test: "node --test" } }, null, 2),
   );
   writeFileSync(join(root, "add.js"), "export const add = (a, b) => a + b;\n");
-  sh("mkdir -p test", root);
+  mkdirSync(join(root, "test"), { recursive: true });
   writeFileSync(
     join(root, "test", "add.test.js"),
     "import { test } from 'node:test';\n" +
@@ -30,7 +32,8 @@ function scaffold(root) {
       "import { add } from '../add.js';\n" +
       "test('adds', () => assert.equal(add(2, 3), 5));\n",
   );
-  sh("git add -A && git commit -qm scaffold", root);
+  git(["add", "-A"], root);
+  git(["commit", "-qm", "scaffold"], root);
 }
 
 /**
