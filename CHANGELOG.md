@@ -6,6 +6,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge verify --claim`**: verify a claim against a signed receipt — checks
+  the provenance signature, tree freshness, and claimed test status, returning
+  a `CONFIRMED`/`STALE`/`REFUTED`/`UNVERIFIABLE`/`INVALID` verdict.
+- **`forge demo`**: green → broken → green walkthrough proving the gate catches
+  a real defect.
+- **`forge test-select`**: first-class smart test selection as a CLI command.
+- **Hook token budget** (`hooks/budget.json`): per-event token budgets with
+  truncation keep long-running hooks inside their allocation.
+- **Verify heartbeat** (`onProgress`): per-suite start/done pulses on stderr so
+  a hung run shows where it stopped; plus a hang watchdog that names the
+  stuck suite.
+
+### Fixed
+
+- **Adaptive verify budget**: the verify budget now scales with tree size
+  instead of a fixed cap.
+- **Doctor hook check**: the Claude plugin hooks check now resolves hook
+  scripts through the launcher (`run.mjs`) instead of flagging the launcher
+  itself as non-executable.
+
 ## [1.12.3] - 2026-10-12
 
 ### Fixed
