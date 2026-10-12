@@ -142,6 +142,18 @@ test("EOTP fails despite tee succeeding and provides actionable setup", bashOnly
   assert.match(result.stdout, /delete the NPM_TOKEN repo secret/);
 });
 
+test("recovery dispatch fails fast: branch OIDC identity cannot satisfy trusted publisher", bashOnly, (t) => {
+  const f = fixture(t);
+  const result = f.run("Publish to npm (with provenance)", {
+    GITHUB_REF_TYPE: "branch",
+    GITHUB_REF_NAME: "master",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /::error::Recovery dispatch cannot publish via OIDC/);
+  assert.match(result.stdout, /git push origin refs\/tags\/v1\.12\.1/);
+  assert.doesNotMatch(f.calls(), /publish --provenance/);
+});
+
 test("other npm errors retain their original failure status", bashOnly, (t) => {
   const f = fixture(t);
   const result = f.run("Publish to npm (with provenance)", {
