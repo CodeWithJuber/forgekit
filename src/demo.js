@@ -20,6 +20,7 @@ function scaffold(root) {
   git(["config", "user.email", "demo@forgekit.local"], root);
   git(["config", "user.name", "forge demo"], root);
   git(["config", "core.autocrlf", "false"], root);
+  git(["config", "core.fileMode", "false"], root);
   writeFileSync(
     join(root, "package.json"),
     JSON.stringify({ name: "forge-demo", scripts: { test: "node --test" } }, null, 2),

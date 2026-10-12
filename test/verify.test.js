@@ -60,6 +60,7 @@ const gitRepo = () => {
   g("config", "user.email", "t@t.t");
   g("config", "user.name", "t");
   g("config", "core.autocrlf", "false");
+  g("config", "core.fileMode", "false");
   return root;
 };
 

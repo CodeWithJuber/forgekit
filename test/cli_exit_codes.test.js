@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { fileURLToPath } from "node:url";
+
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
 function scratchRepo() {
@@ -14,6 +15,7 @@ function scratchRepo() {
   execFileSync("git", ["config", "user.email", "t@t"], { cwd: root });
   execFileSync("git", ["config", "user.name", "t"], { cwd: root });
   execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: root });
+  execFileSync("git", ["config", "core.fileMode", "false"], { cwd: root });
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "x" }));
   return root;
 }
