@@ -186,8 +186,8 @@ export function defaultBudgetPath(fromUrl = import.meta.url) {
  */
 export function loadBudget({
   env = process.env,
-  exists = (p) => existsSync(p),
-  read = (p, enc) => readFileSync(p, enc),
+  exists = existsSync,
+  read = /** @type {(p: string, enc: string) => string} */ (readFileSync),
   budgetPath,
 } = {}) {
   const path = budgetPath ?? defaultBudgetPath();
