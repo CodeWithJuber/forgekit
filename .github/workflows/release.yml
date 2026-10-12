@@ -129,6 +129,14 @@ jobs:
               echo "::error::NODE_AUTH_TOKEN is set — it would shadow OIDC trusted publishing. Remove it (and registry-url from setup-node)."
               exit 1
             fi
+            # Recovery-dispatch runs on a branch, so the OIDC token's identity is
+            # refs/heads/<branch> — npm's trusted publisher expects the tag ref.
+            # Faking GITHUB_REF does not change the OIDC identity. Fail fast with
+            # guidance instead of a cryptic E422 from npm.
+            if [ "${GITHUB_REF_TYPE:-}" = "branch" ]; then
+              echo "::error::Recovery dispatch cannot publish via OIDC trusted publishing: the OIDC identity is refs/heads/${GITHUB_REF_NAME:-?}, but npm expects the tag ref. Push the tag (git push origin refs/tags/$TAG) to trigger a real tag run instead."
+              exit 1
+            fi
             set +e
             # npm provenance reads source SHA/ref from the process environment.
             # Recovery checks out a tag while the workflow itself runs on master.
