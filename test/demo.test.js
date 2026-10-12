@@ -8,12 +8,7 @@ import { demo } from "../src/demo.js";
 // 50+ passing Windows tests. Tracked for Windows-specific harness investigation.
 const winSkip =
   process.platform === "win32" && "F10 mutation detection is git-environment-sensitive on Windows";
-test(
-  "forge demo: green → broken → green, the gate catches the defect (item 11)",
-  {
-    skip: winSkip,
-  },
-  () => {
+test("forge demo: green → broken → green, the gate catches the defect (item 11)", { skip: winSkip }, () => {
   const r = demo();
   assert.deepEqual(
     r.steps.map((s) => s.status),
@@ -21,5 +16,4 @@ test(
     "the middle step must FAIL — a demo that never catches the defect proves nothing",
   );
   assert.equal(r.ok, true);
-},
-);
+});
