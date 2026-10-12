@@ -5,13 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const CLI = new URL("../src/cli.js", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
 function scratchRepo() {
   const root = mkdtempSync(join(tmpdir(), "forge-exit-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
   execFileSync("git", ["config", "user.email", "t@t"], { cwd: root });
   execFileSync("git", ["config", "user.name", "t"], { cwd: root });
+  execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: root });
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "x" }));
   return root;
 }
