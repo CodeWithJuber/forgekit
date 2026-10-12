@@ -16,6 +16,7 @@ import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
   computeCodeState,
+  defaultVerifyBudgetMs,
   extractCalledSymbols,
   findUnknownSymbols,
   maskedTestScript,
@@ -24,7 +25,6 @@ import {
   readVerifyEvents,
   signProvenance,
   verify,
-  defaultVerifyBudgetMs,
 } from "../src/verify.js";
 
 // A fake executable so a suite's exit code (and thus verify's verdict) is deterministic,
@@ -1126,7 +1126,6 @@ test("verify: NOT_CONFIGURED names the missing piece — no manifest at all", ()
   assert.match(r.tests.notConfigured.fix, /forge init/);
 });
 
-
 // ---------------------------------------------------------------------------
 // Items 6 + 7 — adaptive budget; the timeout names the hung suite (HUNG).
 // ---------------------------------------------------------------------------
@@ -1156,10 +1155,19 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
     JSON.stringify({ name: "x", scripts: { test: "node --test test/a.test.js" } }),
   );
   mkdirSync(join(root, "test"), { recursive: true });
-  writeFileSync(join(root, "test", "a.test.js"), "import { test } from 'node:test';\ntest('a', () => {});\n");
+  writeFileSync(
+    join(root, "test", "a.test.js"),
+    "import { test } from 'node:test';\ntest('a', () => {});\n",
+  );
   const events = [];
   const r = verify({ targetRoot: root, onProgress: (e) => events.push(e) });
   assert.equal(r.tests.status, "PASS");
-  assert.ok(events.some((e) => e.phase === "start"), "a start pulse per suite");
-  assert.ok(events.some((e) => e.phase === "done" && e.status === "PASS"), "a done pulse");
+  assert.ok(
+    events.some((e) => e.phase === "start"),
+    "a start pulse per suite",
+  );
+  assert.ok(
+    events.some((e) => e.phase === "done" && e.status === "PASS"),
+    "a done pulse",
+  );
 });

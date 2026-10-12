@@ -173,11 +173,7 @@ export const DEFAULT_HOOK_BUDGET = {
  * @returns {string}
  */
 export function defaultBudgetPath(fromUrl = import.meta.url) {
-  return join(
-    dirname(dirname(dirname(fileURLToPath(fromUrl)))),
-    "hooks",
-    "budget.json",
-  );
+  return join(dirname(dirname(dirname(fileURLToPath(fromUrl)))), "hooks", "budget.json");
 }
 
 /**

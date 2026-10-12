@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { COMMANDS } from "../src/commands.js";
-import { docsCheck, descriptionToolCountDrift, envVarsRead } from "../src/docs_check.js";
+import { descriptionToolCountDrift, docsCheck, envVarsRead } from "../src/docs_check.js";
 import { TOOLS } from "../src/mcp_tools.js";
 import { MODELS } from "../src/model_tiers.js";
 

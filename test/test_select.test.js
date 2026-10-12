@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { COMMANDS } from "../src/commands.js";
 import {
   blastRadius,
   classifyDeterministic,
@@ -12,7 +13,6 @@ import {
   resolveChangedFiles,
   selectTests,
 } from "../src/test_select.js";
-import { COMMANDS } from "../src/commands.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli.js");
 const ROOT = join(import.meta.dirname, "..");
@@ -37,21 +37,13 @@ test("medium: src-only → srcFiles for the impact leg", () => {
 });
 
 test("high: high-risk files always escalate", () => {
-  for (const f of [
-    "package.json",
-    "src/cli.js",
-    "test/_setup.js",
-    ".github/workflows/ci.yml",
-  ]) {
+  for (const f of ["package.json", "src/cli.js", "test/_setup.js", ".github/workflows/ci.yml"]) {
     assert.equal(classifyDeterministic([f]).tier, "high", f);
   }
 });
 
 test("high: mixed types and empty detection both fail safe", () => {
-  assert.equal(
-    classifyDeterministic(["src/atlas.js", "docs/GUIDE.md"]).tier,
-    "high",
-  );
+  assert.equal(classifyDeterministic(["src/atlas.js", "docs/GUIDE.md"]).tier, "high");
   const empty = classifyDeterministic([]);
   assert.equal(empty.tier, "high");
   assert.match(empty.reason, /fail-safe/);
@@ -66,10 +58,7 @@ test("blastRadius: a leaf src file stays small; central files explode", async ()
   mkdirSync(join(dir, "src"), { recursive: true });
   mkdirSync(join(dir, "test"), { recursive: true });
   writeFileSync(join(dir, "src", "a.js"), "export const a = 1;\n");
-  writeFileSync(
-    join(dir, "src", "b.js"),
-    "import { a } from './a.js';\nexport const b = a + 1;\n",
-  );
+  writeFileSync(join(dir, "src", "b.js"), "import { a } from './a.js';\nexport const b = a + 1;\n");
   writeFileSync(
     join(dir, "test", "a.test.js"),
     "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { a } from '../src/a.js';\ntest('a', () => assert.equal(a, 1));\n",
@@ -94,10 +83,7 @@ test("selectTests: medium tier maps impact to real test files", async () => {
   );
   const plan = await selectTests({ root: dir, files: ["src/a.js"] });
   assert.equal(plan.tier, "medium");
-  assert.ok(
-    plan.tests.includes("test/a.test.js"),
-    `impact-mapped test, got ${plan.tests}`,
-  );
+  assert.ok(plan.tests.includes("test/a.test.js"), `impact-mapped test, got ${plan.tests}`);
   assert.equal(plan.typecheck, true);
   assert.equal(plan.fullSuite, false);
   assert.match(plan.reason, /heuristic/);
@@ -124,10 +110,7 @@ test("resolveChangedFiles: a clean tree returns null (skip, never run-everything
 });
 
 test("resolveChangedFiles: --changed parses CSV; working tree picks up edits", () => {
-  assert.deepEqual(resolveChangedFiles(ROOT, { changed: "a.js, b.js " }), [
-    "a.js",
-    "b.js",
-  ]);
+  assert.deepEqual(resolveChangedFiles(ROOT, { changed: "a.js, b.js " }), ["a.js", "b.js"]);
   const dir = mkdtempSync(join(tmpdir(), "forge-ts-dirty-"));
   execSync("git init -q", { cwd: dir });
   execSync("git config user.email t@t && git config user.name t", { cwd: dir });

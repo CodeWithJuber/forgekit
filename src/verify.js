@@ -170,11 +170,14 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
     claim: null,
     reason,
   });
-  if (!prov || typeof prov !== "object") return noReceipt("not a forge verify receipt: no provenance object");
+  if (!prov || typeof prov !== "object")
+    return noReceipt("not a forge verify receipt: no provenance object");
   if (!prov.codeState || typeof prov.codeState !== "object")
     return noReceipt("not a forge verify receipt: no provenance.codeState fingerprint");
   if (typeof prov.signature !== "string" || !prov.signature)
-    return noReceipt("receipt carries no signature — it was hand-written, not minted by forge verify");
+    return noReceipt(
+      "receipt carries no signature — it was hand-written, not minted by forge verify",
+    );
 
   // 1. Authenticity: recompute the MAC over the receipt's own fields.
   let signature = "INVALID";
@@ -211,7 +214,9 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
     finishedAt: prov.event?.finishedAt ?? null,
     verifierVersion: prov.event?.verifierVersion ?? null,
   };
-  const where = claim.runId ? `run ${claim.runId}${claim.finishedAt ? ` (${claim.finishedAt})` : ""}` : "the receipt";
+  const where = claim.runId
+    ? `run ${claim.runId}${claim.finishedAt ? ` (${claim.finishedAt})` : ""}`
+    : "the receipt";
 
   if (signature === "INVALID")
     return {
@@ -951,7 +956,8 @@ function describeNotConfigured(cwd) {
   }
   return {
     reason: "no-project",
-    detail: "no recognizable project manifest (package.json, pyproject.toml, Cargo.toml, go.mod, …)",
+    detail:
+      "no recognizable project manifest (package.json, pyproject.toml, Cargo.toml, go.mod, …)",
     fix: `run \`${BRAND.cli} verify\` inside a project directory — or \`${BRAND.cli} init\` to scaffold one`,
   };
 }

@@ -231,9 +231,15 @@ HANDLERS.init = async (argv) => {
   // Item 42: the atlas cache is warmed during init, so the first `forge impact`
   // is a warm query. Say so (or why not) instead of leaving a silent 9 s first run.
   if (warmed && warmed.error === undefined)
-    console.log(`  warmed:   atlas cache (${warmed.files} files, ${warmed.ms} ms) — first \`forge impact\` is warm`);
-  else if (warmed?.error) console.log(`  warmed:   atlas cache build failed (${warmed.error}) — first \`forge impact\` builds it`);
-  else console.log(`  warmed:   skipped (--no-warm) — first \`forge impact\` builds the atlas cache`);
+    console.log(
+      `  warmed:   atlas cache (${warmed.files} files, ${warmed.ms} ms) — first \`forge impact\` is warm`,
+    );
+  else if (warmed?.error)
+    console.log(
+      `  warmed:   atlas cache build failed (${warmed.error}) — first \`forge impact\` builds it`,
+    );
+  else
+    console.log(`  warmed:   skipped (--no-warm) — first \`forge impact\` builds the atlas cache`);
   const toolOrigin = {
     "--tools": "from --tools",
     config: "recorded in .forge/forge.config.json",

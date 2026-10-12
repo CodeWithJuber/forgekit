@@ -125,9 +125,7 @@ HANDLERS.verify = async (argv) => {
       ? undefined
       : ({ label, phase, status }) =>
           process.stderr.write(
-            phase === "start"
-              ? `  … running suite: ${label}\n`
-              : `  … suite ${label}: ${status}\n`,
+            phase === "start" ? `  … running suite: ${label}\n` : `  … suite ${label}: ${status}\n`,
           ),
   });
   if (json) {

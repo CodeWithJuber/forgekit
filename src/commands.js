@@ -95,8 +95,7 @@ export const COMMANDS = {
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
   verify:
     "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
-  demo:
-    "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
+  demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
   precommit:
     "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
   "test-select": {
@@ -114,7 +113,11 @@ export const COMMANDS = {
       },
       { flag: "--json", desc: "machine-readable plan" },
     ],
-    examples: ["forge test-select", "forge test-select --changed src/atlas.js", "forge test-select --json"],
+    examples: [
+      "forge test-select",
+      "forge test-select --changed src/atlas.js",
+      "forge test-select --json",
+    ],
   },
   harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",

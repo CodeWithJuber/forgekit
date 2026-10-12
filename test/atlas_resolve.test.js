@@ -179,7 +179,10 @@ test("A6: extraction is linear — a 16k-line JS file plus a 16k-line Python fil
   // so the budget scales with 4/cpus. The old extractor still fails it everywhere
   // (its time scales with the machine too).
   const budget = Math.ceil(2500 * Math.max(1, 4 / availableParallelism()));
-  assert.ok(ms < budget, `build took ${ms}ms (budget ${budget}ms on ${availableParallelism()} cores)`);
+  assert.ok(
+    ms < budget,
+    `build took ${ms}ms (budget ${budget}ms on ${availableParallelism()} cores)`,
+  );
   assert.ok(
     atlas.edges.some((e) => e.kind === "calls" && e.resolved),
     "calls still resolve at scale",

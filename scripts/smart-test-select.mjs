@@ -117,8 +117,7 @@ async function main() {
 }
 
 // Only run the CLI when executed as a script (not when imported).
-const invokedAsScript =
-  !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const invokedAsScript = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (invokedAsScript) {
   main().catch((err) => {
     // Absolute fail-safe: any crash → full suite

@@ -11,8 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verify } from "./verify.js";
 
-const sh = (cmd, cwd) =>
-  execFileSync(cmd, { cwd, shell: "/bin/sh", stdio: "pipe" });
+const sh = (cmd, cwd) => execFileSync(cmd, { cwd, shell: "/bin/sh", stdio: "pipe" });
 
 function scaffold(root) {
   sh("git init -q", root);
@@ -20,11 +19,7 @@ function scaffold(root) {
   sh("git config user.name 'forge demo'", root);
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify(
-      { name: "forge-demo", scripts: { test: "node --test" } },
-      null,
-      2,
-    ),
+    JSON.stringify({ name: "forge-demo", scripts: { test: "node --test" } }, null, 2),
   );
   writeFileSync(join(root, "add.js"), "export const add = (a, b) => a + b;\n");
   sh("mkdir -p test", root);
@@ -56,25 +51,17 @@ export function demo({ onStep } = {}) {
     steps.push({ name: "green tree", status: green.tests.status });
 
     say("2/3  introduce a real defect — verify should FAIL");
-    writeFileSync(
-      join(root, "add.js"),
-      "export const add = (a, b) => a - b; // defect\n",
-    );
+    writeFileSync(join(root, "add.js"), "export const add = (a, b) => a - b; // defect\n");
     const broken = verify({ targetRoot: root });
     steps.push({ name: "broken tree", status: broken.tests.status });
 
     say("3/3  fix the defect — verify should PASS again");
-    writeFileSync(
-      join(root, "add.js"),
-      "export const add = (a, b) => a + b;\n",
-    );
+    writeFileSync(join(root, "add.js"), "export const add = (a, b) => a + b;\n");
     const fixed = verify({ targetRoot: root });
     steps.push({ name: "fixed tree", status: fixed.tests.status });
 
     const ok =
-      steps[0].status === "PASS" &&
-      steps[1].status === "FAIL" &&
-      steps[2].status === "PASS";
+      steps[0].status === "PASS" && steps[1].status === "FAIL" && steps[2].status === "PASS";
     return { ok, steps, root };
   } finally {
     // Leave the tree on disk for inspection when the demo failed; clean up on success.

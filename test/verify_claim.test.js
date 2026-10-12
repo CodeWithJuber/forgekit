@@ -3,17 +3,11 @@
 // needed when the tree is unchanged (the MAC'd, fingerprint-bound stamp IS the evidence).
 import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import {
-  computeCodeState,
-  signProvenance,
-  verify,
-  verifyClaim,
-} from "../src/verify.js";
+import { computeCodeState, signProvenance, verify, verifyClaim } from "../src/verify.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli.js");
 
@@ -80,11 +74,7 @@ test("REFUTED: a hand-written receipt with a forged signature fails", () => {
 
 test("INVALID: not a receipt at all", () => {
   const dir = gitRepo();
-  for (const bad of [
-    {},
-    { provenance: {} },
-    { provenance: { codeState: {} } },
-  ]) {
+  for (const bad of [{}, { provenance: {} }, { provenance: { codeState: {} } }]) {
     const r = verifyClaim(bad, { cwd: dir });
     assert.equal(r.verdict, "INVALID", JSON.stringify(bad));
   }
@@ -116,14 +106,10 @@ test("CLI: --claim prints CONFIRMED and exits 0; STALE exits 1", () => {
   }
   assert.match(out, /"signature": "/, "the receipt carries a signature");
   writeFileSync(receiptPath, out); // receipt lives OUTSIDE the repo
-  const ok = execFileSync(
-    process.execPath,
-    [CLI, "verify", "--claim", receiptPath],
-    {
-      cwd: dir,
-      encoding: "utf8",
-    },
-  );
+  const ok = execFileSync(process.execPath, [CLI, "verify", "--claim", receiptPath], {
+    cwd: dir,
+    encoding: "utf8",
+  });
   assert.match(ok, /CONFIRMED/);
   writeFileSync(join(dir, "b.js"), "export const b = 2;\n");
   try {
@@ -146,9 +132,6 @@ test("signProvenance still round-trips through verifyClaim (B7 binding intact)",
     codeState: computeCodeState(dir),
   });
   assert.ok(stamp.signature, "signed");
-  const r = verifyClaim(
-    { provenance: stamp, tests: { status: "PASS" }, ok: true },
-    { cwd: dir },
-  );
+  const r = verifyClaim({ provenance: stamp, tests: { status: "PASS" }, ok: true }, { cwd: dir });
   assert.equal(r.verdict, "CONFIRMED");
 });

@@ -54,8 +54,7 @@ const HIGH_RISK = [
  * @returns {{tier: "cosmetic"|"low"|"medium"|"high", reason: string, tests?: string[], srcFiles?: string[]}}
  */
 export function classifyDeterministic(files) {
-  if (files.length === 0)
-    return { tier: "high", reason: "no changed files detected (fail-safe)" };
+  if (files.length === 0) return { tier: "high", reason: "no changed files detected (fail-safe)" };
 
   const risky = files.filter((f) => HIGH_RISK.some((p) => p.test(f)));
   if (risky.length > 0)
@@ -146,7 +145,7 @@ export async function blastRadius(root, srcFiles) {
       const r = predictImpact(root, f, { basic: true });
       // found === false means the atlas cannot see the file at all (unbuilt atlas,
       // unresolvable target) — that is UNMEASURABLE, not "no impact". Fail safe.
-      if (!r || r.found !== true) return null;
+      if (r?.found !== true) return null;
       for (const hit of r?.impactedFiles ?? []) union.add(hit);
       union.add(f);
     }
@@ -180,14 +179,9 @@ export async function selectTests({ root = process.cwd(), files = [] } = {}) {
     } else {
       result.reason += ` + heuristic blast radius ${blast.count} file(s)`;
       // Blast-radius test files run directly; src files map to their tests by convention.
-      const srcTargets = [
-        ...result.srcFiles,
-        ...blast.files.filter((f) => SRC_FILE.test(f)),
-      ];
+      const srcTargets = [...result.srcFiles, ...blast.files.filter((f) => SRC_FILE.test(f))];
       const testTargets = blast.files.filter((f) => TEST_FILE.test(f));
-      result.tests = [
-        ...new Set([...testTargets, ...mapToTests(root, srcTargets)]),
-      ].sort();
+      result.tests = [...new Set([...testTargets, ...mapToTests(root, srcTargets)])].sort();
     }
     delete result.srcFiles;
   }
@@ -263,8 +257,7 @@ export async function runTestSelect(argv) {
   });
   if (files === null) {
     const msg = "no changes in the working tree — nothing to select";
-    if (json)
-      console.log(JSON.stringify({ tier: "none", reason: msg, tests: [] }));
+    if (json) console.log(JSON.stringify({ tier: "none", reason: msg, tests: [] }));
     else console.log(`  ${msg}.`);
     return;
   }
