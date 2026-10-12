@@ -1181,4 +1181,5 @@ test(
     events.some((e) => e.phase === "done" && e.status === "PASS"),
     "a done pulse",
   );
-});
+},
+);
