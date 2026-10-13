@@ -4,7 +4,7 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { execFileSync } from "node:child_process";
-import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -17,7 +17,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { arch, platform } from "node:os";
+import { arch, availableParallelism, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
@@ -148,6 +148,109 @@ export function signProvenance(prov) {
   const mac = provenanceMac(prov);
   if (mac) prov.signature = mac;
   return prov;
+}
+
+/**
+ * Check someone else's verification claim: `forge verify --claim <receipt.json>`,
+ * where the receipt is `forge verify --json` output. No re-run is needed when the
+ * tree is unchanged — the MAC'd, fingerprint-bound stamp IS the evidence. A changed
+ * tree cannot be confirmed or refuted from the receipt; it is STALE and must be
+ * re-verified. (The MAC key is machine-local: a receipt minted on another machine
+ * reads as INVALID here — tampered-or-foreign is the honest bucket for both.)
+ * @param {any} receipt parsed `forge verify --json` output
+ * @param {{cwd?: string}} [opts]
+ * @returns {{verdict: "CONFIRMED"|"STALE"|"REFUTED"|"UNVERIFIABLE"|"INVALID", signature: "VALID"|"INVALID"|"UNAVAILABLE", tree: "MATCHED"|"CHANGED"|"UNKNOWN", claim: object|null, reason: string}}
+ */
+export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
+  const prov = receipt?.provenance;
+  /** @returns {{verdict: "CONFIRMED"|"STALE"|"REFUTED"|"UNVERIFIABLE"|"INVALID", signature: "VALID"|"INVALID"|"UNAVAILABLE", tree: "MATCHED"|"CHANGED"|"UNKNOWN", claim: object|null, reason: string}} */
+  const noReceipt = (reason) => ({
+    verdict: /** @type {const} */ ("INVALID"),
+    signature: /** @type {const} */ ("INVALID"),
+    tree: /** @type {const} */ ("UNKNOWN"),
+    claim: null,
+    reason,
+  });
+  if (!prov || typeof prov !== "object")
+    return noReceipt("not a forge verify receipt: no provenance object");
+  if (!prov.codeState || typeof prov.codeState !== "object")
+    return noReceipt("not a forge verify receipt: no provenance.codeState fingerprint");
+  if (typeof prov.signature !== "string" || !prov.signature)
+    return noReceipt(
+      "receipt carries no signature — it was hand-written, not minted by forge verify",
+    );
+
+  // 1. Authenticity: recompute the MAC over the receipt's own fields.
+  /** @type {"VALID"|"INVALID"|"UNAVAILABLE"} */
+  let signature = "INVALID";
+  const key = evidenceKey();
+  if (!key) {
+    signature = "UNAVAILABLE";
+  } else {
+    const mac = provenanceMac(prov);
+    try {
+      if (
+        mac &&
+        mac.length === prov.signature.length &&
+        timingSafeEqual(Buffer.from(mac, "utf8"), Buffer.from(prov.signature, "utf8"))
+      ) {
+        signature = "VALID";
+      }
+    } catch {
+      signature = "INVALID";
+    }
+  }
+
+  // 2. Freshness: does the current tree still match the fingerprinted one?
+  const now = computeCodeState(cwd);
+  const cs = prov.codeState;
+  const tree =
+    now.scheme === cs.scheme && now.head === cs.head && now.dirtyHash === cs.dirtyHash
+      ? "MATCHED"
+      : "CHANGED";
+
+  const claim = {
+    tests: prov.tests?.status ?? receipt?.tests?.status ?? "unknown",
+    ok: receipt?.ok ?? null,
+    runId: prov.event?.runId ?? null,
+    finishedAt: prov.event?.finishedAt ?? null,
+    verifierVersion: prov.event?.verifierVersion ?? null,
+  };
+  const where = claim.runId
+    ? `run ${claim.runId}${claim.finishedAt ? ` (${claim.finishedAt})` : ""}`
+    : "the receipt";
+
+  if (signature === "INVALID")
+    return {
+      verdict: "REFUTED",
+      signature,
+      tree,
+      claim,
+      reason: `signature does not verify — ${where} was modified after minting, or minted on another machine (the evidence key is machine-local)`,
+    };
+  if (tree === "CHANGED")
+    return {
+      verdict: "STALE",
+      signature,
+      tree,
+      claim,
+      reason: `tree changed since ${where} — the claim cannot be confirmed or refuted from this receipt; re-run \`forge verify\``,
+    };
+  if (signature === "UNAVAILABLE")
+    return {
+      verdict: "UNVERIFIABLE",
+      signature,
+      tree,
+      claim,
+      reason: `tree matches ${where}, but no local evidence key exists to check the signature — treat as unconfirmed`,
+    };
+  return {
+    verdict: "CONFIRMED",
+    signature,
+    tree,
+    claim,
+    reason: `tree matches ${where}; signature valid; claimed tests status: ${claim.tests}`,
+  };
 }
 
 /** The fingerprint scheme. v2 (review F01): a canonical, length-delimited MANIFEST — the v1
@@ -500,6 +603,9 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  * @property {boolean} [mutated]          the code state changed while the suites ran (review F10)
  * @property {string[]} [unbound]         code the fingerprint could not bind — never a PASS (N05)
  * @property {string} [output]
+ * @property {{reason: string, detail: string, fix: string}} [notConfigured]
+ *   granular NOT_CONFIGURED (item 41): which subsystem is missing + the exact fix,
+ *   instead of one coarse bucket
  */
 // Bins forge is willing to execute directly. Everything else stays report-only.
 const EXECUTORS = new Set(["npm", "pnpm", "yarn", "bun", "pytest"]);
@@ -565,13 +671,15 @@ export function classifySuiteFailure(e, { label, bin, timeout }) {
   }
   if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
     // Killed for running too long — it started but never reached a verdict.
+    // Named as a HANG (item 7): the suite label and budget travel with the verdict
+    // so a stuck run reports WHERE it stopped, not just that it stopped.
     return {
       label,
       status: "INCOMPLETE",
       exitCode: null,
       timedOut: true,
       signal: e.signal ?? undefined,
-      output: `exceeded ${timeout}ms`,
+      output: `HUNG: "${label}" produced no verdict in ${timeout}ms — killed`,
     };
   }
   if (typeof e.status === "number") {
@@ -801,6 +909,61 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
   };
 }
 
+/**
+ * Granular NOT_CONFIGURED (item 41): the old single bucket covered "never
+ * initialized" through "one tool missing". Probe the tree and name the subsystem
+ * plus the exact fix, so the 60-second quickstart walks to PASS in one loop.
+ * @param {string} cwd
+ * @returns {{reason: string, detail: string, fix: string}}
+ */
+function describeNotConfigured(cwd) {
+  const readJson = (name) => {
+    try {
+      return JSON.parse(readFileSync(join(cwd, name), "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const pkg = readJson("package.json");
+  if (pkg) {
+    if (pkg.scripts?.test)
+      return {
+        reason: "runner-unrecognized",
+        detail: "package.json declares a `test` script, but no known runner matched it",
+        fix: "run the suite yourself and treat this as unverified, or wire the runner so forge can execute it",
+      };
+    return {
+      reason: "no-test-script",
+      detail: "package.json exists but declares no `test` script",
+      fix: `add one — e.g. "scripts": { "test": "node --test test/" } — then re-run \`${BRAND.cli} verify\``,
+    };
+  }
+  const manifests = [
+    ["pyproject.toml", "python"],
+    ["setup.py", "python"],
+    ["Cargo.toml", "rust"],
+    ["go.mod", "go"],
+    ["pom.xml", "java/maven"],
+    ["build.gradle", "java/gradle"],
+    ["Gemfile", "ruby"],
+    ["composer.json", "php"],
+  ];
+  for (const [file, stack] of manifests) {
+    if (existsSync(join(cwd, file)))
+      return {
+        reason: "no-test-command",
+        detail: `${file} found (${stack} project) but no test command was detected`,
+        fix: `declare the test command for your stack, then re-run \`${BRAND.cli} verify\``,
+      };
+  }
+  return {
+    reason: "no-project",
+    detail:
+      "no recognizable project manifest (package.json, pyproject.toml, Cargo.toml, go.mod, …)",
+    fix: `run \`${BRAND.cli} verify\` inside a project directory — or \`${BRAND.cli} init\` to scaffold one`,
+  };
+}
+
 // The project's suite must run as if launched from a terminal. `NODE_TEST_CONTEXT` is node's
 // test-runner plumbing: inherited from a parent `node --test` (verify called from inside a
 // test run, or from a hook spawned by one), it makes the project's own `node --test` act as a
@@ -810,6 +973,19 @@ const suiteEnv = () => {
   delete env.NODE_TEST_CONTEXT;
   return env;
 };
+
+/**
+ * Default per-suite budget, adaptive to the machine (item 6): the flat 600 s budget
+ * SIGTERM'd forgekit's own serial suite on 2-core hardware (~612 s measured) — a
+ * verification tool that cannot finish verification on commodity hardware. Slower
+ * machines get proportionally more time (capped at 3×); FORGE_VERIFY_TIMEOUT_MS
+ * still overrides. A hang is still caught — just later on slow iron.
+ * @param {number} [cpus]
+ * @returns {number} milliseconds
+ */
+export function defaultVerifyBudgetMs(cpus = availableParallelism()) {
+  return 600000 * Math.min(3, Math.max(1, Math.ceil(4 / Math.max(1, cpus))));
+}
 
 /**
  * Run EVERY planned suite (HI-01 + review F08) — a polyglot repo where a passing Node suite
@@ -824,13 +1000,15 @@ const suiteEnv = () => {
  * Only a real non-zero EXIT CODE from a suite that actually ran is a FAIL; a suite
  * that never executed is INCOMPLETE, never a false FAIL.
  * @param {string} cwd
- * @param {{plan?: ReturnType<typeof planSuites>}} [opts]
+ * @param {{plan?: ReturnType<typeof planSuites>, onProgress?: (e: {label: string, phase: "start"|"done", status?: string}) => void}} [opts]
  * @returns {VerifyTests}
  */
-function runTests(cwd, { plan = planSuites(cwd) } = {}) {
-  const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || 600000;
+function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
+  const timeout = Number(process.env.FORGE_VERIFY_TIMEOUT_MS) || defaultVerifyBudgetMs();
   // No declared suite anywhere → NOT_CONFIGURED, not a forced npm-test failure.
-  if (!plan.suites.length) return { ran: false, status: "NOT_CONFIGURED" };
+  // Granular (item 41): say WHICH subsystem is missing and the exact fix command.
+  if (!plan.suites.length)
+    return { ran: false, status: "NOT_CONFIGURED", notConfigured: describeNotConfigured(cwd) };
 
   /** @type {SuiteResult[]} */
   const executed = [];
@@ -866,6 +1044,10 @@ function runTests(cwd, { plan = planSuites(cwd) } = {}) {
       continue;
     }
     try {
+      // Heartbeat (item 7): a suite that hangs shows WHERE it stopped, on stderr
+      // (stdout stays machine-readable for --json). The per-suite timeout below is
+      // the watchdog; this line is the pulse.
+      onProgress?.({ label, phase: "start" });
       execFileSync(r.bin, r.args ?? [], {
         cwd: dir,
         encoding: "utf8",
@@ -874,8 +1056,11 @@ function runTests(cwd, { plan = planSuites(cwd) } = {}) {
         env: suiteEnv(),
       });
       executed.push({ label, status: "PASS", ...where, exitCode: 0 });
+      onProgress?.({ label, phase: "done", status: "PASS" });
     } catch (e) {
-      executed.push({ ...classifySuiteFailure(e, { label, bin: r.bin, timeout }), ...where });
+      const classified = { ...classifySuiteFailure(e, { label, bin: r.bin, timeout }), ...where };
+      executed.push(classified);
+      onProgress?.({ label, phase: "done", status: classified.status });
     }
   }
 
@@ -1095,13 +1280,13 @@ export function readVerifyEvents(root) {
  * version, per-suite cwd/command/verdict, package coverage, pre/post tree identity, timestamps
  * and an environment digest. The event is also appended to `.forge/verify-events.jsonl`, so
  * other evidence (router outcomes, ledger refs) can cite a run by id.
- * @param {{targetRoot?: string, base?: string}} [opts]
+ * @param {{targetRoot?: string, base?: string, onProgress?: (e: {label: string, phase: "start"|"done", status?: string}) => void}} [opts]
  * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
  *   changedFiles: string[], added: string}}
  *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER
  *   when nothing ran. `changedFiles` includes untracked files; `added` includes their contents.
  */
-export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
+export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress } = {}) {
   const diff =
     git(["diff", "--unified=0", base], targetRoot) ||
     git(["diff", "--unified=0", "--cached"], targetRoot);
@@ -1153,7 +1338,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD" } = {}) {
   const startedAt = new Date().toISOString();
   const plan = planSuites(targetRoot);
   const pre = computeCodeState(targetRoot);
-  const tests = runTests(targetRoot, { plan });
+  const tests = runTests(targetRoot, { plan, onProgress });
   const post = computeCodeState(targetRoot);
   const finishedAt = new Date().toISOString();
   // F10: the tree moved while the suites ran. Neither state is the one that was tested, so

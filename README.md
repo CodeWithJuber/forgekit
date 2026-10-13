@@ -21,18 +21,37 @@
 **Your coding agent forgets. Forgekit remembers — outside the model, in plain git.**
 
 Forgekit is a Node.js CLI and MCP server (zero runtime dependencies) that gives your AI coding
-tools a reliability layer: **shared memory** that survives sessions and teammates,
-**blast-radius analysis** before you edit, and **verification gates** after. You author project
-rules once, and it emits native configuration for Claude
-Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, OpenClaw and Kimi Code (plus
-MCP configuration for Roo and VS Code). Claude Code is the most deeply exercised integration.
+tools a reliability layer: **agent memory** that survives sessions and teammates, **pre-push
+verification gates**, and **guardrails** that run before and after every tool call. You author
+project rules once, and it emits native configuration for 12 agent tools. Claude Code is the
+most deeply exercised integration.
 
-<p align="center">
-  ⭐ <a href="https://github.com/CodeWithJuber/forgekit">Star it</a>
-  · 📦 <code>npm install -g @codewithjuber/forgekit</code>
-  · 🚀 <a href="#60-second-quickstart">60-second quickstart</a>
-  · 📖 <a href="docs/GUIDE.md">Full guide</a>
-</p>
+| Inventory | Count |
+|---|---|
+| CLI commands (`forge --help`) | 51 |
+| Lifecycle hook commands (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) | 17 |
+| Config emitters (`src/emit/`) | 13 |
+| Installable skill packs (`skills/`) | 3 |
+| Per-event hook token budgets (`hooks/budget.json`) | 5 |
+
+| Tool | Native config | MCP server entry | Automatic hooks |
+|---|---|---|---|
+| Claude Code | ✅ | ✅ | ✅ (all 5 events, blocking) |
+| Codex, Cursor, Gemini, Copilot, Zed, Continue | ✅ | ✅ | — |
+| Aider, Windsurf, OpenClaw, Kimi Code | ✅ | — | — |
+| Roo Code, VS Code | — | ✅ | — |
+
+Why it wins, measured:
+
+- **Hooks stay cheap.** SessionStart injects a pointer index, not the full memory —
+  measured 18,262 B of durable memory → 826 B index — and every hook event has a hard
+  byte budget (`hooks/budget.json`: 12 KB SessionStart, 4–6 KB the rest), enforced by the
+  launcher. No silent context bloat.
+- **Verification that can actually fail the push.** `forge verify` runs the repo's real
+  test suites and reports `PASS` / `FAIL` / `INCOMPLETE` / `NOT_CONFIGURED` against a
+  tree fingerprint of the code it ran on — a red run blocks the push, not just the chat.
+- **Blast radius before you edit.** `forge impact` lists the files a change probably
+  touches from a cached code graph: 1.68 ms warm (the cache is built by `forge init`).
 
 It does three jobs:
 
@@ -55,7 +74,7 @@ It does three jobs:
 >   exercise than Claude Code. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). The other ten tools receive native config (most also an MCP server entry; Aider,
+>   guards). The other eleven tools receive native config (most also an MCP server entry; Aider,
 >   Windsurf/Devin and Kimi Code do not) but no automatic hooks, and have had less real-world exercise.
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
@@ -84,6 +103,7 @@ It does three jobs:
 npm install -g @codewithjuber/forgekit   # or: npm install -g github:CodeWithJuber/forgekit
 forge init                               # emit native config for the tools this repo uses
 forge doctor                             # verify providers, hooks, and MCP wiring
+forge demo                               # watch the gate catch a real defect (green → broken → green)
 ```
 
 Then run a pre-action check inside a repository:
@@ -414,7 +434,9 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge orchestration` | agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global                                   |
 |                         | `forge advisor`       | Claude Code's advisor tool — a stronger second model consulted at decision points: set the advisor per repo (emitted into .claude/settings.json by sync, with an Advisor rule section in AGENTS.md) or --global, check a main/advisor pairing before Claude Code refuses it, list accepted pairings |
 |                         | `forge verify`        | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                                                                                             |
+|                         | `forge demo`          | scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)                                                                                                                                                                             |
 |                         | `forge precommit`     | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                                                                                             |
+|                         | `forge test-select`   | smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)                                                                                                                                                                               |
 | **Memory**              | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                              |
 |                         | `forge recall`        | manage cross-session memory (list / add / consolidate)                                                                                                                                                                                                                                              |
 |                         | `forge remember`      | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                                                                                                     |

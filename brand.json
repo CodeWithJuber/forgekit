@@ -3,6 +3,7 @@
   "cli": "forge",
   "pkg": "forgekit",
   "tagline": "One brain for every AI coding agent.",
+  "description": "Reliability layer for AI coding agents: shared memory that survives sessions, blast-radius checks before edits, verification gates after — one config for 12 tools, zero runtime deps.",
   "home": "~/.forge",
   "layers": {
     "tools": "skills (model-invoked capabilities)",

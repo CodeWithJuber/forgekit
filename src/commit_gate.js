@@ -125,6 +125,57 @@ function stagedPaths(root, strict = false) {
 }
 
 /**
+ * Staged git modes per path, from `git diff --cached --raw -z` (`:oldmode newmode …`).
+ * The Git Data API publishes blobs as 100644 unless the mode is set, so a shebang
+ * script staged 100644 silently loses its exec bit on API-push repos (PR #176
+ * install-smoke). Scoped to the staged diff — not the whole tree.
+ * @param {string} root
+ * @returns {Map<string, string>} path → new staged mode
+ */
+export function stagedModes(root) {
+  const out = new Map();
+  const parts = gitRaw(root, ["diff", "--cached", "--raw", "-z"]).split("\0");
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const m = /^:(\d+) (\d+) [0-9a-f]+ [0-9a-f]+ ([A-Z])/.exec(parts[i]);
+    if (!m || m[3] === "D" || !parts[i + 1]) continue;
+    out.set(parts[i + 1], m[2]);
+  }
+  return out;
+}
+
+/**
+ * Staged files that LOOK executable (first staged line is a shebang) but are staged
+ * 100644 — committing them (or pushing via the Git Data API, which defaults blobs to
+ * 100644) ships a script that cannot run. Warning-only: never blocks the commit.
+ * Fail-open: any git error → no warnings.
+ * @param {string} root
+ * @param {Map<string, string>} [modes] precomputed stagedModes(root)
+ * @returns {string[]} repo-relative paths
+ */
+export function stagedExecBitWarnings(root, modes = stagedModes(root)) {
+  const warnings = [];
+  for (const [file, mode] of modes) {
+    if (mode === "100755" || mode === "100744") continue;
+    let head;
+    try {
+      // First bytes of the STAGED blob are enough; cap the read — a warning must
+      // never cost a full blob read on a huge staged file (fail-open on overflow).
+      const r = spawnSync("git", ["show", `:${file}`], {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024,
+      });
+      if (r.error) continue;
+      head = r.stdout.slice(0, 2);
+    } catch {
+      continue;
+    }
+    if (head === "#!") warnings.push(file);
+  }
+  return warnings.sort();
+}
+
+/**
  * Staged ADDED lines per file (`--unified=0` — context/removed lines predate this
  * commit and must not trigger the secret scan). Header paths are informational only
  * (git may C-quote exotic names there); detection never depends on path fidelity.
@@ -250,13 +301,14 @@ export function gateMode(v = process.env.FORGE_COMMIT_GATE) {
 /**
  * PURE decision table over already-gathered facts — the testable core, no git.
  * `unscanned` = staged files the secret scan could not read: refused like a secret.
- * @param {{staged?: string[], secretFiles?: string[], unscanned?: string[], mode?: "warn"|"block"|"off"}} [opts]
+ * @param {{staged?: string[], secretFiles?: string[], unscanned?: string[], execBitFiles?: string[], mode?: "warn"|"block"|"off"}} [opts]
  * @returns {{allow: boolean, row: string, findings: {kind: string, severity: string, detail: string, files: string[]}[], classes?: Record<string, string[]>}}
  */
 export function commitGateDecision({
   staged = [],
   secretFiles = [],
   unscanned = [],
+  execBitFiles = [],
   mode = "warn",
 } = {}) {
   if (mode === "off") return { allow: true, row: "kill-switch", findings: [] };
@@ -287,6 +339,14 @@ export function commitGateDecision({
         .slice(0, 10)
         .join(", ")}${classes.code.length > 10 ? ` (+${classes.code.length - 10} more)` : ""}`,
       files: classes.code,
+    });
+  }
+  if (execBitFiles.length) {
+    findings.push({
+      kind: "exec-bit",
+      severity: "warn", // never blocks: advisory — the bit may be intentionally unset
+      detail: `staged 100644 but starts with a shebang — will not be executable after an API push: ${execBitFiles.join(", ")}`,
+      files: execBitFiles,
     });
   }
   const allow = !findings.some((f) => f.severity === "block");
@@ -336,8 +396,15 @@ export function commitGate(root, { env = process.env } = {}) {
       const isBinary = binary.has(file) && text.includes("\0");
       if (lineBlockSecret(text, { entropy: !isBinary })) secretFiles.push(file);
     }
+    // Exec-bit audit (P0-04): a shebang script staged 100644 loses its bit on API pushes.
+    let execBitFiles = [];
+    try {
+      execBitFiles = stagedExecBitWarnings(root);
+    } catch {
+      execBitFiles = []; // fail-open: the audit is advisory
+    }
     return {
-      ...commitGateDecision({ staged, secretFiles, unscanned, mode }),
+      ...commitGateDecision({ staged, secretFiles, unscanned, execBitFiles, mode }),
       mode,
       staged,
     };
@@ -379,6 +446,11 @@ export function renderCommitGate(r) {
     if (f.kind === "secret-scan") {
       lines.push(
         "      fix: make `git diff --cached --text -- <file>` work (or unstage the file); if it is intentionally huge, commit it with FORGE_COMMIT_GATE=0.",
+      );
+    }
+    if (f.kind === "exec-bit") {
+      lines.push(
+        "      fix: `git update-index --chmod=+x -- <file>` (then re-stage) — the Git Data API publishes blobs as 100644 unless the bit is set.",
       );
     }
   }

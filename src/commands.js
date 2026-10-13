@@ -35,6 +35,10 @@ export const COMMANDS = {
         flag: "--remove-settings",
         desc: "reverse the merge — remove forge-managed hooks/permissions/statusline from ~/.claude/settings.json (backed up first)",
       },
+      {
+        flag: "--no-warm",
+        desc: "skip warming the atlas cache (init pre-builds it so the first `forge impact` is a warm query instead of a cold graph build)",
+      },
     ],
     examples: [
       "forge init",
@@ -91,8 +95,30 @@ export const COMMANDS = {
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
   verify:
     "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
+  demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
   precommit:
     "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+  "test-select": {
+    summary:
+      "smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)",
+    usage: `forge test-select [--changed <a,b>] [--base <ref> --head <ref>] [--json]`,
+    flags: [
+      {
+        flag: "--changed <a,b>",
+        desc: "comma-separated changed files; default: the working tree (staged + unstaged + untracked)",
+      },
+      {
+        flag: "--base <ref> --head <ref>",
+        desc: "select for a ref range (git diff base...head) instead of the working tree",
+      },
+      { flag: "--json", desc: "machine-readable plan" },
+    ],
+    examples: [
+      "forge test-select",
+      "forge test-select --changed src/atlas.js",
+      "forge test-select --json",
+    ],
+  },
   harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
   remember: "add a durable fact to this repo's portable memory (forge brain)",
   brain: "show / rebuild the portable project memory index",
@@ -385,7 +411,9 @@ export const GROUPS = {
     "orchestration",
     "advisor",
     "verify",
+    "demo",
     "precommit",
+    "test-select",
   ],
   Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
   Quality: ["scan", "spec", "harden", "radar"],

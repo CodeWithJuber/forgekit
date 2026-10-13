@@ -8,6 +8,8 @@
     "command": "node",
     "args": [
       "~/.forge/guards/run.mjs",
+      "--event",
+      "StatusLine",
       "~/.forge/statusline.sh"
     ]
   },
@@ -96,6 +98,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "UserPromptSubmit",
               "~/.forge/guards/cortex.sh",
               "prompt"
             ]
@@ -105,6 +109,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "UserPromptSubmit",
               "~/.forge/guards/cortex.sh",
               "preflight"
             ]
@@ -121,6 +127,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "SessionStart",
               "~/.forge/guards/recall-load.sh"
             ]
           },
@@ -129,6 +137,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "SessionStart",
               "~/.forge/guards/cortex.sh",
               "session-start"
             ]
@@ -145,6 +155,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
               "~/.forge/guards/protect-paths.sh"
             ]
           },
@@ -153,6 +165,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
               "~/.forge/guards/cost-budget.sh"
             ]
           },
@@ -161,6 +175,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
               "~/.forge/guards/doom-loop.sh"
             ]
           }
@@ -174,6 +190,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
               "~/.forge/guards/cortex.sh",
               "pre-edit"
             ]
@@ -188,6 +206,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
               "~/.forge/guards/protect-paths.sh"
             ]
           }
@@ -203,6 +223,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PostToolUse",
               "~/.forge/guards/format-on-edit.sh"
             ]
           },
@@ -211,6 +233,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PostToolUse",
               "~/.forge/guards/cortex.sh",
               "capture"
             ]
@@ -225,6 +249,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PostToolUse",
               "~/.forge/guards/secret-redact.sh"
             ]
           },
@@ -233,6 +259,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "PostToolUse",
               "~/.forge/guards/cortex.sh",
               "capture"
             ]
@@ -248,6 +276,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "Stop",
               "~/.forge/guards/completion-gate.sh"
             ]
           },
@@ -256,6 +286,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "Stop",
               "~/.forge/guards/lean-guard.sh"
             ]
           },
@@ -264,6 +296,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "Stop",
               "~/.forge/guards/session-learner.sh"
             ]
           },
@@ -272,6 +306,8 @@
             "command": "node",
             "args": [
               "~/.forge/guards/run.mjs",
+              "--event",
+              "Stop",
               "~/.forge/guards/cortex.sh",
               "stop"
             ]

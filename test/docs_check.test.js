@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { COMMANDS } from "../src/commands.js";
-import { docsCheck, envVarsRead } from "../src/docs_check.js";
+import { descriptionToolCountDrift, docsCheck, envVarsRead } from "../src/docs_check.js";
 import { TOOLS } from "../src/mcp_tools.js";
 import { MODELS } from "../src/model_tiers.js";
 
@@ -19,7 +19,7 @@ function fixtureRoot(mutate = (files) => files) {
   const allTools = TOOLS.map((t) => `- \`${t.name}\``).join("\n");
   const envDocs = "Set FORGE_FIXTURE_VAR to tune the fixture.";
   const files = {
-    "package.json": JSON.stringify({ name: "fixture", version: "1.2.3" }),
+    "package.json": JSON.stringify({ name: "fixture", version: "1.2.3", description: "fixture" }),
     "README.md": `# fixture\n${allCommands}\n${allTools}\n${TOOLS.length} MCP tools\n${envDocs}\n`,
     "docs/GUIDE.md": `# guide\n${allCommands}\n`,
     "ARCHITECTURE.md": "# arch\n",
@@ -431,4 +431,14 @@ test("docsCheck: empty release sections and version mismatch are flagged", () =>
     ),
     "empty released section flagged",
   );
+});
+
+test("docsCheck: description tool-count drift is caught (item 48)", () => {
+  assert.equal(descriptionToolCountDrift("one config for 12 tools", 12), null);
+  assert.match(
+    descriptionToolCountDrift("one config for 10 tools", 12),
+    /says "10 tools" but there are 12/,
+    "the stale '10 tools' drift that shipped is caught",
+  );
+  assert.match(descriptionToolCountDrift("no count here", 12), /no tool count/);
 });

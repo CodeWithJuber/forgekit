@@ -1,0 +1,12 @@
+{
+  "$schema": "forgekit hook token budget (v1)",
+  "default_bytes": 4096,
+  "events": {
+    "PostToolUse": 4000,
+    "PreToolUse": 4000,
+    "SessionStart": 12000,
+    "Stop": 6000,
+    "UserPromptSubmit": 6000
+  },
+  "note": "Byte caps on hook stdout that Claude Code injects into context. SessionStart used to dump the whole MEMORY.md; UserPromptSubmit/PreToolUse/PostToolUse guards can each add kilobytes per tool call. The launcher (global/guards/run.mjs) enforces these: stdout beyond the cap for the hook's event is truncated with a '[truncated: N bytes over budget]' note. A guard that BLOCKS (exit 2) is never truncated — its verdict is security-critical. stderr is never truncated (it stays in the transcript, not context). Override everything with the HOOK_TOKEN_BUDGET env var (a JSON object shaped like 'events', or the integer default)."
+}

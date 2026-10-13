@@ -11,9 +11,10 @@
 // install dirs, then PATH itself — skipping the WSL launcher in System32, which is not Git Bash.
 // POSIX is unchanged: `bash` from PATH, exactly as before.
 //
-// It must never weaken a guard: stdin (the hook JSON), stdout (SessionStart context,
-// `updatedToolOutput`) and stderr are inherited untouched, and bash's exit code is returned
-// verbatim — a guard's exit 2 still blocks. With no bash anywhere it prints ONE actionable line and
+// It must never weaken a guard: stdin (the hook JSON) and stderr are inherited untouched,
+// stdout is captured only so the hook token budget (hooks/budget.json) can cap what gets
+// injected into context — a guard's BLOCK verdict (exit 2) is never truncated — and bash's
+// exit code is returned verbatim. With no bash anywhere it prints ONE actionable line and
 // exits 1: the same visible, non-blocking hook error the ENOENT was, minus the mystery. Node
 // built-ins only — a launcher that itself failed to load would be exactly the silent no-op the
 // guards exist to prevent.
@@ -25,7 +26,7 @@
 // protect-paths also skips bash entirely: its `.sh` is a thin launcher over a Node twin, which runs
 // on this very node, so the guard works where bash does not.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -134,11 +135,120 @@ export const GUARD_POLICY = {
   "protect-paths.sh": { node: "protect-paths.mjs", failClosed: true },
 };
 
+// ---------------------------------------------------------------- hook token budget
+//
+// Every hook's stdout is injected into the model's context (SessionStart) or attached to the
+// tool call (UserPromptSubmit/PreToolUse/PostToolUse/Stop). Guards used to emit unbounded
+// output — recall-load.sh dumped the whole MEMORY.md on every SessionStart — so a single
+// `hooks/budget.json` now caps hook stdout per event. The launcher truncates past the cap with
+// a "[truncated: N bytes over budget]" note and the full content stays retrievable on demand
+// (lazy recall: SessionStart injects the memory INDEX, not the full text).
+//
+// Safety rule: a guard that BLOCKS (exit 2) is NEVER truncated — its verdict is
+// security-critical and a half-cut JSON decision would fail open. stderr is never truncated
+// (it lands in the transcript, not the injected context).
+
+/**
+ * Built-in fallback budget, used when hooks/budget.json is missing or unreadable.
+ * Fail safe toward capping, never toward unbounded silence.
+ * @type {{default_bytes: number, events: Record<string, number>}}
+ */
+export const DEFAULT_HOOK_BUDGET = {
+  default_bytes: 4096,
+  events: {
+    SessionStart: 12000,
+    UserPromptSubmit: 6000,
+    PreToolUse: 4000,
+    PostToolUse: 4000,
+    Stop: 6000,
+  },
+};
+
+/**
+ * Where the launcher looks for `hooks/budget.json`, resolved from the launcher's own
+ * location: `<package-root>/hooks/budget.json` (the launcher lives three levels down at
+ * `global/guards/run.mjs`). Exported so tests can pin the contract — a wrong level here
+ * silently falls back to the built-ins and a user's edited budget would never apply.
+ * @param {string} [fromUrl] module URL to resolve from (defaults to this launcher)
+ * @returns {string}
+ */
+export function defaultBudgetPath(fromUrl = import.meta.url) {
+  return join(dirname(dirname(dirname(fileURLToPath(fromUrl)))), "hooks", "budget.json");
+}
+
+/**
+ * Load the hook token budget: `hooks/budget.json` next to this launcher, with the
+ * HOOK_TOKEN_BUDGET env var (a JSON object shaped like `events`, or a bare integer
+ * default) overriding it. An unreadable config or override never disables the budget —
+ * the built-in defaults apply. Pure — path probing and env are injectable.
+ * @param {{env?: NodeJS.ProcessEnv, exists?: (p: string) => boolean, read?: (p: string, enc: string) => string, budgetPath?: string}} [opts]
+ * @returns {{default_bytes: number, events: Record<string, number>}}
+ */
+export function loadBudget({
+  env = process.env,
+  exists = existsSync,
+  read = /** @type {(p: string, enc: string) => string} */ (readFileSync),
+  budgetPath,
+} = {}) {
+  const path = budgetPath ?? defaultBudgetPath();
+  let cfg = null;
+  try {
+    if (exists(path)) cfg = JSON.parse(read(path, "utf8"));
+  } catch {
+    cfg = null;
+  }
+  const events = { ...DEFAULT_HOOK_BUDGET.events, ...(cfg?.events ?? {}) };
+  let def =
+    cfg && Number.isFinite(+cfg.default_bytes)
+      ? +cfg.default_bytes
+      : DEFAULT_HOOK_BUDGET.default_bytes;
+  const over = env.HOOK_TOKEN_BUDGET;
+  if (over !== undefined && over !== "") {
+    try {
+      const parsed = JSON.parse(over);
+      if (typeof parsed === "number" && Number.isFinite(parsed)) def = parsed;
+      else if (parsed && typeof parsed === "object") Object.assign(events, parsed);
+    } catch {
+      /* an invalid override never disables the budget */
+    }
+  }
+  return { default_bytes: def, events };
+}
+
+/**
+ * Truncate UTF-8 text to at most `cap` bytes, never splitting a character, and append the
+ * overflow note. The note names the byte overage so the truncation is never silent.
+ * @param {string} text
+ * @param {number} cap
+ * @returns {{text: string, truncated: boolean, over: number}}
+ */
+export function truncateToBudget(text, cap) {
+  const total = Buffer.byteLength(text, "utf8");
+  if (total <= cap) return { text, truncated: false, over: 0 };
+  const over = total - cap;
+  const bytes = Buffer.from(text, "utf8").subarray(0, cap);
+  // Drop a trailing partial UTF-8 sequence: walk back over continuation bytes, then check
+  // the lead byte — if the full sequence does not fit, the cut split a character.
+  let end = bytes.length;
+  let cont = 0;
+  while (end - 1 - cont >= 0 && (bytes[end - 1 - cont] & 0xc0) === 0x80) cont++;
+  const lead = bytes[end - 1 - cont];
+  const want = lead === undefined ? 0 : lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : 4;
+  if (cont + 1 < want) end = end - 1 - cont;
+  return {
+    text: `${bytes.subarray(0, end).toString("utf8")}\n[truncated: ${over} bytes over budget]`,
+    truncated: true,
+    over,
+  };
+}
+
 /**
  * Run a guard with inherited stdio and return the exit code to report: `bash <script> …args`, or
  * `node <twin.mjs> …args` for a guard with a Node twin. `--fail-closed` before the script (or
- * GUARD_POLICY) turns every launcher-level failure into a block. `deps` are test seams.
- * @param {string[]} argv `[--fail-closed] guardScript ...guardArgs`
+ * GUARD_POLICY) turns every launcher-level failure into a block. `--event <Name>` names the
+ * Claude Code hook event for the token budget (stripped before the guard runs). `deps` are
+ * test seams.
+ * @param {string[]} argv `[--fail-closed] [--event <Name>] guardScript ...guardArgs`
  * @param {NodeJS.ProcessEnv} [env]
  * @param {{spawn?: typeof spawnSync, locateBash?: typeof resolveBash, exists?: (p: string) => boolean}} [deps]
  * @returns {number}
@@ -155,9 +265,21 @@ export function runGuard(
     failClosed = true;
     args.shift();
   }
+  // The hook event rides along as `--event <Name>`, inserted by the hook manifests between
+  // the launcher and the guard — the launcher never sniffs stdin for it (reading stdin here
+  // can block forever on an inherited-but-idle pipe). A missing flag falls back to the
+  // default budget. The flag is stripped before the guard runs: the guard never sees it.
+  let eventName = null;
+  const evIdx = args.indexOf("--event");
+  if (evIdx >= 0) {
+    eventName = typeof args[evIdx + 1] === "string" && args[evIdx + 1] ? args[evIdx + 1] : null;
+    args.splice(evIdx, 2);
+  }
   const [script, ...rest] = args;
   if (!script) {
-    process.stderr.write(`${self}: usage: node ${self} [--fail-closed] <guard.sh> [args…]\n`);
+    process.stderr.write(
+      `${self}: usage: node ${self} [--fail-closed] [--event <Name>] <guard.sh> [args…]\n`,
+    );
     return 1;
   }
   const guard = basename(toPosix(script));
@@ -183,13 +305,29 @@ export function runGuard(
     cmd = path;
     cmdArgs = [toPosix(script), ...rest];
   }
-  const r = spawn(cmd, cmdArgs, { stdio: "inherit", env, windowsHide: true });
+  // stdin stays inherited exactly as before (the guard reads the hook JSON itself); only
+  // stdout is captured, so the token budget can cap what gets injected into context.
+  const r = spawn(cmd, cmdArgs, {
+    stdio: ["inherit", "pipe", "inherit"],
+    env,
+    windowsHide: true,
+    encoding: "utf8",
+  });
   if (r.error) {
     const code = /** @type {NodeJS.ErrnoException} */ (r.error).code;
     return failed(code === "ENOENT" && cmd !== process.execPath ? NO_BASH_HINT : r.error.message);
   }
   // A signal-killed guard has no status: a visible non-blocking error (1) or, fail-closed, a block.
   if (r.status === null) return failed(`the guard was killed by ${r.signal ?? "a signal"}`);
+  // Token budget: stdout is what gets injected into context, so cap it per the hook event.
+  // Exit 2 is a BLOCK verdict — security-critical, never truncated.
+  let out = typeof r.stdout === "string" ? r.stdout : "";
+  if (r.status !== 2 && out) {
+    const budget = loadBudget({ env });
+    const cap = (eventName && budget.events[eventName]) || budget.default_bytes;
+    out = truncateToBudget(out, cap).text;
+  }
+  if (out) process.stdout.write(out);
   if (failClosed && r.status !== 0 && r.status !== 2) return failed(`the guard exited ${r.status}`);
   return r.status;
 }

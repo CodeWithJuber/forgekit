@@ -16,6 +16,7 @@ import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
   computeCodeState,
+  defaultVerifyBudgetMs,
   extractCalledSymbols,
   findUnknownSymbols,
   maskedTestScript,
@@ -58,6 +59,8 @@ const gitRepo = () => {
   g("init");
   g("config", "user.email", "t@t.t");
   g("config", "user.name", "t");
+  g("config", "core.autocrlf", "false");
+  g("config", "core.fileMode", "false");
   return root;
 };
 
@@ -1101,4 +1104,78 @@ test("F10: interpreter caches written by a test run are not a code mutation", {
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "PASS", r.tests.output);
   assert.equal(r.tests.mutated, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Item 41 — granular NOT_CONFIGURED: which subsystem is missing + the fix.
+// ---------------------------------------------------------------------------
+
+test("verify: NOT_CONFIGURED names the missing piece — package.json without test script", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "x" }));
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "NOT_CONFIGURED");
+  assert.equal(r.tests.notConfigured.reason, "no-test-script");
+  assert.match(r.tests.notConfigured.detail, /no `test` script/);
+  assert.match(r.tests.notConfigured.fix, /"test"/);
+});
+
+test("verify: NOT_CONFIGURED names the missing piece — no manifest at all", () => {
+  const root = gitRepo();
+  const r = verify({ targetRoot: root });
+  assert.equal(r.tests.status, "NOT_CONFIGURED");
+  assert.equal(r.tests.notConfigured.reason, "no-project");
+  assert.match(r.tests.notConfigured.fix, /forge init/);
+});
+
+// ---------------------------------------------------------------------------
+// Items 6 + 7 — adaptive budget; the timeout names the hung suite (HUNG).
+// ---------------------------------------------------------------------------
+
+test("defaultVerifyBudgetMs: 600s on 4+ cores, more on slower iron (capped 3x)", () => {
+  assert.equal(defaultVerifyBudgetMs(8), 600000);
+  assert.equal(defaultVerifyBudgetMs(4), 600000);
+  assert.equal(defaultVerifyBudgetMs(2), 1200000, "the 2-core case that SIGTERMd the suite");
+  assert.equal(defaultVerifyBudgetMs(1), 1800000, "capped at 3x, not 4x");
+  assert.ok(defaultVerifyBudgetMs() >= 600000, "live machine gets at least the base");
+});
+
+test("classifySuiteFailure: a timed-out suite is named HUNG with its label", () => {
+  const err = Object.assign(new Error("timed out"), { code: "ETIMEDOUT", signal: "SIGTERM" });
+  const r = classifySuiteFailure(err, { label: "npm test", bin: "npm", timeout: 600000 });
+  assert.equal(r.status, "INCOMPLETE");
+  assert.equal(r.timedOut, true);
+  assert.match(r.output, /HUNG/);
+  assert.match(r.output, /npm test/);
+  assert.match(r.output, /600000/);
+});
+
+// Windows: same F10 mutation-detection sensitivity as demo.test.js (see note there).
+// The onProgress heartbeat is covered on Linux/macOS.
+const winSkipHeartbeat =
+  process.platform === "win32" && "F10 mutation detection is git-environment-sensitive on Windows";
+test("verify: onProgress heartbeat fires per suite (does not disturb the verdict)", {
+  skip: winSkipHeartbeat,
+}, () => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ name: "x", scripts: { test: "node --test test/a.test.js" } }),
+  );
+  mkdirSync(join(root, "test"), { recursive: true });
+  writeFileSync(
+    join(root, "test", "a.test.js"),
+    "import { test } from 'node:test';\ntest('a', () => {});\n",
+  );
+  const events = [];
+  const r = verify({ targetRoot: root, onProgress: (e) => events.push(e) });
+  assert.equal(r.tests.status, "PASS");
+  assert.ok(
+    events.some((e) => e.phase === "start"),
+    "a start pulse per suite",
+  );
+  assert.ok(
+    events.some((e) => e.phase === "done" && e.status === "PASS"),
+    "a done pulse",
+  );
 });

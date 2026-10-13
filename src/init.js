@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { build as buildAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { ensureForgePrivateIgnored } from "./gitignore.js";
 import { claimEmittedIntegrations } from "./integrations.js";
@@ -866,7 +867,7 @@ const toolsValue = (tools) => (tools === null ? "all" : tools);
  * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
  * `onSettingsNotice(target)` is forwarded to `mergeSettings` so the GLOBAL-settings
  * disclosure is emitted BEFORE the merge mutates ~/.claude/settings.json (ME-22).
- * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void, tools?: string|string[]}} [opts]
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void, tools?: string|string[], warm?: boolean}} [opts]
  */
 export function init({
   targetRoot = process.cwd(),
@@ -876,6 +877,7 @@ export function init({
   settingsPath,
   onSettingsNotice,
   tools,
+  warm = true,
 } = {}) {
   // The plugin may be enabled in the project or local settings, not the file merged into: its
   // hooks/hooks.json then wires every guard, so settings.json must not carry them too. Same
@@ -923,6 +925,19 @@ export function init({
     hooks,
   });
   const detected = autoDetectProvider();
+  // Item 42: warm the atlas cache so the first `forge impact` is a warm query
+  // (~1.7 ms) instead of a cold graph build (~9 s on the benchmark repo).
+  // Opt out with `forge init --no-warm` (or warm: false).
+  let warmed = null;
+  if (warm && !settingsOnly) {
+    try {
+      const t0 = Date.now();
+      const atlas = buildAtlas({ root: targetRoot });
+      warmed = { files: atlas.files ?? 0, ms: Date.now() - t0 };
+    } catch (e) {
+      warmed = { error: String(e?.message ?? e).slice(0, 120) };
+    }
+  }
   const toolsResult = {
     tools: selection.tools,
     source: selection.source,
@@ -930,7 +945,7 @@ export function init({
       ? { warning: `tool selection not recorded (${unrecorded}); later syncs emit every tool` }
       : {}),
   };
-  return { ...r, settings, detected, profile: profileResult, tools: toolsResult };
+  return { ...r, settings, detected, profile: profileResult, tools: toolsResult, warmed };
 }
 
 function skillDescription(dir) {
