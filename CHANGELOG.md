@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.12.4] - 2026-10-13
+
 ### Added
 
 - **`forge verify --claim`**: verify a claim against a signed receipt — checks
@@ -3622,7 +3624,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...HEAD
+[1.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...v1.12.4
 [1.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.0...v1.12.1
