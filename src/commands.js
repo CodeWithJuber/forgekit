@@ -169,6 +169,22 @@ export const COMMANDS = {
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
   ledger:
     "evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import",
+  claim: {
+    summary:
+      "claim interop — export the ledger's claims as open JSON any tool can read (step 1 toward claims as a standard)",
+    usage: "forge claim export [--out <file>] [--pretty]",
+    flags: [
+      {
+        flag: "--out <file>",
+        desc: "write the export document to a file instead of stdout",
+      },
+      {
+        flag: "--pretty",
+        desc: "pretty-print the JSON (default is compact)",
+      },
+    ],
+    examples: ["forge claim export --pretty", "forge claim export --out claims.json --pretty"],
+  },
   reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
   context: {
     summary:
@@ -415,7 +431,7 @@ export const GROUPS = {
     "precommit",
     "test-select",
   ],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "handoff", "decide", "know"],
+  Memory: ["cortex", "recall", "remember", "brain", "ledger", "claim", "handoff", "decide", "know"],
   Quality: ["scan", "spec", "harden", "radar"],
   Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [

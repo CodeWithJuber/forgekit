@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge claim export`**: export the repo ledger's live claims as
+  interoperable JSON (`forge-claim-export/1` format) — any tool can read
+  claims without knowing forge internals. Secret-shaped claims are refused
+  at export, same rule as mint. Step 1 toward claims as an open standard.
+- **Guard eval harness** (`src/guard_eval.js`): per-guard/skill evaluation
+  against 16 adversarial cases (semantic_guard polarity flips, secrets
+  detection, skillgate malicious shapes). Two known gaps documented
+  (`sec-02`, `sec-04`: hasSecret's conservative false-positives on
+  `<redacted>` placeholders and `token` variable names) — visible baseline
+  for future precision work.
+- **Install friction doc** (`docs/install-friction.md`): head-to-head
+  cold-install measurement — forgekit 3s / 3.2M vs claude-code 36s / 246M
+  vs codex 48s / 432M (2026-10-14, same VM). Zero runtime deps, no auth gate.
+
 ## [1.12.4] - 2026-10-13
 
 ### Added
@@ -67,7 +83,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with no config check at all — files outside the CWD were silently rewritten with
   defaults (or the wrong project's config). The hook now walks up from the **edited
   file's** directory, passes the config explicitly (`ruff --config` / `biome
-  --config-path`), logs the resolved path on every invocation, and skips with a logged
+--config-path`), logs the resolved path on every invocation, and skips with a logged
   reason when no config exists — never `--write`/`--fix` on silent defaults.
 - **Release pipeline: `bump.yml` finalize now sets a git identity before tagging.**
   `git tag -a` died with `fatal: empty ident name` (exit 128), wedging every release
@@ -184,7 +200,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`forge budget` — cost governance.** Per-day and per-task (session) spend budgets,
   an alert threshold, and an opt-in circuit breaker, all stored in
   `.forge/forge.config.json` (`budget` key). `forge budget set --daily 10 --per-task 2
-  [--alert-at 0.8] [--hard|--soft]`; `forge budget status` is the spend meter (ccusage
+[--alert-at 0.8] [--hard|--soft]`; `forge budget status` is the spend meter (ccusage
   when installed, else the Claude log estimate, else honestly "unknown");
   `forge budget clear` removes budgets. The cost guard now enforces them via
   `forge budget check --session-id <sid>` on every 100th tool call: past the alert
@@ -295,7 +311,7 @@ of these fixes then found further counterexamples in each area; they are fixed h
   - Round 2: the near tier no longer serves an artifact whose key is from an older version or
     was stored normalized (`keyVerbatim`).
   - Round 2: its semantic guard now also compares operators with their operands (`x + 1` vs
-    `x - 1`, `a - b` vs `b - a`) and typographic and backtick literals (“a  b”, ``a  b``).
+    `x - 1`, `a - b` vs `b - a`) and typographic and backtick literals (“a b”, `a  b`).
     Features are compared in document order, and every whitespace run other than one space
     counts (line breaks, indentation, tabs, CRLF, fixed-width columns). So do spelling
     (`parse` vs `Parse`, fullwidth or Cyrillic look-alikes) and invisible format characters.
@@ -332,7 +348,7 @@ of these fixes then found further counterexamples in each area; they are fixed h
     elsewhere keeps it, flagged. A small ledger still reports near-duplicates.
 - **An unsigned verifier event never earns verified provenance (N06).** When no evidence key
   could be read or created, `readVerifyEvents` accepted any unsigned line, and `forge route
-  outcome --verify-run` labelled the outcome `verify-event`. Events now carry a derived
+outcome --verify-run` labelled the outcome `verify-event`. Events now carry a derived
   `authenticated` flag, false for every event when no key is available. An outcome citing an
   unauthenticated event is still recorded, but as self-reported with a `provenanceNote`. Round
   2: an event holding a non-finite number (a stored `1e999`) is never authenticated.
@@ -467,6 +483,7 @@ of these fixes then found further counterexamples in each area; they are fixed h
     graph.
 
   See `docs/diagrams/README.md`.
+
 - **Illustrations for the docs site and the landing page, and a new social card.**
   - Seven docs-site pages open with an illustration.
   - The landing page's evidence band has a background image, veiled so its text keeps at
@@ -659,7 +676,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 
 - **A machine-readable claim/status registry** (`docs/status/claims.json`, 47 claims assessed
   against `d2abfa6`), with a generated table in `docs/status/README.md`. `node
-  scripts/claims-status.mjs --check`, now part of the CI quality gate, fails when the registry
+scripts/claims-status.mjs --check`, now part of the CI quality gate, fails when the registry
   is invalid, the table is stale, or a `docs/cognitive-substrate/` copy has drifted from its
   `research/` source.
 - **`docs/INTEGRATIONS.md` lists what each tool really gets.** For every supported tool,
@@ -683,6 +700,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 
   `research/recompute_corrections.py --theorem-checks` asserts the Theorem D checks without
   data, and the recomputation also prints macro F1.
+
 - **Evidence grades are split** into bibliographic verification, claim support, study design,
   independent replication and transfer scope. METR's slowdown result is scoped to its
   16-developer, early-2025 study, with a link to the February 2026 update.
@@ -694,7 +712,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   recipe). They were not re-rendered: the Qur'anic text in a fresh render could not be
   verified, and the refutation paper needs a TeX toolchain.
 - `forge verify`, `forge stack`, `forge ledger`, `forge reuse`, `forge dash` and `forge route
-  universal` sections of the guide describe the new coverage, binding, archive, reuse,
+universal` sections of the guide describe the new coverage, binding, archive, reuse,
   dashboard and advice-only behavior.
 
 ## [1.4.3] - 2026-09-24
@@ -867,7 +885,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   sessions, which used to owe nothing, now owe the same as a className edit.
 - **A passing e2e run counts as test evidence**, recorded by the capture hook and bound to
   the code state, but only when the command's exit status is the suite's: `npm run e2e;
-  echo "exit=$?"`, `|| echo failed`, `| tail`, a trailing `&`, `x || npm run e2e` and
+echo "exit=$?"`, `|| echo failed`, `| tail`, a trailing `&`, `x || npm run e2e` and
   `--list`/`--help` runs do not count.
 - **The Stop gate no longer blames a session for other agents' edits.** Each session's
   capture hook keeps a trail (`.forge/sessions/<sid>.trail`) of the files it edited or
@@ -1190,7 +1208,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   already wrote, and `diagnose()` — the one place an external check has demonstrably failed,
   `THRASH_K` recurrences of a single failure signature — names it: "escalate to opus (the
   tier routing already flagged for this task)", plus `escalateTo` in `--json`. The model's
-  vote still triggers nothing on its own; it only answers *which* tier once a real failure
+  vote still triggers nothing on its own; it only answers _which_ tier once a real failure
   has earned an escalation. Fail-safe and opt-in: `forge diagnose --task "<task>"` (and the
   `task` argument on the `forge_diagnose` MCP tool) is what supplies the join key — without
   it, or with no routing record for that exact task, the wording is unchanged.
@@ -1210,7 +1228,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 - **`caller_fanout` is no longer dead for callers that only have a path.**
   `featuresForEdit()` asked `grepFanout()` about `edit.symbol`, so every caller holding
   only a file path — which is every hook fired on an edit event — got `grepFanout(root,
-  undefined) === 0`: a module with twenty importers scored exactly like one nobody
+undefined) === 0`: a module with twenty importers scored exactly like one nobody
   references. Without a symbol the feature now falls back to the FILE's own fan-out (how
   many code modules name this one as a whole word), which is the honest answer such a
   caller can have. The "who references this module" rule — module stem, directory for
@@ -1224,7 +1242,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   `export * from`, `export { x as y } from`, multi-line clauses, dynamic `import()` and
   `require()` were not parsed at all, and the Python pattern crossed newlines (three stacked
   `import` lines fused into a single edge to a module named `"os<newline>import
-  sys<newline>from pkg"`), dropped parenthesised lists, mapped `import pkg.core as c` to
+sys<newline>from pkg"`), dropped parenthesised lists, mapped `import pkg.core as c` to
   `pkg`, and never resolved a relative import. Specifiers now resolve through one shared
   resolver in `src/scope.js` — exact file, TypeScript NodeNext `./x.js`→`x.ts`,
   extensionless, `<dir>/index.*`, and Python modules indexed by PACKAGE ROOT
@@ -1260,7 +1278,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   in `forge atlas build`, in `impact()` and in `forge impact`.
 - **Blast radius is no longer reverse-only — the refutation's sibling and forward relations
   are ported.** `research/empirical-refutation/` diagnosed that 94.7% of real misses were
-  *siblings* (A and B both depend on module C, so C's contract shift co-changes both) and
+  _siblings_ (A and B both depend on module C, so C's contract shift co-changes both) and
   2.1% were forward-only, but only the Python prototype was repaired; the shipped JS graph
   still walked reverse edges exclusively, so `impact(serializer.js)` reported `app.js` and not
   the `deserializer.js` that shares `wire_format.js` with it. `impact()` now runs the two
@@ -1343,7 +1361,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
     fence became an identifier** — a broker-URL log line yielded "Setting", "up", "delayed",
     "for", "broker" — and each one then went to the substring `git grep` that feeds routing
     fan-out. Fenced blocks are stripped before the inline-code scan, and an inline span now needs
-    a closing backtick run of the same length, so RST ``double`` spans stop pairing across prose;
+    a closing backtick run of the same length, so RST `double` spans stop pairing across prose;
   - URLs, markdown links and images, `N/A` and `and/or` counted as **files**
     (`example.com/issue/12`). Addresses are removed before every scan (`stripUrls`), and a bare
     slash token must look like a path — an extension, a `./ ../ ~/ /` prefix, or a trailing `/`;
@@ -1383,7 +1401,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   server now returns `-32603` with the tool name and message, and keeps serving (the repro
   received replies for ids `[2]` before, `[2, 1]` after).
 - **`forge ledger sync` no longer erases teammates' evidence from the shared ref.** A push
-  wrote the pushing replica's *verified* state, so any record it had to quarantine (a `file:`
+  wrote the pushing replica's _verified_ state, so any record it had to quarantine (a `file:`
   proof only a teammate's tree has, a commit it had not fetched) vanished from
   `refs/forge/ledger` for everyone — the review's alice/bob/carol run ended with the remote
   holding 0 of alice's 1 record. A push now writes the raw remote state joined with the local
@@ -1398,30 +1416,30 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   and `reconcileFacts` matches store and ledger by content instead of by rev-0 id.
 - **Eq. 3 retrieval ranks by relevance again.** Five defects compounded into "the ledger
   answers the wrong question":
-  - *Scope was a strict priority.* The scope weight multiplied σ from outside, and with
+  - _Scope was a strict priority._ The scope weight multiplied σ from outside, and with
     a+b+g = 1 the sigmoid only spans [0.5, 0.731] — so scope decided every ranking: an
     unrelated, 400-day-old, contradicted **symbol** claim scored 0.5375 against a
     perfect-match **repo** claim's 0.3853. Scope is now a bounded term inside σ
     (`s = 0.10`, symbol−global = 0.06): the same pair now ranks 0.6815 (repo) over 0.5622.
-  - *Short queries found nothing.* `rel` was MinHash over 4-token shingles, so a 2–3 word
+  - _Short queries found nothing._ `rel` was MinHash over 4-token shingles, so a 2–3 word
     query was one shingle no claim contained: "auth token refresh" scored `rel` 0 against
     the auth fact and ranked it **below** an unrelated CSS fact. `rel` is now
     `max(shingle Jaccard, query-term coverage)`; the same query ranks auth first (0.713 vs
     0.589).
-  - *Any two non-ASCII texts were "identical".* The tokenizer split on `[^a-z0-9]`, so
+  - _Any two non-ASCII texts were "identical"._ The tokenizer split on `[^a-z0-9]`, so
     Arabic, Chinese or Greek text became the empty token set and two empty sketches agreed
     on all 128 lanes — Jaccard 1. Tokens are now Unicode-aware (`\p{L}\p{N}\p{M}`) and an
     empty set shares nothing with anything: Arabic vs Chinese is 0, and a real Arabic
     query retrieves its Arabic fact.
-  - *Contradictions counted as recent evidence.* `rec` keyed on the newest evidence of any
+  - _Contradictions counted as recent evidence._ `rec` keyed on the newest evidence of any
     polarity, so a fresh refutation RAISED a stale claim's score (0.3280 → 0.3384). `rec`
     now keys on confirmations (or the mint), and the same contradiction lowers the score.
-  - *Two similarity scales in one ranking.* With a partially embedded ledger, cosine
+  - _Two similarity scales in one ranking._ With a partially embedded ledger, cosine
     (0.4–0.6 for unrelated same-domain text) competed with Jaccard (≈0), so every embedded
     claim outranked every lexical one. The backend is chosen once per ranking: cosine only
     when every candidate is embedded.
-  `EQ3_WEIGHTS` no longer claims to be "calibrated in P8" — P8 shipped cost evaluation, not
-  a retrieval calibration; the spec (01-pcm-protocol.md §4) is updated to match the code.
+    `EQ3_WEIGHTS` no longer claims to be "calibrated in P8" — P8 shipped cost evaluation, not
+    a retrieval calibration; the spec (01-pcm-protocol.md §4) is updated to match the code.
 - **Déjà vu is gated on relevance, not on the total score.** `DEJA_FLOOR` (0.39) was tuned on
   repo-scoped summaries, but a symbol-scoped lesson scored ≥ 0.5 for any prompt, so an
   unrelated `parseConfig` lesson surfaced on EVERY prompt — including "translate the README
@@ -1442,7 +1460,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 - **Dormancy latches, and pruning is wired.** A claim refuted by a human revert (val 0.333)
   drifted back above the 0.35 dormancy floor 11 days later — with no new evidence — and
   re-entered retrieval. Dormancy now latches at the evidence event and only a later
-  *confirmation* clears it; decay alone never does. `pruneToAttic` had no callers at all, so
+  _confirmation_ clears it; decay alone never does. `pruneToAttic` had no callers at all, so
   the spec's forgetting rule (01-pcm-protocol.md §3) was unimplemented: the new `pruneLedger`
   archives tombstoned or dormant claims that have had nothing new for 2·T, and runs at
   session end (the déjà-vu Stop write), on `ledger merge` and on `ledger sync` import.
@@ -1471,8 +1489,8 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   - The CUSUM chart was fed the **cumulative** off-goal ratio every prompt, so one static
     off-goal file alarmed by itself after three idle prompts (C = 0.32 → 0.63 → 0.95 → 1.27
     > h = 1.0). It now gets the per-checkpoint increment — the off-goal fraction of what
-    actually moved since the last prompt — so idle prompts score 0 and drain the chart,
-    while a file edited again scores 1 again.
+    > actually moved since the last prompt — so idle prompts score 0 and drain the chart,
+    > while a file edited again scores 1 again.
   - M5 minimality ignored untracked files, which is where over-engineering lives: a 6-class,
     212-line "framework" dropped next to a one-line fix measured as 1 file, +1 line, 0
     warnings. Untracked files are now part of the measured footprint (2 files, +213 lines,
@@ -1512,7 +1530,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 - **Only a real test run counts as one.** The test-command grammar matched anywhere in a
   command, so `echo "run npm test later"` and `grep -r 'jest' package.json` marked a session
   "tested" — minting a `test.run` confirm for a session that ran no tests — and `npm test ||
-  true` counted as a pass because the `|| true` swallowed the exit code. A command now has to
+true` counted as a pass because the `|| true` swallowed the exit code. A command now has to
   BE a test run (start of the command or after a shell separator) and keep its exit code.
 - **CI is green again on Linux.** `global/guards/run.mjs` was committed without its
   executable bit, so `forge doctor`'s plugin-hook check (which `access(X_OK)`s every script a
@@ -1691,7 +1709,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   `<dir> · <branch> · ?` without jq. The rule set also grew what the literal, case-sensitive
   substrings missed — `git reset --hard`, `git clean -f…`, `find … -delete`/`-exec rm`,
   `chmod -R`, `dd … of=`, lowercase SQL `drop table` — while the SAFE `git push
-  --force-with-lease`, which the old `git push --force` substring blocked, is allowed again.
+--force-with-lease`, which the old `git push --force` substring blocked, is allowed again.
   `.aws/credentials`, `.netrc`, `.npmrc` and `.git-credentials` join the protected list, and
   protect-paths now also runs on **Read** in both hook manifests: a plugin install ships no
   `permissions.deny` block, so nothing stood between the agent and `.env` there.
@@ -1701,7 +1719,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
 - **Session hook logs no longer store raw secrets, and `init` keeps them out of git.** The
   `prompt` and `capture` hooks appended the user's prompt and every Bash command verbatim to
   `<repo>/.forge/sessions/<id>.jsonl`. A pasted `GITHUB_TOKEN=ghp_…` or an `Authorization:
-  Bearer ghp_…` curl landed on disk in the repo, and `forge init` did not gitignore the
+Bearer ghp_…` curl landed on disk in the repo, and `forge init` did not gitignore the
   directory. Every string in a session event is now passed through `redactSecrets` before
   it is written (the file now holds `GITHUB_TOKEN=[REDACTED]`). `init` also writes a nested
   `.forge/.gitignore` that ignores `sessions/` without touching the user's root
@@ -1711,7 +1729,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   alone was refused (exit 1), but the same leak staged next to a 1.5 MB file was "allowed"
   (exit 0). A repo-controlled `.gitattributes` `-diff`/`binary` marking or a `textconv`
   driver also hid the added lines. The scan now diffs with `--text --no-ext-diff
-  --no-textconv` and a 256 MiB buffer. If that fails, it retries one file at a time, and any
+--no-textconv` and a 256 MiB buffer. If that fails, it retries one file at a time, and any
   file git still cannot diff is refused as unscanned instead of passed. All three bypasses
   are refused now. The Stop gate's code-state fingerprint (`computeCodeState`) had the same
   1 MiB blind spot: a stale `verify` PASS survived a later code edit whenever the pending
@@ -1757,7 +1775,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   independence the design contradicts — the same classifier at Stop, pre-commit and CI fires
   together, so the product understates the residual 400× in the paper's own example. The
   synthesis and the extended preprint now state the residual as `(1 − p)·P(no check fires |
-  miss)` with Fréchet bounds, bound it by `ε` over an explicit `(p, q)` region, show that the
+miss)` with Fréchet bounds, bound it by `ε` over an explicit `(p, q)` region, show that the
   gate's catch rate depends on agent behaviour (a STATE.md touch passes it), and fix the `lfp`
   definition, the oracle-vs-`Δ*` "identity", T4, T5, T6 (A7 gains the catch-all arm
   `src/knowledge_router.js` already has), A1's type error, A3's definitional I1, the use of
@@ -1821,7 +1839,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   (max 196) — recall 1.00, precision 0.09 — and the substrate's 25-file blast threshold
   would trip on almost every edit. `impact()` now walks reverse dependencies only unless a
   caller passes `relations` (`IMPACT_RELATIONS` for all three), and `forge impact
-  --all-relations` asks for the wide walk. The relations themselves are unchanged, at their
+--all-relations` asks for the wide walk. The relations themselves are unchanged, at their
   frozen parameters; only which ones run by default changed.
 
 - **`forge route calibrate` stops calling itself "outcome-calibrated routing".** Nothing in it
@@ -2069,6 +2087,7 @@ evidence behind it. Scripts that read the JSON output may need to adapt:
   every PreToolUse hook and recompiled the same trigger-glob RegExp each time; compiled
   globs are now cached in a module-level map bounded by the distinct globs in the
   lesson set.
+
 ## [0.27.4] - 2026-08-04
 
 ### Fixed

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { BRAND } from "./brand.js";
 import advisorHandlers from "./cli/advisor.js";
 import budgetHandlers from "./cli/budget.js";
+import claimHandlers from "./cli/claim.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
 import memoryHandlers from "./cli/memory.js";
@@ -65,6 +66,7 @@ function printHelp() {
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
   ...memoryHandlers,
+  ...claimHandlers,
   ...verificationHandlers,
   ...routingHandlers,
   ...budgetHandlers,
