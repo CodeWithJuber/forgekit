@@ -83,8 +83,16 @@ PageRank centrality and ledger incident history. `--basic` reverts to fixed-thre
 mode.
 
 ```bash
-forge impact <symbol-or-file> [--json] [--basic]
+forge impact <symbol-or-file> [--json] [--basic] [--all-relations]
+forge impact --diff [--staged | --since <ref>] [--json]
 ```
+
+`--diff` reports the working diff's impact. First it lists coupled files you did not name,
+which no import edge records. One kind is a set the diff grew that code in the same
+package quantifies over: a require-all loop, a size check, or a switch that misses the new
+member. The other is a file the diff now loads into memory while another binary or package
+writes it, with no reload. Then it lists the graph's dependents of the changed code. The
+Stop gate's repair checklist puts these hazards ahead of its co-change candidates.
 
 ## `forge collide`
 
