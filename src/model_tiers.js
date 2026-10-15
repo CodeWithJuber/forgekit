@@ -16,10 +16,13 @@ import {
   catalogHost,
   catalogPrice,
   catalogSource,
+  compareVersions,
   fetchCatalog,
+  fetchPriceCatalog,
   inFamily,
   namespaceOf,
   newestInFamily,
+  versionOf,
 } from "./model_catalog.js";
 import { loadRegistry } from "./router/registry.js";
 
@@ -115,6 +118,8 @@ export function isSnapshotId(id, tier) {
  * @property {string} [catalog] catalog URL, catalog source only
  * @property {string} [cache] fresh | revalidated | network | stale
  * @property {string} [reason] why the catalog was not used (snapshot source)
+ * @property {{id: string, createdAt?: string, catalog: string}} [newer] snapshot source only: a
+ *   newer model of the same family seen in the price catalog (the snapshot is stale)
  */
 
 /**
@@ -267,12 +272,39 @@ export function resolveTierPrice(tier, opts = {}) {
 }
 
 /**
+ * Mark a snapshot resolution stale when the OpenRouter price catalog (fetched anyway to price
+ * the tier, and memoized per process) lists a newer model of the tier's family. Without a
+ * provider catalog the snapshot id is all a user sees, so a snapshot a generation behind
+ * otherwise passes as current. Any other resolution, or no catalog, is returned unchanged.
+ * @param {ResolvedModel|null} resolved
+ * @param {string} tier
+ * @param {ResolveOpts & {priceCatalog?: any}} [opts] priceCatalog: a prefetched price catalog
+ * @returns {ResolvedModel|null}
+ */
+export function withSnapshotStaleness(resolved, tier, opts = {}) {
+  const m = MODELS[tier];
+  if (!m || resolved?.source !== "snapshot") return resolved;
+  try {
+    const cat = opts.priceCatalog !== undefined ? opts.priceCatalog : fetchPriceCatalog(opts);
+    // The snapshot ids are the first-party vendor's; OpenRouter namespaces them.
+    const pick = cat?.models
+      ? newestInFamily(cat.models, familyOfTier(tier), { namespace: "anthropic" })
+      : null;
+    if (!pick || compareVersions(versionOf(pick.id), versionOf(resolved.id)) >= 0) return resolved;
+    const newer = { id: pick.id, catalog: cat.url };
+    return { ...resolved, newer: pick.createdAt ? { ...newer, createdAt: pick.createdAt } : newer };
+  } catch {
+    return resolved;
+  }
+}
+
+/**
  * Every tier resolved at once — the data behind `forge models`.
  * @param {ResolveOpts & {date?: string}} [opts]
  */
 export function resolveTiers(opts = {}) {
   return TIER_ORDER.map((tier) => {
-    const model = resolveTierModel(tier, opts);
+    const model = withSnapshotStaleness(resolveTierModel(tier, opts), tier, opts);
     const price = resolveTierPrice(tier, { ...opts, resolved: model });
     return { tier, class: MODELS[tier].tier, family: familyOfTier(tier), model, price };
   });
@@ -292,5 +324,8 @@ export function describeResolution(r) {
     return `newest ${r.family} in the ${catalogHost(r.catalog)} catalog${created}${stale}`;
   }
   if (r.source === "config") return "configured for this provider";
-  return `shipped snapshot, pricing verified ${PRICING_VERIFIED}${r.reason ? ` (${r.reason})` : ""}`;
+  const stale = r.newer
+    ? `; snapshot stale: ${r.newer.id} seen in the ${catalogHost(r.newer.catalog)} catalog`
+    : "";
+  return `shipped snapshot, pricing verified ${PRICING_VERIFIED}${r.reason ? ` (${r.reason})` : ""}${stale}`;
 }

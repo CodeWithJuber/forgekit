@@ -354,6 +354,9 @@ config, the cost estimate, `forge route`, `forge models` — it is resolved at t
    (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
 3. **Fallback**, each step only when the previous one is unavailable (no key, offline, timeout,
    non-2xx, no family match): the last cached catalog response, then the shipped snapshot.
+   When a tier falls back to the snapshot but OpenRouter's price catalog lists a newer model
+   of the same family, `forge models` and `forge route` say so on the provenance line
+   (`snapshot stale: <newer id> seen in the openrouter.ai catalog`).
    An id configured explicitly (`.forge/providers.json`, a gateway alias) is used as-is, and
    `ANTHROPIC_MODEL` / `FORGE_MODEL` still pin every call.
 

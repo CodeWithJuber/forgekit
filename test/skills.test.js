@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,31 @@ test("lean skill has valid frontmatter and the Lean Path", () => {
 
 test("recall skill has valid frontmatter", () => {
   assert.equal(frontmatter(read("global/tools/recall/SKILL.md"))?.name, "recall");
+});
+
+// The Agent Skills spec requires `name` to equal the skill's directory name; a hand-picked
+// list let `code-modernization` ship as `name: code-modernizer`.
+test("every SKILL.md name matches its directory", () => {
+  let seen = 0;
+  for (const base of ["global/tools", "skills"]) {
+    for (const dir of readdirSync(join(root, base), { withFileTypes: true })) {
+      if (!dir.isDirectory() || !existsSync(join(root, base, dir.name, "SKILL.md"))) continue;
+      const fm = frontmatter(read(`${base}/${dir.name}/SKILL.md`));
+      assert.equal(fm?.name, dir.name, `${base}/${dir.name}/SKILL.md name`);
+      seen += 1;
+    }
+  }
+  assert.ok(seen > 10, `checked ${seen} skills`);
+});
+
+// A `tools:` allowlist without MCP entries hides the Playwright / chrome-devtools MCP the
+// frontend-verifier is told to screenshot with, so it inherits tools minus file writes.
+test("frontend-verifier can reach MCP screenshot tools and has a Bash fallback", () => {
+  const md = read("global/crew/frontend-verifier.md");
+  const fm = frontmatter(md);
+  assert.ok(!fm?.tools || /mcp__/.test(fm.tools), "no allowlist that excludes MCP tools");
+  assert.match(fm?.disallowedTools ?? "", /Write/, "still never edits files");
+  assert.match(md, /npx playwright screenshot --viewport-size=390,844/);
 });
 
 test("every crew agent declares name + description", () => {

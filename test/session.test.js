@@ -94,6 +94,18 @@ test("rehydrationBlock: commits + dirty files in a repo; empty string outside", 
   assert.equal(rehydrationBlock(mkdtempSync(join(tmpdir(), "forge-session-"))), "");
 });
 
+test("rehydrationBlock: Forge's own .forge/ state is not listed as uncommitted work", () => {
+  const { root } = gitFixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "atlas.json"), "{}\n");
+  const clean = rehydrationBlock(root);
+  assert.doesNotMatch(clean, /Uncommitted changes/, "only .forge/ changed → nothing listed");
+  writeFileSync(join(root, "b.js"), "export const two = 2;\n");
+  const block = rehydrationBlock(root);
+  assert.match(block, /b\.js/);
+  assert.doesNotMatch(block, /\.forge/);
+});
+
 test("rehydrationBlock caps the dirty list with an overflow pointer", () => {
   const { root, git } = gitFixture();
   for (let i = 0; i < 25; i += 1) writeFileSync(join(root, `f${i}.js`), "export const x = 1;\n");

@@ -85,8 +85,17 @@ export function removeGitignoreBlock(root) {
 // runtime state that must never reach git, and .forge/cache/ holds derived HTTP responses
 // (model catalogs) that are re-fetched on demand. A repo may deliberately commit OTHER .forge/
 // content (the ledger, decisions.md), so rather than rewrite the user's root .gitignore
-// the tool owns a nested .forge/.gitignore listing only its private runtime dirs.
-export const FORGE_PRIVATE_DIRS = ["sessions/", "cache/"];
+// the tool owns a nested .forge/.gitignore listing only its private runtime state: those
+// dirs plus the per-machine files every command rewrites (atlas cache, metrics, failure
+// traces, provenance), which otherwise make a clean repo look dirty after one run.
+export const FORGE_PRIVATE_DIRS = [
+  "sessions/",
+  "cache/",
+  "trace/",
+  "atlas.cache.json",
+  "metrics.jsonl",
+  "provenance.json",
+];
 
 /**
  * Ensure `<root>/.forge/.gitignore` ignores every FORGE_PRIVATE_DIRS entry. Appends only
@@ -99,7 +108,9 @@ export function ensureForgePrivateIgnored(root) {
   const file = join(dir, ".gitignore");
   const existing = existsSync(file) ? readFileSync(file, "utf8") : "";
   const have = new Set(existing.split(/\r?\n/).map((l) => l.trim().replace(/^\//, "")));
-  const missing = FORGE_PRIVATE_DIRS.filter((p) => !have.has(p) && !have.has(p.slice(0, -1)));
+  const missing = FORGE_PRIVATE_DIRS.filter(
+    (p) => !have.has(p) && !(p.endsWith("/") && have.has(p.slice(0, -1))),
+  );
   if (!missing.length) return { action: "unchanged", path: file };
   const lead = existing
     ? existing.endsWith("\n")

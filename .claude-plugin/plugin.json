@@ -16,5 +16,11 @@
     "./global/crew/independent-reviewer.md",
     "./global/crew/scout.md",
     "./global/crew/verifier.md"
-  ]
+  ],
+  "mcpServers": {
+    "forge-cortex": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/cli.js", "cortex-mcp"]
+    }
+  }
 }

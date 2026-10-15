@@ -16,9 +16,12 @@ Check for:
 - Anything changed outside the task's stated scope.
 
 Where possible, run the project's tests/build/linter and report the actual result.
-For test selection, `forge imagine "<the change>" --run` computes the minimal
-covering test suite and dry-runs it in an isolated git checkout of HEAD (not a security
-sandbox; node:test files only) — run that first.
+For test selection, `forge imagine "<the change>"` lists the minimal covering test suite.
+`--run` also dry-runs it in an isolated git checkout of HEAD (not a security sandbox), but
+only for node:test suites, and only against committed code: uncommitted changes are not in
+that checkout, so it refuses a dirty tree. For Vitest, Jest, Playwright, pytest or any other
+runner, or for uncommitted work, run the project's own test command on the selected files,
+or `forge verify` for the whole verification gate.
 
 Output:
 - **Verdict:** ship / fix-first / needs-discussion.

@@ -94,6 +94,13 @@ export function git(root, args) {
   }
 }
 
+/** Pathspec args that keep Forge's own runtime state (`<root>/.forge/`: atlas, metrics,
+ *  traces, ledger) out of a "what did the user change" git query: the whole tree minus it.
+ *  Append after `--` to `git status`/`git diff`. Without it, a repo became "dirty" the
+ *  moment Forge ran (imagine --run refused, docs sync and the session summary listed
+ *  .forge/ as changed work). */
+export const NOT_OWN_STATE = [":/", ":(exclude).forge"];
+
 /** Forge's per-user home: `FORGE_HOME` when set (tests and recall-load.sh rely on it), else the
  *  XDG state dir (`$XDG_STATE_HOME/forgekit`, default `~/.local/state/forgekit`). Never inside
  *  the install/source tree (P0-03). The ONE recipe: recall, the evidence key and the user-level

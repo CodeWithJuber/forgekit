@@ -101,6 +101,13 @@ test("dejaLine: floor gate silences noise; verified marker rides evidence", () =
   assert.ok(dejaLine({ claim: confirmed, score: 0.9, rel: 1 }, 100).includes("(verified)"));
 });
 
+test("dejaLine: the day a task was seen reads as a date, not an epoch-day number", () => {
+  const seen = claim("summary", "Add a pricing page", { t: 20741 });
+  const line = dejaLine({ claim: seen, score: 0.9, rel: 1 }, 20742);
+  assert.match(line, /similar task seen on 2026-10-15/);
+  assert.doesNotMatch(line, /day 20741/);
+});
+
 test("dejaAdvisory: kill switch and empty task both yield silence", () => {
   const root = fixture();
   const prev = process.env.FORGE_DEJA;

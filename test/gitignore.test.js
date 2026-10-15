@@ -123,12 +123,23 @@ test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
     }
   };
   assert.equal(ignored(".forge/sessions/s1.jsonl"), true, "session logs are ignored");
+  // Per-machine files every command rewrites: a clean repo must stay clean after one run.
+  for (const p of [
+    ".forge/atlas.cache.json",
+    ".forge/metrics.jsonl",
+    ".forge/trace/failures.jsonl",
+    ".forge/provenance.json",
+  ])
+    assert.equal(ignored(p), true, `${p} is ignored`);
   assert.equal(ignored(".forge/decisions.md"), false, "committable .forge content is not");
   assert.equal(ensureForgePrivateIgnored(root).action, "unchanged", "idempotent");
-  // An existing .forge/.gitignore keeps its lines; only the missing entry is appended.
+  // An existing .forge/.gitignore keeps its lines; only the missing entries are appended.
   const other = tmp();
   mkdirSync(join(other, ".forge"), { recursive: true });
   writeFileSync(join(other, ".forge", ".gitignore"), "cache/");
   ensureForgePrivateIgnored(other);
-  assert.equal(readFileSync(join(other, ".forge", ".gitignore"), "utf8"), "cache/\nsessions/\n");
+  assert.equal(
+    readFileSync(join(other, ".forge", ".gitignore"), "utf8"),
+    "cache/\nsessions/\ntrace/\natlas.cache.json\nmetrics.jsonl\nprovenance.json\n",
+  );
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -255,6 +255,109 @@ test("biome: no biome.json above the file → biome never runs (no silent-defaul
     "function f() {\n\treturn 1;\n}\n",
     "file untouched (no prettier on the stub PATH either)",
   );
+});
+
+// Prettier gets the Biome rule: the hook used to run `npx --no-install prettier`, which
+// resolves the project's own node_modules/.bin/prettier first (untrusted code), and ran it
+// on Prettier's defaults in repos that never configured Prettier at all.
+const PRETTIER_STUB = BIOME_STUB;
+
+// A project whose node_modules/.bin/prettier and an `npx` on PATH both record to `evil`.
+function plantedPrettierProject(tmp, evil) {
+  const proj = join(tmp, "proj");
+  const bindir = join(proj, "node_modules", ".bin");
+  execFileSync("bash", ["-c", `mkdir -p ${bindir} ${join(proj, "components")}`]);
+  writeFileSync(
+    join(bindir, "prettier"),
+    `#!/bin/sh\necho "PROJECT-LOCAL prettier executed with: $@" >> "${evil}"\nexit 0\n`,
+  );
+  chmodSync(join(bindir, "prettier"), 0o755);
+  writeFileSync(join(proj, "package.json"), '{"name":"demo","private":true}\n');
+  return proj;
+}
+const NPX_STUB = (evil) => `#!/bin/sh\necho "NPX executed with: $@" >> "${evil}"\nexit 0\n`;
+
+test("prettier: project-local binary and npx never run; trusted prettier gets the file's --config", {
+  skip: skipWin || false,
+}, () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-fmtp-"));
+  const calls = join(tmp, "calls.log");
+  const evil = join(tmp, "evil.log");
+  writeFileSync(calls, "");
+  writeFileSync(evil, "");
+  const bin = toolBin({ prettier: PRETTIER_STUB, npx: NPX_STUB(evil) });
+  const proj = plantedPrettierProject(tmp, evil);
+  writeFileSync(join(proj, ".prettierrc"), '{"semi":false}\n');
+  const f = join(proj, "components", "Button.tsx");
+  writeFileSync(f, "export const Button = () => <button>ok</button>;\n");
+
+  const r = runHook(f, { bin, cwd: proj, envExtra: { FORGE_FMT_CALLS: calls } });
+
+  assert.equal(r.code, 0);
+  assert.equal(readFileSync(evil, "utf8"), "", "neither npx nor node_modules/.bin/prettier ran");
+  const argv = callsOf(tmp).join("\n");
+  assert.match(argv, new RegExp(`--write --config ${proj}/\\.prettierrc ${f}`));
+  assert.match(
+    r.err,
+    new RegExp(`prettier config: ${proj}/\\.prettierrc`),
+    "resolved config logged",
+  );
+});
+
+test("prettier: no Prettier config above the file → never runs, even with package.json + prettier on PATH", {
+  skip: skipWin || false,
+}, () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-fmtq-"));
+  const calls = join(tmp, "calls.log");
+  const evil = join(tmp, "evil.log");
+  writeFileSync(calls, "");
+  writeFileSync(evil, "");
+  const bin = toolBin({ prettier: PRETTIER_STUB, npx: NPX_STUB(evil) });
+  const proj = plantedPrettierProject(tmp, evil);
+  const f = join(proj, "components", "Button.tsx");
+  const src = "export const Button = () => <button>ok</button>;\n";
+  writeFileSync(f, src);
+
+  const r = runHook(f, { bin, cwd: proj, envExtra: { FORGE_FMT_CALLS: calls } });
+
+  assert.equal(r.code, 0);
+  assert.equal(callsOf(tmp).length, 0, "prettier never invoked");
+  assert.equal(readFileSync(evil, "utf8"), "", "nothing project-local ran");
+  assert.equal(readFileSync(f, "utf8"), src, "file untouched");
+  assert.match(r.err, /no prettier config found/, "skip reason logged");
+});
+
+test('prettier: a package.json "prettier" key counts; a JS config or plugins are refused', {
+  skip: skipWin || false,
+}, () => {
+  const tmp = mkdtempSync(join(tmpdir(), "forge-fmtr-"));
+  const calls = join(tmp, "calls.log");
+  const evil = join(tmp, "evil.log");
+  writeFileSync(calls, "");
+  writeFileSync(evil, "");
+  const bin = toolBin({ prettier: PRETTIER_STUB, npx: NPX_STUB(evil) });
+  const proj = plantedPrettierProject(tmp, evil);
+  const f = join(proj, "components", "Button.tsx");
+  writeFileSync(f, "export const Button = () => <button>ok</button>;\n");
+  const env = { FORGE_FMT_CALLS: calls };
+
+  writeFileSync(join(proj, "package.json"), '{"name":"demo","prettier":{"semi":false}}\n');
+  let r = runHook(f, { bin, cwd: tmp, envExtra: env });
+  assert.match(callsOf(tmp).join("\n"), new RegExp(`--config ${proj}/package\\.json`));
+
+  writeFileSync(calls, "");
+  writeFileSync(join(proj, "package.json"), '{"name":"demo","private":true}\n');
+  writeFileSync(join(proj, "prettier.config.js"), "export default {};\n");
+  r = runHook(f, { bin, cwd: tmp, envExtra: env });
+  assert.equal(callsOf(tmp).length, 0, "an executable config is never handed to prettier");
+  assert.match(r.err, /an executable config runs project code, skipping/);
+
+  rmSync(join(proj, "prettier.config.js"));
+  writeFileSync(join(proj, ".prettierrc.json"), '{"plugins":["prettier-plugin-x"]}\n');
+  r = runHook(f, { bin, cwd: tmp, envExtra: env });
+  assert.equal(callsOf(tmp).length, 0, "a config that loads plugins is never handed to prettier");
+  assert.match(r.err, /loads plugins runs project code, skipping/);
+  assert.equal(readFileSync(evil, "utf8"), "", "nothing project-local ran");
 });
 
 // Real-ruff end-to-end: the hook's `ruff format --config <file-config>` invocation must

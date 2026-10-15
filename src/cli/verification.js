@@ -246,7 +246,9 @@ HANDLERS.imagine = async (argv) => {
     let dirty = "";
     try {
       const { execFileSync } = await import("node:child_process");
-      dirty = execFileSync("git", ["status", "--porcelain"], {
+      const { NOT_OWN_STATE } = await import("../util.js");
+      // Forge's own .forge/ state (atlas, metrics, traces) is not the user's uncommitted work.
+      dirty = execFileSync("git", ["status", "--porcelain", "--", ...NOT_OWN_STATE], {
         cwd: root,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],

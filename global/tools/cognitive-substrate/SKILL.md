@@ -53,4 +53,6 @@ escalate one tier with the minted diagnosis claim at the head of the prompt).
 MCP equivalents: `assumption_gate`, `route_task`, `predict_impact`, `scope_files`.
 
 For the full guide (how it works, extending it, the honesty boundary) and the white paper,
-see `docs/cognitive-substrate/README.md`. `references/capability-map.md` maps faculties to commands.
+see https://github.com/CodeWithJuber/forgekit/blob/master/docs/cognitive-substrate/README.md
+(the npm package does not ship `docs/`). This skill's `references/capability-map.md` maps
+faculties to commands.
