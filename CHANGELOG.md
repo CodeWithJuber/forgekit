@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-15
+
 ### Added
 
 - **`forge impact --diff`: coupled files you did not name** (#206). The import graph
@@ -3643,7 +3645,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...v1.13.0
 [1.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...v1.12.4
 [1.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...v1.12.2
