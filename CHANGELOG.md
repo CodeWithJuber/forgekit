@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge impact --diff`: coupled files you did not name** (#206). The import graph
+  cannot see two kinds of coupling, so `forge impact --diff` (`--staged`, `--since <ref>`)
+  lists them, high priority first, above the graph's dependents of the diff's changed code:
+  - **A set something quantifies over.** The diff adds a member to an allowlist, registry
+    or key map, and code in the same package requires every member to be present, checks
+    the set's size, or switches over its members without the new one. The set is followed
+    through a function parameter (`strictObject(raw, allowedKeys)` → `strictObject`'s
+    require-all loop), which is how an optional key broke every request in the report.
+  - **A store another binary writes.** The diff adds a read kept in memory of a file that
+    another binary (`cmd/<name>/`, `bin/`, a `package main`, a script) or another package
+    writes, with no file watch, mtime check or `SIGHUP` reload. It asks whether the running
+    process sees those writes.
+
+  Go, JS/TS and Python, regex heuristics, advisory only. The Stop gate's repair checklist
+  lists the same hazards for the session's changed code, ahead of its co-change
+  candidates. On this repo's last 101 commits it raised no hazards.
+
 ## [1.12.4] - 2026-10-13
 
 ### Added

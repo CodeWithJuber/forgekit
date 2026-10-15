@@ -490,6 +490,46 @@ Forge impact — blast radius (hazard-aware)
     - src/session.js
 ```
 
+#### `forge impact --diff` — coupled files you did not name
+
+`forge impact --diff` asks the same question of the change you are making: the working
+diff against `HEAD` plus untracked files (`--staged` reads the index, `--since <ref>` diffs
+against a ref). It lists the graph's dependents of the changed code files, and above them,
+two couplings that no import edge records:
+
+- **A set something quantifies over.** The diff adds a member to a named collection
+  literal (an allowlist, a registry, a key map), and code in the same package iterates or
+  measures that set: a require-all loop (`for k := range allowed { if _, ok := raw[k]; !ok
+  { return err } }`, `KEYS.every(…)`, `all(k in d for k in REQUIRED)`), a size check
+  (`len(keys) == 3`), or a switch or parallel list that names the old members but not the
+  new one. The set is followed through a parameter, so `strictObject(raw, allowedKeys)`
+  leads to `strictObject`'s require-all loop even though it sits in another function. Adding
+  an OPTIONAL key to a require-all set breaks every input that omits it.
+- **A store another binary writes.** The diff adds a file read whose result is kept in
+  memory (a module-level load, a `New*`/`Load*`/`init` constructor, a struct or field set
+  from it), and another binary (`cmd/<name>/`, `bin/`, a `package main`, a script) or
+  another package writes the same path. A process that loads the file once never sees those
+  writes. Files that already reload (a file watch, an mtime check, `SIGHUP`) are skipped.
+
+```console
+$ forge impact --diff
+  changed files: 3 (vs HEAD)
+
+  coupled files you did not name — check these first:
+  !! internal/whm/keys.go:6  `createAccountKeys` gained "plan" — 1 site(s) in this package quantify over it; is each still right when "plan" is optional or absent?
+       → internal/whm/strict.go:6  require-all: fails unless every member of `allowed` (= `createAccountKeys`, passed at internal/whm/strict.go:14) is present — a new OPTIONAL member breaks every input without it
+  !! internal/store/store.go:8  reads tokens.json into memory, and 1 site(s) elsewhere write it — will a running process see those writes? Reload on change (mtime/stat check, a file watch, SIGHUP), or document that a restart is required.
+       → cmd/panelctl/main.go:9  writes tokens.json from another binary (cmd/panelctl)
+```
+
+`!!` marks a high-priority hazard (a require-all, size or switch invariant; a writer in
+another binary), `!` a medium one (a parallel list; a writer in another package). The Stop
+gate's repair checklist lists the same hazards for the session's changed code, ahead of
+the graph's co-change candidates. Both checks are regex heuristics over Go, JS/TS and Python
+source: they point at places to look and never block. A store whose path is set only in a
+struct field elsewhere, or a set that is a struct field rather than a variable, is not
+traced.
+
 ### `forge collide` — who else is in these files right now?
 
 The everyday failure of running agents in parallel: two sessions (yours and a

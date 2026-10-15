@@ -31,12 +31,14 @@
 //   - src/eval.js         defines it (:28) (no other same-file caller)
 //   - test/eval.test.js   imports { evalImpact } (:7) and calls it (:34) — the only referencer
 //
-// isStale (src/atlas.js) — 7 files
+// isStale (src/atlas.js) — 8 files
 //   - src/atlas.js             defines it (:1033)
 //   - src/verify.js            imports { isStale } (:11) and calls it (:456)
 //   - src/doctor.js            imports { isStale } (:18) and calls it (:249)
 //   - src/substrate.js         imports it ALIASED (`isStale as atlasIsStale`, :11) and calls
 //                              it twice (:177, :269) — an aliased import is still a reference
+//   - src/coupling.js          imports it ALIASED (`isStale as atlasIsStale`, :20) and calls
+//                              it in diffImpact (:989)
 //   - test/atlas.test.js       imports { isStale } (:6) and calls it
 //   - test/atlas_resolve.test.js imports { isStale } (:11) and calls it (:187, :190)
 //   - test/path_aliases.test.js  imports { isStale } (:10) and calls it (:332, :334)
@@ -103,6 +105,7 @@ export const IMPACT_CASES = [
       "src/verify.js",
       "src/doctor.js",
       "src/substrate.js",
+      "src/coupling.js",
       "test/atlas.test.js",
       "test/atlas_resolve.test.js",
       "test/path_aliases.test.js",
