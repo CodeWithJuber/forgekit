@@ -745,23 +745,30 @@ function callerPathKeys(root, rel, lines, idx, lang, staged) {
     if (m) name = m[1] ?? m[2] ?? m[3] ?? null;
   }
   if (!name || /^(if|for|while|switch|catch|function)$/.test(name)) return [];
+  // A whole-word FIXED-string grep, refined to a call in JS: `\\b` and `\\s` are GNU regex
+  // extensions, and macOS git's POSIX ERE matches nothing with them.
+  const call = new RegExp(`\\b${esc(name)}\\s*\\(`);
   const hits = git(root, [
     "-c",
     "core.quotepath=off",
     "grep",
     "-n",
     "-I",
-    "-E",
+    "-w",
+    "-F",
     ...(staged ? ["--cached"] : ["--untracked"]),
     "-e",
-    `\\b${esc(name)}\\s*\\(`,
+    name,
   ]);
   const pkgName = lang === "go" ? /^package\s+(\w+)/m.exec(lines.join("\n"))?.[1] : null;
   const qualified = pkgName ? new RegExp(`\\b${esc(pkgName)}\\.${esc(name)}\\s*\\(`) : null;
   const keys = new Set();
-  for (const hit of hits.split("\n").slice(0, 100)) {
+  for (const hit of hits
+    .split("\n")
+    .filter((h) => call.test(h))
+    .slice(0, 100)) {
     const m = /^(.+?):(\d+):(.*)$/.exec(hit);
-    if (!m || m[1] === rel || !isCodeSource(m[1])) continue;
+    if (!m || m[1] === rel || !isCodeSource(m[1]) || !call.test(m[3])) continue;
     const def = ENCLOSING[lang].exec(m[3]);
     if (def && (def[1] ?? def[2] ?? def[3]) === name) continue; // the definition itself
     const fl = (readText(root, m[1], staged) ?? "").split("\n");
