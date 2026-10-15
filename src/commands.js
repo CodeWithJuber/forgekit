@@ -281,9 +281,16 @@ export const COMMANDS = {
   impact: {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
-    usage: "forge impact <symbol|file> [--json] [--basic] [--all-relations]",
+    usage:
+      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json]",
     flags: [
       { flag: "--json", desc: "machine-readable report" },
+      {
+        flag: "--diff",
+        desc: "impact of the working diff (vs HEAD, plus untracked files): coupled invariants the graph cannot see — a set a require-all validator quantifies over, a store a sibling binary writes — then the graph's dependents",
+      },
+      { flag: "--staged", desc: "diff mode over the index instead of the working tree" },
+      { flag: "--since <ref>", desc: "diff mode against this git ref instead of HEAD" },
       {
         flag: "--all-relations",
         desc: "also walk sibling and forward relations (recall instrument; much larger, noisier answer)",
@@ -297,6 +304,7 @@ export const COMMANDS = {
       "forge impact src/atlas.js",
       "forge impact computeTax --json",
       "forge impact src/val.js --basic",
+      "forge impact --diff",
     ],
   },
   collide: {

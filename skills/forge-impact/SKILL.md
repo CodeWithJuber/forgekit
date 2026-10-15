@@ -34,7 +34,14 @@ forge impact src/ledger.js          # by file
 forge impact computeTax --json      # by symbol, machine-readable
 forge impact src/val.js --basic     # fixed threshold, no hazard enhancements (faster)
 forge impact <target> --all-relations  # also walk sibling/forward relations (larger, noisier)
+forge impact --diff                 # your working diff: coupled invariants first, then dependents
+forge impact --staged               # the same, over the index
 ```
+
+`--diff` flags what no import edge records: a set you grew (an allowlist, a registry)
+that code in the same package quantifies over (require-all loops, size checks, switches
+missing the new member), and a store you now load into memory while another binary
+writes its file. Treat each `!!` line as a file you must open before claiming done.
 
 ## How it works (the 30-second version)
 

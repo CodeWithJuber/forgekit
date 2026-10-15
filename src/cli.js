@@ -1094,17 +1094,60 @@ HANDLERS.impact = async (argv) => {
   // Default is the focused reverse walk. --all-relations adds the paper's sibling/forward
   // rules: recall 1.00, but on this repo the median answer goes from 15 files to 78.
   const all = argv.includes("--all-relations");
-  const FLAGS = new Set(["--json", "--basic", "--all-relations"]);
-  const target = argv
-    .slice(1)
-    .filter((a) => !FLAGS.has(a))
+  const FLAGS = new Set(["--json", "--basic", "--all-relations", "--diff", "--staged"]);
+  const rest = argv.slice(1);
+  const sinceAt = rest.indexOf("--since");
+  const since = sinceAt >= 0 ? rest[sinceAt + 1] : undefined;
+  const target = rest
+    .filter((a, i) => !FLAGS.has(a) && (sinceAt < 0 || (i !== sinceAt && i !== sinceAt + 1)))
     .join(" ");
-  if (!target) {
-    console.error("usage: forge impact <symbol|file> [--json] [--basic] [--all-relations]");
+  const usage =
+    "usage: forge impact <symbol|file> [--json] [--basic] [--all-relations]\n" +
+    "       forge impact --diff | --staged | --since <ref> [--json] [--all-relations]";
+  const diffMode = argv.includes("--diff") || argv.includes("--staged") || sinceAt >= 0;
+  if ((sinceAt >= 0 && (!since || since.startsWith("--"))) || (diffMode && target)) {
+    console.error(usage);
+    process.exitCode = 1;
+    return;
+  }
+  if (!target && !diffMode) {
+    console.error(usage);
     process.exitCode = 1;
     return;
   }
   const { IMPACT_RELATIONS } = await import("./atlas.js");
+  if (diffMode) {
+    // The diff's blast radius: coupled invariants the import graph cannot see FIRST (an
+    // allowlist a require-all validator quantifies over, a store a sibling binary writes),
+    // then the graph's dependents of the changed code.
+    const { diffImpact, renderHazards } = await import("./coupling.js");
+    const r = diffImpact(process.cwd(), {
+      base: since,
+      staged: argv.includes("--staged"),
+      ...(all ? { relations: IMPACT_RELATIONS } : {}),
+    });
+    if (json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    heading(`${BRAND.brand} impact — this diff\n`);
+    console.log(`  changed files: ${r.changedFiles.length} (vs ${r.base})`);
+    if (r.hazards.length) {
+      console.log(paint("\n  coupled files you did not name — check these first:", "warn"));
+      for (const l of renderHazards(r.hazards)) console.log(`  ${l}`);
+    } else {
+      console.log(paint("  no coupled-invariant hazards (set quantifiers, live readers)", "dim"));
+    }
+    if (r.dependents.length) {
+      console.log(`\n  graph dependents of the changed code: ${r.dependents.length}`);
+      for (const d of r.dependents.slice(0, 20))
+        console.log(`    - ${d.file} (${d.relation} ← ${d.via})`);
+      if (r.dependents.length > 20) console.log(`    … ${r.dependents.length - 20} more`);
+    }
+    if (r.capped)
+      console.log(paint("  ! graph capped: the dependents list may be incomplete", "warn"));
+    return;
+  }
   const r = predictImpact(process.cwd(), target, {
     basic,
     ...(all ? { relations: IMPACT_RELATIONS } : {}),

@@ -6,21 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-15
+
 ### Added
 
-- **`forge claim export`**: export the repo ledger's live claims as
-  interoperable JSON (`forge-claim-export/1` format) — any tool can read
-  claims without knowing forge internals. Secret-shaped claims are refused
-  at export, same rule as mint. Step 1 toward claims as an open standard.
-- **Guard eval harness** (`src/guard_eval.js`): per-guard/skill evaluation
-  against 16 adversarial cases (semantic_guard polarity flips, secrets
-  detection, skillgate malicious shapes). Two known gaps documented
-  (`sec-02`, `sec-04`: hasSecret's conservative false-positives on
-  `<redacted>` placeholders and `token` variable names) — visible baseline
-  for future precision work.
-- **Install friction doc** (`docs/install-friction.md`): head-to-head
-  cold-install measurement — forgekit 3s / 3.2M vs claude-code 36s / 246M
-  vs codex 48s / 432M (2026-10-14, same VM). Zero runtime deps, no auth gate.
+- **`forge impact --diff`: coupled files you did not name** (#206). The import graph
+  cannot see two kinds of coupling, so `forge impact --diff` (`--staged`, `--since <ref>`)
+  lists them, high priority first, above the graph's dependents of the diff's changed code:
+  - **A set something quantifies over.** The diff adds a member to an allowlist, registry
+    or key map, and code in the same package requires every member to be present, checks
+    the set's size, or switches over its members without the new one. The set is followed
+    through a function parameter (`strictObject(raw, allowedKeys)` → `strictObject`'s
+    require-all loop), which is how an optional key broke every request in the report.
+  - **A store another binary writes.** The diff adds a read kept in memory of a file that
+    another binary (`cmd/<name>/`, `bin/`, a `package main`, a script) or another package
+    writes, with no file watch, mtime check or `SIGHUP` reload. It asks whether the running
+    process sees those writes.
+
+  Go, JS/TS and Python, regex heuristics, advisory only. The Stop gate's repair checklist
+  lists the same hazards for the session's changed code, ahead of its co-change
+  candidates. On this repo's last 101 commits it raised no hazards.
 
 ## [1.12.4] - 2026-10-13
 
@@ -3643,7 +3648,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...v1.13.0
 [1.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...v1.12.4
 [1.12.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.1...v1.12.2

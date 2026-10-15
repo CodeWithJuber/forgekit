@@ -48,6 +48,7 @@ import {
 } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { readSession, sessionPath } from "./cortex_hook.js";
+import { couplingHazards, renderHazards } from "./coupling.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
 import {
@@ -422,6 +423,17 @@ export function repairReason(
         ).map((f) => `${f} (${rels[f]})`);
     }
   } catch {}
+  // Coupled invariants the import graph cannot see (an allowlist a require-all validator
+  // quantifies over, a store a sibling binary writes): they outrank the graph's co-change
+  // guesses, so their step goes FIRST after the row's lead step. Fail-open.
+  /** @type {string[]} */
+  let hazardLines = [];
+  if (codeFiles.length)
+    try {
+      hazardLines = renderHazards(couplingHazards(root, { files: codeFiles }).hazards.slice(0, 3), {
+        maxSites: 3,
+      });
+    } catch {}
   const cited = codeFiles.length ? codeFiles : uiRow ? (classes.ui ?? []) : (classes.config ?? []);
   const citedKind = codeFiles.length ? "code" : uiRow ? "UI" : "config";
   const shown = cited.slice(0, 10).join(", ");
@@ -439,6 +451,9 @@ export function repairReason(
         .join(
           ", ",
         )}${coChange.length > 8 ? ` (+${coChange.length - 8} more)` : ""}. (reverse = depends on the change · sibling = shares a dependency with it · forward = the change depends on it)`
+    : "";
+  const hazardStep = hazardLines.length
+    ? `Coupled files you did not name — invariants the import graph cannot see; confirm each still holds (\`${BRAND.cli} impact --diff\` lists them all):\n${hazardLines.map((l) => `   ${l}`).join("\n")}`
     : "";
   let headline;
   const steps = [];
@@ -472,8 +487,10 @@ export function repairReason(
       "END-TO-END COMPLETENESS: code changed this session but no doc or state artifact moved with it.";
     steps.push(docsSyncStep, handoffStep(), decideStep);
   }
-  // Second, right after the row's lead step: the files the diff may still owe a change.
+  // Second, right after the row's lead step: the files the diff may still owe a change —
+  // the coupled-invariant hazards ahead of the graph's co-change candidates.
   if (coChangeStep) steps.splice(1, 0, coChangeStep);
+  if (hazardStep) steps.splice(1, 0, hazardStep);
   if (driftAlarm)
     steps.push(
       `Sustained goal drift this session (CUSUM alarm) — re-read the goal: \`${BRAND.cli} anchor\`.`,
