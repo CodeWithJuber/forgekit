@@ -16,6 +16,14 @@ paths = [
   # high-entropy-token fixtures on purpose and asserts forge redacts them. Those literals are
   # committed, so a full-history scan always matches them — they are NOT real credentials.
   '''^test/secrets\.test\.js$''',
+  # src/guard_eval.js holds the built-in adversarial eval suite: synthetic secret-shaped
+  # fixtures (sec-01, sec-03) that the hasSecret guard must detect. Same rationale —
+  # committed fixtures for testing detection, not real credentials.
+  '''^src/guard_eval\.js$''',
+  # test/guard_eval.test.js and test/claim_export.test.js: synthetic fixtures exercising
+  # the eval harness and the export refusal path. Not real credentials.
+  '''^test/guard_eval\.test\.js$''',
+  '''^test/claim_export\.test\.js$''',
 ]
 # Matched against the whole LINE, so a pattern can name the field it exonerates instead of
 # just the value — which is what lets the citation-key entry below stay narrow.
