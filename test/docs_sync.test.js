@@ -47,6 +47,16 @@ test("changedIdentifiers: paths + definitions + calls from added AND removed lin
   assert.ok(identifiers.includes("checkLimits"), "called symbol captured");
 });
 
+test("changedIdentifiers: Forge's own .forge/ state is never a changed file", () => {
+  const { root } = gitFixture();
+  build({ root }); // writes .forge/atlas.json (+ cache): untracked runtime state
+  mkdirSync(join(root, ".forge", "ledger"), { recursive: true });
+  writeFileSync(join(root, ".forge", "ledger", "c1.json"), "{}\n");
+  writeFileSync(join(root, "src", "val.js"), "export function validateOrderV2(x){ return !!x }\n");
+  const { changedFiles } = changedIdentifiers(root, { base: "HEAD" });
+  assert.deepEqual(changedFiles, ["src/val.js"]);
+});
+
 test("docsSyncReport: stale doc cited file:line; silent doc verified with reason; CHANGELOG exempt", () => {
   const { root } = gitFixture();
   build({ root });

@@ -84,6 +84,8 @@ install_forge() {
   migrate_recall
   for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && link "$d" "$CLAUDE_DIR/skills/$(basename "$d")"; done
   for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && link "$f" "$CLAUDE_DIR/agents/$(basename "$f")"; done
+  # User-level rules: Claude Code loads ~/.claude/rules/*.md in every project.
+  for f in "$REPO"/global/rules/*.md; do [ -e "$f" ] && link "$f" "$CLAUDE_DIR/rules/$(basename "$f")"; done
   link "$REPO/src/cli.js" "$BIN_DIR/forge"
   [ "$DRY" = 1 ] || chmod +x "$REPO/src/cli.js" 2>/dev/null || true
 
@@ -158,6 +160,7 @@ EOF
   fi
   for d in "$REPO"/global/tools/*/; do [ -d "$d" ] && unlink_ours "$CLAUDE_DIR/skills/$(basename "$d")"; done
   for f in "$REPO"/global/crew/*.md; do [ -e "$f" ] && unlink_ours "$CLAUDE_DIR/agents/$(basename "$f")"; done
+  for f in "$REPO"/global/rules/*.md; do [ -e "$f" ] && unlink_ours "$CLAUDE_DIR/rules/$(basename "$f")"; done
   unlink_ours "$BIN_DIR/forge"
   unlink_ours "$FORGE_ASSETS"
   say "Personal state in $FORGE_HOME is left untouched (remove it by hand if you want)."

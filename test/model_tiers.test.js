@@ -13,6 +13,7 @@ import {
   resolveTierPrice,
   resolveTiers,
   TIER_ORDER,
+  withSnapshotStaleness,
 } from "../src/model_tiers.js";
 import { anthropicPage, ok, openRouterBody, stubTransport } from "./_catalog_stub.js";
 
@@ -308,4 +309,46 @@ test("resolveTierPrice never prices another vendor's configured model as a Claud
   });
   const live = resolveTierPrice("haiku", { provider: openai, env: {}, fetchImpl: or.fetchImpl });
   assert.deepEqual([live.inCost, live.outCost, live.source], [0.05, 0.4, "catalog"]);
+});
+
+// Without a provider catalog the tiers fall back to the shipped snapshot, and nothing said when
+// the snapshot was a generation behind, although the OpenRouter catalog fetched for prices
+// already listed the newer models. The "newer" ids here are derived from the snapshot's own
+// (one major version up), so this test never goes stale itself.
+test("withSnapshotStaleness: a newer family member in the price catalog marks the snapshot stale", () => {
+  const bump = (id) => id.replace(/\d+/, (n) => String(Number(n) + 1));
+  const newerOpus = `anthropic/${bump(MODELS.opus.id)}`;
+  const or = stubTransport({
+    "openrouter.ai": ok(
+      openRouterBody([
+        [newerOpus, "0.000004", "0.00002"],
+        [`anthropic/${MODELS.opus.id}`, "0.000005", "0.000025"],
+        [`someone-else/${bump(bump(MODELS.haiku.id))}`, "0.000001", "0.000005"],
+      ]),
+    ),
+  });
+  const rows = resolveTiers({ env: {}, fetchImpl: or.fetchImpl });
+  const opus = rows.find((r) => r.tier === "opus").model;
+  assert.equal(opus.source, "snapshot", "no provider catalog → still the snapshot id");
+  assert.equal(opus.id, MODELS.opus.id);
+  assert.equal(opus.newer?.id, newerOpus);
+  assert.ok(
+    describeResolution(opus).endsWith(
+      `; snapshot stale: ${newerOpus} seen in the openrouter.ai catalog`,
+    ),
+    describeResolution(opus),
+  );
+  const haiku = rows.find((r) => r.tier === "haiku").model;
+  assert.equal(haiku.newer, undefined, "another vendor's namespace never marks a tier stale");
+
+  // The same version (or older) is not newer; a catalog resolution is left as it is; no catalog
+  // at all changes nothing.
+  const same = stubTransport({
+    "openrouter.ai": ok(openRouterBody([[`anthropic/${MODELS.opus.id}`, "0.000005", "0.000025"]])),
+  });
+  const snap = resolveTierModel("opus", { env: {}, fetchImpl: same.fetchImpl });
+  assert.equal(withSnapshotStaleness(snap, "opus", { fetchImpl: same.fetchImpl }).newer, undefined);
+  const live = { id: newerOpus, family: "opus", source: "catalog" };
+  assert.equal(withSnapshotStaleness(live, "opus", { fetchImpl: or.fetchImpl }), live);
+  assert.equal(withSnapshotStaleness(snap, "opus", { priceCatalog: null }), snap);
 });

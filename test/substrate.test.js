@@ -279,3 +279,29 @@ test("substrateCheck sessionId: the pre-existing diff is not this task's footpri
   assert.deepEqual(after.goalAnchor.changed, ["login.js"]);
   assert.equal(after.minimality.footprint?.files, 1);
 });
+
+// The checklist used to append `npm run typecheck` and `npm run lint` to every repo with a
+// package.json: a Next.js portal with no typecheck script, on pnpm, was told to run a script
+// that does not exist through the wrong package manager.
+test("verification checklist names only declared scripts, via the detected package manager", () => {
+  const root = repo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      scripts: { dev: "next dev", build: "next build", lint: "next lint", test: "vitest run" },
+      dependencies: { next: "16.0.0" },
+    }),
+  );
+  writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  writeFileSync(join(root, "tsconfig.json"), "{}\n");
+  const list = substrateCheck(root, "Add a pricing page").verification.checklist;
+  assert.ok(list.includes("pnpm test"), list.join(" | "));
+  assert.ok(list.includes("pnpm run lint"));
+  assert.ok(list.includes("pnpm run build"), "Next.js build is part of verification");
+  assert.ok(list.includes("pnpm exec tsc --noEmit"), "no typecheck script → tsc via tsconfig");
+  assert.ok(!list.some((c) => c.startsWith("npm ")), "never the wrong package manager");
+
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  const bare = substrateCheck(root, "Add a pricing page").verification.checklist;
+  assert.ok(!bare.some((c) => / run (lint|build|typecheck)$/.test(c)), bare.join(" | "));
+});

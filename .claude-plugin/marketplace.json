@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "forge",
   "owner": { "name": "CodeWithJuber" },
+  "description": "Forgekit for Claude Code: guards, skills, crew agents and the forge-cortex MCP server for shared memory, impact analysis and verification gates.",
   "plugins": [
     {
       "name": "forgekit",

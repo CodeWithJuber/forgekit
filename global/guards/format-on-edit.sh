@@ -8,7 +8,7 @@
 # config. The old hook also ran `ruff format` / `ruff check --fix` with no config check
 # at all: a file with no config anywhere above it was rewritten under ruff's defaults.
 # This hook now resolves the config by walking UP from the EDITED FILE's directory,
-# passes it explicitly (ruff --config / biome --config-path), logs the resolved path
+# passes it explicitly (ruff --config / biome --config-path / prettier --config), logs the resolved path
 # on every invocation (auditable evidence), and SKIPS with a logged reason when no
 # config exists — never runs --write/--fix on silent defaults.
 set -uo pipefail
@@ -56,6 +56,61 @@ find_config() {
 ruff_config()  { find_config "$(dirname "$fpath")" pyproject.toml ruff.toml .ruff.toml; }
 biome_config() { find_config "$(dirname "$fpath")" biome.json biome.jsonc; }
 
+# The "prettier" key of a package.json: "object", "plugins" (an object that loads plugins),
+# "string" (a shared config package), or nothing when absent/unreadable.
+pkg_prettier_type() {
+  grep -q '"prettier"' "$1" 2>/dev/null || return 0
+  node -e 'try{const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).prettier;
+if(typeof p==="string")console.log("string");else if(p&&typeof p==="object")console.log(p.plugins?"plugins":"object")}catch{}' "$1" 2>/dev/null
+}
+
+# Nearest Prettier config, in Prettier's own per-directory order: a package.json
+# "prettier" key, then the .prettierrc / prettier.config.* family.
+PRETTIER_FILES=".prettierrc .prettierrc.json .prettierrc.yaml .prettierrc.yml .prettierrc.json5
+.prettierrc.js prettier.config.js .prettierrc.ts prettier.config.ts .prettierrc.mjs
+prettier.config.mjs .prettierrc.mts prettier.config.mts .prettierrc.cjs prettier.config.cjs
+.prettierrc.cts prettier.config.cts .prettierrc.toml"
+prettier_config() {
+  local dir name
+  dir="$(cd "$(dirname "$fpath")" 2>/dev/null && pwd)" || return 0
+  while true; do
+    if [ -n "$(pkg_prettier_type "$dir/package.json")" ]; then
+      printf '%s\n' "$dir/package.json"
+      return 0
+    fi
+    for name in $PRETTIER_FILES; do
+      if [ -f "$dir/$name" ]; then
+        printf '%s\n' "$dir/$name"
+        return 0
+      fi
+    done
+    [ "$dir" = "/" ] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+
+# Why using a Prettier config would run the project's own code, or nothing. A JS/TS config
+# is a program, and `plugins` or a shared-config string load packages from the project's
+# node_modules — even a trusted prettier binary would execute them.
+prettier_untrusted() {
+  case "$1" in
+    *.js | *.cjs | *.mjs | *.ts | *.cts | *.mts) echo "an executable config" ;;
+    */package.json)
+      case "$(pkg_prettier_type "$1")" in
+        string) echo "a shared config package" ;;
+        plugins) echo "a config that loads plugins" ;;
+      esac
+      ;;
+    *)
+      if grep -q 'plugins' "$1" 2>/dev/null; then
+        echo "a config that loads plugins"
+      elif ! grep -q '[:{=]' "$1" 2>/dev/null; then
+        echo "a shared config package" # a bare string names a package, not options
+      fi
+      ;;
+  esac
+}
+
 # A project that formats with Biome must never be rewritten by a global prettier: the two
 # disagree (line width, object wrapping), so every edit churned the whole file. Biome owns
 # the files it is configured for; everything else (markdown included) is left alone.
@@ -83,7 +138,26 @@ case "$fpath" in
           fi
           ;;
       esac
-    elif have npx && [ -f "package.json" ]; then run npx --no-install prettier --write "$fpath"; fi
+    else
+      # The Biome rule, applied to Prettier: never `npx` (it resolves the project's own
+      # node_modules/.bin first, i.e. runs untrusted code), only a trusted prettier from
+      # PATH, and only with a config found above the EDITED file, passed explicitly. No
+      # config → skip: a repo that never chose Prettier is not rewritten under its defaults.
+      pconf="$(prettier_config)"
+      if [ -z "${pconf:-}" ]; then
+        forge_log "no prettier config found walking up from $(dirname "$fpath") — skipped (never --write on defaults)"
+      else
+        why="$(prettier_untrusted "$pconf")"
+        if [ -n "$why" ]; then
+          forge_log "prettier config: $pconf — $why runs project code, skipping"
+        elif have prettier; then
+          forge_log "prettier config: $pconf"
+          run prettier --write --config "$pconf" "$fpath"
+        else
+          forge_log "prettier config: $pconf — no trusted prettier on PATH, skipping (refusing project-local binary)"
+        fi
+      fi
+    fi
     ;;
   *.py)
     if have ruff; then

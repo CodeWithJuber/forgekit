@@ -58,7 +58,11 @@ case "$count" in
     add_note "forge cost: $count tool calls this session — if this feels like a loop, /clear or scope the task (runaway loops are the #1 cost incident)." ;;
 esac
 
-case "$cmd" in
+# Match the command's shape, not its arguments: quoted spans are data (a search pattern, a
+# commit message), so `grep -n "npm install -g" README.md` is a bounded single-file read.
+bare=""
+[ -n "$cmd" ] && bare="$(printf '%s' "$cmd" | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')"
+case "$bare" in
   *"find / "* | *"find /" | *"grep -r"*" / "* | *"npm install "*"-g"* | *" | xargs "*)
     add_note "forge cost: broad/expensive command — scope it or delegate to the scout crew: ${cmd:0:80}" ;;
 esac

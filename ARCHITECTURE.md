@@ -438,8 +438,9 @@ library math with tests until a real consumer exists.
 `tech-selector · reuse-first · dev-radar · code-modernization · explore-plan-code ·
 cost-guard · ui-workflow · design-md · self-improve` (tools) · `scout · verifier ·
 frontend-verifier` (crew) · `protect-paths · format-on-edit · recall-load ·
-session-learner` (guards) · `statusline` · `tech-currency · stack-notes ·
-self-correction` (rules) · project-layer template.
+session-learner` (guards) · `statusline` · `tech-currency · self-correction` (rules,
+which `install.sh` links into `~/.claude/rules/`) · `stack-notes` (a `reuse-first`
+reference, so it ships in the plugin too) · project-layer template.
 
 **Own-branded replacements (thin layer over proven primitive):**
 

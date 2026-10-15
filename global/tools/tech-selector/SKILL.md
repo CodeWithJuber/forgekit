@@ -9,8 +9,9 @@ Training data is stale and biased toward what was popular at cutoff. For any
 "what should I use" decision, verify against live sources before recommending.
 
 ## Verify before recommending (don't skip)
-1. **Docs (Context7 MCP)** — `resolve-library-id` then `get-library-docs` for the
-   candidates. Confirms the API is current and the library still exists.
+1. **Docs (Context7 MCP)** — resolve each candidate's library id (`resolve-library-id`),
+   then query its docs (`query-docs`; older Context7 versions call it `get-library-docs`).
+   Confirms the API is current and the library still exists.
 2. **Web search** — "<use-case> best library <current year>", release notes,
    "X vs Y". Look for recency; ignore posts older than ~18 months unless canonical.
 3. **GitHub health** (via `gh` or GitHub MCP) — for each finalist check:

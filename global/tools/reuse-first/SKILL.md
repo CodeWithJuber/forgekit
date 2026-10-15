@@ -46,7 +46,7 @@ change is the smallest one that fits the codebase.
 - Fix root causes; never suppress an error to make a check pass.
 
 ## Per-stack starting points (verify currency with `tech-selector` before adopting)
-The dated verified baseline lives in `~/.claude/rules/stack-notes.md` (refresh via
+More notes per stack live in this skill's `references/stack-notes.md` (update via
 `/dev-radar`). Quick defaults below — treat as candidates, confirm live per use case:
 - **Web app**: Next.js (App Router) / React; SvelteKit or Astro for content-led.
 - **Styling/UI**: Tailwind + shadcn/ui (Radix) — pull real component code via the
