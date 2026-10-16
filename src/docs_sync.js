@@ -11,6 +11,7 @@ import { extname, join } from "node:path";
 import { load as loadAtlas, RULES } from "./atlas.js";
 import { CALL_IGNORE, extractCalledSymbols } from "./extract.js";
 import { isTestFile } from "./substrate.js";
+import { NOT_OWN_STATE } from "./util.js";
 
 function git(root, args) {
   try {
@@ -50,8 +51,11 @@ function definedNames(rel, text) {
  *   exists).
  */
 export function changedIdentifiers(root, { base = "HEAD" } = {}) {
+  // Forge's own .forge/ state (atlas, ledger, uicheck) is never a changed file of the user's.
+  const notOwn = ["--", ...NOT_OWN_STATE];
   const diff =
-    git(root, ["diff", "--unified=0", base]) || git(root, ["diff", "--unified=0", "--cached"]);
+    git(root, ["diff", "--unified=0", base, ...notOwn]) ||
+    git(root, ["diff", "--unified=0", "--cached", ...notOwn]);
   const perFile = new Map();
   const ensure = (rel) => {
     if (!perFile.has(rel)) perFile.set(rel, { added: [], removed: [] });
@@ -72,7 +76,14 @@ export function changedIdentifiers(root, { base = "HEAD" } = {}) {
     else if (line.startsWith("-") && !line.startsWith("---"))
       ensure(current).removed.push(line.slice(1));
   }
-  for (const f of git(root, ["ls-files", "--others", "--exclude-standard"])
+  for (const f of git(root, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+    "--",
+    ".",
+    ...NOT_OWN_STATE.slice(1),
+  ])
     .split("\n")
     .filter(Boolean)) {
     if (!perFile.has(f)) {

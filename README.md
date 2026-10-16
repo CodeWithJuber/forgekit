@@ -374,10 +374,15 @@ Install using one path:
 
 | Use case | Command |
 | --- | --- |
+| Claude Code 2.1.275 or later, one step | `/plugin install forgekit --marketplace CodeWithJuber/forgekit` |
 | Claude Code or another plugin-capable supported host | `/plugin marketplace add CodeWithJuber/forgekit` then `/plugin install forgekit` |
 | Global CLI from npm | `npm install -g @codewithjuber/forgekit` |
 | Directly from GitHub | `npm install -g github:CodeWithJuber/forgekit` |
 | Contributor checkout | `git clone https://github.com/CodeWithJuber/forgekit.git && cd forgekit && npm link` |
+
+The plugin runs its guards and its `forge-cortex` MCP server from the plugin directory, so
+it needs only `node` on `PATH`. It does not put the `forge` command on your shell's `PATH`;
+to run the `forge` commands below yourself, also install the npm package.
 
 Initialize inside a project:
 

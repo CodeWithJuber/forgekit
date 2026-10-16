@@ -6,6 +6,49 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **format-on-edit no longer runs the project's own prettier.** The hook ran
+  `npx --no-install prettier --write`, which executes `node_modules/.bin/prettier` (untrusted
+  code), and reformatted files under Prettier's defaults in repos with no Prettier config. It
+  now walks up from the edited file for a Prettier config (a `package.json` `"prettier"` key or
+  a `.prettierrc*` file), runs only a prettier from `PATH` with `--config <found>`, and skips
+  with a logged reason when there is no config, or when the config is code (a JS/TS config,
+  `plugins`, a shared-config package).
+- **Plugin installs start the `forge-cortex` MCP server.** The plugin manifest now launches it
+  with `node ${CLAUDE_PLUGIN_ROOT}/src/cli.js cortex-mcp`; the root `.mcp.json` used the bare
+  `forge` command, which a plugin-only install never puts on `PATH`. The README install table
+  gains the one-step `/plugin install forgekit --marketplace CodeWithJuber/forgekit` line, and
+  the marketplace manifest a description.
+- **The verification checklist names only scripts that exist.** `forge substrate` (and the
+  prompt-time advisory) suggested `npm run typecheck` and `npm run lint` in every repo with a
+  `package.json`. It now lists typecheck, lint and (for Next.js) build only when
+  `package.json` declares them, run through the detected package manager, and falls back to
+  `<pm> exec tsc --noEmit` when only a `tsconfig.json` exists.
+- **Forge's own `.forge/` state no longer counts as uncommitted work.** `forge imagine --run`
+  refused every repo where Forge had run, and `forge docs sync` and the SessionStart summary
+  listed `.forge/` files as changes. Those git queries now exclude `.forge/`, and `forge init`
+  also ignores `trace/`, `atlas.cache.json`, `metrics.jsonl` and `provenance.json` in
+  `.forge/.gitignore`. The verifier agent says which runners `imagine --run` supports and what
+  to use otherwise.
+- **`forge models` and `forge route` say when the shipped tier snapshot is stale.** With no
+  provider catalog, a tier shows the snapshot id; when OpenRouter's catalog (already fetched
+  for prices) lists a newer model of the same family, the provenance line now ends with
+  `snapshot stale: <newer id> seen in the openrouter.ai catalog`.
+- **Agents and skills:** the frontend-verifier agent can reach the Playwright or
+  chrome-devtools MCP (it inherits tools minus file writes) and has a Playwright CLI fallback;
+  tech-selector names Context7's `query-docs`; the code-modernization skill's `name` matches
+  its directory (now tested for every skill), its description is narrowed to legacy and
+  migration work, and it runs its scanner from the skill's own directory; cognitive-substrate
+  links its guide by URL; `install.sh` links `global/rules/` into `~/.claude/rules/`, the stack
+  notes moved into the reuse-first skill without version pins, and `global/CLAUDE.md` names
+  the real recall store.
+- **cost-budget no longer flags quoted text.** The broad-command advisory ignored nothing
+  inside quotes, so `grep -n "npm install -g" README.md` was flagged; quoted spans are now
+  stripped before matching.
+- **The déjà-vu advisory shows a date** (`seen on 2026-10-15`) instead of an epoch-day number.
+- Biome's config schema and `CLAUDE.md` now name the installed Biome version (2.5.15).
+
 ## [1.13.0] - 2026-10-15
 
 ### Added

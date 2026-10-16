@@ -1,22 +1,18 @@
 ---
-name: code-modernizer
+name: code-modernization
 description: >-
-  Modernize or refactor a legacy codebase incrementally while preserving business
-  logic. Replaces hand-rolled logic with the standard library, a native feature,
-  an already-installed dependency, or (only after live research) a well-vetted new
-  package, then applies minimal design patterns to whatever custom code remains.
-  Confirms scope first (full-codebase, one module/partial, or only the exact lines
-  named) and flags file count, line count, and breaking-change risk before
-  generating a large diff, asking instead of assuming when scope, a library choice,
-  or a behavior change is unclear.
-  Use for migrations (framework/language/version upgrades), killing tech debt,
-  refactoring an old project, or "bring this up to date". Use whenever the user
-  asks to refactor, modernize, de-bloat, clean up, simplify, upgrade, or audit
-  code; asks "is there a library for this", "don't reinvent the wheel", "replace
-  with a framework", "reduce boilerplate", or "apply proper design patterns"; wants
-  a root-cause fix over a quick patch; says "full upgrade" vs "partial upgrade" vs
-  "just fix this one thing"; or wants a legacy-code/tech-debt audit or a
-  dependency-choice recommendation.
+  Modernize a legacy codebase, or migrate it across a framework, language or major
+  version, incrementally while preserving business logic. Replaces hand-rolled
+  legacy logic with the standard library, a native feature, an already-installed
+  dependency, or (only after live research) a well-vetted new package, then applies
+  minimal design patterns to whatever custom code remains. Confirms scope first
+  (full codebase, one module, or only the exact lines named) and flags file count,
+  line count, and breaking-change risk before generating a large diff, asking
+  instead of assuming when scope, a library choice, or a behavior change is unclear.
+  Use for migrations and version upgrades, legacy-code or tech-debt audits, killing
+  tech debt in an old project, or "bring this up to date" / "full upgrade" vs
+  "partial upgrade". For everyday refactors, bug fixes and new features, use the
+  lean and reuse-first skills instead.
 license: MIT
 attribution: >-
   This skill's ladder is adapted from DietrichGebert/ponytail (MIT licensed).
@@ -95,10 +91,12 @@ option, not the safe default.
 
 ## Step 1: Pre-flight scan and cost/impact flag (Full/Partial only, skip for Targeted)
 
-Ground the estimate in real numbers instead of a guess. Run:
+Ground the estimate in real numbers instead of a guess. The scanner ships inside this
+skill, not in the user's project, so run it by its path under this skill's base
+directory (shown when the skill loads), from the project directory:
 
 ```
-python3 scripts/preflight_scan.py <path>
+python3 <this skill's base directory>/scripts/preflight_scan.py <path>
 ```
 
 It's stdlib-only Python, nothing to install. Report back to the user in a short

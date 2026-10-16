@@ -248,6 +248,29 @@ test("cost-budget never blocks and warns on a broad command", () => {
   assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "a nudge never decides");
 });
 
+// The advisory matched the raw command string, so a bounded grep whose quoted PATTERN merely
+// contained `npm install -g` or ` | xargs ` was flagged and the nudge injected into context.
+test("cost-budget ignores broad-looking text inside quoted arguments", () => {
+  for (const command of [
+    'grep -n "npm install -g" README.md',
+    "rg 'x | xargs y' docs/notes.md",
+    'git commit -m "docs: never find / -name x"',
+  ]) {
+    const r = runGuard("cost-budget.sh", {
+      session_id: `t-quoted-${Date.now()}`,
+      tool_input: { command },
+    });
+    assert.equal(r.code, 0);
+    assert.doesNotMatch(r.out, /broad\/expensive command/, `not flagged: ${command}`);
+  }
+  // The real thing is still flagged when it is the command, not a quoted argument.
+  const real = runGuard("cost-budget.sh", {
+    session_id: `t-quoted-real-${Date.now()}`,
+    tool_input: { command: 'ls | xargs grep -l "TODO"' },
+  });
+  assert.match(real.out, /broad\/expensive command/);
+});
+
 test("cost-budget fires from any cwd (subdir/worktree safe)", () => {
   const r = runGuard(
     "cost-budget.sh",

@@ -3,7 +3,7 @@
 ## Stack
 
 - Node.js >=20, pure ESM (`"type": "module"`), zero runtime dependencies.
-- Linter/formatter: Biome 2.5.13 (dev dependency; `npx biome migrate --write` after an upgrade).
+- Linter/formatter: Biome 2.5.15 (dev dependency; `npx biome migrate --write` after an upgrade).
 - Types: TypeScript via JSDoc annotations — no `.ts` files, checked by `tsc`.
 
 ## Commands

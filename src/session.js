@@ -22,7 +22,7 @@ import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { BRAND } from "./brand.js";
 import { isE2eRun, sessionPath } from "./cortex_hook.js";
 import { redactSecrets } from "./secrets.js";
-import { git, IGNORE_DIRS } from "./util.js";
+import { git, IGNORE_DIRS, NOT_OWN_STATE } from "./util.js";
 import { computeCodeState, evidenceMac } from "./verify.js";
 
 // Raw NUL-separated porcelain — the ONLY quote-proof status format (paths with
@@ -159,7 +159,9 @@ export function rehydrationBlock(root, { commits = 10, statusCap = 20 } = {}) {
     "Recent commits:",
     ...log.map((l) => `- ${l}`),
   ];
-  const status = git(root, ["status", "--short"]).split("\n").filter(Boolean);
+  const status = git(root, ["status", "--short", "--", ...NOT_OWN_STATE])
+    .split("\n")
+    .filter(Boolean);
   if (status.length) {
     lines.push(
       "Uncommitted changes at session start:",

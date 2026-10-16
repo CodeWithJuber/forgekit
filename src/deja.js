@@ -192,9 +192,14 @@ export function dejaLine(top, nowDay = 0) {
   if (!top || (top.rel ?? 0) < DEJA_REL_FLOOR) return "";
   const { claim } = top;
   const verified = val(claim, nowDay) > 0.5;
-  const day = claim.provenance?.t ?? 0;
+  // provenance.t is an epoch day; a bare day number means nothing to a reader.
+  const day = Number(claim.provenance?.t);
+  const seen =
+    Number.isFinite(day) && day > 0
+      ? ` on ${new Date(day * 86_400_000).toISOString().slice(0, 10)}`
+      : "";
   const gist = claimText(claim).replace(/\s+/g, " ").trim().slice(0, 120);
-  return `${BRAND.brand} déjà vu — similar task seen day ${day}${verified ? " (verified)" : ""}: ${gist}`;
+  return `${BRAND.brand} déjà vu — similar task seen${seen}${verified ? " (verified)" : ""}: ${gist}`;
 }
 
 /**

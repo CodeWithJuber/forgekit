@@ -52,7 +52,8 @@ Each tier's model family resolved to a concrete model right now: the newest mode
 family in the active provider's live catalog (the Anthropic Models API with
 `ANTHROPIC_API_KEY`, a gateway's `/v1/models`, or OpenRouter's list), priced from
 OpenRouter's public catalog — else the cached copy, else the shipped snapshot. Every row says
-where its id and price came from.
+where its id and price came from, and a snapshot row says when OpenRouter's catalog lists a
+newer model of the same family (`snapshot stale: …`).
 
 ```bash
 forge models               # tier, family, resolved id, created, price, source

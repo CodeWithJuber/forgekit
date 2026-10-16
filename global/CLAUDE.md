@@ -1,6 +1,8 @@
 # Global instructions (all projects)
 
-Loaded every session. Keep short — long files get ignored. Prune ruthlessly.
+A template for your user-level `~/.claude/CLAUDE.md`. Neither `install.sh` nor the plugin
+installs it (that would overwrite yours), so copy in the parts you want. Once there, Claude
+Code loads it every session. Keep it short — long files get ignored. Prune ruthlessly.
 
 ## Workflow
 - Explore → plan → code → verify. For multi-file or unfamiliar changes, use plan mode first. Skip planning for one-line/obvious fixes.
@@ -23,7 +25,7 @@ Loaded every session. Keep short — long files get ignored. Prune ruthlessly.
 - Ask before: force-push, history rewrite, `rm -rf`, dropping DB tables, or touching production.
 
 ## Memory
-- The `recall` skill records durable, cross-session facts to `~/.claude/memory/`.
+- The `recall` skill records durable, cross-session facts to `$XDG_STATE_HOME/forgekit/recall/` (default `~/.local/state/forgekit/recall/`; `FORGE_HOME` overrides).
 - Save only what's non-obvious and lasting (env quirks, decisions, gotchas). Never save secrets or PII.
 
 ## Tools

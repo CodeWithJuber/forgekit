@@ -42,17 +42,47 @@ function loadSubstrateSpec() {
   }
 }
 
+const NODE_PMS = ["pnpm", "yarn", "bun", "npm"];
+// How each package manager runs a locally installed binary (`npm exec` needs `--` so the
+// flags reach tsc, not npm).
+const EXEC_BIN = { npm: "npm exec --", pnpm: "pnpm exec", yarn: "yarn", bun: "bunx" };
+
+/**
+ * Typecheck/lint/build steps for a Node repo, only for scripts its package.json declares,
+ * run through the package manager detectStack found. A step naming a missing script, or
+ * the wrong package manager, sends the agent to a command that fails.
+ * @param {string} root
+ * @param {{packageManagers?: string[], frameworks?: string[]}} stack
+ * @returns {string[]}
+ */
+function nodeChecks(root, stack) {
+  let scripts;
+  try {
+    scripts = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))?.scripts ?? {};
+  } catch {
+    return [];
+  }
+  const has = (name) => typeof scripts[name] === "string";
+  const pm = stack.packageManagers?.find((p) => NODE_PMS.includes(p)) ?? "npm";
+  const out = [];
+  const typecheck = ["typecheck", "type-check", "tsc"].find(has);
+  if (typecheck) out.push(`${pm} run ${typecheck}`);
+  else if (existsSync(join(root, "tsconfig.json"))) out.push(`${EXEC_BIN[pm]} tsc --noEmit`);
+  if (has("lint")) out.push(`${pm} run lint`);
+  if (has("build") && stack.frameworks?.includes("Next.js")) out.push(`${pm} run build`);
+  return out;
+}
+
 function verificationChecklist(root) {
   const checks = [];
+  let stack = {};
   // Derive the real test command(s) from the repo's actual stack instead of assuming npm.
   try {
-    for (const cmd of detectStack(root).testCommands) checks.push(cmd);
+    const detected = detectStack(root);
+    stack = detected;
+    for (const cmd of detected.testCommands) checks.push(cmd);
   } catch {}
-  // Node repos also get typecheck/lint if the scripts plausibly exist (cheap heuristic).
-  if (existsSync(join(root, "package.json"))) {
-    checks.push("npm run typecheck");
-    checks.push("npm run lint");
-  }
+  checks.push(...nodeChecks(root, stack));
   checks.push("review impacted files before editing");
   checks.push("run the narrowest affected test first, then the broader suite");
   return [...new Set(checks)];
