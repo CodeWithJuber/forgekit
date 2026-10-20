@@ -78,6 +78,18 @@ guests". "Enable X" and "Disable X" are listed as conflicts. Every archived clai
 why it went to the attic (`tombstoned`, `dormant`, `idle` or `duplicate`); archived is not
 refuted.
 
+## `forge claim`
+
+```bash
+forge claim export --pretty                  # print the ledger's claims as open JSON
+forge claim export --out claims.json --pretty  # write the document to a file
+```
+
+The export uses the `forge-claim-export/1` format: each claim's id, kind, body, scope,
+provenance, evidence, current confidence and `tombstoned` flag, so any tool can read
+claims without knowing forge internals. Secret-shaped claims are never exported;
+`refusedSecret` counts the ones held back.
+
 ## `forge reuse`
 
 Proof-carrying code cache — served only when its evidence still holds.
