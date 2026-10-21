@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge claim export`**: export the repo ledger's live claims as
+  interoperable JSON (`forge-claim-export/1` format) — any tool can read
+  claims without knowing forge internals. Secret-shaped claims are refused
+  at export, same rule as mint. Step 1 toward claims as an open standard.
+- **Guard eval harness** (`src/guard_eval.js`): per-guard/skill evaluation
+  against 16 adversarial cases (semantic_guard polarity flips, secrets
+  detection, skillgate malicious shapes). Two known gaps documented
+  (`sec-02`, `sec-04`: hasSecret's conservative false-positives on
+  `<redacted>` placeholders and `token` variable names) — visible baseline
+  for future precision work.
+- **Install friction doc** (`docs/install-friction.md`): head-to-head
+  cold-install measurement — forgekit 3s / 3.2M vs claude-code 36s / 246M
+  vs codex 48s / 432M (2026-10-14, same VM). Zero runtime deps, no auth gate.
+
 ## [1.13.1] - 2026-10-15
 
 ### Fixed
