@@ -30,7 +30,7 @@ Every command is real and wired. Grouped by what it does:
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core**                | `forge init` · `forge sync` · `forge doctor` · `forge tools` · `forge catalog` · `forge docs` · `forge update` · `forge config`                                                                                              |
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge advisor` · `forge verify` · `forge demo` · `forge precommit` · `forge test-select` |
-| **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge handoff` · `forge decide` · `forge know`                                                                                        |
+| **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge claim` · `forge handoff` · `forge decide` · `forge know`                                                                        |
 | **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                                                 |
 | **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                        |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                         |
@@ -1309,6 +1309,21 @@ conflict-free claims). Upgrading from an older version? Run `forge ledger import
 (idempotent) so any pre-ledger local history lands in the ledger. Set **`FORGE_LEDGER_ONLY=0`**
 (the one-release escape hatch) to temporarily restore the legacy file store while external
 tooling migrates.
+
+### `forge claim export` — claims as open JSON
+
+```bash
+forge claim export --pretty                  # print the export document
+forge claim export --out claims.json --pretty  # write it to a file
+```
+
+Exports the repo ledger's claims as a self-describing JSON document in the
+`forge-claim-export/1` format, so another tool can read them without knowing forge's
+on-disk layout. Each claim carries its id, kind, body, scope, provenance, evidence
+outcomes, its current confidence (`val`) and a `tombstoned` flag; a consumer can
+recompute confidence with its own decay rule instead of trusting forge's. A claim whose
+body looks like a secret is never exported; the document's `refusedSecret` field counts
+how many were held back.
 
 ### `forge reuse` — proof-carrying code cache
 
