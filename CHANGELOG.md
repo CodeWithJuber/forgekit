@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-21
+
+### Added
+
+- **`forge claim export`**: export the repo ledger's live claims as
+  interoperable JSON (`forge-claim-export/1` format) — any tool can read
+  claims without knowing forge internals. Secret-shaped claims are refused
+  at export, same rule as mint. Step 1 toward claims as an open standard.
+- **Guard eval harness** (`src/guard_eval.js`): per-guard/skill evaluation
+  against 16 adversarial cases (semantic_guard polarity flips, secrets
+  detection, skillgate malicious shapes). Two known gaps documented
+  (`sec-02`, `sec-04`: hasSecret's conservative false-positives on
+  `<redacted>` placeholders and `token` variable names) — visible baseline
+  for future precision work.
+- **Install friction doc** (`docs/install-friction.md`): head-to-head
+  cold-install measurement — forgekit 3s / 3.2M vs claude-code 36s / 246M
+  vs codex 48s / 432M (2026-10-14, same VM). Zero runtime deps, no auth gate.
+
 ## [1.13.1] - 2026-10-15
 
 ### Fixed
@@ -3690,7 +3708,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.1...v1.14.0
 [1.13.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...v1.13.0
 [1.12.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.3...v1.12.4
