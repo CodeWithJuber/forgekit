@@ -593,7 +593,7 @@ forgekit/
     ledger_retention.js   # retention learned from the ledger's own history: archive never-served claims, idle ones past the longest observed comeback, and exact duplicates; BIC-detected near-duplicates are only proposed (`ledger compact`)
     ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
     ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
-    learn_consolidate.js  # bin/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge exact duplicates, propose near-duplicates, drop only lessons whose exact ledger claim is refuted (dormant/retracted/attic); no model call
+    learn_consolidate.js  # scripts/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge exact duplicates, propose near-duplicates, drop only lessons whose exact ledger claim is refuted (dormant/retracted/attic); no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) coverage, compression ladder, computed missing-set
@@ -618,10 +618,10 @@ forgekit/
   templates/project-layer/  # per-repo template
   .claude-plugin/ .codex-plugin/  # plugin manifests → point at global/ + skills/ (no dup beyond the codex skill mirror)
   install.sh              # hardened: idempotent, symlink, backup, no curl|sh
-  bin/                    # back-compat shims → src/cli.js
   landing/                # hand-authored public landing page; design tokens shared with `forge dash`
   scripts/
     build-pages.mjs       # generates public/index.html, the live status page, from real repo data
+    claude-init.sh claude-taste.sh learn-consolidate.sh  # legacy helpers (not on PATH; no root bin/ — claude.ai org sync refuses plugins that have one)
 ```
 
 Public site deploy (two independent Pages targets, both built from `landing/` +
@@ -672,7 +672,7 @@ from the tree it describes.
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
   test["test<br/>152 files"]
-  src["src<br/>136 files"]
+  src["src<br/>137 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>10 files"]
@@ -680,7 +680,7 @@ flowchart LR
   global["global<br/>5 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 319 --> src
+  test -- 322 --> src
   bench -- 12 --> src
   scripts -- 6 --> src
   examples -- 4 --> src

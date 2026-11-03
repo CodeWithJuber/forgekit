@@ -21,6 +21,23 @@ test("plugin channel points at global/ (no duplication)", () => {
   assert.ok(existsSync(join(root, "global/crew")), "global/crew exists");
 });
 
+// Claude Code plugins reference, Standard layout, `bin/` row: "Files here are on the Bash
+// tool's `PATH` while the plugin is enabled ... claude.ai and Cowork don't install a plugin that
+// has this directory, including one you distribute through claude.ai organization settings"
+// (https://code.claude.com/docs/en/plugins-reference#standard-layout, read 2026-11-03).
+// The plugin root IS the repo root (marketplace `source: "."`), so a root bin/ blocks every
+// org-synced / cloud install. Helper scripts live in scripts/ instead.
+test("the plugin root has no bin/ directory (stays installable via claude.ai org sync)", () => {
+  assert.equal(
+    existsSync(join(root, "bin")),
+    false,
+    "a root bin/ makes claude.ai refuse the plugin",
+  );
+  assert.equal(readJson("package.json").files.includes("bin"), false, "files must not list bin");
+  for (const s of ["claude-init.sh", "claude-taste.sh", "learn-consolidate.sh"])
+    assert.ok(existsSync(join(root, "scripts", s)), `scripts/${s} exists`);
+});
+
 test("plugin name matches the distributable id (brand pkg)", () => {
   assert.equal(readJson(".claude-plugin/plugin.json").name, readJson("brand.json").pkg);
 });

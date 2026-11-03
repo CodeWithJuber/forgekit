@@ -9,7 +9,7 @@ Bundle: `~/Downloads/claude-global-config/`. Most of this is **already applied
 live** on your machine. This is the accurate final command sheet.
 
 ## 0. Applied live (no action needed)
-- 9 skills, 3 agents, 3 rules, 3 hooks, statusline, 3 `bin/` commands installed to `~/.claude/`.
+- 9 skills, 3 agents, 3 rules, 3 hooks, statusline, 3 helper commands installed to `~/.claude/` (in this repo they now live in `scripts/`: `claude-init.sh`, `claude-taste.sh`, `learn-consolidate.sh`; the plugin ships no root `bin/`).
 - `settings.json`: model `sonnet`; statusLine + Pre/Post/Stop hooks; `permissions.allow` pruned to ~56; **plugins trimmed** (disabled code-simplifier, feature-dev, hookify → 19 enabled).
 - **Graphify** installed globally; **Ponytail** installed as a plugin.
 - 29 repos scaffolded with `claude-init`; redundant taste skills archived; `royalfront` project-skills thinned 35→17.
@@ -40,6 +40,7 @@ echo 'export ENABLE_SESSION_LEARNING=1' >> ~/.zshrc && source ~/.zshrc   # alrea
 ```
 
 ## 4. Everyday commands (on your PATH)
+Sources: `scripts/claude-init.sh`, `scripts/claude-taste.sh`, `scripts/learn-consolidate.sh` (link them onto your PATH yourself; nothing installs them).
 ```bash
 claude-init                  # in a repo: write AGENTS.md + thin CLAUDE.md (auto-detect stack)
 claude-taste                 # list per-repo UI taste skills

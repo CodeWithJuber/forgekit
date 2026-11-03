@@ -43,7 +43,6 @@
     ".claude-plugin",
     ".codex-plugin",
     ".mcp.json",
-    "bin",
     "brand.json",
     "install.sh",
     "README.md",

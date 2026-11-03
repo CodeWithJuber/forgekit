@@ -1,4 +1,4 @@
-// A13 (research-to-code audit): bin/learn-consolidate.sh asked a model to "DROP anything …
+// A13 (research-to-code audit): learn-consolidate.sh (then in bin/, now scripts/) asked a model to "DROP anything …
 // contradicted" and rewrote the learned-lessons store from its answer — memory pruned by the
 // model's own judgment, which the research rejects. Consolidation is now deterministic:
 // duplicates merge, and a lesson is dropped only when the ledger refutes it.
@@ -36,7 +36,7 @@ import {
   tombstone,
 } from "../src/ledger_store.js";
 
-const SCRIPT = fileURLToPath(new URL("../bin/learn-consolidate.sh", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../scripts/learn-consolidate.sh", import.meta.url));
 const tmp = (p = "forge-learn-") => mkdtempSync(join(tmpdir(), p));
 
 const FLAKY = "Run the db migration before the integration tests or they fail with a missing table";

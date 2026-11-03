@@ -47,14 +47,14 @@ test("priceOf resolves the active pricing window by date (P0-12)", () => {
 });
 
 test("priceOf falls back to flat cost for a model with no schedule", () => {
-  assert.deepEqual(priceOf("haiku", "2026-07-17"), { inCost: 1, outCost: 5 });
+  assert.deepEqual(priceOf("haiku", "2026-07-17"), { inCost: 0.1, outCost: 0.5 });
   assert.deepEqual(priceOf("flat", "2026-07-17", SCHEDULED), { inCost: 1, outCost: 5 });
   assert.equal(priceOf("nope"), null);
 });
 
-// Anthropic made Sonnet 5's launch price of $2/$10 the standard price; the increase to $3/$15
-// scheduled for 2026-09-01 was cancelled (platform.claude.com pricing page, checked 2026-09-22).
-test("Sonnet 5 stays at $2/$10 after 2026-09-01 (the scheduled increase was cancelled)", () => {
+// The Sonnet tier stays at $2/$10: Sonnet 5's cancelled 2026-09-01 increase never applied, and
+// Sonnet 5.5 kept the same price (platform.claude.com pricing page, checked 2026-11-03).
+test("the Sonnet tier stays at $2/$10 after 2026-09-01 (the scheduled increase was cancelled)", () => {
   assert.deepEqual(priceOf("sonnet", "2026-07-17"), { inCost: 2, outCost: 10 });
   assert.deepEqual(priceOf("sonnet", "2026-09-22"), { inCost: 2, outCost: 10 });
 });
@@ -65,7 +65,7 @@ test("allPricePairs includes both scheduled and flat prices", () => {
   assert.ok(has(synthetic, 2, 10), "a scheduled window's price is included");
   assert.ok(has(synthetic, 3, 15), "the flat price is included");
   const real = allPricePairs();
-  assert.ok(has(real, 1, 5), "haiku flat price present");
+  assert.ok(has(real, 0.1, 0.5), "haiku flat price present");
   assert.ok(has(real, 2, 10), "sonnet price present");
 });
 
@@ -77,9 +77,9 @@ test("allPricePairs includes both scheduled and flat prices", () => {
 const KEY_ENV = { ANTHROPIC_API_KEY: "sk-ant-test" };
 const tmpRoot = () => mkdtempSync(join(tmpdir(), "forge-tiers-"));
 const ANTHROPIC_TODAY = anthropicPage([
-  ["claude-sonnet-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5"],
-  ["claude-opus-4-8", "2026-05-01T00:00:00Z", "Claude Opus 4.8"],
-  ["claude-haiku-4-5-20251001", "2025-10-01T00:00:00Z", "Claude Haiku 4.5"],
+  ["claude-sonnet-5-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5.5"],
+  ["claude-opus-5-5", "2026-05-01T00:00:00Z", "Claude Opus 5.5"],
+  ["claude-haiku-5-5", "2025-10-01T00:00:00Z", "Claude Haiku 5.5"],
   ["claude-3-opus-20240229", "2024-02-29T00:00:00Z", "Claude 3 Opus"],
 ]);
 
@@ -90,13 +90,13 @@ test("resolveTierModel: the newest family member in the live catalog, no code or
     root: tmpRoot(),
     fetchImpl: today.fetchImpl,
   });
-  assert.equal(before.id, "claude-opus-4-8");
+  assert.equal(before.id, "claude-opus-5-5");
   assert.equal(before.source, "catalog");
   assert.equal(before.createdAt, "2026-05-01T00:00:00.000Z");
 
   // Anthropic ships a new Opus. Same code, same model_tiers.json — the catalog alone moves the tier.
   const release = anthropicPage([
-    ["claude-opus-5", "2026-08-01T00:00:00Z", "Claude Opus 5"],
+    ["claude-opus-6", "2026-08-01T00:00:00Z", "Claude Opus 6"],
     ...ANTHROPIC_TODAY.data.map((m) => [m.id, m.created_at, m.display_name]),
   ]);
   const tomorrow = stubTransport({ "api.anthropic.com": ok(release) });
@@ -105,12 +105,12 @@ test("resolveTierModel: the newest family member in the live catalog, no code or
     root: tmpRoot(),
     fetchImpl: tomorrow.fetchImpl,
   });
-  assert.equal(after.id, "claude-opus-5");
-  assert.equal(after.displayName, "Claude Opus 5");
-  assert.equal(MODELS.opus.id, "claude-opus-4-8", "the snapshot is untouched");
+  assert.equal(after.id, "claude-opus-6");
+  assert.equal(after.displayName, "Claude Opus 6");
+  assert.equal(MODELS.opus.id, "claude-opus-5-5", "the snapshot is untouched");
   // The other families are unaffected by an Opus release.
   const sonnet = resolveTierModel("sonnet", { env: KEY_ENV, fetchImpl: tomorrow.fetchImpl });
-  assert.equal(sonnet.id, "claude-sonnet-5");
+  assert.equal(sonnet.id, "claude-sonnet-5-5");
   // The request is the documented Models API call.
   assert.equal(today.calls[0].url, "https://api.anthropic.com/v1/models?limit=1000");
   assert.equal(today.calls[0].headers["x-api-key"], "sk-ant-test");
@@ -152,7 +152,7 @@ test("resolveTierModel fallback chain: every step, each only when the previous i
   const offline = resolveTierModel("opus", { env: KEY_ENV, root, fetchImpl: () => null });
   assert.deepEqual(
     [offline.id, offline.source, offline.cache],
-    ["claude-opus-4-8", "catalog", "stale"],
+    ["claude-opus-5-5", "catalog", "stale"],
   );
 
   // 5. a transport that throws is contained.
@@ -176,7 +176,7 @@ test("resolveTierModel revalidates a header-less catalog with If-None-Match on t
   const again = resolveTierModel("sonnet", { env: KEY_ENV, root, fetchImpl: t.fetchImpl });
   assert.equal(t.calls.length, 2, "no TTL: the next use asks again");
   assert.equal(t.calls[1].headers["if-none-match"], '"cat-1"');
-  assert.deepEqual([again.id, again.cache], ["claude-sonnet-5", "revalidated"]);
+  assert.deepEqual([again.id, again.cache], ["claude-sonnet-5-5", "revalidated"]);
   // With max-age on the response, the next use inside it makes no request at all.
   const root2 = tmpRoot();
   const cached = stubTransport({
@@ -207,26 +207,26 @@ test("resolveTierModel honours explicit provider ids and namespaces OpenRouter p
   const or = stubTransport({
     "openrouter.ai": ok({
       data: [
-        { id: "anthropic/claude-opus-4.8", created: 1_777_000_000 },
-        { id: "anthropic/claude-opus-5", created: 1_785_000_000 },
+        { id: "anthropic/claude-opus-5.5", created: 1_777_000_000 },
+        { id: "anthropic/claude-opus-6", created: 1_785_000_000 },
         { id: "someone-else/opus-finetune", created: 1_790_000_000 },
       ],
     }),
   });
   const r = resolveTierModel("opus", { provider: orProvider, env: {}, fetchImpl: or.fetchImpl });
-  assert.equal(r.id, "anthropic/claude-opus-5");
+  assert.equal(r.id, "anthropic/claude-opus-6");
   assert.equal(r.source, "catalog");
 });
 
 test("resolveTierPrice: live OpenRouter per-token price → per million, else the tier snapshot", () => {
   const catalogs = stubTransport({
     "api.anthropic.com": ok(
-      anthropicPage([["claude-opus-5", "2026-08-01T00:00:00Z", "Claude Opus 5"]]),
+      anthropicPage([["claude-opus-6", "2026-08-01T00:00:00Z", "Claude Opus 6"]]),
     ),
     "openrouter.ai": ok(
       openRouterBody([
-        ["anthropic/claude-opus-5", "0.000005", "0.000025"],
-        ["anthropic/claude-sonnet-5", "0.0000021", "0.0000105"],
+        ["anthropic/claude-opus-6", "0.000005", "0.000025"],
+        ["anthropic/claude-sonnet-5.5", "0.0000021", "0.0000105"],
       ]),
     ),
   });
@@ -234,15 +234,15 @@ test("resolveTierPrice: live OpenRouter per-token price → per million, else th
   const opus = resolveTierPrice("opus", opts);
   assert.deepEqual(
     [opus.inCost, opus.outCost, opus.source, opus.matchedId],
-    [5, 25, "catalog", "anthropic/claude-opus-5"],
+    [5, 25, "catalog", "anthropic/claude-opus-6"],
   );
   // Sonnet: no Sonnet in this Anthropic catalog → the snapshot id, which OpenRouter prices live.
   const sonnet = resolveTierPrice("sonnet", opts);
   assert.deepEqual([sonnet.inCost, sonnet.outCost, sonnet.source], [2.1, 10.5, "catalog"]);
   // Haiku: nobody lists it → the snapshot's own row.
   assert.deepEqual(resolveTierPrice("haiku", { ...opts, date: "2026-09-22" }), {
-    inCost: 1,
-    outCost: 5,
+    inCost: 0.1,
+    outCost: 0.5,
     source: "snapshot",
     basis: "exact",
     matchedId: MODELS.haiku.id,
@@ -250,7 +250,7 @@ test("resolveTierPrice: live OpenRouter per-token price → per million, else th
   // A resolved id the snapshot does not know, priced offline → its tier's price ("family").
   const offlineOpus = resolveTierPrice("opus", {
     ...opts,
-    resolved: { id: "claude-opus-5", family: "opus", source: "catalog" },
+    resolved: { id: "claude-opus-6", family: "opus", source: "catalog" },
     fetchImpl: () => null,
   });
   assert.deepEqual([offlineOpus.source, offlineOpus.basis], ["snapshot", "family"]);

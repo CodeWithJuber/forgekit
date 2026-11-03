@@ -20,17 +20,17 @@ test("familyScore requires the family word and scores higher on a version match"
   // "haiku" absent → not a candidate for the haiku tier, no matter what else matches.
   assert.equal(familyScore("claude-sonnet-5", "haiku"), 0);
   assert.equal(familyScore("gpt-4o", "opus"), 0);
-  // Family word present → scored by overlap of {haiku,4,5} with the id's tokens.
-  const exact = familyScore("claude-haiku-4-5", "haiku"); // {haiku,4,5} ⊆ id → 1.0
-  const bare = familyScore("prod-haiku", "haiku"); // only "haiku" shared → 1/3
+  // Family word present → scored by overlap of {haiku,5.5} with the id's tokens.
+  const exact = familyScore("claude-haiku-5-5", "haiku"); // {haiku,5.5} ⊆ id → 1.0
+  const bare = familyScore("prod-haiku", "haiku"); // only "haiku" shared → below 1
   assert.ok(Math.abs(exact - 1) < 1e-9, "full name+version match saturates at 1");
   assert.ok(bare > 0 && bare < exact, "a bare family match still scores, but below an exact one");
 });
 
 test("familyTokens carries the tier key plus its marketing-name version", () => {
-  assert.deepEqual([...familyTokens("sonnet")].sort(), ["5", "sonnet"]);
+  assert.deepEqual([...familyTokens("sonnet")].sort(), ["5.5", "sonnet"]);
   // One version token, not loose digits: "4" and "5" separately matched any id containing a 5.
-  assert.deepEqual([...familyTokens("haiku")].sort(), ["4.5", "haiku"]);
+  assert.deepEqual([...familyTokens("haiku")].sort(), ["5.5", "haiku"]);
 });
 
 test("versions are parsed, so Sonnet 3.5 no longer wins the Sonnet tier (deep review D9)", () => {
@@ -65,7 +65,7 @@ test("buildGatewayMap maps each tier to the best family-matching advertised id",
 });
 
 test("buildGatewayMap takes the NEWEST family member, not the snapshot's version", () => {
-  // The snapshot pins Sonnet 5; a gateway that already serves a Sonnet 6 gets Sonnet 6.
+  // The snapshot pins Sonnet 5.5; a gateway that already serves a Sonnet 6 gets Sonnet 6.
   assert.equal(buildGatewayMap(["claude-sonnet-5", "prod-sonnet-6"]).sonnet.id, "prod-sonnet-6");
   // A gateway that reports creation times is ordered by them (Anthropic-shaped rows).
   const map = buildGatewayMap([

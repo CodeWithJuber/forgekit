@@ -273,7 +273,7 @@ export const COMMANDS = {
       "forge advisor set opus",
       "forge advisor set fable --global",
       "forge advisor check sonnet opus",
-      "forge advisor pairings claude-opus-4-8",
+      "forge advisor pairings claude-opus-5-5",
       "forge advisor rule off advisor.before-done",
       "forge advisor off",
     ],

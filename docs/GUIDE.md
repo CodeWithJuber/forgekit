@@ -111,7 +111,7 @@ Forge substrate — pre-action check
   proceed: yes
   assumption: low risk · completeness 0.88
 
-  route: Haiku 4.5 (simple) · complexity 0.15
+  route: Haiku 5.5 (simple) · complexity 0.15
     driven by: base cost of any task
 
   context: complete — 4 required item(s), 1840/12000 tokens (`forge context` for the assembly)
@@ -153,7 +153,7 @@ Forge substrate — pre-action check
   clarify:
     - What exactly should this produce, and how will we know it is correct?
 
-  route: Haiku 4.5 (simple) · complexity 0.15
+  route: Haiku 5.5 (simple) · complexity 0.15
   impact: 0 file(s) predicted
 ```
 
@@ -192,14 +192,14 @@ churn, past-mistake density, ambiguity). Whichever facet detects difficulty sets
 
 ```console
 $ forge route "write an is_prime function"
-  → Haiku 4.5  (simple, $1/$5 per M tok, current effective)
-    model: claude-haiku-4-5-20251001 — shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
+  → Haiku 5.5  (simple, $0.1/$0.5 per M tok, current effective)
+    model: claude-haiku-5-5 — shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
     lint, formatting, docs, stubs, trivial well-defined edits
     driven by: similar to "check if a number is prime" (sim 1.00, complexity 0.08)
 
 $ forge route "design and implement a distributed rate limiter with sliding windows across 3 services"
-  → Opus 4.8  (complex, $5/$25 per M tok, current effective)
-    model: claude-opus-4-8 — shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
+  → Opus 5.5  (complex, $4/$20 per M tok, current effective)
+    model: claude-opus-5-5 — shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
     architecture, cross-module refactor, novel algorithms, multi-layer debugging
     complexity 0.73 · driven by: similar to "implement a rate limiter with a token bucket" (sim 0.43, complexity 0.78)
 ```
@@ -252,7 +252,7 @@ reports each in `--json` under `policy.steps`:
 
 ```console
 $ forge route "add a refund endpoint for payments" --mode unattended
-  → Opus 4.8  (complex, …)
+  → Opus 5.5  (complex, …)
     …
     mode: unattended · tier key: opus (policy: writes-code-floor, risk-floor)
 ```
@@ -300,7 +300,7 @@ $ forge advisor                              # advisor, main model, pairing verd
 $ forge advisor set opus                     # this repo: .forge/forge.config.json, then sync → .claude/settings.json + AGENTS.md
 $ forge advisor set fable --global           # every repo: the user-level forge.config.json → ~/.claude/settings.json
 $ forge advisor check sonnet opus            # ok | refused (exit 1) | unverified — for scripts and CI
-$ forge advisor pairings [claude-opus-4-8]   # the accepted-advisors table, or the row for one main model
+$ forge advisor pairings [claude-opus-5-5]   # the accepted-advisors table, or the row for one main model
 $ forge advisor rule off advisor.before-done # switch one rule of the Advisor section (or all)
 $ forge advisor off                          # advisorModel removed on the next sync; `reset` drops Forge's choice instead
 ```
@@ -365,12 +365,12 @@ $ forge models
   provider  anthropic (Anthropic (direct))
 
   tier     family  model                        created     $/M tok    id from   price from
-  simple   haiku   claude-haiku-4-5-20251001    —           $1/$5      snapshot  snapshot
-  medium   sonnet  claude-sonnet-5              —           $2/$10     snapshot  snapshot
-  complex  opus    claude-opus-4-8              —           $5/$25     snapshot  snapshot
-  extreme  fable   claude-fable-5               —           $10/$50    snapshot  snapshot
+  simple   haiku   claude-haiku-5-5             —           $0.1/$0.5  snapshot  snapshot
+  medium   sonnet  claude-sonnet-5-5            —           $2/$10     snapshot  snapshot
+  complex  opus    claude-opus-5-5              —           $4/$20     snapshot  snapshot
+  extreme  fable   claude-fable-5-1             —           $10/$50    snapshot  snapshot
 
-  haiku   shipped snapshot, pricing verified 2026-09-22 (no ANTHROPIC_API_KEY for the Models API)
+  haiku   shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
   …
 ```
 
@@ -442,7 +442,7 @@ Corporate gateway environments work out of the box: with `ANTHROPIC_BASE_URL` +
 auth uses the token as a Bearer credential, and `ANTHROPIC_MODEL` pins the model.
 
 **Custom gateways that rename models.** The tier snapshot carries public Anthropic IDs
-(`claude-haiku-4-5-…`, `claude-sonnet-5`, …), but a self-hosted gateway often serves its
+(`claude-haiku-5-5`, `claude-sonnet-5-5`, …), but a self-hosted gateway often serves its
 own names (`bedrock-claude-haiku`, `prod-sonnet-5`). When a non-default gateway base URL is
 set, Forge asks it (`GET /v1/models`) and maps each tier onto the **newest** model of that
 tier's family the gateway advertises — the rule `forge models` applies to the Anthropic
@@ -1839,7 +1839,7 @@ forge substrate "update verifyToken in src/auth.js" --json
 {
   "okToProceed": false,
   "assumption": { "risk": "high", "shouldAsk": true, "questions": ["…"] },
-  "route": { "tier": "simple", "model": { "name": "Haiku 4.5" } },
+  "route": { "tier": "simple", "model": { "name": "Haiku 5.5" } },
   "impact": {
     "impactedFiles": ["src/auth.js", "src/login.js"],
     "fileRelations": { "src/auth.js": "reverse", "src/login.js": "reverse" },
@@ -1868,7 +1868,7 @@ hook. It adds a short advisory only when something needs attention and never blo
 Forge substrate — pre-action advisory (advisory, never blocks):
 - Under-specified (high risk). Ask before editing:
     • What constraints must be respected: performance, dependencies, style, compatibility?
-- Suggested model: Haiku 4.5 (simple); escalate only on a verifier failure.
+- Suggested model: Haiku 5.5 (simple); escalate only on a verifier failure.
 - Predicted blast radius (2: 2 reverse): auth.js (reverse), login.js (reverse). Review these before editing.
 - Verify with: review impacted files before editing · run the narrowest affected test first
 ```
@@ -2293,6 +2293,7 @@ code reads but this table misses fails CI on the forge repo):
 | `ANTHROPIC_DEFAULT_MODEL`                                      | Claude Code's last-resort main model (used only when nothing else selects one) — the main model `forge advisor` checks the pairing against when no settings file sets `model`                                                            |
 | `FORGE_COMMIT_GATE`                                            | commit-gate mode: `warn` (default — print findings, allow), `block` (refuse the commit), `0` (off); a detected secret blocks in every mode                                                                                              |
 | `FORGE_INTENT`                                                 | `0` disables intent protocol cards on prompts                                                                                                                                                                                           |
+| `FORGE_ORIENT`                                                 | `0` hides the SessionStart orientation block (what the plugin adds, workflow rules, crew agents, MCP tools); `false`/`off`/`no` also work                                                                                                |
 | `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                                                                                                          |
 
 | `FORGE_NO_HINT` | `1` silences the first-run onboarding tip (`forge init` / `forge doctor --fix`) printed once when `~/.claude/settings.json` isn't yet forge-managed |
