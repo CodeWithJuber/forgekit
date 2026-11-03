@@ -141,11 +141,12 @@ async function main() {
       if (hook.session_id) openTrail(root, sid);
     } catch {}
     // Orientation first — the one block a fresh repo also gets, so a plugin install never
-    // starts silent (FORGE_ORIENT=0 hides it). Fail-safe: an error just drops the block.
+    // starts silent (FORGE_ORIENT=0 hides it). Skipped on resume: the resumed transcript
+    // already carries it. Fail-safe: an error just drops the block.
     let orientation = "";
     try {
       const { orientationBlock } = await import("./orient.js");
-      orientation = orientationBlock();
+      orientation = orientationBlock(process.env, { source: hook.source });
     } catch {}
     // Then everything a fresh session forgets: learned lessons, the persistent goal,
     // the handoff snapshot, and the repo's recent history.
