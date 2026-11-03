@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-11-03
+
 ### Fixed
 
 - **The model tiers name the current Claude models.** The shipped snapshot
@@ -3739,7 +3741,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.1...v1.14.0
 [1.13.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.12.4...v1.13.0
