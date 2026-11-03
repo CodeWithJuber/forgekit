@@ -16,6 +16,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check you ran, root-cause fixes), when to use each shipped crew agent, the `forge-cortex` MCP
   tools for memory, pre-edit impact and repeating failures, and the guards that run as hooks.
   Lessons, goal, state and history follow it as before. `FORGE_ORIENT=0` hides it.
+- **The plugin installs through claude.ai organization sync and in Cowork again.** Claude Code
+  puts a plugin's top-level `bin/` on the Bash tool's `PATH`, and claude.ai and Cowork refuse
+  to install a plugin that has one. The three legacy helpers that lived there
+  (`claude-init.sh`, `claude-taste.sh`, `learn-consolidate.sh`) moved to `scripts/`, `bin/` is
+  gone, and `package.json` `files` no longer lists it. A test keeps the root free of `bin/`.
+  If you linked one of them onto your `PATH`, re-point the link at `scripts/`.
 
 ## [1.14.0] - 2026-10-21
 
