@@ -60,14 +60,14 @@ test("stageFactors: cache factor is the tier-weighted hit rate (exact 1.0 / near
 test("stageFactors: route factor prices tokens vs the always-premium baseline; unpriceable events excluded", () => {
   const root = tmp();
   seed(root, [
-    // haiku (in 1, out 5) vs opus baseline (in 5, out 25): 1000·1+1000·5=6000 vs 30000.
+    // haiku (in 0.1, out 0.5) vs opus baseline (in 4, out 20): 1000·0.1+1000·0.5=600 vs 24000.
     { stage: "route", tier: "haiku", tokensIn: 1000, tokensOut: 1000 },
     // Tier names resolve too ("simple" is haiku's tier) — but no tokens ⇒ excluded, not estimated.
     { stage: "route", tier: "simple" },
     { stage: "route", tier: "nonsense", tokensIn: 50, tokensOut: 50 },
   ]);
   const f = stageFactors(root);
-  assert.deepEqual(f.route, { measured: true, value: 1 - 6000 / 30000, events: 1 });
+  assert.deepEqual(f.route, { measured: true, value: 1 - 600 / 24000, events: 1 });
 });
 
 test("stageFactors: context factor is saved / (saved + actual) input tokens", () => {

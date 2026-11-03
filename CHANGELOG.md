@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The model tiers name the current Claude models.** The shipped snapshot
+  (`src/model_tiers.json`) still routed to Haiku 4.5, Sonnet 5, Opus 4.8 and Fable 5, so the
+  per-prompt advisory said "Suggested model: Haiku 4.5" and `forge models` / `forge route`
+  fell back to those ids whenever no live catalog was reachable. It now names Haiku 5.5
+  (`claude-haiku-5-5`, $0.10/$0.50), Sonnet 5.5 (`claude-sonnet-5-5`, $2/$10), Opus 5.5
+  (`claude-opus-5-5`, $4/$20) and Fable 5.1 (`claude-fable-5-1`, $10/$50) per million tokens,
+  checked against the platform.claude.com pricing page on 2026-11-03 (`pricingVerified`).
+  The Haiku price is its rate for prompts up to 100K tokens; longer prompts cost $0.50/$2.50,
+  which the flat snapshot does not model. Live catalog resolution is unchanged and still
+  picks a newer family member when one ships. Test fixtures moved one model generation forward
+  so they keep exercising "the catalog moves the tier past the snapshot".
+
 - **A plugin install no longer starts silent.** The SessionStart hook emitted only learned
   lessons, the goal, the handoff state and repo history, so on a fresh repo it printed nothing:
   no sign the plugin was active, and none of the workflow rules (`global/CLAUDE.md` is a
