@@ -353,7 +353,7 @@ Claude Code's settings, and checks the pairing before Claude Code has to refuse 
 forge advisor set opus                     # this repo: .forge/forge.config.json → .claude/settings.json + an Advisor section in AGENTS.md
 forge advisor set fable --global           # every repo: the user-level config → ~/.claude/settings.json (what /advisor saves to)
 forge advisor check sonnet opus            # ok — exit 1 when the pairing would be refused (for scripts and CI)
-forge advisor pairings claude-opus-4-8     # which advisors this main model accepts, and the suggested one
+forge advisor pairings claude-opus-5-5     # which advisors this main model accepts, and the suggested one
 forge advisor off                          # remove advisorModel again
 ```
 

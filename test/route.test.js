@@ -181,10 +181,10 @@ test("emitGatewayConfig resolves each tier from the live catalog and says so —
   const t = stubTransport({
     "api.anthropic.com": ok(
       anthropicPage([
-        ["claude-opus-5", "2026-08-01T00:00:00Z", "Claude Opus 5"],
-        ["claude-opus-4-8", "2026-05-01T00:00:00Z", "Claude Opus 4.8"],
-        ["claude-sonnet-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5"],
-        ["claude-haiku-4-5-20251001", "2025-10-01T00:00:00Z", "Claude Haiku 4.5"],
+        ["claude-opus-6", "2026-08-01T00:00:00Z", "Claude Opus 6"],
+        ["claude-opus-5-5", "2026-05-01T00:00:00Z", "Claude Opus 5.5"],
+        ["claude-sonnet-5-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5.5"],
+        ["claude-haiku-5-5", "2025-10-01T00:00:00Z", "Claude Haiku 5.5"],
       ]),
     ),
   });
@@ -194,15 +194,15 @@ test("emitGatewayConfig resolves each tier from the live catalog and says so —
   );
   const lines = yaml.split(/\r?\n/).map((l) => l.trim());
   const alias = lines.findIndex((l) => l.startsWith("- model_name: forge-complex"));
-  assert.match(lines[alias], /Claude Opus 5/, "the catalog's display name");
+  assert.match(lines[alias], /Claude Opus 6/, "the catalog's display name");
   assert.equal(
     lines[alias + 1],
     "# id: newest opus in the api.anthropic.com catalog, created 2026-08-01",
   );
-  assert.equal(lines[alias + 2], 'litellm_params: { model: "anthropic/claude-opus-5" }');
-  assert.ok(lines.includes('- model_name: "claude-opus-5"'), "the resolved id passes through");
+  assert.equal(lines[alias + 2], 'litellm_params: { model: "anthropic/claude-opus-6" }');
+  assert.ok(lines.includes('- model_name: "claude-opus-6"'), "the resolved id passes through");
   assert.ok(
-    lines.includes('- model_name: "claude-opus-4-8"'),
+    lines.includes('- model_name: "claude-opus-5-5"'),
     "a client pinned to the snapshot id still passes",
   );
   assert.doesNotMatch(yaml, /@latest|:latest/);
@@ -218,8 +218,8 @@ test("emitGatewayConfig: a catalog string can never splice a second entry into t
     "api.anthropic.com": ok(
       anthropicPage([
         [`claude-opus-9${evil}`, "2026-08-01T00:00:00Z", `Opus 9"${evil}`],
-        ["claude-sonnet-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5"],
-        ["claude-haiku-4-5-20251001", "2025-10-01T00:00:00Z", "Claude Haiku 4.5"],
+        ["claude-sonnet-5-5", "2026-06-01T00:00:00Z", "Claude Sonnet 5.5"],
+        ["claude-haiku-5-5", "2025-10-01T00:00:00Z", "Claude Haiku 5.5"],
       ]),
     ),
   });
@@ -239,7 +239,7 @@ test("emitGatewayConfig: a catalog string can never splice a second entry into t
   assert.ok(!yaml.includes("pwned"), `the spliced text never reaches the file:\n${yaml}`);
   assert.match(
     lines[lines.findIndex((l) => l.includes("forge-complex")) + 2],
-    /model: "anthropic\/claude-opus-4-8"/,
+    /model: "anthropic\/claude-opus-5-5"/,
     "the complex tier falls back to the snapshot id",
   );
   // …and every emitted value is a quoted scalar, so even a value that passed the id check
