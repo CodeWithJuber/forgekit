@@ -9,7 +9,7 @@
 //           pre-edit        (PreToolUse Edit|Write)       — advise on lessons/risk before an edit
 //           stop            (Stop)                        — distill the session into lessons
 //           stop-gate       (Stop, synchronous)           — completion gate: block once if code moved but no doc/state did
-//           session-start   (SessionStart)               — inject learned lessons as context
+//           session-start   (SessionStart)               — inject the orientation + learned lessons as context
 import {
   applyDistillation,
   lessonsForContext,
@@ -140,12 +140,20 @@ async function main() {
       recordBaseline(root, sid);
       if (hook.session_id) openTrail(root, sid);
     } catch {}
+    // Orientation first — the one block a fresh repo also gets, so a plugin install never
+    // starts silent (FORGE_ORIENT=0 hides it). Fail-safe: an error just drops the block.
+    let orientation = "";
+    try {
+      const { orientationBlock } = await import("./orient.js");
+      orientation = orientationBlock();
+    } catch {}
     // Then everything a fresh session forgets: learned lessons, the persistent goal,
     // the handoff snapshot, and the repo's recent history.
     const { goalBlock } = await import("./goal.js");
     const { stateBlock } = await import("./handoff.js");
     const { rehydrationBlock } = await import("./session.js");
     const block = [
+      orientation,
       startupBlock(root, today, undefined, { record: true }),
       goalBlock(root),
       stateBlock(root),

@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A plugin install no longer starts silent.** The SessionStart hook emitted only learned
+  lessons, the goal, the handoff state and repo history, so on a fresh repo it printed nothing:
+  no sign the plugin was active, and none of the workflow rules (`global/CLAUDE.md` is a
+  template the plugin does not install). It now leads with a ~1.4 KB orientation block
+  (`src/orient.js`): the workflow rules (explore → plan → code → verify, no "done" without a
+  check you ran, root-cause fixes), when to use each shipped crew agent, the `forge-cortex` MCP
+  tools for memory, pre-edit impact and repeating failures, and the guards that run as hooks.
+  Lessons, goal, state and history follow it as before. `FORGE_ORIENT=0` hides it.
+
 ## [1.14.0] - 2026-10-21
 
 ### Added
