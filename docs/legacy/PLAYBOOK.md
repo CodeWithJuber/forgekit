@@ -9,6 +9,7 @@ Your global config auto-loads skills/rules by what you ask; you rarely invoke th
 by name. Below: the exact prompt per situation, and what fires under the hood.
 
 ## Setup per repo (once)
+`claude-init`, `claude-taste` and `claude-learn-consolidate` are the scripts in `scripts/` (`claude-init.sh`, `claude-taste.sh`, `learn-consolidate.sh`), linked onto your PATH by hand.
 ```bash
 cd ~/the-repo && claude-init      # writes AGENTS.md + thin CLAUDE.md (auto-detects stack)
 claude-taste minimalist-ui        # optional: enable ONE UI taste for this repo (claude-taste = list)

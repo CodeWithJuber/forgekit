@@ -1,6 +1,6 @@
 // forge learn-consolidate — DETERMINISTIC consolidation of the legacy learned-lessons store
 // (~/.claude/skills/learned: `lessons-YYYY-MM.md`, appended by the opt-in session-learner
-// guard, plus the `CONSOLIDATED.md` a previous run wrote). bin/learn-consolidate.sh used to
+// guard, plus the `CONSOLIDATED.md` a previous run wrote). learn-consolidate.sh (scripts/) used to
 // send every lesson to a model with "DROP anything … contradicted" and rewrite the store
 // from its answer: pruning memory by the model's own judgment, which the research rejects
 // (white paper §3, memory residual gap; §7.1, val = validity from an external oracle).
@@ -374,7 +374,7 @@ export function main(argv = process.argv.slice(2)) {
   return r;
 }
 
-// Run as a script (bin/learn-consolidate.sh execs this file); importing it has no effect.
+// Run as a script (scripts/learn-consolidate.sh execs this file); importing it has no effect.
 // realpath: node resolves the main module through symlinks (/tmp → /private/tmp on macOS).
 const isMain = () => {
   try {
