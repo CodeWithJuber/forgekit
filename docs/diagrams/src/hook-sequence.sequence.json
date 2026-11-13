@@ -22,13 +22,13 @@
   ],
   "messages": [
     { "id": "session-start", "from": "agent", "to": "hooks", "y": 168, "label": "SessionStart: recall-load · cortex session-start" },
-    { "id": "inject-context", "from": "hooks", "to": "agent", "y": 204, "label": "inject learned lessons + last handoff (.forge/state.md)", "variant": "return" },
+    { "id": "inject-context", "from": "hooks", "to": "agent", "y": 204, "label": "inject orientation + lessons + last handoff (.forge/state.md)", "variant": "return" },
     { "id": "prompt", "from": "developer", "to": "agent", "y": 240, "label": "prompt", "variant": "emphasis" },
     { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt + preflight" },
     { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "reads CACHED atlas only; never builds it in a hook" },
     { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "substrate advisory: suggested model · impact · verify checklist", "variant": "return" },
-    { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · cortex pre-edit", "variant": "security" },
-    { "id": "allow-deny", "from": "hooks", "to": "agent", "y": 420, "label": "allow | deny", "variant": "return" },
+    { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex", "variant": "security" },
+    { "id": "allow-deny", "from": "hooks", "to": "agent", "y": 420, "label": "allow | ask | deny", "variant": "return" },
     { "id": "post-tool", "from": "agent", "to": "hooks", "y": 456, "label": "PostToolUse: format-on-edit · secret-redact · cortex capture" },
     { "id": "capture", "from": "hooks", "to": "state", "y": 492, "label": "cortex capture: signals + evidence" },
     { "id": "stop", "from": "agent", "to": "hooks", "y": 528, "label": "Stop: completion-gate · lean-guard · session-learner · cortex stop" },
@@ -44,9 +44,10 @@
     { "participant": "hooks", "from": 523, "to": 605, "type": "security" }
   ],
   "cards": [
-    { "dot": "amber", "title": "Advisory by default", "items": ["UserPromptSubmit output is advisory by default", "PreToolUse (Edit/Write/Bash) denies secret paths and dangerous writes; the others are advisory unless enforced"] },
-    { "dot": "rose", "title": "Completion gate", "items": ["Sessions that touched code need a test in the diff or a fresh passing forge verify"] },
+    { "dot": "amber", "title": "Advisory by default", "items": ["UserPromptSubmit output is advisory by default", "PreToolUse: protect-paths denies secret paths and dangerous writes, dep-gate denies invented or malicious packages; the others advise or ask"] },
+    { "dot": "rose", "title": "Completion gate", "items": ["Code changes need test evidence (a test, a fresh passing forge verify, or e2e) and a doc or state update"] },
     { "dot": "slate", "title": "secret-redact", "items": ["Scrubs secrets from tool output after the tool runs"] },
-    { "dot": "emerald", "title": ".forge/ state", "items": ["ledger · atlas cache · metrics"] }
+    { "dot": "emerald", "title": ".forge/ state", "items": ["ledger · atlas cache · metrics"] },
+    { "dot": "cyan", "title": "Every agent", "items": ["forge hooks on runs this chain in Codex, Gemini CLI, Cursor and Copilot too"] }
   ]
 }

@@ -17,13 +17,13 @@
     "allowedTerminals": ["events"]
   },
   "nodes": [
-    { "id": "config", "lane": "files", "col": 0, "type": "database", "label": ".forge/forge.config.json", "sublabel": "under verify", "tag": "workspaces · exclude · generated", "width": 180 },
+    { "id": "config", "lane": "files", "col": 0, "type": "database", "label": ".forge/forge.config.json", "sublabel": "under verify", "tag": "workspaces · exclude · generated · external", "width": 180 },
     { "id": "plan", "lane": "suites", "col": 0, "type": "messagebus", "label": "Plan suites", "sublabel": "root + nested packages with a suite", "tag": "scripts.test · pytest config · go.mod · …", "width": 180 },
     { "id": "pre", "lane": "state", "col": 1, "type": "database", "label": "Pre-run state", "sublabel": "HEAD · diffs · untracked files", "tag": "untracked: path/mode/size/sha256", "width": 180 },
     { "id": "run", "lane": "suites", "col": 2, "type": "messagebus", "label": "Run each suite", "sublabel": "in its own directory", "width": 180 },
     { "id": "post", "lane": "state", "col": 3, "type": "database", "label": "Post-run state", "sublabel": "changed → INCOMPLETE (mutated)", "width": 180 },
     { "id": "aggregate", "lane": "suites", "col": 4, "type": "security", "label": "Aggregate", "sublabel": "PASS · FAIL · INCOMPLETE · NOT_CONFIGURED", "width": 200 },
-    { "id": "symbols", "lane": "suites", "col": 5, "type": "security", "label": "Hallucinated-symbol check", "sublabel": "against the atlas", "width": 200 },
+    { "id": "symbols", "lane": "suites", "col": 5, "type": "security", "label": "Hallucinated-symbol check", "sublabel": "against the atlas · advisory", "width": 200 },
     { "id": "stamp", "lane": "files", "col": 5, "type": "database", "label": ".forge/provenance.json", "sublabel": "MAC-sealed stamp", "tag": "bound to the pre-run state", "width": 200 },
     { "id": "events", "lane": "files", "col": 4, "type": "database", "label": ".forge/verify-events.jsonl", "sublabel": "verifier event appended", "width": 200 }
   ],
@@ -52,8 +52,9 @@
       "dot": "cyan",
       "title": "Coverage and mutation",
       "items": [
-        "A root script that runs every workspace covers them once",
-        "Interpreter caches and generated paths do not count as a change"
+        "A root run covers the workspaces only if it is a recognized, unfiltered recursive run",
+        "Interpreter caches and generated paths do not count as a change",
+        "Code the stamp cannot bind (an unreadable nested repo) turns PASS into INCOMPLETE"
       ]
     }
   ]

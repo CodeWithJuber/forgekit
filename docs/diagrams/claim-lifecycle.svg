@@ -459,13 +459,13 @@ rect.c-bg-rect { fill: var(--bg); }
         <path data-edge-from="uncertain" data-edge-to="dormant" data-edge-label="contradicts: val &lt; 0.35" data-edge-key="4" data-edge-id="fall" data-composition-points="402,188;402,278" d="M 402 188 L 402 278" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="dormant" data-edge-to="uncertain" data-edge-label="later confirmation" data-edge-key="5" data-edge-id="wake" data-composition-points="402,278;402,188" d="M 402 278 L 402 188" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="dormant" data-edge-to="archived" data-edge-label="dormant" data-edge-key="6" data-edge-id="archive-dormant" data-composition-points="467,307;628,307" d="M 467 307 L 628 307" class="a-dashed" stroke-width="1.1" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="trusted" data-edge-to="archived" data-edge-label="idle · duplicate" data-edge-key="7" data-edge-id="archive-idle" data-composition-points="710,188;710,278" d="M 710 188 L 710 278" class="a-dashed" stroke-width="1.1" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="trusted" data-edge-to="archived" data-edge-label="idle · exact duplicate" data-edge-key="7" data-edge-id="archive-idle" data-composition-points="710,188;710,278" d="M 710 188 L 710 278" class="a-dashed" stroke-width="1.1" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="trusted" data-edge-to="tombstoned" data-edge-label="forge ledger retract" data-edge-key="8" data-edge-id="retract" data-composition-points="769,157;830,157;830,479;615,479" d="M 769 157 L 820 157 Q 830 157 830 167 L 830 469 Q 830 479 820 479 L 615 479" class="a-security" stroke-width="1.1" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="archived" data-edge-to="uncertain" data-edge-label="new evidence brings it back" data-edge-key="9" data-edge-id="restore" data-composition-points="710,336;710,390;20,390;20,80;402,80;402,126" d="M 710 336 L 710 380 Q 710 390 700 390 L 30 390 Q 20 390 20 380 L 20 90 Q 20 80 30 80 L 392 80 Q 402 80 402 90 L 402 126" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- States -->
-        <g id="node-reworded" data-node-id="reworded" data-node-label="Reworded lesson" tabindex="0" role="button" aria-label="Focus Reworded lesson, keeps trust only if equivalent, Live · retrievable" aria-pressed="false" data-node-kind="external" data-node-sublabel="keeps trust only if equivalent" data-node-tag="up to case · space · punct." data-node-context="Live · retrievable">
-          <title>Reworded lesson · keeps trust only if equivalent · Live · retrievable · up to case · space · punct.</title>
+        <g id="node-reworded" data-node-id="reworded" data-node-label="Reworded lesson" tabindex="0" role="button" aria-label="Focus Reworded lesson, keeps trust only if equivalent, Live · retrievable" aria-pressed="false" data-node-kind="external" data-node-sublabel="keeps trust only if equivalent" data-node-tag="up to opening capital · punct." data-node-context="Live · retrievable">
+          <title>Reworded lesson · keeps trust only if equivalent · Live · retrievable · up to opening capital · punct.</title>
           <rect x="32" y="126" width="124" height="62" rx="7" class="c-mask"/>
           <rect x="32" y="126" width="124" height="62" rx="7" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(139 132) scale(0.6875)">
@@ -474,7 +474,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="94" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Reworded lesson</text>
           <text x="94" y="163" class="t-muted" font-size="6.4" text-anchor="middle">keeps trust only if equivalent</text>
-        <text x="94" y="177" class="t-muted" font-size="7" text-anchor="middle">up to case · space · punct.</text>
+        <text x="94" y="177" class="t-muted" font-size="6.4" text-anchor="middle">up to opening capital · punct.</text>
         </g>
 
         <g id="node-minted" data-node-id="minted" data-node-label="Minted" tabindex="0" role="button" aria-label="Focus Minted, 0.5 prior, Live · retrievable" aria-pressed="false" data-node-kind="start" data-node-sublabel="0.5 prior" data-node-tag="candidate" data-node-context="Live · retrievable">
@@ -526,8 +526,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="402" y="325" class="t-security" font-size="6.5" text-anchor="middle">kept for audit, never retrieved</text>
         </g>
 
-        <g id="node-archived" data-node-id="archived" data-node-label="Archived" tabindex="0" role="button" aria-label="Focus Archived, .forge/ledger/attic/, Out of retrieval" aria-pressed="false" data-node-kind="neutral" data-node-sublabel=".forge/ledger/attic/" data-node-tag="tombstoned · dormant · idle · duplicate" data-node-context="Out of retrieval">
-          <title>Archived · .forge/ledger/attic/ · Out of retrieval · tombstoned · dormant · idle · duplicate</title>
+        <g id="node-archived" data-node-id="archived" data-node-label="Archived" tabindex="0" role="button" aria-label="Focus Archived, .forge/ledger/attic/, Out of retrieval" aria-pressed="false" data-node-kind="neutral" data-node-sublabel=".forge/ledger/attic/" data-node-tag="tombstoned · dormant · idle · exact dup." data-node-context="Out of retrieval">
+          <title>Archived · .forge/ledger/attic/ · Out of retrieval · tombstoned · dormant · idle · exact dup.</title>
           <rect x="628" y="278" width="164" height="58" rx="7" class="c-mask"/>
           <rect x="628" y="278" width="164" height="58" rx="7" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="neutral" class="semantic-sigil s-external" transform="translate(775 284) scale(0.6875)">
@@ -536,7 +536,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="710" y="299" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Archived</text>
           <text x="710" y="315" class="t-muted" font-size="7" text-anchor="middle">.forge/ledger/attic/</text>
-        <text x="710" y="325" class="t-muted" font-size="6.6" text-anchor="middle">tombstoned · dormant · idle · duplicate</text>
+        <text x="710" y="325" class="t-muted" font-size="6.5" text-anchor="middle">tombstoned · dormant · idle · exact dup.</text>
         </g>
 
         <g id="node-tombstoned" data-node-id="tombstoned" data-node-label="Tombstoned" tabindex="0" role="button" aria-label="Focus Tombstoned, permanent, Permanent" aria-pressed="false" data-node-kind="failure" data-node-sublabel="permanent" data-node-tag="retracted by a human" data-node-context="Permanent">
@@ -575,9 +575,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="524.35" y="286" width="46.300000000000004" height="16" rx="4" class="c-mask"/>
           <text x="547.5" y="297" class="t-messagebus" font-size="8" text-anchor="middle">dormant</text>
         </g>
-        <g data-edge-from="trusted" data-edge-to="archived" data-edge-label="idle · duplicate" data-edge-key="7" data-edge-id="archive-idle">
+        <g data-edge-from="trusted" data-edge-to="archived" data-edge-label="idle · exact duplicate" data-edge-key="7" data-edge-id="archive-idle">
           <rect x="613.35" y="222" width="193.3" height="27" rx="4" class="c-mask"/>
-          <text x="710" y="233" class="t-messagebus" font-size="8" text-anchor="middle">idle · duplicate</text>
+          <text x="710" y="233" class="t-messagebus" font-size="8" text-anchor="middle">idle · exact duplicate</text>
         <text x="710" y="244" class="t-dim" font-size="7" text-anchor="middle">past learned cut-off · survivor named</text>
         </g>
         <g data-edge-from="trusted" data-edge-to="tombstoned" data-edge-label="forge ledger retract" data-edge-key="8" data-edge-id="retract">

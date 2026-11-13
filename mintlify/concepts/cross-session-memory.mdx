@@ -11,7 +11,7 @@ hooks guarantee a _floor_.
 Where those hooks run in one Claude Code session:
 
 <Frame>
-  <img src="/images/diagrams/hook-sequence.svg" alt="One Claude Code session with forgekit's hooks: SessionStart injects learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop and cortex pre-edit and allows or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger" />
+  <img src="/images/diagrams/hook-sequence.svg" alt="One Claude Code session with forgekit's hooks: SessionStart injects the orientation block, learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop, dep-gate and cortex pre-edit and allows, asks about or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger; forge hooks on runs the same chain in Codex, Gemini CLI, Cursor and Copilot" />
 </Frame>
 
 [Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.

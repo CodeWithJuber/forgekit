@@ -44,7 +44,7 @@ You author the substrate once. `forge sync` compiles that source into each tool'
 native config. The four layers are how the brain is expressed; the compiler is how it
 is delivered.
 
-[![forgekit's architecture: forge sync compiles source/ into native configs for ten tools and configures the four layers (tools, crew, guards, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
+[![forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, guards that run in every agent, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
 
@@ -130,7 +130,7 @@ Decision recorded in
 
 A claim's life, from mint to tombstone:
 
-[![Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim](docs/diagrams/claim-lifecycle.svg)](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html)
+[![Claim lifecycle: a minted claim starts uncertain; confirmations raise it to trusted and contradictions lower it; below val 0.35 it goes dormant until a later confirmation; idle, exact-duplicate and dormant claims are archived with a reason and new evidence brings them back; forge ledger retract tombstones a claim permanently; a reworded lesson is minted as a new claim and keeps its trust only if the wording differs by an opening capital or punctuation](docs/diagrams/claim-lifecycle.svg)](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/claim-lifecycle.html): pan, zoom, search, and trace any node.</sub>
 
@@ -141,7 +141,7 @@ when its evidence still holds — the confidence is above the floor _and_ its at
 dependencies still resolve. Otherwise it falls through to generation and mints a fresh
 claim on the way back.
 
-[![Reuse cache: a spec is looked up by a lossless exact key, then by MinHash and LSH similarity checked by a semantic guard (operators, numbers, literals); a hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/](docs/diagrams/reuse-cache.svg)](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html)
+[![Reuse cache: a spec is looked up by a byte-exact key, then by MinHash and LSH similarity checked by a semantic guard (negation, roles, operators, numbers, literals, paths, layout and more); a near hit is a similar task that requires review; any hit is served only while the proof check holds (confidence at least 0.6) and is flagged as not revalidated when there is no atlas; a match that differs is only an adapt-tier candidate; a miss is generated, verified and minted as a claim into .forge/ledger/](docs/diagrams/reuse-cache.svg)](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/reuse-cache.html): pan, zoom, search, and trace any node.</sub>
 
@@ -168,7 +168,7 @@ synthesis §5.3, corrected 2026-09-21).
 
 Where those deterministic checks run in one Claude Code session:
 
-[![One Claude Code session with forgekit's hooks: SessionStart injects learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop and cortex pre-edit and allows or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger](docs/diagrams/hook-sequence.svg)](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html)
+[![One Claude Code session with forgekit's hooks: SessionStart injects the orientation block, learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop, dep-gate and cortex pre-edit and allows, asks about or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger; forge hooks on runs the same chain in Codex, Gemini CLI, Cursor and Copilot](docs/diagrams/hook-sequence.svg)](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.</sub>
 
@@ -369,7 +369,7 @@ hook never ran, or a session whose one Stop block was already spent.
 
 Plain `forge verify`, end to end:
 
-[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](docs/diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; code the stamp cannot bind also makes it INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; an advisory hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](docs/diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 

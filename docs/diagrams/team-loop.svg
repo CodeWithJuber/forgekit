@@ -486,8 +486,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text data-node-label="" x="301" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Edit</text>
         </g>
 
-        <g id="node-oracles" data-node-id="oracles" data-node-label="Oracles" tabindex="0" role="button" aria-label="Focus Oracles, forge verify · forge imagine --run · CI · human accept/revert, Verify" aria-pressed="false" data-node-kind="security" data-node-sublabel="forge verify · forge imagine --run · CI · human accept/revert" data-node-context="Verify">
-          <title>Oracles · forge verify · forge imagine --run · CI · human accept/revert · Verify</title>
+        <g id="node-oracles" data-node-id="oracles" data-node-label="Oracles" tabindex="0" role="button" aria-label="Focus Oracles, session outcomes · reverts · reuse --ref · re-validation, Verify" aria-pressed="false" data-node-kind="security" data-node-sublabel="session outcomes · reverts · reuse --ref · re-validation" data-node-context="Verify">
+          <title>Oracles · session outcomes · reverts · reuse --ref · re-validation · Verify</title>
           <rect x="281" y="217" width="280" height="52" rx="6" class="c-mask"/>
           <rect x="281" y="217" width="280" height="52" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(287 223) scale(0.6875)">
@@ -495,7 +495,7 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" x="421" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Oracles</text>
-          <text x="421" y="255" class="t-muted" font-size="7.4" text-anchor="middle">forge verify · forge imagine --run · CI · human accept/revert</text>
+          <text x="421" y="255" class="t-muted" font-size="8" text-anchor="middle">session outcomes · reverts · reuse --ref · re-validation</text>
         </g>
 
         <g id="node-ledger" data-node-id="ledger" data-node-label="Team ledger" tabindex="0" role="button" aria-label="Focus Team ledger, .forge/ledger/, Remember" aria-pressed="false" data-node-kind="database" data-node-sublabel=".forge/ledger/" data-node-context="Remember">
