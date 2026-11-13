@@ -11,10 +11,11 @@ context, and cannot enforce rules on itself. Forge
 (`@codewithjuber/forgekit`) is the **cognitive substrate** — the layer that runs
 _before_ the model edits code, supplying evidence-referenced, content-addressed memory (we
 call it "proof-carrying memory"), heuristic impact foresight, and guardrails (blocking on
-Claude Code) — and a **cross-tool config compiler** that delivers that brain as native config
-into every tool at once. Claude Code is the deepest-tested integration and the only one with
-automatic hooks; the others receive native config (most also an MCP server entry) with less
-real-world exercise. The repository's `docs/INTEGRATIONS.md` lists, per tool, what is emitted,
+Claude Code, and on Codex, Gemini CLI, Cursor and Copilot after `forge hooks on`) — and a **cross-tool config compiler** that delivers that brain as native config
+into every tool at once. Claude Code is the deepest-tested integration and gets
+automatic hooks out of the box; Codex, Gemini CLI, Cursor, Copilot and Devin get them once a
+repository opts in with `forge hooks on`, and the others receive native config (most also an
+MCP server entry) with less real-world exercise. The repository's `docs/INTEGRATIONS.md` lists, per tool, what is emitted,
 registered, run automatically and enforced.
 
 <CardGroup cols={3}>
@@ -60,8 +61,8 @@ the research programme's dated corrections explain the difference.
     (`source/rules.json`, `source/substrate.json`, `source/mcp.json`).
   </Step>
   <Step title="Compile everywhere">
-    `forge sync` compiles that source into each tool's native config — nine AI coding
-    tools plus MCP — with a content-hash header, so drift is detectable and re-running
+    `forge sync` compiles that source into each tool's native config — eleven AI coding
+    tools, plus MCP for Roo Code and VS Code — with a content-hash header, so drift is detectable and re-running
     is a no-op.
   </Step>
   <Step title="Gate every task">

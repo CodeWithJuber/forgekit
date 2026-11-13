@@ -5,13 +5,13 @@ everything:
 
 1. [`bump.yml`](../.github/workflows/bump.yml) — runs on **every push to `master`**
    (and still available as **Actions → "Bump version" → Run workflow** for a manual
-   bump). **Phase 1 (propose):** it runs the tests, computes the bump with `auto`,
+   bump). **Phase 1 (propose):** it runs the full quality gate, computes the bump with `auto`,
    and — if something shippable landed — commits `chore(release): vX.Y.Z` to a
    `release/vX.Y.Z` branch and **opens a PR** (no auto-merge; the maintainer merges it,
    same Karo convention as every other PR). **Phase 2 (finalize):** the push that
    *merges* a release PR is detected via the merge commit's 2nd parent — the workflow
    tags the merge commit `vX.Y.Z` and kicks off the release workflow on the new tag.
-2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: tests →
+2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: the quality gate →
    npm publish (with provenance, via OIDC trusted publishing — no token) → GitHub Release with
    auto-generated notes.
 
@@ -19,6 +19,14 @@ The two phases exist because branch protection (required status checks,
 `enforce_admins`) rejects direct pushes of the release commit to `master` (GH006) —
 the release PR lets the required checks run first, and the merge is then an ordinary
 protected-branch merge.
+
+**The release PR needs one manual step before it can merge.** `bump.yml` pushes the release
+branch and opens the PR with `GITHUB_TOKEN`, and GitHub starts no workflow from that token's
+events, so `ci.yml` never runs on the release PR by itself and its required checks stay
+pending. Close and reopen the release PR to start them, then merge it once they pass. Every
+later push to `master` force-pushes the release branch again (with no CI), so do this right
+before merging. When a newer release supersedes a pending one (a `feat:` after a pending
+patch), `bump.yml` opens the new PR and closes the old one.
 
 ## Merge → release PR → merge → release (the default)
 
@@ -33,8 +41,8 @@ On a push to `master`, `bump.yml` first checks whether the push **merged a relea
   - **Something shippable landed** (a `feat:`, `fix:`, `perf:`, or breaking `type!:` /
     `BREAKING CHANGE` commit since the last tag, **or** a hand-written `[Unreleased]`
     section): it bumps, rotates the CHANGELOG, commits `chore(release): vX.Y.Z` to
-    `release/vX.Y.Z`, and opens (or updates) the release PR. Merge that PR and the
-    release cuts itself.
+    `release/vX.Y.Z`, and opens (or updates) the release PR. Close and reopen that PR so
+    its checks run, merge it, and the release cuts itself.
   - **Nothing shippable** (only `chore`/`docs`/`test`/`ci`/`style`/`build`/`refactor`
     commits and an empty `[Unreleased]`): `bump.mjs` exits `3` and the workflow **skips
     cleanly** — no tag, no PR, no publish, CI stays green. So a docs-only or
@@ -63,11 +71,13 @@ Go to **Actions → Bump version → Run workflow** and pick a bump type:
 
 What happens, in order:
 
-1. `npm ci && npm test` — a broken tree is never released.
+1. The full quality gate (`reusable-quality-gate.yml`: tests, Biome, typecheck, audit,
+   ShellCheck, docs check, diagram check, `npm pack`) — a broken tree is never released.
 2. `node scripts/bump.mjs <choice>` updates **every** version field:
    `package.json`, `package-lock.json` (both fields), `.claude-plugin/plugin.json`,
    `.codex-plugin/plugin.json`, `CITATION.cff` (version + release date), the landing
-   page footer, and moves the CHANGELOG `[Unreleased]` section under
+   page footer, the `ROADMAP.md` "Now" marker, `docs/status/claims.json` (and its
+   generated table), and moves the CHANGELOG `[Unreleased]` section under
    `## [X.Y.Z] - <today>` (compare links included).
 3. Commit `chore(release): vX.Y.Z` to branch `release/vX.Y.Z` and open (or update) the
    release PR — **no tag is created yet**. (The old flow committed + tagged directly

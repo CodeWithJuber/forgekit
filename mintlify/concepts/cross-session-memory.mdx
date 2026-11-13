@@ -22,6 +22,10 @@ On `SessionStart` (`src/session.js`), Forge records `HEAD` once per session, pru
 week-old session artifacts, and injects a fresh orientation:
 
 <CardGroup cols={2}>
+  <Card title="Orientation" icon="compass">
+    The workflow rules, which crew agent to delegate to when, and the MCP tools — under 900
+    bytes, on every startup and `/clear` (a resumed session skips it; `FORGE_ORIENT=0` hides it).
+  </Card>
   <Card title="Learned lessons" icon="graduation-cap">
     Cortex lessons mined from past corrections — stored in (and read from) the `.forge`
     ledger, the sole memory store.
@@ -112,6 +116,6 @@ recorded. It is a pure reporter; the completion gate provides the teeth.
 
 <Warning>
   `recall` and `cortex` are file-and-prompt memory only — **not** weight-level learning.
-  Consolidation is a summarizer that can hallucinate, so it stays advisory,
-  human-reviewable, and secret-free.
+  Consolidation is deterministic by default; only the opt-in `--llm` path uses a
+  summarizer that can hallucinate, so it stays advisory, human-reviewable, and secret-free.
 </Warning>

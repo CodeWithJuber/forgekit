@@ -52,7 +52,7 @@ The four layers, brand-named and emitted cross-tool:
 
 - **tools** (`~/.forge/tools/` → `~/.claude/skills/`) — model-invoked capabilities.
 - **crew** (`~/.forge/crew/` → `~/.claude/agents/`) — isolated sub-agents
-  (scout / verifier / frontend-verifier).
+  (scout / verifier / frontend-verifier / independent-reviewer / doc-sync).
 - **guards** (`~/.forge/guards/` → `settings.json` hooks) — **the only layer that
   _enforces_ rather than suggests.** A guard is a deterministic hook the model cannot
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
@@ -200,7 +200,9 @@ mtime-vs-baseline (the baseline file's mtime _is_ session start).
 
 **Session anchoring (SessionStart, `src/session.js`).** Records `HEAD` once per session
 (`.forge/sessions/<sid>.base`; resume keeps it), prunes week-old session artifacts, and
-injects: learned lessons, the anchored goal, the handoff snapshot, recent commits, and
+injects: an orientation block (`src/orient.js`: the workflow rules, which crew agent to use
+when, the MCP tools; under 900 bytes, skipped on resume, `FORGE_ORIENT=0` hides it), learned
+lessons, the anchored goal, the handoff snapshot, recent commits, and
 uncommitted changes — a fresh session orients on evidence, not priors.
 
 **The state/decision stores (`src/handoff.js`, `src/decide.js`).** `state.md` is a
@@ -246,8 +248,10 @@ numbers nor the site's look can silently drift.
 **Auto-release (`.github/workflows/bump.yml` + `scripts/bump.mjs`).** A push to `master`
 runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commit landed
 (or `[Unreleased]` was hand-written), synthesizing changelog notes from commit subjects
-when none exist, and exits `3` (a clean skip, not a failure) otherwise — so releases cut
-themselves without a chore/docs merge spamming the registry.
+when none exist, and exits `3` (a clean skip, not a failure) otherwise — so a chore/docs
+merge never spams the registry. A release goes out as a `release/vX.Y.Z` PR that a maintainer
+merges (closing and reopening it first, since a PR opened with `GITHUB_TOKEN` starts no CI);
+that merge tags the release and runs `release.yml`.
 
 **Runtime model resolution (`src/model_catalog.js`, `src/http_cache.js`).** A tier names a
 model _family_; `model_tiers.json` keeps a snapshot of ids and prices only as data of last
@@ -472,7 +476,8 @@ as native skills through the plugin's `skills` directory.
   symbol that is not in the graph, the gate flags it.
 - **Cross-tool by design:** Codex / Cursor / Gemini / Aider read `.forge/atlas.json`
   via the CLI or plain `jq` — **no MCP dependency to consume.** The MCP server is
-  optional, lazy-started, for Claude convenience only.
+  optional and lazy-started; `forge sync` registers it for every tool with a project-level MCP
+  file (see `docs/INTEGRATIONS.md`).
 
 `atlas.json` is the single source the impact, reuse-revalidation, and hallucination-flag
 stages all read. There is no SQLite database and no `.forge/atlas.db`.
@@ -584,7 +589,7 @@ forgekit/
     cli.js                # init | sync | doctor | substrate | ledger | reuse | … (`forge --help` for all)
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
-    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi) + mcp
+    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi) + claude_settings + mcp + hooks (`forge hooks`)
     orchestration.js      # orchestration rule pack + routing policy config: defaults < user-level < repo config, on/off per rule
     advisor.js            # Claude Code advisor tool: pairing table (data) + check, config resolution over Claude settings, the Advisor section, hook nudges
     route_policy.js       # unattended routing policy (pure): vote raise, writes-code floor, risk floor, top-tier gate
@@ -641,8 +646,9 @@ asserts all three resolve to `global/`.
 - **Verification reduces, does not certify** — `crew` verifiers and the `atlas has`
   hallucination flag cut review burden; they do not prove the code correct.
 - **No weight-level learning** — `recall` / `self-improve` are file-and-prompt memory
-  only. No RL, no fine-tuning. Consolidation is a Haiku summarizer that can hallucinate
-  → advisory, human-reviewable, secret-free.
+  only. No RL, no fine-tuning. Consolidation is deterministic by default (exact
+  duplicates merge, nothing is reworded); the opt-in `--llm` path is a Haiku rewrite that can
+  hallucinate → advisory, human-reviewable, secret-free.
 - **Hook fragility is upstream** — Windows / worktree / long-session hook failures
   affect Forge guards too. Mitigated with defensive path resolution + `forge doctor`;
   the ceiling is inherited, not removed.

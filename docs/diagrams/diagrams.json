@@ -163,9 +163,9 @@
       ],
       "title": "Rubric first, LLM second: how a proposal can move a verdict",
       "receipt": {
-        "specSha256": "ad240c992e5927c0f41b06467ec2e09600ed30d28603195d29f2e526912ec0fa",
-        "artifactSha256": "a97271ef516163b9e21a330b19099bb5ff62b1f52d15e68dbb2bec7cf748c0ac",
-        "artifactBytes": 803139,
+        "specSha256": "3d1d085d1127292ea789c840e0fe31be64d928e4d43fcd2a58c56e33ae3e2ea9",
+        "artifactSha256": "32019c496ff975a51ebb1e8d830b799e1e1c7753fe77f9ae1878f45f52e2a9df",
+        "artifactBytes": 803355,
         "checks": "9/9 showcase"
       }
     },
@@ -178,9 +178,9 @@
       ],
       "title": "forge route universal: a cascade under an explicit objective",
       "receipt": {
-        "specSha256": "900d1d09ee7910b349bf9a5284f69d2f6c81f0522a36582a1845ef03ba8835b7",
-        "artifactSha256": "2a6b7cb3ad4d601b01f41aee5376b8d308cee5d625416e7e3088891e2c5aa2ec",
-        "artifactBytes": 812232,
+        "specSha256": "a339ab8d07d881ab5006d9f2a62e9c011deeaaafe06b5b67b8fe9a011975abcd",
+        "artifactSha256": "085c22a5d98e69d78e8d7aecb56680e0e61095a034e8f3c35025bc8ad8da27bb",
+        "artifactBytes": 812305,
         "checks": "9/9 showcase"
       }
     },
@@ -192,9 +192,9 @@
       ],
       "title": "Substrate v2 plan: phases and dependencies",
       "receipt": {
-        "specSha256": "df6ce832e4d597f41827d041fa3b15ddd950324bc4c69fd48875e4a042721445",
-        "artifactSha256": "064cd5d36912d29aa49d04f8d924333f83da69dbad48f2b25b7f636eee9b6f45",
-        "artifactBytes": 804443,
+        "specSha256": "b57a6e7e067693bc190a69b204faea7794220b07274d15a003c7fd96d579fda6",
+        "artifactSha256": "b4465a1532d2c6c38a19c75a7920aa3ae94a7c14794a4b511a0ff96c68ce17ea",
+        "artifactBytes": 804788,
         "checks": "9/9 showcase"
       }
     },

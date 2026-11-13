@@ -449,7 +449,7 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / Route (advice)</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="300" width="1093" height="104" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Run the cascade</text>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Run the cascade (caller)</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="424" width="1093" height="104" rx="10" class="c-lane" stroke-width="1"/>
         <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / Record + fit</text>
@@ -522,15 +522,15 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="298" y="255" class="t-muted" font-size="8" text-anchor="middle">P(solve) + expected cost</text>
         </g>
 
-        <g id="node-choose" data-node-id="choose" data-node-label="Cheapest cascade" tabindex="0" role="button" aria-label="Focus Cheapest cascade, that meets the objective, Route (advice)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="that meets the objective" data-node-context="Route (advice)">
-          <title>Cheapest cascade · that meets the objective · Route (advice)</title>
+        <g id="node-choose" data-node-id="choose" data-node-label="Best cascade" tabindex="0" role="button" aria-label="Focus Best cascade, for the objective, Route (advice)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="for the objective" data-node-context="Route (advice)">
+          <title>Best cascade · for the objective · Route (advice)</title>
           <rect x="392" y="217" width="132" height="52" rx="6" class="c-mask"/>
           <rect x="392" y="217" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(398 223) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" x="458" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Cheapest cascade</text>
-          <text x="458" y="255" class="t-muted" font-size="8" text-anchor="middle">that meets the objective</text>
+          <text data-node-label="" x="458" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Best cascade</text>
+          <text x="458" y="255" class="t-muted" font-size="8" text-anchor="middle">for the objective</text>
         </g>
 
         <g id="node-recommend" data-node-id="recommend" data-node-label="Recommendation" tabindex="0" role="button" aria-label="Focus Recommendation, advice only if no provider id, Route (advice)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="advice only if no provider id" data-node-context="Route (advice)">
@@ -544,8 +544,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="655.4" y="255" class="t-muted" font-size="8" text-anchor="middle">advice only if no provider id</text>
         </g>
 
-        <g id="node-attempt" data-node-id="attempt" data-node-label="Attempt 1" tabindex="0" role="button" aria-label="Focus Attempt 1, first model in cascade, Run the cascade" aria-pressed="false" data-node-kind="external" data-node-sublabel="first model in cascade" data-node-context="Run the cascade">
-          <title>Attempt 1 · first model in cascade · Run the cascade</title>
+        <g id="node-attempt" data-node-id="attempt" data-node-label="Attempt 1" tabindex="0" role="button" aria-label="Focus Attempt 1, first model in cascade, Run the cascade (caller)" aria-pressed="false" data-node-kind="external" data-node-sublabel="first model in cascade" data-node-context="Run the cascade (caller)">
+          <title>Attempt 1 · first model in cascade · Run the cascade (caller)</title>
           <rect x="580.4" y="341" width="150" height="52" rx="6" class="c-mask"/>
           <rect x="580.4" y="341" width="150" height="52" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(586.4 347) scale(0.6875)">
@@ -556,8 +556,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="655.4" y="379" class="t-muted" font-size="8" text-anchor="middle">first model in cascade</text>
         </g>
 
-        <g id="node-check" data-node-id="check" data-node-label="Check" tabindex="0" role="button" aria-label="Focus Check, tests / forge verify, Run the cascade" aria-pressed="false" data-node-kind="backend" data-node-sublabel="tests / forge verify" data-node-context="Run the cascade">
-          <title>Check · tests / forge verify · Run the cascade</title>
+        <g id="node-check" data-node-id="check" data-node-label="Check" tabindex="0" role="button" aria-label="Focus Check, tests / forge verify, Run the cascade (caller)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="tests / forge verify" data-node-context="Run the cascade (caller)">
+          <title>Check · tests / forge verify · Run the cascade (caller)</title>
           <rect x="758.4" y="341" width="168" height="52" rx="6" class="c-mask"/>
           <rect x="758.4" y="341" width="168" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(764.4 347) scale(0.6875)">
@@ -567,8 +567,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="842.4" y="379" class="t-muted" font-size="8" text-anchor="middle">tests / forge verify</text>
         </g>
 
-        <g id="node-done" data-node-id="done" data-node-label="Done" tabindex="0" role="button" aria-label="Focus Done, Run the cascade" aria-pressed="false" data-node-kind="backend" data-node-context="Run the cascade">
-          <title>Done · Run the cascade</title>
+        <g id="node-done" data-node-id="done" data-node-label="Done" tabindex="0" role="button" aria-label="Focus Done, Run the cascade (caller)" aria-pressed="false" data-node-kind="backend" data-node-context="Run the cascade (caller)">
+          <title>Done · Run the cascade (caller)</title>
           <rect x="964.4000000000001" y="341" width="160" height="52" rx="6" class="c-mask"/>
           <rect x="964.4000000000001" y="341" width="160" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(970.4000000000001 347) scale(0.6875)">

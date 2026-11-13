@@ -1,6 +1,6 @@
 # Integrations — what each tool actually gets
 
-Forgekit emits configuration for ten coding tools, plus MCP configuration for Roo Code and VS Code.
+Forgekit emits configuration for eleven coding tools, plus MCP configuration for Roo Code and VS Code.
 "Supported" hides four different things, so this page lists them separately for every tool:
 
 1. **Config emission** — forge writes the tool's native rules file (or relies on one the tool
@@ -45,17 +45,18 @@ reference on the same day):
 `forge init` emits only for the tools a repository already uses (Claude Code plus any tool with a
 sign on disk) unless `--tools` says otherwise, and records the choice for later `forge sync` runs.
 Every target above is covered by the emission tests in `test/sync.test.js`, `test/mcp.test.js`,
-`test/openclaw.test.js` and `test/init_tools.test.js`. None of the ten host tools is launched in CI,
+`test/openclaw.test.js` and `test/init_tools.test.js`. None of the eleven host tools is launched in CI,
 so "the tool actually loads this file" is documentation-backed everywhere, including Claude Code.
 
 ### Claude Code enforcement
 
-On Claude Code the guards run automatically, and four can stop or pause an action:
+On Claude Code the guards run automatically, and five can stop or pause an action:
 
 | Guard | Event | What it can do | Default |
 |---|---|---|---|
 | `protect-paths` | PreToolUse (writes, shell, reads) | deny a tool call on secrets, credential stores and destructive commands; fails closed when it cannot reach a verdict | on |
 | `cost-budget` | PreToolUse | on every 100th tool call, checks `forge budget`: past the alert threshold it nudges with context; over budget it asks (soft, the default); with `--hard` it denies the call — an opt-in circuit breaker. Falls back to the historic `FORGE_COST_CEILING` check when `forge` is not on PATH | on |
+| `dep-gate` | PreToolUse (shell, edits) | deny an install command or manifest edit that adds a package its own registry lacks or OSV lists as malicious; ask on a high risk score, or when Go, Maven or NuGet lacks the name (a private proxy is normal there); fails open when a registry cannot be reached | on (`FORGE_DEPGATE=0` disables) |
 | completion gate | Stop | block "done" once per session when code changed without test evidence or a doc/state record | on (`FORGE_STOPGATE=0` disables) |
 | substrate gate | UserPromptSubmit / pre-edit | block a vacuous task or an edit into a very large dependent set | off unless `FORGE_ENFORCE=1` |
 
@@ -63,6 +64,7 @@ On Claude Code the guards run automatically, and four can stop or pause an actio
 they warn, redact output after the fact or record, and never block. Guards are defence in depth, not
 a sandbox: a sufficiently creative shell command can bypass a regex guard. Tests run each guard with
 synthetic payloads (`test/guards.test.js`, `test/protect_paths.test.js`, `test/stop_gate.test.js`,
+`test/depgate.test.js`, `test/depgate_generic.test.js`,
 `test/hook_launcher.test.js`), and `test/hook_manifests.test.js` checks that the plugin manifest and
 the settings template wire the same guards.
 
@@ -98,8 +100,9 @@ keep Copilot on its PowerShell entry.
 `forge harden` installs a git pre-commit hook (gitleaks when present, then `forge precommit`). It
 runs at commit time whatever agent or person made the change: with `FORGE_COMMIT_GATE=block` it
 refuses a commit whose staged code carries no doc or state change, and a detected secret blocks in
-every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. This is the only
-enforcement forge offers outside Claude Code.
+every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. For a tool with no
+hook support (Aider, Zed, Continue, OpenClaw, Kimi Code) it is the only enforcement forge offers;
+Codex, Cursor, Gemini CLI, Copilot and Devin run the guards themselves after `forge hooks on`.
 
 ## Models and providers
 
@@ -109,7 +112,7 @@ Model availability and prices change faster than releases, so each needs a date 
   native provider adapters in `src/providers.js`: `anthropic` (Messages API), `openrouter` (the same
   Anthropic model ids as `anthropic/<id>`), `litellm` (tier aliases on a gateway you run), and
   `openai` and `gemini` (their OpenAI-compatible chat-completions endpoints, each with its own
-  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-09-22; `forge models`
+  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models`
   prints where each resolved id and price came from.
 - **The universal router** (`forge route universal`) reads a separate registry, `data/models.json`:
   14 models from seven organisations. Only the seven Anthropic entries ship a provider id (for the

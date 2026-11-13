@@ -24,8 +24,9 @@ npm install -g github:CodeWithJuber/forgekit
 
 </CodeGroup>
 
-The plugin path is recommended for Claude Code and Codex — the guards auto-wire and
-there is nothing to merge. See [Installation](/installation) for the full matrix,
+The plugin path is recommended for Claude Code and Codex. On Claude Code the guards
+auto-wire and there is nothing to merge; the Codex bundle carries the skills and the MCP
+server, and `forge hooks on` adds the guards. See [Installation](/installation) for the full matrix,
 including the symlink dev setup.
 
 ## 2. Configure a repo
@@ -76,8 +77,9 @@ forge substrate "Change verifyToken in src/auth.js to require length > 20; updat
 <Note>
   On Claude Code the substrate runs on **every prompt automatically** via a
   `UserPromptSubmit` hook — advisory only, silent on clean tasks. `forge hooks on` wires the
-  same hooks into the repository for Codex, Gemini CLI, Cursor and Copilot; every other tool
-  gets a native config rule plus 22 MCP tools it can call itself.
+  same hooks into the repository for Codex, Gemini CLI, Cursor and Copilot; the other tools
+  get a native config rule, and most also the 22 MCP tools to call themselves (Aider, Kimi Code
+  and Windsurf/Devin get no MCP entry).
 </Note>
 
 If `forge substrate` says `ASK FIRST`, ask the returned questions before editing. Read

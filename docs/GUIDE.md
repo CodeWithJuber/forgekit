@@ -4,7 +4,8 @@
 window, wiped every call. It can't remember what your team learned, can't foresee what
 an edit breaks, and has no enforced guardrails. Forge is the **cognitive substrate** —
 the layer that runs _before_ the model edits code — that supplies exactly those three
-things, and it ships them as native config to nine AI coding tools at once. The brain is
+things, and it ships them as native config to eleven AI coding tools at once (plus MCP for Roo Code
+and VS Code). The brain is
 the point; one config for every tool is how the brain gets delivered.
 
 This is the exhaustive reference: every command with a worked example and its **real**
@@ -259,8 +260,9 @@ $ forge route "add a refund endpoint for payments" --mode unattended
 
 `key` in `--json` is the generic tier key (`haiku` / `sonnet` / `opus` / `fable`) a lead agent
 maps to its own tool's model names. Set the mode once with
-`forge orchestration set route.mode unattended` (see below). Without `FORGE_LLM=1` and
-`TYPESAFE_API_KEY` there is no vote, and the floors and gate run on the deterministic score.
+`forge orchestration set route.mode unattended` (see below). Without `FORGE_LLM=1` there is
+no vote; with it but without `TYPESAFE_API_KEY`, the text model's vote carries no probability and
+so never raises the tier. Either way the floors and gate run on the deterministic score.
 
 ### `forge orchestration` — rules for a lead running many agents
 
@@ -291,7 +293,7 @@ to an approach, when an error keeps recurring, before declaring a task done. The
 the whole conversation on every call and is billed at its own rate (its read is never cached), and
 Claude Code accepts an advisor only when it ranks at or above the main model: Haiku can call it
 but never act as one, a Sonnet 4.5 or Opus 4.5 main model does not support it at all, and a Fable
-main model takes only a Fable advisor. Claude Code's own `/advisor` saves a personal pick to
+main model takes only a Fable advisor (or a Mythos one of the same version, which ranks equal). Claude Code's own `/advisor` saves a personal pick to
 `~/.claude/settings.json`; `forge advisor` makes the choice part of the repo's config, emits it,
 and checks the pairing first.
 
@@ -431,7 +433,7 @@ over their OpenAI-compatible chat/completions surface. An explicit
 $ forge config show          # active provider + how it was resolved
 $ forge config providers     # everything detected + configured
 $ forge config provider <name>            # switch
-$ forge config provider add <name> --base-url <url> [--env-key VAR]
+$ forge config provider add <name> --base-url <url> [--key-env VAR]
 $ forge config model <tier-or-id>         # default model
 $ forge config gateway       # emit litellm.config.yaml (same as forge route gateway)
 $ forge config setup         # guided first-time setup
@@ -1151,13 +1153,13 @@ for portability, noisy for a repo where only one tool is ever used: `.cursor/`, 
 tools` fixes that without dropping anything `sync` emits (`--reset` clears the primary tool
 and leaves the recorded `tools` set alone).
 
-- `forge tools` — show the detected/primary tool (from `.forge/config.json`, else
+- `forge tools` — show the detected/primary tool (`primaryTool` in `.forge/forge.config.json`, else
   auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
   `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`,
   `.openclaw/`, `.kimi/`) and which targets are currently gitignored.
 - `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
   `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw` · `kimi`) as this repo's primary tool in
-  `.forge/config.json`, then write a **marked, reversible** block into `.gitignore`
+  `.forge/forge.config.json`, then write a **marked, reversible** block into `.gitignore`
   (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
   emitted artifacts. Your own `.gitignore` lines are never touched, and the shared
   `AGENTS.md` plus the primary tool's own files always stay tracked. When `forge init`
@@ -1986,9 +1988,11 @@ masks leaked values after the tool runs.
 
 Three more ambient layers ride the same hooks:
 
-**Session rehydration (SessionStart).** Besides lessons and the anchored goal, every
-session start injects the handoff snapshot (`.forge/state.md`), the last 10 commits, and
-any uncommitted changes — and records the session's git baseline (`HEAD`) that the
+**Session rehydration (SessionStart).** Every start and `/clear` leads with an orientation
+block (`src/orient.js`, under 900 bytes: the workflow rules, which crew agent to use when, the MCP
+tools; a resume skips it, `FORGE_ORIENT=0` hides it). After it come lessons, the anchored goal,
+the handoff snapshot (`.forge/state.md`), the last 10 commits, and any uncommitted changes —
+and every session start records the session's git baseline (`HEAD`) that the
 completion gate and `forge docs sync` diff against. A `--resume` never moves the baseline.
 
 **Intent protocol cards (UserPromptSubmit).** The prompt is classified by the same
@@ -2255,7 +2259,8 @@ shared function once at the root, not each caller.
 independent group, do a session per group; keep coupled files together.
 
 **Controlling cost.** `forge route "<task>"` before you pick a model; `forge cost` for
-real spend; the `cost-budget` guard warns when a day exceeds `FORGE_COST_CEILING`.
+real spend; the `cost-budget` guard asks before going on once a day exceeds `FORGE_COST_CEILING`
+(checked every 100th tool call; it denies instead with `forge budget set --hard`).
 
 **Teaching the repo a fact.** `forge recall add "<name>" "<fact>"` — it's injected next
 session. For learned-from-mistakes memory, just work: Cortex captures recurring
@@ -2311,7 +2316,9 @@ be idempotent and fail-safe — worst case they do nothing.
 
 ### Add a crew member (sub-agent)
 
-Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/agents/`.
+Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/agents/`. A
+plugin install loads only the agents listed under `agents` in `.claude-plugin/plugin.json`,
+so add it there too.
 
 ### Tune the cognitive substrate
 
@@ -2327,7 +2334,7 @@ Create `global/crew/<name>.md` with frontmatter. It installs into `~/.claude/age
 | the cross-tool rule wording                     | `source/rules.json` → `substrate` section (then `forge init`)                                                                         |
 | opt-in LLM adjudication                         | `FORGE_LLM=1` (+ `FORGE_LLM_AMBIENT=1` for the hook); config in `source/substrate.json` → `llm`                                       |
 | opt-in enforcing gate (halt, don't just advise) | `FORGE_ENFORCE=1` — blocks a no-anchor prompt or a very-large-blast action (counted over dependents; sibling/forward candidates are named, not counted — `blastRelations` changes that); `src/substrate.js` → `enforceDecision()`. Off by default. |
-| verify test timeout                             | `FORGE_VERIFY_TIMEOUT_MS` (default 600000)                                                                                            |
+| verify test timeout                             | `FORGE_VERIFY_TIMEOUT_MS` (default 600000 per suite on 4+ CPUs, up to 3× that on fewer)                                               |
 
 ### Opt into LLM-assisted judgments
 
@@ -2373,8 +2380,10 @@ answered under `llm.provider` (`jev` / `text`) with Jev's confidence.
 ### Support a new tool
 
 Add an emitter module in `src/emit/<tool>.js` (mirror an existing one like
-`src/emit/cursor.js`), then register it in `src/sync.js`. A golden-file test in
-`test/sync.test.js` keeps it honest.
+`src/emit/cursor.js`), then register it in `src/sync.js`. Add the tool to `KNOWN_TOOLS` and `TOOL_MARKERS` in
+`src/repo_config.js` and update the tool count in `brand.json`'s `description` (`forge docs
+check` holds that count to `KNOWN_TOOLS`). A golden-file test in `test/sync.test.js` keeps it
+honest.
 
 ### Rebrand
 
@@ -2410,13 +2419,13 @@ code reads but this table misses fails CI on the forge repo):
 | `CLAUDE_CODE_GIT_BASH_PATH`                                    | Claude Code's own Git Bash location — honored by the hook launcher when `FORGE_BASH` is unset                                                                                                                                           |
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                                                                                                                                                   |
 | `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                                                                                                                                                        |
-| `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                                                                                                                                           |
+| `FORGE_COST_CEILING`                                           | daily spend (USD) past which the cost-budget guard asks (denies with `forge budget set --hard`) (default 10)                                                                                                                            |
 | `FORGE_DEPGATE`                                                | `0` switches off the dep-gate guard (install commands and manifest edits are no longer vetted against their registries); `forge vet` still answers |
 | `FORGE_HOOKS`                                                  | `0` silences every project-level hook written by `forge hooks on` (`forge hooks run` answers nothing); the user-level Claude Code wiring from `forge init` is not affected |
 | `FORGE_GUARD_STRICT`                                           | `1` escalates secret-redaction failure to exit 2, surfacing the `DEGRADED` warning to Claude as hook feedback. Note: PostToolUse fires after the tool ran, so this is visibility, not blocking — blocking lives in the PreToolUse guard |
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                                                                                                      |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                                                                                                      |
-| `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout (default 600000)                                                                                                                                                                                                |
+| `FORGE_VERIFY_TIMEOUT_MS`                                      | verify test-run timeout per suite (default 600000 on 4+ CPUs, scaled up to 3× on fewer)                                                                                                                                                 |
 | `FORGE_RADAR`                                                  | `0` disables the pre-edit dependency-currency advisory                                                                                                                                                                                  |
 | `FORGE_RADAR_TTL_H`                                            | `forge radar` cache TTL in hours (default 24)                                                                                                                                                                                           |
 | `FORGE_SKILLGATE_NOEXTERNAL`                                   | `1` skips the external scanner in `forge scan` (heuristic only)                                                                                                                                                                         |

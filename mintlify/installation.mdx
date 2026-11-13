@@ -11,7 +11,7 @@ Pick the channel that fits your tool.
 
 <CardGroup cols={2}>
   <Card title="Plugin (recommended)" icon="puzzle-piece">
-    For Claude Code and Codex. Guards auto-wire; nothing to merge.
+    For Claude Code and Codex. Claude Code guards auto-wire; Codex adds them with `forge hooks on`.
   </Card>
   <Card title="npm global" icon="node-js">
     For any tool. The `forge` CLI from the public npm registry.
@@ -40,8 +40,9 @@ The recommended path for Claude Code and Codex needs no token and no clone:
 /plugin install forgekit
 ```
 
-The plugin wires the guards through `${CLAUDE_PROJECT_DIR}` so the pre-action gate and
-completion gate fire ambiently.
+On Claude Code the plugin wires the guards through `${CLAUDE_PLUGIN_ROOT}`, so the pre-action
+gate and completion gate fire ambiently. The Codex bundle carries skills and the MCP server;
+run `forge hooks on` in a repository to give Codex the guards.
 
 ## npm global
 

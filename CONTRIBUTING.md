@@ -70,9 +70,10 @@ We'd rather give a clear "not now" than merge something that adds maintenance bu
 
 ## Releasing (maintainers)
 
-Releases are automatic: **merging a `feat`/`fix`/`perf`/breaking change to `master`
-cuts the release itself** (bump → tag → npm publish → GitHub Release); chore/docs-only
-merges skip cleanly. A manual **Actions → Bump version** dispatch is still available. The
+Releases are almost automatic: **merging a `feat`/`fix`/`perf`/breaking change to
+`master` opens a release PR**; chore/docs-only merges skip cleanly. The bot opens that PR
+with `GITHUB_TOKEN`, so its CI does not start by itself: close and reopen it, merge it once
+the checks pass, and the merge cuts the release (tag → npm publish → GitHub Release). A manual **Actions → Bump version** dispatch is still available. The
 full runbook (and the one-time npm trusted-publisher setup) is in
 [docs/RELEASING.md](./docs/RELEASING.md).
 

@@ -28,17 +28,19 @@ most deeply exercised integration.
 
 | Inventory | Count |
 |---|---|
-| CLI commands (`forge --help`) | 52 |
+| CLI commands (`forge --help`) | 54 |
 | Lifecycle hook commands (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) | 18 |
-| Config emitters (`src/emit/`) | 13 |
+| Config emitters (`src/emit/`) | 14 |
 | Installable skill packs (`skills/`) | 3 |
 | Per-event hook token budgets (`hooks/budget.json`) | 5 |
 
 | Tool | Native config | MCP server entry | Automatic hooks |
 |---|---|---|---|
 | Claude Code | ✅ | ✅ | ✅ (all 5 events, blocking) |
-| Codex, Cursor, Gemini, Copilot, Zed, Continue | ✅ | ✅ | — |
-| Aider, Windsurf, OpenClaw, Kimi Code | ✅ | — | — |
+| Codex, Cursor, Gemini, Copilot | ✅ | ✅ | ✅ after `forge hooks on` |
+| Zed, Continue | ✅ | ✅ | — |
+| Windsurf / Devin | ✅ | — | ✅ after `forge hooks on` (reads Claude Code's file) |
+| Aider, OpenClaw, Kimi Code | ✅ | — | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Why it wins, measured:
@@ -118,8 +120,9 @@ forge substrate "Change verifyToken in src/auth.js to require length > 20; updat
 The result includes an assumption verdict, a model-tier recommendation, predicted impact,
 a context-coverage check (what was delivered, not a proof that it suffices), scope clusters, and
 a verification checklist. On Claude Code, the
-pre-action check can run automatically through a `UserPromptSubmit` hook. On other supported
-tools, Forgekit emits instructions and MCP configuration that the tool can invoke.
+pre-action check can run automatically through a `UserPromptSubmit` hook; Codex, Gemini CLI,
+Cursor and Copilot run it the same way once a repository opts in with `forge hooks on`. On other
+supported tools, Forgekit emits instructions and MCP configuration that the tool can invoke.
 
 The three jobs, one command each:
 
@@ -317,9 +320,10 @@ from a fresh repository graph.
   a gate on the top tier ([Agent orchestration](#agent-orchestration)).
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
-- **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
-  budget, repeated failures, format-on-edit, secret redaction, completion checks, and session
-  learning. These controls reduce risk; they do not create a secure execution boundary.
+- **Lifecycle guardrails.** Hooks cover prompt preflight, protected paths, cost budget,
+  dependency vetting, repeated failures, format-on-edit, secret redaction, completion checks,
+  and session learning — in Claude Code, and in Codex, Gemini CLI, Cursor and Copilot after
+  `forge hooks on`. These controls reduce risk; they do not create a secure execution boundary.
 - **Verification, partial or full.** `forge verify` runs the repository's detected test
   suites, reports `PASS`, `FAIL`, `INCOMPLETE`, or `NOT_CONFIGURED`, checks unknown symbols,
   and binds provenance to the code state it ran on. A verdict covers only the suites that ran:
@@ -631,7 +635,7 @@ table is default-branch commit
 
 | Area | Implementation evidence | Test or delivery evidence | Evidence-safe claim |
 | --- | --- | --- | --- |
-| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) defines 21 tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [recent CI runs](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
+| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) defines 22 tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [recent CI runs](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
 | Agent memory | [`src/ledger.js`](src/ledger.js) implements content-addressed claims, an oracle taxonomy, time-decayed validity, ranked retrieval, and a semilattice merge; [`src/ledger_store.js`](src/ledger_store.js) adds persistence, hash verification, and quarantine; [`src/ledger_sync.js`](src/ledger_sync.js) adds directory and git-ref sync | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js), [`test/ledger_sync.test.js`](test/ledger_sync.test.js) | Implemented durable, evidence-weighted, mergeable memory for coding-agent workflows |
 | LLM integration | [`src/llm.js`](src/llm.js) implements Anthropic Messages and OpenAI-compatible chat-completions calls; [`src/providers.js`](src/providers.js) configures Anthropic, OpenRouter, LiteLLM, OpenAI, Gemini, and custom endpoints | [`test/llm.test.js`](test/llm.test.js), [`test/providers.test.js`](test/providers.test.js) | Implemented direct, bounded single-prompt LLM adapters and provider configuration; this is not a streaming or autonomous tool-call client loop |
 | Retrieval and embeddings | [`src/context.js`](src/context.js) assembles code definitions, dependants, tests, and trusted lessons under a token budget; [`src/embed.js`](src/embed.js) supports an optional command or OpenAI-compatible embedding endpoint, cosine similarity, and a disk cache; [`src/reuse.js`](src/reuse.js) falls back to MinHash and gates reuse on evidence | [`test/context.test.js`](test/context.test.js), [`test/embed.test.js`](test/embed.test.js), [`test/reuse.test.js`](test/reuse.test.js) | Implemented repository-local retrieval/context augmentation and an optional embedding adapter; no vector database or enterprise-document ingestion pipeline is claimed |
@@ -700,7 +704,7 @@ This table describes architecture, not a claim of superiority or equivalent prod
 | Memory | Content-addressed claims, provenance, oracle-weighted validity, time decay, and git-native union merge | No hosted synchronization, managed database, enterprise tenancy, or RBAC |
 | Retrieval | MinHash retrieval by default; optional external embeddings; proof-gated code reuse | No vector database or general enterprise corpus pipeline |
 | Routing | A visible deterministic recommendation with optional bounded LLM input; LiteLLM alias config emission | Does not proxy traffic, manage quotas, perform failover, or hold provider keys |
-| Tool use | A JSON-RPC MCP server with 21 executable tool handlers | Does not implement the model/client loop that chooses and executes tool calls autonomously |
+| Tool use | A JSON-RPC MCP server with 22 executable tool handlers | Does not implement the model/client loop that chooses and executes tool calls autonomously |
 | Agent roles | Five host-consumable Claude Code role definitions | No multi-agent graph, scheduler, inter-agent messaging layer, or named orchestration framework |
 | Verification | Repository tests, provenance, structural and security lenses, limited benchmark suites | No managed GenAI evaluation service, production telemetry, online evaluation, or broad red-team certification |
 

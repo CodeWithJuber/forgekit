@@ -202,7 +202,7 @@ Set **`FORGE_LLM=1`** to add a **thin, opt-in semantic layer** on top: a cheap `
 call proposes a completeness reading (M2), a complexity band (M1), the coupled edges the
 regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
 
-[![Rubric first, LLM second: a task or edit goes to the deterministic rubric and, when FORGE_LLM=1, to an LLM proposer whose proposal is verified against the rubric band, repository grounding (grep) and tests; the verdict moves (llm-cleared, lowered, raised or verified) only when the proposal passes those checks, and otherwise the deterministic verdict holds](../diagrams/llm-reconcile.svg)](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html)
+[![Rubric first, LLM second: a task or edit goes to the deterministic rubric and, when FORGE_LLM=1, to an LLM proposer whose proposal is verified against a confidence of at least 0.8, the rubric band and its hard floors, and repository grounding (grep); the verdict moves (cleared, tightened, lowered or verified; raised only in unattended mode) only when the proposal passes those checks, and otherwise the deterministic verdict holds](../diagrams/llm-reconcile.svg)](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html): pan, zoom, search, and trace any node.</sub>
 
