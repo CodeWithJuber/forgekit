@@ -103,7 +103,9 @@ export const SPEC_PARSERS = {
   },
   packagist(raw) {
     // `vendor/package[:constraint]`; `php`, `ext-json` and a bare constraint word are not packages.
-    const m = /^([a-z0-9](?:[_.-]?[a-z0-9]+)*\/[a-z0-9](?:[_.-]?[a-z0-9]+)*)(?::(.+))?$/i.exec(raw);
+    // Each part is alphanumeric runs joined by single `_` `.` `-`. A separator must start every
+    // repeat, so the pattern cannot backtrack exponentially (CodeQL js/redos).
+    const m = /^([a-z0-9]+(?:[_.-][a-z0-9]+)*\/[a-z0-9]+(?:[_.-][a-z0-9]+)*)(?::(.+))?$/i.exec(raw);
     return m ? { name: m[1].toLowerCase(), version: exact(m[2]) } : null;
   },
   pub(raw) {
@@ -724,11 +726,41 @@ function pubspecDeps(text) {
 /** @param {string} xml @param {string} tag */
 const xmlTag = (xml, tag) => new RegExp(`<${tag}>\\s*([^<]*?)\\s*</${tag}>`).exec(xml)?.[1] ?? "";
 
+/**
+ * An XML document without its comments, read left to right as an XML parser reads it: `<!--`
+ * inside a CDATA section is text, not a comment. A regex replace treats that `<!--` as a comment
+ * and can strip a real <dependency> that follows it. Running the replace until nothing changes
+ * would make this worse, since it also joins text from either side of a comment into a new
+ * `<!--`. An unterminated comment is kept, so nothing after it is hidden from the gate.
+ * @param {string} xml
+ */
+function stripXmlComments(xml) {
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const comment = xml.indexOf("<!--", at);
+    if (comment < 0) break;
+    const cdata = xml.indexOf("<![CDATA[", at);
+    if (cdata >= 0 && cdata < comment) {
+      const close = xml.indexOf("]]>", cdata + 9);
+      const end = close < 0 ? xml.length : close + 3;
+      out += xml.slice(at, end);
+      at = end;
+      continue;
+    }
+    const close = xml.indexOf("-->", comment + 4);
+    if (close < 0) break;
+    out += xml.slice(at, comment);
+    at = close + 3;
+  }
+  return out + xml.slice(at);
+}
+
 /** @param {string} text @returns {Spec[]|null} */
 function pomDeps(text) {
   /** @type {Spec[]} */
   const out = [];
-  const xml = text.replace(/<!--[\s\S]*?-->/g, "");
+  const xml = stripXmlComments(text);
   for (const m of xml.matchAll(/<(dependency|plugin|parent)>([\s\S]*?)<\/\1>/g)) {
     const [group, artifact] = [xmlTag(m[2], "groupId"), xmlTag(m[2], "artifactId")];
     // A coordinate built from a property (`${project.groupId}`) cannot be read literally.
@@ -771,7 +803,7 @@ function gradleDeps(text) {
 function msbuildDeps(text) {
   /** @type {Spec[]} */
   const out = [];
-  const xml = text.replace(/<!--[\s\S]*?-->/g, "");
+  const xml = stripXmlComments(text);
   for (const m of xml.matchAll(/<(?:PackageReference|PackageVersion|package)\b([^>]*)>/g)) {
     const name = /\b(?:Include|Update|id)\s*=\s*"([^"]+)"/.exec(m[1])?.[1];
     const spec = name && !name.includes("$(") ? SPEC_PARSERS.nuget(name) : null;

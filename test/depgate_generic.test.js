@@ -307,6 +307,46 @@ test("manifestDeps: each manifest format yields its registry dependencies", () =
   assert.deepEqual(deps("README.md", "express"), []);
 });
 
+test("manifestDeps: XML comments are read as an XML parser reads them", () => {
+  const deps = (file, text) => manifestDeps(file, text)?.map(label);
+  const dep = (a) => `<dependency><groupId>g</groupId><artifactId>${a}</artifactId></dependency>`;
+  const pom = (body) => `<project><dependencies>${body}</dependencies></project>`;
+  // A commented-out dependency is not declared.
+  assert.deepEqual(deps("pom.xml", pom(`<!-- ${dep("old")} -->${dep("kept")}`)), ["maven:g:kept"]);
+  // `<!--` inside CDATA is text: it must not swallow the dependency after it.
+  assert.deepEqual(deps("pom.xml", pom(`<x><![CDATA[ <!-- ]]></x>${dep("real")}<!-- end -->`)), [
+    "maven:g:real",
+  ]);
+  // Removing one comment must not join its neighbours into a new `<!--`.
+  assert.deepEqual(
+    deps("pom.xml", pom(`<x><![CDATA[<!<!-- -->--]]></x>${dep("real")}<!-- end -->`)),
+    ["maven:g:real"],
+  );
+  // An unterminated comment hides nothing.
+  assert.deepEqual(deps("pom.xml", pom(`${dep("a")}<!-- ${dep("b")}`)), ["maven:g:a", "maven:g:b"]);
+  assert.deepEqual(
+    deps(
+      "App.csproj",
+      '<Project><!-- <PackageReference Include="Old" /> --><PackageReference Include="New" /></Project>',
+    ),
+    ["nuget:New"],
+  );
+});
+
+test("SPEC_PARSERS.packagist: vendor/package names, in linear time", () => {
+  const name = (raw) => SPEC_PARSERS.packagist(raw)?.name ?? null;
+  assert.equal(name("monolog/monolog:^3.0"), "monolog/monolog");
+  assert.equal(name("Symfony/Polyfill-PHP80"), "symfony/polyfill-php80");
+  assert.equal(name("a.b_c/d-e.f"), "a.b_c/d-e.f");
+  for (const bad of ["php", "ext-json", "-a/b", "a-/b", "a/b-", "a--b/c", "a//b", "a/b/c"])
+    assert.equal(name(bad), null, bad);
+  // The inputs CodeQL (js/redos) flagged on the old pattern: each took exponential time.
+  const start = performance.now();
+  assert.equal(name(`${"0".repeat(40)}!`), null);
+  assert.equal(name(`0/${"0".repeat(40)}!`), null);
+  assert.ok(performance.now() - start < 1000);
+});
+
 test("manifestDeps: a manifest that names its own package source is not vetted publicly", () => {
   for (const [file, text] of [
     ["requirements.txt", "--extra-index-url https://pypi.corp/simple\ninternal-lib\n"],
