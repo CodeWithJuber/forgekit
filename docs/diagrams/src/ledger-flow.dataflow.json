@@ -20,7 +20,7 @@
     {"label": "Team · git"}
   ],
   "nodes": [
-    {"id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "tests · CI", "tag": "human accept / revert", "stage": 0, "row": 0, "width": 150},
+    {"id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "session outcomes · reverts", "tag": "test refs · re-validation", "stage": 0, "row": 0, "width": 150},
     {"id": "events", "type": "frontend", "label": "Local events", "sublabel": "recall / remember · cortex lesson", "tag": "reuse mint · diagnose", "stage": 0, "row": 1, "width": 150},
     {"id": "ledger", "type": "database", "label": ".forge/ledger/", "sublabel": "content-addressed claims", "tag": "append-only evidence logs", "stage": 1, "row": 1},
     {"id": "readview", "type": "backend", "label": "Merged read view", "stage": 2, "row": 1},

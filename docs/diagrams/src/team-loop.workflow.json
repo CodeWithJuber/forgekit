@@ -15,7 +15,7 @@
   "nodes": [
     {"id": "precheck", "lane": "work", "col": 0, "type": "security", "label": "Substrate pre-checks", "width": 150},
     {"id": "edit", "lane": "work", "col": 1, "type": "backend", "label": "Edit", "width": 150},
-    {"id": "oracles", "lane": "verify", "col": 2, "type": "security", "label": "Oracles", "sublabel": "forge verify · forge imagine --run · CI · human accept/revert", "width": 280},
+    {"id": "oracles", "lane": "verify", "col": 2, "type": "security", "label": "Oracles", "sublabel": "session outcomes · reverts · reuse --ref · re-validation", "width": 280},
     {"id": "ledger", "lane": "remember", "col": 4, "type": "database", "label": "Team ledger", "sublabel": ".forge/ledger/", "width": 150},
     {"id": "teammates", "lane": "remember", "col": 5, "type": "database", "label": "Teammates' ledgers", "width": 150}
   ],

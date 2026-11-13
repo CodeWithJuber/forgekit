@@ -478,11 +478,11 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="inject learned lessons + last handoff (.forge/state.md)" data-edge-key="1" data-edge-id="inject-context">
+        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="inject orientation + lessons + last handoff (.forge/state.md)" data-edge-key="1" data-edge-id="inject-context">
           <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="inject-context" data-composition-points="955.3333333333334,204;566.6666666666667,204" d="M 955.3333333333334 204 L 566.6666666666667 204" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="612" y="184" width="298" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="194" class="t-muted" font-size="9" text-anchor="middle">inject learned lessons + last handoff (.forge/state.md)</text>
+          <rect x="596.4" y="184" width="329.2" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="194" class="t-muted" font-size="9" text-anchor="middle">inject orientation + lessons + last handoff (.forge/state.md)</text>
         </g>
         </g>
 
@@ -518,19 +518,19 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="PreToolUse: protect-paths · cost-budget · doom-loop · cortex pre-edit" data-edge-key="6" data-edge-id="pre-tool">
+        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex" data-edge-key="6" data-edge-id="pre-tool">
           <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="pre-tool" data-composition-points="566.6666666666667,384;955.3333333333334,384" d="M 566.6666666666667 384 L 955.3333333333334 384" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g>
-          <rect x="575.6" y="364" width="370.8" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="374" class="t-security" font-size="9" text-anchor="middle">PreToolUse: protect-paths · cost-budget · doom-loop · cortex pre-edit</text>
+          <rect x="570.4" y="364" width="381.2" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="374" class="t-security" font-size="9" text-anchor="middle">PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex</text>
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="allow | deny" data-edge-key="7" data-edge-id="allow-deny">
+        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="allow | ask | deny" data-edge-key="7" data-edge-id="allow-deny">
           <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="allow-deny" data-composition-points="955.3333333333334,420;566.6666666666667,420" d="M 955.3333333333334 420 L 566.6666666666667 420" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="723.8" y="400" width="74.4" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="410" class="t-muted" font-size="9" text-anchor="middle">allow | deny</text>
+          <rect x="708.2" y="400" width="105.60000000000001" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="410" class="t-muted" font-size="9" text-anchor="middle">allow | ask | deny</text>
         </g>
         </g>
 

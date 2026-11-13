@@ -12,17 +12,17 @@
     ]
   },
   "components": [
-    { "id": "source", "type": "database", "label": "source/ · the one source of truth", "sublabel": "rules.json · substrate.json · mcp.json", "pos": [40, 60], "size": [270, 76] },
+    { "id": "source", "type": "database", "label": "source/ · the one source of truth", "sublabel": "rules · substrate · mcp · orchestration · advisor", "pos": [40, 60], "size": [320, 76] },
     { "id": "forge-sync", "type": "backend", "label": "forge sync", "sublabel": "content hash · DO-NOT-EDIT headers", "pos": [470, 60], "size": [250, 76] },
-    { "id": "native-configs", "type": "external", "label": "Native configs for ten tools", "sublabel": "CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …", "pos": [860, 60], "size": [340, 76] },
+    { "id": "native-configs", "type": "external", "label": "Native configs for eleven tools", "sublabel": "CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …", "pos": [860, 60], "size": [340, 76] },
     { "id": "tools", "type": "backend", "label": "tools", "sublabel": "model-invoked skills", "pos": [40, 260], "size": [230, 70] },
     { "id": "crew", "type": "backend", "label": "crew", "sublabel": "isolated sub-agents", "pos": [350, 260], "size": [230, 70] },
-    { "id": "guards", "type": "security", "label": "guards · enforced", "sublabel": "deterministic hooks", "pos": [660, 260], "size": [230, 70] },
-    { "id": "mcp", "type": "backend", "label": "mcp", "sublabel": "atlas + substrate MCP server", "pos": [970, 260], "size": [230, 70] },
+    { "id": "guards", "type": "security", "label": "guards · enforced", "sublabel": "deterministic hooks · every agent", "pos": [660, 260], "size": [230, 70] },
+    { "id": "mcp", "type": "backend", "label": "mcp", "sublabel": "substrate · memory · dep_check", "pos": [970, 260], "size": [230, 70] },
     { "id": "local-events", "type": "messagebus", "label": "Local events", "sublabel": "cortex · recall · reuse · diagnose", "pos": [40, 470], "size": [260, 76] },
     { "id": "ledger", "type": "database", "label": "PCM ledger", "sublabel": ".forge/ledger/", "pos": [520, 470], "size": [240, 76] },
     { "id": "teammates", "type": "external", "label": "Teammate ledgers", "pos": [980, 470], "size": [220, 76] },
-    { "id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "tests · CI · human accept/revert", "pos": [510, 660], "size": [260, 76] }
+    { "id": "oracles", "type": "external", "label": "Independent oracles", "sublabel": "session outcomes · reverts · test refs", "pos": [510, 660], "size": [260, 76] }
   ],
   "boundaries": [
     { "kind": "region", "label": "the four layers", "wraps": ["tools", "crew", "guards", "mcp"] }

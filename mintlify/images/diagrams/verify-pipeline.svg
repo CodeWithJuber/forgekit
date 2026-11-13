@@ -533,8 +533,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="618" y="258" class="t-muted" font-size="7.8" text-anchor="middle">PASS · FAIL · INCOMPLETE · NOT_CONFIGURED</text>
         </g>
 
-        <g id="node-symbols" data-node-id="symbols" data-node-label="Hallucinated-symbol check" tabindex="0" role="button" aria-label="Focus Hallucinated-symbol check, against the atlas, Suites" aria-pressed="false" data-node-kind="security" data-node-sublabel="against the atlas" data-node-context="Suites">
-          <title>Hallucinated-symbol check · against the atlas · Suites</title>
+        <g id="node-symbols" data-node-id="symbols" data-node-label="Hallucinated-symbol check" tabindex="0" role="button" aria-label="Focus Hallucinated-symbol check, against the atlas · advisory, Suites" aria-pressed="false" data-node-kind="security" data-node-sublabel="against the atlas · advisory" data-node-context="Suites">
+          <title>Hallucinated-symbol check · against the atlas · advisory · Suites</title>
           <rect x="746" y="220" width="200" height="52" rx="6" class="c-mask"/>
           <rect x="746" y="220" width="200" height="52" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(752 226) scale(0.6875)">
@@ -542,11 +542,11 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" x="846" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hallucinated-symbol check</text>
-          <text x="846" y="258" class="t-muted" font-size="8" text-anchor="middle">against the atlas</text>
+          <text x="846" y="258" class="t-muted" font-size="8" text-anchor="middle">against the atlas · advisory</text>
         </g>
 
-        <g id="node-config" data-node-id="config" data-node-label=".forge/forge.config.json" tabindex="0" role="button" aria-label="Focus .forge/forge.config.json, under verify, .forge/" aria-pressed="false" data-node-kind="database" data-node-sublabel="under verify" data-node-tag="workspaces · exclude · generated" data-node-context=".forge/">
-          <title>.forge/forge.config.json · under verify · .forge/ · workspaces · exclude · generated</title>
+        <g id="node-config" data-node-id="config" data-node-label=".forge/forge.config.json" tabindex="0" role="button" aria-label="Focus .forge/forge.config.json, under verify, .forge/" aria-pressed="false" data-node-kind="database" data-node-sublabel="under verify" data-node-tag="workspaces · exclude · generated · external" data-node-context=".forge/">
+          <title>.forge/forge.config.json · under verify · .forge/ · workspaces · exclude · generated · external</title>
           <rect x="48" y="338" width="180" height="68" rx="6" class="c-mask"/>
           <rect x="48" y="338" width="180" height="68" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 344) scale(0.6875)">
@@ -555,7 +555,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="138" y="359" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">.forge/forge.config.json</text>
           <text x="138" y="376" class="t-muted" font-size="8" text-anchor="middle">under verify</text>
-        <text x="138" y="394" class="t-database" font-size="7" text-anchor="middle">workspaces · exclude · generated</text>
+        <text x="138" y="394" class="t-database" font-size="6.6" text-anchor="middle">workspaces · exclude · generated · external</text>
         </g>
 
         <g id="node-events" data-node-id="events" data-node-label=".forge/verify-events.jsonl" tabindex="0" role="button" aria-label="Focus .forge/verify-events.jsonl, verifier event appended, .forge/" aria-pressed="false" data-node-kind="database" data-node-sublabel="verifier event appended" data-node-context=".forge/">

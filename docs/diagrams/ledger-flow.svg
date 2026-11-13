@@ -467,8 +467,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <path data-edge-from="teammates" data-edge-to="ledger" data-edge-label="forge ledger merge / sync" data-edge-key="7" data-edge-id="sync-in" data-composition-points="904,499;315,499;315,300" d="M 904 499 L 315 499 L 315 300" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
 
         <!-- Nodes -->
-        <g id="node-oracles" data-node-id="oracles" data-node-label="Independent oracles" tabindex="0" role="button" aria-label="Focus Independent oracles, tests · CI, 01 / This machine · sources" aria-pressed="false" data-node-kind="external" data-node-sublabel="tests · CI" data-node-tag="human accept / revert" data-node-context="01 / This machine · sources">
-          <title>Independent oracles · tests · CI · 01 / This machine · sources · human accept / revert</title>
+        <g id="node-oracles" data-node-id="oracles" data-node-label="Independent oracles" tabindex="0" role="button" aria-label="Focus Independent oracles, session outcomes · reverts, 01 / This machine · sources" aria-pressed="false" data-node-kind="external" data-node-sublabel="session outcomes · reverts" data-node-tag="test refs · re-validation" data-node-context="01 / This machine · sources">
+          <title>Independent oracles · session outcomes · reverts · 01 / This machine · sources · test refs · re-validation</title>
           <rect x="25" y="128" width="150" height="58" rx="6" class="c-mask"/>
           <rect x="25" y="128" width="150" height="58" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(31 134) scale(0.6875)">
@@ -476,8 +476,8 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" x="100" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Independent oracles</text>
-          <text x="100" y="165" class="t-muted" font-size="7" text-anchor="middle">tests · CI</text>
-        <text x="100" y="175" class="t-external" font-size="7" text-anchor="middle">human accept / revert</text>
+          <text x="100" y="165" class="t-muted" font-size="7" text-anchor="middle">session outcomes · reverts</text>
+        <text x="100" y="175" class="t-external" font-size="7" text-anchor="middle">test refs · re-validation</text>
         </g>
 
         <g id="node-events" data-node-id="events" data-node-label="Local events" tabindex="0" role="button" aria-label="Focus Local events, recall / remember · cortex lesson, 01 / This machine · sources" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="recall / remember · cortex lesson" data-node-tag="reuse mint · diagnose" data-node-context="01 / This machine · sources">

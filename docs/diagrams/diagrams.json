@@ -28,9 +28,9 @@
       ],
       "title": "forgekit: one source, native configs, enforced guards, evidence-carrying memory",
       "receipt": {
-        "specSha256": "fa81768a8a95ab952a1bfb9ba2bb2968074b90142d9b9a5e5ca717001408fba6",
-        "artifactSha256": "9c7108271573d07626a1af3c9ce31816ce7c1d99874fd4fda768687c7e7e89a6",
-        "artifactBytes": 810944,
+        "specSha256": "51a03c2cc620ca86231dca9b1bc7b9798caae8088e3a19fba492d5cfb37c2fd3",
+        "artifactSha256": "8af33cb8c9882bd88a6c4b1d6def0cdf4809770bbe7124ec449b040473254b62",
+        "artifactBytes": 811110,
         "checks": "9/9 showcase"
       }
     },
@@ -59,9 +59,9 @@
       ],
       "title": "Proof-carrying memory: how claims gain and lose trust",
       "receipt": {
-        "specSha256": "e2468b369423327a7a4b39def20dc2c3b61e198367f1f922e8aa456cea173e80",
-        "artifactSha256": "6778222c587e62d1e088b81af1c2d90348801410e2e3da0f968f4cb973b3f973",
-        "artifactBytes": 808572,
+        "specSha256": "4329c09c90eac742385f91b4191d50cbf655fad68724e677617dff83a49e8269",
+        "artifactSha256": "958182b583746df2fa3108b4eb62fb9bc3fd6b73a79c57533b78fb3ba161ef61",
+        "artifactBytes": 808651,
         "checks": "9/9 showcase"
       }
     },
@@ -74,9 +74,9 @@
       ],
       "title": "Claim lifecycle in the ledger",
       "receipt": {
-        "specSha256": "90ec1d01391f010752f8df9204194a18e405fc8e5887107763a6f4256bc06611",
-        "artifactSha256": "e0d31bdb3007eb87b2b7c3273777b9f7f8951c6bb804685e2c89d082142f0206",
-        "artifactBytes": 808845,
+        "specSha256": "2332566b4331cf8fec424f5a0938acc1855c1a1a58d1508f58136fc435b8bf42",
+        "artifactSha256": "6936abf20ac65c27494d5a6042fa365127548cdf58dd98f97af4c093df13d896",
+        "artifactBytes": 808874,
         "checks": "9/9 showcase"
       }
     },
@@ -89,9 +89,9 @@
       ],
       "title": "Reuse cache: serve only while the proof holds",
       "receipt": {
-        "specSha256": "2a8c4e773fc7d91dacb3de2964f3c3b08999b2bc334348807c02df82f8b3a2fe",
-        "artifactSha256": "6956ed90f594f32323f63684eec1fe67aa1f55cc7ced32501259f171c7f5bdcf",
-        "artifactBytes": 813029,
+        "specSha256": "2821ca9cb8d4a56ea17aa08aadd958baa256dd84417a9926427582640b02fced",
+        "artifactSha256": "b7ac6f9ed6c99fc6c5cf820aa748b07ddba412b276a902e3dda01cdfe299b6cd",
+        "artifactBytes": 813712,
         "checks": "9/9 showcase"
       }
     },
@@ -103,9 +103,9 @@
       ],
       "title": "The team loop: work, verify, remember",
       "receipt": {
-        "specSha256": "6bf73f5500964bc19185cb52bd79f354243cd71cec920a44141eb499f1b2201e",
-        "artifactSha256": "e90ff6b2bb13ec4efa6ce8566a9dd71c1307c247be0c0006f71aae1d45483bb5",
-        "artifactBytes": 801007,
+        "specSha256": "ba998a1acd975106176c2cc3f9c16a940f687f5ced788db7a68a43c76214fa90",
+        "artifactSha256": "e795411893a723ed211273df3982279fae107a0765720d31681284fdf6576405",
+        "artifactBytes": 800985,
         "checks": "9/9 showcase"
       }
     },
@@ -118,9 +118,9 @@
       ],
       "title": "One Claude Code session with forgekit's hooks",
       "receipt": {
-        "specSha256": "7d64581815896d8bc7b02ed3a083a2f79f1003d59e80504a5529ddb29efec171",
-        "artifactSha256": "63c7f944ef3641c474fcda162e6c873da2bfd43acd98a66b19d357936905dce2",
-        "artifactBytes": 810635,
+        "specSha256": "297219c0419d0cb48276cb3b5b0363f5897710d56c6ffb802b960efb1713e268",
+        "artifactSha256": "617f9bbba71471ebcd1a53386dee1c31902a3c8bce3ddeb433123983039c7eff",
+        "artifactBytes": 811027,
         "checks": "9/9 showcase"
       }
     },
@@ -134,9 +134,9 @@
       ],
       "title": "forge verify: a PASS bound to the code that was tested",
       "receipt": {
-        "specSha256": "99a2dc93be3d1bba13bbfd4c16aef7e9def0a922e1991d202077dbb12bfeffd4",
-        "artifactSha256": "c574188d958ec8493a57989fc868e6b5edd4e13c92d6c1d542dae611ed72cfcc",
-        "artifactBytes": 807339,
+        "specSha256": "d8dd9d41c35371562fea2b1f71bbe41b567cc73d72711ee3ed98f74a4e527266",
+        "artifactSha256": "8f1013a263cd516c907db69c8c441fa7f71ae382ee7d94bd7e98783d6dd66249",
+        "artifactBytes": 807562,
         "checks": "9/9 showcase"
       }
     },
@@ -195,6 +195,21 @@
         "specSha256": "df6ce832e4d597f41827d041fa3b15ddd950324bc4c69fd48875e4a042721445",
         "artifactSha256": "064cd5d36912d29aa49d04f8d924333f83da69dbad48f2b25b7f636eee9b6f45",
         "artifactBytes": 804443,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "dep-gate",
+      "type": "workflow",
+      "usedIn": [
+        "docs/GUIDE.md",
+        "mintlify/guides/radar-deps.mdx"
+      ],
+      "title": "dep-gate: a package is vetted before it is added",
+      "receipt": {
+        "specSha256": "a73ba56e77a8351e7a817eefc3eb5d3a75b9abfa717abc7796d81f8a280ce665",
+        "artifactSha256": "94fe2f55f0b06545c85945b1e36eadb66907ff42b0ba8553b4547d2b706c1a4a",
+        "artifactBytes": 810774,
         "checks": "9/9 showcase"
       }
     }

@@ -465,7 +465,7 @@ rect.c-bg-rect { fill: var(--bg); }
         <path data-edge-from="exact" data-edge-to="near" data-edge-label="otherwise" data-edge-key="4" data-edge-id="exact-near" data-composition-points="394.8,132;456,132" d="M 394.8 132 L 456 132" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="generate" data-edge-to="verify" data-edge-key="5" data-edge-id="generate-verify" data-composition-points="662.4,432;606,432" d="M 662.4 432 L 606 432" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="guard" data-edge-to="adapt" data-edge-label="differs" data-edge-key="6" data-edge-id="guard-adapt" data-composition-points="812.4,132;864,132" d="M 812.4 132 L 864 132" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="guard" data-edge-to="check" data-edge-label="agrees: hit" data-edge-key="7" data-edge-id="guard-hit" data-composition-points="737.4,178;737.4,194;634.2,194;634.2,220;531,220;531,236" d="M 737.4 178 L 737.4 194 L 634.2 194 L 634.2 220 L 531 220 L 531 236" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="guard" data-edge-to="check" data-edge-label="agrees: near hit, review" data-edge-key="7" data-edge-id="guard-hit" data-composition-points="737.4,178;737.4,194;634.2,194;634.2,220;531,220;531,236" d="M 737.4 178 L 737.4 194 L 634.2 194 L 634.2 220 L 531 220 L 531 236" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="spec" data-edge-to="exact" data-edge-label="lookup" data-edge-key="8" data-edge-id="lookup-exact" data-composition-points="198,132;244.8,132" d="M 198 132 L 244.8 132" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="near" data-edge-to="guard" data-edge-label="similar" data-edge-key="9" data-edge-id="near-guard" data-composition-points="606,132;662.4,132" d="M 606 132 L 662.4 132" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="verify" data-edge-to="mint" data-edge-key="10" data-edge-id="verify-mint" data-composition-points="456,432;394.8,432" d="M 456 432 L 394.8 432" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
@@ -483,8 +483,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="123" y="132" class="t-muted" font-size="8" text-anchor="middle">the task text</text>
         </g>
 
-        <g id="node-exact" data-node-id="exact" data-node-label="Exact tier" tabindex="0" role="button" aria-label="Focus Exact tier, lossless except whitespace, Lookup ladder" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="lossless except whitespace" data-node-tag="Unicode-normalized; case kept" data-node-context="Lookup ladder">
-          <title>Exact tier · lossless except whitespace · Lookup ladder · Unicode-normalized; case kept</title>
+        <g id="node-exact" data-node-id="exact" data-node-label="Exact tier" tabindex="0" role="button" aria-label="Focus Exact tier, byte-exact spec · sha256, Lookup ladder" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="byte-exact spec · sha256" data-node-tag="nothing normalized" data-node-context="Lookup ladder">
+          <title>Exact tier · byte-exact spec · sha256 · Lookup ladder · nothing normalized</title>
           <rect x="244.8" y="86" width="150" height="92" rx="6" class="c-mask"/>
           <rect x="244.8" y="86" width="150" height="92" rx="6" class="c-messagebus" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(250.8 92) scale(0.6875)">
@@ -494,8 +494,8 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
           <text data-node-label="" x="319.8" y="107" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Exact tier</text>
-          <text x="319.8" y="124" class="t-muted" font-size="8" text-anchor="middle">lossless except whitespace</text>
-        <text x="319.8" y="166" class="t-messagebus" font-size="7" text-anchor="middle">Unicode-normalized; case kept</text>
+          <text x="319.8" y="124" class="t-muted" font-size="8" text-anchor="middle">byte-exact spec · sha256</text>
+        <text x="319.8" y="166" class="t-messagebus" font-size="7" text-anchor="middle">nothing normalized</text>
         </g>
 
         <g id="node-near" data-node-id="near" data-node-label="Near tier" tabindex="0" role="button" aria-label="Focus Near tier, MinHash + LSH similarity, Lookup ladder" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MinHash + LSH similarity" data-node-context="Lookup ladder">
@@ -512,8 +512,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="531" y="132" class="t-muted" font-size="8" text-anchor="middle">MinHash + LSH similarity</text>
         </g>
 
-        <g id="node-guard" data-node-id="guard" data-node-label="Semantic guard" tabindex="0" role="button" aria-label="Focus Semantic guard, operators · numbers · literals, Lookup ladder" aria-pressed="false" data-node-kind="security" data-node-sublabel="operators · numbers · literals" data-node-tag="identifiers · paths · negation" data-node-context="Lookup ladder">
-          <title>Semantic guard · operators · numbers · literals · Lookup ladder · identifiers · paths · negation</title>
+        <g id="node-guard" data-node-id="guard" data-node-label="Semantic guard" tabindex="0" role="button" aria-label="Focus Semantic guard, negation · roles · numbers, Lookup ladder" aria-pressed="false" data-node-kind="security" data-node-sublabel="negation · roles · numbers" data-node-tag="operators · paths · layout · …" data-node-context="Lookup ladder">
+          <title>Semantic guard · negation · roles · numbers · Lookup ladder · operators · paths · layout · …</title>
           <rect x="662.4" y="86" width="150" height="92" rx="6" class="c-mask"/>
           <rect x="662.4" y="86" width="150" height="92" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(668.4 92) scale(0.6875)">
@@ -521,8 +521,8 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" x="737.4" y="107" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Semantic guard</text>
-          <text x="737.4" y="124" class="t-muted" font-size="7.8" text-anchor="middle">operators · numbers · literals</text>
-        <text x="737.4" y="166" class="t-security" font-size="7" text-anchor="middle">identifiers · paths · negation</text>
+          <text x="737.4" y="124" class="t-muted" font-size="8" text-anchor="middle">negation · roles · numbers</text>
+        <text x="737.4" y="166" class="t-security" font-size="7" text-anchor="middle">operators · paths · layout · …</text>
         </g>
 
         <g id="node-adapt" data-node-id="adapt" data-node-label="Adapt tier" tabindex="0" role="button" aria-label="Focus Adapt tier, a match that differs, Lookup ladder" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="a match that differs" data-node-context="Lookup ladder">
@@ -627,9 +627,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="816.4000000000001" y="112" width="43.6" height="14" rx="3" class="c-mask"/>
           <text x="838.2" y="122" class="t-muted" font-size="8" text-anchor="middle">differs</text>
         </g>
-        <g data-edge-from="guard" data-edge-to="check" data-edge-label="agrees: hit" data-edge-key="7" data-edge-id="guard-hit">
-          <rect x="551.2" y="200" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="582.6" y="210" class="t-muted" font-size="8" text-anchor="middle">agrees: hit</text>
+        <g data-edge-from="guard" data-edge-to="check" data-edge-label="agrees: near hit, review" data-edge-key="7" data-edge-id="guard-hit">
+          <rect x="520" y="200" width="125.19999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="582.6" y="210" class="t-muted" font-size="8" text-anchor="middle">agrees: near hit, review</text>
         </g>
         <g data-edge-from="spec" data-edge-to="exact" data-edge-label="lookup" data-edge-key="8" data-edge-id="lookup-exact">
           <rect x="202" y="112" width="38.8" height="14" rx="3" class="c-mask"/>

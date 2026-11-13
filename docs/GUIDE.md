@@ -70,7 +70,7 @@ substrate** (`forge substrate` — the pre-action check). The full argument is t
 The daily loop — every outcome an oracle observes lands in the team ledger, and the
 ledger informs the next task:
 
-[![The team loop: substrate pre-checks, then the edit; oracles (forge verify, forge imagine --run, CI, a human accept or revert) record outcomes that move each claim's value in the team ledger in .forge/ledger/; teammates' ledgers merge through git and forge ledger merge; lessons, facts and reuse hits feed the next pre-check](diagrams/team-loop.svg)](https://jubershaikh.com/forgekit/diagrams/team-loop.html)
+[![The team loop: substrate pre-checks, then the edit; oracles (session outcomes, reverts, test references from reuse mint --ref, re-validation) record outcomes that move each claim's value in the team ledger in .forge/ledger/; teammates' ledgers merge through git and forge ledger merge; lessons, facts and reuse hits feed the next pre-check](diagrams/team-loop.svg)](https://jubershaikh.com/forgekit/diagrams/team-loop.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/team-loop.html): pan, zoom, search, and trace any node.</sub>
 
@@ -812,7 +812,7 @@ The independent check: runs the real test suite and flags edited symbols that ar
 the codebase (possible hallucinations). This is what turns "the model says it's done"
 into "the tests say it's done."
 
-[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; a hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
+[![forge verify: suites are planned for the root and every nested package that declares one; the code state (HEAD, staged and unstaged diffs, untracked files) is captured before and after each suite runs in its own directory, and a change during the run makes the result INCOMPLETE; code the stamp cannot bind also makes it INCOMPLETE; the verdict is PASS, FAIL, INCOMPLETE or NOT_CONFIGURED; an advisory hallucinated-symbol check runs against the atlas; the result is sealed in .forge/provenance.json and a verifier event is appended to .forge/verify-events.jsonl](diagrams/verify-pipeline.svg)](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/verify-pipeline.html): pan, zoom, search, and trace any node.</sub>
 
@@ -1088,6 +1088,8 @@ each table of `src/depgate.js` and `src/depgate_sources.js`, never a new code pa
 | An install command | `npm` / `pnpm` / `yarn` / `bun` installs, `npx` / `dlx` / `bunx`, `npm create`; `pip` / `uv` / `poetry` / `pipx`, `uvx`, `python -m pip`; `cargo add` / `install`; `go get` / `install`; `gem install`, `bundle add`; `composer require`; `dotnet add package`, `nuget install`; `dart` / `flutter pub add` |
 | An edit to a manifest | what the edit **adds** (declared after − declared before) to `package.json`, `requirements*.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json`, `pubspec.yaml`, `pom.xml`, Gradle build files and version catalogs, `*.csproj`, `Directory.Packages.props`, `packages.config` — an exact pin moved to another release counts as new |
 | An install that reads a manifest | `npm install` / `npm ci` / `yarn` with no names (what `package.json` declares and `node_modules` lacks), `pip install -r file` (following the files it includes) |
+
+[![dep-gate: an install command or manifest edit names new packages; anything behind a private source or on the allow-list passes untouched; each other name goes first to its own registry, and a name the registry lacks is blocked (asked about on Go, Maven and NuGet); a name the registry has is checked against deps.dev and OSV, an OSV malicious listing is blocked, and the rest is scored — 0.5 or more asks the human, 0.25 or more leaves a note, and a clean result is remembered for seven days](diagrams/dep-gate.svg)](https://jubershaikh.com/forgekit/diagrams/dep-gate.html)
 
 Only two findings **deny**, both first-hand: the name is not on its own registry, or OSV lists
 it as malicious (a `MAL-` advisory). Where the public registry is not the only place a name can
