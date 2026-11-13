@@ -23,6 +23,9 @@
  *   node scripts/diagrams.mjs validate [id…]         archify showcase validation
  *   node scripts/diagrams.mjs build [id…] [--no-svg] validate + render + re-export the SVG and
  *                                                    rewrite the receipts (after editing a source)
+ *   node scripts/diagrams.mjs build --stale          the same, for only the diagrams whose source
+ *                                                    no longer matches its receipt (what the
+ *                                                    docs-autoupdate workflow runs)
  *   node scripts/diagrams.mjs sync                   offline: refresh the docs-site SVG copies
  *   node scripts/diagrams.mjs site <outDir>          Pages: render every HTML (verified against
  *                                                    its receipt), copy the SVGs, write a gallery
@@ -160,6 +163,23 @@ export function checkDiagrams(root) {
         `${MINTLIFY_SVG_DIR}/${f}: no docs-site page embeds it — run \`node scripts/diagrams.mjs sync\``,
       );
   return problems;
+}
+
+/**
+ * The diagrams a `build` must redo: a source that changed since its receipt, a missing
+ * receipt, or a missing SVG. A pin bump (archify commit) makes every diagram stale.
+ * @param {string} root
+ * @param {{archify?: {commit?: string}, diagrams?: any[]}} manifest
+ * @returns {any[]} manifest entries
+ */
+export function staleDiagrams(root, manifest) {
+  const pinMoved = manifest.archify?.commit !== ARCHIFY.commit;
+  return (manifest.diagrams ?? []).filter((entry) => {
+    if (pinMoved || !entry.receipt) return true;
+    const src = path.join(root, sourcePath(entry));
+    if (!existsSync(src) || sha256(readFileSync(src)) !== entry.receipt.specSha256) return true;
+    return !existsSync(path.join(root, svgPath(entry)));
+  });
 }
 
 /** Make mintlify/images/diagrams/ hold exactly the SVGs the docs site embeds. */
@@ -383,9 +403,16 @@ async function main(argv) {
   }
   if (cmd === "validate" || cmd === "build") {
     const manifest = readManifest(root);
-    const pick = ids.length
-      ? manifest.diagrams.filter((d) => ids.includes(d.id))
-      : manifest.diagrams;
+    const pick = flags.has("--stale")
+      ? staleDiagrams(root, manifest)
+      : ids.length
+        ? manifest.diagrams.filter((d) => ids.includes(d.id))
+        : manifest.diagrams;
+    if (!pick.length) {
+      // Nothing to render: no archify fetch, no browser, and the receipts stay as they are.
+      process.stdout.write("ok: every diagram matches its receipt — nothing to render\n");
+      return 0;
+    }
     const unknown = ids.filter((i) => !manifest.diagrams.some((d) => d.id === i));
     if (unknown.length) {
       process.stderr.write(`unknown diagram id(s): ${unknown.join(", ")}\n`);
@@ -429,7 +456,7 @@ async function main(argv) {
     return 0;
   }
   process.stderr.write(
-    "usage: node scripts/diagrams.mjs check | validate [id…] | build [id…] [--no-svg] | sync | site <outDir>\n",
+    "usage: node scripts/diagrams.mjs check | validate [id…] | build [id…|--stale] [--no-svg] | sync | site <outDir>\n",
   );
   return 2;
 }

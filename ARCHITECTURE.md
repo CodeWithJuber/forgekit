@@ -430,7 +430,10 @@ repo-map diagram in ARCHITECTURE, and the Mintlify changelog page, rendered from
 regenerated from `COMMANDS`/`GROUPS`/`TOOLS`/`CHANGELOG.md`; six
 "N MCP tools" count phrases are auto-corrected; and every mermaid block across all `.md`
 and `.mdx` files receives the branded `%%{init` theme. Registry-derived blocks are CI-gated
-errors when stale; tree-derived output is advisory.
+errors when stale; tree-derived output is advisory. Diagram facts (`src/diagram_facts.js`)
+bind labels in the Archify sources to the code (the hook chain, tool counts, thresholds);
+after a merge, `.github/workflows/docs-autoupdate.yml` re-renders them and opens one
+"docs: auto-update" PR.
 
 **Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
 has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
@@ -677,8 +680,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>155 files"]
-  src["src<br/>141 files"]
+  test["test<br/>156 files"]
+  src["src<br/>142 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>10 files"]
@@ -686,7 +689,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 327 --> src
+  test -- 330 --> src
   bench -- 12 --> src
   test -- 7 --> global
   scripts -- 6 --> src

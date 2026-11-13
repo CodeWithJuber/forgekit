@@ -494,11 +494,11 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="UserPromptSubmit: cortex prompt + preflight" data-edge-key="3" data-edge-id="prompt-submit">
+        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="UserPromptSubmit: cortex prompt · preflight" data-edge-key="3" data-edge-id="prompt-submit">
           <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="prompt-submit" data-composition-points="566.6666666666667,276;955.3333333333334,276" d="M 566.6666666666667 276 L 955.3333333333334 276" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
           <rect x="643.2" y="256" width="235.6" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="266" class="t-backend" font-size="9" text-anchor="middle">UserPromptSubmit: cortex prompt + preflight</text>
+          <text x="761" y="266" class="t-backend" font-size="9" text-anchor="middle">UserPromptSubmit: cortex prompt · preflight</text>
         </g>
         </g>
 

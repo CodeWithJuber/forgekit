@@ -118,9 +118,9 @@
       ],
       "title": "One Claude Code session with forgekit's hooks",
       "receipt": {
-        "specSha256": "297219c0419d0cb48276cb3b5b0363f5897710d56c6ffb802b960efb1713e268",
-        "artifactSha256": "617f9bbba71471ebcd1a53386dee1c31902a3c8bce3ddeb433123983039c7eff",
-        "artifactBytes": 811027,
+        "specSha256": "12747783d6f160dfa93ac1fb2f9178c722097810341863470bad120e2ab0b549",
+        "artifactSha256": "8c338a7b4dc51dc6351815686fed25c21e125b2f7d5612ce355bfce34dd3429b",
+        "artifactBytes": 811029,
         "checks": "9/9 showcase"
       }
     },

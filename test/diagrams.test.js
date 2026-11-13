@@ -13,6 +13,7 @@ import {
   galleryHtml,
   MANIFEST_PATH,
   parseSourceName,
+  staleDiagrams,
   syncDocsSiteCopies,
 } from "../scripts/diagrams.mjs";
 import { BRAND } from "../src/brand.js";
@@ -45,6 +46,30 @@ function fixture() {
   write(MANIFEST_PATH, JSON.stringify(manifest));
   return { root, write, manifest, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+test("staleDiagrams: only a diagram whose source, receipt or SVG moved is rebuilt", () => {
+  const f = fixture();
+  try {
+    assert.deepEqual(
+      staleDiagrams(f.root, f.manifest),
+      [],
+      "a consistent fixture has nothing to build",
+    );
+    f.write("docs/diagrams/src/flow.workflow.json", '{"meta":{"title":"edited"}}\n');
+    assert.deepEqual(
+      staleDiagrams(f.root, f.manifest).map((d) => d.id),
+      ["flow"],
+    );
+    const moved = { ...f.manifest, archify: { ...ARCHIFY, commit: "0".repeat(40) } };
+    f.write("docs/diagrams/src/flow.workflow.json", '{"meta":{"title":"A flow"}}\n');
+    assert.deepEqual(staleDiagrams(f.root, f.manifest), []);
+    assert.equal(staleDiagrams(f.root, moved).length, 1, "a pin bump makes every diagram stale");
+    rmSync(join(f.root, "docs/diagrams/flow.svg"));
+    assert.equal(staleDiagrams(f.root, f.manifest).length, 1, "a missing SVG is rebuilt");
+  } finally {
+    f.cleanup();
+  }
+});
 
 test("parseSourceName accepts <id>.<type>.json for the five archify types only", () => {
   assert.deepEqual(parseSourceName("docs/diagrams/src/core-loop.workflow.json"), {

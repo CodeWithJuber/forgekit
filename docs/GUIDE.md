@@ -723,7 +723,13 @@ generated from the same registries the check reads, into marker-managed blocks
   every release, and the `[Unreleased]` work, as one Mintlify `<Update>` entry listing each
   change's headline with a link to its full notes. An MDX page cannot hold HTML comments,
   so its markers are JSX comments (`{/* forge:render:changelog:begin … */}`). A release
-  (`scripts/bump.mjs`) regenerates it in the release commit.
+  (`scripts/bump.mjs`) regenerates it in the release commit;
+- the diagram facts — labels in the Archify diagram sources (`docs/diagrams/src`) that state
+  something the code decides: the guards each hook event runs (from `hooks/hooks.json`), how
+  many tools get a native config, the reuse serve floor, the ledger's trust bands, the
+  semantic guard's kinds, dep-gate's thresholds. `src/diagram_facts.js` binds each to one
+  field on one line; render rewrites that field and nothing else, and names the diagrams to
+  re-render (`node scripts/diagrams.mjs build --stale`, which needs Chrome).
 
 ```console
 $ forge docs render
@@ -737,7 +743,11 @@ reconciler in CI: a stale registry-derived block is an **error** whose message i
 fix (`run forge docs render`), while tree-derived output (the repo map, diagram theme)
 is a warning — moving a file never fails an unrelated PR, but a new command with a
 stale table always does. The changelog page is an error too: edit `CHANGELOG.md`, then
-run `forge docs render` in the same change.
+run `forge docs render` in the same change. A stale diagram fact is a warning: re-rendering
+needs a browser, so after each merge to `master` the `docs-autoupdate` workflow runs
+`forge docs render` and `build --stale` and opens (or updates) one
+"docs: auto-update" PR, listing the prose `forge docs impact` flags for a person to check
+([docs/diagrams/README.md](diagrams/README.md#automatic-updates)).
 
 ### `forge docs sync` — which prose did this diff make stale?
 

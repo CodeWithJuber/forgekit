@@ -24,7 +24,7 @@
     { "id": "session-start", "from": "agent", "to": "hooks", "y": 168, "label": "SessionStart: recall-load · cortex session-start" },
     { "id": "inject-context", "from": "hooks", "to": "agent", "y": 204, "label": "inject orientation + lessons + last handoff (.forge/state.md)", "variant": "return" },
     { "id": "prompt", "from": "developer", "to": "agent", "y": 240, "label": "prompt", "variant": "emphasis" },
-    { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt + preflight" },
+    { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt · preflight" },
     { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "reads CACHED atlas only; never builds it in a hook" },
     { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "substrate advisory: suggested model · impact · verify checklist", "variant": "return" },
     { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex", "variant": "security" },

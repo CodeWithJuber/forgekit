@@ -585,14 +585,18 @@ HANDLERS.docs = async (argv) => {
     return;
   }
   // `render` — regenerate the machine-owned doc surfaces (command tables, MCP tool
-  // table, count phrases, mermaid theme, repo map) from the registries. The write-side
-  // twin of `check`: check tells you docs drifted, render is the one-command repair.
+  // table, count phrases, mermaid theme, repo map) from the registries, and the diagram
+  // facts (labels in docs/diagrams/src bound to the code). The write-side twin of `check`:
+  // check tells you docs drifted, render is the one-command repair. A rewritten diagram
+  // source still needs a re-render (`node scripts/diagrams.mjs build --stale`).
   if (sub === "render") {
     const { renderDocs } = await import("./docs_render.js");
+    const { renderDiagramFacts } = await import("./diagram_facts.js");
     const check = argv.includes("--check");
     const r = renderDocs(undefined, { write: !check });
+    const facts = await renderDiagramFacts(undefined, { write: !check });
     if (json) {
-      console.log(JSON.stringify(r, null, 2));
+      console.log(JSON.stringify({ ...r, diagramFacts: facts }, null, 2));
       if (check && !r.ok) process.exitCode = 1;
       return;
     }
@@ -602,7 +606,20 @@ HANDLERS.docs = async (argv) => {
       );
     for (const m of r.missing)
       console.error(`  ${paint(`missing markers for block ${m.name} in ${m.file}`, "err")}`);
-    if (!r.files.length && !r.missing.length) console.log("  all generated doc surfaces current");
+    for (const d of facts.drift)
+      console.log(
+        `  ${check ? "stale" : "rendered"}: ${d.file}  ${paint(`(diagram fact: ${d.field} at ${d.at})`, "dim")}`,
+      );
+    for (const e of facts.errors)
+      console.error(
+        `  ${paint(`diagram fact ${e.field} at ${e.at} in ${e.file}: ${e.error}`, "err")}`,
+      );
+    if (facts.changed.length && !check)
+      console.log(
+        `  re-render: node scripts/diagrams.mjs build --stale  ${paint(`(${facts.changed.join(", ")})`, "dim")}`,
+      );
+    if (!r.files.length && !r.missing.length && !facts.drift.length && !facts.errors.length)
+      console.log("  all generated doc surfaces current");
     if (check && !r.ok) process.exitCode = 1;
     return;
   }
@@ -619,6 +636,21 @@ HANDLERS.docs = async (argv) => {
   if (!r.issues.length) console.log(`  ✓ docs and code agree (${r.checked.join(", ")})`);
   for (const i of r.issues)
     console.log(`  ${i.severity === "error" ? "✗" : "!"} [${i.check}] ${i.detail}`);
+  // Advisory: a diagram label bound to the code (src/diagram_facts.js) no longer says what
+  // the code does. Never fails the check — a re-render needs Chrome, so the docs-autoupdate
+  // workflow does it after the merge — but say exactly what will change.
+  try {
+    const { renderDiagramFacts } = await import("./diagram_facts.js");
+    const facts = await renderDiagramFacts();
+    for (const d of facts.drift)
+      console.log(
+        `  ! [diagram-facts] ${d.file}: ${d.field} at ${d.at} says ${JSON.stringify(d.current)}, the code says ${JSON.stringify(d.expected)} — \`${BRAND.cli} docs render\` then \`node scripts/diagrams.mjs build --stale\` (the docs-autoupdate workflow does both after a merge)`,
+      );
+    for (const e of facts.errors)
+      console.log(
+        `  ! [diagram-facts] ${e.file}: ${e.field} at ${e.at}: ${e.error} — update FACTS in src/diagram_facts.js`,
+      );
+  } catch {}
   if (!r.ok) {
     console.log(`\n${r.issues.filter((i) => i.severity === "error").length} problem(s)`);
     process.exitCode = 1;

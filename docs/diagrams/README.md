@@ -47,6 +47,35 @@ To add a diagram, create its source and add an entry `{ "id", "type", "usedIn": 
 `diagrams.json`. Then run `build`, embed the SVG, and list each file that embeds it in
 `usedIn`. The check verifies that every listed file really does embed the diagram.
 
+## Facts bound to the code
+
+Some labels state something the code decides: the guards each hook event runs, how many
+tools get a native config, the reuse serve floor, the ledger's trust bands, the semantic
+guard's kinds, dep-gate's thresholds. `src/diagram_facts.js` binds each one to the code
+(`FACTS`: a source, a marker that names exactly one line, a field, and a function of the
+code). `forge docs render` rewrites a stale fact (that field only, every other byte as it
+was) and names the diagrams to re-render; `forge docs check` lists the drift as a warning.
+
+To bind a new fact, add a row to `FACTS`. A test fails if any bound label disagrees with
+the code, or if a marker no longer names exactly one line.
+
+## Automatic updates
+
+`.github/workflows/docs-autoupdate.yml` runs after every push to `master` that touches
+code, hooks, guards, `source/` or the diagrams:
+
+1. `forge docs render` regenerates the machine-owned doc surfaces and the diagram facts.
+2. `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source no
+   longer matches its receipt (nothing is fetched when none has changed).
+3. If anything changed, the result is force-pushed to the `docs/auto-update` branch and one
+   PR is opened or updated. Its body lists the prose that `forge docs impact` says
+   mentions what the merge changed: prose is never regenerated, only flagged. When nothing
+   needs changing, a leftover PR is closed.
+
+The PR is opened with `GITHUB_TOKEN`, which starts no other workflow, so close and reopen it
+to run CI before merging (the same step as the release PR). Do not push to
+`docs/auto-update` by hand; the next run overwrites it.
+
 ## Embedding
 
 - **Markdown (GitHub, npm):** link the SVG to its interactive page:
@@ -70,6 +99,8 @@ To add a diagram, create its source and add an entry `{ "id", "type", "usedIn": 
   - an SVG or a docs-site copy is missing or stale
   - a `usedIn` file no longer embeds its diagram
   - the receipts were written by an Archify commit other than the pinned one
+- `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source, receipt
+  or SVG moved (every diagram after an Archify pin bump).
 - `node scripts/diagrams.mjs sync` refreshes the docs-site copies without rendering.
 - `node scripts/diagrams.mjs site <dir>` is what the Pages workflow runs. It renders every
   page, verifies each against its receipt, and writes the gallery.

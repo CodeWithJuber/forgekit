@@ -6,6 +6,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Diagrams follow the code, and docs update themselves after a merge.** Labels in the
+  Archify diagram sources that state something the code decides — the guards each hook event
+  runs (`hooks/hooks.json`), how many tools get a native config, the reuse serve floor, the
+  ledger's trust bands, the semantic guard's kinds, dep-gate's thresholds — are now bound to
+  that code (`src/diagram_facts.js`). `forge docs render` rewrites a stale label (that one
+  field, every other byte untouched) and names the diagrams to re-render; `forge docs check`
+  lists the drift as a warning; a test keeps every bound label equal to the code.
+  `node scripts/diagrams.mjs build --stale` re-renders only diagrams whose source moved. A new
+  workflow, `docs-autoupdate.yml`, runs both after each push to `master` and opens (or
+  updates, or closes when nothing is left) one "docs: auto-update" PR, listing the prose that
+  `forge docs impact` flags for a person to check. Like the release PR it starts no CI by
+  itself: close and reopen it before merging.
+
+### Changed
+
+- **The docs and every diagram describe 1.15 again.** All diagram sources dated from 1.7.2.
+  A new diagram shows how dep-gate vets a package. The hook diagram now shows dep-gate,
+  "ask" answers and the SessionStart orientation block; the reuse, ledger and verify diagrams
+  match the 1.7.3/1.7.4 rules (a byte-exact reuse key, near hits served for review, exact
+  duplicates only, unbound code → INCOMPLETE); the memory diagrams name the evidence sources
+  that exist (no CI or human-accept writer is wired yet). Prose across the README, guide,
+  architecture, integrations, release and docs-site pages now covers `forge hooks` for other
+  agents, eleven native-config tools, the release PR's close-and-reopen step and the current
+  counts.
+
 ## [1.15.0] - 2026-11-13
 
 ### Added
