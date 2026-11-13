@@ -231,6 +231,27 @@ export const TOOLS = [
     },
   },
   {
+    name: "dep_check",
+    description:
+      "Vet a package BEFORE installing it or adding it to a manifest (dep-gate): is the name on its own registry (a missing one is a hallucinated dependency — do not install), does OSV list it as malicious, how new and thin is it, and are there known advisories on a pinned version. Covers npm, PyPI, crates.io, Go modules, Maven, NuGet, RubyGems, Packagist and pub.dev. Pass `packages` (ecosystem:name, e.g. npm:left-pad, pypi:requests==2.31.0, go:github.com/spf13/cobra, maven:org.slf4j:slf4j-api) or the install `command` you are about to run. Returns the evidence and a verdict per package: deny / ask / note / ok / unknown.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packages: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "packages as ecosystem:name — npm, pypi, cargo, go, maven, nuget, rubygems, packagist, pub",
+        },
+        command: {
+          type: "string",
+          description:
+            "an install command line to vet instead (npm/pnpm/yarn/bun, pip/uv/poetry, cargo, go, gem/bundle, composer, dotnet, dart/flutter, npx/uvx)",
+        },
+      },
+    },
+  },
+  {
     name: "forge_ledger_retract",
     description:
       "Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`. Prefixes are refused; the pending proposal shows in ledger query/stats.",

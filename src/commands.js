@@ -93,6 +93,46 @@ export const COMMANDS = {
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
+  vet: {
+    summary:
+      "vet a package before install (dep-gate) — is the name on its registry, is it listed malicious, how new and thin is it",
+    usage: 'forge vet <ecosystem:name[@version]>… | --cmd "<install command>" [--json]',
+    flags: [
+      {
+        flag: '--cmd "<command>"',
+        desc: "vet every package an install command line would fetch (the PreToolUse guard's view)",
+      },
+      { flag: "--json", desc: "print the evidence and verdict per package as JSON" },
+    ],
+    examples: [
+      "forge vet npm:left-pad pypi:requests==2.31.0 cargo:serde",
+      "forge vet go:github.com/spf13/cobra@v1.8.0 maven:org.slf4j:slf4j-api@2.0.9 gem:rails",
+      'forge vet --cmd "npm install some-new-package"',
+    ],
+  },
+  hooks: {
+    summary:
+      "run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)",
+    usage:
+      "forge hooks [status | on | off | run <host> <event>] [--hosts a,b] [--bootstrap] [--json]",
+    flags: [
+      {
+        flag: "--hosts <a,b>",
+        desc: "with `on`: only these hosts (claude, codex, gemini, cursor, copilot) instead of every tool the repo emits for",
+      },
+      {
+        flag: "--bootstrap",
+        desc: "with `on`: a session start installs this exact forge version when the CLI is missing (fresh cloud or CI machines)",
+      },
+      { flag: "--json", desc: "print status or the written files as JSON" },
+    ],
+    examples: [
+      "forge hooks",
+      "forge hooks on",
+      "forge hooks on --hosts claude,codex --bootstrap",
+      "forge hooks off",
+    ],
+  },
   verify:
     "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
   demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
@@ -440,7 +480,7 @@ export const GROUPS = {
     "test-select",
   ],
   Memory: ["cortex", "recall", "remember", "brain", "ledger", "claim", "handoff", "decide", "know"],
-  Quality: ["scan", "spec", "harden", "radar"],
+  Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
   Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [
     "taste",

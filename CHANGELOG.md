@@ -6,6 +6,59 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge hooks`: the guards run by themselves in every agent, not only Claude Code.** A
+  skill or an MCP tool runs when the model chooses to call it; a hook runs whatever the model
+  chooses, and forge's hooks reached Claude Code alone, on a machine with a user-level install.
+  `forge hooks on` writes project-level hook files in each agent's own format —
+  `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`,
+  `.github/hooks/forge.json` (Devin reads Claude Code's file) — so a teammate's agent, CI and
+  cloud agents run the same guards. Every entry is one command, `forge hooks run <host>
+  <event>` (`src/hosts.js`): it turns the agent's payload into the shape the guards already
+  read, runs the chain from `hooks/hooks.json`, merges the answers and replies in that agent's
+  dialect. Hosts, events, tool names, field names and dialects are tables, so a new agent is a
+  row and no guard changes. An "ask" in an agent with no confirm step becomes a block that says
+  so; a patch (`apply_patch`) is checked file by file; an event that arrives by two files runs
+  the guards once and gets the same verdict twice. A machine without forge skips the hooks
+  silently (`--bootstrap` installs this exact version at session start instead), the project
+  entry stands down where forge is already wired at user level, `forge hooks off` removes
+  exactly what forge wrote, and `FORGE_HOOKS=0` silences them. `forge sync` keeps the files
+  current once a repository has turned them on.
+- **dep-gate: a package is vetted before it is added — in nine ecosystems, however it
+  arrives.** An agent that invents a package name is the slopsquatting attack surface: the name
+  sounds right, somebody registers it, and the install runs their code. A new PreToolUse guard
+  (`global/guards/dep-gate.sh`, wired on `Bash`, `Edit`, `Write` and `MultiEdit`) covers npm,
+  PyPI, crates.io, Go modules, Maven Central, NuGet, RubyGems, Packagist and pub.dev, and the
+  three ways a dependency arrives: an install command (every package manager's own spelling),
+  an edit that **adds** a dependency to a manifest (`package.json`, `requirements*.txt`,
+  `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json`, `pubspec.yaml`,
+  `pom.xml`, Gradle files and version catalogs, `*.csproj` …), and an install that reads a
+  manifest (`npm install` with no names, `pip install -r`). It asks three first-hand sources
+  about each package: its own registry (does the name exist), then — only for a package that
+  registry has — deps.dev (first publish, version count) and OSV (malicious listings,
+  advisories on the pinned version). A name the registry lacks is told to nobody else. Only two
+  findings block: the name is not on its registry, or OSV lists it as malicious; on registries
+  that are not the only legitimate source (Go, Maven, NuGet) a miss asks instead. The rest is a
+  formula, `1 − ∏(1 − wₖ·sₖ)` over youth, thin history and the worst advisory: a high score
+  asks the human, a middling one leaves a note. A package that passed is remembered for seven
+  days. The guard fails open — an unreachable registry, a private source (flag, environment,
+  config file or a manifest that names its own index), a git/path/URL source or a name the
+  shell must compute all pass untouched — and `FORGE_DEPGATE=0` switches it off.
+  `depgate.allow` in `.forge/forge.config.json` lists private packages to skip. Ecosystems,
+  command grammars, flags and manifest formats are tables (`src/depgate.js`,
+  `src/depgate_sources.js`). The same rule set is `forge vet <ecosystem:name[@version]>…` on
+  the command line (`--cmd "<install command>"` vets a whole line, `--json` prints the
+  evidence) and the `dep_check` MCP tool.
+
+### Changed
+
+- **The feature protocol card tells the agent to look before it builds.** The card injected on
+  a feature prompt now carries the reuse step — the proof-carrying cache, then the repository,
+  then a maintained library, with `forge vet` before any new dependency — so it no longer
+  depends on the model choosing to open the `reuse-first` skill. Requests to bring in a library
+  ("integrate …", "add a library for …") classify as feature work.
+
 ## [1.14.1] - 2026-11-03
 
 ### Fixed

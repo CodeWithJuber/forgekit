@@ -28,8 +28,8 @@ most deeply exercised integration.
 
 | Inventory | Count |
 |---|---|
-| CLI commands (`forge --help`) | 51 |
-| Lifecycle hook commands (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) | 17 |
+| CLI commands (`forge --help`) | 52 |
+| Lifecycle hook commands (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) | 18 |
 | Config emitters (`src/emit/`) | 13 |
 | Installable skill packs (`skills/`) | 3 |
 | Per-event hook token budgets (`hooks/budget.json`) | 5 |
@@ -75,7 +75,10 @@ It does three jobs:
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
 >   guards). The other eleven tools receive native config (most also an MCP server entry; Aider,
->   Windsurf/Devin and Kimi Code do not) but no automatic hooks, and have had less real-world exercise.
+>   Windsurf/Devin and Kimi Code do not). Codex, Gemini CLI, Cursor, Copilot and Devin can run
+>   the guards automatically once a repository opts in with `forge hooks on`; that adapter is
+>   tested against each vendor's documented hook protocol but has not been exercised inside
+>   those agents the way the Claude Code path has. The rest have no automatic hooks.
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
 >   Codex bundle loads its skills and bundle-scoped MCP server. Neither path provides ambient
@@ -188,11 +191,20 @@ The pain it kills — and the mechanism that kills it:
   (`forge docs sync` sweeps the diff for stale prose, `forge handoff` writes the bounded
   session snapshot, `forge decide` records choices so no session re-decides them). On Claude
   Code this runs automatically.
+- **A dependency that does not exist.** An agent that invents a package name is the
+  slopsquatting attack surface. The dep-gate guard reads install commands, manifest edits and
+  installs that read a manifest, across nine ecosystems (npm, PyPI, crates.io, Go, Maven,
+  NuGet, RubyGems, Packagist, pub.dev), and blocks a name that is not on its own registry or
+  that OSV lists as malicious; a brand-new, thin package asks you first. It fails open — an
+  unreachable registry never blocks an install — and `forge vet` runs the same check by hand.
 - **Rules that die at context compaction.** Guardrails — protected paths, cost budget,
-  doom-loop detection, secret redaction — run as deterministic hooks, not prose in a prompt.
-  They survive compaction the way `CLAUDE.md` does not. (Ambient hooks are the Claude Code
-  integration; other tools get config and instructions. The substrate is advisory by default;
-  set `FORGE_ENFORCE=1` to block only its strongest signals.)
+  doom-loop detection, dependency vetting, secret redaction — run as deterministic hooks, not
+  prose in a prompt.
+  They survive compaction the way `CLAUDE.md` does not. `forge init` wires them into Claude
+  Code on your machine; `forge hooks on` writes the same wiring into the repository for Claude
+  Code, Codex, Gemini CLI, Cursor and Copilot, so a teammate's agent, CI and cloud agents run
+  the guards too — without the model having to choose to. (The substrate is advisory by
+  default; set `FORGE_ENFORCE=1` to block only its strongest signals.)
 - **One rulebook, eleven tools.** Author your rules once; Forge emits each tool's native config,
   plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain files in git,
   no server to run.
@@ -452,9 +464,11 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge decide`        | append-only decision log — D-#### ADR-lite entries in .forge/decisions.md                                                                                                                                                                                                                           |
 |                         | `forge know`          | route any fact to its storage home (decision / ledger / recall / …) — total, never dropped                                                                                                                                                                                                          |
 | **Quality**             | `forge scan`          | vet a skill/MCP for injection/RCE/exfil before install (skill-gate)                                                                                                                                                                                                                                 |
+|                         | `forge vet`           | vet a package before install (dep-gate) — is the name on its registry, is it listed malicious, how new and thin is it                                                                                                                                                                               |
 |                         | `forge spec`          | spec-as-contract — init (OpenSpec) / lock / check drift                                                                                                                                                                                                                                             |
 |                         | `forge harden`        | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                                                                                                |
 |                         | `forge radar`         | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                                                                                                  |
+|                         | `forge hooks`         | run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)                                                                                                                                        |
 | **Config**              | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
 |                         | `forge atlas`         | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                                                                                               |
 |                         | `forge stack`         | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                                                                                             |
@@ -560,9 +574,10 @@ These are concrete role prompts supplied to the host tool. Forgekit does not con
 that spawns these roles, exchanges inter-agent messages, or executes a LangGraph-style state
 machine.
 
-The built-in MCP server exposes 21 tools, including:
+The built-in MCP server exposes 22 tools, including:
 
-- pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`;
+- pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`,
+  `dep_check`;
 - repository analysis: `predict_impact`, `scope_files`, `rank_code`, `collide_check`;
 - memory: `cortex_lessons`, `forge_remember`, `forge_ledger_query`,
   `forge_ledger_ratify`, `forge_ledger_retract`;
@@ -631,7 +646,7 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 21 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 22 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
 | **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
 

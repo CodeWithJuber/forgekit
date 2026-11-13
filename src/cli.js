@@ -25,7 +25,9 @@ import { suggest } from "./math.js";
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
 // Commands that are themselves the onboarding path — nudging on them would be circular.
-const HINT_SKIP = new Set(["init", "help", "version"]);
+// `hooks` too: `hooks run` replies to an agent on stdout/stderr, and a tip line there would be
+// read as part of a guard's verdict.
+const HINT_SKIP = new Set(["init", "help", "version", "hooks"]);
 
 /** First-run nudge: if the user has never run `forge init` (no forge-managed marker in
  *  ~/.claude/settings.json) and is invoking a real command, print ONE tip line to stderr.
@@ -877,6 +879,202 @@ HANDLERS.scan = async (argv) => {
   );
   if (r.critical) process.exitCode = 1;
   return;
+};
+HANDLERS.vet = async (argv) => {
+  // dep-gate: vet packages BEFORE they are installed (mizan — every verdict ships its evidence;
+  // missing evidence never blocks). The same rule set the PreToolUse guard runs.
+  const { depgateDecision, parseVetArg, vetPackages, VET_PREFIXES } = await import("./depgate.js");
+  const json = argv.includes("--json");
+  const cmdAt = argv.indexOf("--cmd");
+  const command = cmdAt >= 0 ? String(argv[cmdAt + 1] ?? "") : "";
+  const args = argv.slice(1).filter((a, i) => !a.startsWith("--") && argv[i] !== "--cmd");
+  if (cmdAt < 0 && !args.length) {
+    console.error(
+      `usage: ${BRAND.cli} vet <ecosystem:name>… | --cmd "<install command>" [--json]\n` +
+        `  ecosystems: ${[...new Set(Object.values(VET_PREFIXES))].join(", ")} (a bare name is npm)`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  /** @type {Awaited<ReturnType<typeof vetPackages>>} */
+  let results;
+  /** @type {string[]} */
+  let skipped = [];
+  if (cmdAt >= 0) {
+    // An explicit `forge vet` always answers fresh: the guard's switch and cache do not apply.
+    const env = { ...process.env, FORGE_DEPGATE: "1" };
+    ({ results, skipped } = await depgateDecision({ command, env, cache: null }));
+  } else {
+    const specs = args.map(parseVetArg);
+    const bad = args.filter((_, i) => !specs[i]);
+    if (bad.length) {
+      console.error(
+        `${BRAND.cli} vet: not a registry package: ${bad.join(", ")} (write it as ecosystem:name, e.g. npm:left-pad, pypi:requests, go:github.com/spf13/cobra)`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const wanted = /** @type {NonNullable<ReturnType<typeof parseVetArg>>[]} */ (specs);
+    results = await vetPackages(wanted);
+    if (results.unvetted?.length)
+      skipped.push(`${results.unvetted.length} more package(s) past the cap per run`);
+  }
+  const denied = results.some((r) => r.judgment.level === "deny");
+  if (denied) process.exitCode = 1;
+  if (json) return console.log(JSON.stringify({ results, skipped }, null, 2));
+  heading(`${BRAND.brand} vet — dep-gate (verdicts from registry, deps.dev and OSV evidence)\n`);
+  if (!results.length) {
+    console.log("  no registry packages to vet in that command.");
+  } else {
+    const roleFor = (level) =>
+      level === "ok" ? "ok" : level === "deny" ? "err" : level === "unknown" ? "dim" : "warn";
+    const rows = results.map(({ pkg, evidence, judgment }) => [
+      paint(judgment.level, roleFor(judgment.level)),
+      `${pkg.eco}:${pkg.name}${pkg.version ? `@${pkg.version}` : ""}`,
+      bar(judgment.score),
+      judgment.reasons.join("; ") ||
+        (judgment.level === "unknown"
+          ? paint("could not reach its registry — not verified", "dim")
+          : paint(
+              `on its registry${evidence.versions ? `, ${evidence.versions} versions` : ""}`,
+              "dim",
+            )),
+    ]);
+    console.log(table(rows));
+  }
+  for (const s of skipped) console.log(`  ${paint(`skipped — ${s}`, "dim")}`);
+  if (denied) console.log(`\n  ${paint("BLOCKED — do not install the denied package(s)", "err")}`);
+  return;
+};
+HANDLERS.hooks = async (argv) => {
+  // The same guards in every agent that has a hook system. `run` is what the agents call
+  // (src/hosts.js); on / off / status manage the project-level files (src/emit/hooks.js).
+  const sub = argv[1] ?? "status";
+  if (sub === "run") {
+    // Hot path: reply and leave. Nothing else may reach stdout or stderr, and nothing here may
+    // fail the tool call — an unreadable stdin is an empty payload.
+    const { runHook } = await import("./hosts.js");
+    let input = "";
+    if (!process.stdin.isTTY) {
+      try {
+        for await (const chunk of process.stdin) input += chunk;
+      } catch {}
+    }
+    const reply = await runHook({ host: argv[2] ?? "", event: argv[3] ?? "", input });
+    if (reply.stdout) process.stdout.write(reply.stdout);
+    if (reply.stderr) process.stderr.write(`${reply.stderr.trimEnd()}\n`);
+    process.exitCode = reply.exit;
+    return;
+  }
+  const { applyHooks, HOOK_HOSTS, hooksStatus, selectedHosts } = await import("./emit/hooks.js");
+  const { HOSTS } = await import("./hosts.js");
+  const { parseTools, readForgeConfig, writeForgeConfig } = await import("./repo_config.js");
+  const root = process.cwd();
+  const json = argv.includes("--json");
+  const flag = (name) => {
+    const at = argv.indexOf(name);
+    return at >= 0 ? String(argv[at + 1] ?? "") : null;
+  };
+  if (sub === "on" || sub === "off") {
+    // `--hosts copilot,codex` narrows it; otherwise every host whose tool this repo emits for.
+    const asked = flag("--hosts");
+    const names = asked
+      ? asked
+          .split(",")
+          .map((n) => n.trim().toLowerCase())
+          .filter(Boolean)
+      : null;
+    const unknown = (names ?? []).filter((n) => !HOOK_HOSTS.includes(n));
+    if (unknown.length) {
+      console.error(
+        `${BRAND.cli} hooks: unknown host(s): ${unknown.join(", ")} — choose from ${HOOK_HOSTS.join(", ")}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const enable = sub === "on";
+    const bootstrap = enable && argv.includes("--bootstrap");
+    const before = readForgeConfig(root);
+    const tools =
+      typeof before.tools === "string" || Array.isArray(before.tools)
+        ? parseTools(before.tools).tools
+        : null;
+    const saved = writeForgeConfig(root, (cfg) => {
+      if (!enable) cfg.hooks = { project: false };
+      else
+        cfg.hooks = {
+          project: true,
+          ...(bootstrap ? { bootstrap: true } : {}),
+          ...(names ? { hosts: names } : {}),
+        };
+      return cfg;
+    });
+    if (!saved.ok || !("config" in saved)) {
+      console.error(
+        `${BRAND.cli} hooks: ${"reason" in saved ? saved.reason : "could not write the config"}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    // Turning off removes forge's entries everywhere, whatever was selected when they went in.
+    const hosts = enable
+      ? selectedHosts(saved.config, (key) => tools === null || tools.includes(key))
+      : HOOK_HOSTS;
+    const rows = hosts.map((id) => applyHooks(root, id, { enable, bootstrap })).filter(Boolean);
+    if (json) return console.log(JSON.stringify({ enabled: enable, bootstrap, rows }, null, 2));
+    heading(`${BRAND.brand} hooks — ${enable ? "on" : "off"}\n`);
+    console.log(
+      table(
+        rows.map((r) => [
+          paint(
+            r.action,
+            r.action === "skipped" ? "warn" : r.action === "unchanged" ? "dim" : "ok",
+          ),
+          r.tool,
+          r.target,
+          paint(r.note, "dim"),
+        ]),
+      ),
+    );
+    if (enable) {
+      console.log(
+        `\n  Commit these files: they are what a teammate's agent, CI and cloud agents read.\n` +
+          `  A machine without ${BRAND.cli} on its PATH skips them silently${bootstrap ? " (a session start installs it first)" : ` — add --bootstrap to install it at session start`}.\n` +
+          `  ${HOSTS.devin.label} needs no file of its own: it reads ${HOSTS.claude.file}.\n` +
+          `  Off again: ${BRAND.cli} hooks off · one shell: FORGE_HOOKS=0`,
+      );
+    }
+    return;
+  }
+  if (sub !== "status") {
+    console.error(`usage: ${BRAND.cli} hooks [status|on|off] [--hosts a,b] [--bootstrap] [--json]`);
+    process.exitCode = 1;
+    return;
+  }
+  const status = hooksStatus(root, { config: readForgeConfig(root) });
+  if (json) return console.log(JSON.stringify(status, null, 2));
+  heading(`${BRAND.brand} hooks — which agents run the guards by themselves in this repository\n`);
+  const role = (state) =>
+    state === "on" || state.startsWith("via") ? "ok" : state === "stale" ? "warn" : "dim";
+  console.log(
+    table(
+      status.hosts.map((h) => [
+        paint(h.state, role(h.state)),
+        h.label,
+        h.file ?? "—",
+        paint(h.note, "dim"),
+      ]),
+    ),
+  );
+  console.log(
+    `\n  project hooks: ${status.enabled ? "on" : "off"}${status.bootstrap ? " (bootstrap)" : ""} · ` +
+      `this machine's Claude Code: ${status.userLevel ? "wired at user level (project hooks stand down)" : "not wired at user level"}`,
+  );
+  if (status.hosts.some((h) => h.state === "stale"))
+    console.log(
+      `  stale entries: run \`${BRAND.cli} sync\` (or \`${BRAND.cli} hooks on\`) to refresh them.`,
+    );
+  if (!status.enabled) console.log(`  turn them on: ${BRAND.cli} hooks on`);
 };
 HANDLERS.remember = async (argv) => {
   const b = await import("./brain.js");

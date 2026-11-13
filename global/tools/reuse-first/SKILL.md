@@ -19,8 +19,13 @@ change is the smallest one that fits the codebase.
 - Search the repo next (`grep`/`glob`/serena LSP): is there an existing util,
   component, hook, service, or pattern that already does this? Extend it.
 - If not in-repo, is there a maintained library? Vet it with `tech-selector`
-  (current best from Context7 + web + GitHub health) before adding a dependency.
-- Only write from scratch when reuse genuinely doesn't fit — and say why.
+  (current best from Context7 + web + GitHub health) before adding a dependency,
+  and check the exact name with `forge vet <ecosystem>:<name>` before the
+  install command — never install a package name from memory alone.
+- Is the job itself already a skill or plugin? Look before writing one, and run
+  `forge scan` on anything third-party before installing it.
+- Only write from scratch when reuse genuinely doesn't fit — and say why. Record
+  the choice with `forge decide` so the next session does not re-decide it.
 
 ## 2. Follow the codebase's patterns
 - Match the existing architecture and idioms over any personal preference or

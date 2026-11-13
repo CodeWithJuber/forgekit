@@ -133,6 +133,9 @@ const toPosix = (p) => String(p).replaceAll("\\", "/");
  */
 export const GUARD_POLICY = {
   "protect-paths.sh": { node: "protect-paths.mjs", failClosed: true },
+  // dep-gate does network I/O, so it fails OPEN: an install must keep working offline. Only a
+  // verdict from the twin (exit 2) blocks.
+  "dep-gate.sh": { node: "dep-gate.mjs" },
 };
 
 // ---------------------------------------------------------------- hook token budget
