@@ -31,7 +31,7 @@ Every command is real and wired. Grouped by what it does:
 | **Core**                | `forge init` · `forge sync` · `forge doctor` · `forge tools` · `forge catalog` · `forge docs` · `forge update` · `forge config`                                                                                              |
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge advisor` · `forge verify` · `forge demo` · `forge precommit` · `forge test-select` |
 | **Memory**              | `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge claim` · `forge handoff` · `forge decide` · `forge know`                                                                        |
-| **Quality**             | `forge scan` · `forge spec` · `forge harden` · `forge radar`                                                                                                                                                                 |
+| **Quality**             | `forge scan` · `forge vet` · `forge spec` · `forge harden` · `forge radar` · `forge hooks`                                                                                                                                   |
 | **Config**              | `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                        |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                         |
 <!-- forge:render:command-groups:end -->
@@ -1056,6 +1056,72 @@ The `dev-radar` skill is the LLM _wide scan_ across the ecosystem; `forge radar`
 deterministic _repo instrument_ — it implements `global/rules/tech-currency.md` against THIS
 repo's actual manifests.
 
+### `forge vet` — does the package you are about to add exist?
+
+`forge radar` judges the dependencies a repo already has. `forge vet` (dep-gate) asks the
+earlier question, at the moment a dependency is about to arrive: is this name on its own
+registry, and is it what you think it is? An agent that invents a package name is the
+slopsquatting attack surface — the name sounds right, somebody registers it, and the install
+runs their code.
+
+```
+$ forge vet npm:left-pad pypi:requests==2.19.0 npm:fast-json-utils-pro
+  ok    npm:left-pad             on its registry, 15 versions
+  note  pypi:requests@2.19.0     10 known advisories on 2.19.0 (worst: GHSA-…)
+  deny  npm:fast-json-utils-pro  is not on the npm registry — the name looks invented
+$ forge vet go:github.com/spf13/cobra@v1.8.0 maven:org.slf4j:slf4j-api@2.0.9 gem:rails
+$ forge vet --cmd "npm install some-new-package"   # the guard's view of a command line
+```
+
+**Nine ecosystems, one rule set.** npm, PyPI, crates.io, Go modules, Maven Central, NuGet,
+RubyGems, Packagist and pub.dev — each asked directly at its own registry, never an aggregator
+that lags a fresh publish. `forge vet` takes `ecosystem:name[@version]` (`npm`, `pypi`/`pip`,
+`cargo`/`crates`, `go`, `maven`/`gradle`, `nuget`/`dotnet`, `rubygems`/`gem`,
+`packagist`/`composer`, `pub`/`dart`); a bare name is npm. Adding an ecosystem is a row in
+each table of `src/depgate.js` and `src/depgate_sources.js`, never a new code path.
+
+**Three ways a dependency arrives, all covered** by the PreToolUse guard
+(`global/guards/dep-gate.sh`, on `Bash`, `Edit`, `Write` and `MultiEdit`):
+
+| How it arrives | What is read |
+| --- | --- |
+| An install command | `npm` / `pnpm` / `yarn` / `bun` installs, `npx` / `dlx` / `bunx`, `npm create`; `pip` / `uv` / `poetry` / `pipx`, `uvx`, `python -m pip`; `cargo add` / `install`; `go get` / `install`; `gem install`, `bundle add`; `composer require`; `dotnet add package`, `nuget install`; `dart` / `flutter pub add` |
+| An edit to a manifest | what the edit **adds** (declared after − declared before) to `package.json`, `requirements*.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json`, `pubspec.yaml`, `pom.xml`, Gradle build files and version catalogs, `*.csproj`, `Directory.Packages.props`, `packages.config` — an exact pin moved to another release counts as new |
+| An install that reads a manifest | `npm install` / `npm ci` / `yarn` with no names (what `package.json` declares and `node_modules` lacks), `pip install -r file` (following the files it includes) |
+
+Only two findings **deny**, both first-hand: the name is not on its own registry, or OSV lists
+it as malicious (a `MAL-` advisory). Where the public registry is not the only place a name can
+legitimately live — Go modules, Maven and NuGet are routinely served from a company proxy — a
+miss **asks** instead of denying. Everything else is a formula over evidence, never a package
+list: `score = 1 − ∏(1 − wₖ·sₖ)` over youth (`2^(−age/30d)` since the first publish, from
+deps.dev), a thin history (`1/versions`) and the worst advisory on the version being
+installed (OSV). A score ≥ 0.5 **asks** the human, ≥ 0.25 leaves a **note**, below is silent.
+Missing evidence never blocks: an unreachable registry is `unknown` and the install goes
+through. A package that passed is remembered for seven days (in the user state directory), so
+a repeated install costs no request; a denial or an ask is never remembered.
+
+Every MCP-capable agent can ask the same question through `dep_check`, and with
+[`forge hooks on`](#forge-hooks--the-guards-in-every-agent) the guard itself runs in Codex,
+Gemini CLI, Cursor and Copilot too. It fails **open** — the opposite of `protect-paths` —
+because an install must keep working offline. Not vetted, by design: paths, URLs and git
+sources; a name the shell must compute (`$PKG`); anything behind a private source — a flag
+(`--registry`, `--index-url`, `--git`, `--path`, `--source`), the environment
+(`NPM_CONFIG_REGISTRY`, `PIP_INDEX_URL`, `UV_INDEX_URL`, `GOPROXY`, `GOPRIVATE`,
+`PUB_HOSTED_URL`), a config file that chooses one (`.npmrc`, `.yarnrc.yml`, `bunfig.toml`, the
+index settings in `pyproject.toml`, `uv.toml` and `pip.conf`, `.cargo/config.toml`,
+`nuget.config`, `.gemrc`, `.bundle/config`, `composer.json` repositories, `~/.m2/settings.xml`),
+or a manifest that names its own index. For a private package that shares the public
+namespace, list it under `depgate.allow` in `.forge/forge.config.json` (`"@acme/*"`,
+`"acme-*"`, or an exact name). `FORGE_DEPGATE=0` switches the guard off.
+
+What leaves the machine: the package name (and a pinned version) goes to the package's own
+public registry. Only if that registry has it is the name also sent to deps.dev and OSV — a
+typo, an invention or a private name is told to nobody else. Advisories are asked for the
+version that is pinned; with no pin, only a malicious listing counts.
+
+It is pattern matching in front of the permission system, not a boundary: an install inside
+a script or a Makefile is not seen.
+
 ### `forge update` — self-update
 
 No more manual "am I on the latest?". `forge update --check` reports whether a newer
@@ -1822,6 +1888,8 @@ full rule: [substrate-v2 plan 05 §3](plans/substrate-v2/05-cost-model.md#3-acce
 | `forge cost`                     | Real per-day spend (via `ccusage`) + the cost ceiling; `--stages` for the measured report.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `forge budget`                   | Cost governance: `set --daily 10 --per-task 2 [--alert-at 0.8] [--hard\|--soft]` writes budgets to `.forge/forge.config.json`; `status` is the spend meter; the cost guard alerts at the threshold and, over budget, asks (soft, default) or blocks (`--hard`, opt-in circuit breaker); `clear` removes budgets.                                                                                                                                                                                                                                                                                                                                                                     |
 | `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `forge vet <pkg…>`               | Vet a package before it is added (dep-gate), in nine ecosystems (`ecosystem:name[@version]`): on its registry? listed malicious? how new and thin? `--cmd "<install command>"` vets a whole command line; `--json` prints the evidence. |
+| `forge hooks [on\|off\|status]`   | Run the guards by themselves in every agent: `on` writes project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (`--hosts a,b` narrows, `--bootstrap` installs forge at session start on a machine without it); `off` removes exactly what forge wrote; `run <host> <event>` is what the agents call. |
 | `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines (binary files get the credential-format grammars only, not the entropy leg). `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode.                                                                                                                                                                                                                                                                                                     |
 | `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1998,7 +2066,69 @@ snapshot counts via its mtime against the baseline because `.forge/` is gitignor
 gate can never loop (rows 1+4) and never brick a session (rows 3+12) — it costs at most
 one extra turn, exactly when that turn was owed.
 
-### Every other tool — a rule + MCP tools
+### `forge hooks` — the guards in every agent
+
+A skill or an MCP tool runs when the model decides to call it. A hook runs whatever the model
+decides. `forge init` wires the hooks into Claude Code on **one machine**; a teammate, a CI
+job, a cloud agent, or any other agent opening the repository got text in `AGENTS.md` and an
+MCP server it was free to ignore. `forge hooks on` writes the same wiring **into the
+repository**, in each agent's own hook format:
+
+```
+$ forge hooks on
+  written  Claude Code     .claude/settings.json
+  written  Codex           .codex/hooks.json
+  written  Gemini CLI      .gemini/settings.json
+  written  Cursor          .cursor/hooks.json
+  written  GitHub Copilot  .github/hooks/forge.json
+$ forge hooks            # which agents run the guards by themselves here
+$ forge hooks off        # remove forge's entries, leave everything else byte for byte
+```
+
+Every entry is one command, `forge hooks run <host> <event>`, and it does four things: turn
+the agent's payload into the shape every guard already reads, run the guard chain from
+`hooks/hooks.json` (the one list of what runs when), merge the answers (deny beats ask beats
+allow, context is concatenated), and answer in that agent's dialect. Everything agent-specific
+is a table in `src/hosts.js` — event names, tool names, field names, what each event can
+express — so a new agent is a row, and no guard changes.
+
+| Agent | File | Session start | Each prompt | Before a tool | After a tool | When it stops |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | `.claude/settings.json` | context | context | deny · ask · context | context | continue |
+| Codex | `.codex/hooks.json` | context | context | deny · context | context | continue |
+| Gemini CLI | `.gemini/settings.json` | context | context | deny | context | continue |
+| Cursor | `.cursor/hooks.json` | context | block only | deny · ask (shell) | context | continue |
+| GitHub Copilot (CLI and cloud agent) | `.github/hooks/forge.json` | context | — | deny · ask | context | continue |
+| Devin (CLI and desktop, formerly Windsurf) | reads `.claude/settings.json` | context | context | deny · context | context | continue |
+
+What an event cannot express degrades the safe way. An **ask** in an agent with no confirm
+step becomes a block that says so — never a silent pass. Context an event cannot carry is
+dropped. Codex and Copilot send a whole patch as one tool call; it is read for the files it
+touches, so `protect-paths` and dep-gate see each one (the first eight; the rest is reported).
+
+Three things keep it from getting in the way:
+
+- **A machine without forge is untouched.** Each command checks for the CLI first and exits 0
+  when it is absent, so a hook can never turn into a failed tool call. `--bootstrap` makes the
+  session-start hook install this exact forge version when it is missing — what makes a fresh
+  cloud or CI machine work with no setup. It is off by default: it runs `npm install -g`.
+- **Nothing runs twice.** Where forge is already wired at user level (the plugin, or
+  `forge init`), the project entry stands down. Inside an agent that reads Claude Code's file
+  *and* has its own (Cursor), Claude's file stands down for the agent's own. And when one event
+  still arrives by two files (Copilot CLI reads both), the first delivery claims it and the
+  second replays the same verdict — the guards run once, and a denial stays a denial.
+- **It is yours to turn off.** `forge hooks off` removes exactly the entries forge wrote
+  (ownership is the command text, so a hook you wrote is never touched), and `FORGE_HOOKS=0`
+  silences every project-level hook for one shell.
+
+Off by default, on purpose: a committed hook is code that runs in every teammate's agent, so it
+is the team's decision. Each agent also asks before it trusts a project hook — Codex wants the
+project trusted and each hook reviewed once with `/hooks`, Gemini CLI warns the first time,
+Copilot's cloud agent reads the file from the default branch only. `--hosts claude,codex`
+narrows it; otherwise it follows the tools the repository emits for, and `forge sync` keeps the
+files in step with the installed version.
+
+### Agents without hooks — a rule + MCP tools
 
 `forge init` writes a rule into each tool's native config (`AGENTS.md`, `.cursor/rules`,
 `GEMINI.md`, …) telling the agent to run the check itself:
@@ -2009,40 +2139,42 @@ one extra turn, exactly when that turn was owed.
 
 What each tool actually gets — config emission vs MCP registration vs automatic hooks vs
 blocking enforcement, with how each claim is backed — is in
-[docs/INTEGRATIONS.md](INTEGRATIONS.md). The short version: only Claude Code gets automatic
-hooks; every other tool gets native config (and most an MCP server entry) that the agent
-invokes itself.
+[docs/INTEGRATIONS.md](INTEGRATIONS.md). The short version: Claude Code gets automatic hooks
+from `forge init`; Codex, Gemini CLI, Cursor, Copilot and Devin get them from
+`forge hooks on`; every other tool gets native config (and most an MCP server entry) that the
+agent invokes itself.
 
-…and exposes the substrate as **21 MCP tools** any MCP-capable agent can call directly
+…and exposes the substrate as **22 MCP tools** any MCP-capable agent can call directly
 (the stdio server is launched with `forge cortex-mcp`, wired automatically via the
 emitted `.mcp.json`):
 
 <a id="mcp-tools"></a>
 
 <!-- forge:render:mcp-tools:begin (generated by `forge docs render` — do not edit) -->
-| MCP tool                | Does                                                                                                                                                                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cortex_lessons`        | Lessons Forge Cortex learned from past mistakes on THIS repo, for the given files/symbols.                                                                                                                                                                        |
-| `cortex_status`         | Summary of learned lessons on this repo (counts by state, top by confidence).                                                                                                                                                                                     |
-| `preflight_check`       | BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME.                                                                                                                                                     |
-| `route_task`            | Recommend the cheapest CAPABLE model for a task by code-task complexity (files, fan-out, churn, past mistakes, ambiguity).                                                                                                                                        |
-| `assumption_gate`       | Score specification completeness before work starts.                                                                                                                                                                                                              |
-| `predict_impact`        | Predict blast radius for a symbol or file using Forge atlas reverse-dependency traversal.                                                                                                                                                                         |
-| `substrate_check`       | Full Forge cognitive-substrate pre-action check: assumption gate, route, impact, scope, memory, minimality, and verification checklist.                                                                                                                           |
-| `scope_files`           | Decompose files into INDEPENDENT clusters (run as separate sessions) vs coupled, and surface coupled files you didn't name (the 'forgot the related module' guard).                                                                                               |
-| `forge_cost`            | Cost report — measured stage factors (gate, cache, route, context) from .forge/metrics.jsonl with multiplicative composition.                                                                                                                                     |
-| `forge_dash_data`       | Dashboard JSON payload — ledger stats, metrics, atlas info.                                                                                                                                                                                                       |
-| `forge_dash_summary`    | Lightweight dashboard health check — just counts (claims, tombstoned, contested, atlas built, metric events).                                                                                                                                                     |
-| `forge_brain`           | Project memory index — list all remembered facts stored in .forge/brain/.                                                                                                                                                                                         |
-| `forge_ledger_query`    | Query the proof-carrying memory ledger with a natural language query.                                                                                                                                                                                             |
-| `forge_diagnose`        | Doom-loop check — record a failure and check if the same signature has recurred (3x = escalation).                                                                                                                                                                |
-| `forge_doctor`          | Health check — verify installed tools, guards, MCP auth, config drift, and system state.                                                                                                                                                                          |
-| `forge_provider_status` | Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.                                                                                                                                                 |
-| `forge_remember`        | Store a durable fact in this repo's portable memory (.forge/brain/).                                                                                                                                                                                              |
-| `forge_ledger_ratify`   | Propose a ratification of a ledger claim as agent:mcp (never as the human) — mints a decision claim and does NOT change the claim's confidence.                                                                                                                   |
-| `collide_check`         | Parallel-session conflict radar — which recent teammate/agent sessions touched the files (or their import neighbors) you are about to edit, from the team-merged Forge ledger.                                                                                    |
-| `rank_code`             | Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph. |
-| `forge_ledger_retract`  | Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`.                                                                  |
+| MCP tool                | Does                                                                                                                                                                                                                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cortex_lessons`        | Lessons Forge Cortex learned from past mistakes on THIS repo, for the given files/symbols.                                                                                                                                                                                          |
+| `cortex_status`         | Summary of learned lessons on this repo (counts by state, top by confidence).                                                                                                                                                                                                       |
+| `preflight_check`       | BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME.                                                                                                                                                                       |
+| `route_task`            | Recommend the cheapest CAPABLE model for a task by code-task complexity (files, fan-out, churn, past mistakes, ambiguity).                                                                                                                                                          |
+| `assumption_gate`       | Score specification completeness before work starts.                                                                                                                                                                                                                                |
+| `predict_impact`        | Predict blast radius for a symbol or file using Forge atlas reverse-dependency traversal.                                                                                                                                                                                           |
+| `substrate_check`       | Full Forge cognitive-substrate pre-action check: assumption gate, route, impact, scope, memory, minimality, and verification checklist.                                                                                                                                             |
+| `scope_files`           | Decompose files into INDEPENDENT clusters (run as separate sessions) vs coupled, and surface coupled files you didn't name (the 'forgot the related module' guard).                                                                                                                 |
+| `forge_cost`            | Cost report — measured stage factors (gate, cache, route, context) from .forge/metrics.jsonl with multiplicative composition.                                                                                                                                                       |
+| `forge_dash_data`       | Dashboard JSON payload — ledger stats, metrics, atlas info.                                                                                                                                                                                                                         |
+| `forge_dash_summary`    | Lightweight dashboard health check — just counts (claims, tombstoned, contested, atlas built, metric events).                                                                                                                                                                       |
+| `forge_brain`           | Project memory index — list all remembered facts stored in .forge/brain/.                                                                                                                                                                                                           |
+| `forge_ledger_query`    | Query the proof-carrying memory ledger with a natural language query.                                                                                                                                                                                                               |
+| `forge_diagnose`        | Doom-loop check — record a failure and check if the same signature has recurred (3x = escalation).                                                                                                                                                                                  |
+| `forge_doctor`          | Health check — verify installed tools, guards, MCP auth, config drift, and system state.                                                                                                                                                                                            |
+| `forge_provider_status` | Provider detection — which API provider is active (auto-detected or configured), env vars set, and health checks.                                                                                                                                                                   |
+| `forge_remember`        | Store a durable fact in this repo's portable memory (.forge/brain/).                                                                                                                                                                                                                |
+| `forge_ledger_ratify`   | Propose a ratification of a ledger claim as agent:mcp (never as the human) — mints a decision claim and does NOT change the claim's confidence.                                                                                                                                     |
+| `collide_check`         | Parallel-session conflict radar — which recent teammate/agent sessions touched the files (or their import neighbors) you are about to edit, from the team-merged Forge ledger.                                                                                                      |
+| `rank_code`             | Which code is load-bearing and dangerous to touch — PageRank centrality over the Forge atlas graph joined with past-incident history from the evidence ledger, plus circular-dependency clusters and chokepoint files whose removal disconnects the import graph.                   |
+| `dep_check`             | Vet a package BEFORE installing it or adding it to a manifest (dep-gate): is the name on its own registry (a missing one is a hallucinated dependency — do not install), does OSV list it as malicious, how new and thin is it, and are there known advisories on a pinned version. |
+| `forge_ledger_retract`  | Propose retracting one ledger claim, named by its full 64-char id, as agent:mcp — the claim stays live with unchanged confidence until a human runs `forge ledger retract <full id> --reason …`.                                                                                    |
 <!-- forge:render:mcp-tools:end -->
 
 Forge never pretends it can force a hook into a tool that has none — **ambient on Claude
@@ -2277,6 +2409,8 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_ROOT`                                                   | repo root override for the MCP server                                                                                                                                                                                                   |
 | `FORGE_AUTHOR`                                                 | identity stamped on ledger provenance (defaults to git identity)                                                                                                                                                                        |
 | `FORGE_COST_CEILING`                                           | daily spend (USD) the cost-budget guard warns at (default 10)                                                                                                                                                                           |
+| `FORGE_DEPGATE`                                                | `0` switches off the dep-gate guard (install commands and manifest edits are no longer vetted against their registries); `forge vet` still answers |
+| `FORGE_HOOKS`                                                  | `0` silences every project-level hook written by `forge hooks on` (`forge hooks run` answers nothing); the user-level Claude Code wiring from `forge init` is not affected |
 | `FORGE_GUARD_STRICT`                                           | `1` escalates secret-redaction failure to exit 2, surfacing the `DEGRADED` warning to Claude as hook feedback. Note: PostToolUse fires after the tool ran, so this is visibility, not blocking — blocking lives in the PreToolUse guard |
 | `FORGE_LOOP_THRESHOLD`                                         | identical tool calls before the doom-loop guard speaks (default 4)                                                                                                                                                                      |
 | `FORGE_LEAN_THRESHOLD`                                         | lines-per-task-word ratio the lean guard nudges at                                                                                                                                                                                      |

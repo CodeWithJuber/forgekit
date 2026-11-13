@@ -35,6 +35,31 @@ prompt-injection / RCE / exfil before install, and its guards block secret-file
 writes and redact secrets from tool output. These reduce, but do not eliminate,
 supply-chain risk — always review a third-party skill/plugin before installing it.
 
+The `dep-gate` guard (`forge vet`) vets a package before it is added — by an install command,
+by an edit to a manifest, or by an install that reads one: a name that is not on its own
+registry, or that OSV lists as malicious, is blocked (on Go, Maven and NuGet, where a company
+proxy is a normal second source, a miss asks instead). It is pattern matching over the command
+line and the manifest, not a sandbox — an install inside a script or a Makefile is not seen —
+and it fails open, so an unreachable registry never blocks an install. **What leaves your
+machine:** the package name (and a pinned version) goes to the package's own public registry
+(npm, PyPI, crates.io, the Go module proxy, Maven Central, nuget.org, rubygems.org, Packagist,
+pub.dev); only if that registry has the package is it also sent to deps.dev and OSV. A name the
+registry does not have is told to nobody else, and nothing is sent at all when a private
+source is configured (flags, environment, or the registry settings of npm, yarn, bun, pip, uv,
+poetry, cargo, NuGet, Bundler, Composer, Maven and Go) or with `FORGE_DEPGATE=0`. A clean
+verdict is cached for seven days in the user state directory; nothing else is stored.
+
+`forge hooks on` writes hook entries into the repository (`.claude/settings.json`,
+`.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`,
+`.github/hooks/forge.json`). **A committed hook is code that runs in every teammate's agent**,
+which is why it is off until you turn it on and why each agent asks before trusting a project
+hook. Every entry is the single command `forge hooks run <host> <event>`, guarded so that a
+machine without forge runs nothing. With `--bootstrap`, the session-start entry also runs
+`npm install -g` of this exact forge version (the name and version from `package.json`, never
+the brand name) when the CLI is missing; leave it off if a hook installing a package is not
+acceptable in your environment. `forge hooks off` removes exactly the entries forge wrote, and
+`FORGE_HOOKS=0` silences them for one shell.
+
 ## Threat model (what's in and out of scope)
 
 **In scope:** the forgekit CLI and its emitters/guards; the `skill-gate` scanner

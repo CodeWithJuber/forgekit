@@ -75,8 +75,9 @@ forge substrate "Change verifyToken in src/auth.js to require length > 20; updat
 
 <Note>
   On Claude Code the substrate runs on **every prompt automatically** via a
-  `UserPromptSubmit` hook — advisory only, silent on clean tasks. Every other tool gets
-  a native config rule plus 21 MCP tools it can call itself.
+  `UserPromptSubmit` hook — advisory only, silent on clean tasks. `forge hooks on` wires the
+  same hooks into the repository for Codex, Gemini CLI, Cursor and Copilot; every other tool
+  gets a native config rule plus 22 MCP tools it can call itself.
 </Note>
 
 If `forge substrate` says `ASK FIRST`, ask the returned questions before editing. Read

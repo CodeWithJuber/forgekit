@@ -190,6 +190,20 @@ async function callTool(name, args = {}) {
     const { rankReport } = await import("./rank.js");
     return JSON.stringify(rankReport(root, { top: Number(args.top ?? 15) || 15 }), null, 2);
   }
+  if (name === "dep_check") {
+    const { depgateDecision, parseVetArg, vetPackages } = await import("./depgate.js");
+    if (typeof args.command === "string" && args.command.trim()) {
+      // An explicit question always gets an answer, even with the guard switched off.
+      const env = { ...process.env, FORGE_DEPGATE: "1" };
+      const d = await depgateDecision({ command: args.command, cwd: root, env, cache: null });
+      return JSON.stringify(d, null, 2);
+    }
+    const asked = Array.isArray(args.packages) ? args.packages.map(String) : [];
+    const specs = asked.map(parseVetArg);
+    const results = await vetPackages(specs.filter((s) => s !== null));
+    const notPackages = asked.filter((_, i) => !specs[i]);
+    return JSON.stringify({ results, notPackages }, null, 2);
+  }
   // The two agent-callable ledger WRITES act as the agent, never as the human: both are
   // stamped `agent:mcp` (not gitAuthor()), neither changes any claim's confidence, and
   // neither is final — a human ratifies or retracts with `forge ledger ratify|retract`.

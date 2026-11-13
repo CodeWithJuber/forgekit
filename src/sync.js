@@ -15,6 +15,7 @@ import continueTool from "./emit/continue.js";
 import copilot from "./emit/copilot.js";
 import cursor from "./emit/cursor.js";
 import gemini from "./emit/gemini.js";
+import { emitProjectHooks } from "./emit/hooks.js";
 import kimi from "./emit/kimi.js";
 import { emitMcp } from "./emit/mcp.js";
 import openclaw from "./emit/openclaw.js";
@@ -383,6 +384,14 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
         note: err.message,
       });
     }
+  }
+
+  // Project-level hooks — only for a repository that turned them on (`forge hooks on`); then
+  // every sync keeps each agent's hook file in step with this forge version.
+  try {
+    for (const row of emitProjectHooks({ targetRoot, config: cfg, emits })) report.push(row);
+  } catch (err) {
+    report.push({ tool: "hooks", target: "-", action: "error", note: err.message });
   }
 
   // MCP servers — emit the FULL managed set (registry ∪ recorded integrations) into each

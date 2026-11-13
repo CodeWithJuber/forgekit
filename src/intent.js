@@ -48,6 +48,10 @@ export const INTENT_EXEMPLARS = [
   { text: "naya dashboard banao", intent: "feature" },
   { text: "ek search feature banao", intent: "feature" },
   { text: "profile page bana do", intent: "feature" },
+  { text: "integrate stripe payments into checkout", intent: "feature" },
+  { text: "add a library for pdf export", intent: "feature" },
+  { text: "install and set up redis caching", intent: "feature" },
+  { text: "yeh library use karke upload feature banao", intent: "feature" },
   // refactor — behavior-preserving, tests first, sweep every old name
   { text: "clean up the api module", intent: "refactor" },
   { text: "refactor the payment service into smaller functions", intent: "refactor" },
@@ -142,10 +146,11 @@ export const PROTOCOL_CARDS = {
   feature: [
     `## Feature protocol (${BRAND.brand})`,
     `1. \`${BRAND.cli} preflight "<task>"\` — answer its questions or record the assumptions.`,
-    `2. State acceptance criteria up front (\`${BRAND.cli} handoff --criteria "…"\`).`,
-    `3. \`${BRAND.cli} impact\` / \`${BRAND.cli} scope\` before building — know the full artifact list.`,
-    "4. Docs, tests, and configs move IN THE SAME PASS as the code, not later.",
-    `5. \`${BRAND.cli} verify\` before claiming done.`,
+    `2. Look before you build: \`${BRAND.cli} reuse query "<what>"\`, then this repo, then a maintained library — and \`${BRAND.cli} vet <ecosystem:name>\` before any new dependency.`,
+    `3. State acceptance criteria up front (\`${BRAND.cli} handoff --criteria "…"\`).`,
+    `4. \`${BRAND.cli} impact\` / \`${BRAND.cli} scope\` before building — know the full artifact list.`,
+    "5. Docs, tests, and configs move IN THE SAME PASS as the code, not later.",
+    `6. \`${BRAND.cli} verify\` before claiming done.`,
   ].join("\n"),
   refactor: [
     `## Refactor protocol (${BRAND.brand})`,

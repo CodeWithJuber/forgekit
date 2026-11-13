@@ -93,6 +93,21 @@
         ]
       },
       {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "--event",
+              "PreToolUse",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/dep-gate.sh"
+            ]
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {

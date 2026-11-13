@@ -183,6 +183,21 @@
         ]
       },
       {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
+              "~/.forge/guards/dep-gate.sh"
+            ]
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {

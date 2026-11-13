@@ -17,6 +17,13 @@ Training data is stale and biased toward what was popular at cutoff. For any
 3. **GitHub health** (via `gh` or GitHub MCP) — for each finalist check:
    last commit date, release cadence, open-vs-closed issue ratio, maintainer
    count, and license. A popular-but-abandoned repo is a trap.
+4. **The exact package name (`forge vet`)** — before the install command, run
+   `forge vet <ecosystem>:<name>` (npm, pypi, cargo, go, maven, nuget, gem, composer, pub): is that name on its
+   registry, is it listed malicious, how new and thin is it. A name recalled from
+   memory can be an invention, and an invented name is how slopsquatting lands. On
+   The dep-gate guard checks every install command and manifest edit wherever forge's
+   hooks run (Claude Code, and any agent wired by `forge hooks on`); elsewhere ask
+   `dep_check` over MCP.
 
 ## Decision rubric (fit first, not stars)
 Score finalists on: **fit** to the actual use case > **maintenance** (active,
