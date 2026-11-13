@@ -59,6 +59,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   depends on the model choosing to open the `reuse-first` skill. Requests to bring in a library
   ("integrate …", "add a library for …") classify as feature work.
 
+- **Biome 2.6.3 (dev dependency, from 2.5.15).** The config schema is migrated, and Markdown
+  stays out of the formatter: 2.6 is the first release to format Markdown, and on
+  `bench/universal-router/README.md` it deleted a space inside a table cell ("Cost per task
+  [95% CI]"), which changes the text, not its layout. `clamp01` (`src/util.js`) uses
+  `Math.min` for the new `complexity/useMathMinMax` rule and still returns 0 for NaN.
+
 ## [1.14.1] - 2026-11-03
 
 ### Fixed

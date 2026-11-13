@@ -34,7 +34,7 @@ export const slug = (s) => {
  *  straight through, and one NaN poisons every score it touches. */
 export const clamp01 = (x) => {
   const n = Number(x);
-  return n > 0 ? (n < 1 ? n : 1) : 0;
+  return n > 0 ? Math.min(n, 1) : 0;
 };
 
 // Normalize a path to POSIX separators. Node's path.relative()/join() emit `\` on Windows,
