@@ -161,11 +161,18 @@ jobs:
           else
             echo "::notice::Release PR for v$VERSION is already open — branch updated."
           fi
-          # Close superseded release PRs (a breaking change after a pending minor, etc.).
-          for pr in $(gh pr list --base master --state open --json number,headRefName \
-              --jq --arg b "$BRANCH" '.[] | select(.headRefName | startswith("release/v")) | select(.headRefName != $b) | .number'); do
-            gh pr close "$pr" --comment "Superseded by the newer release PR for \`$BRANCH\`."
-          done
+          # Close superseded release PRs (a feat after a pending patch, a breaking change after
+          # a pending minor). One left open keeps the old CHANGELOG rotation and conflicts with
+          # master as soon as anything else lands. `gh --jq` has no `--arg`, so the branch is
+          # compared in the shell; and the list is captured by an assignment, which `set -e`
+          # checks, not inside `for … in $(…)`, where a failing gh just means zero iterations.
+          OPEN_RELEASES="$(gh pr list --base master --state open --limit 100 --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release/v")) | "\(.number) \(.headRefName)"')"
+          while read -r pr ref; do
+            if [ -n "$pr" ] && [ "$ref" != "$BRANCH" ]; then
+              gh pr close "$pr" --comment "Superseded by the newer release PR for \`$BRANCH\`."
+            fi
+          done <<< "$OPEN_RELEASES"
 
   # Phase 2: this push merged a release PR — tag the merge commit and cut the release.
   finalize:
