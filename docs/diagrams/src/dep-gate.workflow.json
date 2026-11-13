@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "dep-gate: a package is vetted before it is added",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "agent-lane", "label": "Agent" },
+    { "id": "gate-lane", "label": "dep-gate" },
+    { "id": "sources-lane", "label": "First-hand sources" },
+    { "id": "verdict-lane", "label": "Verdict", "variant": "exception" }
+  ],
+  "mainPath": ["action", "parse", "registry", "evidence", "score", "allow"],
+  "semanticChecks": {
+    "allowedRoots": ["action"],
+    "allowedTerminals": ["pass", "block", "ask", "allow"],
+    "requiredEdges": [
+      { "from": "parse", "to": "pass" },
+      { "from": "registry", "to": "block" },
+      { "from": "registry", "to": "ask" },
+      { "from": "evidence", "to": "block" },
+      { "from": "score", "to": "ask" }
+    ]
+  },
+  "nodes": [
+    { "id": "action", "lane": "agent-lane", "col": 0, "type": "frontend", "label": "Install or manifest edit", "sublabel": "Bash · Edit · Write · MultiEdit", "width": 190 },
+    { "id": "parse", "lane": "gate-lane", "col": 1, "type": "backend", "label": "Find the new packages", "sublabel": "nine ecosystems", "width": 190 },
+    { "id": "pass", "lane": "verdict-lane", "col": 1, "type": "external", "label": "Pass untouched", "sublabel": "private source · allow-list", "width": 190 },
+    { "id": "registry", "lane": "sources-lane", "col": 2, "type": "cloud", "label": "Its own registry", "sublabel": "does the name exist?", "width": 190 },
+    { "id": "evidence", "lane": "sources-lane", "col": 3, "type": "cloud", "label": "deps.dev + OSV", "sublabel": "age · versions · advisories", "width": 190 },
+    { "id": "block", "lane": "verdict-lane", "col": 3, "type": "security", "label": "Block", "sublabel": "invented or malicious", "width": 190 },
+    { "id": "score", "lane": "gate-lane", "col": 4, "type": "backend", "label": "Risk score", "sublabel": "1 − ∏(1 − wₖ·sₖ)", "width": 190 },
+    { "id": "ask", "lane": "verdict-lane", "col": 4, "type": "security", "label": "Ask the human", "width": 190 },
+    { "id": "allow", "lane": "agent-lane", "col": 5, "type": "backend", "label": "Allow", "sublabel": "clean result kept 7 days", "width": 190 }
+  ],
+  "edges": [
+    { "id": "action-parse", "from": "action", "to": "parse" },
+    { "id": "parse-pass", "from": "parse", "to": "pass", "label": "nothing to check publicly", "role": "branch" },
+    { "id": "parse-registry", "from": "parse", "to": "registry", "label": "name only" },
+    { "id": "registry-evidence", "from": "registry", "to": "evidence", "label": "found", "variant": "emphasis" },
+    { "id": "registry-block", "from": "registry", "to": "block", "label": "missing", "role": "error" },
+    { "id": "registry-ask", "from": "registry", "to": "ask", "label": "missing on Go, Maven, NuGet", "role": "branch" },
+    { "id": "evidence-block", "from": "evidence", "to": "block", "label": "OSV malicious", "role": "error" },
+    { "id": "evidence-score", "from": "evidence", "to": "score" },
+    { "id": "score-ask", "from": "score", "to": "ask", "label": "≥ 0.5", "role": "branch" },
+    { "id": "score-allow", "from": "score", "to": "allow", "label": "< 0.5 · note ≥ 0.25", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "Fails open", "items": ["An unreachable registry, a timeout or an unparseable call lets the action through"] },
+    { "dot": "cyan", "title": "What leaves the machine", "items": ["The name goes to its own registry first", "deps.dev and OSV see it only if that registry has it"] },
+    { "dot": "emerald", "title": "One rule set", "items": ["PreToolUse guard · forge vet · dep_check MCP tool"] }
+  ]
+}

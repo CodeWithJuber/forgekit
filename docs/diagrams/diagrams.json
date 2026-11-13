@@ -197,6 +197,21 @@
         "artifactBytes": 804443,
         "checks": "9/9 showcase"
       }
+    },
+    {
+      "id": "dep-gate",
+      "type": "workflow",
+      "usedIn": [
+        "docs/GUIDE.md",
+        "mintlify/guides/radar-deps.mdx"
+      ],
+      "title": "dep-gate: a package is vetted before it is added",
+      "receipt": {
+        "specSha256": "a73ba56e77a8351e7a817eefc3eb5d3a75b9abfa717abc7796d81f8a280ce665",
+        "artifactSha256": "94fe2f55f0b06545c85945b1e36eadb66907ff42b0ba8553b4547d2b706c1a4a",
+        "artifactBytes": 810774,
+        "checks": "9/9 showcase"
+      }
     }
   ]
 }

@@ -1089,6 +1089,8 @@ each table of `src/depgate.js` and `src/depgate_sources.js`, never a new code pa
 | An edit to a manifest | what the edit **adds** (declared after − declared before) to `package.json`, `requirements*.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json`, `pubspec.yaml`, `pom.xml`, Gradle build files and version catalogs, `*.csproj`, `Directory.Packages.props`, `packages.config` — an exact pin moved to another release counts as new |
 | An install that reads a manifest | `npm install` / `npm ci` / `yarn` with no names (what `package.json` declares and `node_modules` lacks), `pip install -r file` (following the files it includes) |
 
+[![dep-gate: an install command or manifest edit names new packages; anything behind a private source or on the allow-list passes untouched; each other name goes first to its own registry, and a name the registry lacks is blocked (asked about on Go, Maven and NuGet); a name the registry has is checked against deps.dev and OSV, an OSV malicious listing is blocked, and the rest is scored — 0.5 or more asks the human, 0.25 or more leaves a note, and a clean result is remembered for seven days](diagrams/dep-gate.svg)](https://jubershaikh.com/forgekit/diagrams/dep-gate.html)
+
 Only two findings **deny**, both first-hand: the name is not on its own registry, or OSV lists
 it as malicious (a `MAL-` advisory). Where the public registry is not the only place a name can
 legitimately live — Go modules, Maven and NuGet are routinely served from a company proxy — a

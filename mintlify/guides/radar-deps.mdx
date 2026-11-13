@@ -38,6 +38,26 @@ Because detection is data-driven and fail-safe across ecosystems (`package.json`
 `build.gradle`, `*.csproj`), radar can reason about currency for the same set of manifests
 `stack` understands.
 
+## Before a dependency is added: dep-gate
+
+Radar judges the dependencies a repo already has. The dep-gate guard asks the earlier
+question, when an agent is about to add one: is the name on its own registry, and is it what
+the agent thinks it is? An invented package name is the slopsquatting attack surface. The
+guard reads install commands and manifest edits in nine ecosystems, blocks only a name its
+registry lacks or one OSV lists as malicious, and fails open when a registry cannot be
+reached.
+
+<Frame>
+  <img src="/images/diagrams/dep-gate.svg" alt="dep-gate: an install command or manifest edit names new packages; anything behind a private source or on the allow-list passes untouched; each other name goes first to its own registry, and a name the registry lacks is blocked (asked about on Go, Maven and NuGet); a name the registry has is checked against deps.dev and OSV, an OSV malicious listing is blocked, and the rest is scored — 0.5 or more asks the human, 0.25 or more leaves a note, and a clean result is remembered for seven days" />
+</Frame>
+
+[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/dep-gate.html): pan, zoom, search, and trace any node.
+
+```bash
+forge vet npm:left-pad pypi:requests==2.19.0      # the same check, by hand
+forge vet --cmd "npm install some-new-package"   # the guard's view of a command line
+```
+
 ## Using it in the loop
 
 <Steps>
