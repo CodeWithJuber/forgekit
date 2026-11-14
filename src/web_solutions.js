@@ -20,16 +20,17 @@ const cooldowns = new Map();
 const MAX_BYTES = 512 * 1024;
 
 function safeText(value, size) {
-  return typeof value === "string"
-    ? redactSecrets(
-        value
-          .slice(0, 2048)
-          .replace(/<[^<>]*>/g, "")
-          .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
-          .replace(/\s+/g, " ")
-          .trim(),
-      ).slice(0, size)
-    : "";
+  if (typeof value !== "string") return "";
+  // Providers wrap highlighted terms in simple emphasis elements. Decode only those
+  // delimiters; unknown or incomplete HTML is not trustworthy display text.
+  const pieces = value.slice(0, 2048).split(/<\/?(?:b|em|strong)>/gi);
+  if (pieces.some((piece) => /[<>]/.test(piece))) return "";
+  const text = pieces
+    .join("")
+    .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return redactSecrets(text).slice(0, size);
 }
 function link(value) {
   if (typeof value !== "string" || value.length > 1200 || /[\p{Cc}\p{Cf}]/u.test(value))

@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -51,7 +52,7 @@ test("only approved, matched IDs enqueue, private queries never reach disk or wo
   assert.equal(enqueue(root()).job, null);
   const job = enqueue(r);
   assert.deepEqual(job.job, { id: "context7", state: "queued" });
-  assert.deepEqual(job.args.slice(0, 3), [r, "context7", 1]);
+  assert.deepEqual(job.args.slice(0, 3), [realpathSync(r), "context7", 1]);
   assert.equal(enqueue(r).job, null);
   const jobs = autoStatus(r).jobs;
   assert.ok(!JSON.stringify(jobs).includes("client-7421"));
@@ -83,7 +84,7 @@ test("a pinned checkout without its private package is restored once; installati
   let installs = 0;
   const install = async (root, id, opts) => {
     installs++;
-    assert.equal(root, r);
+    assert.equal(root, realpathSync(r));
     assert.equal(id, "context7");
     assert.equal(opts.version, "3.2.2");
     assert.equal(opts.canRegister(), true);

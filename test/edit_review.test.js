@@ -68,6 +68,23 @@ test("edit reviews skip a failed, oversize, protected or external file", (t) => 
   }
 });
 
+test("absolute file paths can use the workspace root alias while nested symlinks stay excluded", {
+  skip: process.platform === "win32",
+}, (t) => {
+  const temp = mkdtempSync(join(tmpdir(), "review-root-alias-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const root = join(temp, "work");
+  const alias = join(temp, "editor-work");
+  mkdirSync(root);
+  symlinkSync(root, alias, "dir");
+  writeFileSync(join(root, "config.json"), "{}");
+  symlinkSync(join(root, "config.json"), join(root, "linked.json"));
+  const run = (name) =>
+    editReview(root, { tool_name: "Write", tool_input: { file_path: join(alias, name) } });
+  assert.match(run("config.json"), /JSON parsed/);
+  assert.equal(run("linked.json"), "");
+});
+
 test("a failed patch does not review or record per-file edits that never happened", () => {
   const result = normalize("codex", "PostToolUse", {
     cwd: process.cwd(),

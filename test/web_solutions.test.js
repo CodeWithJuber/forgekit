@@ -109,3 +109,18 @@ test("rate-limited searches issue no retry and honor provider retry-after", asyn
   assert.equal(next.checkedAt, null);
   assert.match(next.warnings[0], /rate limit/);
 });
+
+test("nested and incomplete markup in search snippets is discarded", async () => {
+  const r = await searchWebSolutions("rust parser", {
+    env: serper,
+    fetchImpl: async () =>
+      Response.json({
+        organic: [
+          { title: "Docs", link: "https://example.org/docs", snippet: "<sc<b>ri</b>pt>" },
+          { title: "API", link: "https://example.org/api", snippet: "before <script" },
+        ],
+      }),
+  });
+  assert.equal(r.results.length, 2);
+  assert.ok(r.results.every((row) => !row.snippet));
+});

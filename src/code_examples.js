@@ -267,7 +267,9 @@ async function stack(rows, query, get, signal) {
         a.body.matchAll(/<pre>\s*<code(?:\s[^>]*)?>([\s\S]*?)<\/code>\s*<\/pre>/gi),
         (m) => ({
           line: 1,
-          code: decode(m[1].replace(/<[^>]*>/g, "")).replace(/\r\n/g, "\n"),
+          // SO encodes source operators as entities. Skip blocks containing raw HTML:
+          // stripping arbitrary nested markup can join tokens and invent code.
+          code: /[<>]/.test(m[1]) ? "" : decode(m[1]).replace(/\r\n/g, "\n"),
           context: "",
         }),
       );

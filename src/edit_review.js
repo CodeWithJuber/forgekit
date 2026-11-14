@@ -41,6 +41,24 @@ function nearbyTests(root, file) {
     .slice(0, 2);
 }
 
+// The shell and editor can spell the workspace root differently (macOS /var and
+// /private/var). Resolve the root alias only. readWorkspaceText still rejects
+// symlinks anywhere in the relative file path.
+function relativeEditPath(base, file) {
+  if (file.length > 4096) return "";
+  const full = resolve(base, file);
+  const direct = relative(base, full);
+  if (!isAbsolute(direct) && direct !== ".." && !direct.startsWith(`..${sep}`)) return direct;
+  for (let parent = dirname(full); parent !== dirname(parent); parent = dirname(parent)) {
+    try {
+      if (realpathSync(parent) === base) return relative(parent, full);
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 /** Check a bounded snapshot of the current file, within a fixed per-file budget.
  * A parser exit is syntax evidence only. The project may use a different compiler.
  * @param {string} root @param {any} hook */
@@ -52,7 +70,7 @@ export function editReview(root, hook) {
   } catch {
     return "";
   }
-  const rel = relative(base, resolve(base, hook.tool_input.file_path));
+  const rel = relativeEditPath(base, hook.tool_input.file_path);
   if (
     !rel ||
     isAbsolute(rel) ||

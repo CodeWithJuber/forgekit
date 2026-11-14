@@ -44,10 +44,12 @@ function limit(value, fallback, ceiling) {
 // An empty index makes even an accidentally tracked, ignored credential file ineligible.
 // Standalone folders get a disposable empty Git directory, leaving the source untouched.
 function listFiles(root, only = null, timeout = 8000) {
+  // Use the OS-native resolver consistently. On Windows the legacy sync resolver
+  // can keep an 8.3 alias (RUNNER~1) which the async/native resolver expands.
   const state = resolve(userStateDir());
   let privateDir = state;
   try {
-    privateDir = realpathSync(state);
+    privateDir = realpathSync.native(state);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -353,7 +355,7 @@ export function eligibleLocalRows(source, rows) {
   const eligible = new Set();
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > 64) return eligible;
   try {
-    const root = realpathSync(source.root);
+    const root = realpathSync.native(source.root);
     const files = new Map(
       rows
         .filter((r) => typeof r?.path === "string" && safePath(r.path) && r.fileVersion)
@@ -365,10 +367,10 @@ export function eligibleLocalRows(source, rows) {
       const path = resolve(root, rel);
       let fd;
       try {
-        if (realpathSync(path) !== path) continue;
+        if (realpathSync.native(path) !== path) continue;
         fd = openSync(path, READ_FLAGS);
         const stat = fstatSync(fd);
-        if (stat.isFile() && version(stat) === files.get(rel) && realpathSync(path) === path)
+        if (stat.isFile() && version(stat) === files.get(rel) && realpathSync.native(path) === path)
           eligible.add(rel);
       } catch {
         // Files can disappear, become inaccessible, be replaced, or move during search.

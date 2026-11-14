@@ -86,7 +86,10 @@ test("fetches pinned GitHub usage code and attributed accepted answer, with auth
   assert.equal(out.results[1].snippet.trim(), "if (n < retries) retry();");
   assert.equal(out.results[1].license, "CC BY-SA 3.0");
   assert.equal(new URL(out.manualGoogleUrl).hostname, "www.google.com");
-  assert.ok(calls.every((url) => !url.includes("google.com")));
+  assert.deepEqual(
+    new Set(calls.map((url) => new URL(url).hostname)),
+    new Set(["api.github.com", "api.stackexchange.com"]),
+  );
 });
 test("missing source license returns links only, ignoring unverified discovery licenses", async () => {
   const out = await findCodeExamples("retry", {
@@ -127,7 +130,7 @@ test("one provider can still return a candidate when another fails", async () =>
   const out = await findCodeExamples("retry", {
     repositories: [so, repo],
     fetchImpl: async (url, opts) =>
-      String(url).includes("api.github.com")
+      new URL(String(url)).hostname === "api.github.com"
         ? new Response(null, { status: 429 })
         : live(url, opts),
   });
@@ -152,4 +155,24 @@ test("reStructuredText examples preserve pinned file line numbers and indentatio
   });
   assert.equal(out.results[0].line, 6);
   assert.match(out.results[0].snippet, /^ {3}from retries import retry\n {3}retry\(task\)/);
+});
+
+test("raw nested markup inside an answer never becomes a source excerpt", async () => {
+  const out = await findCodeExamples("retry", {
+    repositories: [so],
+    fetchImpl: async () =>
+      Response.json({
+        items: [
+          {
+            answer_id: 42,
+            is_accepted: true,
+            content_license: "CC BY-SA 4.0",
+            owner: { display_name: "Author" },
+            body: "<pre><code>&lt;s<b>cr</b>ipt&gt; retry();</code></pre>",
+          },
+        ],
+      }),
+  });
+  assert.equal(out.results.length, 1);
+  assert.equal(out.results[0].snippet, null);
 });

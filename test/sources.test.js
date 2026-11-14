@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -104,7 +105,7 @@ test("subdirectories use the same repository config while nested worktrees remai
   execFileSync("git", ["init", "-q"], { cwd: root });
   const sub = join(root, "pkg", "nested");
   mkdirSync(sub, { recursive: true });
-  assert.equal(sourceWorkspaceRoot(sub), root);
+  assert.equal(sourceWorkspaceRoot(sub), realpathSync(root));
   assert.equal(sourcesStatus(sub).configPath, sourcesStatus(root).configPath);
   execFileSync("git", ["init", "-q"], { cwd: sub });
   assert.notEqual(sourcesStatus(sub).configPath, sourcesStatus(root).configPath);
