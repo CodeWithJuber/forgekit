@@ -63,15 +63,12 @@ the code, or if a marker no longer names exactly one line.
 
 `.github/workflows/docs-autoupdate.yml` checks generated documentation after every push to `master`. It can also be started manually.
 
-1. `forge docs render` regenerates the machine-owned doc surfaces and the diagram facts.
-2. `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source or SVG
-   no longer matches its receipt (nothing is fetched when none has changed).
-3. If anything changed, the result is force-pushed to the `docs/auto-update` branch and one
-   PR is opened or updated. Its body lists the prose that `forge docs impact` says
-   mentions what the merge changed: prose is never regenerated, only flagged. When nothing
-   needs changing, a leftover PR is closed.
+1. `forge docs render` regenerates managed Markdown sections and the code-derived labels in diagram sources.
+2. `node scripts/diagrams.mjs build --stale` renders figures with changed sources or SVGs. The workflow synchronizes and checks the Mintlify copies. The media renderer also checks the recorded inputs and outputs of CLI demo GIFs, README artwork, social cards and dashboard screenshots.
+3. The **Docs auto-update** run summary identifies affected handwritten guides and line numbers for review, even when there is nothing to regenerate.
+4. When generated files change, the workflow opens or updates one `docs/auto-update` PR and requests GitHub auto-merge for the verified commit. The repository must allow auto-merge and its required approvals and checks must pass. If auto-merge is unavailable, the proposal stays open. When generated output already matches the default branch, the workflow closes any stale proposal.
 
-A maintainer can select **Approve workflows to run** on the latest automation PR commit when GitHub requests review. Wait for checks on that commit before merging. The workflow manages the contents of `docs/auto-update`. [GitHub token event behavior](https://docs.github.com/en/actions/concepts/security/github_token)
+Look for **Approve workflows to run** if GitHub requests approval for checks on a bot-created PR. Administrators can configure the optional `FORGE_DOCS_TOKEN` for publication. The render steps use no publication credential. [Workflow](../../.github/workflows/docs-autoupdate.yml) · [Media inputs and regeneration](../assets/README.md) · [GitHub token event behavior](https://docs.github.com/en/actions/concepts/security/github_token)
 
 ## Embedding
 

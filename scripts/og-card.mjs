@@ -13,7 +13,7 @@
  *   node scripts/og-card.mjs --check    # measure only, write nothing
  *
  * Environment: ARCHIFY_CHROME (Chrome/Chromium), FORGE_ARCHIFY_DIR (see scripts/diagrams.mjs).
- * Needs network once for the Inter and JetBrains Mono web fonts (Google Fonts, OFL).
+ * Fonts are embedded from the same pinned DejaVu distribution as the CLI captures.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -49,10 +49,21 @@ async function main(argv) {
   const svg = readFileSync(path.join(assets, "og.svg"), "utf8");
   const work = mkdtempSync(path.join(tmpdir(), "forge-og-"));
   const page = path.join(work, "og.html");
+  const fonts = process.env.FORGE_DEMO_FONTS || "/usr/share/fonts/truetype/dejavu";
+  const css = [
+    ["Forge Sans", "400", "DejaVuSans.ttf"],
+    ["Forge Sans", "700 800", "DejaVuSans-Bold.ttf"],
+    ["Forge Mono", "600", "DejaVuSansMono-Bold.ttf"],
+  ]
+    .map(([family, weight, filename]) => {
+      const bytes = readFileSync(path.join(fonts, filename)).toString("base64");
+      return `@font-face{font-family:"${family}";font-weight:${weight};src:url(data:font/ttf;base64,${bytes}) format("truetype")}`;
+    })
+    .join("\n");
   writeFileSync(
     page,
     `<!doctype html><html><head><meta charset="utf-8"><base href="${pathToFileURL(`${assets}/`).href}">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&family=JetBrains+Mono:wght@600&display=block">
+<style>${css}</style>
 <style>html,body{margin:0;background:#171310}svg{display:block}</style></head><body>${svg}</body></html>`,
   );
   const browser = new vc.ChromeVisualBrowser(chrome);
@@ -74,13 +85,11 @@ async function main(argv) {
       await document.fonts.ready;
       const art = new Image(); art.src = "og-background.webp";
       try { await art.decode(); } catch { return { art: false }; }
-      return { art: art.naturalWidth > 0, inter: document.fonts.check('800 54px Inter'), mono: document.fonts.check('600 16px "JetBrains Mono"') };
+      return { art: art.naturalWidth > 0, inter: document.fonts.check('800 54px "Forge Sans"'), mono: document.fonts.check('600 16px "Forge Mono"') };
     })()`);
     if (!ready?.art) throw new Error("og-background.webp did not load");
     if (!ready.inter || !ready.mono)
-      throw new Error(
-        `web fonts did not load (Inter ${ready.inter}, JetBrains Mono ${ready.mono}) — the card needs network once`,
-      );
+      throw new Error(`local display fonts did not load (sans ${ready.inter}, mono ${ready.mono})`);
     const boxes = await evaluate(
       `[...document.querySelectorAll('svg text')].map((t) => { const b = t.getBoundingClientRect(); return { text: t.textContent.trim(), x: b.left, y: b.top, w: b.width, h: b.height }; })`,
     );

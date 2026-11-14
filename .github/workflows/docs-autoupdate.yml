@@ -19,7 +19,7 @@ jobs:
   update:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write
       pull-requests: write
@@ -34,9 +34,44 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.14.0
 
-      - name: List prose affected by the push
+      - name: Identify generated Markdown and source changes
+        run: |
+          node src/cli.js docs render --json > "$RUNNER_TEMP/render.json"
+          node --input-type=module - <<'JS' >> "$GITHUB_OUTPUT"
+          import { readFileSync } from "node:fs";
+          import { mediaPlan } from "./scripts/docs-media.mjs";
+          import { readManifest, staleDiagrams } from "./scripts/diagrams.mjs";
+          const report = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/render.json", "utf8"));
+          if (report.diagramFacts.errors.length) throw Error(JSON.stringify(report.diagramFacts.errors));
+          const groups = mediaPlan().stale;
+          console.log("tools=" + (groups.some(g => g !== "hero") || staleDiagrams(".", readManifest(".")).length > 0));
+          JS
+        id: plan
+
+      - uses: actions/setup-python@v6
+        if: steps.plan.outputs.tools == 'true'
+        with:
+          python-version: '3.12.10'
+
+      - name: Prepare pinned image and browser tools
+        if: steps.plan.outputs.tools == 'true'
+        run: |
+          scripts/docs-media/setup.sh "$RUNNER_TEMP/docs-render"
+          cat "$RUNNER_TEMP/docs-render/env" >> "$GITHUB_ENV"
+
+      - name: Render impacted diagrams, demos and previews
+        run: |
+          node scripts/diagrams.mjs build --stale
+          node scripts/diagrams.mjs sync
+          node scripts/docs-media.mjs build
+          node scripts/docs-media.mjs check
+          node scripts/diagrams.mjs check
+          node src/cli.js docs render --check
+          node src/cli.js docs check
+
+      - name: Report handwritten guides to review
         env:
           BEFORE: ${{ github.event.before }}
         run: |
@@ -44,19 +79,19 @@ jobs:
             BEFORE=HEAD^
           fi
           node src/cli.js docs impact --since "${BEFORE:-HEAD^}" --min-confidence 0.7 > "$RUNNER_TEMP/impact.txt"
+          {
+            echo '### Handwritten guides affected by this change'
+            echo
+            echo 'Check the listed files and lines against the changed CLI, tool or setting.'
+            echo
+            echo '````'
+            head -n 120 "$RUNNER_TEMP/impact.txt"
+            echo '````'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Regenerate and verify docs and diagrams
-        run: |
-          node src/cli.js docs render
-          ARCHIFY_CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)" \
-            node scripts/diagrams.mjs build --stale
-          node scripts/diagrams.mjs sync
-          node scripts/diagrams.mjs check
-          node src/cli.js docs render --check
-
-      - name: Open, update or close the docs PR
+      - name: Publish verified generated updates
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.FORGE_DOCS_TOKEN || github.token }}
         run: |
           gh auth setup-git
           # A rerun of an older successful build must not update a newer proposal.
@@ -68,8 +103,25 @@ jobs:
             exit 0
           fi
           OPEN="$(gh pr list --base master --head "$BRANCH" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')"
-          # Only the outputs owned by the two renderers belong in this commit.
-          git add -A -- '*.md' '*.mdx' docs/diagrams mintlify/images/diagrams
+          # Stage exactly the Markdown and source fields that the first renderer reported.
+          # Diagram exports and media files have explicit output directories or filenames.
+          node --input-type=module - <<'JS' > "$RUNNER_TEMP/allowed"
+          import {readFileSync} from "node:fs";
+          import {readManifest, svgPath, mintlifySvgPath} from "./scripts/diagrams.mjs";
+          const r = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/render.json", "utf8"));
+          const out = new Set([...r.files.filter(x => x.changed).map(x => x.file), ...r.diagramFacts.drift.map(x => x.file)]);
+          for (const d of readManifest(".").diagrams) out.add(svgPath(d)).add(mintlifySvgPath(d));
+          out.add("docs/diagrams/diagrams.json");
+          for (const file of out) console.log(file);
+          JS
+          node scripts/docs-media.mjs outputs >> "$RUNNER_TEMP/allowed"
+          # sync may remove an obsolete, previously committed site copy.
+          git ls-files 'mintlify/images/diagrams/*.svg' >> "$RUNNER_TEMP/allowed"
+          while IFS= read -r file; do
+            if [[ -e "$file" ]] || git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+              git --literal-pathspecs add -A -- "$file"
+            fi
+          done < "$RUNNER_TEMP/allowed"
           if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
             echo "::error::The renderer changed a file outside the documentation outputs."
             git status --short
@@ -89,7 +141,7 @@ jobs:
           git push --force-with-lease="refs/heads/$BRANCH:$expected" origin "HEAD:refs/heads/$BRANCH"
           BODY="$RUNNER_TEMP/body.md"
           {
-            echo "Regenerated from \`$GITHUB_SHA\` with \`forge docs render\` and the pinned diagram renderer."
+            echo "Regenerated from \`$GITHUB_SHA\` using the docs, diagram and media renderers."
             echo
             echo "Review the latest head and select **Approve workflows to run** in the merge box if GitHub requests approval. [GitHub Actions behavior](https://docs.github.com/en/actions/concepts/security/github_token)"
             echo
@@ -108,6 +160,13 @@ jobs:
           if [[ -n "$OPEN" ]]; then
             gh pr edit "$OPEN" --body-file "$BODY"
           else
-            gh pr create --base master --head "$BRANCH" \
-              --title "docs: refresh generated documentation" --body-file "$BODY"
+            OPEN=$(gh pr create --base master --head "$BRANCH" \
+              --title "docs: refresh generated documentation" --body-file "$BODY")
+          fi
+          # Mint a normal auto-merge request for our verified commit. Review requirements
+          # and protected branch checks still apply. No admin/bypass or direct master push.
+          head=$(git rev-parse HEAD)
+          if ! gh pr merge "$OPEN" --auto --merge --match-head-commit "$head"; then
+            echo "::warning::Automatic merge was unavailable. Check the repository auto-merge setting, required checks and review requests on $OPEN."
+            echo "Automatic merge was unavailable for $OPEN. Review the repository settings and checks on this proposal." >> "$GITHUB_STEP_SUMMARY"
           fi

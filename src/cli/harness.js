@@ -1,9 +1,21 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { initHarness, loadHarnessConfig, localVerifier, trustHarness } from "../harness_config.js";
+import {
+  connectHarnessHosts,
+  initHarness,
+  loadHarnessConfig,
+  localVerifier,
+  trustHarness,
+} from "../harness_config.js";
 import { readHarnessConfigData } from "../harness_config_data.js";
 import { checkHarnessDrift } from "../harness_drift.js";
 import { normalizeHarnessRequest } from "../harness_gateway.js";
+import {
+  detectHarnessHosts,
+  GENERIC_HOST,
+  genericHarnessServer,
+  parseHarnessHosts,
+} from "../harness_hosts.js";
 import { approvalStore } from "../harness_policy.js";
 import { describeHarnessRoutes, harnessSpend } from "../harness_router.js";
 import {
@@ -15,17 +27,26 @@ import {
 } from "../harness_trace.js";
 import { sourceWorkspaceRoot } from "../sources.js";
 
-async function setupHosts(root, chosen) {
+async function setupHosts(root, chosen, additive = false) {
+  const selected = chosen.filter((id) => id !== GENERIC_HOST);
+  if (!selected.length) return [];
   const { init } = await import("../init.js");
   const { HOOK_HOSTS, applyHooks } = await import("../emit/hooks.js");
   const { HOSTS } = await import("../hosts.js");
-  const { writeForgeConfig } = await import("../repo_config.js");
-  const result = init({ targetRoot: root, tools: chosen, noSettings: true, warm: false });
+  const { KNOWN_TOOLS, parseTools, readForgeConfig, writeForgeConfig } = await import(
+    "../repo_config.js"
+  );
+  const prior = readForgeConfig(root);
+  if (prior.corrupt) throw new Error("Invalid project host configuration");
+  const previous = additive && prior.tools ? (parseTools(prior.tools).tools ?? KNOWN_TOOLS) : [];
+  const tools = [...new Set([...selected, ...previous])];
+  const result = init({ targetRoot: root, tools, noSettings: true, warm: false });
   if (result.aborted) throw new Error("Host setup failed");
-  const ids = HOOK_HOSTS.filter((id) => chosen.includes(HOSTS[id].tool));
+  const ids = HOOK_HOSTS.filter((id) => selected.includes(HOSTS[id].tool));
+  const installed = additive && Array.isArray(prior.hooks?.hosts) ? prior.hooks.hosts : [];
   const saved = writeForgeConfig(root, (cfg) => ({
     ...cfg,
-    hooks: { ...cfg.hooks, project: true, hosts: ids },
+    hooks: { ...cfg.hooks, project: true, hosts: [...new Set([...installed, ...ids])] },
   }));
   if (!saved.ok) throw new Error("Could not record project hooks");
   return ids.map((id) => applyHooks(root, id, { enable: true })).filter(Boolean);
@@ -73,6 +94,7 @@ async function command(root, op, args) {
     throw new Error("Use approvals list or get|grant|deny <approval-id>");
   }
   const schemas = {
+    connect: { hosts: { type: "string" } },
     init: { hosts: { type: "string" }, supervised: { type: "boolean" } },
     drift: { hosts: { type: "string" } },
     run: {
@@ -91,16 +113,10 @@ async function command(root, op, args) {
     options: schemas[op] ?? {},
   });
   const v = /** @type {Record<string, any>} */ (values);
-  if (op === "init" || op === "drift") {
+  if (op === "init" || op === "drift" || op === "connect") {
     if (p.length) throw new Error("Choose hosts with --hosts");
-    let hosts;
-    if (v.hosts) {
-      const { parseTools, KNOWN_TOOLS } = await import("../repo_config.js");
-      const choice = parseTools(v.hosts);
-      if (choice.unknown.length || choice.tools?.length === 0)
-        throw new Error(`Unknown coding hosts: ${choice.unknown.join(", ")}`);
-      hosts = choice.tools ?? KNOWN_TOOLS;
-    }
+    let hosts = v.hosts === undefined ? undefined : parseHarnessHosts(v.hosts);
+    if (!hosts && op === "init" && v.supervised) hosts = detectHarnessHosts(root);
     if (op === "drift") {
       const cfg = loadHarnessConfig(root, { trusted: false });
       const result = checkHarnessDrift(
@@ -110,10 +126,22 @@ async function command(root, op, args) {
       if (!result.ok) process.exitCode = 1;
       return result;
     }
-    const result = initHarness(root, { hosts, supervised: v.supervised });
-    // On a partially initialized checkout existing controls require an explicit review.
-    const hooks = hosts && result.activated ? await setupHosts(root, hosts) : [];
-    return { ...result, hooks };
+    if (op === "connect" && !hosts?.length)
+      throw new Error("Choose hosts with forge harness connect --hosts <names>");
+    const result =
+      op === "connect"
+        ? await connectHarnessHosts(root, hosts, (chosen) => setupHosts(root, chosen, true))
+        : initHarness(root, { hosts, supervised: v.supervised });
+    const wired = "hosts" in result ? result.hosts : result.activated ? hosts : [];
+    const hooks =
+      "hooks" in result ? result.hooks : wired?.length ? await setupHosts(root, wired) : [];
+    return {
+      ...result,
+      hooks,
+      ...(wired?.includes(GENERIC_HOST)
+        ? { mcpServers: { "forge-cortex": genericHarnessServer(root) } }
+        : {}),
+    };
   }
   if (op === "run" || op === "resume") {
     if (!p.length || (op === "resume" && p.length !== 1))

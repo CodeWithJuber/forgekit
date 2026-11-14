@@ -82,10 +82,7 @@ Run `node src/cli.js docs render` after changing CLI commands, MCP tools, releas
 or other generated tables. For architecture figures, run
 `node scripts/diagrams.mjs build --stale`, `node scripts/diagrams.mjs sync` and
 `node scripts/diagrams.mjs check`. Keep
-the source, receipt and rendered SVGs in the same PR. The docs workflow repeats the
-checks on `master` and proposes any generated changes on `docs/auto-update`. For the
-GIFs and social previews, rerun the relevant renderer and review the frames or image
-before committing. [Diagram sources](./docs/diagrams/README.md) · [Media renderers](./docs/assets/README.md)
+the source, receipt and rendered SVGs in the same PR. After a push to `master`, the docs workflow also checks inputs and outputs for the CLI recordings, README artwork, social previews and dashboard screenshot. The workflow records affected handwritten pages in its job summary, proposes generated changes on `docs/auto-update` and requests auto-merge subject to repository settings and checks. Use `node scripts/docs-media.mjs plan` to see which media groups need rebuilding, then `node scripts/docs-media.mjs build` to render them locally. Review any generated images before merging. [Diagram sources](./docs/diagrams/README.md) · [Media renderers](./docs/assets/README.md)
 
 ## Sign your work (DCO)
 

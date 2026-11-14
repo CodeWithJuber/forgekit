@@ -190,8 +190,7 @@ test("serve: / is the page, /api/data is the payload, unknown routes 404, GET-on
     assert.equal((await fetch(`${base}/api/impact`)).status, 400, "missing target");
     assert.equal((await fetch(`${base}/api/impact?target=x`)).status, 404, "no atlas yet");
     assert.equal((await fetch(`${base}/nope`)).status, 404);
-    // The ONLY writes are POST /api/ratify and /api/retract — POST anywhere else is 404,
-    // as is any other method on the write routes.
+    // Read endpoints reject POST. Ledger actions require the POST method.
     assert.equal(
       (await fetch(`${base}/api/data`, { method: "POST" })).status,
       404,
@@ -208,7 +207,7 @@ test("serve: / is the page, /api/data is the payload, unknown routes 404, GET-on
   }
 });
 
-test("serve: POST /api/ratify and /api/retract are the two append-only writes", async () => {
+test("serve: POST /api/ratify and /api/retract append human decisions", async () => {
   process.env.FORGE_AUTHOR = "dash-tester"; // deterministic identity for gitAuthor()
   const { root, trusted, contested } = fixture();
   const server = serve(root, { port: 0 });
@@ -383,6 +382,10 @@ test("claimsData: a query ranks via retrieve (scores present) and kind filters",
     m.rows.every((r) => typeof r.score === "number"),
     "query rows carry a retrieval score",
   );
+  const miss = claimsData(root, { q: "xylophonically-unmatched", nowDay: NOW });
+  assert.deepEqual(miss.rows, []);
+  assert.equal(miss.count, 0);
+  assert.ok(miss.total > 0, "a search miss is distinct from an empty ledger");
   const facts = claimsData(root, { kind: "fact", nowDay: NOW });
   assert.ok(facts.rows.every((r) => r.kind === "fact"));
   const none = claimsData(root, { kind: "nonexistent", nowDay: NOW });

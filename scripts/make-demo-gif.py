@@ -73,10 +73,10 @@ def screen(command, lines, status=0):
 
 def capture_scenes(key, c):
     if key == "setup":
-        args = "harness init --hosts kimi,codex --supervised"
+        args = "harness init --hosts claude,codex,kimi --supervised"
         init = json.loads(c.forge(args))
         status = json.loads(c.forge("harness status"))
-        drift_args = "harness drift --hosts kimi,codex"
+        drift_args = "harness drift --hosts claude,codex,kimi"
         drift = json.loads(c.forge(drift_args))
         if not drift["ok"] or init["activated"]["mode"] != "supervised":
             raise ValueError("Supervised setup must pass the project drift check")
@@ -87,7 +87,7 @@ def capture_scenes(key, c):
                    "hosts     " + ", ".join(status["hosts"]),
                    "profiles  " + ", ".join(status["profiles"])]),
             screen("forge " + drift_args, [f"{row['host']:<7} {row['component']:<18} {row['status']}"
-                   for row in drift["checks"]]),
+                   for row in drift["checks"] if row["component"] == "mcp" or row["status"] == "manual"]),
         ]
     if key == "verify":
         # Build a real failing npm suite. No test dependencies or downloads.

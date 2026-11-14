@@ -1,1291 +1,2383 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="forge-dash-token" content="__FORGE_DASH_TOKEN__" />
-    <title>forge dash</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="forge-dash-token" content="__FORGE_DASH_TOKEN__">
+    <title>Overview · ForgeKit</title>
     <style>
-      /* Taste discipline (07-ui-quality-gate.md): ONE accent (forge ember, the brand's
-     own — not framework blue), a 4px-based spacing scale, exactly two radius levels,
-     system sans + one mono. Palette matches the landing page = close to home. */
-      :root {
-        --bg: #171310;
-        --panel: #201a15;
-        --panel-2: #272019;
-        --line: #372c22;
-        --fg: #f2ede7;
-        --muted: #a99e90;
-        --faint: #7d7263;
-        --ember: #f26430;
-        --ember-wash: rgba(242, 100, 48, 0.14);
-        --r-s: 4px; /* radius level 1: chips, bars, inputs */
-        --r-m: 10px; /* radius level 2: panels */
-        --s1: 4px;
-        --s2: 8px;
-        --s3: 12px;
-        --s4: 16px;
-        --s6: 24px;
-        --s8: 32px;
-        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-        --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    :root {
+      color-scheme: light;
+      --bg: #f6f6f2;
+      --panel: #fff;
+      --panel-2: #f4f4ef;
+      --line: #d9dbd3;
+      --fg: #212822;
+      --muted: #545e56;
+      --faint: #626c63;
+      --ember: #a43b0f;
+      --ember-wash: #fff0e5;
+      --sans: Inter, "Segoe UI", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font: 15px / 1.5 var(--sans);
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+    button,
+    a,
+    input,
+    select,
+    summary {
+      -webkit-tap-highlight-color: transparent;
+    }
+    button,
+    summary,
+    select {
+      cursor: pointer;
+    }
+    button:focus-visible,
+    a:focus-visible,
+    summary:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    [tabindex="-1"]:focus-visible {
+      outline: 3px solid #0e78b2;
+      outline-offset: 3px;
+    }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: white;
+      color: var(--fg);
+      padding: 8px 12px;
+      min-height: 36px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    button:hover {
+      background: #eff0e9;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+    h1 {
+      font-size: clamp(32px, 4vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -0.055em;
+      font-weight: 650;
+    }
+    h2 {
+      font-size: 20px;
+      line-height: 1.25;
+      letter-spacing: -0.035em;
+      font-weight: 650;
+    }
+    h3 {
+      font-size: 15px;
+      line-height: 1.35;
+    }
+    code,
+    kbd,
+    .mono,
+    .barnum,
+    .num {
+      font-family: var(--mono);
+      font-size: 0.91em;
+    }
+    .icon {
+      width: 18px;
+      height: 18px;
+      flex: none;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.65;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .skip {
+      position: fixed;
+      top: -100px;
+      left: 8px;
+      z-index: 10;
+      background: white;
+      color: #111;
+      padding: 8px;
+    }
+    .skip:focus {
+      top: 8px;
+    }
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 224px minmax(0, 1fr);
+    }
+    .rail {
+      background: #1b2420;
+      color: #dae0da;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      padding: 24px 16px;
+      z-index: 3;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 8px;
+      color: #fff;
+      font-weight: 720;
+      letter-spacing: -0.06em;
+      font-size: 25px;
+      line-height: 1;
+    }
+    .brand svg {
+      width: 36px;
+      height: 36px;
+    }
+    .brand small {
+      color: #ee995e;
+    }
+    .rail nav {
+      margin-top: 44px;
+    }
+    .nav-label {
+      font: 600 10px / 1.3 var(--mono);
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: #abb7ad;
+      margin: 24px 12px 8px;
+    }
+    .navlink {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 4px;
+      font-weight: 500;
+      color: #c7d0c8;
+      font-size: 14px;
+    }
+    .navlink:hover,
+    .navlink:focus-visible {
+      color: white;
+      background: #29372f;
+    }
+    .navlink[aria-current="page"] {
+      color: #fff;
+      background: #314037;
+      box-shadow: inset 3px 0 #fa9857;
+    }
+    .navlink[aria-current="page"] .icon {
+      color: #ffab70;
+    }
+    .rail-foot {
+      margin-top: auto;
+      font: 11px var(--mono);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: #aeb9af;
+      padding: 20px 8px 0;
+    }
+    .rail-foot .icon {
+      width: 15px;
+      height: 15px;
+    }
+    .work {
+      min-width: 0;
+    }
+    header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      min-height: 64px;
+      border-bottom: 1px solid var(--line);
+      padding: 8px clamp(20px, 4.5vw, 72px);
+      background: #fcfcf9;
+    }
+    .crumb {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+      min-width: 0;
+    }
+    .repo {
+      font-weight: 600;
+      color: var(--fg);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tools {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: none;
+    }
+    #hdr-meta {
+      font: 11px var(--mono);
+      color: var(--faint);
+    }
+    #menu {
+      display: none;
+    }
+    .quiet,
+    .section-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .quiet .icon,
+    .section-link .icon {
+      width: 15px;
+      height: 15px;
+    }
+    .section-link {
+      color: var(--ember);
+    }
+    .section-link:hover {
+      text-decoration: underline;
+    }
+    main {
+      padding: clamp(24px, 3.5vw, 56px) clamp(20px, 4.5vw, 72px) 64px;
+      max-width: 1512px;
+      margin: auto;
+    }
+    .intro {
+      margin-bottom: 28px;
+    }
+    .intro p,
+    .muted,
+    .faint,
+    .hint {
+      color: var(--muted);
+    }
+    .intro p {
+      font-size: 15px;
+      margin-top: 8px;
+    }
+    .hero {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #25352b;
+      color: #f3f5ee;
+      min-height: 192px;
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 12px;
+    }
+    .hero h2 {
+      font-size: clamp(26px, 3vw, 38px);
+      letter-spacing: -0.045em;
+      max-width: 76%;
+    }
+    .hero p {
+      color: #d4ddd2;
+      max-width: 62%;
+      font-size: 14px;
+    }
+    .hero .primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: #ffb57c;
+      color: #282118;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .hero .primary:hover {
+      background: #ffcc9f;
+    }
+    .hero .icon {
+      width: 15px;
+      height: 15px;
+    }
+    .hero-art {
+      position: absolute;
+      right: 0;
+      top: 0;
+      height: 100%;
+      width: 34%;
+      z-index: -1;
+      opacity: 0.85;
+      pointer-events: none;
+    }
+    .metrics {
+      margin: 16px 0 24px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .metric,
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 12px;
+      min-width: 0;
+    }
+    .metric {
+      padding: 16px 20px;
+      display: grid;
+      gap: 8px;
+    }
+    .metric:hover {
+      border-color: #8e9a8c;
+    }
+    .metric-label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .metric-label .icon {
+      width: 16px;
+      height: 16px;
+    }
+    .metric strong {
+      font-size: 30px;
+      letter-spacing: -0.06em;
+      line-height: 1.15;
+    }
+    .metric small {
+      color: var(--faint);
+      font-size: 12px;
+    }
+    .columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(240px, 1fr);
+      align-items: start;
+      gap: 16px;
+    }
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      padding: 20px 24px;
+      overflow: auto;
+    }
+    .panel-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .panel h3 {
+      margin: 20px 0 8px;
+    }
+    .panel .hint {
+      font-size: 13px;
+      margin: 4px 0 12px;
+    }
+    .empty,
+    .notice {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .empty {
+      padding: 12px 0;
+    }
+    .blank {
+      padding: 24px 0 12px;
+      text-align: center;
+      display: grid;
+      justify-items: center;
+      gap: 8px;
+    }
+    .blank .icon {
+      color: #71816f;
+      width: 28px;
+      height: 28px;
+    }
+    .blank h3 {
+      margin: 0;
+    }
+    .blank p {
+      max-width: 38ch;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .notice {
+      padding: 12px 16px;
+      border: 1px solid #d39a72;
+      background: #fff4e8;
+      color: #663915;
+      margin: 0 0 16px;
+      border-radius: 4px;
+    }
+    .host-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border-top: 1px solid var(--line);
+      padding: 12px 0;
+    }
+    .host-row:first-child {
+      border-top: 0;
+    }
+    .host-row strong {
+      font-size: 14px;
+    }
+    .host-row p {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 4px 0;
+    }
+    .host-row .push {
+      margin-left: auto;
+    }
+    .hostmark {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      background: #f2efe7;
+      color: #5b6254;
+      border-radius: 4px;
+      font: 650 15px var(--mono);
+      flex: none;
+    }
+    .hostmark.claude {
+      color: #974222;
+      background: #ffeadc;
+    }
+    .hostmark.codex {
+      color: #2b604b;
+      background: #e8f1e9;
+    }
+    .hostmark.kimi {
+      color: #2f4b70;
+      background: #eaf0f6;
+    }
+    .tag,
+    .ringcount {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font: 500 11px / 1.4 var(--sans);
+      border-radius: 4px;
+      padding: 4px 8px;
+      background: var(--panel-2);
+      color: #515c52;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .tag.good {
+      color: #265c3b;
+      background: #e6f2e7;
+    }
+    .tag.attn,
+    .tag.contested {
+      color: #843d10;
+      background: #fff0df;
+    }
+    .run-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .run-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding: 12px 0;
+    }
+    .run-row div,
+    .run-detail summary > span:first-child {
+      min-width: 0;
+    }
+    .run-row strong,
+    .run-detail strong {
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    a.run-row:hover strong {
+      text-decoration: underline;
+      color: var(--ember);
+    }
+    .run-row small,
+    .run-detail small {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .run-detail {
+      border-top: 1px solid var(--line);
+      padding: 12px 0;
+    }
+    .run-detail summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .run-detail summary::before {
+      content: "+";
+      color: var(--ember);
+      font: 16px var(--mono);
+    }
+    .run-detail[open] summary::before {
+      content: "−";
+    }
+    .run-detail summary span:first-of-type {
+      flex: 1;
+    }
+    .run-detail dl {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 4px 12px;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    .run-detail dt {
+      color: var(--muted);
+    }
+    .run-detail dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .codebox {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 12px 0;
+      padding: 12px 16px;
+      background: #f2f4ed;
+      border-radius: 4px;
+    }
+    .codebox code {
+      overflow-wrap: anywhere;
+      color: #2d4638;
+    }
+    .codebox button {
+      flex: none;
+    }
+    .toolbar,
+    .stats,
+    .rings {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+    input,
+    select {
+      max-width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #b6beb3;
+      background: white;
+      border-radius: 4px;
+      color: var(--fg);
+      font-size: 14px;
+    }
+    .grow {
+      flex: 1;
+      min-width: 100px;
+    }
+    .stats .stat {
+      display: grid;
+      gap: 4px;
+      background: var(--panel-2);
+      border-radius: 4px;
+      padding: 8px 12px;
+    }
+    .n {
+      font-weight: 650;
+      font-size: 18px;
+    }
+    .stat .l {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+    }
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    td.num {
+      text-align: right;
+    }
+    tr.tomb .text {
+      text-decoration: line-through;
+      color: var(--muted);
+    }
+    td .act,
+    td .blame {
+      font-size: 12px;
+      padding: 4px 8px;
+      min-height: 28px;
+    }
+    .bar {
+      display: inline-block;
+      overflow: hidden;
+      width: 36px;
+      height: 4px;
+      background: var(--line);
+      margin-right: 4px;
+    }
+    .bar i {
+      display: block;
+      height: 100%;
+      background: var(--ember);
+    }
+    .bar.dim i {
+      background: var(--faint);
+    }
+    .tl,
+    .log {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tl li,
+    .log li,
+    .trend {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .tl .day,
+    .tl .ev {
+      font-family: var(--mono);
+      margin-right: 12px;
+    }
+    .trend {
+      display: grid;
+      grid-template-columns: minmax(80px, 1fr) 2fr auto;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+    .spark-svg {
+      width: 100%;
+      height: 28px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: #777;
+      display: inline-block;
+      border-radius: 4px;
+    }
+    .adopt {
+      background: #47754d;
+    }
+    .trial {
+      background: #99681b;
+    }
+    .hold {
+      background: #af5528;
+    }
+    .help summary {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .help p {
+      color: var(--muted);
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      color: white;
+      background: #27372d;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-size: 13px;
+      z-index: 5;
+    }
+    @media (max-width: 1050px) {
+      .shell {
+        grid-template-columns: 196px minmax(0, 1fr);
       }
-      * {
-        box-sizing: border-box;
+      header,
+      main {
+        padding-left: 24px;
+        padding-right: 24px;
       }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 13px/1.55 var(--sans);
-        -webkit-font-smoothing: antialiased;
+      .columns {
+        grid-template-columns: 1fr 1fr;
       }
-      .mono {
-        font-family: var(--mono);
+      .panel {
+        padding: 16px;
       }
-      .muted {
-        color: var(--muted);
+    }
+    @media (max-width: 800px) {
+      .shell {
+        display: block;
       }
-      .faint {
-        color: var(--faint);
+      .rail {
+        display: none;
+        position: fixed;
+        top: 64px;
+        bottom: 0;
+        width: 240px;
+        height: auto;
+        box-shadow: 12px 0 32px #15201835;
       }
-
+      .rail.open {
+        display: flex;
+      }
+      .rail nav {
+        margin-top: 16px;
+      }
+      #menu {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
       header {
         position: sticky;
         top: 0;
-        z-index: 5;
-        display: flex;
-        align-items: center;
-        gap: var(--s3);
-        padding: var(--s3) var(--s6);
-        background: rgba(23, 19, 16, 0.85);
-        backdrop-filter: blur(8px);
-        border-bottom: 1px solid var(--line);
+        z-index: 4;
       }
-      .spark {
-        width: 8px;
-        height: 8px;
-        border-radius: var(--r-s);
-        background: var(--ember);
+      .hero-art {
+        width: 28%;
       }
-      .brand {
-        font-family: var(--mono);
-        font-size: 13px;
-        letter-spacing: 0.02em;
+      .hero p {
+        max-width: 72%;
       }
-      .brand b {
-        color: var(--ember);
-        font-weight: 600;
+      .columns {
+        grid-template-columns: 1fr;
       }
+      .intro {
+        margin-bottom: 20px;
+      }
+    }
+    @media (max-width: 540px) {
+      header {
+        padding: 8px 12px;
+        gap: 8px;
+      }
+      .crumb .context,
+      .crumb .slash,
       #hdr-meta {
-        margin-left: auto;
-        font-family: var(--mono);
-        font-size: 11px;
-        color: var(--muted);
-      }
-      button {
-        font: 12px var(--mono);
-        color: var(--fg);
-        cursor: pointer;
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: var(--s1) var(--s3);
-      }
-      button:hover {
-        border-color: var(--ember);
-        color: var(--ember);
-      }
-
-      main {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: var(--s6);
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: var(--s4);
-      }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: var(--r-m);
-        padding: var(--s4);
-        min-width: 0;
-      }
-      .panel.wide {
-        grid-column: 1 / -1;
-      }
-      @media (max-width: 880px) {
-        main {
-          grid-template-columns: 1fr;
-        }
-      }
-      .panel h2 {
-        margin: 0 0 var(--s3);
-        font: 600 11px var(--mono);
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: var(--muted);
-      }
-      .panel h2 .cmd {
-        text-transform: none;
-        letter-spacing: 0;
-        color: var(--faint);
-        float: right;
-      }
-      h3 {
-        margin: var(--s6) 0 var(--s2);
-        font: 600 11px var(--mono);
-        letter-spacing: 0.08em;
-        color: var(--faint);
-        text-transform: uppercase;
-      }
-      .empty {
-        color: var(--faint);
-        font-family: var(--mono);
-        font-size: 12px;
-        padding: var(--s2) 0;
-      }
-      [hidden] {
         display: none;
       }
-
-      /* First-run empty state: one plain-language banner keyed off meta.empty, so a
-         fresh .forge/ reads as "nothing here yet" instead of blank panels. */
-      .empty-banner {
-        grid-column: 1 / -1;
-        background: var(--ember-wash);
-        border: 1px solid var(--ember);
-        border-radius: var(--r-m);
-        padding: var(--s4);
-        color: var(--fg);
-        font-family: var(--mono);
-        font-size: 13px;
-        line-height: 1.6;
+      .tools {
+        gap: 4px;
       }
-      .empty-banner b {
-        color: var(--ember);
+      main {
+        padding: 24px 12px 48px;
       }
-
-      /* Panel legend: a "?" toggle that explains what each panel means in one plain
-         sentence — the dashboard was called confusing, so every lens gets a caption. */
-      #legend-toggle.on {
-        color: var(--ember);
-        border-color: var(--ember);
+      .hero {
+        padding: 20px;
+        min-height: 180px;
       }
-      .legend dl {
-        margin: 0;
-        display: grid;
-        grid-template-columns: max-content 1fr;
-        gap: var(--s2) var(--s4);
+      .hero h2 {
+        max-width: 90%;
       }
-      .legend dt {
-        font: 600 11px var(--mono);
-        color: var(--ember);
-        white-space: nowrap;
+      .hero p {
+        max-width: 88%;
       }
-      .legend dd {
-        margin: 0;
-        color: var(--muted);
+      .hero-art {
+        opacity: 0.25;
       }
-      @media (max-width: 560px) {
-        .legend dl {
-          grid-template-columns: 1fr;
-          gap: var(--s1) 0;
-        }
-        .legend dt {
-          margin-top: var(--s2);
-        }
-      }
-
-      /* stat tiles */
-      .stats {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--s2);
-        margin-bottom: var(--s3);
-      }
-      .stat {
-        background: var(--panel-2);
+      .metrics {
+        gap: 0;
         border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: var(--s2) var(--s3);
-        min-width: 84px;
+        border-radius: 12px;
+        background: #fff;
       }
-      .stat .n {
-        font: 600 18px var(--mono);
-        display: block;
+      .metric {
+        padding: 12px 8px;
+        border: 0;
+        border-right: 1px solid var(--line);
+        border-radius: 0;
+        background: transparent;
       }
-      .stat .n.ember {
-        color: var(--ember);
+      .metric:last-child {
+        border: 0;
       }
-      .stat .l {
-        font-size: 11px;
-        color: var(--faint);
-      }
-
-      /* tables */
-      table {
-        width: 100%;
-        border-collapse: collapse;
+      .metric-label {
         font-size: 12px;
       }
-      th {
-        text-align: left;
-        font: 600 10px var(--mono);
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--faint);
-        padding: var(--s1) var(--s2);
-        border-bottom: 1px solid var(--line);
+      .metric-label .icon {
+        display: none;
       }
-      td {
-        padding: var(--s1) var(--s2);
-        border-bottom: 1px solid var(--line);
-        vertical-align: top;
-      }
-      tr:last-child td {
-        border-bottom: 0;
-      }
-      tr.tomb td {
-        opacity: 0.45;
-      }
-      tr.tomb .text {
-        text-decoration: line-through;
-      }
-      td.num {
-        font-family: var(--mono);
-        text-align: right;
-      }
-      .tag {
-        font: 11px var(--mono);
-        color: var(--muted);
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: 0 var(--s1);
-        display: inline-block;
-        white-space: nowrap;
-      }
-      .tag.contested {
-        color: var(--ember);
-        border-color: var(--ember);
-        background: var(--ember-wash);
-      }
-
-      /* val / trust / confidence bars — width IS the number; label repeats it */
-      .bar {
-        display: inline-block;
-        width: 64px;
-        height: 6px;
-        vertical-align: middle;
-        background: var(--panel-2);
-        border-radius: var(--r-s);
-        overflow: hidden;
-        margin-right: var(--s2);
-      }
-      .bar i {
-        display: block;
-        height: 100%;
-        background: var(--ember);
-        border-radius: var(--r-s);
-      }
-      .bar.dim i {
-        background: var(--faint);
-      }
-      .barnum {
-        font-family: var(--mono);
+      .metric small {
         font-size: 11px;
       }
-
-      /* the provenance affordance: every number traces to a blame command */
-      .blame {
-        font: 11px var(--mono);
-        color: var(--faint);
-        cursor: copy;
-        white-space: nowrap;
+      .metric strong {
+        font-size: 24px;
       }
-      .blame:hover {
-        color: var(--ember);
-      }
-      .blame.copied {
-        color: var(--ember);
-      }
-
-      /* the two writes (spec §2): small per-row actions, append-only on the server */
-      .act {
-        font: 11px var(--mono);
-        color: var(--faint);
-        cursor: pointer;
-        border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: 0 var(--s1);
-        white-space: nowrap;
-        display: inline-block;
-      }
-      .act:hover {
-        color: var(--ember);
-        border-color: var(--ember);
-        background: var(--ember-wash);
-      }
-      td.acts {
-        white-space: nowrap;
-      }
-
-      select,
-      input[type="text"] {
-        font: 12px var(--mono);
-        color: var(--fg);
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: var(--s1) var(--s2);
-      }
-      input[type="text"]:focus,
-      select:focus {
-        outline: none;
-        border-color: var(--ember);
+      .panel {
+        padding: 16px;
       }
       .toolbar {
-        display: flex;
-        align-items: center;
-        gap: var(--s2);
-        margin-bottom: var(--s3);
-        flex-wrap: wrap;
+        align-items: stretch;
       }
-      .toolbar .grow {
-        flex: 1;
+      .host-row {
+        gap: 8px;
       }
-
-      .log {
-        font: 11px/1.7 var(--mono);
-        color: var(--muted);
-        margin: 0;
-        padding: 0;
-        list-style: none;
+    }
+    .form {
+      margin: 16px 0;
+      padding: 16px;
+      background: #f5f6f0;
+      border-radius: 4px;
+    }
+    .form label {
+      display: block;
+      margin: 12px 0 4px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .form h3 {
+      margin: 0;
+    }
+    .form textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #b6beb3;
+      border-radius: 4px;
+      color: var(--fg);
+      font: inherit;
+      resize: vertical;
+    }
+    .form textarea:focus-visible {
+      outline: 3px solid #0e78b2;
+      outline-offset: 2px;
+    }
+    #new-run,
+    #submit-run {
+      background: #293d30;
+      color: white;
+      border-color: #293d30;
+    }
+    #launch-feedback {
+      padding: 12px;
+      background: #f2f4ed;
+      color: var(--fg);
+      border-radius: 4px;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        scroll-behavior: auto !important;
       }
-      .log .st {
-        color: var(--fg);
-      }
-      .log .plus {
-        color: var(--ember);
-      }
-
-      /* dash v2: sparklines, radar rings, timeline */
-      .spark-svg {
-        display: block;
-        width: 100%;
-        height: 28px;
-      }
-      .trend {
-        display: grid;
-        grid-template-columns: 96px 1fr auto;
-        align-items: center;
-        gap: var(--s3);
-        padding: var(--s1) 0;
-        border-bottom: 1px solid var(--line);
-      }
-      .trend:last-child {
-        border-bottom: 0;
-      }
-      .trend .lbl {
-        font: 11px var(--mono);
-        color: var(--muted);
-      }
-      .trend .n {
-        font: 11px var(--mono);
-        color: var(--faint);
-        text-align: right;
-        white-space: nowrap;
-      }
-
-      .rings {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--s2);
-        margin-bottom: var(--s3);
-      }
-      .ringcount {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--s1);
-        font: 11px var(--mono);
-        color: var(--muted);
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: var(--r-s);
-        padding: var(--s1) var(--s2);
-      }
-      .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        display: inline-block;
-      }
-      .dot.adopt {
-        background: #46b17a;
-      }
-      .dot.trial {
-        background: #d9a441;
-      }
-      .dot.assess {
-        background: var(--muted);
-      }
-      .dot.hold {
-        background: var(--ember);
-      }
-      td.ring {
-        white-space: nowrap;
-      }
-
-      .tl {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        font: 11px/1.6 var(--mono);
-      }
-      .tl li {
-        display: grid;
-        grid-template-columns: 44px 60px 1fr;
-        gap: var(--s2);
-        padding: var(--s1) 0;
-        border-bottom: 1px solid var(--line);
-        align-items: baseline;
-      }
-      .tl li:last-child {
-        border-bottom: 0;
-      }
-      .tl .day {
-        color: var(--faint);
-      }
-      .tl .ev {
-        color: var(--muted);
-      }
-      .tl .ev.retract {
-        color: var(--ember);
-      }
-      .tl .txt {
-        color: var(--fg);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      footer {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 0 var(--s6) var(--s8);
-        font: 11px var(--mono);
-        color: var(--faint);
-      }
+    }
     </style>
   </head>
   <body>
-    <header>
-      <span class="spark"></span>
-      <span class="brand"
-        ><b>forge</b> dash <span id="hdr-repo" class="muted"></span
-      ></span>
-      <span id="hdr-meta"></span>
-      <button
-        id="legend-toggle"
-        type="button"
-        aria-expanded="false"
-        title="what does each panel mean?"
-      >
-        ? legend
-      </button>
-      <button id="refresh" type="button">refresh</button>
-    </header>
-
-    <main>
-      <div id="empty-state" class="empty-banner" hidden>
-        <b>No data in .forge/ yet</b> — run
-        <span class="mono">forge sync</span>, then work a session. Claims, cost,
-        and trends fill in here as the substrate records what happens.
+    <a href="#content" class="skip">Skip to content</a>
+    <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+      <defs>
+        <symbol id="i-overview" viewBox="0 0 24 24">
+          <path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z" />
+        </symbol>
+        <symbol id="i-runs" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M10 8l6 4-6 4z" /></symbol>
+        <symbol id="i-hosts" viewBox="0 0 24 24">
+          <path d="M3 4h18v12H3z M8 21h8 M12 16v5" />
+        </symbol>
+        <symbol id="i-memory" viewBox="0 0 24 24">
+          <path d="M3 6c0-4 18-4 18 0s-18 4-18 0v12c0 4 18 4 18 0V6 M3 12c0 4 18 4 18 0" />
+        </symbol>
+        <symbol id="i-usage" viewBox="0 0 24 24">
+          <path d="M3 4v16h18 M7 16v-4 M12 16V7 M17 16v-6" />
+        </symbol>
+        <symbol id="i-tools" viewBox="0 0 24 24">
+          <path d="M7 6l-5 6 5 6 M17 6l5 6-5 6 M14 4l-4 16" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z" /></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24">
+          <path d="M20 6v5h-5 M4 18v-5h5 M6 8a7 7 0 0 1 12-2l2 3 M18 16a7 7 0 0 1-12 2l-2-3" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15 M13 6l6 6-6 6" /></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 5h18 M3 12h18 M3 19h18" /></symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24">
+          <path d="M3 4h18v16H3z M6 8l4 4-4 4 M13 16h4" />
+        </symbol>
+      </defs>
+    </svg>
+    <div class="shell">
+      <aside class="rail" id="rail">
+        <a href="#overview" class="brand" aria-label="ForgeKit overview"
+          ><svg viewBox="0 0 64 64" aria-hidden="true">
+            <g stroke="#f8b17d" stroke-width="2.5" fill="none">
+              <rect x="13" y="13" width="38" height="38" />
+              <path d="m59 32-27-27-27 27 27 27z" />
+            </g>
+            <path fill="#fff" d="M23 20h18v5H29v5h10v5H29v9h-6z" />
+          </svg><span>ForgeKit<small>.</small></span></a
+        >
+        <nav aria-label="Workspace navigation">
+          <div class="nav-label">Workspace</div>
+          <a class="navlink" href="#overview"
+            ><svg class="icon" aria-hidden="true"><use href="#i-overview"></use></svg>Overview</a
+          >
+          <a class="navlink" href="#runs"
+            ><svg class="icon" aria-hidden="true"><use href="#i-runs"></use></svg>Runs</a
+          >
+          <a class="navlink" href="#hosts"
+            ><svg class="icon" aria-hidden="true"><use href="#i-hosts"></use></svg>Coding hosts</a
+          >
+          <div class="nav-label">Insights</div>
+          <a class="navlink" href="#memory"
+            ><svg class="icon" aria-hidden="true"><use href="#i-memory"></use></svg>Project
+            memory</a
+          >
+          <a class="navlink" href="#usage"
+            ><svg class="icon" aria-hidden="true"><use href="#i-usage"></use></svg>Usage</a
+          >
+          <a class="navlink" href="#tools"
+            ><svg class="icon" aria-hidden="true"><use href="#i-tools"></use></svg>Code tools</a
+          >
+        </nav>
+        <div class="rail-foot">
+          <svg class="icon" aria-hidden="true"><use href="#i-terminal"></use></svg>
+          <span>forge dash</span>
+        </div>
+      </aside>
+      <div class="work">
+        <header>
+          <button type="button" id="menu" aria-controls="rail" aria-expanded="false">
+            <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+            Menu
+          </button>
+          <div class="crumb">
+            <svg class="icon" aria-hidden="true"><use href="#i-folder"></use></svg>
+            <span class="context">Workspace</span><span class="slash">/</span
+            ><span id="hdr-repo" class="repo">Loading project…</span>
+          </div>
+          <div class="tools">
+            <span id="hdr-meta"></span
+            ><button type="button" id="refresh" class="quiet">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+              Refresh
+            </button>
+          </div>
+        </header>
+        <main id="content" tabindex="-1">
+          <div class="intro">
+            <h1 id="page-title" tabindex="-1">Overview</h1>
+            <p id="page-desc">Coding runs, host setup and project activity.</p>
+          </div>
+          <div id="read-errors" class="notice" role="alert" hidden></div>
+          <div id="harness-error" class="notice" role="alert" hidden></div>
+          <section id="view-overview" aria-label="Overview">
+            <div class="hero">
+              <h2 id="hero-title">Reading workspace…</h2>
+              <p id="hero-body"></p>
+              <a class="primary" id="hero-action" href="#hosts" hidden
+                >View coding hosts
+                <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a
+              >
+              <svg
+                class="hero-art"
+                aria-hidden="true"
+                viewBox="0 0 300 200"
+                preserveAspectRatio="xMidYMid slice"
+              >
+                <g fill="none" stroke="#6f836c" stroke-width=".8" transform="translate(173 105)">
+                  <path d="M-170 0h340M0-130v260" stroke-dasharray="2 7" />
+                  <g transform="rotate(45)">
+                    <rect x="-88" y="-88" width="176" height="176" />
+                    <rect x="-73" y="-73" width="146" height="146" />
+                    <rect x="-48" y="-48" width="96" height="96" />
+                  </g>
+                  <rect x="-88" y="-88" width="176" height="176" />
+                  <rect x="-73" y="-73" width="146" height="146" />
+                  <rect x="-48" y="-48" width="96" height="96" />
+                  <path stroke="#ffb57c" stroke-width="1.6" d="m0-68 68 68-68 68-68-68z" />
+                  <path stroke="#ffb57c" stroke-width="2" d="M-13-17h29v7H-5v9h16v7H-5v15h-8z" />
+                </g>
+              </svg>
+            </div>
+            <div class="metrics">
+              <a class="metric" href="#runs"
+                ><span class="metric-label"
+                  ><svg class="icon" aria-hidden="true"><use href="#i-runs"></use></svg>Recorded
+                  runs</span
+                ><strong id="metric-runs">—</strong
+                ><small id="metric-runs-note">In this workspace</small></a
+              >
+              <a class="metric" href="#hosts"
+                ><span class="metric-label"
+                  ><svg class="icon" aria-hidden="true"><use href="#i-hosts"></use></svg>Selected
+                  hosts</span
+                ><strong id="metric-hosts">—</strong
+                ><small id="metric-hosts-note">In project settings</small></a
+              >
+              <a class="metric" href="#memory"
+                ><span class="metric-label"
+                  ><svg class="icon" aria-hidden="true"><use href="#i-memory"></use></svg>Memory
+                  entries</span
+                ><strong id="metric-memory">—</strong
+                ><small id="metric-memory-note">In project memory</small></a
+              >
+            </div>
+            <div class="columns">
+              <article class="panel">
+                <div class="panel-head">
+                  <h2>Recent runs</h2>
+                  <a class="section-link" href="#runs"
+                    >View runs
+                    <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a
+                  >
+                </div>
+                <div id="recent-runs" class="empty">Loading…</div>
+              </article>
+              <article class="panel">
+                <div class="panel-head">
+                  <h2>Coding hosts</h2>
+                  <a class="section-link" href="#hosts"
+                    >View setup
+                    <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a
+                  >
+                </div>
+                <div id="overview-hosts" class="empty">Loading…</div>
+              </article>
+            </div>
+          </section>
+          <section id="view-runs" class="stack" hidden>
+            <article class="panel">
+              <div class="panel-head">
+                <h2>Run history</h2>
+                <button type="button" id="new-run" hidden>New run</button>
+              </div>
+              <p id="run-setup" class="hint">
+                <a href="#hosts" class="section-link">Check workspace setup</a>
+                to start a run.
+              </p>
+              <form id="new-run-form" class="form" hidden>
+                <h3>New run</h3>
+                <label for="run-task">Task</label
+                ><textarea
+                  id="run-task"
+                  maxlength="16384"
+                  rows="3"
+                  required
+                  placeholder="What should the agent do?"
+                ></textarea><label for="run-acceptance"
+                  >Acceptance criteria <span class="faint">(optional)</span></label
+                ><textarea id="run-acceptance" rows="2" aria-describedby="criteria-help"></textarea>
+                <p class="hint" id="criteria-help">
+                  Enter one check per line. Starting a run uses the project’s configured model and
+                  tool permissions.
+                </p>
+                <div class="toolbar">
+                  <button id="submit-run" type="submit">Start run</button
+                  ><button type="button" id="cancel-run">Cancel</button>
+                </div>
+              </form>
+              <div id="launch-feedback" role="status" tabindex="-1" hidden></div>
+              <p id="runs-info" class="hint">Select a run to see its result and next step.</p>
+              <div id="run-list" class="empty">Loading…</div>
+            </article>
+          </section>
+          <section id="view-hosts" class="stack" hidden>
+            <article class="panel">
+              <h2>Workspace setup</h2>
+              <div id="setup-guidance" class="empty">Loading…</div>
+            </article>
+            <article class="panel">
+              <h2>Host support</h2>
+              <p class="hint">
+                Setup checks describe files in this checkout. Confirm plugin activation inside your
+                coding client.
+              </p>
+              <div id="host-list" class="empty">Loading…</div>
+            </article>
+          </section>
+          <section id="view-memory" class="stack" hidden>
+            <article class="panel" id="memory-panel">
+              <h2>Search project memory</h2>
+              <p class="hint">Look up facts and decisions from this project’s claim ledger.</p>
+              <div class="toolbar">
+                <label for="mem-q">Search</label>
+                <input type="text" id="mem-q" class="grow" placeholder="e.g. deployment window">
+                <label for="mem-kind">Type</label
+                ><select id="mem-kind">
+                  <option value="">All types</option>
+                </select><span id="mem-count"></span>
+              </div>
+              <div id="memory-out" class="empty"></div>
+            </article>
+            <article class="panel" id="ledger-panel">
+              <h2>Review saved claims</h2>
+              <div class="stats" id="ledger-stats"></div>
+              <div class="toolbar">
+                <label for="kind-filter">Type</label
+                ><select id="kind-filter">
+                  <option value="">All types</option>
+                </select><span id="claim-count" class="faint"></span>
+              </div>
+              <div id="claims"></div>
+              <h3>Conflicting evidence</h3>
+              <div id="contested"></div>
+              <h3>Confidence by author</h3>
+              <div id="trust"></div>
+            </article>
+            <article class="panel" id="timeline-panel">
+              <h2>Memory history</h2>
+              <ul class="tl" id="timeline-out"></ul>
+            </article>
+          </section>
+          <section id="view-usage" class="stack" hidden>
+            <article class="panel" id="cost-panel">
+              <h2>Session costs</h2>
+              <p class="hint">
+                Estimates use tokens in available session logs and configured model prices.
+              </p>
+              <div class="stats" id="cost-stats"></div>
+              <div id="spend-section"></div>
+              <h3>Activity by stage</h3>
+              <div id="stages"></div>
+              <h3>Recent events</h3>
+              <ul class="log" id="recent"></ul>
+            </article>
+            <article class="panel" id="history-panel">
+              <h2>Activity over time</h2>
+              <div id="history-out"></div>
+            </article>
+          </section>
+          <section id="view-tools" class="stack" hidden>
+            <article class="panel" id="impact-panel">
+              <h2>Trace a code change</h2>
+              <p class="hint">Find code that depends on a symbol or file.</p>
+              <div class="toolbar">
+                <label for="impact-target">File or symbol</label>
+                <input type="text" id="impact-target" class="grow" placeholder="e.g. dashData">
+                <button id="impact-go" type="button">Trace dependencies</button>
+              </div>
+              <div id="impact-out" aria-live="polite"></div>
+            </article>
+            <article class="panel" id="radar-panel">
+              <h2>Dependency review</h2>
+              <p class="hint">
+                Inspect cached versions and recommendations from the project’s last dependency scan.
+              </p>
+              <div id="radar-rings" class="rings"></div>
+              <div id="radar-out"></div>
+            </article>
+            <article class="panel help">
+              <details>
+                <summary>Dashboard help</summary>
+                <p>
+                  Runs shows verification results and next steps. Coding hosts lists this project’s
+                  integration settings. Project memory lets you search, confirm or retract recorded
+                  claims. Usage shows session estimates. Code tools traces dependencies and reads
+                  cached package reviews.
+                </p>
+              </details>
+            </article>
+          </section>
+          <div id="feedback" class="toast" role="status" hidden></div>
+        </main>
       </div>
-      <div id="read-errors" class="empty-banner" role="alert" hidden></div>
-
-      <section class="panel wide legend" id="legend" hidden>
-        <h2>What each panel means</h2>
-        <dl>
-          <dt>Ledger</dt>
-          <dd>
-            Proof-carrying claims the substrate has learned, each scored by how
-            often evidence has confirmed it (val).
-          </dd>
-          <dt>Cost / Cache</dt>
-          <dd>
-            Real spend and tokens saved, measured from your session metrics —
-            asserted by nothing, counted from what happened.
-          </dd>
-          <dt>Impact</dt>
-          <dd>
-            The blast radius of a change: which files a given symbol or file
-            would ripple out to.
-          </dd>
-          <dt>Radar</dt>
-          <dd>
-            Whether each dependency is current, deprecated, or worth adopting —
-            grouped into adopt / trial / assess / hold rings.
-          </dd>
-          <dt>Trends</dt>
-          <dd>
-            How each pipeline stage has behaved over the recent window, as a
-            per-stage sparkline of activity.
-          </dd>
-          <dt>Memory browser</dt>
-          <dd>
-            Search past claims, ranked by relevance × freshness × confidence —
-            the same recall that powers <span class="mono">forge deja</span>.
-          </dd>
-          <dt>Session timeline</dt>
-          <dd>
-            The durable history of claims minted and retracted, carried across
-            sessions.
-          </dd>
-        </dl>
-      </section>
-      <section class="panel wide" id="ledger-panel">
-        <h2>
-          Ledger — proof-carrying memory <span class="cmd">.forge/ledger/</span>
-        </h2>
-        <div class="stats" id="ledger-stats"></div>
-        <div class="toolbar">
-          <label class="faint mono" for="kind-filter">kind</label>
-          <select id="kind-filter">
-            <option value="">all</option>
-          </select>
-          <span class="grow"></span>
-          <span id="claim-count" class="mono faint"></span>
-        </div>
-        <div id="claims"></div>
-        <h3>Contested — val ∈ [0.40, 0.60] with ≥1 contradiction</h3>
-        <div id="contested"></div>
-        <h3>Author trust — earned from oracle outcomes, floored at 0.50</h3>
-        <div id="trust"></div>
-      </section>
-
-      <section class="panel" id="cost-panel">
-        <h2>
-          Cost / Cache — measured, not asserted
-          <span class="cmd">.forge/metrics.jsonl</span>
-        </h2>
-        <div class="stats" id="cost-stats"></div>
-        <div id="spend-section"></div>
-        <div id="stages"></div>
-        <h3>Recent events</h3>
-        <ul class="log" id="recent"></ul>
-      </section>
-
-      <section class="panel" id="impact-panel">
-        <h2>
-          Impact — blast radius <span class="cmd">.forge/atlas.json</span>
-        </h2>
-        <div class="toolbar">
-          <input
-            type="text"
-            id="impact-target"
-            placeholder="symbol or file — e.g. dashData"
-            style="flex: 1"
-          />
-          <button id="impact-go" type="button">trace</button>
-        </div>
-        <div id="impact-out" class="empty">
-          pick a symbol to see what a change would touch
-        </div>
-      </section>
-
-      <section class="panel" id="radar-panel">
-        <h2>
-          Radar — dependency currency <span class="cmd">forge radar</span>
-        </h2>
-        <div class="rings" id="radar-rings"></div>
-        <div id="radar-out" class="empty">
-          no radar cache yet — run: forge radar
-        </div>
-      </section>
-
-      <section class="panel" id="history-panel">
-        <h2>
-          Trends — stage history <span class="cmd">.forge/metrics.jsonl</span>
-        </h2>
-        <div id="history-out" class="empty">
-          no metrics yet — stages append as you work
-        </div>
-      </section>
-
-      <section class="panel wide" id="memory-panel">
-        <h2>
-          Memory browser — ranked recall
-          <span class="cmd">forge deja "&lt;task&gt;"</span>
-        </h2>
-        <div class="toolbar">
-          <input
-            type="text"
-            id="mem-q"
-            class="grow"
-            placeholder="search claims — rel × freshness × val ranking"
-          />
-          <select id="mem-kind">
-            <option value="">all kinds</option>
-          </select>
-          <span id="mem-count" class="mono faint"></span>
-        </div>
-        <div id="memory-out" class="empty">
-          type to search, or leave blank for the whole ledger by confidence
-        </div>
-      </section>
-
-      <section class="panel wide" id="timeline-panel">
-        <h2>
-          Session timeline — durable memory events
-          <span class="cmd">.forge/ledger/</span>
-        </h2>
-        <ul class="tl" id="timeline-out"></ul>
-      </section>
-    </main>
-
-    <footer>
-      lens on .forge/ — every number traces to
-      <span class="mono">forge ledger blame &lt;id&gt;</span>. the only writes
-      are ratify/retract (append-only; CLI twins:
-      <span class="mono">forge ledger ratify|retract</span>).
-    </footer>
-
+    </div>
     <script>
-      "use strict";
-      const $ = (id) => document.getElementById(id);
-      const esc = (s) =>
-        String(s).replace(
-          /[&<>"']/g,
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) =>
+      String(s).replace(
+        /[&<>"']/g,
+        (c) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[c],
+      );
+
+    const bar = (v, { dim = false } = {}) =>
+      '<span class="bar' +
+      (dim ? " dim" : "") +
+      '"><i style="width:' +
+      Math.round(Math.max(0, Math.min(1, v)) * 100) +
+      '%"></i></span><span class="barnum">' +
+      v.toFixed(2) +
+      "</span>";
+
+    // Every claim row carries its provenance affordance — click to copy the exact command.
+    const blameCell = (id8) =>
+      `<td><button type="button" class="blame" data-id8="${esc(id8)}">forge ledger blame ${esc(id8)}</button></td>`;
+
+    // The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
+    // server stamps YOUR git identity as author); retract = tombstone with a reason.
+    // A tombstoned row gets neither — retraction is already the terminal append.
+    const actionsCell = (c) =>
+      c.tombstoned
+        ? "<td></td>"
+        : '<td class="acts"><button type="button" class="act" data-act="ratify" data-id8="' +
+          esc(c.id8) +
+          '" title="Record a confirmed decision under your Git identity">Confirm</button> ' +
+          '<button type="button" class="act" data-act="retract" data-id8="' +
+          esc(c.id8) +
+          '" title="Record a reason for withdrawing this claim">Retract</button></td>';
+
+    const claimRows = (claims) =>
+      claims
+        .map(
           (c) =>
-            ({
-              "&": "&amp;",
-              "<": "&lt;",
-              ">": "&gt;",
-              '"': "&quot;",
-              "'": "&#39;",
-            })[c],
-        );
-
-      const bar = (v, { dim = false } = {}) =>
-        '<span class="bar' +
-        (dim ? " dim" : "") +
-        '"><i style="width:' +
-        Math.round(Math.max(0, Math.min(1, v)) * 100) +
-        '%"></i></span><span class="barnum">' +
-        v.toFixed(2) +
-        "</span>";
-
-      // Every claim row carries its provenance affordance — click to copy the exact command.
-      const blameCell = (id8) =>
-        `<td><span class="blame" data-id8="${esc(id8)}">forge ledger blame ${esc(id8)}</span></td>`;
-
-      // The two writes (spec §2), per live row. Ratify = human-only hikma promotion (the
-      // server stamps YOUR git identity as author); retract = tombstone with a reason.
-      // A tombstoned row gets neither — retraction is already the terminal append.
-      const actionsCell = (c) =>
-        c.tombstoned
-          ? "<td></td>"
-          : '<td class="acts"><span class="act" data-act="ratify" data-id8="' +
+            '<tr class="' +
+            (c.tombstoned ? "tomb" : "") +
+            '">' +
+            '<td class="mono faint">' +
             esc(c.id8) +
-            '" title="promote to hikma — mints a decision claim with you as author">ratify ▸</span> ' +
-            '<span class="act" data-act="retract" data-id8="' +
-            esc(c.id8) +
-            '" title="tombstone this claim with a reason (append-only)">retract ✕</span></td>';
+            "</td>" +
+            '<td><span class="tag">' +
+            esc(c.kind) +
+            "</span>" +
+            (c.tombstoned ? ' <span class="tag">retracted</span>' : "") +
+            "</td>" +
+            "<td>" +
+            bar(c.val, { dim: c.val < 0.35 }) +
+            "</td>" +
+            '<td class="num">' +
+            c.evidenceCount +
+            "</td>" +
+            '<td class="muted">' +
+            esc(c.author || "—") +
+            "</td>" +
+            '<td class="text">' +
+            esc(c.text) +
+            "</td>" +
+            blameCell(c.id8) +
+            actionsCell(c) +
+            "</tr>",
+        )
+        .join("");
 
-      const claimRows = (claims) =>
-        claims
+    const claimTable = (claims) =>
+      "<table><thead><tr><th>ID</th><th>kind</th><th>Confidence</th><th>Evidence</th><th>author</th>" +
+      "<th>claim</th><th>Source command</th><th>actions</th></tr></thead><tbody>" +
+      claimRows(claims) +
+      "</tbody></table>";
+
+    let DATA = null;
+
+    function renderLedger(d) {
+      const L = d.ledger;
+      $("ledger-stats").innerHTML =
+        '<span class="stat"><span class="n">' +
+        L.stats.total +
+        '</span><span class="l">claims</span></span>' +
+        '<span class="stat"><span class="n ember">' +
+        L.stats.val.trusted +
+        '</span><span class="l">trusted ≥0.65</span></span>' +
+        '<span class="stat"><span class="n">' +
+        L.stats.val.uncertain +
+        '</span><span class="l">uncertain</span></span>' +
+        '<span class="stat"><span class="n">' +
+        L.stats.val.dormant +
+        '</span><span class="l">dormant &lt;0.35</span></span>' +
+        Object.entries(L.stats.byKind)
+          .map(
+            ([k, n]) =>
+              `<span class="stat"><span class="n">${n}</span><span class="l">${esc(k)}</span></span>`,
+          )
+          .join("");
+
+      const kinds = Object.keys(L.stats.byKind).sort();
+      const sel = $("kind-filter");
+      const keep = sel.value;
+      sel.innerHTML =
+        '<option value="">all</option>' +
+        kinds.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+      if (kinds.includes(keep)) sel.value = keep;
+
+      const shown = L.claims.filter((c) => !sel.value || c.kind === sel.value);
+      $("claim-count").textContent = `${shown.length} of ${L.stats.total} shown`;
+      $("claims").innerHTML = shown.length
+        ? claimTable(shown)
+        : '<div class="empty">No matching claims. To save a fact, run forge remember "&lt;name&gt;" "&lt;fact&gt;"</div>';
+
+      $("contested").innerHTML = L.contested.length
+        ? `<span class="tag contested">${L.contested.length} contested</span>${claimTable(L.contested)}`
+        : '<div class="empty">No claims with conflicting evidence need review.</div>';
+
+      const trust = Object.entries(L.trust).sort((a, b) => b[1] - a[1]);
+      $("trust").innerHTML = trust.length
+        ? "<table><tbody>" +
+          trust
+            .map(([a, u]) => `<tr><td class="muted">${esc(a)}</td><td>${bar(u)}</td></tr>`)
+            .join("") +
+          "</tbody></table>"
+        : '<div class="empty">No author scores yet.</div>';
+    }
+
+    function renderCost(d) {
+      const stages = Object.entries(d.metrics.stages);
+      const saved = stages.reduce((n, [, s]) => n + (s.savedEstimate || 0), 0);
+      const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
+      const spend = d.spend;
+      const noData = (!spend || !(spend.totalCost > 0)) && saved === 0 && events === 0;
+      if (noData) {
+        $("cost-stats").innerHTML = spend
+          ? '<div class="empty">No session costs have been recorded.</div>'
+          : '<div class="empty">Cost unavailable. No session logs were found.</div>';
+      } else {
+        // An ESTIMATE (logged tokens × catalog prices, USD) — never labeled as a bill, and
+        // marked partial when some model had no price (review A10).
+        $("cost-stats").innerHTML =
+          (spend && spend.totalCost > 0
+            ? '<span class="stat"><span class="n ember">$' +
+              spend.totalCost.toFixed(2) +
+              '</span><span class="l">est. spend (USD, logged tokens × list price' +
+              (spend.complete === false
+                ? `; partial — ${spend.unpriced?.length ?? 0} model(s) unpriced`
+                : "") +
+              ")</span></span>" +
+              '<span class="stat"><span class="n">' +
+              spend.sessions +
+              '</span><span class="l">sessions</span></span>'
+            : "") +
+          '<span class="stat"><span class="n' +
+          (spend && spend.totalCost > 0 ? "" : " ember") +
+          '">' +
+          saved.toLocaleString() +
+          '</span><span class="l">est. tokens saved</span></span>' +
+          '<span class="stat"><span class="n">' +
+          events +
+          '</span><span class="l">stage events</span></span>';
+      }
+      if (spend?.byModel?.length) {
+        $("spend-section").innerHTML =
+          "<h3>Spend by model</h3>" +
+          "<table><thead><tr><th>model</th><th>cost</th><th>Input tokens</th><th>Output tokens</th></tr></thead><tbody>" +
+          spend.byModel
+            .map(
+              (m) =>
+                '<tr><td class="mono">' +
+                esc(m.model) +
+                '</td><td class="num">' +
+                (m.priced === false || m.cost == null ? "unpriced" : `$${m.cost.toFixed(4)}`) +
+                '</td><td class="num">' +
+                (m.inTokens || 0).toLocaleString() +
+                '</td><td class="num">' +
+                (m.outTokens || 0).toLocaleString() +
+                "</td></tr>",
+            )
+            .join("") +
+          "</tbody></table>";
+      } else {
+        $("spend-section").innerHTML =
+          '<div class="empty">No per-model estimates are available.</div>';
+      }
+      $("stages").innerHTML = stages.length
+        ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
+          stages
+            .map(
+              ([name, s]) =>
+                '<tr><td class="mono">' +
+                esc(name) +
+                '</td><td class="num">' +
+                s.events +
+                "</td><td>" +
+                Object.entries(s.byOutcome || {})
+                  .map(([o, n]) => `<span class="tag">${esc(o)} ${n}</span>`)
+                  .join(" ") +
+                '</td><td class="num">' +
+                (s.savedEstimate || 0).toLocaleString() +
+                "</td></tr>",
+            )
+            .join("") +
+          "</tbody></table>"
+        : '<div class="empty">No stage activity has been recorded.</div>';
+      $("recent").innerHTML =
+        d.metrics.recent
+          .slice()
+          .reverse()
+          .map(
+            (e) =>
+              "<li>" +
+              new Date(e.t).toLocaleTimeString() +
+              ' <span class="st">' +
+              esc(e.stage) +
+              "</span> " +
+              esc(e.outcome || "") +
+              (e.savedEstimate ? ` <span class="plus">+${e.savedEstimate}</span>` : "") +
+              "</li>",
+          )
+          .join("") || '<li class="empty">No recent session events.</li>';
+    }
+
+    async function runImpact() {
+      const target = $("impact-target").value.trim();
+      const out = $("impact-out");
+      if (!target) return;
+      if (DATA && !DATA.atlas.built) {
+        out.innerHTML =
+          '<div class="empty">Build the code index with forge atlas build, then refresh.</div>';
+        return;
+      }
+      out.innerHTML = '<div class="empty">tracing…</div>';
+      const res = await fetch(`/api/impact?target=${encodeURIComponent(target)}`);
+      const r = await res.json();
+      if (!res.ok) {
+        out.innerHTML = `<div class="empty">${esc(r.error || "error")}</div>`;
+        return;
+      }
+      if (!r.found) {
+        out.innerHTML =
+          '<div class="empty">"' +
+          esc(target) +
+          '" not found in the atlas (' +
+          r.totalGraphNodes +
+          " nodes)</div>";
+        return;
+      }
+      out.innerHTML =
+        '<div class="stats">' +
+        '<span class="stat"><span class="n ember">' +
+        r.impactedFiles.length +
+        '</span><span class="l">impacted files</span></span>' +
+        '<span class="stat"><span class="n">' +
+        r.impacted.length +
+        '</span><span class="l">nodes</span></span></div>' +
+        "<table><thead><tr><th>confidence</th><th>hop</th><th>node</th><th>file</th></tr></thead><tbody>" +
+        r.impacted
+          .slice(0, 40)
+          .map(
+            (x) =>
+              "<tr><td>" +
+              bar(x.confidence) +
+              '</td><td class="num">' +
+              (x.hopDistance ?? "llm") +
+              '</td><td class="mono">' +
+              esc(x.node.name || x.id) +
+              '</td><td class="muted">' +
+              esc(x.node.file || "") +
+              "</td></tr>",
+          )
+          .join("") +
+        "</tbody></table>" +
+        (r.impacted.length > 40
+          ? `<div class="empty">… ${r.impacted.length - 40} more</div>`
+          : "") +
+        '<div class="empty" style="margin-top:8px">same trace on the CLI: forge impact ' +
+        esc(target) +
+        "</div>";
+    }
+
+    // ~30-line inline-SVG sparkline — no library, no CDN. Plots a series of numbers
+    // as a polyline scaled to its own min/max, with a dot on the latest point.
+    function sparkline(values, { w = 240, h = 28 } = {}) {
+      const nums = values.map(Number).filter(Number.isFinite);
+      if (!nums.length) return "";
+      const max = Math.max(...nums, 0);
+      const min = Math.min(...nums, 0);
+      const range = max - min || 1;
+      const dx = nums.length > 1 ? w / (nums.length - 1) : 0;
+      const y = (v) => (h - 1 - ((v - min) / range) * (h - 2)).toFixed(1);
+      const pts = nums.map((v, i) => `${(i * dx).toFixed(1)},${y(v)}`).join(" ");
+      const lx = ((nums.length - 1) * dx).toFixed(1);
+      const ly = y(nums[nums.length - 1]);
+      return (
+        '<svg class="spark-svg" viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" preserveAspectRatio="none">' +
+        '<polyline fill="none" stroke="var(--ember)" stroke-width="1.5" points="' +
+        pts +
+        '"/>' +
+        '<circle cx="' +
+        lx +
+        '" cy="' +
+        ly +
+        '" r="2" fill="var(--ember)"/></svg>'
+      );
+    }
+
+    function renderHistory(h) {
+      const stages = Object.entries(h.stages || {});
+      if (!stages.length) {
+        $("history-out").innerHTML =
+          '<div class="empty">No stage activity has been recorded.</div>';
+        return;
+      }
+      $("history-out").innerHTML = stages
+        .map(([name, s]) => {
+          const series = (s.series || []).map((p) => p.events);
+          const saved = s.saved ? ` · ${s.saved.toLocaleString()} saved` : "";
+          return (
+            '<div class="trend"><span class="lbl">' +
+            esc(name || "—") +
+            "</span>" +
+            sparkline(series) +
+            '<span class="n">' +
+            s.events +
+            " ev" +
+            saved +
+            "</span></div>"
+          );
+        })
+        .join("");
+    }
+
+    function renderRadar(r) {
+      const ringN = r.counts || {};
+      $("radar-rings").innerHTML = ["adopt", "trial", "assess", "hold"]
+        .map(
+          (k) =>
+            '<span class="ringcount"><span class="dot ' +
+            k +
+            '"></span>' +
+            esc(k) +
+            " " +
+            (ringN[k] || 0) +
+            "</span>",
+        )
+        .join("");
+      if (!r.present || !r.deps.length) {
+        $("radar-out").innerHTML =
+          '<div class="empty">Run forge radar in this project to cache a dependency review.</div>';
+        return;
+      }
+      $("radar-out").innerHTML =
+        "<table><thead><tr><th>Package</th><th>Recommendation</th><th>score</th><th>version</th></tr></thead><tbody>" +
+        r.deps
+          .map(
+            (d) =>
+              '<tr><td class="mono">' +
+              esc(d.name) +
+              '</td><td class="ring"><span class="dot ' +
+              esc(d.ring) +
+              '"></span> ' +
+              esc(d.ring) +
+              "</td><td>" +
+              (d.score == null ? '<span class="faint">—</span>' : bar(d.score, { dim: true })) +
+              '</td><td class="mono faint">' +
+              esc(d.version || "") +
+              (d.latest && d.latest !== d.version ? ` → ${esc(d.latest)}` : "") +
+              "</td></tr>",
+          )
+          .join("") +
+        "</tbody></table>";
+    }
+
+    function renderMemory(m) {
+      $("mem-count").textContent = m.rows.length ? `${m.rows.length} of ${m.total}` : "";
+      // keep the kind dropdown in sync with what the ledger holds
+      const sel = $("mem-kind");
+      const keep = sel.value;
+      const kinds = [...new Set((DATA?.ledger.claims || []).map((c) => c.kind))].sort();
+      sel.innerHTML =
+        '<option value="">all kinds</option>' +
+        kinds.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+      sel.value = kinds.includes(keep) ? keep : "";
+      if (!m.rows.length) {
+        $("memory-out").innerHTML =
+          '<div class="empty">No matching claims. Try another term or clear the search.</div>';
+        return;
+      }
+      $("memory-out").innerHTML =
+        "<table><thead><tr><th>kind</th><th>confidence</th><th>freshness</th>" +
+        (m.q ? "<th>score</th>" : "") +
+        "<th>claim</th><th>Source command</th></tr></thead><tbody>" +
+        m.rows
           .map(
             (c) =>
               '<tr class="' +
               (c.tombstoned ? "tomb" : "") +
-              '">' +
-              '<td class="mono faint">' +
-              esc(c.id8) +
-              "</td>" +
-              '<td><span class="tag">' +
+              '"><td><span class="tag">' +
               esc(c.kind) +
-              "</span>" +
-              (c.tombstoned ? ' <span class="tag">retracted</span>' : "") +
-              "</td>" +
-              "<td>" +
+              "</span></td><td>" +
               bar(c.val, { dim: c.val < 0.35 }) +
+              "</td><td>" +
+              bar(c.fresh, { dim: true }) +
               "</td>" +
-              '<td class="num">' +
-              c.evidenceCount +
-              "</td>" +
-              '<td class="muted">' +
-              esc(c.author || "—") +
-              "</td>" +
+              (m.q
+                ? '<td class="num">' + (c.score == null ? "—" : c.score.toFixed(3)) + "</td>"
+                : "") +
               '<td class="text">' +
               esc(c.text) +
               "</td>" +
-              blameCell(c.id8) +
-              actionsCell(c) +
-              "</tr>",
+              '<td><button type="button" class="blame" data-id8="' +
+              esc(c.id8) +
+              '">forge ledger blame ' +
+              esc(c.id8) +
+              "</button></td></tr>",
           )
-          .join("");
-
-      const claimTable = (claims) =>
-        "<table><thead><tr><th>id</th><th>kind</th><th>val</th><th>evid</th><th>author</th>" +
-        "<th>claim</th><th>provenance</th><th>actions</th></tr></thead><tbody>" +
-        claimRows(claims) +
+          .join("") +
         "</tbody></table>";
+    }
 
-      let DATA = null;
-
-      function renderLedger(d) {
-        const L = d.ledger;
-        $("hdr-repo").textContent = `· ${d.repo}`;
-        $("hdr-meta").textContent =
-          `${L.stats.total} claims · ${L.stats.tombstoned} tombstoned · day ${d.nowDay}`;
-        $("ledger-stats").innerHTML =
-          '<span class="stat"><span class="n">' +
-          L.stats.total +
-          '</span><span class="l">claims</span></span>' +
-          '<span class="stat"><span class="n ember">' +
-          L.stats.val.trusted +
-          '</span><span class="l">trusted ≥0.65</span></span>' +
-          '<span class="stat"><span class="n">' +
-          L.stats.val.uncertain +
-          '</span><span class="l">uncertain</span></span>' +
-          '<span class="stat"><span class="n">' +
-          L.stats.val.dormant +
-          '</span><span class="l">dormant &lt;0.35</span></span>' +
-          Object.entries(L.stats.byKind)
-            .map(
-              ([k, n]) =>
-                `<span class="stat"><span class="n">${n}</span><span class="l">${esc(k)}</span></span>`,
-            )
-            .join("");
-
-        const kinds = Object.keys(L.stats.byKind).sort();
-        const sel = $("kind-filter");
-        const keep = sel.value;
-        sel.innerHTML =
-          '<option value="">all</option>' +
-          kinds
-            .map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
-            .join("");
-        if (kinds.includes(keep)) sel.value = keep;
-
-        const shown = L.claims.filter(
-          (c) => !sel.value || c.kind === sel.value,
-        );
-        $("claim-count").textContent =
-          `${shown.length} of ${L.stats.total} shown`;
-        $("claims").innerHTML = shown.length
-          ? claimTable(shown)
-          : '<div class="empty">no claims yet — mint one: forge remember "&lt;name&gt;" "&lt;fact&gt;"</div>';
-
-        $("contested").innerHTML = L.contested.length
-          ? `<span class="tag contested">${L.contested.length} contested</span>${claimTable(L.contested)}`
-          : '<div class="empty">none — no live claim is both uncertain and contradicted</div>';
-
-        const trust = Object.entries(L.trust).sort((a, b) => b[1] - a[1]);
-        $("trust").innerHTML = trust.length
-          ? "<table><tbody>" +
-            trust
-              .map(
-                ([a, u]) =>
-                  `<tr><td class="muted">${esc(a)}</td><td>${bar(u)}</td></tr>`,
-              )
-              .join("") +
-            "</tbody></table>"
-          : '<div class="empty">no authored claims yet</div>';
-      }
-
-      function renderCost(d) {
-        const stages = Object.entries(d.metrics.stages);
-        const saved = stages.reduce(
-          (n, [, s]) => n + (s.savedEstimate || 0),
-          0,
-        );
-        const events = stages.reduce((n, [, s]) => n + (s.events || 0), 0);
-        const spend = d.spend;
-        const noData =
-          (!spend || !(spend.totalCost > 0)) && saved === 0 && events === 0;
-        if (noData) {
-          $("cost-stats").innerHTML = spend
-            ? '<div class="empty">no cost data yet — run forge substrate or forge cost to start tracking</div>'
-            : '<div class="empty">spend unknown — no session logs were found (that is not $0)</div>';
-        } else {
-          // An ESTIMATE (logged tokens × catalog prices, USD) — never labeled as a bill, and
-          // marked partial when some model had no price (review A10).
-          $("cost-stats").innerHTML =
-            (spend && spend.totalCost > 0
-              ? '<span class="stat"><span class="n ember">$' +
-                spend.totalCost.toFixed(2) +
-                '</span><span class="l">est. spend (USD, logged tokens × list price' +
-                (spend.complete === false
-                  ? `; partial — ${spend.unpriced?.length ?? 0} model(s) unpriced`
-                  : "") +
-                ")</span></span>" +
-                '<span class="stat"><span class="n">' +
-                spend.sessions +
-                '</span><span class="l">sessions</span></span>'
-              : "") +
-            '<span class="stat"><span class="n' +
-            (spend && spend.totalCost > 0 ? "" : " ember") +
-            '">' +
-            saved.toLocaleString() +
-            '</span><span class="l">est. tokens saved</span></span>' +
-            '<span class="stat"><span class="n">' +
-            events +
-            '</span><span class="l">stage events</span></span>';
-        }
-        if (spend?.byModel?.length) {
-          $("spend-section").innerHTML =
-            "<h3>Spend by model</h3>" +
-            "<table><thead><tr><th>model</th><th>cost</th><th>in tok</th><th>out tok</th></tr></thead><tbody>" +
-            spend.byModel
-              .map(
-                (m) =>
-                  '<tr><td class="mono">' +
-                  esc(m.model) +
-                  '</td><td class="num">' +
-                  (m.priced === false || m.cost == null
-                    ? "unpriced"
-                    : `$${m.cost.toFixed(4)}`) +
-                  '</td><td class="num">' +
-                  (m.inTokens || 0).toLocaleString() +
-                  '</td><td class="num">' +
-                  (m.outTokens || 0).toLocaleString() +
-                  "</td></tr>",
-              )
-              .join("") +
-            "</tbody></table>";
-        } else {
-          $("spend-section").innerHTML =
-            '<div class="empty">no model spend data yet — real costs appear when ccusage is configured</div>';
-        }
-        $("stages").innerHTML = stages.length
-          ? "<table><thead><tr><th>stage</th><th>events</th><th>outcomes</th><th>saved</th></tr></thead><tbody>" +
-            stages
-              .map(
-                ([name, s]) =>
-                  '<tr><td class="mono">' +
-                  esc(name) +
-                  '</td><td class="num">' +
-                  s.events +
-                  "</td><td>" +
-                  Object.entries(s.byOutcome || {})
-                    .map(([o, n]) => `<span class="tag">${esc(o)} ${n}</span>`)
-                    .join(" ") +
-                  '</td><td class="num">' +
-                  (s.savedEstimate || 0).toLocaleString() +
-                  "</td></tr>",
-              )
-              .join("") +
-            "</tbody></table>"
-          : '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
-        $("recent").innerHTML =
-          d.metrics.recent
-            .slice()
-            .reverse()
+    function renderTimeline(t) {
+      $("timeline-out").innerHTML = t.events.length
+        ? t.events
             .map(
               (e) =>
-                "<li>" +
-                new Date(e.t).toLocaleTimeString() +
-                ' <span class="st">' +
-                esc(e.stage) +
-                "</span> " +
-                esc(e.outcome || "") +
-                (e.savedEstimate
-                  ? ` <span class="plus">+${e.savedEstimate}</span>`
-                  : "") +
-                "</li>",
+                '<li><span class="day">d' +
+                e.day +
+                '</span><span class="ev ' +
+                esc(e.type) +
+                '">' +
+                esc(e.type) +
+                " " +
+                esc(e.kind) +
+                '</span><span class="txt" title="' +
+                esc(e.text) +
+                '">' +
+                esc(e.text || "—") +
+                "</span></li>",
             )
-            .join("") ||
-          '<li class="empty">no recent events — the substrate records cache hits, gate passes, and routing decisions as you work</li>';
-      }
+            .join("")
+        : '<li class="empty">No saved or retracted claims yet.</li>';
+    }
 
-      async function runImpact() {
-        const target = $("impact-target").value.trim();
-        const out = $("impact-out");
-        if (!target) return;
-        if (DATA && !DATA.atlas.built) {
-          out.innerHTML =
-            '<div class="empty">no atlas — run: forge atlas build</div>';
-          return;
-        }
-        out.innerHTML = '<div class="empty">tracing…</div>';
-        const res = await fetch(
-          `/api/impact?target=${encodeURIComponent(target)}`,
-        );
-        const r = await res.json();
-        if (!res.ok) {
-          out.innerHTML = `<div class="empty">${esc(r.error || "error")}</div>`;
-          return;
-        }
-        if (!r.found) {
-          out.innerHTML =
-            '<div class="empty">"' +
-            esc(target) +
-            '" not found in the atlas (' +
-            r.totalGraphNodes +
-            " nodes)</div>";
-          return;
-        }
-        out.innerHTML =
-          '<div class="stats">' +
-          '<span class="stat"><span class="n ember">' +
-          r.impactedFiles.length +
-          '</span><span class="l">impacted files</span></span>' +
-          '<span class="stat"><span class="n">' +
-          r.impacted.length +
-          '</span><span class="l">nodes</span></span></div>' +
-          "<table><thead><tr><th>confidence</th><th>hop</th><th>node</th><th>file</th></tr></thead><tbody>" +
-          r.impacted
-            .slice(0, 40)
-            .map(
-              (x) =>
-                "<tr><td>" +
-                bar(x.confidence) +
-                '</td><td class="num">' +
-                (x.hopDistance ?? "llm") +
-                '</td><td class="mono">' +
-                esc(x.node.name || x.id) +
-                '</td><td class="muted">' +
-                esc(x.node.file || "") +
-                "</td></tr>",
-            )
-            .join("") +
-          "</tbody></table>" +
-          (r.impacted.length > 40
-            ? `<div class="empty">… ${r.impacted.length - 40} more</div>`
-            : "") +
-          '<div class="empty" style="margin-top:8px">same trace on the CLI: forge impact ' +
-          esc(target) +
-          "</div>";
+    const pages = {
+      overview: ["Overview", "Coding runs, host setup and project activity."],
+      runs: ["Runs", "Review recent supervised tasks, their verification results and next steps."],
+      hosts: [
+        "Coding hosts",
+        "Connect a coding client to this workspace and check its configuration.",
+      ],
+      memory: ["Project memory", "Search saved decisions and review the evidence behind them."],
+      usage: ["Usage", "Explore recorded session costs, token savings and activity."],
+      tools: ["Code tools", "Trace dependencies and review package recommendations."],
+    };
+    let currentPage = "overview";
+    let harness = null;
+    let harnessFailure = false;
+    let refreshing = false;
+    let refreshingAgain = false;
+    let feedbackTimer = null;
+    function icon(name) {
+      return '<svg class="icon" aria-hidden="true"><use href="#i-' + name + '"></use></svg>';
+    }
+    function navigate(moveFocus = false) {
+      const hash = location.hash.slice(1);
+      currentPage = Object.hasOwn(pages, hash) ? hash : "overview";
+      for (const key of Object.keys(pages)) $("view-" + key).hidden = key !== currentPage;
+      for (const link of document.querySelectorAll(".navlink")) {
+        if (link.hash === "#" + currentPage) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
       }
-
-      // ~30-line inline-SVG sparkline — no library, no CDN. Plots a series of numbers
-      // as a polyline scaled to its own min/max, with a dot on the latest point.
-      function sparkline(values, { w = 240, h = 28 } = {}) {
-        const nums = values.map(Number).filter(Number.isFinite);
-        if (!nums.length) return "";
-        const max = Math.max(...nums, 0);
-        const min = Math.min(...nums, 0);
-        const range = max - min || 1;
-        const dx = nums.length > 1 ? w / (nums.length - 1) : 0;
-        const y = (v) => (h - 1 - ((v - min) / range) * (h - 2)).toFixed(1);
-        const pts = nums
-          .map((v, i) => `${(i * dx).toFixed(1)},${y(v)}`)
-          .join(" ");
-        const lx = ((nums.length - 1) * dx).toFixed(1);
-        const ly = y(nums[nums.length - 1]);
-        return (
-          '<svg class="spark-svg" viewBox="0 0 ' +
-          w +
-          " " +
-          h +
-          '" preserveAspectRatio="none">' +
-          '<polyline fill="none" stroke="var(--ember)" stroke-width="1.5" points="' +
-          pts +
-          '"/>' +
-          '<circle cx="' +
-          lx +
-          '" cy="' +
-          ly +
-          '" r="2" fill="var(--ember)"/></svg>'
-        );
+      const [title, description] = pages[currentPage];
+      $("page-title").textContent = title;
+      $("page-desc").textContent = description;
+      document.title = title + " · ForgeKit";
+      closeMenu();
+      if (moveFocus) {
+        $("page-title").focus({ preventScroll: true });
+        window.scrollTo(0, 0);
       }
-
-      function renderHistory(h) {
-        const stages = Object.entries(h.stages || {});
-        if (!stages.length) {
-          $("history-out").innerHTML =
-            '<div class="empty">no metrics yet — stages append to .forge/metrics.jsonl as you work</div>';
-          return;
-        }
-        $("history-out").innerHTML = stages
-          .map(([name, s]) => {
-            const series = (s.series || []).map((p) => p.events);
-            const saved = s.saved ? ` · ${s.saved.toLocaleString()} saved` : "";
-            return (
-              '<div class="trend"><span class="lbl">' +
-              esc(name || "—") +
-              "</span>" +
-              sparkline(series) +
-              '<span class="n">' +
-              s.events +
-              " ev" +
-              saved +
-              "</span></div>"
-            );
-          })
-          .join("");
+    }
+    function closeMenu() {
+      $("rail").classList.remove("open");
+      $("menu").setAttribute("aria-expanded", "false");
+    }
+    function feedback(message) {
+      clearTimeout(feedbackTimer);
+      $("feedback").textContent = message;
+      $("feedback").hidden = false;
+      feedbackTimer = setTimeout(() => {
+        $("feedback").hidden = true;
+      }, 2200);
+    }
+    async function copyCommand(command, success = "Command copied") {
+      try {
+        await navigator.clipboard.writeText(command);
+        feedback(success);
+      } catch {
+        prompt("Copy this command", command);
       }
-
-      function renderRadar(r) {
-        const ringN = r.counts || {};
-        $("radar-rings").innerHTML = ["adopt", "trial", "assess", "hold"]
-          .map(
-            (k) =>
-              '<span class="ringcount"><span class="dot ' +
-              k +
-              '"></span>' +
-              esc(k) +
-              " " +
-              (ringN[k] || 0) +
-              "</span>",
-          )
-          .join("");
-        if (!r.present || !r.deps.length) {
-          $("radar-out").innerHTML =
-            '<div class="empty">no radar cache yet — run: forge radar</div>';
-          return;
-        }
-        $("radar-out").innerHTML =
-          "<table><thead><tr><th>dep</th><th>ring</th><th>score</th><th>version</th></tr></thead><tbody>" +
-          r.deps
-            .map(
-              (d) =>
-                '<tr><td class="mono">' +
-                esc(d.name) +
-                '</td><td class="ring"><span class="dot ' +
-                esc(d.ring) +
-                '"></span> ' +
-                esc(d.ring) +
-                "</td><td>" +
-                (d.score == null
-                  ? '<span class="faint">—</span>'
-                  : bar(d.score, { dim: true })) +
-                '</td><td class="mono faint">' +
-                esc(d.version || "") +
-                (d.latest && d.latest !== d.version
-                  ? ` → ${esc(d.latest)}`
-                  : "") +
-                "</td></tr>",
-            )
-            .join("") +
-          "</tbody></table>";
-      }
-
-      function renderMemory(m) {
-        $("mem-count").textContent = m.rows.length
-          ? `${m.rows.length} of ${m.total}`
-          : "";
-        // keep the kind dropdown in sync with what the ledger holds
-        const sel = $("mem-kind");
-        const keep = sel.value;
-        const kinds = [
-          ...new Set((DATA?.ledger.claims || []).map((c) => c.kind)),
-        ].sort();
-        sel.innerHTML =
-          '<option value="">all kinds</option>' +
-          kinds
-            .map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
-            .join("");
-        sel.value = kinds.includes(keep) ? keep : "";
-        if (!m.rows.length) {
-          $("memory-out").innerHTML =
-            '<div class="empty">no matching claims — try another term, or clear the box</div>';
-          return;
-        }
-        $("memory-out").innerHTML =
-          "<table><thead><tr><th>kind</th><th>confidence</th><th>freshness</th>" +
-          (m.q ? "<th>score</th>" : "") +
-          "<th>claim</th><th>provenance</th></tr></thead><tbody>" +
-          m.rows
-            .map(
-              (c) =>
-                '<tr class="' +
-                (c.tombstoned ? "tomb" : "") +
-                '"><td><span class="tag">' +
-                esc(c.kind) +
-                "</span></td><td>" +
-                bar(c.val, { dim: c.val < 0.35 }) +
-                "</td><td>" +
-                bar(c.fresh, { dim: true }) +
-                "</td>" +
-                (m.q
-                  ? '<td class="num">' +
-                    (c.score == null ? "—" : c.score.toFixed(3)) +
-                    "</td>"
-                  : "") +
-                '<td class="text">' +
-                esc(c.text) +
-                "</td>" +
-                '<td><span class="blame" data-id8="' +
-                esc(c.id8) +
-                '">forge ledger blame ' +
-                esc(c.id8) +
-                "</span></td></tr>",
-            )
-            .join("") +
-          "</tbody></table>";
-      }
-
-      function renderTimeline(t) {
-        $("timeline-out").innerHTML = t.events.length
-          ? t.events
-              .map(
-                (e) =>
-                  '<li><span class="day">d' +
-                  e.day +
-                  '</span><span class="ev ' +
-                  esc(e.type) +
-                  '">' +
-                  esc(e.type) +
-                  " " +
-                  esc(e.kind) +
-                  '</span><span class="txt" title="' +
-                  esc(e.text) +
-                  '">' +
-                  esc(e.text || "—") +
-                  "</span></li>",
-              )
-              .join("")
-          : '<li class="empty">no durable events yet — claims and tombstones appear here across sessions</li>';
-      }
-
-      let memTimer = null;
-      async function refreshMemory() {
-        const q = encodeURIComponent($("mem-q").value.trim());
-        const kind = encodeURIComponent($("mem-kind").value);
-        try {
-          const m = await (
-            await fetch(`/api/claims?q=${q}&kind=${kind}`)
-          ).json();
-          renderMemory(m);
-        } catch {}
-      }
-
-      // First-run banner: shown only when the payload reports an untouched .forge/.
-      function renderEmptyState(d) {
-        const es = $("empty-state");
-        if (es) es.hidden = !d?.meta?.empty;
-        // A store that could not be READ is not an empty one — say which, and why.
-        const re = $("read-errors");
-        const errs = d?.meta?.errors ?? [];
-        if (re) {
-          re.hidden = !errs.length;
-          re.textContent = errs.length
-            ? `Could not read: ${errs.map((e) => `${e.section} (${e.error})`).join("; ")} — the panels below are incomplete, not empty.`
+    }
+    function codebox(command) {
+      return (
+        '<div class="codebox"><code>' +
+        esc(command) +
+        '</code><button type="button" class="copy" data-command="' +
+        esc(command) +
+        '" aria-label="Copy command">Copy</button></div>'
+      );
+    }
+    function blank(title, text, mark = "runs") {
+      return (
+        '<div class="blank">' +
+        icon(mark) +
+        "<h3>" +
+        esc(title) +
+        "</h3><p>" +
+        esc(text) +
+        "</p></div>"
+      );
+    }
+    function label(value) {
+      return String(value ?? "Unknown")
+        .replace(/[_-]+/g, " ")
+        .replace(/^./, (c) => c.toUpperCase());
+    }
+    const wiringText = {
+      configured: "Files ready",
+      "needs-attention": "Check setup",
+      manual: "Check in client",
+      "not-checked": "Not checked",
+    };
+    function wire(host) {
+      if (!host.selected) return { text: host.detected ? "Not selected" : "Supported", color: "" };
+      return {
+        text: wiringText[host.wiring] ?? "Not checked",
+        color:
+          host.wiring === "configured" ? "good" : host.wiring === "needs-attention" ? "attn" : "",
+      };
+    }
+    function hostRow(host, short) {
+      const state = wire(host),
+        mark = ["claude", "codex", "kimi"].includes(host.id) ? host.id : "";
+      const type = {
+        native: "Native hooks",
+        mcp: "MCP connection",
+        instructions: "Project instructions",
+        manual: "Manual setup",
+      }[host.capability];
+      const note = [type, host.note].filter(Boolean).join(" · ");
+      return (
+        '<div class="host-row"><span class="hostmark ' +
+        mark +
+        '" aria-hidden="true">' +
+        esc((host.label || host.id || "?").slice(0, 1)) +
+        "</span><div><strong>" +
+        esc(host.label || host.id) +
+        "</strong>" +
+        (!short && note ? "<p>" + esc(note) + "</p>" : "") +
+        '</div><span class="tag push ' +
+        state.color +
+        '">' +
+        esc(state.text) +
+        "</span></div>"
+      );
+    }
+    function runState(run) {
+      const names = {
+        done: "Completed",
+        running: "In progress",
+        approval_pending: "Awaiting approval",
+        awaiting_approval: "Awaiting approval",
+        verification_failed: "Verification failed",
+        budget_exhausted: "Budget reached",
+      };
+      const text = run.verified === true ? "Verified" : names[run.status] || label(run.status);
+      const color =
+        run.verified === true
+          ? "good"
+          : /fail|approval|denied|exhausted|interrupt/.test(run.status || "")
+            ? "attn"
             : "";
-        }
-      }
-
-      async function refresh() {
-        const res = await fetch("/api/data");
-        DATA = await res.json();
-        renderEmptyState(DATA);
-        renderLedger(DATA);
-        renderCost(DATA);
-        // v2 lenses — each is independent, a failure in one never blanks the others.
-        const pull = async (path, render) => {
-          try {
-            render(await (await fetch(path)).json());
-          } catch {}
-        };
-        await Promise.all([
-          pull("/api/history", renderHistory),
-          pull("/api/radar", renderRadar),
-          pull("/api/timeline", renderTimeline),
-          refreshMemory(),
-        ]);
-      }
-
-      // The two writes: POST then refresh — the ledger on disk is the only state, the page
-      // just re-reads it. retract prompts for its reason (spec: tombstone WITH a reason).
-      async function runWrite(act, id8) {
-        const body = { id: id8 };
-        if (act === "retract") {
-          const reason = prompt(
-            `retract ${id8} — reason (recorded in the tombstone):`,
+      return '<span class="tag ' + color + '">' + esc(text) + "</span>";
+    }
+    function stamp(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      return Number.isFinite(date.getTime())
+        ? date.toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : "";
+    }
+    function renderRuns(h) {
+      const runs = h?.runs ?? [];
+      const unavailable = harnessFailure || !h || h.runsUnavailable || h.state === "private";
+      const partial = unavailable && runs.length > 0;
+      const report =
+        h?.state === "private"
+          ? "Open the dashboard on loopback to view private run records."
+          : "Refresh the dashboard or check your local run store.";
+      $("runs-info").textContent = partial
+        ? "Some run records could not be read. Showing available records."
+        : h?.moreRuns
+          ? "Showing the 20 most recent runs. Select a run to inspect it."
+          : "Select a run to see its result and next step.";
+      const empty = unavailable
+        ? blank("Run history unavailable", report)
+        : blank("No runs yet", "After you start a supervised task, its result will appear here.");
+      const summary = runs
+        .slice(0, 4)
+        .map(
+          (run) =>
+            '<li><a class="run-row" href="#runs" data-open-run="' +
+            esc(run.id) +
+            '"><div><strong>' +
+            esc(run.task || run.id) +
+            "</strong><small>" +
+            esc([stamp(run.updatedAt), run.id].filter(Boolean).join(" · ")) +
+            "</small></div>" +
+            runState(run) +
+            "</a></li>",
+        )
+        .join("");
+      $("recent-runs").innerHTML = summary
+        ? (partial ? '<p class="hint">Some records are unavailable.</p>' : "") +
+          '<ul class="run-list">' +
+          summary +
+          "</ul>"
+        : empty;
+      const openIds = new Set(
+        [...$("run-list").querySelectorAll("details[open]")].map((el) => el.dataset.id),
+      );
+      const activeId = document.activeElement?.closest("#run-list details")?.dataset.id;
+      const focusedCopy = Boolean(document.activeElement?.matches("#run-list .copy"));
+      const details = runs
+        .map((run) => {
+          const fields = [
+            ["Run ID", run.id],
+            ["Last updated", stamp(run.updatedAt)],
+            ["Reason", run.reason ? label(run.reason) : null],
+            ["Turns", run.turns],
+            ["Tool calls", run.toolCalls],
+            ["Estimated cost", Number.isFinite(run.costUsd) ? "$" + run.costUsd.toFixed(4) : null],
+          ];
+          return (
+            '<details class="run-detail" data-id="' +
+            esc(run.id) +
+            '"' +
+            (openIds.has(String(run.id)) ? " open" : "") +
+            "><summary><span><strong>" +
+            esc(run.task || run.id) +
+            "</strong><small>" +
+            esc(stamp(run.updatedAt)) +
+            "</small></span>" +
+            runState(run) +
+            "</summary><dl>" +
+            fields
+              .filter(([, v]) => v != null && v !== "")
+              .map(([k, v]) => "<dt>" + k + "</dt><dd>" + esc(v) + "</dd>")
+              .join("") +
+            "</dl>" +
+            (run.nextAction ? '<p class="hint">' + esc(run.nextAction) + "</p>" : "") +
+            (run.command ? codebox(run.command) : "") +
+            "</details>"
           );
-          if (reason === null) return; // cancelled
-          body.reason = reason;
-        }
-        // The per-session write token the server embedded in this page (CSRF guard).
-        const token =
-          document.querySelector('meta[name="forge-dash-token"]')?.getAttribute("content") ?? "";
-        const res = await fetch(`/api/${act}`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-forge-token": token },
-          body: JSON.stringify(body),
-        });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok)
-          alert(`${act} failed: ${r.reason || r.error || res.status}`);
-        await refresh();
+        })
+        .join("");
+      const holder = $("run-list");
+      if (holder.dataset.rendered !== (details || empty)) {
+        holder.dataset.rendered = details || empty;
+        holder.innerHTML = details || empty;
+        if (activeId)
+          [...holder.querySelectorAll("details")]
+            .find((el) => el.dataset.id === activeId)
+            ?.querySelector(focusedCopy ? ".copy" : "summary")
+            ?.focus({ preventScroll: true });
       }
-
-      document.addEventListener("click", (ev) => {
-        const act = ev.target.closest(".act");
-        if (act) {
-          runWrite(act.dataset.act, act.dataset.id8).catch(() => {});
+    }
+    function hostCommand(id, adding) {
+      return adding
+        ? "forge harness connect --hosts " + id
+        : "forge harness init --hosts " + id + " --supervised";
+    }
+    function renderHarness(h) {
+      const state = harnessFailure || !h ? "unavailable" : h.state;
+      const hosts = h?.hosts ?? [];
+      const selected = hosts.filter((x) => x.selected);
+      const states = {
+        unconfigured: [
+          "Set up supervised runs",
+          "Choose a coding host and connect it to this project to start recording verified tasks.",
+          "Set up coding hosts",
+          "hosts",
+        ],
+        "needs-trust": [
+          "Review the project configuration",
+          "Review the harness files in this checkout, then trust the changes to enable runs.",
+          "Review setup",
+          "hosts",
+        ],
+        invalid: [
+          "Check the harness configuration",
+          "The project settings could not be loaded. Inspect the configuration before starting another run.",
+          "Review setup",
+          "hosts",
+        ],
+        private: [
+          "Private run data is hidden",
+          "Open the local dashboard on loopback to view this project’s supervised runs.",
+          "View coding hosts",
+          "hosts",
+        ],
+        unavailable: [
+          "Harness status unavailable",
+          "Refresh the dashboard to retry the connection.",
+          "View coding hosts",
+          "hosts",
+        ],
+        active:
+          h?.mode === "supervised"
+            ? [
+                "Supervised runs enabled",
+                "Tasks use the workspace’s tool permissions, model budget and verification checks.",
+                "New run",
+                "runs",
+              ]
+            : [
+                "Host-led runs enabled",
+                "Your coding client leads the session. You can also start a supervised run from the CLI or MCP.",
+                "New run",
+                "runs",
+              ],
+      };
+      const [title, desc, action, page] = states[state] || states.unavailable;
+      $("hero-title").textContent = title;
+      $("hero-body").textContent = desc;
+      const cta = $("hero-action");
+      cta.hidden = false;
+      cta.href = "#" + page;
+      cta.innerHTML = action + " " + icon("arrow");
+      const runs = h?.runs ?? [];
+      $("metric-runs").textContent =
+        !h || h.state === "private" || (h.runsUnavailable && !runs.length)
+          ? "—"
+          : String(runs.length) + (h.moreRuns ? "+" : "");
+      $("metric-runs-note").textContent = h?.moreRuns
+        ? "Recent records shown"
+        : "In this workspace";
+      $("metric-hosts").textContent =
+        !h || ["private", "invalid", "needs-trust"].includes(state) ? "—" : String(selected.length);
+      const featured = [
+        ...selected,
+        ...hosts.filter((host) => !host.selected && ["claude", "codex", "kimi"].includes(host.id)),
+      ].slice(0, 3);
+      $("overview-hosts").innerHTML = featured.length
+        ? featured.map((x) => hostRow(x, true)).join("")
+        : '<p class="empty">Host configuration unavailable.</p>';
+      $("host-list").innerHTML = hosts.length
+        ? hosts.map((x) => hostRow(x, false)).join("")
+        : '<p class="empty">Host information unavailable.</p>';
+      let setup;
+      if (state === "unconfigured" || state === "active") {
+        const adding = state === "active";
+        const candidates = hosts.filter(
+          (host) => /^[a-z][a-z0-9-]*$/.test(host.id) && (!adding || !host.selected),
+        );
+        const chosen = $("setup-host")?.value;
+        const preferred =
+          candidates.find((host) => host.id === chosen) ||
+          candidates.find((host) => host.detected) ||
+          candidates.find((host) => host.id === "claude") ||
+          candidates[0];
+        const ids = selected.map((host) => host.id).filter((id) => /^[a-z][a-z0-9-]*$/.test(id));
+        setup = adding
+          ? "<p>" +
+            esc(desc) +
+            "</p>" +
+            codebox(
+              ids.length ? "forge harness drift --hosts " + ids.join(",") : "forge harness status",
+            ) +
+            "<p>Check which model will handle your runs.</p>" +
+            codebox("forge harness routes")
+          : "<p>Choose a coding host and run the setup command in the project directory.</p>";
+        if (preferred) {
+          const options = candidates
+            .map(
+              (host) =>
+                '<option value="' +
+                esc(host.id) +
+                '"' +
+                (host.id === preferred.id ? " selected" : "") +
+                ">" +
+                esc(host.label) +
+                "</option>",
+            )
+            .join("");
+          setup +=
+            '<div class="toolbar"><label for="setup-host">' +
+            (adding ? "Add another host" : "Coding host") +
+            '</label><select id="setup-host">' +
+            options +
+            "</select></div>" +
+            '<div id="setup-command">' +
+            codebox(hostCommand(preferred.id, adding)) +
+            "</div><p>Follow the CLI’s activation steps in your client, then refresh this page.</p>";
+        }
+      } else if (state === "needs-trust")
+        setup =
+          "<p>Review the files under <code>harness/</code> in this checkout. When the configuration matches your intent, run:</p>" +
+          codebox("forge harness trust");
+      else if (state === "invalid")
+        setup =
+          "<p>Inspect the harness files and read the configuration error in your terminal.</p>" +
+          codebox("forge harness status");
+      else setup = "<p>" + esc(desc) + "</p>";
+      const holder = $("setup-guidance");
+      if (holder.dataset.source !== setup) {
+        const restore = document.activeElement?.id === "setup-host";
+        holder.innerHTML = setup;
+        if (restore) $("setup-host")?.focus({ preventScroll: true });
+        holder.dataset.source = setup;
+      }
+      renderRuns(h);
+    }
+    const getJson = async (url, options) => {
+      const res = await fetch(url, options);
+      const value = await res.json().catch(() => null);
+      if (!res.ok || !value)
+        throw new Error(
+          value?.error || value?.reason || "The dashboard request failed (" + res.status + ").",
+        );
+      return value;
+    };
+    function postJson(body) {
+      const token = document.querySelector('meta[name="forge-dash-token"]').content;
+      return {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forge-token": token },
+        body: JSON.stringify(body),
+      };
+    }
+    let memRequest = 0;
+    async function refreshMemory() {
+      const request = ++memRequest;
+      const q = encodeURIComponent($("mem-q").value.trim());
+      const kind = encodeURIComponent($("mem-kind").value);
+      try {
+        const result = await getJson("/api/claims?q=" + q + "&kind=" + kind);
+        if (request === memRequest) renderMemory(result);
+      } catch {
+        if (request === memRequest)
+          $("memory-out").textContent = "Project memory could not be read. Refresh to retry.";
+      }
+    }
+    async function refresh() {
+      if (refreshing) {
+        refreshingAgain = true;
+        return;
+      }
+      refreshing = true;
+      try {
+        const [dataResult, harnessResult] = await Promise.allSettled([
+          getJson("/api/data"),
+          getJson("/api/harness"),
+        ]);
+        const readError = $("read-errors");
+        if (dataResult.status === "fulfilled") {
+          DATA = dataResult.value;
+          $("hdr-repo").textContent = DATA.repo;
+          $("hdr-meta").textContent =
+            "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          renderLedger(DATA);
+          renderCost(DATA);
+          const errs = DATA.meta?.errors || [];
+          readError.hidden = !errs.length;
+          readError.textContent = errs.length
+            ? "Some project data could not be read. " +
+              errs.map((e) => label(e.section) + " (" + e.error + ")").join(" · ")
+            : "";
+          $("metric-memory").textContent = errs.some((e) => e.section === "ledger")
+            ? "—"
+            : DATA.ledger.stats.total;
+        } else {
+          $("hdr-meta").textContent = "Refresh failed";
+          if (!DATA) $("hdr-repo").textContent = "Project unavailable";
+          $("metric-memory").textContent = "—";
+          readError.hidden = false;
+          readError.textContent =
+            "Project data could not be refreshed. Check that forge dash is running.";
+        }
+        harnessFailure = harnessResult.status !== "fulfilled";
+        harness = harnessFailure ? null : harnessResult.value;
+        $("harness-error").hidden = !harnessFailure;
+        $("harness-error").textContent = harnessFailure
+          ? "Run information could not be refreshed. Check the local server and try again."
+          : "";
+        renderHarness(harness);
+        $("new-run").hidden = harness?.state !== "active";
+        $("run-setup").hidden = harness?.state === "active";
+        if (!harnessFailure && harness?.state !== "active") $("new-run-form").hidden = true;
+        focusRequestedRun();
+        const pull = async (path, render, id) => {
+          try {
+            render(await getJson(path));
+          } catch {
+            $(id).textContent = "This data could not be loaded. Refresh to retry.";
+          }
+        };
+        if (currentPage === "memory")
+          await Promise.all([
+            refreshMemory(),
+            pull("/api/timeline", renderTimeline, "timeline-out"),
+          ]);
+        if (currentPage === "tools") await pull("/api/radar", renderRadar, "radar-out");
+        if (currentPage === "usage") await pull("/api/history", renderHistory, "history-out");
+      } finally {
+        refreshing = false;
+        if (refreshingAgain) {
+          refreshingAgain = false;
+          void refresh();
+        }
+      }
+    }
+    async function runWrite(act, id8, button) {
+      const body = { id: id8 };
+      if (act === "retract") {
+        const reason = prompt(
+          "Why should claim " + id8 + " be retracted? The reason is saved in the project history.",
+        );
+        if (reason === null) return;
+        if (!reason.trim()) {
+          feedback("Enter a reason to retract a claim.");
           return;
         }
-        const el = ev.target.closest(".blame");
-        if (!el) return;
-        navigator.clipboard
-          ?.writeText(`forge ledger blame ${el.dataset.id8}`)
-          .then(() => {
-            el.classList.add("copied");
-            const prev = el.textContent;
-            el.textContent = "copied ✓";
-            setTimeout(() => {
-              el.textContent = prev;
-              el.classList.remove("copied");
-            }, 900);
-          });
-      });
-      $("refresh").addEventListener("click", refresh);
-      // Panel legend: pure display toggle, no fetch, no writes.
-      $("legend-toggle").addEventListener("click", () => {
-        const legend = $("legend");
-        const btn = $("legend-toggle");
-        const open = legend.hidden;
-        legend.hidden = !open;
-        btn.classList.toggle("on", open);
-        btn.setAttribute("aria-expanded", String(open));
-      });
-      $("kind-filter").addEventListener(
-        "change",
-        () => DATA && renderLedger(DATA),
+        body.reason = reason.trim();
+      }
+      try {
+        button.disabled = true;
+        await getJson("/api/" + act, postJson(body));
+        feedback(act === "ratify" ? "Claim confirmed" : "Claim retracted");
+        await refresh();
+      } catch (e) {
+        feedback(e.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    let launching = false;
+    let submission = null;
+    let watchRun = null;
+    function openForm() {
+      if (harness?.state !== "active") {
+        location.hash = "hosts";
+        return;
+      }
+      if (location.hash !== "#runs") location.hash = "runs";
+      $("new-run-form").hidden = false;
+      // Navigation's hashchange focus would otherwise take focus off the task.
+      requestAnimationFrame(() => $("run-task").focus());
+    }
+    function focusRequestedRun() {
+      if (!watchRun) return;
+      const detail = [...$("run-list").querySelectorAll("details")].find(
+        (el) => el.dataset.id === watchRun,
       );
-      $("impact-go").addEventListener("click", runImpact);
-      $("impact-target").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") runImpact();
-      });
-
-      // Memory browser: debounced live search, plus kind filter re-query.
-      $("mem-q").addEventListener("input", () => {
-        clearTimeout(memTimer);
-        memTimer = setTimeout(() => refreshMemory().catch(() => {}), 180);
-      });
-      $("mem-kind").addEventListener("change", () =>
-        refreshMemory().catch(() => {}),
-      );
-
-      // Live refresh: poll every 5s, paused while the tab is hidden (SSE is a
-      // follow-up; polling a localhost lens is cheap and keeps the base simple).
-      let poll = null;
-      const stopPoll = () => {
-        if (poll) clearInterval(poll);
-        poll = null;
-      };
-      const startPoll = () => {
-        stopPoll();
-        poll = setInterval(() => refresh().catch(() => {}), 5000);
-      };
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) stopPoll();
-        else {
-          refresh().catch(() => {});
-          startPoll();
+      if (detail) {
+        detail.open = true;
+        watchRun = null;
+      }
+    }
+    $("new-run").addEventListener("click", openForm);
+    $("hero-action").addEventListener("click", (e) => {
+      if (harness?.state === "active") {
+        e.preventDefault();
+        openForm();
+      }
+    });
+    $("cancel-run").addEventListener("click", () => {
+      $("new-run-form").hidden = true;
+      $("new-run").focus();
+    });
+    $("new-run-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (launching || harness?.state !== "active") return;
+      const task = $("run-task").value.trim();
+      if (!task) {
+        $("run-task").setCustomValidity("Enter a task.");
+        $("run-task").reportValidity();
+        return;
+      }
+      const acceptance = $("run-acceptance")
+        .value.split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const encoder = new TextEncoder();
+      if (
+        encoder.encode(task).length > 16384 ||
+        acceptance.length > 32 ||
+        acceptance.some((item) => encoder.encode(item).length > 2048)
+      ) {
+        $("launch-feedback").textContent =
+          "Use a task up to 16 KiB and up to 32 acceptance checks of 2 KiB each.";
+        $("launch-feedback").hidden = false;
+        return;
+      }
+      launching = true;
+      $("submit-run").disabled = true;
+      $("cancel-run").disabled = true;
+      $("launch-feedback").hidden = true;
+      try {
+        const body = { task, acceptance };
+        const fingerprint = JSON.stringify(body);
+        if (submission?.fingerprint !== fingerprint)
+          submission = { fingerprint, key: crypto.randomUUID() };
+        const request = postJson(body);
+        request.headers["Idempotency-Key"] = submission.key;
+        const submitted = await getJson("/api/harness/runs", request);
+        submission = null;
+        watchRun = submitted.id;
+        $("new-run-form").reset();
+        $("new-run-form").hidden = true;
+        $("launch-feedback").innerHTML =
+          "<strong>Run request accepted</strong> <code>" +
+          esc(submitted.id) +
+          '</code> <button type="button" data-run-id="' +
+          esc(submitted.id) +
+          '">Copy ID</button>';
+        $("launch-feedback").hidden = false;
+        $("launch-feedback").focus();
+        await refresh();
+      } catch (err) {
+        $("launch-feedback").textContent =
+          "Could not confirm the run start. " + err.message + " Check run history before retrying.";
+        $("launch-feedback").hidden = false;
+      } finally {
+        launching = false;
+        $("submit-run").disabled = false;
+        $("cancel-run").disabled = false;
+      }
+    });
+    $("new-run-form").addEventListener("input", () => {
+      submission = null;
+      $("run-task").setCustomValidity("");
+    });
+    document.addEventListener("click", (ev) => {
+      const runLink = ev.target.closest("[data-open-run]");
+      if (runLink) {
+        watchRun = runLink.dataset.openRun;
+      }
+      const btn = ev.target.closest("button");
+      if (btn?.dataset.act) {
+        void runWrite(btn.dataset.act, btn.dataset.id8, btn);
+        return;
+      }
+      if (btn?.classList.contains("blame")) {
+        void copyCommand("forge ledger blame " + btn.dataset.id8);
+        return;
+      }
+      if (btn?.dataset.runId) {
+        void copyCommand(btn.dataset.runId, "Run ID copied");
+        return;
+      }
+      if (btn?.dataset.command) {
+        void copyCommand(btn.dataset.command);
+        return;
+      }
+      if ($("rail").classList.contains("open") && !ev.target.closest("#rail,#menu")) closeMenu();
+    });
+    document.addEventListener("change", (ev) => {
+      if (ev.target.id === "setup-host") {
+        const host = harness?.hosts.find((x) => x.id === ev.target.value);
+        if (host && /^[a-z][a-z0-9-]*$/.test(host.id))
+          $("setup-command").innerHTML = codebox(hostCommand(host.id, harness.state === "active"));
+      }
+    });
+    document.querySelector(".skip").addEventListener("click", (event) => {
+      event.preventDefault();
+      $("content").focus();
+    });
+    for (const link of document.querySelectorAll(".navlink,.brand")) {
+      link.addEventListener("click", () => {
+        if (link.hash.slice(1) === currentPage) {
+          closeMenu();
+          $("page-title").focus();
         }
       });
-
-      refresh()
-        .then(startPoll)
-        .catch(() => {
-          $("hdr-meta").textContent = "could not load /api/data";
-        });
+    }
+    $("menu").addEventListener("click", () => {
+      const open = $("rail").classList.toggle("open");
+      $("menu").setAttribute("aria-expanded", String(open));
+      if (open) $("rail").querySelector('[aria-current="page"]')?.focus();
+    });
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && $("rail").classList.contains("open")) {
+        closeMenu();
+        $("menu").focus();
+      }
+    });
+    $("refresh").addEventListener("click", () => {
+      void refresh();
+    });
+    $("kind-filter").addEventListener("change", () => DATA && renderLedger(DATA));
+    function trace() {
+      runImpact().catch(() => {
+        $("impact-out").textContent = "The dependency trace failed. Refresh and try again.";
+      });
+    }
+    $("impact-go").addEventListener("click", trace);
+    $("impact-target").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") trace();
+    });
+    let memTimer = null;
+    $("mem-q").addEventListener("input", () => {
+      clearTimeout(memTimer);
+      memTimer = setTimeout(refreshMemory, 180);
+    });
+    $("mem-kind").addEventListener("change", refreshMemory);
+    window.addEventListener("hashchange", () => {
+      navigate(true);
+      void refresh();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) void refresh();
+    });
+    setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, 5000);
+    navigate();
+    void refresh();
     </script>
   </body>
 </html>

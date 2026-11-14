@@ -57,7 +57,7 @@ the model invokes it), and **recall** (memory).
 
 [![A coding host or queued job enters the same supervised run. Policy and budgets gate tool calls. A verifier can accept the result, request a repair or close the run with evidence.](docs/diagrams/supervised-run.svg)](https://jubershaikh.com/forgekit/diagrams/supervised-run.html)
 
-1. The CLI, MCP server or job worker supplies a task and its acceptance criteria to the executor. The executor combines these with scoped memory and cited workspace evidence within the context budget.
+1. The local dashboard, CLI, MCP server and job worker each pass a task and its acceptance criteria to the project executor. The executor combines these with scoped memory and cited workspace evidence within the context budget.
 2. The router selects an eligible Chat Completions endpoint. The policy checks each proposed tool's arguments, stage and approval requirements. The built-in tools list, read and write eligible workspace files.
 3. When the model reports completion, the verifier evaluates the current tree. A failed check can trigger a bounded repair. The trace records the final status, evidence and usage.
 4. A later session can inspect the run by ID. Trust, permission grants and memory sharing are operator actions. Native hooks cover calls the client forwards to them.
@@ -423,16 +423,13 @@ as the `collide_check` MCP tool.
 
 **Machine-owned doc surfaces (`src/docs_render.js`, `forge docs render`).** The
 auto-maintenance layer that keeps tables and diagrams in sync with the code registries.
-Five marker-managed blocks (commands table in README, groups and MCP-tools tables in GUIDE,
-repo-map diagram in ARCHITECTURE, and the Mintlify changelog page, rendered from
-`CHANGELOG.md` by `src/changelog_page.js` between MDX-safe JSX-comment markers) are
-regenerated from `COMMANDS`/`GROUPS`/`TOOLS`/`CHANGELOG.md`; six
-"N MCP tools" count phrases are auto-corrected; and every mermaid block across all `.md`
-and `.mdx` files receives the branded `%%{init` theme. Registry-derived blocks are CI-gated
+Marker-managed blocks include the commands table in README, groups and MCP tools in GUIDE,
+the repo map in ARCHITECTURE, the hook coverage table in HARNESS, and the Mintlify changelog rendered from
+`CHANGELOG.md` by `src/changelog_page.js` between MDX-safe JSX-comment markers. The same renderer updates
+MCP tool counts and applies the branded theme to Mermaid blocks in Markdown and MDX. Registry-derived blocks are CI-gated
 errors when stale; tree-derived output is advisory. Diagram facts (`src/diagram_facts.js`)
 bind labels in the Archify sources to the code (the hook chain, tool counts, thresholds);
-after a merge, `.github/workflows/docs-autoupdate.yml` re-renders them and opens one
-"docs: auto-update" PR.
+after a push to `master`, the documentation workflow checks generated tables, diagrams, recorded CLI demos and dashboard previews. It proposes regenerated files in a dedicated PR. [Generated assets](docs/assets/README.md)
 
 **Deliberately not wired:** `checkpointCadence` (optimal-stopping check spacing) still
 has no runtime step-loop to consume it — wiring it would mean inventing one. It stays
@@ -608,7 +605,7 @@ forgekit/
     imagine.js            # consequence simulation (Eq. 4): predicted breaks + minimal dry-run suite via greedy set cover
     uifingerprint.js      # deterministic design fingerprint + slop-distance / conformance gate (no LLM, no screenshots)
     taste.js              # taste-profile system: applies design-taste profiles (brutalist, corporate, editorial, minimalist, playful; JSON in global/taste/) to parameterize `uicheck design` gate thresholds via --taste
-    dash.js               # localhost-only read-only dashboard over the ledger, metrics, and blast radius (node:http, one HTML page)
+    dash.js               # local dashboard for run outcomes, host setup, project knowledge, metrics and impact
     metrics.js            # stage-tagged .forge/metrics.jsonl — the measured events every cost figure is computed from
     cost_report.js        # per-stage cost factors as pure arithmetic over metrics.jsonl; composes ONLY measured stages
     rank.js               # load-bearing code: weighted PageRank centrality × ledger incident history, Tarjan SCC (circular deps), Hopcroft–Tarjan articulation points (chokepoints)
@@ -679,22 +676,22 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>208 files"]
-  test["test<br/>196 files"]
+  src["src<br/>211 files"]
+  test["test<br/>199 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
-  scripts["scripts<br/>12 files"]
+  scripts["scripts<br/>16 files"]
   bench["bench<br/>6 files"]
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 421 --> src
+  test -- 431 --> src
+  scripts -- 14 --> src
   bench -- 12 --> src
   test -- 8 --> global
-  scripts -- 6 --> src
   src -- 6 --> global
+  test -- 5 --> scripts
   examples -- 4 --> src
-  test -- 4 --> scripts
   test -- 2 --> bench
   global --> src
 ```

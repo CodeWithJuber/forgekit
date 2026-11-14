@@ -67,16 +67,6 @@ The site is **English-only**. It previously carried five hand-maintained transla
 prose in sync by hand was the main source of documentation drift — every English fix had
 to be re-applied five times, and any miss left the site lagging the code.
 
-If translations are wanted again, add them the automated way instead of hand-maintaining
-parallel `.mdx` trees:
+To enable Mintlify auto-localization, add the locale codes under `navigation.languages` in `docs.json` and enable AI translation in the Mintlify dashboard. Mintlify refreshes those translations from the English source.
 
-- **Mintlify auto-localization** — write English once, list the locale codes under
-  `navigation.languages` in `docs.json`, and enable AI translation for the deployment in
-  the Mintlify dashboard. Mintlify generates and refreshes the translated pages; there are
-  no per-locale files to maintain in this repo.
-- **Code→docs Workflow** — configure a Mintlify
-  [Workflow](https://www.mintlify.com/docs/automations) (dashboard → Automations) so the
-  site updates from the source repo automatically, rather than drifting until
-  `forge docs check` catches it. The repo-side guard (`checkMintlify` in
-  `src/docs_check.js`) stays as a backstop and is scoped to the English pages, so it keeps
-  working regardless of how many display languages are enabled.
+The repository’s [docs maintenance workflow](../.github/workflows/docs-autoupdate.yml) already maintains the English generated references and illustrations with explicit source inputs, including the dashboard preview. Edit the source for generated content and check the proposed output. [Contributor instructions](../CONTRIBUTING.md#updating-documentation-and-visuals)

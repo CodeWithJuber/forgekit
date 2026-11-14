@@ -9,8 +9,7 @@ machine-enforced we say so; where it isn't, we don't dress it up as conformance.
 forgekit has three places a person actually looks at output:
 
 - **CLI output** — every `forge` command. Plain text.
-- **`forge dash`** — a localhost-only, read-only web dashboard over the ledger, metrics, and
-  blast radius (default port 4242; never exposed off `localhost`).
+- **`forge dash`** opens a local project dashboard on port 4242 by default. Users can inspect host setup and run outcomes, start a supervised task, or review a saved claim.
 - **The public pages** — the landing page and the generated status page shipped to GitHub
   Pages.
 
@@ -19,6 +18,7 @@ forgekit has three places a person actually looks at output:
 - **CLI output never relies on color alone.** Status is carried by symbol *and* word
   (`✓ ok`, `! warn`, `✗ fail`, `PASS`, `BLOCKED`), so it reads on a monochrome terminal and
   through a screen reader. Color is decoration, not information.
+- **Dashboard browser checks** exercise empty and populated workspaces, labeled form controls, mobile navigation and offline report display. [Browser checks](./scripts/dashboard-preview.mjs)
 - **The public pages are gated in CI by `forge uicheck`.** Three checks run before a page
   ships: `uicheck contrast` (WCAG contrast ratios on the text/background token pairs),
   `uicheck fingerprint`/`design` (the design system stays on one 8-color / 4px scale), and
@@ -33,10 +33,7 @@ forgekit has three places a person actually looks at output:
 
 ## What we don't claim
 
-We do **not** claim a formal WCAG 2.1/2.2 AA conformance level across every surface — we
-haven't run a full audit, and we'd rather under-promise. What's above is what the gates
-actually enforce. Contrast is measured; keyboard and screen-reader traversal of the dashboard
-is not yet part of the automated gate. Treat any gap as a bug, not a design choice.
+A full WCAG 2.1/2.2 AA conformance audit and screen-reader evaluation remain outstanding. The automated checks cover specific browser interactions and contrast measurements.
 
 ## Reporting an accessibility issue
 

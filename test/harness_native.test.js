@@ -201,9 +201,9 @@ test("Cursor defers an unqualified MCP candidate only with the fail-closed, name
   assert.doesNotMatch(JSON.stringify(result), /never-store-in-denial-audit/);
 });
 
-test("supervised Kimi and Codex get the exact ingress on an ordinary first user prompt", async (t) => {
+test("supervised Claude, Kimi and Codex get the exact ingress on an ordinary first user prompt", async (t) => {
   const { root } = fixture(t);
-  for (const host of ["kimi", "codex"]) {
+  for (const host of ["claude", "kimi", "codex"]) {
     const outcome = await pre(host, "UserPromptSubmit", {
       cwd: root,
       prompt: "Investigate source imports",
@@ -214,4 +214,33 @@ test("supervised Kimi and Codex get the exact ingress on an ordinary first user 
     assert.match(context, /forge_harness_status/);
     assert.match(context, /forge-cortex/);
   }
+});
+
+test("Claude can discover only the two exact deferred harness schemas", (t) => {
+  const { root } = fixture(t);
+  const tool = "mcp__forge-cortex__forge_harness_";
+  function denial(query, host = "claude", extra = {}) {
+    return nativeHarnessDenial({
+      host,
+      event: "PreToolUse",
+      payload: { cwd: root, tool_name: "ToolSearch", tool_input: { query }, ...extra },
+      env: {},
+    });
+  }
+  assert.equal(denial(`select:${tool}run,${tool}status`), null);
+  assert.equal(denial("select:mcp__plugin_forgekit_forge-cortex__forge_harness_run"), null);
+  for (const query of [
+    "",
+    "Bash",
+    "github",
+    `select:${tool}run,Bash`,
+    "select:mcp__other__forge_harness_run",
+  ]) {
+    assert.match(denial(query), /supervised ForgeKit/);
+  }
+  assert.match(denial(`select:${tool}run`, "kimi"), /supervised ForgeKit/);
+  assert.match(
+    denial(`select:${tool}run`, "claude", { mcp_server_name: "other" }),
+    /supervised ForgeKit/,
+  );
 });

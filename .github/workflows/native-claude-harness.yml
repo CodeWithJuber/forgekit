@@ -1,0 +1,30 @@
+name: Native Claude supervised harness
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'global/**'
+      - 'hooks/**'
+      - '.claude-plugin/**'
+      - '.mcp.json'
+      - 'scripts/test-native-claude-harness.py'
+      - 'scripts/native_harness_fixture.py'
+      - '.github/workflows/native-claude-harness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  supervised-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install pinned Claude Code CLI
+        run: npm install --prefix "$RUNNER_TEMP/native-claude" --no-audit --no-fund @anthropic-ai/claude-code@2.1.325
+      - name: Verify Claude routing, signed suite evidence and native write denial on loopback
+        run: python3 scripts/test-native-claude-harness.py --claude "$RUNNER_TEMP/native-claude/node_modules/.bin/claude"

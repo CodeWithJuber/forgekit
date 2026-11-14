@@ -1,0 +1,2 @@
+# CPython 3.12, manylinux x86-64. The wheel also pins FreeType and the image codecs.
+Pillow==13.0.0 --hash=sha256:42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca

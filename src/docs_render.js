@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { CHANGELOG_PAGE, renderChangelogPage } from "./changelog_page.js";
 import { commandSummary, GROUPS } from "./commands.js";
+import { HOSTS } from "./hosts.js";
 import { TOOLS } from "./mcp_tools.js";
 import { directedImportGraph } from "./scope.js";
 import { git } from "./util.js";
@@ -83,6 +84,33 @@ export function renderGroupsTable() {
     names.map((n) => `\`${BRAND.cli} ${n}\``).join(" · "),
   ]);
   return mdTable(["Group", "Commands"], rows);
+}
+
+/** Use the host's event names, including aliases such as Gemini's BeforeAgent. */
+export function renderHostHooks() {
+  const rows = Object.values(HOSTS).map((host) => {
+    const events = Object.entries(host.events);
+    const matching = (predicate) =>
+      events
+        .filter(([, event]) => predicate(event))
+        .map(([name]) => `\`${name}\``)
+        .join(", ") || "—";
+    return [
+      host.label,
+      matching((e) => e.as === "UserPromptSubmit" && e.context),
+      matching((e) => e.as === "PreToolUse"),
+      matching((e) => e.as === "PostToolUseFailure" && e.context),
+    ];
+  });
+  return mdTable(
+    [
+      "Host",
+      "Adds context at prompt submission",
+      "Checks tools before execution",
+      "Adds context after a tool failure",
+    ],
+    rows,
+  );
 }
 
 /** The MCP tool table — straight from the TOOLS registry, first sentence per tool. */
@@ -187,6 +215,12 @@ const BLOCK_TARGETS = [
     file: "docs/GUIDE.md",
     name: "mcp-tools",
     render: () => renderMcpToolsTable(),
+    strict: true,
+  },
+  {
+    file: "docs/HARNESS.md",
+    name: "host-hooks",
+    render: () => renderHostHooks(),
     strict: true,
   },
   {

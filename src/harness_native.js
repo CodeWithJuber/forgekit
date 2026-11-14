@@ -28,8 +28,24 @@ function isHarnessTool(host, event, name, server) {
   return false;
 }
 
+// Claude defers MCP tool schemas. Fetching a schema may happen before the
+// actual tool call. Admit only exact names from our two supported namespaces.
+function isClaudeHarnessDiscovery(payload) {
+  if (payload?.tool_name !== "ToolSearch" || payload.mcp_server_name !== undefined) return false;
+  const query = payload.tool_input?.query;
+  if (typeof query !== "string" || !query.startsWith("select:") || query.length > 256) return false;
+  const names = query
+    .slice(7)
+    .split(",")
+    .map((name) => name.trim());
+  return (
+    names.length <= TOOLS.length &&
+    names.every((name) => isHarnessTool("claude", "PreToolUse", name, undefined))
+  );
+}
+
 const SUPERVISED =
-  "This worktree uses the supervised ForgeKit coding harness. For the requested task, call forge_harness_run on the forge-cortex MCP server with the task and its acceptance criteria. If the server is still starting, discover its tools when available. Follow a pending run with forge_harness_status and report its verification evidence. Direct host tools cannot perform this work.";
+  "This worktree uses the supervised ForgeKit coding harness. For the requested task, call forge_harness_run on the forge-cortex MCP server with the task and its acceptance criteria. If Claude defers these tools, use ToolSearch with select: and the exact registered ForgeKit tool names. If the server is still starting, discover its tools when available. Follow a pending run with forge_harness_status and report its verification evidence. Direct host tools cannot perform this work.";
 const INVALID =
   "The supervised workspace policy could not be validated. Inspect the harness configuration and its local trust record.";
 
@@ -101,6 +117,7 @@ export function nativeHarnessDenial({ host, event, payload = {}, env = process.e
   const tool = payload?.tool_name ?? payload?.toolName;
   const valid = binding.instruction !== INVALID;
   if (valid && isHarnessTool(host, event, tool, payload?.mcp_server_name)) return null;
+  if (valid && host === "claude" && isClaudeHarnessDiscovery(payload)) return null;
   if (
     valid &&
     host === "cursor" &&

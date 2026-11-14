@@ -1888,11 +1888,14 @@ HANDLERS.dash = async (argv) => {
     process.exitCode = 1;
     return;
   }
-  const server = serve(process.cwd(), { port });
+  const { sourceWorkspaceRoot } = await import("./sources.js");
+  const root = sourceWorkspaceRoot(process.cwd());
+  const server = serve(root, { port });
   server.on("listening", () => {
     const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
-    heading(`${BRAND.brand} dash — read-only lens on .forge/\n`);
-    console.log(`  http://127.0.0.1:${addr.port}  (localhost-only · Ctrl-C to stop)`);
+    heading(`${BRAND.brand} project dashboard\n`);
+    console.log(`  Open http://127.0.0.1:${addr.port} in your browser.`);
+    console.log(`  Project: ${root}\n  Press Ctrl+C to stop.`);
   });
   server.on("error", (err) => {
     console.error(`  ${err.message}`);

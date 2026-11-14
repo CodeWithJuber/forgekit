@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { readHarnessConfigData } from "./harness_config_data.js";
+import { parseHarnessHosts } from "./harness_hosts.js";
 import { defaultHarnessPolicy } from "./harness_policy.js";
 import { defaultHarnessRouting } from "./harness_router.js";
 import { outsideWorkspace } from "./private_paths.js";
@@ -73,6 +74,9 @@ function defaults() {
     lockfile: { version: 1, extensions: [] },
   };
 }
+function configDigest(config) {
+  return hash(JSON.stringify(Object.fromEntries(names.map((key) => [key, config[key]]))));
+}
 function controls(root) {
   const d = join(root, "harness");
   const c = Object.fromEntries(
@@ -96,12 +100,14 @@ function controls(root) {
     routing: c.routing,
     budgets: c.budgets,
     jobs: c.jobs,
-    digest: hash(JSON.stringify(c)),
+    digest: configDigest(c),
   };
 }
-export function trustHarness(root) {
-  const config = controls(root),
-    path = bindingPath(root);
+export function trustHarness(root, expectedDigest = undefined) {
+  const config = controls(root);
+  if (expectedDigest !== undefined && config.digest !== expectedDigest)
+    throw new Error("Harness controls changed during setup; review them before trusting");
+  const path = bindingPath(root);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   if (realpathSync.native(dirname(path)) !== dirname(path))
     throw new Error("Symlinked private activation directory");
@@ -170,7 +176,9 @@ export function initHarness(root, { hosts = [], supervised = false } = {}) {
     root,
     created,
     activated,
-    next: activated ? "forge harness routes" : "Review harness/ and run forge harness trust",
+    next: activated
+      ? "forge harness routes"
+      : "Review harness/ and run forge harness trust, then use forge harness connect --hosts <names> to wire hosts",
   };
 }
 export function loadHarnessConfig(root, { trusted = true } = {}) {
@@ -179,6 +187,46 @@ export function loadHarnessConfig(root, { trusted = true } = {}) {
     throw new Error("Review harness/ and run forge harness trust in this worktree");
   return cfg;
 }
+// Connect only appends hosts to an already trusted project. Bind the exact intended
+// controls so concurrent edits cannot silently authorize a new route or policy.
+export async function connectHarnessHosts(root, add, wire) {
+  const path = join(root, "harness", "policy.yaml");
+  const lock = `${bindingPath(root)}.connect-lock`;
+  // Read once before creating the private lock to reject an untrusted checkout.
+  loadHarnessConfig(root);
+  try {
+    writeFileSync(lock, String(process.pid), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error.code === "EEXIST")
+      throw new Error(
+        `Host connection is locked at ${lock}. Retry, or remove the lock after checking its process has exited.`,
+      );
+    throw error;
+  }
+  let temp;
+  try {
+    const cfg = loadHarnessConfig(root);
+    const hosts = parseHarnessHosts([...cfg.policy.hosts, ...add]);
+    if (JSON.stringify(hosts) !== JSON.stringify(cfg.policy.hosts)) {
+      const updated = { ...cfg.policy, hosts };
+      temp = join(dirname(path), `.forge-hosts-${randomUUID()}`);
+      writeFileSync(temp, `${JSON.stringify(updated, null, 2)}\n`, {
+        flag: "wx",
+        mode: lstatSync(path).mode & 0o777,
+      });
+      if (controls(root).digest !== cfg.digest)
+        throw new Error("Harness controls changed during setup; retry after review");
+      renameSync(temp, path);
+      trustHarness(root, configDigest({ ...cfg, policy: updated }));
+    }
+    const hooks = await wire(hosts);
+    return { hosts, mode: cfg.policy.nativeMode, hooks };
+  } finally {
+    if (temp) rmSync(temp, { force: true });
+    rmSync(lock);
+  }
+}
+
 export function nativeHarnessPolicy(cwd) {
   const dir = resolve(userStateDir(), "harness-activation");
   if (!existsSync(dir)) return null;

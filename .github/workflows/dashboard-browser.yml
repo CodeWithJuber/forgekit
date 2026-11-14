@@ -1,0 +1,29 @@
+name: Dashboard browser acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/dash*'
+      - 'src/report.js'
+      - 'src/harness*.js'
+      - 'src/cli.js'
+      - 'scripts/dashboard-preview.mjs'
+      - 'scripts/docs-media/setup.sh'
+      - '.github/workflows/dashboard-browser.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.14.0
+      - name: Check desktop and mobile against the running dashboard
+        run: |
+          export ARCHIFY_CHROME="$(command -v google-chrome)"
+          node scripts/dashboard-preview.mjs --check
