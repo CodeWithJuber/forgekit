@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-11-14
+
+### Added
+
+- run the portable harness from a clearer project dashboard and refresh generated docs
+
+### Fixed
+
+- pass preview selectors as DevTools arguments
+- limit screenshot fixture writes to disposable workspaces
+
 ## [1.16.0] - 2026-11-14
 
 ### Added
@@ -3824,7 +3835,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.16.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.0...HEAD
+[1.17.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.1...v1.15.0
 [1.14.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.0...v1.14.1

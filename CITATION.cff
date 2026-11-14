@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use forgekit, please cite it using this metadata."
 title: "Forge (forgekit)"
-version: 1.16.0
+version: 1.17.0
 date-released: "2026-11-14"
 abstract: >-
   A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
