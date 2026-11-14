@@ -47,14 +47,17 @@ function keys(obj, allowed) {
     "Unexpected extension manifest fields",
   );
 }
+function insideWorkspace(rel) {
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
 function safeDir(root, path) {
-  const work = realpathSync.native(root),
-    candidate = resolve(work, path);
-  const rel = relative(work, candidate);
-  check(
-    rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel),
-    "Extension must be a directory in the workspace",
-  );
+  const work = realpathSync.native(root);
+  const candidate = resolve(root, path);
+  const lexical = relative(resolve(root), candidate);
+  // A host can supply the workspace through a symlink, e.g. /var on macOS.
+  // Accept either spelling of the root, then inspect every child from the real root.
+  const rel = insideWorkspace(lexical) ? lexical : relative(work, candidate);
+  check(insideWorkspace(rel), "Extension must be a directory in the workspace");
   let dir = work;
   for (const part of rel.split(sep)) {
     dir = join(dir, part);

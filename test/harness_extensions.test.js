@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -113,6 +121,22 @@ function fixture(t, overrides = {}, kind = "plugin") {
     });
   return { root, dir, hooks, open };
 }
+test("extensions resolve through a workspace alias and reject symlinks inside it", (t) => {
+  const f = fixture(t);
+  const aliases = mkdtempSync(join(tmpdir(), "harness-alias-"));
+  t.after(() => rmSync(aliases, { recursive: true, force: true }));
+  const root = join(aliases, "workspace");
+  symlinkSync(realpathSync.native(f.root), root, "junction");
+  const physical = realpathSync.native(f.dir);
+  const lexical = join(root, "extensions", "retry");
+  const { digest } = inspectHarnessExtension(root, lexical);
+  assert.equal(inspectHarnessExtension(root, physical).digest, digest);
+  pinHarnessExtension(root, lexical, digest);
+  assert.equal(f.open().active.length, 1);
+  symlinkSync(physical, join(root, "linked-extension"), "junction");
+  assert.throws(() => inspectHarnessExtension(root, "linked-extension"), /symlink/);
+  assert.throws(() => inspectHarnessExtension(root, aliases), /in the workspace/);
+});
 test("review binds exact content, workspace, host and task; unloading revokes even retained tool handles", async (t) => {
   const f = fixture(t, { triggers: ["retry"], hosts: ["codex", "kimi"] }, "skill");
   const review = inspectHarnessExtension(f.root, f.dir);
