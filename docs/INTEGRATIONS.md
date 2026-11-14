@@ -28,12 +28,12 @@ reference on the same day):
 
 | Tool | Config emission | MCP registration | Automatic hooks | Enforcement (blocking) |
 |---|---|---|---|---|
-| **Claude Code** | `CLAUDE.md` importing `@AGENTS.md`, plus forge's block in `AGENTS.md` — tested (emission); `advisorModel` in `.claude/settings.json` once `forge advisor set` names an advisor (the one key forge owns there) — tested (emission) | `.mcp.json` — tested (emission) | plugin `hooks/hooks.json` or `forge init`-merged `~/.claude/settings.json`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop — tested (execution) for the guard scripts; manifests tested for wiring; project-level `.claude/settings.json` after `forge hooks on`, for machines with no user-level install (it stands down where one exists) — tested (emission and execution) | yes — see [Claude Code enforcement](#claude-code-enforcement) — tested (execution) |
-| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the package's Codex bundle (`.codex-plugin/`) — declared | `.codex/hooks.json` after `forge hooks on`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop — tested (emission); the adapter is tested (execution) against Codex's documented payloads | yes after `forge hooks on` — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
-| **Cursor** | root `AGENTS.md`; warns when a legacy `.cursorrules` would shadow it — tested (emission) | `.cursor/mcp.json` — tested (emission) | `.cursor/hooks.json` after `forge hooks on`: sessionStart, beforeSubmitPrompt, beforeShellExecution, preToolUse, postToolUse, stop — tested (emission); adapter tested (execution). Project hooks also run in Cursor cloud agents, which do not fire sessionStart — declared | yes after `forge hooks on` — deny and ask on shell commands, deny on other tools — tested (execution) for the adapter |
+| **Claude Code** | `CLAUDE.md` importing `@AGENTS.md`, plus forge's block in `AGENTS.md` — tested (emission); `advisorModel` in `.claude/settings.json` once `forge advisor set` names an advisor (the one key forge owns there) — tested (emission) | `.mcp.json` — tested (emission) | plugin `hooks/hooks.json` or `forge init`-merged `~/.claude/settings.json`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop — tested (execution) for the guard scripts; manifests tested for wiring; project-level `.claude/settings.json` after `forge hooks on`, for machines with no user-level install (it stands down where one exists) — tested (emission and execution) | yes — see [Claude Code enforcement](#claude-code-enforcement) — tested (execution) |
+| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest also points to the packaged MCP config (`forge` on PATH) | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Adapter and packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
+| **Cursor** | root `AGENTS.md`; warns when a legacy `.cursorrules` would shadow it — tested (emission) | `.cursor/mcp.json` — tested (emission) | `.cursor/hooks.json` after `forge hooks on`: sessionStart, beforeSubmitPrompt, beforeShellExecution, preToolUse, postToolUse, postToolUseFailure, stop — tested (emission); adapter tested (execution). Project hooks also run in Cursor cloud agents, which do not fire sessionStart — declared | yes after `forge hooks on` — deny and ask on shell commands, deny on other tools — tested (execution) for the adapter |
 | **Gemini CLI** | `AGENTS.md` added to `.gemini/settings.json` `context.fileName` — tested (emission) | `.gemini/settings.json` `mcpServers` — tested (emission) | `.gemini/settings.json` `hooks` after `forge hooks on`: SessionStart, BeforeAgent, BeforeTool, AfterTool, AfterAgent — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny before a tool (no "ask": an ask blocks and says so) — tested (execution) for the adapter |
 | **Aider** | `.aider.conf.yml` with `read: AGENTS.md` — tested (emission) | not supported | not supported | not supported in the agent |
-| **GitHub Copilot** | root `AGENTS.md`, read by the coding agent — tested (emission) | `.vscode/mcp.json` — tested (emission) | `.github/hooks/forge.json` after `forge hooks on`: sessionStart, userPromptSubmitted, preToolUse, postToolUse, agentStop, for the CLI and the cloud agent (which reads it from the default branch) — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny and ask before a tool (the cloud agent treats ask as deny) — tested (execution) for the adapter |
+| **GitHub Copilot** | root `AGENTS.md`, read by the coding agent — tested (emission) | `.vscode/mcp.json` — tested (emission) | `.github/hooks/forge.json` after `forge hooks on`: sessionStart, userPromptSubmitted, preToolUse, postToolUse, postToolUseFailure, agentStop, for the CLI and the cloud agent (which reads it from the default branch) — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny and ask before a tool (the cloud agent treats ask as deny) — tested (execution) for the adapter |
 | **Windsurf / Devin** | root `AGENTS.md`, with a warning past the tool's size caps — tested (emission) | not supported (the tool's MCP config is global-only) | Devin (the CLI and the desktop app that was Windsurf) reads Claude Code's `.claude/settings.json`, so `forge hooks on` covers it with no file of its own — declared; the adapter's Devin rules are tested (execution). The older Cascade hook format (`.windsurf/hooks.json`) is not written | yes after `forge hooks on` — deny before a tool (no "ask") — tested (execution) for the adapter |
 | **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | not supported in the agent |
 | **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | not supported in the agent |
@@ -82,16 +82,45 @@ is the single list), and answers in the agent's dialect. What is tested, and how
 - **Not launched in CI** — no agent is run, so "the agent loads this file and honours this
   reply" rests on each vendor's hook reference, as it does for Claude Code.
 
-Limits worth knowing: an agent with no confirm step turns a guard's "ask" into a block (Codex,
-Gemini CLI, Devin, and Cursor outside shell commands); Cursor and Copilot cannot receive
-context at prompt time, so the per-prompt protocol card reaches them only through `AGENTS.md`;
-Cursor cloud agents do not fire the session-start event; Codex runs a project hook only after
-the project is trusted and the hook reviewed with `/hooks`; a machine without the forge CLI
-runs nothing unless `--bootstrap` was chosen. The commands are POSIX shell (macOS, Linux, WSL,
-Git Bash); Codex and Copilot also get a PowerShell variant, and an agent that runs hooks
-through `cmd.exe` with neither sees a failed hook, which every agent here treats as "carry on"
-— except Copilot's `preToolUse`, where a failed hook denies the call, so on native Windows
-keep Copilot on its PowerShell entry.
+After an Edit, Write or MultiEdit, ForgeKit checks the current workspace file for credential
+patterns and merge-conflict markers. For JSON it parses the document. For explicit CommonJS
+and ES modules (`.cjs`, `.mjs`) Node checks syntax without evaluating the file. The check
+skips protected paths, symlinks, binary data and files larger than 128 KiB. The response
+names tests found by filename convention as suggestions. A syntax success does not count as
+a passing project suite. The existing Stop gate evaluates verification and session evidence.
+Edits made entirely inside a shell command can bypass this post-edit callback.
+
+The prompt hook runs evidence retrieval directly in Claude Code, local Codex and Gemini CLI.
+Cursor and Copilot command hooks use the first subsequent tool result that accepts context.
+A tool-free turn on those hosts receives no injected evidence. The deferred query is redacted,
+user-private and scoped to the workspace and session. The excerpt is retrieved at delivery.
+Claude Code, Cursor and Copilot expose dedicated failure events. Codex and Gemini use tool
+results with a recognizable failure signal. Adapter tests use synthetic payloads and a real
+indexed document. Setup and cache details are in [Agent evidence](AGENT-EVIDENCE.md).
+
+A manual native-host check on 14 November 2026 used Claude Code 2.1.325 with the ForgeKit
+plugin, an empty test workspace and a separately indexed synthetic handbook. An ordinary
+implementation request caused UserPromptSubmit to include the matching handbook text and
+line locator in the first outgoing model request. In a second run the generic task had no
+matching excerpt. A Bash tool emitted a synthetic importer error and exited 1. Claude's
+PostToolUseFailure hook supplied the handbook excerpt in the next model request.
+A third run wrote malformed JSON with the real Write tool. The next request contained the
+post-edit parser result and the explicit test-execution status. A local mock received the requests.
+The Codex CLI installed and enabled the bundle in an isolated configuration. The available
+sandbox could not start a nested Codex model session, so the Codex delivery test runs its
+packaged hook command with the documented payload.
+
+Local Codex requires hook trust. Review the plugin or project commands in `/hooks` after
+installation or an update. Codex cloud orchestration does not execute these local commands.
+A project hook uses the forge CLI on PATH. The Codex plugin hook uses its bundled copy and
+requires Node on PATH. Cursor cloud agents need a writable environment and do not fire
+sessionStart. Copilot cloud reads hooks from the default branch. See the vendor references
+for [Codex](https://learn.chatgpt.com/docs/hooks), [Cursor](https://cursor.com/docs/hooks)
+and [Copilot](https://docs.github.com/en/copilot/reference/hooks-reference).
+
+An agent without a confirmation step turns a guard's ask into a block. The project commands use
+a POSIX shell or the Codex and Copilot PowerShell entries. A missing forge CLI skips a project
+hook unless bootstrap was enabled on a host with a supported startup event.
 
 ### Any tool that commits through git
 

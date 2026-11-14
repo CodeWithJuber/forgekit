@@ -90,6 +90,59 @@ export const COMMANDS = {
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
     "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
+  develop: {
+    summary:
+      "assemble a development plan, search prior solutions, assess security and select verification for the current change",
+    usage: 'forge develop "<task>" [--web "<public search terms>"] [--verify] [--json]',
+    examples: [
+      'forge develop "Fix a PostgreSQL deadlock" --web "postgres application retry deadlock"',
+      'forge develop "Verify the retry fix" --verify --json',
+    ],
+  },
+  team: {
+    summary:
+      "plan independent read-only agents for complex work and optionally run them with a shared budget",
+    usage: 'forge team "<task>" [--max-workers N] [--run claude --budget-usd N]',
+    examples: [
+      'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
+    ],
+  },
+  evidence: {
+    summary:
+      "find existing code, cached source excerpts and public research candidates before editing or debugging",
+    usage: 'forge evidence "<task>" [--web "<public query>"] [--json]',
+    flags: [
+      {
+        flag: "--web <terms>",
+        desc: "send these separately supplied public terms to discovery providers",
+      },
+      { flag: "--json", desc: "include provenance and source warnings" },
+    ],
+    examples: [
+      'forge evidence "Investigate PostgreSQL deadlocks"',
+      'forge evidence "Choose a parser" --web "streaming XLSX Node.js"',
+    ],
+  },
+  sources: {
+    summary:
+      "sync scoped project sources privately and search, route live reads or aggregate local tables",
+    usage:
+      "forge sources init|status|sync [id]|probe <id>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
+    flags: [
+      { flag: "--source <id>", desc: "restrict search to one configured source" },
+      { flag: "--budget <tokens>", desc: "estimated token budget for search excerpts" },
+      { flag: "--fresh --mcp", desc: "route a live operation through an available MCP server" },
+      {
+        flag: "--column X --group-by Y --sheet Z",
+        desc: "select table columns and worksheet for aggregation",
+      },
+    ],
+    examples: [
+      "forge sources init",
+      'forge sources search "retry policy" --budget 400',
+      "forge sources aggregate docs usage.csv sum --column minutes",
+    ],
+  },
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
@@ -455,8 +508,17 @@ export const COMMANDS = {
       "forge docs impact --since main",
     ],
   },
-  integrations:
-    "opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it",
+  integrations: {
+    summary:
+      "find and install pinned community tools for a task, or manage opt-in third-party MCP config",
+    usage:
+      'forge integrations find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
+    examples: [
+      'forge integrations find "test a browser checkout flow"',
+      "forge integrations install playwright",
+      "forge integrations auto status",
+    ],
+  },
 };
 
 // Groups order the --help surface from the stable reliability loop down to experiments.
@@ -468,6 +530,10 @@ export const GROUPS = {
   Substrate: [
     "substrate",
     "preflight",
+    "evidence",
+    "team",
+    "develop",
+    "sources",
     "impact",
     "scope",
     "context",

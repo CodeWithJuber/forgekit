@@ -76,7 +76,10 @@ test("HOSTS: every event maps to a canonical one, every dialect and tool name is
     // Each host covers the whole lifecycle, so no guard is silently missing somewhere.
     assert.deepEqual(
       [...new Set(Object.values(host.events).map((e) => e.as))].sort(),
-      [...CANON].sort(),
+      [
+        ...CANON,
+        ...(["claude", "cursor", "copilot"].includes(id) ? ["PostToolUseFailure"] : []),
+      ].sort(),
       id,
     );
     for (const [name, e] of Object.entries(host.events)) {
@@ -376,7 +379,7 @@ test("guardChain: hooks/hooks.json is the single list — matchers decide, the r
     for (const a of s.args) assert.ok(!a.includes("${"), `unfilled placeholder: ${a}`);
   // Every guard the manifest names can be reached from some canonical payload.
   const manifest = loadManifest();
-  assert.deepEqual(Object.keys(manifest).sort(), [...CANON].sort());
+  assert.deepEqual(Object.keys(manifest).sort(), [...CANON, "PostToolUseFailure"].sort());
   // A broken matcher in a manifest skips that group instead of throwing.
   assert.deepEqual(
     guardChain(
@@ -968,7 +971,7 @@ test("hookCommand: never fails a machine without the CLI; a bootstrap pins this 
 test("planHooks: each agent's file, in its own shape", () => {
   const doc = (host, o) => JSON.parse(planHooks(null, host, o).next);
   const claude = doc("claude");
-  assert.deepEqual(Object.keys(claude.hooks), CANON);
+  assert.deepEqual(Object.keys(claude.hooks), [...CANON, "PostToolUseFailure"]);
   assert.deepEqual(claude.hooks.PreToolUse, [
     {
       hooks: [

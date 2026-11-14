@@ -10,8 +10,9 @@
   "repository": "https://github.com/CodeWithJuber/forgekit",
   "license": "MIT",
   "keywords": ["codex", "mcp", "ai-coding", "agents-md", "cognitive-substrate"],
-  "skills": "global/tools",
-  "mcpServers": ".mcp.json",
+  "skills": "./global/tools",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/codex.json",
   "interface": {
     "displayName": "Forge",
     "shortDescription": "Cognitive substrate and one config for every AI coding tool.",

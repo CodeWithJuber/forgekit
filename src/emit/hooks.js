@@ -27,6 +27,7 @@ export const HOOK_TIMEOUT_S = Object.freeze({
   UserPromptSubmit: 30,
   PreToolUse: 30,
   PostToolUse: 30,
+  PostToolUseFailure: 30,
   Stop: 60,
 });
 /** A session start that may install the package first needs longer. */

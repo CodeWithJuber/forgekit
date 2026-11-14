@@ -4,7 +4,10 @@
 // server (which imports doctor.js — that import cycle cost every doctor run the
 // whole tool tree's startup and was one require-order bug away from breaking).
 
+import { EVIDENCE_TOOLS } from "./evidence_tools.js";
+
 export const TOOLS = [
+  ...EVIDENCE_TOOLS,
   {
     name: "cortex_lessons",
     description:

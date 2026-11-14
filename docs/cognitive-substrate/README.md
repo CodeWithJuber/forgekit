@@ -53,8 +53,9 @@ Forge substrate — pre-action advisory (advisory, never blocks):
 - Verify with: review impacted files before editing · run the narrowest affected test first
 ```
 
-**In other AI tools** (Codex, Cursor, Gemini, Aider…) — `forge init` writes a rule into their
-config file telling the agent to run the check itself, and exposes it as MCP tools it can call.
+A trusted prompt or tool-result hook can also deliver the evidence packet on supported hosts.
+For a host without those events, run `forge evidence "<task>"` or call `forge_evidence`.
+The [evidence guide](../AGENT-EVIDENCE.md) covers host setup, provider reads and indexed sources.
 See [In other AI tools](#in-other-ai-tools).
 
 ---

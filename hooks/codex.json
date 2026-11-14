@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/src/cli.js\" hooks run codex SessionStart",
+            "commandWindows": "node \"$env:PLUGIN_ROOT/src/cli.js\" hooks run codex SessionStart",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/src/cli.js\" hooks run codex UserPromptSubmit",
+            "commandWindows": "node \"$env:PLUGIN_ROOT/src/cli.js\" hooks run codex UserPromptSubmit",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/src/cli.js\" hooks run codex PreToolUse",
+            "commandWindows": "node \"$env:PLUGIN_ROOT/src/cli.js\" hooks run codex PreToolUse",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/src/cli.js\" hooks run codex PostToolUse",
+            "commandWindows": "node \"$env:PLUGIN_ROOT/src/cli.js\" hooks run codex PostToolUse",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/src/cli.js\" hooks run codex Stop",
+            "commandWindows": "node \"$env:PLUGIN_ROOT/src/cli.js\" hooks run codex Stop",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

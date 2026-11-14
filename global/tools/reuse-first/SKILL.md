@@ -9,10 +9,11 @@ Default to reusing and following what exists. New code is a liability; the best
 change is the smallest one that fits the codebase.
 
 ## 1. Reuse before building
+- Read the evidence delivered by the host hook. If your host has no such event, use `forge evidence "<task or failure>"` or `forge_evidence`. Open the cited files, rows or pages. For a current ticket value, read the live record. Supply separate public terms for external research.
 - **Ask the proof-carrying cache first**: `forge reuse query "<what you're about to
   build>"`. A hit is code this team already generated AND verified — its test/accept
   evidence travels with it (`forge ledger blame <id>` shows why to trust it):
-  - **EXACT / NEAR hit** → use that artifact; do not regenerate.
+  - **EXACT hit** → check its current dependencies and tests. A **NEAR hit** needs a review of semantic differences before reuse.
   - **ADAPT hit** → read it, start from it, generate only the delta.
   - **miss** → build it, then `forge reuse mint "<spec>" --file <path> --ref <test-run>`
     so the next teammate (or session) gets the hit.

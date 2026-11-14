@@ -24,6 +24,7 @@ import {
   processSession,
   readSession,
 } from "./cortex_hook.js";
+import { autoAdoptionNotice, failureQuery, hookEvidence } from "./hook_evidence.js";
 import { mergedLessons } from "./ledger_read.js";
 import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
 import { epochDay } from "./util.js";
@@ -77,6 +78,8 @@ async function main() {
   const today = epochDay();
 
   if (mode === "capture" || mode === "prompt") {
+    const edit = mode === "capture" && ["Edit", "Write", "MultiEdit"].includes(hook.tool_name);
+    if (edit && failureQuery(hook)) return;
     appendSessionEvent(root, sid, classifyEvent(hook));
     // The session trail: what THIS session touched (edit targets, the paths a Bash command
     // names, passing e2e runs). It outlives the Stop-time clear of the event log, so the
@@ -87,6 +90,17 @@ async function main() {
         recordTrail(root, sid, hook);
       } catch {}
     }
+    if (edit) {
+      const { editReview } = await import("./edit_review.js");
+      const review = editReview(root, hook);
+      if (review) emit("PostToolUse", review);
+    }
+  } else if (mode === "failure") {
+    const text = await hookEvidence(
+      root,
+      [failureQuery(hook), hook.pending_query].filter(Boolean).join("\n"),
+    );
+    if (text) emit("PostToolUseFailure", text);
   } else if (mode === "stop") {
     const events = readSession(root, sid);
     if (events.length) {
@@ -272,7 +286,13 @@ async function main() {
         const risk = riskMatches(hook.prompt, resolveRoutePolicy(root).riskCategories).length > 0;
         advisorLine = advisorNudge(root, { ...result, risk });
       } catch {}
+      const adoption = await autoAdoptionNotice(root, hook.prompt);
+      const evidence = hook.defer_evidence
+        ? ""
+        : await hookEvidence(root, hook.prompt, result.reuse);
       const combined = [
+        evidence,
+        adoption,
         advisory ? [advisory, advisorLine].filter(Boolean).join("\n") : advisorLine,
         card,
         deja,

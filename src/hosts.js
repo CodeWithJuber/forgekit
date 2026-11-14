@@ -40,10 +40,11 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
+import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
 import { readJsonSafe, userStateDir } from "./util.js";
 
 /** The events forge has guards for — Claude Code's names, the shape every guard reads.
- *  @typedef {"SessionStart"|"UserPromptSubmit"|"PreToolUse"|"PostToolUse"|"Stop"} CanonEvent */
+ *  @typedef {"SessionStart"|"UserPromptSubmit"|"PreToolUse"|"PostToolUse"|"PostToolUseFailure"|"Stop"} CanonEvent */
 /** One native event of a host: which canonical event it is, and what a hook may say there.
  *  `tool` + `lift`: the event carries no tool name, it IS one tool, its input lifted from
  *  top-level fields. `skipTools`: canonical tools another event of this host already covers.
@@ -77,7 +78,7 @@ export const HOSTS = {
     file: ".claude/settings.json",
     layout: "groups",
     dialect: "claude",
-    events: CLAUDE_EVENTS,
+    events: { ...CLAUDE_EVENTS, PostToolUseFailure: { as: "PostToolUseFailure", context: true } },
     tools: {},
     trust: "runs once the folder is trusted; also read by Cursor, Copilot CLI and Devin",
   },
@@ -139,6 +140,7 @@ export const HOSTS = {
       beforeShellExecution: { as: "PreToolUse", tool: "Bash", lift: ["command"], ask: true },
       preToolUse: { as: "PreToolUse", skipTools: ["Bash"] },
       postToolUse: { as: "PostToolUse", context: true },
+      postToolUseFailure: { as: "PostToolUseFailure", context: true },
       stop: { as: "Stop", block: true },
     },
     tools: { Shell: "Bash", Write: "Write", Read: "Read", Grep: "Grep", Task: "Task" },
@@ -156,6 +158,7 @@ export const HOSTS = {
       userPromptSubmitted: { as: "UserPromptSubmit" },
       preToolUse: { as: "PreToolUse", ask: true },
       postToolUse: { as: "PostToolUse", context: true },
+      postToolUseFailure: { as: "PostToolUseFailure", context: true },
       agentStop: { as: "Stop", block: true },
     },
     tools: {
@@ -206,6 +209,7 @@ export const FIELDS = Object.freeze({
   cwd: ["cwd", "workspace_roots.0"],
   prompt: ["prompt", "user_prompt", "initialPrompt", "initial_prompt"],
   tool_name: ["tool_name", "toolName"],
+  tool_use_id: ["tool_use_id", "toolCallId", "tool_call_id"],
   tool_input: ["tool_input", "toolArgs", "tool_args"],
   tool_response: ["tool_response", "tool_output", "toolResult", "tool_result", "output"],
   transcript_path: ["transcript_path", "transcriptPath"],
@@ -361,7 +365,7 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
     session_id: String(pick(data, FIELDS.session_id) ?? "default"),
     cwd,
   };
-  for (const key of /** @type {const} */ (["transcript_path", "permission_mode"])) {
+  for (const key of /** @type {const} */ (["transcript_path", "permission_mode", "tool_use_id"])) {
     const v = pick(data, FIELDS[key]);
     if (v !== undefined) base[key] = v;
   }
@@ -373,7 +377,7 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
   // A host that counts stop-hook rounds (Cursor) says the same thing as `stop_hook_active`.
   if (def.as === "Stop")
     base.stop_hook_active = Boolean(data.stop_hook_active) || Number(data.loop_count) > 0;
-  if (def.as !== "PreToolUse" && def.as !== "PostToolUse")
+  if (def.as !== "PreToolUse" && def.as !== "PostToolUse" && def.as !== "PostToolUseFailure")
     return { event: def.as, def, payloads: [base], unchecked: 0 };
 
   const input = def.tool
@@ -395,12 +399,26 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
           : tool;
   if (def.skipTools?.includes(tool)) return { event: def.as, def, payloads: [], unchecked: 0 };
   const response = pick(data, FIELDS.tool_response);
+  const code = data.exitCode ?? data.exit_code;
   const call = {
     ...base,
+    ...(typeof code === "number" ? { exitCode: code } : {}),
+    ...(def.as === "PostToolUseFailure"
+      ? {
+          error: String(data.error ?? data.error_message ?? "Tool failed"),
+          is_interrupt: data.is_interrupt === true,
+          failure_type: data.failure_type,
+        }
+      : {}),
     tool_name: tool,
     tool_input: input,
     ...(def.as === "PostToolUse" && response !== undefined ? { tool_response: response } : {}),
   };
+
+  // A failed patch has no successful per-file edits to review or capture. Preserve the
+  // original error response for recovery instead of expanding it into synthetic edits.
+  if (def.as === "PostToolUseFailure" || (def.as === "PostToolUse" && failureQuery(call)))
+    return { event: def.as, def, payloads: [call], unchecked: 0 };
 
   // A patch names its files inside the text: one edit per file, so path and manifest guards see them.
   const patchText = [input.command, input.patch, input.input].find(
@@ -649,7 +667,10 @@ export const DIALECTS = {
   copilot: {
     deny: (_e, reason) => json({ permissionDecision: "deny", permissionDecisionReason: reason }),
     ask: (_e, reason) => json({ permissionDecision: "ask", permissionDecisionReason: reason }),
-    context: (_e, context) => json({ additionalContext: context }),
+    context: (e, context) =>
+      e.as === "PostToolUseFailure"
+        ? { stdout: context, stderr: "", exit: 2 }
+        : json({ additionalContext: context }),
     block: (_e, reason) => json({ decision: "block", reason }),
   },
 };
@@ -696,7 +717,12 @@ export function eventKey(payloads) {
     h.update(
       JSON.stringify([
         p.hook_event_name,
+        p.cwd,
         p.session_id,
+        p.error ?? "",
+        p.tool_use_id ?? "",
+        p.exitCode ?? "",
+        p.tool_response ?? "",
         p.tool_name ?? "",
         p.tool_input?.command ?? "",
         p.tool_input?.file_path ?? "",
@@ -866,19 +892,48 @@ export async function runHook({
     const norm = normalize(as, event, payload, env);
     if (!norm?.payloads.length) return empty;
 
-    const ticket = claim ? await claim({ key: eventKey(norm.payloads) }) : null;
+    const first = norm.payloads[0];
+    const defer = as === "cursor" || as === "copilot";
+    const sid = pick(payload, FIELDS.session_id);
+    if (defer && norm.event === "UserPromptSubmit") first.defer_evidence = true;
+    if (defer && (norm.event === "Stop" || norm.event === "SessionStart"))
+      queueQuery(as, first.cwd, sid, "");
+
+    const evidenceEvent = ["UserPromptSubmit", "PostToolUse", "PostToolUseFailure"].includes(
+      norm.event,
+    );
+    // Hosts with different output capabilities must each deliver their own advice. Duplicate
+    // plugin + project deliveries in ONE host can share the original execution.
+    const key = (evidenceEvent ? `${as}-` : "") + eventKey(norm.payloads);
+    const ticket = claim ? await claim({ key }) : null;
     if (ticket && "verdict" in ticket && ticket.verdict) return render(as, event, ticket.verdict);
 
+    const afterTool = norm.event === "PostToolUse" || norm.event === "PostToolUseFailure";
+    const pending = defer && afterTool ? takeQuery(as, first.cwd, sid) : "";
+    if (pending && norm.event === "PostToolUseFailure") first.pending_query = pending;
     const chains = norm.payloads.map((p) => ({ payload: p, steps: guardChain(p, manifest) }));
     const runs = await Promise.all(chains.map((c) => run(c.steps, c.payload, { env })));
     const verdict = merge(runs.flat().map((r) => interpret(norm.event, r)));
+    if (defer && norm.event === "UserPromptSubmit")
+      queueQuery(as, first.cwd, sid, verdict.block ? "" : first.prompt);
+    if (norm.event === "PostToolUse") {
+      // Other hosts deliver failures inside the ordinary result, e.g. a nonzero Codex Bash exit.
+      const guidance = await hookEvidence(
+        first.cwd,
+        [failureQuery(first), pending].filter(Boolean).join("\n"),
+      );
+      verdict.context = join2(verdict.context, guidance, "\n\n");
+    }
     if (norm.unchecked && norm.event === "PreToolUse")
       verdict.context = join2(
         verdict.context,
         `${BRAND.brand}: ${norm.unchecked} more file(s) in this patch were not checked (the first ${MAX_PATCH_FILES} were).`,
         "\n\n",
       );
-    if (ticket && "publish" in ticket) ticket.publish(verdict);
+    // Only the first delivery injects source text. A duplicate replays the decision without
+    // saving private excerpts in the event-claim store or injecting them twice.
+    if (ticket && "publish" in ticket)
+      ticket.publish(evidenceEvent ? { ...verdict, context: "" } : verdict);
     return render(as, event, verdict);
   } catch {
     return silent;

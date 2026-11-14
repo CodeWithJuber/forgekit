@@ -283,6 +283,23 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "--event",
+              "PostToolUseFailure",
+              "~/.forge/guards/cortex.sh",
+              "failure"
+            ]
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

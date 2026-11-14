@@ -36,9 +36,12 @@ most deeply exercised integration.
 
 | Tool | Native config | MCP server entry | Automatic hooks |
 |---|---|---|---|
-| Claude Code | ✅ | ✅ | ✅ (all 5 events, blocking) |
-| Codex, Cursor, Gemini, Copilot, Zed, Continue | ✅ | ✅ | — |
-| Aider, Windsurf, OpenClaw, Kimi Code | ✅ | — | — |
+| Claude Code | ✅ | ✅ | Plugin or project hooks |
+| Local Codex | ✅ | ✅ | Trusted plugin or project hooks |
+| Cursor, Gemini CLI, Copilot | ✅ | ✅ | Project hooks |
+| Zed, Continue | ✅ | ✅ | — |
+| Devin | ✅ | — | Via trusted Claude project hooks |
+| Aider, OpenClaw, Kimi Code | ✅ | — | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Why it wins, measured:
@@ -78,7 +81,8 @@ It does three jobs:
 >   Windsurf/Devin and Kimi Code do not). Codex, Gemini CLI, Cursor, Copilot and Devin can run
 >   the guards automatically once a repository opts in with `forge hooks on`; that adapter is
 >   tested against each vendor's documented hook protocol but has not been exercised inside
->   those agents the way the Claude Code path has. The rest have no automatic hooks.
+>   those agents the way the Claude Code path has. Local Codex also accepts trusted bundled hooks.
+>   Prompt and failure delivery varies by host. See [Agent evidence](docs/AGENT-EVIDENCE.md).
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
 >   Codex bundle loads its skills and bundle-scoped MCP server. Neither path provides ambient
@@ -128,6 +132,14 @@ forge ledger query "token validation"   # 1. what does the team already know abo
 forge impact verifyToken                 # 2. which files will this edit probably touch?
 forge verify                             # 3. did the change pass the suites that actually ran?
 ```
+
+### Automatic evidence for coding agents
+
+Use `forge develop "<task>"` to inspect the development plan and research evidence. Use `forge develop "<task>" --verify` to run the project checks for the current tree.
+
+In a project, run `forge hooks on --hosts claude,codex` to install the project hooks for those hosts. A supported, trusted hook retrieves relevant code locations and source excerpts on a coding prompt or tool failure. To add private sources, run `forge sources init`, edit the configuration file it prints, then run `forge sources sync`. The cache stays in your user state directory.
+
+Run `forge evidence "investigate retry timeouts"` to inspect the same evidence directly. For an unfamiliar capability, `forge integrations find "<task>"` looks for a suitable community tool. `forge team "<task>"` shows whether independent specialist work is warranted. The [setup and research guide](docs/AGENT-EVIDENCE.md) covers supported hosts, local PDFs and spreadsheets, public research, and Jira, Confluence and GitLab on cloud and self-hosted deployments.
 
 ## See it in action
 
@@ -444,6 +456,10 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge config`        | provider setup — show / switch / add providers, set default model                                                                                                                                                                                                                                   |
 | **Substrate**           | `forge substrate`     | one pre-action gate: assumptions, route, impact, scope, memory, verify                                                                                                                                                                                                                              |
 |                         | `forge preflight`     | assumption check — what a task names that the repo doesn't define                                                                                                                                                                                                                                   |
+|                         | `forge evidence`      | find existing code, cached source excerpts and public research candidates before editing or debugging                                                                                                                                                                                               |
+|                         | `forge team`          | plan independent read-only agents for complex work and optionally run them with a shared budget                                                                                                                                                                                                     |
+|                         | `forge develop`       | assemble a development plan, search prior solutions, assess security and select verification for the current change                                                                                                                                                                                 |
+|                         | `forge sources`       | sync scoped project sources privately and search, route live reads or aggregate local tables                                                                                                                                                                                                        |
 |                         | `forge impact`        | hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history                                                                                                                                                                      |
 |                         | `forge scope`         | decompose files into independent clusters (+ coupled files you didn't name)                                                                                                                                                                                                                         |
 |                         | `forge context`       | budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed                                                                                                                                                                                                         |
@@ -472,7 +488,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 | **Config**              | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
 |                         | `forge atlas`         | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                                                                                               |
 |                         | `forge stack`         | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                                                                                             |
-|                         | `forge integrations`  | opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it                                                                                                                                      |
+|                         | `forge integrations`  | find and install pinned community tools for a task, or manage opt-in third-party MCP config                                                                                                                                                                                                         |
 |                         | `forge cost`          | real per-day spend via ccusage + measured stage factors (--stages)                                                                                                                                                                                                                                  |
 |                         | `forge budget`        | cost governance — per-day and per-task spend budgets, alert threshold, and an opt-in circuit breaker the cost guard enforces                                                                                                                                                                        |
 |                         | `forge models`        | each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from                                                                                                                                  |
@@ -574,7 +590,7 @@ These are concrete role prompts supplied to the host tool. Forgekit does not con
 that spawns these roles, exchanges inter-agent messages, or executes a LangGraph-style state
 machine.
 
-The built-in MCP server exposes 22 tools, including:
+The built-in MCP server exposes 31 tools, including:
 
 - pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`,
   `dep_check`;
@@ -646,7 +662,7 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 22 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 31 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
 | **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
 

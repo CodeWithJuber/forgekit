@@ -48,6 +48,8 @@
     "README.md",
     "ARCHITECTURE.md",
     "ONBOARDING.md",
+    "docs/AGENT-EVIDENCE.md",
+    "docs/INTEGRATIONS.md",
     "CHANGELOG.md",
     "LICENSE",
     "scripts"

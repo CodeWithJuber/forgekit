@@ -21,8 +21,10 @@ test("_setup ran: $HOME is a sandbox, not the developer's home", () => {
 // Regex false positives from comments, not real reads (src/commit_gate.js, src/consensus.js,
 // src/docs_check.js, src/docs_impact.js all document `process.env.X` in prose). TERM is
 // deliberately kept: only TERM=dumb is meaningful in src/fmt.js and it forces colour off,
-// which already matches a non-TTY test process.
-const NOT_SCRUBBED = new Set(["TERM", "TOKEN", "X"]);
+// which already matches a non-TTY test process. PATH supplies the toolchain for integration
+// tests that execute git, node and the package manager. Proxy routing stays inherited
+// by those tools; networked registry lookups are disabled via FORGE_NO_CATALOG_FETCH.
+const NOT_SCRUBBED = new Set(["PATH", "HTTPS_PROXY", "TERM", "TOKEN", "X"]);
 // Sandboxed rather than scrubbed: _setup points these at an empty test home (pinned by the
 // test above), so a src read of them sees that home, never the developer's. They count as a
 // leak again the moment one holds the real home.
@@ -53,7 +55,7 @@ test("canary: a hostile env cannot reach a test process", () => {
     process.execPath,
     // A file:// URL, not a path: --import resolves module specifiers, and on Windows a
     // plain absolute path (D:\…) parses as the URL scheme "d:" (ERR_UNSUPPORTED_ESM_URL_SCHEME).
-    ["--import", new URL("./_setup.js", import.meta.url).href, "-e", canary],
+    ["--import", new URL("./_setup.js", import.meta.url).href, "--input-type=module", "-e", canary],
     {
       encoding: "utf8",
       env: {
