@@ -145,7 +145,10 @@ test("CLI: detected Kimi writes its MCP config and reports why Claude settings w
     env: { ...process.env, FORGE_SETTINGS_PATH: settingsPath },
   });
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /settings: skipped \(Claude Code is outside this repo's tool selection\)/);
+  assert.match(
+    run.stdout,
+    /settings: skipped \(Claude Code is outside this repo's tool selection\)/,
+  );
   assert.ok(existsSync(join(root, ".kimi-code", "mcp.json")));
   for (const p of ["CLAUDE.md", ".claude", ".mcp.json"]) assert.ok(!existsSync(join(root, p)));
   assert.ok(!existsSync(settingsPath));
