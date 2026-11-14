@@ -1128,6 +1128,24 @@ async function main() {
     const reason = nativeHarnessDenial({ host: "claude", event: "PreToolUse", payload: data });
     if (reason) deny(reason);
   }
+  // The wildcard subscribes the supervisory gate to every native tool. Apply the
+  // legacy path grammar only to its original tools; arbitrary third-party tool
+  // arguments named "path" or "command" have no local filesystem semantics.
+  if (
+    typeof data.tool_name === "string" &&
+    ![
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash",
+      "Read",
+      "Grep",
+      "Glob",
+      "NotebookRead",
+    ].includes(data.tool_name)
+  )
+    return;
   const inp = data.tool_input ?? {};
   const d = protectPathsDecision({
     toolName: data.tool_name,

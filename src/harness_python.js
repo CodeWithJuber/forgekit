@@ -48,7 +48,7 @@ export function installedHarnessProgram(root, program, additionalRoots = []) {
       // Continue to the next installed executable.
     }
   }
-  throw new Error(`Install ${program} outside the checkout and add it to PATH`);
+  throw new Error(`Install a trusted ${program} outside the checkout and add it to PATH`);
 }
 
 export function installedHarnessPython(root) {

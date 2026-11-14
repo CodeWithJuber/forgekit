@@ -153,6 +153,16 @@ test("bundled Claude guard covers arbitrary plugin tools; historical standalone 
 
 test("ordinary workspaces preserve ordinary tool calls", async (t) => {
   const { root } = fixture(t, false);
+  const remote = spawnSync(process.execPath, [guard], {
+    cwd: root,
+    encoding: "utf8",
+    input: JSON.stringify({
+      cwd: root,
+      tool_name: "mcp__reader__describe",
+      tool_input: { path: ".env", command: "git reset --hard" },
+    }),
+  });
+  assert.equal(remote.status, 0, remote.stderr);
   assert.equal(
     denied("codex", await pre("codex", "PreToolUse", { cwd: root, tool_name: "exec_command" })),
     false,
