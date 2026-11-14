@@ -671,6 +671,52 @@ const bash = (command, extra = {}) => ({
   ...extra,
 });
 
+test("Kimi user plugin honors the worktree host selection for prompts and status", async (t) => {
+  const root = tmp();
+  const home = tmp();
+  const configDir = join(root, ".forge");
+  const nested = join(root, "packages");
+  const plugins = join(home, ".kimi-code", "plugins");
+  mkdirSync(configDir);
+  mkdirSync(nested);
+  writeFileSync(join(root, ".git"), "gitdir: ../main/.git/worktrees/client\n");
+  mkdirSync(plugins, { recursive: true });
+  writeFileSync(
+    join(plugins, "installed.json"),
+    JSON.stringify({ plugins: [{ id: BRAND.pkg, enabled: true }] }),
+  );
+  const kimiHome = process.env.KIMI_CODE_HOME;
+  delete process.env.KIMI_CODE_HOME;
+  t.after(() => {
+    if (kimiHome !== undefined) process.env.KIMI_CODE_HOME = kimiHome;
+  });
+  for (const [config, enabled] of [
+    [{}, true],
+    [{ tools: ["codex"] }, false],
+    [{ tools: [] }, false],
+    [{ tools: "all" }, true],
+    [{ tools: "kimi-code,codex" }, true],
+    [{ tools: ["kimi"], hooks: { hosts: ["codex"] } }, false],
+    [{ tools: ["codex"], hooks: { hosts: ["kimi"] } }, true],
+    [{ tools: ["kimi"], hooks: { project: false } }, false],
+  ]) {
+    writeFileSync(join(configDir, "forge.config.json"), JSON.stringify(config));
+    const seen = [];
+    await hook(
+      {
+        host: "kimi",
+        event: "UserPromptSubmit",
+        input: { cwd: nested, prompt: [{ type: "text", text: "Find the test." }] },
+      },
+      [],
+      seen,
+    );
+    assert.equal(seen.length > 0, enabled, JSON.stringify(config));
+    const row = hooksStatus(root, { config, home }).hosts.find((h) => h.host === "kimi");
+    assert.equal(row.state, enabled ? "enabled in Kimi" : "off");
+  }
+});
+
 test("runHook: a guard's denial reaches each agent in its own words", async () => {
   const deny = [ran({ status: 2, stderr: "BLOCKED by dep-gate: not on the registry" })];
   const codex = await hook({ host: "codex", event: "PreToolUse", input: bash("npm i x") }, deny);

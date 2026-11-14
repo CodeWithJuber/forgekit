@@ -84,9 +84,16 @@ def verify(codex, folder):
     location = json.loads(run([forge, "sources", "init"]).stdout)["configPath"]
     Path(location).write_text(json.dumps({"sources": [
         {"id": "manuals", "provider": "local", "root": str(manuals)}]}))
-    marker = "FW-" + secrets.token_hex(12)
+    # Keep the random map reference lowercase so credential-shaped entropy redaction
+    # never masks a test value. The value still carries 96 unpredictable bits.
+    marker = "ref-" + secrets.token_hex(12)
     (manuals / "procedures.csv").write_text(f"component,evidence\nmainspring,{marker}\n")
     run([forge, "sources", "sync"])
+    prompt = "Find the documented mainspring procedure."
+    indexed = run([forge, "evidence", prompt]).stdout
+    expected_evidence = [marker, "procedures.csv", "rows 1-2"]
+    if any(item not in indexed for item in expected_evidence):
+        raise SystemExit("Fixture CSV value or row locator missing from synced evidence")
     run([forge, "hooks", "on", "--hosts", "codex", "--json"])
     server = ThreadingHTTPServer(("127.0.0.1", 0), LocalResponses)
     server.requests = []
@@ -112,7 +119,7 @@ trust_level = "trusted"
         result = subprocess.run([codex, "exec", "--ephemeral", "--json",
                                  "--sandbox", "read-only", "--dangerously-bypass-hook-trust",
                                  "--disable", "shell_snapshot",
-                                 "Find the documented mainspring procedure."],
+                                 prompt],
                                 cwd=project, env=env, text=True, capture_output=True,
                                 stdin=subprocess.DEVNULL, timeout=90)
         if result.returncode or not server.requests:
@@ -123,8 +130,10 @@ trust_level = "trusted"
         # know it from project files, static rules or the prompt. No tool calls
         # are returned by our provider. Verify the first request specifically.
         messages = json.dumps(server.requests[0].get("input", []))
-        if marker not in messages or "procedures.csv" not in messages or "rows 1-2" not in messages:
-            raise SystemExit("The first native model request did not include the CSV row and its source locator")
+        if any(item not in messages for item in expected_evidence):
+            raise SystemExit(f"Missing fixture evidence in the first native model request "
+                             f"(value={marker in messages}, file={'procedures.csv' in messages}, "
+                             f"locator={'rows 1-2' in messages})")
         print(f"{expected} delivered the external CSV row and locator to the first loopback request.")
     finally:
         server.shutdown()

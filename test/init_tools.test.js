@@ -1,5 +1,5 @@
-// forge init emits config only for the tools a repo uses — Claude + AGENTS.md by default,
-// plus every tool with a sign of life on disk, or an explicit --tools list — and records the
+// forge init emits config for tools with a sign of life on disk (Claude on an empty repo),
+// or an explicit --tools list, along with AGENTS.md. It records the
 // choice so later syncs emit the same set. It used to create .aider.conf.yml, .codex/,
 // .continue/, .cursor/, .gemini/, .openclaw/, .roo/, .vscode/ and .zed/ in every repo.
 import assert from "node:assert/strict";
@@ -73,10 +73,10 @@ test("parseTools normalises lists, aliases and `all`; unknown names are reported
   assert.deepEqual(parseTools(42), { tools: [], unknown: [] });
 });
 
-test("resolveInitTools: --tools wins, then the recorded set, else Claude + detected", () => {
+test("resolveInitTools: --tools wins, then the recorded set, then the detected hosts", () => {
   const root = fixture();
   mkdirSync(join(root, ".codex"));
-  assert.deepEqual(resolveInitTools(root), { tools: ["claude", "codex"], source: "detected" });
+  assert.deepEqual(resolveInitTools(root), { tools: ["codex"], source: "detected" });
   assert.deepEqual(resolveInitTools(root, "cursor"), { tools: ["cursor"], source: "--tools" });
   assert.deepEqual(resolveInitTools(root, "all"), { tools: null, source: "--tools" });
   assert.match(resolveInitTools(root, "claude,bogus").error, /unknown tool\(s\).*bogus/);
@@ -103,11 +103,52 @@ test("init emits for tools the repo already uses (.cursor/, copilot-instructions
   mkdirSync(join(root, ".github"));
   writeFileSync(join(root, ".github", "copilot-instructions.md"), "x\n");
   const r = init({ targetRoot: root, noSettings: true });
-  assert.deepEqual(r.tools.tools, ["claude", "cursor", "vscode"]);
+  assert.deepEqual(r.tools.tools, ["cursor", "vscode"]);
   assert.ok(existsSync(join(root, ".cursor", "mcp.json")), "Cursor MCP");
   assert.ok(existsSync(join(root, ".vscode", "mcp.json")), "VS Code / Copilot MCP");
   for (const p of [".aider.conf.yml", ".gemini", ".codex", ".continue", ".roo", ".zed"])
     assert.ok(!existsSync(join(root, p)), `${p} not created`);
+});
+
+test("a non-Claude selection leaves global settings untouched on init and re-init", () => {
+  const root = fixture();
+  const settingsDir = fixture();
+  const settingsPath = join(settingsDir, "settings.json");
+  const opts = {
+    targetRoot: root,
+    settingsPath,
+    warm: false,
+    onSettingsNotice: () => assert.fail("unrelated settings merge attempted"),
+  };
+  assert.equal(init({ ...opts, tools: "kimi,codex" }).settings.action, "skipped");
+  assert.deepEqual(readdirSync(settingsDir), []);
+  const original = '{ "userSetting": 42, "hooks": {} }\n';
+  writeFileSync(settingsPath, original);
+  // A hand-written Claude marker doesn't supersede the saved tool selection.
+  writeFileSync(join(root, "CLAUDE.md"), "# Another team's rules\n");
+  assert.equal(init(opts).settings.action, "skipped");
+  assert.deepEqual(readdirSync(settingsDir), ["settings.json"]);
+  assert.equal(readFileSync(settingsPath, "utf8"), original);
+
+  const global = init({ targetRoot: root, settingsPath, settingsOnly: true });
+  assert.equal(global.settings.action, "merged");
+  assert.equal(JSON.parse(readFileSync(settingsPath, "utf8")).userSetting, 42);
+});
+
+test("CLI: detected Kimi writes its MCP config and reports why Claude settings were skipped", () => {
+  const root = fixture();
+  mkdirSync(join(root, ".kimi-code"));
+  const settingsPath = join(fixture(), ".claude", "settings.json");
+  const run = spawnSync(process.execPath, [CLI, "init", "--no-warm"], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_SETTINGS_PATH: settingsPath },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /settings: skipped \(Claude Code is outside this repo's tool selection\)/);
+  assert.ok(existsSync(join(root, ".kimi-code", "mcp.json")));
+  for (const p of ["CLAUDE.md", ".claude", ".mcp.json"]) assert.ok(!existsSync(join(root, p)));
+  assert.ok(!existsSync(settingsPath));
 });
 
 test("init --tools all emits every tool (the old behaviour, on request)", () => {

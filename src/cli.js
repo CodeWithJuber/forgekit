@@ -195,7 +195,7 @@ HANDLERS.init = async (argv) => {
   const profileIdx = argv.indexOf("--profile");
   const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
   // --tools <list> (or --tools=<list>): the agent tools to emit config for. Omitted = the set an
-  // earlier init recorded, else Claude plus the tools this repo already uses.
+  // earlier init recorded, else the detected hosts (Claude on a fresh repo).
   const toolsEq = argv.find((a) => a.startsWith("--tools="));
   const toolsIdx = argv.indexOf("--tools");
   const tools = toolsEq
@@ -249,7 +249,7 @@ HANDLERS.init = async (argv) => {
   const toolOrigin = {
     "--tools": "from --tools",
     config: "recorded in .forge/forge.config.json",
-    detected: "Claude + tools found in this repo",
+    detected: "auto-detected, with Claude as the fallback",
   }[toolsResult.source];
   console.log(
     `  tools:    ${toolsResult.tools === null ? "all" : toolsResult.tools.join(", ")} (${toolOrigin}) — change with \`${BRAND.cli} init --tools <list|all>\``,
@@ -287,7 +287,7 @@ HANDLERS.init = async (argv) => {
   } else if (settings?.action === "unchanged" && "path" in settings) {
     console.log(`  settings: already up to date (${settings.path})`);
   } else if (settings?.action === "skipped") {
-    console.log("  settings: skipped (--no-settings)");
+    console.log(`  settings: skipped (${settings.reason})`);
   } else if (settings?.action === "error") {
     // RA-04: repo files above were still emitted, but the settings merge FAILED —
     // surface it on stderr and fail the command instead of a quiet exit 0.

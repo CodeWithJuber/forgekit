@@ -18,7 +18,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BRAND } from "../brand.js";
-import { HOSTS, isForgeHookCommand, userLevelWired } from "../hosts.js";
+import { HOSTS, isForgeHookCommand, kimiPluginEnabled, userLevelWired } from "../hosts.js";
 import { readJsonSafe } from "../util.js";
 import { writeIfChanged } from "./_shared.js";
 
@@ -220,14 +220,11 @@ export function hooksStatus(root, { config = {}, home } = {}) {
       const records = readJsonSafe(join(kimiHome, "plugins", "installed.json"));
       const record =
         Array.isArray(records?.plugins) && records.plugins.find((r) => r?.id === BRAND.pkg);
-      const policyOff =
-        config?.hooks?.project === false ||
-        (Array.isArray(config?.hooks?.hosts) && !config.hooks.hosts.includes(id));
       return {
         host: id,
         label: host.label,
         file: null,
-        state: record?.enabled === true && !policyOff ? "enabled in Kimi" : "off",
+        state: record?.enabled === true && kimiPluginEnabled(config) ? "enabled in Kimi" : "off",
         note: host.trust,
       };
     }

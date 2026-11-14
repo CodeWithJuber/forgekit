@@ -41,7 +41,7 @@ import { isAbsolute, join } from "node:path";
 import { GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
 import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
-import { readForgeConfig } from "./repo_config.js";
+import { readForgeConfig, recordedTools } from "./repo_config.js";
 import { readJsonSafe, userStateDir } from "./util.js";
 
 /** The events forge has guards for — Claude Code's names, the shape every guard reads.
@@ -885,6 +885,13 @@ export function userLevelWired({ home = homedir() } = {}) {
 export const hooksDisabled = (env = process.env) =>
   /^(0|false|off|no)$/i.test(String(env.FORGE_HOOKS ?? "").trim());
 
+/** Explicit hook hosts take precedence over the repository's selected tools. */
+export function kimiPluginEnabled(cfg) {
+  if (cfg.corrupt || cfg.hooks?.project === false) return false;
+  const hosts = Array.isArray(cfg.hooks?.hosts) ? cfg.hooks.hosts : recordedTools(cfg);
+  return hosts === null || hosts.includes("kimi");
+}
+
 /**
  * `forge hooks run <host> <event>` — one hook call, start to finish. Never throws; every path
  * that is not a guard's own verdict returns an empty, successful reply.
@@ -923,12 +930,7 @@ export async function runHook({
       if (typeof cwd !== "string" || !isAbsolute(cwd)) return silent;
       const { sourceWorkspaceRoot } = await import("./sources.js");
       const cfg = readForgeConfig(sourceWorkspaceRoot(cwd));
-      if (
-        cfg.corrupt ||
-        cfg.hooks?.project === false ||
-        (Array.isArray(cfg.hooks?.hosts) && !cfg.hooks.hosts.includes("kimi"))
-      )
-        return silent;
+      if (!kimiPluginEnabled(cfg)) return silent;
     }
     if (host === "claude") {
       const actual = detectHost(env);

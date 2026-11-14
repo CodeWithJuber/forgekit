@@ -1,6 +1,6 @@
 # Integrations — what each tool actually gets
 
-Forgekit emits configuration for ten coding tools, plus MCP configuration for Roo Code and VS Code.
+Choose your coding hosts with `forge init --tools kimi,codex`. Each host receives its supported project instructions, MCP entries or hooks.
 "Supported" hides four different things, so this page lists them separately for every tool:
 
 1. **Config emission** — forge writes the tool's native rules file (or relies on one the tool
@@ -12,7 +12,7 @@ Forgekit emits configuration for ten coding tools, plus MCP configuration for Ro
    call it.
 4. **Enforcement** — some of that code can *block* an action, not just advise.
 
-Each cell says how the claim is backed (checked 2026-11-13 against `src/emit/*.js`,
+Each cell says how the claim is backed (updated 2026-11-14 against `src/emit/*.js`,
 `src/hosts.js`, `src/sync.js`, `src/init.js`, `hooks/hooks.json` and the tests; the hook
 protocols of Codex, Cursor, Gemini CLI, Copilot and Devin were read from each vendor's hook
 reference on the same day):
@@ -42,11 +42,20 @@ reference on the same day):
 | **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
 | **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
 
-`forge init` emits only for the tools a repository already uses (Claude Code plus any tool with a
-sign on disk) unless `--tools` says otherwise, and records the choice for later `forge sync` runs.
-Every target above is covered by the emission tests in `test/sync.test.js`, `test/mcp.test.js`,
-`test/openclaw.test.js` and `test/init_tools.test.js`. None of the ten host tools is launched in CI,
-so "the tool actually loads this file" is documentation-backed everywhere, including Claude Code.
+Use `--tools` to choose the hosts that a repository needs. ForgeKit records that choice for
+later `forge sync` runs. Project configuration tests cover the emitted files. The native
+acceptance checks below describe which clients actually received context in a model request.
+
+### Connect another coding host
+
+In any host with local stdio MCP support, add a server named `forge-cortex` with command
+`forge` and the single argument `cortex-mcp`. Start the server in the project directory,
+or set its `FORGE_ROOT` environment variable to the absolute project path. An MCP client
+can then list and call the tools. For a host that reads project instructions, use the
+shared `AGENTS.md` or export the instructions with `forge prompts show master --profile engineering`.
+Automatic context on every prompt requires a lifecycle callback that can deliver context
+in that host. For projects using other hosts, the CLI also supports explicit retrieval
+with `forge evidence "your task"`.
 
 ### Claude Code enforcement
 
@@ -79,8 +88,9 @@ is the single list), and answers in the agent's dialect. What is tested, and how
 - **tested (execution), the adapter** — the same file feeds each agent's documented payload
   (tool names, field names, a JSON-text argument, a whole patch) through the adapter and checks
   the reply in that agent's dialect, including two end-to-end runs through the real guards.
-- **Not launched in CI** — no agent is run, so "the agent loads this file and honours this
-  reply" rests on each vendor's hook reference, as it does for Claude Code.
+- **Native client delivery** — the Codex workflow launches a pinned client. Isolated native
+  Kimi and Claude sessions also exercised prompt delivery. The other adapter tests exercise
+  host payloads and responses in ForgeKit.
 
 After an Edit, Write or MultiEdit, ForgeKit checks the current workspace file for credential
 patterns and merge-conflict markers. For JSON it parses the document. For explicit CommonJS
@@ -133,8 +143,7 @@ hook unless bootstrap was enabled on a host with a supported startup event.
 `forge harden` installs a git pre-commit hook (gitleaks when present, then `forge precommit`). It
 runs at commit time whatever agent or person made the change: with `FORGE_COMMIT_GATE=block` it
 refuses a commit whose staged code carries no doc or state change, and a detected secret blocks in
-every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. This is the only
-enforcement forge offers outside Claude Code.
+every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. This Git-level check also works for hosts without lifecycle hooks.
 
 ## Models and providers
 

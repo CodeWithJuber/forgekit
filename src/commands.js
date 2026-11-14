@@ -11,13 +11,13 @@
 export const COMMANDS = {
   init: {
     summary:
-      "scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source",
+      "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
       "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   symlinkSync,
   writeFileSync,
@@ -14,6 +15,7 @@ import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
 import { doctor, repairFailure } from "../src/doctor.js";
 import { mergeSettings } from "../src/init.js";
+import { writeForgeConfig } from "../src/repo_config.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -148,6 +150,30 @@ test("doctor --fix adds the ledger union-merge rule to .gitattributes", () => {
   const attrs = join(root, ".gitattributes");
   assert.ok(existsSync(attrs), ".gitattributes was created");
   assert.match(readFileSync(attrs, "utf8"), /\.forge\/ledger\//);
+});
+
+test("doctor --fix respects detected and recorded non-Claude hosts while repairing AGENTS.md", () => {
+  for (const recorded of [false, true]) {
+    const root = fixture();
+    const settingsDir = fixture();
+    const settingsPath = join(settingsDir, "settings.json");
+    const original = '{ "anotherPlugin": true }\n';
+    mkdirSync(join(root, ".kimi-code"));
+    if (recorded) {
+      writeForgeConfig(root, (cfg) => ({ ...cfg, tools: ["kimi"] }));
+      writeFileSync(join(root, "CLAUDE.md"), "# Existing hand-written instructions\n");
+      writeFileSync(settingsPath, original);
+    }
+    const fixed = doctor({ targetRoot: root, settingsPath, fix: true });
+    assert.ok(fixed.repairs.some((r) => r.id === "agents" && r.ok));
+    assert.ok(!fixed.repairs.some((r) => r.id === "settings"));
+    assert.ok(!fixed.results.some((r) => r.label === "settings" || r.label === "advisor"));
+    assert.ok(existsSync(join(root, ".kimi-code", "mcp.json")));
+    for (const p of [".claude", ".mcp.json", ".codex"]) assert.ok(!existsSync(join(root, p)), p);
+    assert.deepEqual(readdirSync(settingsDir), recorded ? ["settings.json"] : []);
+    if (recorded) assert.equal(readFileSync(settingsPath, "utf8"), original);
+    else assert.ok(!existsSync(join(root, "CLAUDE.md")));
+  }
 });
 
 test("doctor --fix is idempotent — a second run repairs nothing", () => {

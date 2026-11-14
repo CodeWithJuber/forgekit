@@ -28,6 +28,7 @@ import {
   guardKey,
   isStaleManagedHook,
   mergeSettings,
+  repoInitTools,
 } from "./init.js";
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
@@ -595,11 +596,11 @@ function checkRedaction(out, guardsDirOverride) {
   }
 }
 
-function checkDrift(out, targetRoot) {
+function checkDrift(out, targetRoot, tools) {
   const syncFix = {
     id: "agents",
     label: "emit/refresh AGENTS.md (forge sync)",
-    run: () => sync({ targetRoot }),
+    run: () => sync({ targetRoot, tools: tools ?? "all" }),
   };
   // The same classifier sync and the Stop-hook auto-sync use, so doctor can never advise a
   // write they would refuse. Forge owns only its marked block: the block is compared byte
@@ -868,11 +869,13 @@ export function subsystemHealth(results) {
  */
 function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   const results = [];
+  const { tools } = repoInitTools(targetRoot);
+  const usesClaude = tools === null || tools.includes("claude");
   checkNode(results);
-  checkSettings(results, settingsPath, targetRoot);
+  if (usesClaude) checkSettings(results, settingsPath, targetRoot);
   checkProvider(results, targetRoot);
   checkGateway(results);
-  checkAdvisor(results, targetRoot, settingsPath);
+  if (usesClaude) checkAdvisor(results, targetRoot, settingsPath);
   checkBrandConsistency(results);
   checkLayers(results);
   checkGuardsExecutable(results);
@@ -880,7 +883,7 @@ function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   checkTooling(results);
   checkRedaction(results, guardsDir);
   checkInstall(results, forgeHome);
-  checkDrift(results, targetRoot);
+  checkDrift(results, targetRoot, tools);
   checkDocs(results, targetRoot);
   checkAtlas(results, targetRoot);
   checkPricing(results);

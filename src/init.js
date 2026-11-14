@@ -818,8 +818,8 @@ function writeProfile(targetRoot, profile, tools) {
  * Decide which agent tools `forge init` emits config for. Pure (reads, never writes):
  *   1. an explicit `--tools` list (`all` = every tool); unknown names are an error;
  *   2. else the selection an earlier init recorded in `.forge/forge.config.json` (`tools`);
- *   3. else Claude plus every tool the repo already shows signs of (`.cursor/`, `.codex/`,
- *      `.github/copilot-instructions.md`, …) — never a folder for a tool nobody uses.
+ *   3. else every tool the repo already shows signs of (`.cursor/`, `.codex/`, etc.),
+ *      with Claude as the fallback when the repo has no markers.
  * `tools: null` means every tool. AGENTS.md is always emitted: it is the shared source.
  * @param {string} targetRoot
  * @param {string|string[]} [explicit]
@@ -836,10 +836,18 @@ export function resolveInitTools(targetRoot, explicit) {
       return { error: "--tools needs at least one tool name (or all)" };
     return { tools, source: "--tools" };
   }
+  return repoInitTools(targetRoot);
+}
+
+/** Resolve a repo's existing host selection for an unattended init or repair.
+ * @returns {{tools: string[]|null, source: "config"|"detected"}}
+ */
+export function repoInitTools(targetRoot) {
   const recorded = readForgeConfig(targetRoot).tools;
   if (typeof recorded === "string" || Array.isArray(recorded))
     return { tools: parseTools(recorded).tools, source: "config" };
-  return { tools: [...new Set(["claude", ...detectTools(targetRoot)])], source: "detected" };
+  const detected = detectTools(targetRoot);
+  return { tools: detected.length ? detected : ["claude"], source: "detected" };
 }
 
 /** Record the resolved selection so later `forge sync` runs (and doctor's fix) emit the same
@@ -882,17 +890,15 @@ export function init({
   // The plugin may be enabled in the project or local settings, not the file merged into: its
   // hooks/hooks.json then wires every guard, so settings.json must not carry them too. Same
   // scopes `forge doctor` reads, so init never creates the double registration doctor flags.
-  const hooks = forgePluginEnabled({ settingsPath, targetRoot }).enabled ? false : undefined;
+  const mergeClaudeSettings = () =>
+    mergeSettings({
+      noSettings,
+      settingsPath,
+      onNotice: onSettingsNotice,
+      hooks: forgePluginEnabled({ settingsPath, targetRoot }).enabled ? false : undefined,
+    });
   if (settingsOnly) {
-    return {
-      settings: mergeSettings({
-        noSettings,
-        settingsPath,
-        onNotice: onSettingsNotice,
-        hooks,
-      }),
-      settingsOnly: true,
-    };
+    return { settings: mergeClaudeSettings(), settingsOnly: true };
   }
   // RA-13: an invalid profile aborts BEFORE any filesystem/settings side effect —
   // no AGENTS.md, no .forge/, no .gitattributes append, no settings merge.
@@ -918,12 +924,10 @@ export function init({
   ensureLedgerGitattributes(targetRoot);
   // Session hook logs hold raw prompts/commands — never let them be committed.
   ensureForgePrivateIgnored(targetRoot);
-  const settings = mergeSettings({
-    noSettings,
-    settingsPath,
-    onNotice: onSettingsNotice,
-    hooks,
-  });
+  const settings =
+    selection.tools === null || selection.tools.includes("claude")
+      ? mergeClaudeSettings()
+      : { action: "skipped", reason: "Claude Code is outside this repo's tool selection" };
   const detected = autoDetectProvider();
   // Item 42: warm the atlas cache so the first `forge impact` is a warm query
   // (~1.7 ms) instead of a cold graph build (~9 s on the benchmark repo).
