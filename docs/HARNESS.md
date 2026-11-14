@@ -69,10 +69,9 @@ forge harness run "Read issue.json and report its status." \
   --id ready-example --accept "status equals ready" --verifier check-ready.json
 forge harness show ready-example
 forge harness replay ready-example
-forge harness audit ready-example
 ```
 
-Read `status`, `reason`, `evidence` and `usage` together. A completed file assertion proves the listed property. For a normal project with tests, choose an appropriate verifier.
+Read `status`, `reason`, `evidence` and `usage` together. For a dedicated registry smoke run use `forge harness audit RUN_ID`. It returns a nonzero status and lists any registered tool that the run never executed. A focused task can pass its own verification with tools still unused. A completed file assertion proves the listed property. For a normal project with tests, choose an appropriate verifier.
 
 | Verifier | Evidence and usage |
 | --- | --- |
@@ -133,7 +132,7 @@ forge harness extensions list
 forge harness extensions remove retry
 ```
 
-Review the digest and inspection report before pinning. Changing any included file changes the digest. A skill uses `skill.json`, `SKILL.md` and a `triggers` list such as `["retry","backoff"]`. Instructions enter context when the task matches. Bundles can declare event subscriptions and bounded hooks such as `{"point":"agent.tool.before","action":"veto_contains","value":"restricted-staging"}`. A critical hook requires `policy.trustedHooks` to list that point under the extension name. The bus times handlers, records errors, removes registrations and quarantines a release on its third handler failure. The inventory reports review and inactivity dates. Human review, a private approval and a project lock pin authorize this release. Existing [integration selection](V2-IMPLEMENTATION.md) handles separate npm, MCP and local-executable integrations. Executable plugin lifecycle code and remote reputation feeds are outside this declarative loader.
+Review the digest and inspection report before pinning. Changing any included file changes the digest. A skill uses `skill.json`, `SKILL.md` and a `triggers` list such as `["retry","backoff"]`. Instructions enter context when the task matches. Omit `hosts` for a portable skill, or select a host-specific skill on the CLI with `forge harness run "<task>" --host kimi`. Bundles can declare event subscriptions and bounded hooks such as `{"point":"agent.tool.before","action":"veto_contains","value":"restricted-staging"}`. A critical hook requires `policy.trustedHooks` to list that point under the extension name. The bus times handlers, records errors, removes registrations and quarantines a release on its third handler failure. The inventory reports review and inactivity dates. Human review, a private approval and a project lock pin authorize this release. Existing [integration selection](V2-IMPLEMENTATION.md) handles separate npm, MCP and local-executable integrations. Executable plugin lifecycle code and remote reputation feeds are outside this declarative loader.
 
 ## Jobs and multi-agent decisions
 
