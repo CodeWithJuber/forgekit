@@ -7,7 +7,7 @@
 // forge CLI, and a guard crash must never become a broken tool call. A verdict is a JSON
 // object on stdout: `{decision, reason}` before a tool, `{context}` after a prompt or tool,
 // `{block}` at the end of a turn.
-import { existsSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { hashContent, isManaged, markerString, readIfExists, writeIfChanged } from "./_shared.js";
 

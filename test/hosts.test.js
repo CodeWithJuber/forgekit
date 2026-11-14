@@ -1110,9 +1110,7 @@ test("planHooks: only forge's own entries are ever touched; turning off leaves n
   // Off: byte for byte what the person had.
   assert.equal(planHooks(on, "claude", { enable: false }).next, `${before}\n`);
   // A file forge created is removed entirely when turned off; a version number is not content.
-  for (const host of HOOK_HOSTS.filter(
-    (id) => HOSTS[id].file && HOSTS[id].layout !== "module",
-  )) {
+  for (const host of HOOK_HOSTS.filter((id) => HOSTS[id].file && HOSTS[id].layout !== "module")) {
     const created = planHooks(null, host).next;
     assert.equal(planHooks(created, host, { enable: false }).next, null, host);
   }

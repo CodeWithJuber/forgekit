@@ -2129,7 +2129,7 @@ express — so a new agent is a row, and no guard changes.
 | GitHub Copilot (CLI and cloud agent) | `.github/hooks/forge.json` | context | — | deny · ask | context | continue |
 | Devin (CLI and desktop, formerly Windsurf) | reads `.claude/settings.json` | context | context | deny · context | context | continue |
 | Kimi Code | user-installed `kimi.plugin.json` | event | context · block | deny | asynchronous event | block |
-| OpenCode | `.opencode/plugins/forgekit.js` | context | context · block | deny · ask · context | context | block |
+| OpenCode | `.opencode/plugins/forgekit.js` | context attempt | context attempt · block | deny · ask-as-block | context attempt | advisory event |
 
 What an event cannot express degrades the safe way. An **ask** in an agent with no confirm
 step becomes a block that says so — never a silent pass. Context an event cannot carry is
@@ -2138,6 +2138,10 @@ touches, so `protect-paths` and dep-gate see each one (the first eight; the rest
 OpenCode 1.18.x runs the generated plugin's `experimental.chat.system.transform` hook but does
 not deliver what it appends to `output.system`; its rules arrive through `AGENTS.md` and its
 tool guard still blocks.
+Its Stop handler observes `session.idle` and queues a block reason as advisory context; it
+cannot prevent completion. The plugin needs a ForgeKit CLI containing the OpenCode adapter.
+Version 1.17.0 returns no verdict for OpenCode events, so the generated plugin fails open with
+that CLI.
 
 Three things keep it from getting in the way:
 

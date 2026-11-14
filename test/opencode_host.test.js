@@ -2,7 +2,7 @@
 // host row, the payload translation, the marker-owned file, and the adapter itself: a stub
 // `forge` proves the plugin blocks, injects context and fails open without the CLI.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -122,24 +122,25 @@ test("sync: OpenCode is a first-class tool and its plugin waits for `forge hooks
 
 /** A stub `forge` that logs every payload and answers with the JSON verdicts the plugin reads. */
 function stubForge(root, logPath) {
-  const path = join(root, "forge-stub");
+  // Node executes the first CLI argument, "hooks", as a script on every platform.
+  // A shell-script executable would fail to spawn on Windows before exercising the adapter.
+  writeFileSync(join(root, "package.json"), '{"type":"module"}\n');
   writeFileSync(
-    path,
-    `#!/bin/sh
-event="$4"
-cat >> "${logPath}"
-printf '\\n' >> "${logPath}"
-case "$event" in
-  SessionStart) printf '{"context":"session context"}' ;;
-  UserPromptSubmit) printf '{"context":"prompt context"}' ;;
-  PreToolUse) printf '{"decision":"deny","reason":"blocked by test"}' ;;
-  PostToolUse) printf '{"context":"tool context"}' ;;
-  Stop) printf '{"block":"stop block"}' ;;
-esac
+    join(root, "hooks"),
+    `import { appendFileSync, readFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(logPath)}, readFileSync(0, "utf8") + "\\n");
+const replies = {
+  SessionStart: { context: "session context" },
+  UserPromptSubmit: { context: "prompt context" },
+  PreToolUse: { decision: "deny", reason: "blocked by test" },
+  PostToolUse: { context: "tool context" },
+  Stop: { block: "stop block" },
+};
+const reply = replies[process.argv[4]];
+if (reply) process.stdout.write(JSON.stringify(reply));
 `,
   );
-  chmodSync(path, 0o755);
-  return path;
+  return process.execPath;
 }
 
 /**
@@ -178,7 +179,12 @@ test("OpenCode adapter: blocks a tool, injects context, and carries the stop ver
   const system = { system: [] };
   await hooks["chat.message"](
     { sessionID: "s1" },
-    { parts: [{ type: "text", text: "hello" }, { type: "text", text: "world" }] },
+    {
+      parts: [
+        { type: "text", text: "hello" },
+        { type: "text", text: "world" },
+      ],
+    },
   );
   await hooks["experimental.chat.system.transform"]({ sessionID: "s1" }, system);
   assert.deepEqual(system.system, ["session context", "prompt context"]);

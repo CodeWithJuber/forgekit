@@ -64,6 +64,11 @@ The table comes from ForgeKit’s host adapters. Each cell shows the client even
 | Devin          | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
 <!-- forge:render:host-hooks:end -->
 
+The OpenCode row identifies the forwarded event, not proof of model-visible context.
+In the OpenCode 1.18.31 smoke check, `experimental.chat.system.transform` ran but its appended
+context did not reach the model. See the [integration matrix](INTEGRATIONS.md) for the CLI
+dependency and advisory-only Stop handling.
+
 ## Select and verify a model route
 
 The default route is the local Chat Completions endpoint at `http://127.0.0.1:11434/v1`, model `qwen2.5-coder:7b`. Start a compatible server and install that model yourself, or configure a route for your own model. Initialization makes no download or paid call. Endpoints must support the tool-call message format. Runtime credentials come from the environment variable named by the route.
