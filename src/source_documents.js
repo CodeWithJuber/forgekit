@@ -15,20 +15,21 @@ export function doclingConfig(root, config) {
     config === null ||
     typeof config !== "object" ||
     Array.isArray(config) ||
-    !["scans", "layout"].includes(config.mode) ||
-    typeof config.artifactsPath !== "string" ||
-    !isAbsolute(config.artifactsPath)
+    !["scans", "layout"].includes(config.mode)
   )
-    throw new Error(
-      "Set docling.mode to scans or layout and supply an absolute local artifactsPath",
-    );
-  const artifactsPath = realpathSync.native(config.artifactsPath);
-  const rel = relative(root, artifactsPath);
-  if (
-    (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)) ||
-    !statSync(artifactsPath).isDirectory()
-  )
-    throw new Error("Use a prefetched Docling model directory outside the indexed source");
+    throw new Error("Set docling.mode to scans or layout");
+  let artifactsPath = null;
+  if (config.artifactsPath !== undefined || config.mode === "layout") {
+    if (typeof config.artifactsPath !== "string" || !isAbsolute(config.artifactsPath))
+      throw new Error("Layout extraction needs an absolute local artifactsPath");
+    artifactsPath = realpathSync.native(config.artifactsPath);
+    const rel = relative(root, artifactsPath);
+    if (
+      (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)) ||
+      !statSync(artifactsPath).isDirectory()
+    )
+      throw new Error("Use a prefetched Docling model directory outside the indexed source");
+  }
   const languages = config.languages ?? ["eng"];
   if (
     !Array.isArray(languages) ||
@@ -45,7 +46,7 @@ export function extractDocument(ext, bytes, cap, config = null) {
   const python = process.platform === "win32" ? "python" : "python3";
   let command = python;
   let args = enhanced
-    ? ["-I", docling, config.artifactsPath, config.languages.join(",")]
+    ? ["-I", docling, config.artifactsPath ?? "", config.languages.join(","), config.mode]
     : ["-I", office, ext];
   const env = { ...process.env };
   if (enhanced && process.platform === "darwin") {

@@ -3,6 +3,8 @@ import errno
 import io
 import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +36,36 @@ def deny_linux_network():
         lib.seccomp_release(context)
 
 
+def tesseract_pages(data, languages):
+    # This fallback provides searchable page text only. It makes no claims about
+    # table structure. A fixed image extent caps memory even on enormous page boxes.
+    import tempfile
+    from shutil import which
+    if not all(which(cmd) for cmd in ("pdfinfo", "pdftoppm", "tesseract")):
+        return {"error":"Scan OCR requires local Poppler and Tesseract or installed Docling"}
+    info = subprocess.run(["pdfinfo", "-"], input=data, capture_output=True, timeout=6, check=True).stdout
+    page_field = re.search(rb"^Pages:\s*([0-9]+)\s*$", info, re.MULTILINE)
+    if not page_field or not 1 <= int(page_field[1]) <= 40:
+        return {"error":"Plain OCR accepts up to 40 PDF pages; split the source or configure Docling"}
+    sections = []
+    with tempfile.TemporaryDirectory(prefix="forge-ocr-") as tmp:
+        prefix = Path(tmp) / "page"
+        image = prefix.with_suffix(".pgm")
+        for n in range(1, int(page_field[1]) + 1):
+            # Use the allow-listed source bytes and a fixed private output prefix.
+            subprocess.run(["pdftoppm", "-f", str(n), "-l", str(n), "-singlefile", "-scale-to", "1900",
+                            "-gray", "-", str(prefix)], input=data, capture_output=True, timeout=12, check=True)
+            if image.stat().st_size > 6 * 1024**2:
+                raise ValueError()
+            out = subprocess.run(["tesseract", str(image), "stdout", "-l", languages],
+                                 capture_output=True, timeout=20, check=True).stdout
+            if len(out) > 128 * 1024 or b"-----BEGIN " in out.upper():
+                raise ValueError()
+            sections.append([f"page {n}", out.decode("utf-8")])
+            image.unlink()
+    return {"sections":sections, "structure":{"pages":len(sections),"converter":"tesseract","tableAccuracy":"unverified"}}
+
+
 def main():
     if sys.platform.startswith("linux"):
         try:
@@ -45,13 +77,20 @@ def main():
     # Set before importing any ML library. Some libraries use a native network stack.
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1",
                       HF_HUB_DISABLE_TELEMETRY="1", OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling_core.types.io import DocumentStream
     data = sys.stdin.buffer.read(8 * 1024**2 + 1)
     if len(data) > 8 * 1024**2:
         raise ValueError()
+    if not sys.argv[1] and sys.argv[3] == "scans":
+        return tesseract_pages(data, sys.argv[2].replace(",", "+"))
+    try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling_core.types.io import DocumentStream
+    except ModuleNotFoundError:
+        if sys.argv[3] == "scans":
+            return tesseract_pages(data, sys.argv[2].replace(",", "+"))
+        raise
     opts = PdfPipelineOptions(artifacts_path=Path(sys.argv[1]), enable_remote_services=False,
                               allow_external_plugins=False, do_ocr=True, do_table_structure=True,
                               ocr_options=TesseractCliOcrOptions(lang=sys.argv[2].split(",")))

@@ -136,3 +136,38 @@ assert subprocess.run([sys.executable,"-I","-c","import socket; socket.socket()"
     script,
   );
 });
+
+test("an image-only PDF yields OCR text and a real page locator with the offline fallback", {
+  skip:
+    process.platform !== "linux" ||
+    !hasPython ||
+    spawnSync(python, ["-I", "-c", "import ctypes, PIL; ctypes.CDLL('libseccomp.so.2')"]).status !==
+      0 ||
+    ["pdfinfo", "pdftoppm", "pdftotext", "tesseract"].some(
+      (cmd) => spawnSync(cmd, [cmd === "tesseract" ? "--version" : "-v"]).status !== 0,
+    ),
+}, async (t) => {
+  const source = fixture(t);
+  run(
+    `
+from PIL import Image,ImageDraw,ImageFont
+from pathlib import Path
+import sys
+image=Image.new("RGB",(1100,500),"white")
+draw=ImageDraw.Draw(image)
+try:font=ImageFont.truetype("DejaVuSans.ttf",52)
+except OSError:font=ImageFont.load_default(size=52)
+draw.text((60,160),"Verify service invoices",fill="black",font=font)
+image.save(Path(sys.argv[1])/"scan.pdf","PDF")
+`,
+    source.root,
+  );
+  const scan = await readLocalSource({
+    ...source,
+    docling: { mode: "scans" },
+  });
+  assert.deepEqual(scan.warnings, []);
+  assert.equal(scan.chunks[0].structure.converter, "tesseract");
+  assert.equal(scan.chunks[0].locator, "page 1");
+  assert.match(scan.chunks[0].text, /service invoices/i);
+});

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -29,16 +30,29 @@ class LocalResponses(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         self.server.requests.append(json.loads(self.rfile.read(size)))
+        reply = "Fixture complete."
+        message = {"type": "message", "id": "msg_fixture", "role": "assistant",
+                   "status": "completed", "content": [{"type": "output_text", "text": reply,
+                                                       "annotations": []}]}
         response = {"id": "resp_fixture", "object": "response", "created_at": 1,
-                    "status": "completed", "model": "fixture", "output": [],
+                    "status": "completed", "model": "fixture", "output": [message],
                     "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
-        for kind in ["response.created", "response.completed"]:
-            body = {"type": kind, "response": {**response, "status":
-                    "in_progress" if kind == "response.created" else "completed"}}
+        events = [
+            ("response.created", {"response": {**response, "status": "in_progress", "output": []}}),
+            ("response.output_item.added", {"output_index": 0,
+             "item": {**message, "status": "in_progress", "content": []}}),
+            ("response.output_text.delta", {"item_id": message["id"], "output_index": 0,
+                                            "content_index": 0, "delta": reply}),
+            ("response.output_item.done", {"output_index": 0, "item": message}),
+            ("response.completed", {"response": response}),
+        ]
+        for sequence, (kind, fields) in enumerate(events):
+            body = {"type": kind, "sequence_number": sequence, **fields}
             self.wfile.write(f"event: {kind}\ndata: {json.dumps(body)}\n\n".encode())
+        self.wfile.flush()
 
 
 def verify(codex, folder):
@@ -49,14 +63,14 @@ def verify(codex, folder):
     # Expose the actual packaged CLI on PATH as an npm installation would. An argv
     # shim also works in a source checkout with the JS bin file in mode 0644.
     forge = bin_dir / "forge"
-    forge.write_text("#!/bin/sh\nexec node \"$FORGE_TEST_CLI\" \"$@\"\n")
-    forge.chmod(0o700)
     node = shutil.which("node")
     if not node:
         raise SystemExit("Node is required")
+    forge.write_text(f'#!/bin/sh\nexec {shlex.quote(node)} {shlex.quote(str(ROOT / "src/cli.js"))} "$@"\n')
+    forge.chmod(0o700)
     env = {"PATH": os.pathsep.join([str(bin_dir), str(Path(node).parent), os.defpath]),
            "HOME": str(home), "CODEX_HOME": str(code_home), "FORGE_HOME": str(home / "forge"),
-           "FORGE_TEST_CLI": str(ROOT / "src/cli.js"), "FORGE_EVIDENCE_WEB": "0",
+           "FORGE_EVIDENCE_WEB": "0",
            "FORGE_NO_CATALOG_FETCH": "1", "FORGE_NO_HINT": "1", "NO_COLOR": "1",
            "LANG": "C.UTF-8", "NO_PROXY": "127.0.0.1,localhost",
            "HTTP_PROXY": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9",

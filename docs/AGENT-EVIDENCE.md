@@ -85,7 +85,12 @@ codex plugin list --marketplace forge --json
 | The host offers no context field at prompt submission | The available event controls the earliest delivery. | On Cursor/Copilot, inspect the subsequent supported tool event. A session that ends before that event can miss the packet. Hosts without suitable local hooks can invoke the CLI or MCP tool explicitly. |
 | A hosted agent works in its own checkout | The local machine and the hosted environment have different files and credentials. | Run the setup and test in the environment that executes the code. A developer laptop's private mirrors do not travel with the repo. |
 
-**Validation in this change.** In Claude Code 2.1.325, a plain coding prompt caused a synced CSV row and its locator to appear in the first outgoing model request, without the model requesting a tool. This was observed with both project hooks and the plugin installation path, using synthetic data and a loopback Messages endpoint. In a separate run, a failing native Read tool triggered a new evidence excerpt for the subsequent request. The new excerpt was absent from the earlier request. These tests establish what the real client delivered. In Codex CLI 0.167.0-alpha.4, local marketplace install and plugin enablement succeeded. The sandbox prevented a native turn from starting, so actual hook delivery on that host remains unverified. See the host matrix for adapter coverage and arrange a real-client check on any other host used by your team.
+**Validation in this change.** In Claude Code 2.1.325, a plain coding prompt caused a synced CSV row and its locator to appear in the first outgoing model request, without the model requesting a tool. This was observed with both project hooks and the plugin installation path, using synthetic data and a loopback Messages endpoint. In a separate run, a failing native Read tool triggered a new evidence excerpt for the subsequent request. The new excerpt was absent from the earlier request.
+
+Codex CLI 0.167.0-alpha.4 completed the local marketplace install and enabled the plugin.
+A separate project-hook test ran Codex CLI 0.169.0 in its read-only sandbox on GitHub-hosted
+Ubuntu. The first request to a loopback Responses endpoint included the unique CSV value,
+filename and row range retrieved from outside the project. See the [native Codex acceptance run](https://github.com/CodeWithJuber/forgekit/actions/runs/43584740300/job/132416709361).
 
 ## From a task to a reviewed change
 
@@ -316,7 +321,9 @@ An optional source-level `docling` setting enables a local PDF pipeline.
 `scans` tries Poppler first and falls back when extraction fails or a page has
 no text. `layout` requests Docling for every PDF in that source. Install Docling,
 Tesseract and the requested OCR languages separately and prefetch the Docling
-models. Linux requires libseccomp. macOS requires sandbox-exec. The worker
+models. In scans mode, omit `artifactsPath` to use local Poppler and Tesseract
+for up to 40 pages, with no Docling installation. It returns cited text, with table accuracy
+marked unverified. Linux requires libseccomp. macOS requires sandbox-exec. The worker
 denies network access to its process and children. Windows reports the optional
 offline pipeline as unavailable. Check inferred tables against the originals
 before relying on their values. Format support and network isolation have

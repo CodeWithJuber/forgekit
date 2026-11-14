@@ -79,10 +79,10 @@ It does three jobs:
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
 >   guards). MCP registration and hook coverage for the other tools vary by host.
->   Codex, Gemini CLI, Cursor, Copilot and Devin can run
->   the guards automatically once a repository opts in with `forge hooks on`; that adapter is
->   tested against each vendor's documented hook protocol but has not been exercised inside
->   those agents the way the Claude Code path has. Local Codex also accepts trusted bundled hooks.
+>   With project hooks enabled, Codex CLI 0.169.0 included a separately indexed CSV row
+>   and its locator in the first model request for an ordinary prompt. See the [native Codex acceptance run](https://github.com/CodeWithJuber/forgekit/actions/runs/43584740300/job/132416709361).
+>   Local Codex also accepts trusted bundled hooks. The Gemini CLI, Cursor, Copilot and
+>   Devin adapters have tests against their documented hook protocols.
 >   Kimi Code loads its native plugin per user and accepts project MCP in a trusted workspace.
 >   A normal prompt on Kimi Code 2.6.2 delivered local source evidence into a loopback model request.
 >   Prompt and failure delivery varies by host. See [Agent evidence](docs/AGENT-EVIDENCE.md).
