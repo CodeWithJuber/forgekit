@@ -1,0 +1,113 @@
+# Regenerate tracked documentation from the merged tree. Each run owns one
+# proposal branch. Release notes, brand changes, new tests and documentation
+# edits can all affect generated output, so every push to master is checked.
+name: Docs auto-update
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: docs-autoupdate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      FORGE_NO_HINT: "1"
+      BRANCH: docs/auto-update
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: List prose affected by the push
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if ! git rev-parse --verify --quiet "${BEFORE:-HEAD^}^{commit}" > /dev/null; then
+            BEFORE=HEAD^
+          fi
+          node src/cli.js docs impact --since "${BEFORE:-HEAD^}" --min-confidence 0.7 > "$RUNNER_TEMP/impact.txt"
+
+      - name: Regenerate and verify docs and diagrams
+        run: |
+          node src/cli.js docs render
+          ARCHIFY_CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)" \
+            node scripts/diagrams.mjs build --stale
+          node scripts/diagrams.mjs sync
+          node scripts/diagrams.mjs check
+          node src/cli.js docs render --check
+
+      - name: Open, update or close the docs PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          # A rerun of an older successful build must not update a newer proposal.
+          refs=$(git ls-remote origin refs/heads/master "refs/heads/$BRANCH")
+          master=$(awk '$2 == "refs/heads/master" {print $1}' <<< "$refs")
+          expected=$(awk -v branch="refs/heads/$BRANCH" '$2 == branch {print $1}' <<< "$refs")
+          if [[ "$master" != "$GITHUB_SHA" ]]; then
+            echo "::notice::master advanced; skipping this superseded run."
+            exit 0
+          fi
+          OPEN="$(gh pr list --base master --head "$BRANCH" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')"
+          # Only the outputs owned by the two renderers belong in this commit.
+          git add -A -- '*.md' '*.mdx' docs/diagrams mintlify/images/diagrams
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "::error::The renderer changed a file outside the documentation outputs."
+            git status --short
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            if [[ -n "$OPEN" ]]; then
+              gh pr close "$OPEN"
+            fi
+            echo "::notice::Docs and diagrams match master."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -s -m "docs: refresh generated documentation" \
+            -m "Regenerated from $GITHUB_SHA by docs-autoupdate.yml."
+          git push --force-with-lease="refs/heads/$BRANCH:$expected" origin "HEAD:refs/heads/$BRANCH"
+          BODY="$RUNNER_TEMP/body.md"
+          {
+            echo "Regenerated from \`$GITHUB_SHA\` with \`forge docs render\` and the pinned diagram renderer."
+            echo
+            echo "Review the latest head and select **Approve workflows to run** in the merge box if GitHub requests approval. [GitHub Actions behavior](https://docs.github.com/en/actions/concepts/security/github_token)"
+            echo
+            echo "### Changed files"
+            echo
+            echo '```'
+            git show --stat --format= HEAD
+            echo '```'
+            echo
+            echo "### Related prose to review"
+            echo
+            echo '```'
+            head -n 60 "$RUNNER_TEMP/impact.txt"
+            echo '```'
+          } > "$BODY"
+          if [[ -n "$OPEN" ]]; then
+            gh pr edit "$OPEN" --body-file "$BODY"
+          else
+            gh pr create --base master --head "$BRANCH" \
+              --title "docs: refresh generated documentation" --body-file "$BODY"
+          fi

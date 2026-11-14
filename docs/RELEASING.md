@@ -5,13 +5,13 @@ everything:
 
 1. [`bump.yml`](../.github/workflows/bump.yml) — runs on **every push to `master`**
    (and still available as **Actions → "Bump version" → Run workflow** for a manual
-   bump). **Phase 1 (propose):** it runs the tests, computes the bump with `auto`,
+   bump). **Phase 1 (propose):** it runs the full quality gate, computes the bump with `auto`,
    and — if something shippable landed — commits `chore(release): vX.Y.Z` to a
    `release/vX.Y.Z` branch and **opens a PR** (no auto-merge; the maintainer merges it,
    same Karo convention as every other PR). **Phase 2 (finalize):** the push that
    *merges* a release PR is detected via the merge commit's 2nd parent — the workflow
    tags the merge commit `vX.Y.Z` and kicks off the release workflow on the new tag.
-2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: tests →
+2. [`release.yml`](../.github/workflows/release.yml) — runs on any `v*` tag: the quality gate →
    npm publish (with provenance, via OIDC trusted publishing — no token) → GitHub Release with
    auto-generated notes.
 
@@ -19,6 +19,12 @@ The two phases exist because branch protection (required status checks,
 `enforce_admins`) rejects direct pushes of the release commit to `master` (GH006) —
 the release PR lets the required checks run first, and the merge is then an ordinary
 protected-branch merge.
+
+On the release PR, review the latest commit and select **Approve workflows to run** in
+the merge box when GitHub requests it. A collaborator with write access can approve
+the runs. Merge after the required checks pass on the latest head. The bot refreshes the
+branch and release notes as changes land on `master`. A new head can need its own
+approval. [GitHub Actions behavior](https://docs.github.com/en/actions/concepts/security/github_token)
 
 ## Merge → release PR → merge → release (the default)
 
@@ -33,8 +39,8 @@ On a push to `master`, `bump.yml` first checks whether the push **merged a relea
   - **Something shippable landed** (a `feat:`, `fix:`, `perf:`, or breaking `type!:` /
     `BREAKING CHANGE` commit since the last tag, **or** a hand-written `[Unreleased]`
     section): it bumps, rotates the CHANGELOG, commits `chore(release): vX.Y.Z` to
-    `release/vX.Y.Z`, and opens (or updates) the release PR. Merge that PR and the
-    release cuts itself.
+    `release/vX.Y.Z`, and opens (or updates) the release PR. Approve any waiting checks on its latest head. Merging the
+    verified PR starts phase 2.
   - **Nothing shippable** (only `chore`/`docs`/`test`/`ci`/`style`/`build`/`refactor`
     commits and an empty `[Unreleased]`): `bump.mjs` exits `3` and the workflow **skips
     cleanly** — no tag, no PR, no publish, CI stays green. So a docs-only or
@@ -48,9 +54,8 @@ On a push to `master`, `bump.yml` first checks whether the push **merged a relea
 The release PR carries the full CHANGELOG section in its body. If a newer shippable
 merge lands while a release PR is still open, the bot force-pushes the updated release
 commit to the same branch (the version is recomputed from *all* commits since the last
-tag) and closes any superseded release PRs. There is no loop: branch pushes don't
-re-trigger this workflow (it only listens on `master`), and pushes made with
-`GITHUB_TOKEN` never trigger other workflows (GitHub's recursion guard).
+tag), refreshes its PR description from the same changelog section, and closes any
+superseded release PRs. The bump workflow listens for pushes to `master`.
 
 ## The manual flow (still supported)
 
@@ -63,11 +68,13 @@ Go to **Actions → Bump version → Run workflow** and pick a bump type:
 
 What happens, in order:
 
-1. `npm ci && npm test` — a broken tree is never released.
+1. The full quality gate (`reusable-quality-gate.yml`: tests, Biome, typecheck, audit,
+   ShellCheck, docs check, diagram check, `npm pack`) — a broken tree is never released.
 2. `node scripts/bump.mjs <choice>` updates **every** version field:
    `package.json`, `package-lock.json` (both fields), `.claude-plugin/plugin.json`,
    `.codex-plugin/plugin.json`, `CITATION.cff` (version + release date), the landing
-   page footer, and moves the CHANGELOG `[Unreleased]` section under
+   page footer, the `ROADMAP.md` "Now" marker, `docs/status/claims.json` (and its
+   generated table), and moves the CHANGELOG `[Unreleased]` section under
    `## [X.Y.Z] - <today>` (compare links included).
 3. Commit `chore(release): vX.Y.Z` to branch `release/vX.Y.Z` and open (or update) the
    release PR — **no tag is created yet**. (The old flow committed + tagged directly

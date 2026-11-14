@@ -7,6 +7,9 @@ When a lead agent runs several coding sub-agents, most of the cost is each agent
 its own context while it waits, not new work. Forge ships an **orchestration rule pack** that
 `forge sync` writes into every tool's config, and a **routing policy** for unattended agents.
 
+For a supervised run, begin with one agent. A team can run a paired trial for a task class
+before enabling a reviewer or council for routine use. See [Supervised coding runs](/guides/supervised-runs).
+
 ## What one session showed
 
 A lead agent ran 7 sub-agents in parallel against one shared end-to-end test environment.
@@ -46,7 +49,8 @@ through its own rules file.
   **Kimi Code reads `AGENTS.md` itself.** Its docs describe `${KIMI_AGENTS_MD}` as the merged
   `AGENTS.md` content from the project root to the working directory, including
   `.kimi/AGENTS.md` ([kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)).
-  Forge therefore writes no Kimi-specific file.
+  Forge also writes a project MCP entry under `.kimi-code/`. Install the per-user plugin
+  and reload Kimi to activate its lifecycle hooks. See [Installation](/installation).
 </Note>
 
 ## Switch rules on and off

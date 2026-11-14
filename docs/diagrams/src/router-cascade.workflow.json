@@ -6,7 +6,7 @@
     "locale": "en",
     "quality_profile": "showcase",
     "views": [
-      { "id": "choose", "label": "Choose a cascade", "focus": ["route-cmd", "estimates", "choose", "recommend", "infeasible"], "note": "Task features and per-model fits select the cheapest cascade that meets the objective, or INFEASIBLE." },
+      { "id": "choose", "label": "Choose a cascade", "focus": ["route-cmd", "estimates", "choose", "recommend", "infeasible"], "note": "Task features and per-model fits select the best cascade for the objective, or INFEASIBLE." },
       { "id": "run", "label": "Run and escalate", "focus": ["recommend", "attempt", "check", "escalate", "done"], "note": "Each attempt is checked; a failure escalates to the next model in the cascade." },
       { "id": "learn", "label": "Record and fit", "focus": ["check", "outcome", "fit"], "note": "forge route outcome records each outcome; forge route fit refits a local point estimate, shrunk toward the shipped prior." }
     ]
@@ -14,14 +14,14 @@
   "lanes": [
     { "id": "fallbacks", "label": "Fallbacks", "variant": "exception" },
     { "id": "route", "label": "Route (advice)" },
-    { "id": "run", "label": "Run the cascade" },
+    { "id": "run", "label": "Run the cascade (caller)" },
     { "id": "learn", "label": "Record + fit" }
   ],
   "mainPath": ["route-cmd", "estimates", "choose", "recommend", "attempt", "check", "done"],
   "nodes": [
     { "id": "route-cmd", "lane": "route", "col": 0, "type": "frontend", "label": "forge route universal", "sublabel": "\"<task>\" → 12 task features", "width": 156 },
     { "id": "estimates", "lane": "route", "col": 1, "type": "backend", "label": "Per model", "sublabel": "P(solve) + expected cost", "width": 132 },
-    { "id": "choose", "lane": "route", "col": 2, "type": "backend", "label": "Cheapest cascade", "sublabel": "that meets the objective", "width": 132 },
+    { "id": "choose", "lane": "route", "col": 2, "type": "backend", "label": "Best cascade", "sublabel": "for the objective", "width": 132 },
     { "id": "recommend", "lane": "route", "col": 3, "type": "backend", "label": "Recommendation", "sublabel": "advice only if no provider id", "width": 150 },
     { "id": "infeasible", "lane": "fallbacks", "col": 3, "type": "backend", "label": "INFEASIBLE · exit 1", "sublabel": "labeled least-bad fallback", "width": 150 },
     { "id": "escalate", "lane": "fallbacks", "col": 4, "type": "external", "label": "Escalate", "sublabel": "next model in the cascade", "width": 168 },
@@ -46,7 +46,7 @@
   ],
   "cards": [
     { "dot": "cyan", "title": "Per-model estimates", "items": ["P(solve): multidimensional IRT fit (correlated failures)", "Expected cost of one attempt: the cost fit"] },
-    { "dot": "violet", "title": "Objective", "items": ["match-best-single | target:p | value:$ | budget:$", "INFEASIBLE reports the minimum achievable expected cost"] },
-    { "dot": "amber", "title": "Caveats", "items": ["Expected cost is not a cap: the worst case runs every attempt", "Outcomes are self-reported unless --verify-run ties them to a verify event"] }
+    { "dot": "violet", "title": "Objective", "items": ["match-best-single | target:p | value:$ | budget:$", "INFEASIBLE says what is reachable: best P(success) or least cost"] },
+    { "dot": "amber", "title": "Caveats", "items": ["Expected cost is not a cap, and assuming independent attempts under-predicts it by 5–22%", "Outcomes are self-reported unless --verify-run ties them to a verify event"] }
   ]
 }

@@ -15,24 +15,21 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Demo: forge budget — set a spend budget, check the meter, clear it" width="880">
+  <img src="docs/assets/demo.gif" alt="ForgeKit initializes supervised mode for Kimi and Codex and checks the generated configuration" width="880">
 </p>
 
-**Your coding agent forgets. Forgekit remembers — outside the model, in plain git.**
-
-Forgekit is a Node.js CLI and MCP server (zero runtime dependencies) that gives your AI coding
-tools a reliability layer: **agent memory** that survives sessions and teammates, **pre-push
-verification gates**, and **guardrails** that run before and after every tool call. You author
-project rules once, and it emits native configuration for 12 agent tools. Kimi Code, local Codex and Claude Code have each delivered source evidence to a real
-client’s first model request.
+ForgeKit gives coding agents project context, shared memory and a way to verify changes. Install the
+Node CLI, choose the hosts your repo uses, and keep their rules in one place. ForgeKit emits native
+configuration for eleven tools. For a task that needs approval gates, spending limits and a recorded
+verification result, enable the [supervised harness](docs/HARNESS.md).
 
 | Inventory | Count |
 |---|---|
 | CLI commands (`forge --help`) | 61 |
-| Lifecycle hook commands across six events (`hooks/hooks.json`) | 19 |
+| Lifecycle hook commands across six events (`hooks/hooks.json`) | 18 |
 | Config emitters (`src/emit/`, excluding the shared helper) | 14 |
 | Installable skill packs (`skills/`) | 3 |
-| Per-event hook token budgets (`hooks/budget.json`) | 5 |
+| Explicit per-event hook byte budgets (`hooks/budget.json`) | 5 |
 
 | Tool | Native config | MCP server entry | Automatic hooks |
 |---|---|---|---|
@@ -40,9 +37,10 @@ client’s first model request.
 | Local Codex | ✅ | ✅ | Trusted plugin or project hooks |
 | Cursor, Gemini CLI, Copilot | ✅ | ✅ | Project hooks |
 | Zed, Continue | ✅ | ✅ | — |
-| Devin | ✅ | — | Via trusted Claude project hooks |
+| Windsurf / Devin | ✅ | — | Devin can use trusted Claude project hooks |
 | Kimi Code | ✅ | Project MCP | Native user plugin |
-| Aider, OpenClaw | ✅ | — | — |
+| Aider | ✅ | — | — |
+| OpenClaw | ✅ | Operator registration or bundle | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Why it wins, measured:
@@ -79,13 +77,11 @@ It does three jobs:
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
 >   guards). MCP registration and hook coverage for the other tools vary by host.
->   With project hooks enabled, Codex CLI 0.169.0 included a separately indexed CSV row
->   and its locator in the first model request for an ordinary prompt. See the [native Codex acceptance run](https://github.com/CodeWithJuber/forgekit/actions/runs/43584740300/job/132416709361).
->   Local Codex also accepts trusted bundled hooks. The Gemini CLI, Cursor, Copilot and
->   Devin adapters have tests against their documented hook protocols.
->   Kimi Code loads its native plugin per user and accepts project MCP in a trusted workspace.
->   A normal prompt on Kimi Code 2.6.2 delivered local source evidence into a loopback model request.
->   Prompt and failure delivery varies by host. See [Agent evidence](docs/AGENT-EVIDENCE.md).
+>   In a trusted workspace, the first model request from Codex CLI 0.169.0 included a source
+>   excerpt and routing instructions. Kimi Code 2.6.2 discovered and called the supervised MCP
+>   tool on an ordinary prompt, then received a signed test receipt. Both clients blocked a direct
+>   shell write. These runs used real clients, synthetic workspaces and loopback model responses.
+>   [Codex run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328444/job/132430512728) · [Kimi run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328450/job/132430513107) · [Host coverage](docs/INTEGRATIONS.md)
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
 >   Codex bundle loads its skills and bundle-scoped MCP server. Neither path provides ambient
@@ -125,8 +121,9 @@ forge substrate "Change verifyToken in src/auth.js to require length > 20; updat
 The result includes an assumption verdict, a model-tier recommendation, predicted impact,
 a context-coverage check (what was delivered, not a proof that it suffices), scope clusters, and
 a verification checklist. On Claude Code, the
-pre-action check can run automatically through a `UserPromptSubmit` hook. On other supported
-tools, Forgekit emits instructions and MCP configuration that the tool can invoke.
+pre-action check can run automatically through a `UserPromptSubmit` hook; Codex, Gemini CLI,
+Cursor and Copilot run it the same way once a repository opts in with `forge hooks on`. On other
+supported tools, Forgekit emits instructions and MCP configuration that the tool can invoke.
 
 The three jobs, one command each:
 
@@ -150,19 +147,19 @@ Run `forge evidence "investigate retry timeouts"` to inspect the same evidence d
 
 ## See it in action
 
-Real terminal recordings of the actual CLI — nothing mocked:
+These animations show selected CLI output from disposable projects.
 
-![forge verify catching a hallucinated dependency](.github/assets/forgekit-verify.gif)
+![A project test fails while importing a missing module and forge verify reports the failure](.github/assets/forgekit-verify.gif)
 
-`forge verify` on a change that imports a package that doesn't exist: it flags the hallucinated dependency (`frobnicator` — not in the codebase) and blocks the push.
+A missing module breaks the project's npm test. `forge verify` runs that test and reports a failed verdict.
 
-![forge precommit refusing a staged secret](.github/assets/forgekit-precommit.gif)
+![forge precommit detects a credential-shaped value in a staged change](.github/assets/forgekit-precommit.gif)
 
-A fake secret staged with `git add`: `forge precommit` spots the credential-like line and refuses the commit before it ever happens.
+`forge precommit` checks the staged diff and refuses the synthetic credential.
 
-![forge recall — memory across sessions](.github/assets/forgekit-memory.gif)
+![A fact saved with forge recall add appears in a subsequent forge recall list](.github/assets/forgekit-memory.gif)
 
-Cross-session memory: `forge recall add` saves a durable fact (`deploy-window`), `forge recall list` reads it back — memory that survives across agent sessions.
+`forge recall add` saves a fact. A separate invocation of `forge recall list` retrieves it.
 
 ## Contents
 
@@ -170,6 +167,7 @@ Cross-session memory: `forge recall add` saves a durable fact (`deploy-window`),
 - [See it in action](#see-it-in-action)
 - [Why Forgekit exists](#why-forgekit-exists)
 - [How the loop works](#how-the-loop-works)
+- [Run a supervised coding task](#run-a-supervised-coding-task)
 - [Core capabilities](#core-capabilities)
 - [Agent orchestration](#agent-orchestration)
 - [Advisor pairing](#advisor-pairing)
@@ -336,9 +334,10 @@ from a fresh repository graph.
   a gate on the top tier ([Agent orchestration](#agent-orchestration)).
 - **Proof-gated reuse.** Cached code is served only after evidence clears a confidence floor
   and declared dependencies still resolve in the current repository graph.
-- **Lifecycle guardrails.** Claude Code hooks cover prompt preflight, protected paths, cost
-  budget, repeated failures, format-on-edit, secret redaction, completion checks, and session
-  learning. These controls reduce risk; they do not create a secure execution boundary.
+- **Lifecycle guardrails.** Hooks cover prompt preflight, protected paths, cost budget,
+  dependency vetting, repeated failures, format-on-edit, secret redaction, completion checks,
+  and session learning — in Claude Code, and in Codex, Gemini CLI, Cursor and Copilot after
+  `forge hooks on`. These controls reduce risk; they do not create a secure execution boundary.
 - **Verification, partial or full.** `forge verify` runs the repository's detected test
   suites, reports `PASS`, `FAIL`, `INCOMPLETE`, or `NOT_CONFIGURED`, checks unknown symbols,
   and binds provenance to the code state it ran on. A verdict covers only the suites that ran:
@@ -551,16 +550,17 @@ per-user ledger.
 - Anthropic Messages API;
 - OpenAI-compatible chat completions, used for OpenAI, Gemini, OpenRouter, and LiteLLM.
 
-Credentials are read from environment variables and are not put in command-line arguments.
-The implementation performs a bounded single-prompt request. It does not implement streaming,
-conversation persistence, or a model-driven tool-call execution loop.
+The direct adapter reads credentials from environment variables and sends a bounded single-prompt
+request. The supervised executor has a separate Chat Completions client for iterative tool calls.
+Its route, limits and verification contract come from the project's harness controls. [Harness setup](docs/HARNESS.md)
 
-### Repository-local retrieval
+### Repository and document retrieval
 
-Forgekit retrieves from its code graph and evidence ledger, then assembles a context bundle
-for an external coding agent. This is retrieval and augmentation for source-code work, not a
-general enterprise RAG pipeline. There is no document connector layer, chunking service,
-citation generator, managed index, or vector database in this repository.
+ForgeKit retrieves code definitions and ledger evidence locally. A configured source mirror can
+also return cited rows, pages and issue records from selected folders, Jira projects, Confluence
+spaces and GitLab projects. Source credentials, caches and freshness limits belong to the
+operator. Use `forge sources sync` to refresh the configured sources and `forge sources aggregate`
+for exact spreadsheet totals. [Source configuration, formats and routing](docs/AGENT-EVIDENCE.md)
 
 ### Optional embeddings
 
@@ -588,14 +588,25 @@ embedding behavior is defined by [`src/embed.js`](src/embed.js) and
 
 ## Run a supervised coding task
 
-`forge harness init --hosts kimi,codex` creates a reviewable project policy, routing table,
-budgets, job definitions and extension lock. Start a compatible local model, run the project checks
-and use `forge harness run "Investigate the failing test"`. A run records tool decisions, usage,
-the verifier output and its exit reason. Choose `--supervised` on first init to mediate native tools
-on supported, trusted hosts. For an existing harness, edit its policy and use `forge harness trust`.
-MCP clients can call `forge_harness_run` and `forge_harness_status`. Remote model routes require an
-operator fingerprint in `FORGE_HARNESS_TRUSTED_ROUTES`. A rootless container verifier can use
-`XDG_RUNTIME_DIR` to find the operator’s local runtime. See the [setup and acceptance guide](docs/HARNESS.md).
+From a fresh project checkout, use Node 20+ and Python with SQLite FTS5 support. Python 3.11+
+also supports the Codex TOML configuration check.
+
+```bash
+forge harness init --hosts kimi,codex --supervised
+forge harness status
+forge harness drift --hosts kimi,codex
+```
+
+In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`.
+In local Codex, trust the workspace and review the project hooks in `/hooks`. Drift checks inspect
+the generated project files. Your client controls its local trust and plugin activation.
+
+Start the configured model endpoint. The default is a local Chat Completions server at
+`http://127.0.0.1:11434/v1` serving `qwen2.5-coder:7b`. In a project with a trusted test suite,
+`forge verify` can issue a receipt for the current tree. To verify edits during a run, configure
+a pinned container verifier. A rootless container runtime may require `XDG_RUNTIME_DIR`.
+For a custom model endpoint, copy the fingerprint from `forge harness routes` into
+`FORGE_HARNESS_TRUSTED_ROUTES`. A run returns its ID, verdict, usage and evidence. [First run, approvals and verification](docs/HARNESS.md)
 
 ## Agent roles and MCP tools
 
@@ -610,7 +621,7 @@ Use `forge prompts show reviewer` to print a portable role brief, or `forge team
 For an independent task, the team runner can launch a Kimi or Codex client with a supplied brief.
 The lead applies changes and verifies the result. See the [worker options and billing](docs/V2-IMPLEMENTATION.md).
 
-The built-in MCP server advertises 36 tools through `tools/list`, including:
+In ordinary projects the built-in MCP server advertises 36 tools through `tools/list`, including:
 
 - pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`,
   `dep_check`;
@@ -619,8 +630,9 @@ The built-in MCP server advertises 36 tools through `tools/list`, including:
   `forge_ledger_ratify`, `forge_ledger_retract`;
 - operations: `forge_doctor`, `forge_provider_status`, `forge_cost`, dashboard data.
 
-The MCP server is the tool-provider side of function calling. The compatible host remains
-responsible for deciding when to call a tool and feeding the result back to its model.
+In a trusted supervised project the MCP server exposes only `forge_harness_run` and
+`forge_harness_status`. The client can start a task and inspect its outcome. ForgeKit applies
+the project policy and verifier to tool calls made inside that run.
 
 ## Honest limits
 
@@ -632,11 +644,9 @@ responsible for deciding when to call a tool and feeding the result back to its 
   every supported host.
 - **The code graph is heuristic.** Regex extraction is not a sound call graph and can both
   over-predict and miss dependencies.
-- **Routing is advisory.** Forgekit recommends a tier. LiteLLM or another gateway must be run
-  separately to move traffic, handle failover, enforce quotas, or manage credentials. Routing
-  costs are expected values, not caps, and no cost saving has been measured end to end: the
-  ~90 % figure in the plans is a target (a hypothesis), and the white paper's 62.1 % routing
-  saving was refuted on held-out tasks.
+- **Routing and costs.** `forge route` recommends a model tier. A supervised run uses its configured
+  endpoint and enforces run and project budgets using the operator's prices. The Python routing
+  study's 62.1% saving failed to reproduce on held-out tasks. [Evaluation](#measured-evidence)
 - **Memory is external state, not model training.** Claims live in files and are retrieved into
   context; Forgekit does not update model weights. It supplies persistence and external checks
   that a model does not guarantee on its own — one tested way to do that, not the only one.
@@ -649,9 +659,8 @@ responsible for deciding when to call a tool and feeding the result back to its 
 - **Evaluations are deliberately scoped.** The JavaScript impact set has six hand-labelled cases;
   the Python router set has 30 hand-labelled tasks tuned to its rubric; the Python impact study has
   five mutations. None is a production field study.
-- **No enterprise platform claim.** There is no Azure OpenAI/AI Foundry integration, vector DB,
-  business-system/RPA connector layer, multi-tenant service, Kubernetes deployment, IaC stack,
-  or public production-usage case study in this repository.
+- **Deployment scope.** Source mirrors and harness state live under the operator's account.
+  Teams supply their identity controls, model service, tenant credentials and production monitoring.
 
 ## Portfolio evidence
 
@@ -660,20 +669,18 @@ as an enterprise multi-agent application, a general-purpose RAG platform, or an 
 deployment. Per-claim status (implemented, measured, refuted, hypothesis, partial, reported) is
 kept in [docs/status/](docs/status/README.md).
 
-For reviewers evaluating hands-on Agentic AI or GenAI work, each claim below links to the
-implementation and its closest test or build proof. The evidence snapshot used for this
-table is default-branch commit
-[`3d9be37`](https://github.com/CodeWithJuber/forgekit/commit/3d9be37e26639c5c0a787d9196562b70444e2640).
+Each row points to the implementation and its corresponding checks.
 
 | Area | Implementation evidence | Test or delivery evidence | Evidence-safe claim |
 | --- | --- | --- | --- |
-| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) defines 21 tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [recent CI runs](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
+| MCP tools | [`src/mcp_tools.js`](src/mcp_tools.js) assembles the MCP tool schemas; [`src/cortex_mcp.js`](src/cortex_mcp.js) implements JSON-RPC `initialize`, `tools/list`, and `tools/call` handlers | [`test/mcp.test.js`](test/mcp.test.js), [`test/cortex_mcp.test.js`](test/cortex_mcp.test.js), [recent CI runs](https://github.com/CodeWithJuber/forgekit/actions/workflows/ci.yml) | Implemented an MCP server that exposes memory, preflight, routing, impact, verification, and health operations to compatible clients |
 | Agent memory | [`src/ledger.js`](src/ledger.js) implements content-addressed claims, an oracle taxonomy, time-decayed validity, ranked retrieval, and a semilattice merge; [`src/ledger_store.js`](src/ledger_store.js) adds persistence, hash verification, and quarantine; [`src/ledger_sync.js`](src/ledger_sync.js) adds directory and git-ref sync | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js), [`test/ledger_sync.test.js`](test/ledger_sync.test.js) | Implemented durable, evidence-weighted, mergeable memory for coding-agent workflows |
-| LLM integration | [`src/llm.js`](src/llm.js) implements Anthropic Messages and OpenAI-compatible chat-completions calls; [`src/providers.js`](src/providers.js) configures Anthropic, OpenRouter, LiteLLM, OpenAI, Gemini, and custom endpoints | [`test/llm.test.js`](test/llm.test.js), [`test/providers.test.js`](test/providers.test.js) | Implemented direct, bounded single-prompt LLM adapters and provider configuration; this is not a streaming or autonomous tool-call client loop |
-| Retrieval and embeddings | [`src/context.js`](src/context.js) assembles code definitions, dependants, tests, and trusted lessons under a token budget; [`src/embed.js`](src/embed.js) supports an optional command or OpenAI-compatible embedding endpoint, cosine similarity, and a disk cache; [`src/reuse.js`](src/reuse.js) falls back to MinHash and gates reuse on evidence | [`test/context.test.js`](test/context.test.js), [`test/embed.test.js`](test/embed.test.js), [`test/reuse.test.js`](test/reuse.test.js) | Implemented repository-local retrieval/context augmentation and an optional embedding adapter; no vector database or enterprise-document ingestion pipeline is claimed |
+| LLM integration | [`src/llm.js`](src/llm.js) implements Anthropic Messages and OpenAI-compatible chat-completions calls; [`src/providers.js`](src/providers.js) configures Anthropic, OpenRouter, LiteLLM, OpenAI, Gemini, and custom endpoints | [`test/llm.test.js`](test/llm.test.js), [`test/providers.test.js`](test/providers.test.js) | Direct adapters make bounded single-prompt requests. The supervised router runs model/tool turns under project policy. |
+| Supervised runs | [Executor](src/harness_loop.js), [router](src/harness_router.js), [verifier](src/harness_verify.js) | [Loop coverage](test/harness_loop.test.js), [real container checks](.github/workflows/harness-container.yml) | A run applies scoped permissions and budget checks, then verifies the result. |
+| Retrieval and embeddings | [`src/context.js`](src/context.js) assembles code definitions, dependants, tests, and trusted lessons under a token budget; [`src/embed.js`](src/embed.js) supports an optional command or OpenAI-compatible embedding endpoint, cosine similarity, and a disk cache; [`src/reuse.js`](src/reuse.js) falls back to MinHash and gates reuse on evidence | [`test/context.test.js`](test/context.test.js), [`test/embed.test.js`](test/embed.test.js), [`test/reuse.test.js`](test/reuse.test.js) | Repository-local retrieval and optional embeddings. Separate [source adapters](src/sources.js) handle scoped documents and project records. |
 | Guardrails and verification | [`hooks/hooks.json`](hooks/hooks.json) wires lifecycle hooks; [`global/guards/protect-paths.sh`](global/guards/protect-paths.sh) and [`global/guards/secret-redact.sh`](global/guards/secret-redact.sh) add path and secret controls; [`src/skillgate.js`](src/skillgate.js), [`src/verify.js`](src/verify.js), and [`src/consensus.js`](src/consensus.js) implement scanning and multi-lens checks | [`test/secrets.test.js`](test/secrets.test.js), [`test/skillgate.test.js`](test/skillgate.test.js), [`test/verify.test.js`](test/verify.test.js), [`test/consensus.test.js`](test/consensus.test.js); [Security workflow](https://github.com/CodeWithJuber/forgekit/actions/workflows/security.yml) and [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/workflows/codeql.yml) | Implemented deterministic defence-in-depth controls and evidence-producing verification; the regex guards are not a security sandbox |
 | Human review affordances | [`src/ledger.js`](src/ledger.js) defines human accept/revert oracles; [`src/ledger_store.js`](src/ledger_store.js) implements ratify and retract records | [`test/ledger.test.js`](test/ledger.test.js), [`test/ledger_store.test.js`](test/ledger_store.test.js) | Implemented auditable human correction and ratification paths; no identity-enforced RBAC or enterprise approval workflow is claimed |
-| Agent roles | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) registers [`scout`](global/crew/scout.md), [`verifier`](global/crew/verifier.md), [`independent-reviewer`](global/crew/independent-reviewer.md), [`frontend-verifier`](global/crew/frontend-verifier.md), and [`doc-sync`](global/crew/doc-sync.md) | [`test/channels.test.js`](test/channels.test.js) checks plugin-channel wiring | Authored five concrete Claude Code role definitions; they are declarative roles, not a multi-agent orchestration runtime |
+| Agent roles | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) registers [`scout`](global/crew/scout.md), [`verifier`](global/crew/verifier.md), [`independent-reviewer`](global/crew/independent-reviewer.md), [`frontend-verifier`](global/crew/frontend-verifier.md), and [`doc-sync`](global/crew/doc-sync.md) | [`test/channels.test.js`](test/channels.test.js) checks plugin-channel wiring | Five native role definitions. The separate [harness council](src/harness_council.js) coordinates bounded workers and tracks measured adoption by task class. |
 | Evaluation | [`src/eval.js`](src/eval.js) calculates precision, recall, and F1; [`bench/bench.mjs`](bench/bench.mjs) provides a seeded benchmark harness; [`reports/benchmarks.md`](reports/benchmarks.md) records methodology and limitations | [`test/eval.test.js`](test/eval.test.js), [`test/bench.test.js`](test/bench.test.js) | Implemented reproducible evaluation for the repository's impact predictor and local performance; the datasets are small and are not field benchmarks |
 | Python research | [`research/python-prototypes/router_gate/`](research/python-prototypes/router_gate/) implements assumption gating, model routing, execution, verification, escalation, CLI, and MCP; [`research/python-prototypes/impact_oracle/`](research/python-prototypes/impact_oracle/) implements Python AST parsing and a persistent NetworkX dependency graph | [`router_gate` tests](research/python-prototypes/router_gate/tests/test_router_gate.py), [`router_gate` live demonstration results](research/python-prototypes/router_gate/eval_results.json), [`impact_oracle` tests](research/python-prototypes/impact_oracle/tests/test_demo_package.py) | Built working Python research prototypes; the shipped Forgekit runtime is Node and the Python packages are not presented as production services |
 | Delivery engineering | [`package.json`](package.json) defines a Node 20+ CLI with no runtime dependencies; [`.github/workflows/release.yml`](.github/workflows/release.yml) gates releases and configures npm provenance; [`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) exercises clean install and uninstall | [latest release](https://github.com/CodeWithJuber/forgekit/releases/latest); successful audited runs for [CI](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393690), [Smoke](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393550), [Security](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393540), [CodeQL](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393514), and [Scorecard](https://github.com/CodeWithJuber/forgekit/actions/runs/33693393496) | Demonstrates packaging, cross-platform CI, security checks, and repeatable OSS release engineering; it does not establish enterprise production operation |
@@ -682,9 +689,9 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 36 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested** | Node CLI and emitters, 36 MCP tools in ordinary mode, source mirrors, evidence-backed memory, supervised model/tool execution, optional bounded workers, verification and release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
-| **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
+| **Not claimed by this repository** | Hosted multi-tenant operation, production support guarantees, enterprise identity management, a managed vector database or measured team-wide ROI |
 
 Personal maintainer use is intentionally not used as proof of organizational adoption. No
 customer count, enterprise deployment, production traffic, or service-level claim is made
@@ -735,8 +742,8 @@ This table describes architecture, not a claim of superiority or equivalent prod
 | --- | --- | --- |
 | Memory | Content-addressed claims, provenance, oracle-weighted validity, time decay, and git-native union merge | No hosted synchronization, managed database, enterprise tenancy, or RBAC |
 | Retrieval | MinHash retrieval by default; optional external embeddings; proof-gated code reuse | No vector database or general enterprise corpus pipeline |
-| Routing | A visible deterministic recommendation with optional bounded LLM input; LiteLLM alias config emission | Does not proxy traffic, manage quotas, perform failover, or hold provider keys |
-| Tool use | A stdio JSON-RPC MCP server with 36 advertised tools | Does not implement the model/client loop that chooses and executes tool calls autonomously |
+| Routing | A visible deterministic recommendation with optional bounded LLM input; LiteLLM alias config emission | Supervised routing calls configured endpoints with per-run and cumulative budgets. External host calls have separate billing. |
+| Tool use | A stdio MCP server with 36 tools in ordinary mode and two supervised entry points | The inner executor gates tools it owns. External clients control calls outside that boundary. |
 | Agent roles | Portable role briefs, an optional specialist runner and five native Claude Code roles | The active host owns edits and the lead verifies worker findings |
 | Verification | Repository tests, provenance, structural and security lenses, limited benchmark suites | No managed GenAI evaluation service, production telemetry, online evaluation, or broad red-team certification |
 
@@ -811,6 +818,8 @@ not an AI application deployment.
 | --- | --- |
 | [`ONBOARDING.md`](ONBOARDING.md) | Five-minute setup and design principles |
 | [`docs/GUIDE.md`](docs/GUIDE.md) | Full command reference, worked examples, MCP schemas, and honest limits |
+| [`docs/HARNESS.md`](docs/HARNESS.md) | Supervised tasks, model routes, verification, approvals, workers and recovery |
+| [`docs/AGENT-EVIDENCE.md`](docs/AGENT-EVIDENCE.md) | Source configuration, local documents, hosted and self-managed services, public search and reuse |
 | [`examples/`](examples/) | Runnable pain-point solution demos (cost governance, adversarial doctor) — each with copy-paste steps, a demo script, and a GIF |
 | [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) | Per-tool behaviour: config emission, MCP registration, automatic hooks, blocking — and how each is tested |
 | [`docs/UNIVERSAL_ROUTING.md`](docs/UNIVERSAL_ROUTING.md) | The cross-provider router: model, shipped prior, evidence status and modeling limits |

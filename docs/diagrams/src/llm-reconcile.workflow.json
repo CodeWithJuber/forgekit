@@ -28,10 +28,10 @@
     { "id": "input", "lane": "reconcile-lane", "col": 0, "type": "database", "label": "Task or edit", "width": 180 },
     { "id": "rubric", "lane": "rubric-lane", "col": 1, "type": "security", "label": "Deterministic rubric", "width": 180 },
     { "id": "proposer", "lane": "llm-lane", "col": 1, "type": "cloud", "label": "LLM proposer", "sublabel": "opt-in: FORGE_LLM=1", "tag": "never judges alone", "width": 180 },
-    { "id": "verify", "lane": "llm-lane", "col": 2, "type": "security", "label": "Verify", "sublabel": "rubric band · repo grounding (grep) · tests", "width": 220 },
+    { "id": "verify", "lane": "llm-lane", "col": 2, "type": "security", "label": "Verify", "sublabel": "p ≥ 0.8 · rubric band + floors · grep", "width": 220 },
     { "id": "reconcile", "lane": "reconcile-lane", "col": 3, "type": "security", "label": "Reconcile", "width": 180 },
     { "id": "holds", "lane": "rubric-lane", "col": 4, "type": "security", "label": "Verdict holds", "sublabel": "deterministic", "width": 220 },
-    { "id": "moves", "lane": "reconcile-lane", "col": 4, "type": "security", "label": "Verdict moves", "sublabel": "llm-cleared / lowered / raised / verified", "width": 220 }
+    { "id": "moves", "lane": "reconcile-lane", "col": 4, "type": "security", "label": "Verdict moves", "sublabel": "cleared · tightened · lowered · verified", "tag": "raised only in unattended mode", "width": 220 }
   ],
   "edges": [
     { "id": "to-rubric", "from": "input", "to": "rubric", "fromSide": "top" },

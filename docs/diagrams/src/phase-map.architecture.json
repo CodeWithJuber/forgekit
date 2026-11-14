@@ -27,6 +27,7 @@
     { "id": "p2-p7", "from": "p2", "to": "p7" },
     { "id": "p5-p7", "from": "p5", "to": "p7" },
     { "id": "p6-p7", "from": "p6", "to": "p7" },
+    { "id": "p3-p7", "from": "p3", "to": "p7", "fromSide": "bottom", "toSide": "right", "via": [[660, 580], [1320, 580], [1320, 160]] },
     { "id": "p3-p8", "from": "p3", "to": "p8", "variant": "dashed" },
     { "id": "p5-p8", "from": "p5", "to": "p8", "variant": "dashed" }
   ],

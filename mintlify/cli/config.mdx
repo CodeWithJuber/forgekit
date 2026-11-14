@@ -146,12 +146,15 @@ forge tools
 
 ## `forge integrations`
 
+Use `forge integrations list` to inspect choices. Run `forge integrations select` for the interactive
+selector, or `forge integrations select playwright` to select a reviewed entry explicitly.
+For discovery and research examples, see [Project sources and research](/guides/project-evidence).
+
 Opt-in third-party MCP servers (for example `context7`), managed non-destructively across
 the tools Forge emits config for in this repo. Forge uses the set recorded by `forge init`,
 or every tool when none is recorded.
 
-Third-party MCP servers are **not** installed by default. Nothing lands on disk until you
-run `forge integrations add <name> --yes`.
+Third-party integrations are opt-in. The `add` commands below manage an MCP configuration entry. Use `select` for a reviewed install or a hosted endpoint.
 
 ```bash
 forge integrations                        # list opt-in servers with package + purpose
@@ -166,7 +169,7 @@ forge integrations remove <name>          # reverse the add — deletes only for
 `add --yes` writes the server from one canonical spec into the native MCP config of each
 tool in the recorded set (the dry run lists the exact files):
 
-- `.mcp.json` (Claude Code)
+- `.mcp.json` (Claude Code) and `.kimi-code/mcp.json` (Kimi Code)
 - `.cursor/mcp.json` (Cursor)
 - `.gemini/settings.json` (Gemini)
 - `.codex/config.toml` — as a `# forge:managed:<name>` block, refreshed by byte-compare

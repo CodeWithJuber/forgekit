@@ -22,15 +22,15 @@
   <text x="90" y="206" font-size="13.5" letter-spacing="5" fill="#f26430" font-weight="700">OPEN SOURCE · BETA · MIT</text>
 
   <!-- headline -->
-  <text x="86" y="276" font-size="54" font-weight="800" fill="#f2ede7" letter-spacing="-2">One operating</text>
-  <text x="86" y="336" font-size="54" font-weight="800" fill="#f2ede7" letter-spacing="-2">memory for every</text>
-  <text x="86" y="396" font-size="54" font-weight="800" fill="#f26430" letter-spacing="-2">coding agent.</text>
+  <text x="86" y="276" font-size="54" font-weight="800" fill="#f2ede7" letter-spacing="-2">Supervised runs</text>
+  <text x="86" y="336" font-size="54" font-weight="800" fill="#f2ede7" letter-spacing="-2">for coding</text>
+  <text x="86" y="396" font-size="54" font-weight="800" fill="#f26430" letter-spacing="-2">agents.</text>
 
   <!-- subline -->
-  <text x="90" y="458" font-size="22" fill="#a99e90">Evidence-referenced memory, change-impact</text>
-  <text x="90" y="488" font-size="22" fill="#a99e90">analysis and explicit verification for Claude</text>
-  <text x="90" y="518" font-size="22" fill="#a99e90">Code, Codex, Cursor, Gemini and more.</text>
+  <text x="90" y="458" font-size="22" fill="#a99e90">Project evidence and tool permissions</text>
+  <text x="90" y="488" font-size="22" fill="#a99e90">for Kimi, Codex and other MCP hosts.</text>
+  <text x="90" y="518" font-size="22" fill="#a99e90">Verify each run against project checks.</text>
 
   <!-- footer -->
-  <text x="90" y="568" font-size="16" font-weight="600" fill="#a99e90" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">zero runtime dependencies · node ≥ 20</text>
+  <text x="90" y="568" font-size="16" font-weight="600" fill="#a99e90" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">CLI · MCP · native hooks</text>
 </svg>

@@ -2,6 +2,8 @@
 
 ForgeKit can run a task through a model, a gated tool registry and a verifier. The CLI, the ForgeKit MCP server and the job worker use the same executor. A run ID identifies its task, decisions, tool calls, usage and final evidence. A model saying it has finished starts verification.
 
+[![A supervised task branches into a policy-checked tool call or verification, with a bounded repair path](diagrams/supervised-run.svg)](https://jubershaikh.com/forgekit/diagrams/supervised-run.html)
+
 ## Start with your coding hosts
 
 Use a checkout of the project you want to work on. Install this version of the ForgeKit CLI on your PATH. Use Node 20+ and a Python installation outside the project with SQLite support. The Codex configuration check uses Python 3.11+ for TOML. Generated control files use JSON syntax, which is valid YAML. Install PyYAML for the selected interpreter if you want to use indented YAML syntax.
@@ -33,6 +35,8 @@ Use `--supervised` for a project whose native pre-tool hooks should send work th
 | Other MCP hosts | Register `forge` with arguments `["cortex-mcp"]` as a stdio server in the target project. Use `forge_harness_run` and `forge_harness_status`. A shell-only or instruction-only agent can invoke the CLI. |
 
 In supervised projects the ForgeKit MCP server accepts those two harness tools. An MCP run accepts `task` and an optional array of `acceptance` strings. Approval administration, extension review, route trust and memory sharing are operator commands. The client hook fixtures and the read-only drift check exercise six host dialects. A green drift report establishes the managed entries on disk. The [host matrix](INTEGRATIONS.md) records separate native-client delivery results.
+
+The [native acceptance results](INTEGRATIONS.md#supervise-a-coding-run) record client versions, first-prompt delivery and blocked writes.
 
 ## Select and verify a model route
 

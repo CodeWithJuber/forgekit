@@ -68,6 +68,8 @@ For a host that can call ForgeKit's MCP server, the available tool names map dir
 | `forge_source_route` | `{"sourceId":"tickets","operation":"read","fresh":true,"mcpAvailable":true}` |
 | `forge_table_aggregate` | `{"sourceId":"manuals","path":"usage.csv","operation":"sum","column":"minutes","groupBy":"team"}` |
 
+In a project that opts into supervised mode, the MCP server advertises only `forge_harness_run` and `forge_harness_status`. The run retrieves scoped workspace evidence inside its executor. Source administration and explicit public research remain available through the CLI. [Supervised setup and client evidence](INTEGRATIONS.md#supervise-a-coding-run)
+
 ### Troubleshoot a silent plugin
 
 For the native Codex CLI plugin installation from a reviewed checkout, run the following in the client environment, then start a fresh trusted session. The marketplace and plugin names correspond to this repository's manifests.

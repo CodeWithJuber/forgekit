@@ -6,7 +6,7 @@ between independent calls and sees only its context window, so on its own it doe
 what your team learned, cannot see what an edit affects unless those files are in context, and
 cannot enforce rules on itself. forgekit supplies that state and those checks from outside the
 model, and delivers them as native config to Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
-Windsurf, Zed, Continue, and OpenClaw at once. Author it once; every tool reads it.
+Windsurf, Zed, Continue, OpenClaw, and Kimi Code at once. Author it once; every tool reads it.
 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.
@@ -50,7 +50,7 @@ forge init --tools all     # or pick: --tools claude,cursor,gemini (recorded for
 ```
 
 With `--tools all`, Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
-Continue, and OpenClaw all read the **same** rules — each from its own native file (plus
+Continue, OpenClaw, and Kimi Code all read the **same** rules — each from its own native file (plus
 MCP server config for Roo Code and VS Code). Without it, init emits Claude Code's files and
 those of any tool the repo already shows (`.cursor/`, `.codex/`,
 `.github/copilot-instructions.md`, …); AGENTS.md-reading tools get the rules regardless.
@@ -77,6 +77,30 @@ Change a rule later by editing `source/rules.json` (or dropping a per-repo
 ```bash
 forge sync                 # recompiles into each selected tool; idempotent (only rewrites what changed)
 ```
+
+### Supervise Kimi and Codex in this checkout
+
+For a fresh harness, install the CLI on the machine running the coding agent and use Python 3.11+
+with SQLite FTS5. From the project root, run:
+
+```bash
+forge harness init --hosts kimi,codex --supervised
+forge harness status
+forge harness drift --hosts kimi,codex
+```
+
+In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`.
+In local Codex, trust the project and review the commands in `/hooks`. A passing drift check
+confirms the generated files. Start the configured local model or connect a reviewed model
+endpoint before asking the host to run a supervised task. The [first-run example](docs/HARNESS.md#a-first-verifiable-run)
+includes an acceptance criterion and a check you can reproduce.
+
+### Select integrations and context
+
+Run `forge integrations select` to choose a package or a remote MCP endpoint. For a private
+folder, Jira project, Confluence space or GitLab project, run `forge sources init`, edit the
+private configuration file it prints, then run `forge sources sync`. A coding prompt can then
+retrieve a cited page or spreadsheet row on supported hosts. [Configuration examples](docs/AGENT-EVIDENCE.md)
 
 ## 3. Use the cognitive substrate
 

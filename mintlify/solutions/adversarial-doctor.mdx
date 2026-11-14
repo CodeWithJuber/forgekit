@@ -7,7 +7,7 @@ Guardrail claims without self-test are hollow. `forge doctor --adversarial`
 fuzzes Forge's own hooks with real payloads fired at the real guard binaries —
 no mocks. The verdict you see is the verdict an agent's tool call would get.
 
-<img src="/images/adversarial-doctor.gif" alt="forge doctor --adversarial attacking its own hooks: seven rerouting attacks blocked, two benign controls allowed, malformed JSON denied fail-closed, three honest warnings, and both permission-bypass probes clean — all clear" />
+<img src="/images/adversarial-doctor.gif" alt="Terminal excerpts from forge doctor --adversarial show probe verdicts and a warning from the hook checks." />
 
 ## The three attack classes
 

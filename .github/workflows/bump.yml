@@ -132,34 +132,30 @@ jobs:
             echo "::error::Release wedged: tag v$VERSION already exists (orphaned partial run). An operator must delete it: git push origin :refs/tags/v$VERSION, then re-run."
             exit 1
           fi
+          BODY="$RUNNER_TEMP/release-pr-body.md"
+          node > "$BODY" <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const lines = readFileSync("CHANGELOG.md", "utf8").split(/\r?\n/);
+          const version = process.env.VERSION;
+          const start = lines.findIndex(line => line.startsWith("## [" + version + "]"));
+          if (start < 0) throw new Error("Missing changelog section for " + version);
+          const rest = lines.slice(start + 1);
+          const end = rest.findIndex(line => line.startsWith("## [") || line.startsWith("[Unreleased]:"));
+          const notes = rest.slice(0, end < 0 ? rest.length : end).join("\n").trim();
+          if (!notes) throw new Error("Empty changelog section for " + version);
+          console.log("Automated release PR — merge it to cut the release. Tagging `v" + version + "` and the GitHub Release happen automatically on merge (finalize phase).");
+          console.log("\n## v" + version + "\n\n" + notes);
+          NODE
           git add -A
           git commit -m "chore(release): v$VERSION"
           # Force-push: a pending release PR accumulates later merges (the version is
           # recomputed from all commits since the last tag each run).
           git push --force origin "HEAD:$BRANCH"
-          if [ -z "$(gh pr list --base master --state open --json headRefName --jq '.[].headRefName' | grep -x "$BRANCH" || true)" ]; then
-            NOTES="$(VERSION="$VERSION" node -e '
-              const fs = require("fs");
-              const lines = fs.readFileSync("CHANGELOG.md", "utf8").split("\n");
-              const v = process.env.VERSION;
-              const out = [];
-              let on = false;
-              for (const l of lines) {
-                if (l.startsWith("## [" + v + "]")) { on = true; continue; }
-                if (on && l.startsWith("## [")) break;
-                if (on) out.push(l);
-              }
-              console.log(out.join("\n").trim());
-            ')"
-            gh pr create --base master --head "$BRANCH" \
-              --title "chore(release): v$VERSION" \
-              --body "Automated release PR — merge it to cut the release. Tagging \`v$VERSION\` and the GitHub Release happen automatically on merge (finalize phase).
-
-          ## v$VERSION
-
-          $NOTES"
+          OPEN="$(gh pr list --base master --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$OPEN" ]; then
+            gh pr edit "$OPEN" --title "chore(release): v$VERSION" --body-file "$BODY"
           else
-            echo "::notice::Release PR for v$VERSION is already open — branch updated."
+            gh pr create --base master --head "$BRANCH" --title "chore(release): v$VERSION" --body-file "$BODY"
           fi
           # Close superseded release PRs (a feat after a pending patch, a breaking change after
           # a pending minor). One left open keeps the old CHANGELOG rotation and conflicts with

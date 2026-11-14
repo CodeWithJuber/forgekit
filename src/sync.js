@@ -47,6 +47,9 @@ const MODULES = [
   kimi,
 ];
 
+/** The tools that get a native config file, one name each (Claude Code has two emitters). */
+export const NATIVE_CONFIG_TOOLS = Object.freeze([...new Set(MODULES.map((m) => m.tool))]);
+
 // Soft budget: Codex hard-truncates at 32 KiB, Windsurf caps ~12k chars. Warn early.
 const SIZE_BUDGET_BYTES = 12 * 1024;
 

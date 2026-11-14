@@ -11,11 +11,12 @@
       "usedIn": [
         "README.md"
       ],
-      "title": "How forgekit fits around a coding agent",
+      "title": "How ForgeKit supports a host-led coding session",
       "receipt": {
-        "specSha256": "36f083e0f0fd475928450143da634566b42b1d461e3c644df19ec7425cb37494",
-        "artifactSha256": "6d593c7f5fb0f2276a64840a58b4d92aecdcbdf792e3d1d283464aa610520673",
-        "artifactBytes": 802431,
+        "specSha256": "6907f3ead1a0c71290d19011b6e2a7e6009065c7e015e08142aced6e29c501dd",
+        "svgSha256": "fef60ebd00d57cf4998d18b170efc2e856764a5ca2b92e449ae76dff3e2d03a1",
+        "artifactSha256": "17e228eb35902e51fc86717f4f490067a91a9fab92a5514d7c5eb5cfaf61aa23",
+        "artifactBytes": 802455,
         "checks": "9/9 showcase"
       }
     },
@@ -28,9 +29,27 @@
       ],
       "title": "forgekit: one source, native configs, enforced guards, evidence-carrying memory",
       "receipt": {
-        "specSha256": "51a03c2cc620ca86231dca9b1bc7b9798caae8088e3a19fba492d5cfb37c2fd3",
-        "artifactSha256": "8af33cb8c9882bd88a6c4b1d6def0cdf4809770bbe7124ec449b040473254b62",
-        "artifactBytes": 811110,
+        "specSha256": "010120857c89d6c6226c396e0a2d8a4299e45b15c98966963957fdea329ad495",
+        "svgSha256": "ae85fd70076ddd3afac9377018e339fedc372b1fa64cad46faf571ba95a16530",
+        "artifactSha256": "cdb3b0b42694ac647d8e02010a4a72003aaf0ab49a3b5ed3b8d34a3a05890c5d",
+        "artifactBytes": 810986,
+        "checks": "9/9 showcase"
+      }
+    },
+    {
+      "id": "supervised-run",
+      "type": "workflow",
+      "usedIn": [
+        "ARCHITECTURE.md",
+        "docs/HARNESS.md",
+        "mintlify/guides/supervised-runs.mdx"
+      ],
+      "title": "Supervised runs from request to verified result",
+      "receipt": {
+        "specSha256": "89fe34596ca5a6c104674a56c9cdea8a95b6a5f71a2ecf9f5f117dad6a2a114d",
+        "svgSha256": "63236d7c371cf1326f0b866e492e13812d5583bfeb7b094f00ba402d99522cc1",
+        "artifactSha256": "c50a43dd74847e57fb6b7190ff209af65eb4468bb0586630a4ddc9b34098f90f",
+        "artifactBytes": 805043,
         "checks": "9/9 showcase"
       }
     },
@@ -44,6 +63,7 @@
       "title": "The pre-action gate: one deterministic pass before the agent edits",
       "receipt": {
         "specSha256": "01f9114c08733345bd946316c398e67a77cd72ba45d187dfde62cf0ae4809a8d",
+        "svgSha256": "90af02363848b5f21685a3e69489f5356d9bc2f92575c52876fd3b43a40cf86c",
         "artifactSha256": "a4628c3c21c9f1d8be3365de05e33a5a19920471eb7021b33bda24b6055b157a",
         "artifactBytes": 810094,
         "checks": "9/9 showcase"
@@ -60,6 +80,7 @@
       "title": "Proof-carrying memory: how claims gain and lose trust",
       "receipt": {
         "specSha256": "4329c09c90eac742385f91b4191d50cbf655fad68724e677617dff83a49e8269",
+        "svgSha256": "1bf55882a91045e710ae9581637bd5d000004f2cc0baea00bbac0cc1d59c44fb",
         "artifactSha256": "958182b583746df2fa3108b4eb62fb9bc3fd6b73a79c57533b78fb3ba161ef61",
         "artifactBytes": 808651,
         "checks": "9/9 showcase"
@@ -75,6 +96,7 @@
       "title": "Claim lifecycle in the ledger",
       "receipt": {
         "specSha256": "2332566b4331cf8fec424f5a0938acc1855c1a1a58d1508f58136fc435b8bf42",
+        "svgSha256": "7b4d8911c37257c41ca3dc9ad88a6a4a648c1a3bae8cf906b206fd224a40052a",
         "artifactSha256": "6936abf20ac65c27494d5a6042fa365127548cdf58dd98f97af4c093df13d896",
         "artifactBytes": 808874,
         "checks": "9/9 showcase"
@@ -90,6 +112,7 @@
       "title": "Reuse cache: serve only while the proof holds",
       "receipt": {
         "specSha256": "2821ca9cb8d4a56ea17aa08aadd958baa256dd84417a9926427582640b02fced",
+        "svgSha256": "e528024eb03c625e6e7dd762fba99e7127cfa51e214aa3c71482e7cabab7b577",
         "artifactSha256": "b7ac6f9ed6c99fc6c5cf820aa748b07ddba412b276a902e3dda01cdfe299b6cd",
         "artifactBytes": 813712,
         "checks": "9/9 showcase"
@@ -104,6 +127,7 @@
       "title": "The team loop: work, verify, remember",
       "receipt": {
         "specSha256": "ba998a1acd975106176c2cc3f9c16a940f687f5ced788db7a68a43c76214fa90",
+        "svgSha256": "5f30d17d34584eb4584434355383c96cf8db06cb351a0fad73fc9f03215d9c22",
         "artifactSha256": "e795411893a723ed211273df3982279fae107a0765720d31681284fdf6576405",
         "artifactBytes": 800985,
         "checks": "9/9 showcase"
@@ -118,9 +142,10 @@
       ],
       "title": "One Claude Code session with forgekit's hooks",
       "receipt": {
-        "specSha256": "297219c0419d0cb48276cb3b5b0363f5897710d56c6ffb802b960efb1713e268",
-        "artifactSha256": "617f9bbba71471ebcd1a53386dee1c31902a3c8bce3ddeb433123983039c7eff",
-        "artifactBytes": 811027,
+        "specSha256": "a7260561aa9a34e08e290dbc8dcfe33a22a723e005840dec2264750c0d91525c",
+        "svgSha256": "69b05b155334b62decc647c21740d1f5b6df3e006ac69a59c6f8f08636f0ac8b",
+        "artifactSha256": "f475baa310548e2dcad2465a84b16eecc43114888d5d85e68311962c16e05727",
+        "artifactBytes": 813232,
         "checks": "9/9 showcase"
       }
     },
@@ -135,6 +160,7 @@
       "title": "forge verify: a PASS bound to the code that was tested",
       "receipt": {
         "specSha256": "d8dd9d41c35371562fea2b1f71bbe41b567cc73d72711ee3ed98f74a4e527266",
+        "svgSha256": "686d64a565ed705e558eef5ed481612ed12abd7020b345cddb297e113b4cb075",
         "artifactSha256": "8f1013a263cd516c907db69c8c441fa7f71ae382ee7d94bd7e98783d6dd66249",
         "artifactBytes": 807562,
         "checks": "9/9 showcase"
@@ -150,6 +176,7 @@
       "title": "Guided onboarding: what happens after forge init",
       "receipt": {
         "specSha256": "b16e5c655a469284374caa8c04ab570882ec2f65a67ae48efb45113a638c702d",
+        "svgSha256": "3f17b98b7be7b215a2758158fd7d926a00e3272b15696ff5b885077ad3c40624",
         "artifactSha256": "906dfad571e5d6b7b0e13cf6ac558a136461841b21637126046873123399674b",
         "artifactBytes": 801851,
         "checks": "9/9 showcase"
@@ -163,9 +190,10 @@
       ],
       "title": "Rubric first, LLM second: how a proposal can move a verdict",
       "receipt": {
-        "specSha256": "ad240c992e5927c0f41b06467ec2e09600ed30d28603195d29f2e526912ec0fa",
-        "artifactSha256": "a97271ef516163b9e21a330b19099bb5ff62b1f52d15e68dbb2bec7cf748c0ac",
-        "artifactBytes": 803139,
+        "specSha256": "3d1d085d1127292ea789c840e0fe31be64d928e4d43fcd2a58c56e33ae3e2ea9",
+        "svgSha256": "1e1ac675122070d9e5402dbec8f1d8bc3498d5d1c401aee0a4ab40dd10261220",
+        "artifactSha256": "32019c496ff975a51ebb1e8d830b799e1e1c7753fe77f9ae1878f45f52e2a9df",
+        "artifactBytes": 803355,
         "checks": "9/9 showcase"
       }
     },
@@ -178,9 +206,10 @@
       ],
       "title": "forge route universal: a cascade under an explicit objective",
       "receipt": {
-        "specSha256": "900d1d09ee7910b349bf9a5284f69d2f6c81f0522a36582a1845ef03ba8835b7",
-        "artifactSha256": "2a6b7cb3ad4d601b01f41aee5376b8d308cee5d625416e7e3088891e2c5aa2ec",
-        "artifactBytes": 812232,
+        "specSha256": "a339ab8d07d881ab5006d9f2a62e9c011deeaaafe06b5b67b8fe9a011975abcd",
+        "svgSha256": "60780ff4ae0c49d099556c8075996b2848f2a8b4243548c3dc36f270b05605a7",
+        "artifactSha256": "085c22a5d98e69d78e8d7aecb56680e0e61095a034e8f3c35025bc8ad8da27bb",
+        "artifactBytes": 812305,
         "checks": "9/9 showcase"
       }
     },
@@ -192,9 +221,10 @@
       ],
       "title": "Substrate v2 plan: phases and dependencies",
       "receipt": {
-        "specSha256": "df6ce832e4d597f41827d041fa3b15ddd950324bc4c69fd48875e4a042721445",
-        "artifactSha256": "064cd5d36912d29aa49d04f8d924333f83da69dbad48f2b25b7f636eee9b6f45",
-        "artifactBytes": 804443,
+        "specSha256": "b57a6e7e067693bc190a69b204faea7794220b07274d15a003c7fd96d579fda6",
+        "svgSha256": "2d82618d719abd4b53ba0c95480f1acdcc8ce892d0a0680b29e066dd74728e6a",
+        "artifactSha256": "b4465a1532d2c6c38a19c75a7920aa3ae94a7c14794a4b511a0ff96c68ce17ea",
+        "artifactBytes": 804788,
         "checks": "9/9 showcase"
       }
     },
@@ -208,6 +238,7 @@
       "title": "dep-gate: a package is vetted before it is added",
       "receipt": {
         "specSha256": "a73ba56e77a8351e7a817eefc3eb5d3a75b9abfa717abc7796d81f8a280ce665",
+        "svgSha256": "f63fb414044cd2ad1368d405d3f3016e4893628cf492571f127fbc622bce906c",
         "artifactSha256": "94fe2f55f0b06545c85945b1e36eadb66907ff42b0ba8553b4547d2b706c1a4a",
         "artifactBytes": 810774,
         "checks": "9/9 showcase"

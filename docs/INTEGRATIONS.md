@@ -12,10 +12,7 @@ Choose your coding hosts with `forge init --tools kimi,codex`. Each host receive
    call it.
 4. **Enforcement** — some of that code can *block* an action, not just advise.
 
-Each cell says how the claim is backed (updated 2026-11-14 against `src/emit/*.js`,
-`src/hosts.js`, `src/sync.js`, `src/init.js`, `hooks/hooks.json` and the tests; the hook
-protocols of Codex, Cursor, Gemini CLI, Copilot and Devin were read from each vendor's hook
-reference on the same day):
+The matrix covers emitted files and adapter behavior. The native checks below identify specific client versions and the actions observed in them.
 
 | Label | Meaning |
 |---|---|
@@ -57,14 +54,27 @@ Automatic context on every prompt requires a lifecycle callback that can deliver
 in that host. For projects using other hosts, the CLI also supports explicit retrieval
 with `forge evidence "your task"`.
 
+### Supervise a coding run
+
+In a trusted checkout, run `forge harness init --hosts kimi,codex --supervised`. In Kimi, follow the printed plugin install command and run `/reload`. In local Codex, review the generated commands in `/hooks`. Configure a model route before starting a run. `forge harness drift --hosts kimi,codex` checks the project files. To verify activation in the client, submit a normal coding prompt and inspect the resulting tool call or hook trace. [Model setup and first verified run](HARNESS.md)
+
+| Client | Evidence from the acceptance run |
+| --- | --- |
+| Kimi Code 2.6.2 | An ordinary prompt reached `forge_harness_run`. The run read the fixture, returned a signed test receipt and exposed matching status. The hook denied a subsequent direct native write. [Kimi run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328450/job/132430513107) |
+| Codex CLI 0.169.0 | The first request contained the retrieved row, its locator and the routing instruction. The hook denied a direct shell write inside a writable sandbox. [Codex run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328444/job/132430512728) |
+| Other stdio MCP clients | Register `forge cortex-mcp` in the project and invoke `forge_harness_run` and `forge_harness_status`. Automatic routing depends on the host's lifecycle callbacks. Actions outside those callbacks use the host's own permissions. |
+
+For business systems, choose the source independently of the coding host. A scoped Jira project, Confluence space, GitLab project or local document folder can be synced once and queried by another configured client in the same workspace. Use a live record read when the current version matters. [Cloud and self-hosted source setup, local queries and refresh rules](AGENT-EVIDENCE.md)
+
 ### Claude Code enforcement
 
-On Claude Code the guards run automatically, and four can stop or pause an action:
+On Claude Code the guards run automatically, and five can stop or pause an action:
 
 | Guard | Event | What it can do | Default |
 |---|---|---|---|
 | `protect-paths` | PreToolUse (writes, shell, reads) | deny a tool call on secrets, credential stores and destructive commands; fails closed when it cannot reach a verdict | on |
 | `cost-budget` | PreToolUse | on every 100th tool call, checks `forge budget`: past the alert threshold it nudges with context; over budget it asks (soft, the default); with `--hard` it denies the call — an opt-in circuit breaker. Falls back to the historic `FORGE_COST_CEILING` check when `forge` is not on PATH | on |
+| `dep-gate` | PreToolUse (shell, edits) | deny an install command or manifest edit that adds a package its own registry lacks or OSV lists as malicious; ask on a high risk score, or when Go, Maven or NuGet lacks the name (a private proxy is normal there); fails open when a registry cannot be reached | on (`FORGE_DEPGATE=0` disables) |
 | completion gate | Stop | block "done" once per session when code changed without test evidence or a doc/state record | on (`FORGE_STOPGATE=0` disables) |
 | substrate gate | UserPromptSubmit / pre-edit | block a vacuous task or an edit into a very large dependent set | off unless `FORGE_ENFORCE=1` |
 
@@ -72,6 +82,7 @@ On Claude Code the guards run automatically, and four can stop or pause an actio
 they warn, redact output after the fact or record, and never block. Guards are defence in depth, not
 a sandbox: a sufficiently creative shell command can bypass a regex guard. Tests run each guard with
 synthetic payloads (`test/guards.test.js`, `test/protect_paths.test.js`, `test/stop_gate.test.js`,
+`test/depgate.test.js`, `test/depgate_generic.test.js`,
 `test/hook_launcher.test.js`), and `test/hook_manifests.test.js` checks that the plugin manifest and
 the settings template wire the same guards.
 
@@ -153,7 +164,7 @@ Model availability and prices change faster than releases, so each needs a date 
   native provider adapters in `src/providers.js`: `anthropic` (Messages API), `openrouter` (the same
   Anthropic model ids as `anthropic/<id>`), `litellm` (tier aliases on a gateway you run), and
   `openai` and `gemini` (their OpenAI-compatible chat-completions endpoints, each with its own
-  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-09-22; `forge models`
+  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models`
   prints where each resolved id and price came from.
 - **The universal router** (`forge route universal`) reads a separate registry, `data/models.json`:
   14 models from seven organisations. Only the seven Anthropic entries ship a provider id (for the

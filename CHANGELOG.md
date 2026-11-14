@@ -16,6 +16,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Coding prompts and tool failures can retrieve cited project evidence automatically on supported hosts. `forge evidence` discovers reusable symbols, prior team artifacts and public implementation candidates.
 - `forge sources` indexes private folders, PDFs, spreadsheets, Jira, Confluence and GitLab for an individual working tree. It supports scoped live record reads, time-bounded remote snapshots and full-table numeric aggregation.
 
+- Architecture diagrams show the host-led and supervised coding paths. Hook labels and selected diagram values follow the configuration or policy that defines them. The docs workflow refreshes stale generated output on a pull request after changes land on the default branch.
+
+### Changed
+
+- Updated the README, onboarding and documentation site with a supervised setup walkthrough, current host support and recorded CLI demonstrations. The integrations guide links the native Kimi and Codex checks and describes each client's activation step.
+
 ## [1.15.0] - 2026-11-13
 
 ### Added

@@ -3,19 +3,9 @@ title: "Forge: the cognitive substrate for AI coding agents"
 description: "A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis, and explicit verification around coding agents — as native config for every AI coding tool."
 ---
 
-**A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
-and explicit verification around coding agents.** A language model keeps no durable state between
-independent calls and sees only a bounded context window, so on its own it does not carry what
-your team learned, cannot see the parts of the repository an edit affects unless they are in
-context, and cannot enforce rules on itself. Forge
-(`@codewithjuber/forgekit`) is the **cognitive substrate** — the layer that runs
-_before_ the model edits code, supplying evidence-referenced, content-addressed memory (we
-call it "proof-carrying memory"), heuristic impact foresight, and guardrails (blocking on
-Claude Code) — and a **cross-tool config compiler** that delivers that brain as native config
-into every tool at once. Claude Code is the deepest-tested integration and the only one with
-automatic hooks; the others receive native config (most also an MCP server entry) with less
-real-world exercise. The repository's `docs/INTEGRATIONS.md` lists, per tool, what is emitted,
-registered, run automatically and enforced.
+ForgeKit gives coding agents project rules, cited context and checks they can run before
+and after a change. Use it from your coding host or the `forge` CLI. Choose supervised
+mode when a task needs tool permissions, spend limits and independent verification.
 
 <CardGroup cols={3}>
   <Card title="Memory" icon="brain">
@@ -60,8 +50,8 @@ the research programme's dated corrections explain the difference.
     (`source/rules.json`, `source/substrate.json`, `source/mcp.json`).
   </Step>
   <Step title="Compile everywhere">
-    `forge sync` compiles that source into each tool's native config — nine AI coding
-    tools plus MCP — with a content-hash header, so drift is detectable and re-running
+    `forge sync` compiles that source into each tool's native config — eleven AI coding
+    tools, plus MCP for Roo Code and VS Code — with a content-hash header, so drift is detectable and re-running
     is a no-op.
   </Step>
   <Step title="Gate every task">
@@ -91,8 +81,8 @@ the research programme's dated corrections explain the difference.
   a design record or a UI check instead of a unit test), with the repair checklist as
   the answer.
 - **One config for 11 tools.** Author your rules once; Forge emits each tool's native
-  config, plus MCP for Roo and VS Code. Zero runtime dependencies — one Node CLI, plain
-  files in git, no server.
+  config, plus MCP for Roo and VS Code. The core CLI uses Node built-ins; supervised
+  memory and several document readers also use local Python and SQLite.
 
 ## Which tools does Forge feed?
 
@@ -100,9 +90,8 @@ Forge emits config for **eleven tools**, plus an MCP server for Roo Code and VS 
 Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf/Devin, Zed, Continue, OpenClaw,
 and Kimi Code. Each reads the same rules from its own native file.
 
-The only MCP server wired by default is Forge's own (`src/cortex_mcp.js`) — the substrate
-checks and memory reads. Third-party MCP servers such as `context7` are **opt-in** and
-never land on disk until you run [`forge integrations add <name> --yes`](/cli/config#forge-integrations).
+Selected hosts can register ForgeKit’s own MCP server, `forge-cortex`. Use `forge integrations list`
+to inspect third-party options and `forge integrations select` to configure a tool for your project.
 
 ## Honest limits
 
@@ -124,10 +113,9 @@ Forge states its own ceiling everywhere.
 - **Tests and human corrections always win.**
 
 <Note>
-  Forge is **beta**: releases follow semantic versioning (a breaking change is a new major
-  version), and "beta" describes maturity — heuristic analyses, advisory checks, and less
-  real-world exercise outside Claude Code. The core (`init`, `sync`, `substrate`, `impact`,
-  `ledger`, guards) is tested and in daily use.
+  Native client checks cover prompt delivery for Kimi Code, local Codex and Claude Code.
+  The [integration matrix](https://github.com/CodeWithJuber/forgekit/blob/master/docs/INTEGRATIONS.md)
+  records which other hosts have been checked with emitted files or simulated hook events.
 </Note>
 
 ## Next steps
@@ -138,6 +126,12 @@ Forge states its own ceiling everywhere.
   </Card>
   <Card title="Core concepts" icon="diagram-project" href="/concepts/config-compiler">
     The four-layer compiler, proof-carrying memory, and the pre-action gate.
+  </Card>
+  <Card title="Supervised coding runs" icon="list-check" href="/guides/supervised-runs">
+    Activate hooks, choose a model route and verify the result.
+  </Card>
+  <Card title="Project sources and research" icon="magnifying-glass" href="/guides/project-evidence">
+    Find a cited passage, query a live ticket or research a reusable implementation.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/cli/overview">
     Every command, grouped by Core, Memory, Substrate, Quality, and Config.

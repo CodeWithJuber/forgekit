@@ -12,7 +12,7 @@ config. The four layers are _how the brain is expressed_; the compiler is _how i
 delivered_.
 
 <Frame>
-  <img src="/images/diagrams/system.svg" alt="forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, guards that run in every agent, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge" />
+  <img src="/images/diagrams/system.svg" alt="forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, guards on supported lifecycle events, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge" />
 </Frame>
 
 [Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.
@@ -73,13 +73,13 @@ compaction.
 
 ## The verified cross-tool emit matrix
 
-Forge emits config for **ten tools**, plus an MCP server for Roo Code and VS Code. Each
+Forge emits config for **eleven tools**, plus an MCP server for Roo Code and VS Code. Each
 row is confirmed against vendor docs.
 
 | Tool               | Native target                                                     | How Forge emits                                                        |
 | ------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
 | **Claude Code**    | `CLAUDE.md` (+ `.claude/rules/*.md`, `settings.json`)            | Thin `CLAUDE.md` whose first line is `@AGENTS.md`; guards → settings   |
-| **Codex**          | `AGENTS.md` native (32 KiB cap)                                  | Canonical `AGENTS.md` at root **is** the source                       |
+| **Codex**          | `AGENTS.md` native (32 KiB cap)                                  | Root `AGENTS.md`, project MCP in `.codex/config.toml`, trusted hooks in `.codex/hooks.json` or the installed plugin                       |
 | **Cursor**         | `AGENTS.md` + `.cursor/rules/*.mdc`                             | `AGENTS.md` for flat rules; `.mdc` when scoping is needed             |
 | **Gemini**         | `GEMINI.md`, or `AGENTS.md` via `context.fileName` opt-in       | Writes `.gemini/settings.json` to avoid a second copy                 |
 | **Aider**          | `CONVENTIONS.md` via `read:` in `.aider.conf.yml`              | Emits `.aider.conf.yml` with `read: AGENTS.md`                         |
@@ -88,7 +88,7 @@ row is confirmed against vendor docs.
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`             | Emits `AGENTS.md`; doctor flags any shadowing legacy file             |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`         | Emits a rules file plus the Forge MCP server config                   |
 | **OpenClaw**       | execution-folder `AGENTS.md`; MCP registry is global          | Relies on root `AGENTS.md`; writes `.openclaw/mcp.json` to apply once |
-| **Kimi Code**      | `AGENTS.md` merged from project root to working dir           | Relies on root `AGENTS.md`; no extra file, MCP or hooks               |
+| **Kimi Code**      | `AGENTS.md` merged from project root to working dir           | Project MCP in `.kimi-code/mcp.json`; the per-user ForgeKit plugin supplies lifecycle hooks               |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.json`,
 `.vscode/mcp.json`) rather than a rules file.

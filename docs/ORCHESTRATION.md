@@ -179,8 +179,10 @@ the policy steps that moved it.
 
 ## Limits
 
-- The rules are instructions. An agent can ignore them. Only Claude Code has hooks that
-  enforce anything, and none of these rules is a hook.
+- The orchestration rule pack guides the lead through its host's project instructions.
+  Trusted host hooks can block specific tool calls on Claude Code, Codex, Kimi Code and other
+  supported clients. The supervised executor enforces its own permissions and budgets.
+  [Host capability matrix](INTEGRATIONS.md) · [Supervised execution](HARNESS.md)
 - The risk floor is a keyword match. It can miss a risky task worded differently, and it can
   flag a harmless one ("session" in a UI task). Add or remove keywords per repo.
 - The evidence above is one session. It shows where the tokens went in that session; it is not
