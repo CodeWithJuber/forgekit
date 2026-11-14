@@ -123,6 +123,32 @@ test("budget preflight skips untrusted/overbudget endpoints before a network cal
   assert.equal(describeHarnessRoutes(cfg)[0].fingerprint, trusted);
 });
 
+test("route pins bind the public credential selector independently of rotating secret values", async () => {
+  const original = harnessRouteFingerprint(paid);
+  const swapped = { ...paid, apiKeyEnv: "OTHER_SLOT" };
+  assert.match(original, /^[a-f0-9]{64}@HARNESS_TEST_KEY$/);
+  assert.notEqual(harnessRouteFingerprint(swapped), original);
+  assert.match(harnessRouteFingerprint(local), /^[a-f0-9]{64}$/);
+  assert.throws(() => harnessRouteFingerprint({ ...paid, apiKeyEnv: ["HARNESS_TEST_KEY"] }));
+
+  let seen;
+  const options = {
+    ...ledger,
+    env: { HARNESS_TEST_KEY: "rotated-fixture", OTHER_SLOT: "unused-fixture" },
+    trustedFingerprints: [original],
+    fetchImpl: async (_url, request) => {
+      seen = request.headers.authorization;
+      return reply({ content: "ok" });
+    },
+  };
+  await assert.rejects(createHarnessModel({ routes: [swapped] }, options)(call), {
+    code: "route_not_trusted",
+  });
+  assert.equal(seen, undefined);
+  await createHarnessModel({ routes: [paid] }, options)(call);
+  assert.equal(seen, "Bearer rotated-fixture");
+});
+
 test("declared fallback counts failed requests and malformed responses; missing usage consumes full reservation", async () => {
   const c = { ...paid, id: "other", model: "other-model" };
   for (const first of [

@@ -73,7 +73,10 @@ function validateRoute(route) {
   for (const key of ["inputUsdPerMillion", "outputUsdPerMillion"])
     if (!Number.isFinite(route[key]) || route[key] < 0 || route[key] > 1e6)
       throw new Error("Set both model price ceilings per million tokens");
-  if (route.apiKeyEnv !== undefined && !/^[A-Z][A-Z_0-9]{0,95}$/.test(route.apiKeyEnv))
+  if (
+    route.apiKeyEnv !== undefined &&
+    (typeof route.apiKeyEnv !== "string" || !/^[A-Z][A-Z_0-9]{0,95}$/.test(route.apiKeyEnv))
+  )
     throw new Error("Invalid API credential variable name");
   return {
     id: route.id,
@@ -91,7 +94,11 @@ function validateRoute(route) {
 }
 
 function fingerprint(route) {
-  return createHash("sha256").update(JSON.stringify(route)).digest("hex");
+  // The selector is a public environment variable name. Bind it verbatim so an
+  // operator can see which credential slot is authorized before any lookup.
+  const settings = { ...route, apiKeyEnv: null };
+  const digest = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
+  return route.apiKeyEnv === null ? digest : `${digest}@${route.apiKeyEnv}`;
 }
 
 export function harnessRouteFingerprint(route) {
