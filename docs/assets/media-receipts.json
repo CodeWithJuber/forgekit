@@ -27,7 +27,7 @@
     }
   },
   "dashboard": {
-    "input": "5f24dff863465640eba7c55249459ba54dcccdf9c3e882e0d5e1567cd88e2a5b",
+    "input": "34b56a5d5dee56120544ef25771e82e09723f4d291cd5139de044acecce642b6",
     "artifacts": {
       "docs/assets/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b",
       "mintlify/images/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b"

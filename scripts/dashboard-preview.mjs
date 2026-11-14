@@ -32,6 +32,15 @@ async function seed() {
   const { putClaim, repoLedger } = await import("../src/ledger_store.js");
   const { record } = await import("../src/metrics.js");
   const project = process.cwd();
+  // Only the capture parent creates this disposable directory and passes the
+  // child a matching path. Never seed the checkout a user invokes this script in.
+  assert.ok(
+    process.env.FORGE_DASH_PREVIEW_DIR &&
+      project === join(process.env.FORGE_DASH_PREVIEW_DIR, "parcel-service") &&
+      dirname(process.env.FORGE_DASH_PREVIEW_DIR) === tmpdir() &&
+      readFileSync(join(process.env.FORGE_DASH_PREVIEW_DIR, "preview-fixture"), "utf8") === script,
+    "The internal seed operation requires a temporary dashboard preview fixture.",
+  );
   const policyFile = join(project, "delivery.json");
   writeFileSync(policyFile, '{"attempts":3,"timeout":10,"region":"local"}\n');
   const cases = [
@@ -139,6 +148,7 @@ async function capture(check) {
   const project = join(work, "parcel-service");
   const home = join(work, "home");
   const preload = join(work, "clock.cjs");
+  writeFileSync(join(work, "preview-fixture"), script, { flag: "wx", mode: 0o600 });
   mkdirSync(project);
   mkdirSync(home);
   writeFileSync(preload, `globalThis.fixtureTime=${date};\n${clock}`);
@@ -262,7 +272,10 @@ async function capture(check) {
     ]);
     writeFileSync(join(project, "harness/routing.yaml"), JSON.stringify(routing));
     command(process.execPath, [cli, "harness", "trust"]);
-    command(process.execPath, [script, "--seed"]);
+    execFileSync(process.execPath, [script, "--seed"], {
+      cwd: project,
+      env: { ...env, FORGE_DASH_PREVIEW_DIR: work },
+    });
     writeFileSync(
       join(project, "package.json"),
       JSON.stringify({ name: "parcel-service", scripts: { test: "node --test policy.test.cjs" } }),
@@ -389,5 +402,8 @@ async function capture(check) {
   }
 }
 
-if (process.argv[2] === "--seed") await seed();
-else await capture(process.argv.includes("--check"));
+const args = process.argv.slice(2);
+if (args.length === 1 && args[0] === "--seed") await seed();
+else if (!args.length || (args.length === 1 && args[0] === "--check"))
+  await capture(args.length === 1);
+else throw new Error("Usage: node scripts/dashboard-preview.mjs [--check]");
