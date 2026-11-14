@@ -78,11 +78,13 @@ function validateRoute(route) {
     (typeof route.apiKeyEnv !== "string" || !/^[A-Z][A-Z_0-9]{0,95}$/.test(route.apiKeyEnv))
   )
     throw new Error("Invalid API credential variable name");
-  return {
+  // All transport settings belong to the content digest. Keep the public slot
+  // name separate so reviewers can see which credential they are authorizing.
+  const settings = {
     id: route.id,
     model: route.model,
     baseUrl: url.href.replace(/\/+$/, ""),
-    apiKeyEnv: route.apiKeyEnv ?? null,
+    apiKeyEnv: null,
     steps: [...new Set(steps)].sort(),
     strength,
     maxOutputTokens,
@@ -91,18 +93,17 @@ function validateRoute(route) {
     inputUsdPerMillion: route.inputUsdPerMillion,
     outputUsdPerMillion: route.outputUsdPerMillion,
   };
-}
-
-function fingerprint(route) {
-  // The selector is a public environment variable name. Bind it verbatim so an
-  // operator can see which credential slot is authorized before any lookup.
-  const settings = { ...route, apiKeyEnv: null };
   const digest = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
-  return route.apiKeyEnv === null ? digest : `${digest}@${route.apiKeyEnv}`;
+  const envName = route.apiKeyEnv ?? null;
+  return {
+    ...settings,
+    apiKeyEnv: envName,
+    fingerprint: envName === null ? digest : `${digest}@${envName}`,
+  };
 }
 
 export function harnessRouteFingerprint(route) {
-  return fingerprint(validateRoute(route));
+  return validateRoute(route).fingerprint;
 }
 
 function routeList(routing) {
@@ -135,7 +136,6 @@ function requiresPin(route) {
 export function describeHarnessRoutes(routing = defaultHarnessRouting()) {
   return routeList(routing).map((route) => ({
     ...route,
-    fingerprint: fingerprint(route),
     requiresPin: requiresPin(route),
   }));
 }
@@ -392,7 +392,7 @@ export function createHarnessModel(
     for (const route of eligible) {
       if (signal?.aborted) throw failure("model_cancelled", used, attempts);
       const budget = limits(route, input, maxTokens - used.tokens, maxCostUsd - used.costUsd);
-      const authorized = !requiresPin(route) || pins.has(fingerprint(route));
+      const authorized = !requiresPin(route) || pins.has(route.fingerprint);
       const key = authorized && route.apiKeyEnv && env[route.apiKeyEnv];
       if (!authorized || (route.apiKeyEnv && !key) || !budget) {
         reason = !authorized
@@ -523,8 +523,8 @@ export function createHarnessModel(
   if (
     routes.length === 1 &&
     /@sha256:[a-f0-9]{64}$/.test(routes[0].model) &&
-    (!requiresPin(routes[0]) || pins.has(fingerprint(routes[0])))
+    (!requiresPin(routes[0]) || pins.has(routes[0].fingerprint))
   )
-    model.trustIdentity = fingerprint(routes[0]);
+    model.trustIdentity = routes[0].fingerprint;
   return model;
 }
