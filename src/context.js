@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
-import { claimText, val } from "./ledger.js";
+import { claimText, jaccard, sketch, val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { referencedEntities } from "./preflight.js";
 
@@ -347,11 +347,7 @@ export function assemble(
 
   // --- selection: pin required coverage, downgrade before dropping -------------------
   const pinned = items.filter((i) => i.covers.length).sort((a, b) => (a.id < b.id ? -1 : 1));
-  // Value density: score per token of the item's full variant (ties by id, deterministic).
-  const density = (i) => i.score / Math.max(1, i.variants[0].tokens);
-  const optional = items
-    .filter((i) => !i.covers.length)
-    .sort((a, b) => density(b) - density(a) || (a.id < b.id ? -1 : 1));
+  const optional = items.filter((i) => !i.covers.length);
   let chosen = pinned.map((i) => ({ item: i, v: 0 })); // v = variant index
   const sepTokens = tokensOf(SEP);
   // Per-piece ceilings plus separators bound the rendered block's estimate from above.
@@ -386,17 +382,45 @@ export function assemble(
     dropped.push(worst.item.id);
   }
   const overflow = dropped.length > 0;
-  // Greedy fill by value density with per-source diminishing returns. The cut is checked
-  // BEFORE taking an item, and skips only that source — other sources keep competing
-  // (a `break` here used to end the whole fill, and only after taking a 6th item).
-  const perSource = {};
-  for (const item of optional) {
-    const taken = perSource[item.source] ?? 0;
-    if (SOURCE_DISCOUNT ** taken < SOURCE_VALUE_FLOOR) continue; // 4th+ from this source
-    const v = item.variants[0];
-    if (used() + v.tokens + (chosen.length ? sepTokens : 0) > budget) continue;
-    chosen.push({ item, v: 0 });
-    perSource[item.source] = taken + 1;
+  // Choose optional evidence by marginal value per estimated token. Exact repeats
+  // have zero marginal information; related evidence pays a Jaccard penalty. Only
+  // compare against optional records: required material retains its coverage rights.
+  const perSource = new Map();
+  const available = budget - used() - (chosen.length ? sepTokens : 0);
+  const candidates = optional
+    .filter((item) => item.variants[0].tokens <= available)
+    .map((item) => ({
+      item,
+      sketch: sketch(item.variants[0].text),
+      similarity: 0,
+    }));
+  while (candidates.length) {
+    let best = -1,
+      highest = 0;
+    const remaining = budget - used() - (chosen.length ? sepTokens : 0);
+    for (const [index, candidate] of candidates.entries()) {
+      const { item, similarity } = candidate;
+      const v = item.variants[0];
+      const discount = SOURCE_DISCOUNT ** (perSource.get(item.source) ?? 0);
+      if (similarity === 1 || discount < SOURCE_VALUE_FLOOR || v.tokens > remaining) continue;
+      const density = ((item.score - 0.5 * similarity) * discount) / Math.max(1, v.tokens);
+      if (
+        density > highest ||
+        (best >= 0 && density === highest && item.id < candidates[best].item.id)
+      ) {
+        highest = density;
+        best = index;
+      }
+    }
+    if (best < 0) break;
+    const [selected] = candidates.splice(best, 1);
+    chosen.push({ item: selected.item, v: 0 });
+    perSource.set(selected.item.source, (perSource.get(selected.item.source) ?? 0) + 1);
+    for (const candidate of candidates)
+      candidate.similarity = Math.max(
+        candidate.similarity,
+        jaccard(candidate.sketch, selected.sketch),
+      );
   }
 
   const block = chosen.map((c) => c.item.variants[c.v].text).join(SEP);

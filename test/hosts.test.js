@@ -78,7 +78,7 @@ test("HOSTS: every event maps to a canonical one, every dialect and tool name is
       [...new Set(Object.values(host.events).map((e) => e.as))].sort(),
       [
         ...CANON,
-        ...(["claude", "cursor", "copilot"].includes(id) ? ["PostToolUseFailure"] : []),
+        ...(["claude", "cursor", "copilot", "kimi"].includes(id) ? ["PostToolUseFailure"] : []),
       ].sort(),
       id,
     );
@@ -89,7 +89,8 @@ test("HOSTS: every event maps to a canonical one, every dialect and tool name is
         assert.notEqual(e.as, "PreToolUse", `${id}.${name}: a gate denies, it does not "block"`);
     }
     // A host with no file of its own is served through one that has.
-    if (!host.file) assert.ok(HOSTS[host.via]?.file, `${id}: served via a host with a file`);
+    if (!host.file && !host.plugin)
+      assert.ok(HOSTS[host.via]?.file, `${id}: served via a host with a file`);
   }
   for (const d of Object.values(DIALECTS))
     for (const verb of ["deny", "ask", "context", "block"])
@@ -670,6 +671,52 @@ const bash = (command, extra = {}) => ({
   ...extra,
 });
 
+test("Kimi user plugin honors the worktree host selection for prompts and status", async (t) => {
+  const root = tmp();
+  const home = tmp();
+  const configDir = join(root, ".forge");
+  const nested = join(root, "packages");
+  const plugins = join(home, ".kimi-code", "plugins");
+  mkdirSync(configDir);
+  mkdirSync(nested);
+  writeFileSync(join(root, ".git"), "gitdir: ../main/.git/worktrees/client\n");
+  mkdirSync(plugins, { recursive: true });
+  writeFileSync(
+    join(plugins, "installed.json"),
+    JSON.stringify({ plugins: [{ id: BRAND.pkg, enabled: true }] }),
+  );
+  const kimiHome = process.env.KIMI_CODE_HOME;
+  delete process.env.KIMI_CODE_HOME;
+  t.after(() => {
+    if (kimiHome !== undefined) process.env.KIMI_CODE_HOME = kimiHome;
+  });
+  for (const [config, enabled] of [
+    [{}, true],
+    [{ tools: ["codex"] }, false],
+    [{ tools: [] }, false],
+    [{ tools: "all" }, true],
+    [{ tools: "kimi-code,codex" }, true],
+    [{ tools: ["kimi"], hooks: { hosts: ["codex"] } }, false],
+    [{ tools: ["codex"], hooks: { hosts: ["kimi"] } }, true],
+    [{ tools: ["kimi"], hooks: { project: false } }, false],
+  ]) {
+    writeFileSync(join(configDir, "forge.config.json"), JSON.stringify(config));
+    const seen = [];
+    await hook(
+      {
+        host: "kimi",
+        event: "UserPromptSubmit",
+        input: { cwd: nested, prompt: [{ type: "text", text: "Find the test." }] },
+      },
+      [],
+      seen,
+    );
+    assert.equal(seen.length > 0, enabled, JSON.stringify(config));
+    const row = hooksStatus(root, { config, home }).hosts.find((h) => h.host === "kimi");
+    assert.equal(row.state, enabled ? "enabled in Kimi" : "off");
+  }
+});
+
 test("runHook: a guard's denial reaches each agent in its own words", async () => {
   const deny = [ran({ status: 2, stderr: "BLOCKED by dep-gate: not on the registry" })];
   const codex = await hook({ host: "codex", event: "PreToolUse", input: bash("npm i x") }, deny);
@@ -1026,7 +1073,7 @@ test("planHooks: each agent's file, in its own shape", () => {
     doc("claude", { bootstrap: true }).hooks.PreToolUse[0].hooks[0].timeout,
     HOOK_TIMEOUT_S.PreToolUse,
   );
-  assert.deepEqual(HOOK_HOSTS, ["claude", "codex", "gemini", "cursor", "copilot"]);
+  assert.deepEqual(HOOK_HOSTS, ["claude", "codex", "gemini", "cursor", "copilot", "kimi"]);
 });
 
 test("planHooks: only forge's own entries are ever touched; turning off leaves no trace", () => {
@@ -1051,7 +1098,7 @@ test("planHooks: only forge's own entries are ever touched; turning off leaves n
   // Off: byte for byte what the person had.
   assert.equal(planHooks(on, "claude", { enable: false }).next, `${before}\n`);
   // A file forge created is removed entirely when turned off; a version number is not content.
-  for (const host of HOOK_HOSTS) {
+  for (const host of HOOK_HOSTS.filter((id) => HOSTS[id].file)) {
     const created = planHooks(null, host).next;
     assert.equal(planHooks(created, host, { enable: false }).next, null, host);
   }
@@ -1091,20 +1138,26 @@ test("applyHooks / hooksStatus / emitProjectHooks: on, current, stale, off", () 
   const rows = emitProjectHooks({ targetRoot: root, config: on });
   assert.deepEqual(
     rows.map((r) => [r.tool, r.target, r.action]),
-    HOOK_HOSTS.map((id) => [HOSTS[id].label, HOSTS[id].file, "written"]),
+    HOOK_HOSTS.map((id) => [
+      HOSTS[id].label,
+      HOSTS[id].file ?? "Kimi /plugins",
+      HOSTS[id].file ? "written" : "manual",
+    ]),
   );
-  for (const id of HOOK_HOSTS) assert.ok(existsSync(join(root, HOSTS[id].file)), id);
+  for (const id of HOOK_HOSTS.filter((id) => HOSTS[id].file))
+    assert.ok(existsSync(join(root, HOSTS[id].file)), id);
   assert.deepEqual(state(on), {
     claude: "on",
     codex: "on",
     gemini: "on",
     cursor: "on",
     copilot: "on",
+    kimi: "off",
     devin: "via claude",
   });
   assert.deepEqual(
     emitProjectHooks({ targetRoot: root, config: on }).map((r) => r.action),
-    Array(5).fill("unchanged"),
+    [...Array(5).fill("unchanged"), "manual"],
   );
   // The files hold yesterday's commands (here: no bootstrap, config now asks for one) → stale.
   const boot = { hooks: { project: true, bootstrap: true } };
@@ -1122,7 +1175,11 @@ test("applyHooks / hooksStatus / emitProjectHooks: on, current, stale, off", () 
   );
   // Off: gone.
   for (const id of HOOK_HOSTS)
-    assert.equal(applyHooks(root, id, { enable: false }).action, "removed", id);
+    assert.equal(
+      applyHooks(root, id, { enable: false }).action,
+      HOSTS[id].plugin ? "manual" : "removed",
+      id,
+    );
   assert.deepEqual(new Set(Object.values(state({}))), new Set(["off"]));
   assert.equal(applyHooks(root, "devin"), null, "Devin has no file of its own");
   // A file that is not JSON is reported, not overwritten.
@@ -1143,14 +1200,19 @@ test("forge hooks: on writes every file, status reads them back, off removes the
       env: { ...process.env, FORGE_DEPGATE: "0" },
     });
   const on = JSON.parse(run(["on", "--json"]).stdout);
-  assert.deepEqual([on.enabled, on.rows.length], [true, 5]);
+  assert.deepEqual([on.enabled, on.rows.length], [true, 6]);
   assert.deepEqual(
     JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8")).hooks,
     { project: true },
   );
   const status = JSON.parse(run(["status", "--json"]).stdout);
   assert.equal(status.enabled, true);
-  assert.ok(status.hosts.every((h) => h.state === "on" || h.state === "via claude"));
+  assert.ok(
+    status.hosts.every(
+      (h) =>
+        h.state === "on" || h.state === "via claude" || (h.host === "kimi" && h.state === "off"),
+    ),
+  );
   // What an agent gets: a verdict on stdout/stderr and nothing else — no tip line, no banner.
   const blocked = run(
     ["run", "codex", "PreToolUse"],
@@ -1172,8 +1234,13 @@ test("forge hooks: on writes every file, status reads them back, off removes the
   const quiet = run(["run", "codex", "PreToolUse"], "{}");
   assert.deepEqual([quiet.status, quiet.stdout, quiet.stderr], [0, "", ""]);
   const off = JSON.parse(run(["off", "--json"]).stdout);
-  assert.ok(off.rows.every((r) => r.action === "removed"));
-  for (const id of HOOK_HOSTS) assert.equal(existsSync(join(root, HOSTS[id].file)), false, id);
+  assert.ok(
+    off.rows.every(
+      (r) => r.action === "removed" || (r.tool === "Kimi Code" && r.action === "manual"),
+    ),
+  );
+  for (const id of HOOK_HOSTS.filter((id) => HOSTS[id].file))
+    assert.equal(existsSync(join(root, HOSTS[id].file)), false, id);
   const bad = run(["on", "--hosts", "emacs"]);
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /unknown host\(s\): emacs/);

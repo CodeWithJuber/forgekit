@@ -1,19 +1,23 @@
 // Local task matching sends only pinned catalog package names to public services.
 // Resolution checks the publisher's canonical repo before a private, script-free npm install.
 import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { vetPackages } from "./depgate.js";
 import { addIntegration, stableVersion } from "./integrations.js";
 import { researchPointers } from "./public_research.js";
@@ -83,13 +87,7 @@ function canonical(path) {
   }
   return join(realpathSync(parent), relative(parent, path));
 }
-export function adoptionCatalog(root = process.cwd()) {
-  const path = privateCatalog();
-  if (!existsSync(path)) return CATALOG;
-  if (inside(realpathSync(root), realpathSync(path)))
-    throw new Error("Keep tool-catalog.json outside the repository");
-  if (statSync(path).size > 65536) throw new Error("Tool catalog exceeds 64 KiB");
-  const additions = JSON.parse(readFileSync(path, "utf8")).tools;
+function checkPersonalTools(additions) {
   if (!Array.isArray(additions) || additions.length > 64)
     throw new Error("Expected up to 64 personal catalog tools");
   const ids = new Set(CATALOG.map((c) => c.id));
@@ -123,7 +121,103 @@ export function adoptionCatalog(root = process.cwd()) {
     }
     ids.add(c.id);
   }
-  return [...CATALOG, ...additions];
+}
+
+const MAX_CATALOG_BYTES = 64 * 1024;
+function readPersonalCatalog(root, path) {
+  if (!existsSync(path)) return { tools: [] };
+  if (inside(realpathSync(root), realpathSync(path)))
+    throw new Error("Keep tool-catalog.json outside the repository");
+  const stat = statSync(path);
+  if (!stat.isFile()) throw new Error("Expected a regular personal catalog file");
+  if (stat.size > MAX_CATALOG_BYTES) throw new Error("Tool catalog exceeds 64 KiB");
+  const catalog = JSON.parse(readFileSync(path, "utf8"));
+  checkPersonalTools(catalog?.tools);
+  return catalog;
+}
+
+export function adoptionCatalog(root = process.cwd()) {
+  return [...CATALOG, ...readPersonalCatalog(root, privateCatalog()).tools];
+}
+
+// Serialize read/modify/write between CLI processes. Readers see the old or new
+// complete snapshot. An interrupted writer can leave a lock but cannot corrupt the
+// catalog or let a later process silently discard another developer's entry.
+function editPersonalCatalog(root, id, edit) {
+  if (CATALOG.some((tool) => tool.id === id))
+    throw new Error(`Built-in integration '${id}' cannot be replaced or unregistered`);
+  if (
+    typeof id !== "string" ||
+    !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ||
+    id in Object.prototype ||
+    id === "forge-cortex"
+  )
+    throw new Error("Invalid personal integration ID");
+  const path = privateCatalog();
+  if (inside(realpathSync(root), canonical(dirname(path))))
+    throw new Error("Keep tool-catalog.json outside the repository");
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const lock = `${path}.lock`;
+  const deadline = Date.now() + 2000;
+  const delay = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      mkdirSync(lock, { mode: 0o700 });
+      break;
+    } catch (e) {
+      if (e.code !== "EEXIST") throw e;
+      if (Date.now() >= deadline)
+        throw new Error(
+          `Catalog is locked. Retry, or remove the stale lock at ${lock} after checking for an active writer.`,
+        );
+      Atomics.wait(delay, 0, 0, 10);
+    }
+  }
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  try {
+    if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink())
+      throw new Error("Refusing to replace a symlinked personal catalog");
+    const catalog = readPersonalCatalog(root, path);
+    const changed = edit(catalog.tools);
+    if (changed) {
+      checkPersonalTools(catalog.tools);
+      const data = `${JSON.stringify(catalog, null, 2)}\n`;
+      if (Buffer.byteLength(data) > MAX_CATALOG_BYTES)
+        throw new Error("Tool catalog exceeds 64 KiB");
+      writeFileSync(tmp, data, { flag: "wx", mode: 0o600 });
+      renameSync(tmp, path);
+    }
+    return { ok: true, id, changed, catalogPath: path };
+  } finally {
+    try {
+      rmSync(tmp, { force: true });
+    } finally {
+      rmdirSync(lock);
+    }
+  }
+}
+
+export function registerCatalogTool(root, descriptor) {
+  return editPersonalCatalog(root, descriptor?.id, (tools) => {
+    const existing = tools.find((tool) => tool.id === descriptor.id);
+    if (existing) {
+      if (isDeepStrictEqual(existing, descriptor)) return false;
+      throw new Error(
+        `A different personal integration is already registered as '${descriptor.id}'`,
+      );
+    }
+    tools.push(descriptor);
+    return true;
+  });
+}
+
+export function unregisterCatalogTool(root, id) {
+  return editPersonalCatalog(root, id, (tools) => {
+    const index = tools.findIndex((tool) => tool.id === id);
+    if (index < 0) return false;
+    tools.splice(index, 1);
+    return true;
+  });
 }
 
 // npm already ships node-semver. Resolve from the npm installation paired with the

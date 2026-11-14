@@ -17,6 +17,7 @@ import { EDGE_WEIGHT, load } from "./atlas.js";
 import { val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { globToRe } from "./lessons.js";
+import { referencedEntities } from "./preflight.js";
 import { directedImportGraph } from "./scope.js";
 import { epochDay, toPosix } from "./util.js";
 
@@ -32,12 +33,12 @@ const NON_SYMBOL_KINDS = new Set(["module", "doc", "config", "unknown"]);
  * Weighted PageRank over the atlas graph. An edge source→target means "source depends
  * on target", so the random surfer walks WITH dependency direction and rank accrues to
  * what is depended upon. Edge weight = EDGE_WEIGHT[kind] × edge.confidence; out-weights
- * are normalized per source; dangling mass is redistributed uniformly.
+ * are normalized per source; dangling mass follows the same teleport distribution as restarts.
  * @param {{nodes?:any[], edges?:any[]}} atlas
- * @param {{damping?:number, maxIter?:number, tol?:number}} [opts]
+ * @param {{damping?:number, maxIter?:number, tol?:number, seeds?:string[]}} [opts]
  * @returns {Map<string, number>} node id → score (scores sum to ~1)
  */
-export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9 } = {}) {
+export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9, seeds = [] } = {}) {
   const ids = [...new Set((atlas.nodes ?? []).map((n) => n.id))].sort();
   const n = ids.length;
   const scores = new Map();
@@ -59,9 +60,13 @@ export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9 } = {
     out[s].push([t, w]);
     outWeight[s] += w;
   }
-  let r = new Float64Array(n).fill(1 / n);
+  const active = [...new Set(seeds)].map((id) => index.get(id)).filter((i) => i !== undefined);
+  const teleport = new Float64Array(n);
+  if (active.length) for (const i of active) teleport[i] = 1 / active.length;
+  else teleport.fill(1 / n);
+  let r = teleport.slice();
   for (let iter = 0; iter < maxIter; iter++) {
-    const next = new Float64Array(n).fill((1 - damping) / n);
+    const next = teleport.map((p) => (1 - damping) * p);
     let dangling = 0;
     for (let i = 0; i < n; i++) {
       if (!out[i].length) {
@@ -71,10 +76,10 @@ export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9 } = {
       const share = (damping * r[i]) / outWeight[i];
       for (const [t, w] of out[i]) next[t] += share * w;
     }
-    const danglingShare = (damping * dangling) / n;
+    const danglingMass = damping * dangling;
     let l1 = 0;
     for (let i = 0; i < n; i++) {
-      next[i] += danglingShare;
+      next[i] += danglingMass * teleport[i];
       l1 += Math.abs(next[i] - r[i]);
     }
     r = next;
@@ -88,7 +93,7 @@ export function pagerank(atlas, { damping = 0.85, maxIter = 60, tol = 1e-9 } = {
  * File- and symbol-level centrality views. A file's score is the sum of its nodes'
  * PageRank; the symbol view keeps only definition nodes (functions/classes/types).
  * @param {{nodes?:any[], edges?:any[]}} atlas
- * @param {{damping?:number, maxIter?:number, tol?:number}} [opts]
+ * @param {{damping?:number, maxIter?:number, tol?:number, seeds?:string[]}} [opts]
  * @returns {{files:{file:string,score:number}[], symbols:{id:string,name:string,file:string,score:number}[]}}
  */
 export function centrality(atlas, opts) {
@@ -286,11 +291,11 @@ const round6 = (x) => Number(x.toFixed(6));
  * The impure assembler the CLI and MCP tool call: load the atlas (missing → build hint),
  * the import graph, and — best-effort — the ledger, then compose the report.
  * @param {string} root
- * @param {{top?:number}} [opts]
+ * @param {{top?:number,task?:string}} [opts]
  * @returns {{built:boolean, nodes?:number, edges?:number, topFiles?:any[], topSymbols?:any[],
- *   cycles?:string[][], chokepoints?:{file:string,splits:number}[]}}
+ *   personalization?:object, cycles?:string[][], chokepoints?:{file:string,splits:number}[]}}
  */
-export function rankReport(root, { top = 15 } = {}) {
+export function rankReport(root, { top = 15, task = "" } = {}) {
   top = Math.max(1, Math.floor(Number(top)) || 15); // a negative slice() would return the whole graph
   let atlas = null;
   try {
@@ -309,7 +314,18 @@ export function rankReport(root, { top = 15 } = {}) {
       undirected.get(t)?.add(f);
     }
   }
-  const { files, symbols } = centrality(atlas);
+  const query = String(task ?? "")
+    .trim()
+    .slice(0, 4000);
+  const entities = referencedEntities(query);
+  const names = new Set([...entities.symbols, ...(query.match(/[A-Za-z_$][\w$]{2,}/g) ?? [])]);
+  const paths = new Set(entities.files);
+  const seeds = query
+    ? (atlas.nodes ?? [])
+        .filter((node) => names.has(node.name) || (node.kind === "module" && paths.has(node.file)))
+        .map((node) => node.id)
+    : [];
+  const { files, symbols } = centrality(atlas, { seeds });
   let claims = [];
   try {
     claims = loadClaims(repoLedger(root));
@@ -336,6 +352,15 @@ export function rankReport(root, { top = 15 } = {}) {
   ranked.sort((a, b) => b.hazard - a.hazard || byCode(a.file, b.file));
   return {
     built: true,
+    ...(query
+      ? {
+          personalization: {
+            mode: seeds.length ? "task" : "global",
+            matchedNodes: seeds.length,
+            damping: 0.85,
+          },
+        }
+      : {}),
     nodes: (atlas.nodes ?? []).length,
     edges: (atlas.edges ?? []).length,
     topFiles: ranked.slice(0, top),

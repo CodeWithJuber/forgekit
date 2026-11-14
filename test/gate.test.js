@@ -318,3 +318,14 @@ test("recordUiCheck: run from a subdirectory, the stamp lands at the toplevel, t
   const stamp = JSON.parse(readFileSync(join(root, ".forge", "uicheck.json"), "utf8"));
   assert.deepEqual(stamp.files, ["web/src/a.css"], "the path `git status` reports");
 });
+
+test("a fresh authenticated SUSPECT receipt takes precedence over a changed test or green e2e", () => {
+  const evidence = { fresh: true, codeStateMatches: true, status: "SUSPECT", authentic: true };
+  const options = { changed: ["src/app.js", "test/app.test.js", "README.md"], e2eEvidence: true };
+  assert.equal(gateDecision({ ...options, verifyEvidence: evidence }).row, "suspect-test-coverage");
+  for (const prop of ["fresh", "authentic", "codeStateMatches"])
+    assert.equal(
+      gateDecision({ ...options, verifyEvidence: { ...evidence, [prop]: false } }).allow,
+      true,
+    );
+});

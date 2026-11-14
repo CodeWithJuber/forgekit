@@ -375,3 +375,35 @@ test("assemble regression (E5): a source's 4th+ optional item is dropped — not
   assert.equal(taken.length, 3, "three optional facts, then the source is spent");
   assert.ok(r.tokens <= 6000);
 });
+
+test("the token budget admits distinct evidence ahead of duplicate optional facts", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  const claims = [
+    {
+      id: "11111111a",
+      name: "parsing",
+      text: "The parser consumes signed integer amounts from the input",
+    },
+    {
+      id: "22222222b",
+      name: "parsing",
+      text: "The parser consumes signed integer amounts from the input",
+    },
+    {
+      id: "33333333c",
+      name: "auditing",
+      text: "The ledger retains immutable transaction references for reversals",
+    },
+  ].map(({ id, name, text }) => ({
+    id,
+    kind: "fact",
+    body: { name, text },
+    scope: { level: "repo" },
+    t: 0,
+  }));
+  const report = assemble(root, "read ledger", { claims, budget: 100 });
+  assert.equal(report.selection.length, 2);
+  assert.match(report.block, /signed integer/);
+  assert.match(report.block, /immutable transaction/);
+  assert.ok(report.tokens <= 100);
+});

@@ -11,13 +11,13 @@
 export const COMMANDS = {
   init: {
     summary:
-      "scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source",
+      "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
       "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",
@@ -102,7 +102,8 @@ export const COMMANDS = {
   team: {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
-    usage: 'forge team "<task>" [--max-workers N] [--run claude --budget-usd N]',
+    usage:
+      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N]',
     examples: [
       'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
     ],
@@ -127,7 +128,7 @@ export const COMMANDS = {
     summary:
       "sync scoped project sources privately and search, route live reads or aggregate local tables",
     usage:
-      "forge sources init|status|sync [id]|probe <id>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
+      "forge sources init|status|sync [id] [--full]|update-page <id> <page> --version N --title TITLE --body-file FILE|probe <id>|get <id> [item] [--chunk N]|sql <id> <SELECT>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
     flags: [
       { flag: "--source <id>", desc: "restrict search to one configured source" },
       { flag: "--budget <tokens>", desc: "estimated token budget for search excerpts" },
@@ -508,11 +509,22 @@ export const COMMANDS = {
       "forge docs impact --since main",
     ],
   },
+  hikmah: {
+    summary: "bind a local Hikmah kernel ledger and recall its verified public lessons",
+    usage:
+      "forge hikmah on --binary <absolute-path> --store <absolute-path> | recall <query> | status | off",
+  },
+  prompts: {
+    summary: "choose a workspace development profile or show a portable prompt and specialist role",
+    usage:
+      "forge prompts list | use engineering|quran|off | status | show <master|pain-id|role-id> [--profile engineering|quran]",
+    examples: ["forge prompts use engineering", "forge prompts show master --profile quran"],
+  },
   integrations: {
     summary:
-      "find and install pinned community tools for a task, or manage opt-in third-party MCP config",
+      "choose project integrations, register custom packages and connect hosted or self-managed MCP endpoints",
     usage:
-      'forge integrations find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
+      'forge integrations list [--json] | select [id] | connect <id> [--url URL] [--token-env NAME] | local <id> --binary PATH [--arg ARG] | register <descriptor.json> | unregister <id> | find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
     examples: [
       'forge integrations find "test a browser checkout flow"',
       "forge integrations install playwright",
@@ -545,9 +557,20 @@ export const GROUPS = {
     "precommit",
     "test-select",
   ],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "claim", "handoff", "decide", "know"],
+  Memory: [
+    "hikmah",
+    "cortex",
+    "recall",
+    "remember",
+    "brain",
+    "ledger",
+    "claim",
+    "handoff",
+    "decide",
+    "know",
+  ],
   Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
-  Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
+  Config: ["prompts", "brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [
     "taste",
     "uicheck",

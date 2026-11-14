@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { managedMcpState, removeIntegration } from "../src/integrations.js";
 import {
   adoptionCatalog,
@@ -19,7 +20,9 @@ import {
   installAdoption,
   matchAdoption,
   matchAdoptions,
+  registerCatalogTool,
   runAdoption,
+  unregisterCatalogTool,
 } from "../src/tool_adoption.js";
 
 const digest = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
@@ -258,4 +261,82 @@ test("policy revoked during installation and symlinks into the repository cannot
     assert.match(unsafe.reason, /outside the repository/);
     assert.ok(!existsSync(join(root, "playwright")));
   }
+});
+
+const descriptor = (id) => ({
+  id,
+  npm: `@example/${id}`,
+  upstream: `https://github.com/example/${id}`,
+  bin: id,
+  terms: ["diagram export"],
+  cost: "Local process",
+  permissions: "Reads diagram files",
+});
+
+test("registering and unregistering personal options preserves metadata and other tools", (t) => {
+  const { home, root } = fixture(t);
+  const path = join(home, "tool-catalog.json");
+  const tool = descriptor("diagram-export");
+  writeFileSync(path, JSON.stringify({ version: 1, tools: [descriptor("original")] }));
+  assert.equal(registerCatalogTool(root, tool).changed, true);
+  assert.deepEqual(adoptionCatalog(root).at(-1), tool);
+  assert.equal(matchAdoption("diagram export", { root })[0].id, tool.id);
+  const reversedKeys = Object.fromEntries(Object.entries(tool).reverse());
+  assert.equal(registerCatalogTool(root, reversedKeys).changed, false);
+  assert.throws(() => registerCatalogTool(root, { ...tool, bin: "other" }), /already registered/);
+  assert.throws(() => registerCatalogTool(root, descriptor("playwright")), /Built-in/);
+  assert.throws(() => unregisterCatalogTool(root, "context7"), /Built-in/);
+  const before = readFileSync(path, "utf8");
+  assert.throws(
+    () => registerCatalogTool(root, { ...descriptor("new"), command: "sh" }),
+    /Invalid/,
+  );
+  assert.equal(readFileSync(path, "utf8"), before);
+  assert.equal(unregisterCatalogTool(root, tool.id).changed, true);
+  assert.equal(unregisterCatalogTool(root, tool.id).changed, false);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+    version: 1,
+    tools: [descriptor("original")],
+  });
+  assert.equal(existsSync(join(root, ".mcp.json")), false);
+});
+
+test("catalog edits reject repository state and preserve a malformed or oversized original", (t) => {
+  const { home, root } = fixture(t);
+  const path = join(home, "tool-catalog.json");
+  const tool = descriptor("diagram-export");
+  for (const data of ["{invalid", " ".repeat(65537)]) {
+    writeFileSync(path, data);
+    assert.throws(() => registerCatalogTool(root, tool));
+    assert.equal(readFileSync(path, "utf8"), data);
+  }
+  process.env.FORGE_HOME = join(root, "unsafe");
+  assert.throws(() => registerCatalogTool(root, tool), /outside/);
+  assert.equal(existsSync(process.env.FORGE_HOME), false);
+});
+
+test("parallel catalog registration retains every successful add", async (t) => {
+  const { root } = fixture(t);
+  const url = new URL("../src/tool_adoption.js", import.meta.url).href;
+  const code = `import {registerCatalogTool} from ${JSON.stringify(url)};
+    registerCatalogTool(process.argv[1], JSON.parse(process.argv[2]));`;
+  const ids = ["one", "two", "three", "four"];
+  await Promise.all(
+    ids.map((id) =>
+      promisify(execFile)(process.execPath, [
+        "--input-type=module",
+        "-e",
+        code,
+        root,
+        JSON.stringify(descriptor(id)),
+      ]),
+    ),
+  );
+  assert.deepEqual(
+    adoptionCatalog(root)
+      .slice(2)
+      .map((tool) => tool.id)
+      .sort(),
+    ids.sort(),
+  );
 });

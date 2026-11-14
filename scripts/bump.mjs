@@ -272,6 +272,7 @@ export const JSON_VERSION_FILES = [
   "package.json",
   ".claude-plugin/plugin.json",
   ".codex-plugin/plugin.json",
+  "kimi.plugin.json",
 ];
 
 function readIfExists(file) {

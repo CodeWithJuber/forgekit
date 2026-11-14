@@ -1,6 +1,6 @@
 # Integrations — what each tool actually gets
 
-Forgekit emits configuration for ten coding tools, plus MCP configuration for Roo Code and VS Code.
+Choose your coding hosts with `forge init --tools kimi,codex`. Each host receives its supported project instructions, MCP entries or hooks.
 "Supported" hides four different things, so this page lists them separately for every tool:
 
 1. **Config emission** — forge writes the tool's native rules file (or relies on one the tool
@@ -12,7 +12,7 @@ Forgekit emits configuration for ten coding tools, plus MCP configuration for Ro
    call it.
 4. **Enforcement** — some of that code can *block* an action, not just advise.
 
-Each cell says how the claim is backed (checked 2026-11-13 against `src/emit/*.js`,
+Each cell says how the claim is backed (updated 2026-11-14 against `src/emit/*.js`,
 `src/hosts.js`, `src/sync.js`, `src/init.js`, `hooks/hooks.json` and the tests; the hook
 protocols of Codex, Cursor, Gemini CLI, Copilot and Devin were read from each vendor's hook
 reference on the same day):
@@ -29,7 +29,7 @@ reference on the same day):
 | Tool | Config emission | MCP registration | Automatic hooks | Enforcement (blocking) |
 |---|---|---|---|---|
 | **Claude Code** | `CLAUDE.md` importing `@AGENTS.md`, plus forge's block in `AGENTS.md` — tested (emission); `advisorModel` in `.claude/settings.json` once `forge advisor set` names an advisor (the one key forge owns there) — tested (emission) | `.mcp.json` — tested (emission) | plugin `hooks/hooks.json` or `forge init`-merged `~/.claude/settings.json`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop — tested (execution) for the guard scripts; manifests tested for wiring; project-level `.claude/settings.json` after `forge hooks on`, for machines with no user-level install (it stands down where one exists) — tested (emission and execution) | yes — see [Claude Code enforcement](#claude-code-enforcement) — tested (execution) |
-| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest also points to the packaged MCP config (`forge` on PATH) | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Adapter and packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
+| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest also points to the packaged MCP config (`forge` on PATH) | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Native 0.169.0 project prompt hook delivered source evidence. Packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
 | **Cursor** | root `AGENTS.md`; warns when a legacy `.cursorrules` would shadow it — tested (emission) | `.cursor/mcp.json` — tested (emission) | `.cursor/hooks.json` after `forge hooks on`: sessionStart, beforeSubmitPrompt, beforeShellExecution, preToolUse, postToolUse, postToolUseFailure, stop — tested (emission); adapter tested (execution). Project hooks also run in Cursor cloud agents, which do not fire sessionStart — declared | yes after `forge hooks on` — deny and ask on shell commands, deny on other tools — tested (execution) for the adapter |
 | **Gemini CLI** | `AGENTS.md` added to `.gemini/settings.json` `context.fileName` — tested (emission) | `.gemini/settings.json` `mcpServers` — tested (emission) | `.gemini/settings.json` `hooks` after `forge hooks on`: SessionStart, BeforeAgent, BeforeTool, AfterTool, AfterAgent — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny before a tool (no "ask": an ask blocks and says so) — tested (execution) for the adapter |
 | **Aider** | `.aider.conf.yml` with `read: AGENTS.md` — tested (emission) | not supported | not supported | not supported in the agent |
@@ -38,15 +38,24 @@ reference on the same day):
 | **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | not supported in the agent |
 | **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | not supported in the agent |
 | **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | not supported in the agent |
-| **Kimi Code** | root `AGENTS.md`, merged by Kimi from the project root to the working directory ([kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) — tested (emission) | not supported (not verified for a repo-local file) | not supported | not supported in the agent |
+| **Kimi Code** | Shared root `AGENTS.md` | Trusted workspace `.kimi-code/mcp.json` | Per-user ForgeKit plugin runs SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure and Stop. A real Kimi 2.6.2 prompt delivered indexed source evidence. | PreToolUse can deny; Stop and UserPromptSubmit can block. Kimi observes post-tool events asynchronously. |
 | **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
 | **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
 
-`forge init` emits only for the tools a repository already uses (Claude Code plus any tool with a
-sign on disk) unless `--tools` says otherwise, and records the choice for later `forge sync` runs.
-Every target above is covered by the emission tests in `test/sync.test.js`, `test/mcp.test.js`,
-`test/openclaw.test.js` and `test/init_tools.test.js`. None of the ten host tools is launched in CI,
-so "the tool actually loads this file" is documentation-backed everywhere, including Claude Code.
+Use `--tools` to choose the hosts that a repository needs. ForgeKit records that choice for
+later `forge sync` runs. Project configuration tests cover the emitted files. The native
+acceptance checks below describe which clients actually received context in a model request.
+
+### Connect another coding host
+
+In any host with local stdio MCP support, add a server named `forge-cortex` with command
+`forge` and the single argument `cortex-mcp`. Start the server in the project directory,
+or set its `FORGE_ROOT` environment variable to the absolute project path. An MCP client
+can then list and call the tools. For a host that reads project instructions, use the
+shared `AGENTS.md` or export the instructions with `forge prompts show master --profile engineering`.
+Automatic context on every prompt requires a lifecycle callback that can deliver context
+in that host. For projects using other hosts, the CLI also supports explicit retrieval
+with `forge evidence "your task"`.
 
 ### Claude Code enforcement
 
@@ -79,8 +88,9 @@ is the single list), and answers in the agent's dialect. What is tested, and how
 - **tested (execution), the adapter** — the same file feeds each agent's documented payload
   (tool names, field names, a JSON-text argument, a whole patch) through the adapter and checks
   the reply in that agent's dialect, including two end-to-end runs through the real guards.
-- **Not launched in CI** — no agent is run, so "the agent loads this file and honours this
-  reply" rests on each vendor's hook reference, as it does for Claude Code.
+- **Native client delivery** — the Codex workflow launches a pinned client. Isolated native
+  Kimi and Claude sessions also exercised prompt delivery. The other adapter tests exercise
+  host payloads and responses in ForgeKit.
 
 After an Edit, Write or MultiEdit, ForgeKit checks the current workspace file for credential
 patterns and merge-conflict markers. For JSON it parses the document. For explicit CommonJS
@@ -90,7 +100,7 @@ names tests found by filename convention as suggestions. A syntax success does n
 a passing project suite. The existing Stop gate evaluates verification and session evidence.
 Edits made entirely inside a shell command can bypass this post-edit callback.
 
-The prompt hook runs evidence retrieval directly in Claude Code, local Codex and Gemini CLI.
+The prompt hook runs evidence retrieval directly in Claude Code, local Codex, Gemini CLI and Kimi Code.
 Cursor and Copilot command hooks use the first subsequent tool result that accepts context.
 A tool-free turn on those hosts receives no injected evidence. The deferred query is redacted,
 user-private and scoped to the workspace and session. The excerpt is retrieved at delivery.
@@ -106,9 +116,15 @@ matching excerpt. A Bash tool emitted a synthetic importer error and exited 1. C
 PostToolUseFailure hook supplied the handbook excerpt in the next model request.
 A third run wrote malformed JSON with the real Write tool. The next request contained the
 post-edit parser result and the explicit test-execution status. A local mock received the requests.
-The Codex CLI installed and enabled the bundle in an isolated configuration. The available
-sandbox could not start a nested Codex model session, so the Codex delivery test runs its
-packaged hook command with the documented payload.
+The Codex CLI installed and enabled the bundle in an isolated configuration. In a separate
+test on a hosted Ubuntu runner, a trusted project hook on Codex CLI 0.169.0 delivered a random
+CSV value, the external filename and the row range in the first request to a loopback Responses
+endpoint. The test ran with a read-only Codex sandbox and a fresh home directory. See the
+[native Codex acceptance run](https://github.com/CodeWithJuber/forgekit/actions/runs/43584740300/job/132416709361).
+
+For Kimi Code, run `forge init --tools kimi` from the repository to configure its project MCP server, then start Kimi in that directory and trust the workspace. Install the ForgeKit directory as a native user plugin with `/plugins install /absolute/path/to/forgekit`, then `/reload`. The directory must contain `kimi.plugin.json` and its packaged code. Kimi also accepts a GitHub URL pinned to a revision containing this manifest. The plugin is installed once per user. `forge hooks on --hosts kimi` displays the local install command and records this repo's selection. `forge hooks status` reads the Kimi install record. `forge hooks off` opts this repo out. To disable the plugin for all projects use `/plugins disable forgekit` followed by `/reload`. [Kimi plugins](https://moonshotai.github.io/kimi-code/en/customization/plugins) · [Hook events](https://moonshotai.github.io/kimi-code/en/customization/hooks) · [Workspace MCP](https://moonshotai.github.io/kimi-code/en/customization/mcp)
+
+On 14 November 2026 an isolated Kimi Code 2.6.2 CLI loaded the packaged plugin, processed an ordinary user prompt and sent the matching synthetic handbook CSV row, its source path and row locator to a local OpenAI-compatible model fixture in the first request. Kimi runs the plugin command in the managed plugin directory and sends the workspace path in the hook payload. The adapter uses that workspace for retrieval. Kimi accepts prompt context in the `message` field. Outputs from post-tool event hooks do not inject evidence into the current turn. In the same test, the trusted workspace MCP client completed initialization and requested the ForgeKit tool list. Its asynchronous startup is independent of the prompt hook. A separately launched Kimi review worker received its task evidence in a temporary workspace. Its model request included the brief and advertised zero tools.
 
 Local Codex requires hook trust. Review the plugin or project commands in `/hooks` after
 installation or an update. Codex cloud orchestration does not execute these local commands.
@@ -127,8 +143,7 @@ hook unless bootstrap was enabled on a host with a supported startup event.
 `forge harden` installs a git pre-commit hook (gitleaks when present, then `forge precommit`). It
 runs at commit time whatever agent or person made the change: with `FORGE_COMMIT_GATE=block` it
 refuses a commit whose staged code carries no doc or state change, and a detected secret blocks in
-every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. This is the only
-enforcement forge offers outside Claude Code.
+every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`. This Git-level check also works for hosts without lifecycle hooks.
 
 ## Models and providers
 

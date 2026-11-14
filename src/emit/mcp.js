@@ -37,6 +37,7 @@ const JSON_TARGETS = [
   { id: "roo", tool: "Roo Code", file: ".roo/mcp.json", key: "mcpServers" },
   { id: "zed", tool: "Zed", file: ".zed/settings.json", key: "context_servers" },
   { id: "vscode", tool: "VS Code / Copilot", file: ".vscode/mcp.json", key: "servers" },
+  { id: "kimi", tool: "Kimi CLI", file: ".kimi-code/mcp.json", key: "mcpServers" },
   { id: "openclaw", tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
 ];
 
@@ -63,6 +64,31 @@ export function mcpTargetFilesFor(tools = null) {
     ...JSON_TARGETS.filter((t) => emits(t.id)).map((t) => t.file),
     ...(emits("codex") ? [CODEX_TARGET] : []),
   ];
+}
+
+// Remote HTTP entries use each host's actual URL and credential-reference syntax.
+// Hosts without documented bearer-env interpolation can still connect without a key.
+export function remoteTargetDefinition(id, def) {
+  if (!def.url) return def;
+  if (id === "openclaw" || (def.tokenEnv && ["zed", "roo", "continue"].includes(id))) return null;
+  if (id === "kimi")
+    return { url: def.url, ...(def.tokenEnv ? { bearerTokenEnvVar: def.tokenEnv } : {}) };
+  if (id === "codex")
+    return { url: def.url, ...(def.tokenEnv ? { bearer_token_env_var: def.tokenEnv } : {}) };
+  const reference = ["cursor", "vscode"].includes(id) ? "${env:" : "${";
+  return {
+    ...(["claude", "vscode"].includes(id) ? { type: "http" } : {}),
+    ...(["roo", "continue"].includes(id) ? { type: "streamable-http" } : {}),
+    [id === "gemini" ? "httpUrl" : "url"]: def.url,
+    ...(def.tokenEnv ? { headers: { Authorization: `Bearer ${reference}${def.tokenEnv}}` } } : {}),
+  };
+}
+
+export function targetDefinition(target, def) {
+  const id =
+    JSON_TARGETS.find((entry) => entry.file === target)?.id ??
+    (target === CODEX_TARGET ? "codex" : "continue");
+  return remoteTargetDefinition(id, def);
 }
 
 const adoptHint = (name) => `adopt with: ${BRAND.cli} integrations add ${name} --adopt`;
@@ -231,6 +257,11 @@ const codexBegin = (name) => `# forge:managed:${name} begin`;
 const codexEnd = (name) => `# forge:managed:${name} end`;
 
 function codexBlock(name, def) {
+  if (def.url) {
+    const lines = [codexBegin(name), `[mcp_servers.${name}]`, `url = ${JSON.stringify(def.url)}`];
+    if (def.tokenEnv) lines.push(`bearer_token_env_var = ${JSON.stringify(def.tokenEnv)}`);
+    return [...lines, codexEnd(name), ""].join("\n");
+  }
   const args = (def.args || []).map((a) => JSON.stringify(a)).join(", ");
   return `${codexBegin(name)}\n[mcp_servers.${name}]\ncommand = ${JSON.stringify(def.command)}\nargs = [${args}]\n${codexEnd(name)}\n`;
 }
@@ -238,6 +269,7 @@ function codexBlock(name, def) {
 /** What the pre-marker emitter wrote for this server — the migration fingerprint. A
  *  byte-identical unmarked block is provably a past forge emission, safe to claim. */
 function legacyCodexBlock(name, def) {
+  if (def.url) return "";
   const args = (def.args || []).map((a) => JSON.stringify(a)).join(", ");
   return `[mcp_servers.${name}]\ncommand = ${JSON.stringify(def.command)}\nargs = [${args}]\n`;
 }
@@ -344,6 +376,16 @@ function removeCodexBlock(path, name) {
 // ---------------------------------------------------------------------------
 
 function continueBody(name, def) {
+  if (def.url)
+    return [
+      `name: ${continueFileFor(name).replace(/\.yaml$/, "")}`,
+      "version: 0.0.1",
+      "schema: v1",
+      "mcpServers:",
+      `  - name: ${name}`,
+      "    type: streamable-http",
+      `    url: ${yamlScalar(def.url)}`,
+    ].join("\n");
   const lines = [
     `name: ${continueFileFor(name).replace(/\.yaml$/, "")}`,
     "version: 0.0.1",
@@ -418,14 +460,25 @@ function openclawEnableHint(servers) {
  * any write (ME-11); a per-target write failure surfaces as an `error` row (never a throw)
  * so callers can keep disk and the managed-set record consistent (ME-10). `tools` limits the
  * emit to those tools' targets (canonical keys); null/omitted = every target, as before.
- * @param {{targetRoot:string, servers:Record<string,{command:string,args?:string[]}>,
+ * @param {{targetRoot:string, servers:Record<string,any>,
  *   owns?:(target:string, name:string)=>boolean, tools?:string[]|null}} opts
  */
 export function emitMcp({ targetRoot, servers, owns = () => true, tools = null }) {
   validateServers(servers);
   const emits = (id) => tools === null || tools.includes(id);
   const rows = JSON_TARGETS.filter((t) => emits(t.id)).map((t) => {
-    const r = mergeJson(join(targetRoot, t.file), t.key, servers, (name) => owns(t.file, name));
+    const available = {};
+    const unsupported = [];
+    for (const [name, definition] of Object.entries(servers)) {
+      const def = remoteTargetDefinition(t.id, definition);
+      if (def) available[name] = def;
+      else unsupported.push(name);
+    }
+    const r = Object.keys(available).length
+      ? mergeJson(join(targetRoot, t.file), t.key, available, (name) => owns(t.file, name))
+      : { action: "skipped", note: "" };
+    if (unsupported.length)
+      r.note += ` ${unsupported.join(", ")}: HTTP transport or bearer environment reference unsupported for this host.`;
     return {
       tool: `${t.tool} MCP`,
       target: t.file,
@@ -433,7 +486,7 @@ export function emitMcp({ targetRoot, servers, owns = () => true, tools = null }
       // OpenClaw is the one target whose file is NOT read by the tool: its registry is the
       // user's global config. Never let the row read like the server is live — always carry
       // the explicit enable command (RA-03's honesty rule applied to a manual-apply target).
-      note: t.file === OPENCLAW_TARGET ? `${r.note}; ${openclawEnableHint(servers)}` : r.note,
+      note: t.file === OPENCLAW_TARGET ? `${r.note}; ${openclawEnableHint(available)}` : r.note,
     };
   });
   if (emits("codex")) {
@@ -450,7 +503,9 @@ export function emitMcp({ targetRoot, servers, owns = () => true, tools = null }
   if (!emits("continue")) return rows;
   const dir = join(targetRoot, CONTINUE_DIR);
   for (const [name, def] of Object.entries(servers)) {
-    const r = emitContinueServer(dir, name, def);
+    const r = remoteTargetDefinition("continue", def)
+      ? emitContinueServer(dir, name, def)
+      : { action: "skipped", note: "Bearer environment reference unsupported for this host." };
     rows.push({
       tool: "Continue MCP",
       target: `.continue/mcpServers/${continueFileFor(name)}`,
@@ -556,11 +611,16 @@ export function removeMcp({ targetRoot, name, removeJsonEntry }) {
 export function foreignTargets(targetRoot, name, def) {
   const out = new Set();
   for (const t of JSON_TARGETS) {
+    const effective = remoteTargetDefinition(t.id, def);
+    if (!effective) {
+      out.add(t.file);
+      continue;
+    }
     const path = join(targetRoot, t.file);
     if (!existsSync(path)) continue;
     try {
       const cur = bucketAt(JSON.parse(readFileSync(path, "utf8")), t.key)?.[name];
-      if (cur !== undefined && JSON.stringify(cur) !== JSON.stringify(def)) out.add(t.file);
+      if (cur !== undefined && JSON.stringify(cur) !== JSON.stringify(effective)) out.add(t.file);
     } catch {
       // invalid JSON: mergeJson will skip the file entirely — not a claimable entry
     }

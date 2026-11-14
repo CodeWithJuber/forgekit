@@ -167,8 +167,11 @@ async function main() {
     const { goalBlock } = await import("./goal.js");
     const { stateBlock } = await import("./handoff.js");
     const { rehydrationBlock } = await import("./session.js");
+    const { activePromptProfile, showDevelopmentPrompt } = await import("./development_profile.js");
+    const profile = activePromptProfile(root);
     const block = [
       orientation,
+      profile === "off" ? "" : showDevelopmentPrompt("master", profile).prompt,
       startupBlock(root, today, undefined, { record: true }),
       goalBlock(root),
       stateBlock(root),
@@ -189,7 +192,9 @@ async function main() {
     const advice = loop || (await preEditAdvisory(root, hook.tool_input, today));
     const docs = await staleDocsAdvisory(root, hook.tool_input?.file_path);
     const currency = await currencyAdvisory(root, hook.tool_input?.file_path);
-    const combined = [advice, docs, currency].filter(Boolean).join("\n\n");
+    const { preEditReuse } = await import("./duplicate_gate.js");
+    const reuseAdvice = preEditReuse(root, hook.tool_input);
+    const combined = [advice, docs, currency, reuseAdvice].filter(Boolean).join("\n\n");
     if (combined) emit("PreToolUse", combined);
   } else if (mode === "preflight") {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)

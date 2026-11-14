@@ -50,7 +50,7 @@ Each layer is brand-named and emitted cross-tool.
     does not. Every enforceable invariant belongs here.
   </Accordion>
   <Accordion title="mcp — the protocol layer" icon="plug">
-    Forge ships one stdio server (`src/cortex_mcp.js`) exposing 31 MCP tools: the
+    Forge ships one stdio server (`src/cortex_mcp.js`) exposing 34 MCP tools: the
     substrate checks (`substrate_check` / `predict_impact` / `assumption_gate` / …),
     memory reads _and_ writes (`forge_remember`, ledger ratify/retract), and ops/health.
   </Accordion>
@@ -107,3 +107,10 @@ Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.js
   enforces a source size budget and checks the whole `AGENTS.md`, including any text you
   wrote outside the Forge block, so a config never silently truncates.
 </Warning>
+
+
+## Optional workspace features
+
+Run `forge integrations list` to browse the catalog. `forge integrations select deepwiki` configures one endpoint for the project's selected clients. `forge integrations connect <name> --url <endpoint>` accepts a custom Streamable HTTP server. `forge prompts use engineering` or `forge prompts use quran` selects a private workspace preference. Print the portable master prompt with `forge prompts show master` for an instruction-only agent.
+
+Use `forge hikmah on --binary <path> --store <path>` to bind an installed local Hikmah kernel and ledger explicitly. `forge hikmah recall "<query>"` returns verified public lessons with their provenance. `forge hikmah off` disconnects the ledger.

@@ -226,6 +226,10 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        task: {
+          type: "string",
+          description: "Optional task naming symbols or files to seed personalized PageRank",
+        },
         top: {
           type: "number",
           description: "how many files/symbols to return (default 15)",

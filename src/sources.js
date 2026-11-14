@@ -17,9 +17,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { itemIndex } from "./mirror_items.js";
 import { redactSecrets } from "./secrets.js";
 import { eligibleLocalRows, readLocalSource } from "./source_local.js";
-import { fetchRemoteSource, remoteScope } from "./source_remote.js";
+import {
+  fetchRemoteRecord,
+  fetchRemoteSource,
+  putConfluencePage,
+  remoteScope,
+} from "./source_remote.js";
 import { contentHash, userStateDir } from "./util.js";
 
 const MAX_SOURCES = 12;
@@ -162,7 +168,7 @@ function reserve(dir) {
   throw new Error("Concurrent source refreshes; retry");
 }
 /** @returns {{id:string,provider:string,status:string,reason?:string,cachedAt?:string,
- * chunks?:number,partial?:boolean,warnings?:string[],pack?:string}} */
+ * chunks?:number,partial?:boolean,warnings?:string[],pack?:string,checkpoint?:string,lastReconciled?:string,retryAt?:number}} */
 function metadata(configPath, source, now = Date.now()) {
   const base = { id: source.id, provider: source.provider };
   const dir = sourceDir(configPath, source);
@@ -180,7 +186,13 @@ function metadata(configPath, source, now = Date.now()) {
     const m = jsonFile(manifest, 32 * 1024);
     if (m.scope !== scope)
       return { ...base, status: "missing", reason: "Source or credentials changed" };
-    if (m.error) return { ...base, status: "unavailable", reason: m.error };
+    if (m.error)
+      return {
+        ...base,
+        status: "unavailable",
+        reason: m.error,
+        retryAt: Number.isFinite(m.retryAt) ? m.retryAt : undefined,
+      };
     if (m.version !== 1 || !Number.isFinite(m.at)) throw new Error("Unsupported snapshot");
     const age = now - m.at;
     const expired =
@@ -189,6 +201,8 @@ function metadata(configPath, source, now = Date.now()) {
       ...base,
       status: expired ? "expired" : "ready",
       cachedAt: new Date(m.at).toISOString(),
+      checkpoint: m.checkpoint,
+      lastReconciled: m.lastReconciled,
       chunks: m.chunks,
       partial: !!m.partial,
       warnings: m.warnings ?? [],
@@ -311,6 +325,10 @@ function remoteRows(documents, sourceId) {
         path: doc.url,
         title: redactSecrets(doc.title),
         recordId: doc.recordId,
+        ordinal: start / 1800,
+        kind: doc.kind,
+        version: doc.version,
+        status: typeof doc.status === "string" ? redactSecrets(doc.status).slice(0, 160) : null,
         locator: `record ${doc.recordId}, chars ${start + 1}-${Math.min(start + 1800, text.length)}`,
         text: text.slice(start, start + 1800),
         updatedAt: doc.updatedAt,
@@ -343,13 +361,66 @@ function publish(dir, generation, name, bytes) {
     rmSync(tmp, { force: true });
   }
 }
-async function refresh(configPath, source) {
+// A permission-scoped ID walk validates unchanged rows; a watermark alone cannot
+// detect deletions, revocations, newly visible old records or back-dated updates.
+async function remoteRefresh(source, previous) {
+  if (!previous?.checkpoint || !previous.pack)
+    return { ...(await fetchRemoteSource(source)), rows: undefined };
+  const old = previousRows(previous.pack);
+  if (old.length !== previous.chunks)
+    return { ...(await fetchRemoteSource(source)), rows: undefined };
+  const delta = await fetchRemoteSource(source, { since: previous.checkpoint });
+  const ids = await fetchRemoteSource(source, { idsOnly: true });
+  const modified = new Map(delta.documents.map((d) => [d.recordId, d]));
+  const prior = new Map(old.map((r) => [r.recordId, r.updatedAt]));
+  const visible = new Set(ids.documents.map((d) => d.recordId));
+  // A missing/newer timestamp can arise when access is granted mid-window. Rebuild
+  // a bounded full snapshot rather than issuing N single-record requests.
+  for (const d of ids.documents) {
+    if (
+      !modified.has(d.recordId) &&
+      (!prior.has(d.recordId) || (d.updatedAt && prior.get(d.recordId) !== d.updatedAt))
+    )
+      return { ...(await fetchRemoteSource(source)), rows: undefined };
+    const newer = modified.get(d.recordId);
+    if (newer && d.updatedAt && d.updatedAt !== newer.updatedAt)
+      return { ...(await fetchRemoteSource(source)), rows: undefined };
+  }
+  const rows = old.filter((r) => visible.has(r.recordId) && !modified.has(r.recordId));
+  rows.push(
+    ...remoteRows(
+      delta.documents.filter((d) => visible.has(d.recordId)),
+      source.id,
+    ),
+  );
+  return { ...delta, rows };
+}
+
+function publishSnapshot(dir, generation, rows, manifest) {
+  if (rows.length > MAX_CHUNKS) throw new Error("Source chunk limit exceeded");
+  publish(dir, generation, "evidence.pack", makePack(rows));
+  const items = JSON.stringify(itemIndex(rows));
+  if (Buffer.byteLength(items) > MAX_PACK)
+    throw new Error("Source manifest exceeds its size limit");
+  publish(dir, generation, "items.json", items);
+  publish(
+    dir,
+    generation,
+    "result.json",
+    JSON.stringify({ ...manifest, version: 1, chunks: rows.length }),
+  );
+}
+
+async function refresh(configPath, source, full = false) {
   const dir = sourceDir(configPath, source);
-  const previous = source.provider === "local" ? metadata(configPath, source) : null;
+  const previous = metadata(configPath, source);
+  if (previous.retryAt > Date.now())
+    return { id: source.id, ok: false, error: previous.reason, retryAt: previous.retryAt };
   const { generation, old } = reserve(dir);
   let scope;
   try {
     scope = identity(source);
+    let checkpoint, lastReconciled, mode;
     let rows,
       warnings = [],
       partial = false;
@@ -362,38 +433,54 @@ async function refresh(configPath, source) {
       warnings = local.warnings;
       partial = local.truncated || warnings.length > 0;
     } else {
-      rows = remoteRows((await fetchRemoteSource(source)).documents, source.id);
+      const validPrevious =
+        ["ready", "expired"].includes(previous.status) && !full ? previous : null;
+      const data = await remoteRefresh(source, validPrevious);
+      rows = data.rows ?? remoteRows(data.documents, source.id);
+      checkpoint = data.checkpoint;
+      lastReconciled = new Date().toISOString();
+      mode = data.mode;
     }
-    if (rows.length > MAX_CHUNKS) throw new Error("Source chunk limit exceeded");
     if (identity(source) !== scope) throw new Error("Source or credentials changed during refresh");
     warnings = warnings.slice(0, 24).map((w) => redactSecrets(String(w)).slice(0, 350));
-    publish(dir, generation, "evidence.pack", makePack(rows));
-    publish(
-      dir,
-      generation,
-      "result.json",
-      JSON.stringify({ version: 1, at: Date.now(), scope, chunks: rows.length, partial, warnings }),
-    );
-    return { id: source.id, ok: true, chunks: rows.length, partial, warnings };
+    publishSnapshot(dir, generation, rows, {
+      at: Date.now(),
+      scope,
+      partial,
+      warnings,
+      checkpoint,
+      lastReconciled,
+    });
+    return {
+      id: source.id,
+      ok: true,
+      chunks: rows.length,
+      partial,
+      warnings,
+      mode,
+      lastReconciled,
+    };
   } catch (e) {
     const error = redactSecrets(String(e.message)).slice(0, 480);
     try {
-      publish(dir, generation, "result.json", JSON.stringify({ scope, error }));
+      for (const file of ["evidence.pack", "items.json"])
+        rmSync(join(dir, generation, file), { force: true });
+      publish(dir, generation, "result.json", JSON.stringify({ scope, error, retryAt: e.retryAt }));
     } catch (err) {
       if (err.code !== "ENOENT") throw err; // A newer refresh already removed this generation.
       return { id: source.id, ok: false, error: "Refresh superseded by a later sync" };
     }
-    return { id: source.id, ok: false, error };
+    return { id: source.id, ok: false, error, retryAt: e.retryAt };
   } finally {
     for (const name of old) rmSync(join(dir, name), { recursive: true, force: true });
   }
 }
 /** Explicit full reconciliation. A failed sync hides the last generation for that ID. */
-export async function syncSources(root, { sourceId = undefined } = {}) {
+export async function syncSources(root, { sourceId = undefined, full = false } = {}) {
   const cfg = configuration(root);
   const sources = [];
   for (const source of selected(cfg.sources, sourceId))
-    sources.push(await refresh(cfg.configPath, source));
+    sources.push(await refresh(cfg.configPath, source, full));
   return { configPath: cfg.configPath, ok: sources.every((s) => s.ok), sources };
 }
 
@@ -412,33 +499,42 @@ export async function readSourceRecord(root, id, recordId, { offset = 0, limit =
   if (typeof id !== "string") throw new Error("Select a configured remote source");
   const [source] = selected(cfg.sources, id);
   if (source.provider === "local") throw new Error("Select a configured remote source");
-  const { fetchRemoteRecord } = await import("./source_remote.js");
+  const record = await observedRecord(cfg, source, recordId);
+  const full = redactSecrets(record.text);
+  if (offset > full.length) throw new Error("Offset beyond the current redacted record length");
+  const end = Math.min(full.length, offset + limit);
+  return {
+    ...record,
+    title: redactSecrets(record.title).slice(0, 600),
+    text: full.slice(offset, end),
+    offset,
+    nextOffset: end < full.length ? end : null,
+    totalChars: full.length,
+  };
+}
+
+function invalidateSource(cfg, source, scope, error) {
+  const dir = sourceDir(cfg.configPath, source);
+  const { generation, old } = reserve(dir);
+  try {
+    publish(dir, generation, "result.json", JSON.stringify({ scope, error }));
+  } finally {
+    for (const n of old) rmSync(join(dir, n), { recursive: true, force: true });
+  }
+}
+
+async function observedRecord(cfg, source, id) {
   const scope = identity(source);
   try {
-    const record = await fetchRemoteRecord(source, recordId);
-    const full = redactSecrets(record.text);
-    if (offset > full.length) throw new Error("Offset beyond the current redacted record length");
-    const end = Math.min(full.length, offset + limit);
-    return {
-      ...record,
-      title: redactSecrets(record.title).slice(0, 600),
-      text: full.slice(offset, end),
-      offset,
-      nextOffset: end < full.length ? end : null,
-      totalChars: full.length,
-    };
+    return await fetchRemoteRecord(source, id);
   } catch (e) {
-    if ([401, 403, 404, 410].includes(e.status)) {
-      const dir = sourceDir(cfg.configPath, source);
-      const { generation, old } = reserve(dir);
-      const error =
-        "Live provider access failed. Sync the source to reconcile access and deletions.";
-      try {
-        publish(dir, generation, "result.json", JSON.stringify({ scope, error }));
-      } finally {
-        for (const name of old) rmSync(join(dir, name), { recursive: true, force: true });
-      }
-    }
+    if ([401, 403, 404, 410].includes(e.status))
+      invalidateSource(
+        cfg,
+        source,
+        scope,
+        "Live provider access failed. Sync the source to reconcile access and deletions.",
+      );
     throw e;
   }
 }
@@ -566,6 +662,8 @@ export function searchSources(root, query, { budget = 600, sourceId = undefined 
       lines.push(line);
       hits.push({
         sourceId: entry.source.id,
+        itemId: r.recordId ?? r.path,
+        chunk: Number.isSafeInteger(r.ordinal) ? r.ordinal : undefined,
         path: r.path,
         locator: r.locator,
         title: r.title,
@@ -581,5 +679,198 @@ export function searchSources(root, query, { budget = 600, sourceId = undefined 
     return { hits, warnings, text, estimatedTokens: Math.ceil(text.length / 3.6) };
   } finally {
     for (const { index } of indexes) index.close();
+  }
+}
+
+/** A mirror session pins one complete, identity-checked generation, including its authorization
+ * decisions. Re-check the configuration and generation before returning an answer. */
+export function openSourceMirror(root, id) {
+  if (typeof id !== "string") throw new Error("Select a configured source");
+  const cfg = configuration(root);
+  const [source] = selected(cfg.sources, id);
+  const meta = metadata(cfg.configPath, source);
+  if (meta.status !== "ready") throw new Error(`Mirror ${meta.status}; run sources sync`);
+  const dir = dirname(meta.pack);
+  const path = join(dir, "items.json");
+  const index = openIndex(meta.pack);
+  try {
+    // Backward compatibility for pre-manifest snapshots. They still respect current permissions.
+    const items = existsSync(path)
+      ? jsonFile(path, MAX_PACK)
+      : itemIndex(index.header.r.map(index.read));
+    if (!Array.isArray(items) || items.length > MAX_CHUNKS) throw new Error("Invalid mirror index");
+    const allowed = new Set();
+    if (source.provider === "local")
+      for (let i = 0; i < items.length; i += 64)
+        for (const p of eligibleLocalRows(source, items.slice(i, i + 64))) allowed.add(p);
+    const visible = source.provider === "local" ? items.filter((r) => allowed.has(r.path)) : items;
+    return {
+      meta,
+      source,
+      dir,
+      items: visible,
+      partial: !!meta.partial || visible.length < items.length,
+      read: (ordinal) => index.read(index.header.r[ordinal]),
+      close: index.close,
+      confirm() {
+        const current = getSource(root, id);
+        const latest = metadata(cfg.configPath, current);
+        if (latest.status !== "ready" || latest.pack !== meta.pack)
+          throw new Error("Source changed during the mirror read; retry");
+        if (current.provider === "local") {
+          for (let i = 0; i < visible.length; i += 64) {
+            const group = visible.slice(i, i + 64);
+            if (eligibleLocalRows(current, group).size !== group.length)
+              throw new Error("Local permissions or content changed during the mirror read; retry");
+          }
+        }
+      },
+    };
+  } catch (err) {
+    index.close();
+    throw err;
+  }
+}
+
+// Replace just the freshly observed page in the current generation. Retain the
+// original snapshot timestamp and checkpoint: nothing reauthorized its neighbors.
+function cacheLivePage(cfg, source, scope, doc) {
+  const meta = metadata(cfg.configPath, source);
+  if (meta.status !== "ready" || identity(source) !== scope) return false;
+  const index = openIndex(meta.pack);
+  let rows;
+  try {
+    rows = index.header.r.map(index.read).filter((r) => r.recordId !== doc.recordId);
+  } finally {
+    index.close();
+  }
+  const dir = sourceDir(cfg.configPath, source);
+  rows.push(...remoteRows([doc], source.id));
+  const { generation, old } = reserve(dir);
+  try {
+    publishSnapshot(dir, generation, rows, {
+      at: Date.parse(meta.cachedAt),
+      scope,
+      partial: meta.partial,
+      warnings: meta.warnings,
+      checkpoint: meta.checkpoint,
+      lastReconciled: meta.lastReconciled,
+    });
+  } finally {
+    for (const name of old) rmSync(join(dir, name), { recursive: true, force: true });
+  }
+  return true;
+}
+
+/** Explicit Confluence CAS. A changed baseline aborts before PUT. An ambiguous
+ * network result is re-read once and never automatically retried. */
+export async function writeSourcePage(
+  root,
+  sourceId,
+  recordId,
+  { expectedVersion, title, storage },
+) {
+  const source = getSource(root, sourceId);
+  if (source.provider !== "confluence" || source.allowWrites !== true)
+    throw new Error("Confluence requires allowWrites:true in this user's private source config");
+  if (
+    typeof recordId !== "string" ||
+    !/^\d{1,128}$/.test(recordId) ||
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 1
+  )
+    throw new Error("Supply a numeric page ID and the observed positive version");
+  const cfg = configuration(root);
+  const scope = identity(source);
+  const { mirrorGet } = await import("./source_mirror.js");
+  const entry = mirrorGet(root, sourceId, { id: recordId });
+  if (!("item" in entry)) throw new Error("Missing cached page metadata");
+  const cached = entry.item;
+  if (
+    typeof title !== "string" ||
+    !title.trim() ||
+    title.length > 255 ||
+    typeof storage !== "string" ||
+    !storage.trim() ||
+    Buffer.byteLength(storage) > 1024 * 1024
+  )
+    throw new Error("Provide a title and storage-format body up to 1 MiB");
+  if (cached.version !== expectedVersion)
+    return {
+      ok: false,
+      status: "conflict",
+      expectedVersion,
+      currentVersion: cached.version,
+      written: false,
+    };
+  const before = await observedRecord(cfg, source, recordId);
+  const currentSource = getSource(root, sourceId);
+  if (
+    identity(currentSource) !== scope ||
+    currentSource.allowWrites !== true ||
+    before.kind !== "page"
+  )
+    throw new Error("Source permissions or configuration changed; restart the update");
+  if (before.version !== expectedVersion || before.updatedAt !== cached.updatedAt) {
+    cacheLivePage(cfg, source, scope, before);
+    return {
+      ok: false,
+      status: "conflict",
+      expectedVersion,
+      currentVersion: before.version,
+      written: false,
+    };
+  }
+  let putError;
+  try {
+    const ack = await putConfluencePage(source, recordId, { expectedVersion, title, storage });
+    if (String(ack?.id) !== recordId || ack?.version?.number !== expectedVersion + 1)
+      putError = "unconfirmed";
+  } catch (err) {
+    if (err.status && err.status !== 409 && err.status < 500) {
+      if ([401, 403, 404, 410].includes(err.status))
+        invalidateSource(cfg, source, scope, "Provider rejected page update; sync the source");
+      throw err;
+    }
+    putError = err.status === 409 ? "conflict" : "unconfirmed";
+  }
+  // A conflict, a lost response, or a successful PUT each get exactly one
+  // reconciliation read. Only a confirmed PUT + exact live revision is success.
+  try {
+    const current = await observedRecord(cfg, source, recordId);
+    const updated = cacheLivePage(cfg, source, scope, current);
+    if (putError === "conflict")
+      return {
+        ok: false,
+        status: "conflict",
+        written: false,
+        currentVersion: current.version,
+        mirrored: updated,
+      };
+    if (putError || current.version !== expectedVersion + 1 || current.title !== title || !updated)
+      return {
+        ok: false,
+        status: putError ? "unconfirmed" : "applied_unverified",
+        written: putError ? null : true,
+        currentVersion: current.version,
+        mirrored: updated,
+      };
+    return {
+      ok: true,
+      status: "verified",
+      written: true,
+      currentVersion: current.version,
+      mirrored: true,
+    };
+  } catch {
+    // Removing visibility is safer than leaving an older version as a ready answer.
+    if (identity(source) === scope && metadata(cfg.configPath, source).status === "ready")
+      invalidateSource(cfg, source, scope, "Page update could not be reconciled; sync the source");
+    return {
+      ok: false,
+      status: putError ?? "applied_unverified",
+      written: putError === "conflict" ? false : putError ? null : true,
+      mirrored: false,
+    };
   }
 }

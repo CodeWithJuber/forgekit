@@ -23,14 +23,14 @@
 Forgekit is a Node.js CLI and MCP server (zero runtime dependencies) that gives your AI coding
 tools a reliability layer: **agent memory** that survives sessions and teammates, **pre-push
 verification gates**, and **guardrails** that run before and after every tool call. You author
-project rules once, and it emits native configuration for 12 agent tools. Claude Code is the
-most deeply exercised integration.
+project rules once, and it emits native configuration for 12 agent tools. Kimi Code, local Codex and Claude Code have each delivered source evidence to a real
+client’s first model request.
 
 | Inventory | Count |
 |---|---|
-| CLI commands (`forge --help`) | 52 |
-| Lifecycle hook commands (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) | 18 |
-| Config emitters (`src/emit/`) | 13 |
+| CLI commands (`forge --help`) | 60 |
+| Lifecycle hook commands across six events (`hooks/hooks.json`) | 19 |
+| Config emitters (`src/emit/`, excluding the shared helper) | 14 |
 | Installable skill packs (`skills/`) | 3 |
 | Per-event hook token budgets (`hooks/budget.json`) | 5 |
 
@@ -41,7 +41,8 @@ most deeply exercised integration.
 | Cursor, Gemini CLI, Copilot | ✅ | ✅ | Project hooks |
 | Zed, Continue | ✅ | ✅ | — |
 | Devin | ✅ | — | Via trusted Claude project hooks |
-| Aider, OpenClaw, Kimi Code | ✅ | — | — |
+| Kimi Code | ✅ | Project MCP | Native user plugin |
+| Aider, OpenClaw | ✅ | — | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Why it wins, measured:
@@ -77,11 +78,13 @@ It does three jobs:
 >   exercise than Claude Code. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). The other eleven tools receive native config (most also an MCP server entry; Aider,
->   Windsurf/Devin and Kimi Code do not). Codex, Gemini CLI, Cursor, Copilot and Devin can run
->   the guards automatically once a repository opts in with `forge hooks on`; that adapter is
->   tested against each vendor's documented hook protocol but has not been exercised inside
->   those agents the way the Claude Code path has. Local Codex also accepts trusted bundled hooks.
+>   guards). MCP registration and hook coverage for the other tools vary by host.
+>   With project hooks enabled, Codex CLI 0.169.0 included a separately indexed CSV row
+>   and its locator in the first model request for an ordinary prompt. See the [native Codex acceptance run](https://github.com/CodeWithJuber/forgekit/actions/runs/43584740300/job/132416709361).
+>   Local Codex also accepts trusted bundled hooks. The Gemini CLI, Cursor, Copilot and
+>   Devin adapters have tests against their documented hook protocols.
+>   Kimi Code loads its native plugin per user and accepts project MCP in a trusted workspace.
+>   A normal prompt on Kimi Code 2.6.2 delivered local source evidence into a loopback model request.
 >   Prompt and failure delivery varies by host. See [Agent evidence](docs/AGENT-EVIDENCE.md).
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
@@ -134,6 +137,10 @@ forge verify                             # 3. did the change pass the suites tha
 ```
 
 ### Automatic evidence for coding agents
+
+For Kimi Code, `KIMI_CODE_HOME` selects the user profile where the native plugin is enabled. The project MCP connections live in `.kimi-code/mcp.json`. For Codex, enable the repository’s hooks in a trusted session.
+
+Choose the agents your project uses. For example, `forge init --tools kimi,codex` prepares both clients. Run `forge integrations` to browse packages and remote servers, or `forge integrations select` for the interactive picker. Select each integration separately. Use `forge integrations connect <id> --url <endpoint>` for a hosted or self-managed MCP server and `forge integrations register <descriptor.json>` for a custom npm tool. `forge integrations list --json` shows the recorded selection and `forge integrations remove <id>` disconnects it from the project. Read the [implementation and host setup guide](docs/V2-IMPLEMENTATION.md) for Kimi's native plugin, Codex hook trust, portable agents and command examples.
 
 Use `forge develop "<task>"` to inspect the development plan and research evidence. Use `forge develop "<task>" --verify` to run the project checks for the current tree.
 
@@ -416,7 +423,7 @@ forge doctor
 forge doctor --fix
 ```
 
-`forge init` can merge Forgekit hooks and permissions into
+When Claude Code is selected, `forge init` can merge Forgekit hooks and permissions into
 `~/.claude/settings.json`. That file is global and affects all repositories. Use
 `forge init --no-settings` to skip the merge or `forge init --remove-settings` to reverse
 Forgekit-managed entries. The implementation preserves unrelated entries and creates a
@@ -425,9 +432,9 @@ timestamped backup before changing the file. When the Forgekit Claude Code plugi
 `forge init` and `forge doctor --fix` merge permissions only and never register the guards a
 second time.
 
-`forge init` emits configuration only for the agent tools the repository already uses:
-Claude Code plus any tool with a sign on disk (`.cursor/`, `.codex/`,
-`.github/copilot-instructions.md`, and so on). Choose explicitly with
+`forge init` detects agent tools from files such as `.cursor/`, `.codex/` and
+`.github/copilot-instructions.md`. A repository with no tool markers starts with Claude Code.
+Choose explicitly with
 `forge init --tools claude,cursor` or `--tools all`; the choice is recorded in
 `.forge/forge.config.json`, so later `forge sync` runs emit the same set. In `AGENTS.md`,
 Forgekit owns only the block between `<!-- forge:begin -->` and `<!-- forge:end -->`. A
@@ -446,7 +453,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 <!-- forge:render:commands-table:begin (generated by `forge docs render` — do not edit) -->
 | Group                   | Command               | Does                                                                                                                                                                                                                                                                                                |
 | ----------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core**                | `forge init`          | scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source                                                                                                                                                                                        |
+| **Core**                | `forge init`          | scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source                                                                                                                                                                                           |
 |                         | `forge sync`          | recompile the canonical source into each tool's native config files                                                                                                                                                                                                                                 |
 |                         | `forge doctor`        | health-check installed tools, guards, MCP auth, and config drift                                                                                                                                                                                                                                    |
 |                         | `forge tools`         | primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)                                                                                                                                       |
@@ -470,7 +477,8 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge demo`          | scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)                                                                                                                                                                             |
 |                         | `forge precommit`     | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                                                                                             |
 |                         | `forge test-select`   | smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)                                                                                                                                                                               |
-| **Memory**              | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                              |
+| **Memory**              | `forge hikmah`        | bind a local Hikmah kernel ledger and recall its verified public lessons                                                                                                                                                                                                                            |
+|                         | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                              |
 |                         | `forge recall`        | manage cross-session memory (list / add / consolidate)                                                                                                                                                                                                                                              |
 |                         | `forge remember`      | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                                                                                                     |
 |                         | `forge brain`         | show / rebuild the portable project memory index                                                                                                                                                                                                                                                    |
@@ -485,10 +493,11 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge harden`        | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                                                                                                |
 |                         | `forge radar`         | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                                                                                                  |
 |                         | `forge hooks`         | run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)                                                                                                                                        |
-| **Config**              | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
+| **Config**              | `forge prompts`       | choose a workspace development profile or show a portable prompt and specialist role                                                                                                                                                                                                                |
+|                         | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
 |                         | `forge atlas`         | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                                                                                               |
 |                         | `forge stack`         | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                                                                                             |
-|                         | `forge integrations`  | find and install pinned community tools for a task, or manage opt-in third-party MCP config                                                                                                                                                                                                         |
+|                         | `forge integrations`  | choose project integrations, register custom packages and connect hosted or self-managed MCP endpoints                                                                                                                                                                                              |
 |                         | `forge cost`          | real per-day spend via ccusage + measured stage factors (--stages)                                                                                                                                                                                                                                  |
 |                         | `forge budget`        | cost governance — per-day and per-task spend budgets, alert threshold, and an opt-in circuit breaker the cost guard enforces                                                                                                                                                                        |
 |                         | `forge models`        | each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from                                                                                                                                  |
@@ -578,7 +587,7 @@ embedding behavior is defined by [`src/embed.js`](src/embed.js) and
 
 ## Agent roles and MCP tools
 
-Forgekit registers five Claude Code role definitions:
+Use `forge prompts show reviewer` to print a portable role brief, or `forge team "<task>" --handoff kimi` to prepare evidence for an independent reviewer. Nine role briefs cover planning, research, coding, debugging, review, security, testing, memory and coordination. The Claude Code plugin also registers five native role definitions:
 
 - `scout` — read-only repository investigation;
 - `verifier` — fresh-context correctness review;
@@ -586,11 +595,10 @@ Forgekit registers five Claude Code role definitions:
 - `frontend-verifier` — visual and accessibility review;
 - `doc-sync` — documentation consistency after code changes.
 
-These are concrete role prompts supplied to the host tool. Forgekit does not contain a runtime
-that spawns these roles, exchanges inter-agent messages, or executes a LangGraph-style state
-machine.
+For an independent task, the team runner can launch a Kimi or Codex client with a supplied brief.
+The lead applies changes and verifies the result. See the [worker options and billing](docs/V2-IMPLEMENTATION.md).
 
-The built-in MCP server exposes 31 tools, including:
+The built-in MCP server advertises 34 tools through `tools/list`, including:
 
 - pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`,
   `dep_check`;
@@ -662,7 +670,7 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 31 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 34 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
 | **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
 
@@ -716,8 +724,8 @@ This table describes architecture, not a claim of superiority or equivalent prod
 | Memory | Content-addressed claims, provenance, oracle-weighted validity, time decay, and git-native union merge | No hosted synchronization, managed database, enterprise tenancy, or RBAC |
 | Retrieval | MinHash retrieval by default; optional external embeddings; proof-gated code reuse | No vector database or general enterprise corpus pipeline |
 | Routing | A visible deterministic recommendation with optional bounded LLM input; LiteLLM alias config emission | Does not proxy traffic, manage quotas, perform failover, or hold provider keys |
-| Tool use | A JSON-RPC MCP server with 21 executable tool handlers | Does not implement the model/client loop that chooses and executes tool calls autonomously |
-| Agent roles | Five host-consumable Claude Code role definitions | No multi-agent graph, scheduler, inter-agent messaging layer, or named orchestration framework |
+| Tool use | A stdio JSON-RPC MCP server with 34 advertised tools | Does not implement the model/client loop that chooses and executes tool calls autonomously |
+| Agent roles | Portable role briefs, an optional specialist runner and five native Claude Code roles | The active host owns edits and the lead verifies worker findings |
 | Verification | Repository tests, provenance, structural and security lenses, limited benchmark suites | No managed GenAI evaluation service, production telemetry, online evaluation, or broad red-team certification |
 
 ## Python research prototypes

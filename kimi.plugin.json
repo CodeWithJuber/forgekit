@@ -1,0 +1,39 @@
+{
+  "name": "forgekit",
+  "version": "1.15.0",
+  "description": "Research existing code and surface workspace evidence before coding. Run ForgeKit guards around tool calls.",
+  "license": "MIT",
+  "skills": "./global/tools",
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "node ./src/cli.js hooks run kimi SessionStart",
+      "timeout": 60
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "node ./src/cli.js hooks run kimi UserPromptSubmit",
+      "timeout": 30
+    },
+    {
+      "event": "PreToolUse",
+      "command": "node ./src/cli.js hooks run kimi PreToolUse",
+      "timeout": 30
+    },
+    {
+      "event": "PostToolUse",
+      "command": "node ./src/cli.js hooks run kimi PostToolUse",
+      "timeout": 30
+    },
+    {
+      "event": "PostToolUseFailure",
+      "command": "node ./src/cli.js hooks run kimi PostToolUseFailure",
+      "timeout": 30
+    },
+    {
+      "event": "Stop",
+      "command": "node ./src/cli.js hooks run kimi Stop",
+      "timeout": 60
+    }
+  ]
+}

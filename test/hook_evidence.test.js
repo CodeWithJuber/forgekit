@@ -127,6 +127,35 @@ test("packaged prompt and failure hooks retrieve actual indexed evidence without
       input: JSON.stringify({ cwd: root, ...payload }),
       encoding: "utf8",
     });
+  const kimi = JSON.parse(readFileSync(join(BRAND.root, "kimi.plugin.json"), "utf8"));
+  assert.deepEqual(
+    kimi.hooks.map((h) => h.event),
+    Object.keys(HOSTS.kimi.events),
+  );
+  const kPrompt = {
+    ...body,
+    session_id: "kimi-native",
+    prompt: [
+      { type: "image_url", image_url: { url: "data:image/png;base64,omitted" } },
+      { type: "text", text: body.prompt },
+    ],
+  };
+  const k = spawnSync(kimi.hooks.find((h) => h.event === "UserPromptSubmit").command, {
+    shell: true,
+    cwd: BRAND.root,
+    env,
+    input: JSON.stringify(kPrompt),
+    encoding: "utf8",
+  });
+  assert.equal(k.status, 0, k.stderr);
+  assert.match(JSON.parse(k.stdout).message, /lacustrine sentinel/);
+  assert.doesNotMatch(k.stdout, /data:image/);
+  writeFileSync(
+    join(root, ".forge", "forge.config.json"),
+    JSON.stringify({ hooks: { project: false } }),
+  );
+  assert.equal(fire("kimi", "UserPromptSubmit", kPrompt).stdout, "");
+  rmSync(join(root, ".forge", "forge.config.json"));
   const cursorPrompt = fire("cursor", "beforeSubmitPrompt", {
     conversation_id: "cursor",
     prompt: body.prompt,

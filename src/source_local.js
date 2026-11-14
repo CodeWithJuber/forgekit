@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { redactSecrets } from "./secrets.js";
+import { doclingConfig, extractDocument } from "./source_documents.js";
 import { CODE_EXT, contentHash, IGNORE_DIRS, toPosix, userStateDir } from "./util.js";
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -24,7 +25,7 @@ const TEXT = /\.(?:txt|rst|mdx|sql|sh|kt|kts|scala|swift|zig|exs?|lua|tf|xml|pro
 const SECRET_NAME =
   /^(?:credentials?(?:[._-]|$)|secrets?(?:[._-]|$)|id_rsa|id_ed25519)|\.(?:key|pem|pfx|p12|kdbx)$/i;
 const READER = fileURLToPath(new URL("./source_table.py", import.meta.url));
-const PARSER_VERSION = "source-local-v1";
+const PARSER_VERSION = "source-local-v3";
 
 function safePath(rel) {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control characters in filesystem citations.
@@ -220,13 +221,20 @@ function passages(parts, isPdf, cap) {
   return { chunks, truncated: false };
 }
 
-function convert(rel, bytes, cap) {
+function convert(rel, bytes, cap, docling) {
   const ext = extname(rel).toLowerCase();
+  if (ext === ".docx" || ext === ".pptx") return extractDocument(ext, bytes, cap);
+  if (ext === ".pdf" && docling?.mode === "layout")
+    return extractDocument(ext, bytes, cap, docling);
   if (TABLE.test(rel)) {
     const result = table("index", ext, bytes, { limit: cap });
     // Table structure separates assignment names from values. Mask known credential
     // columns in the Python reader; redact known tokens in every other cell.
     for (const row of result.chunks) row.text = redactSecrets(row.text);
+    for (const sheet of result.structure?.sheets ?? []) {
+      sheet.sheet = sheet.sheet === null ? null : redactSecrets(String(sheet.sheet)).slice(0, 150);
+      sheet.columns = sheet.columns.map((column) => redactSecrets(column));
+    }
     return result;
   }
   let text;
@@ -237,6 +245,17 @@ function convert(rel, bytes, cap) {
       maxBuffer: 8 * 1024 * 1024,
       encoding: "utf8",
     });
+    if (
+      docling &&
+      (result.error ||
+        result.status !== 0 ||
+        !result.stdout?.trim() ||
+        result.stdout
+          .replace(/\f$/, "")
+          .split("\f")
+          .some((page) => !page.trim()))
+    )
+      return extractDocument(ext, bytes, cap, docling);
     if (result.error && "code" in result.error && result.error.code === "ENOENT")
       throw new Error("PDF extraction requires Poppler pdftotext on PATH");
     if (result.error || result.status !== 0)
@@ -253,17 +272,17 @@ function convert(rel, bytes, cap) {
     (m) => `[REDACTED]${m.replace(/[^\n\f]/g, "")}`,
   );
   text = redactSecrets(text);
-  return passages(
-    ext === ".pdf" ? text.replace(/\f$/, "").split("\f") : [text],
-    ext === ".pdf",
-    cap,
-  );
+  const parts = ext === ".pdf" ? text.replace(/\f$/, "").split("\f") : [text];
+  return {
+    ...passages(parts, ext === ".pdf", cap),
+    structure: ext === ".pdf" ? { pages: parts.length } : null,
+  };
 }
 
 /** Build a bounded source snapshot. Reuse conversion from a complete same-scope previous
  * snapshot only after hashing current bytes and checking every ordinal. Deleted/ignored
  * files are absent, and renamed files receive new locators.
- * @param {{id:string,root:string}} source
+ * @param {{id:string,root:string,docling?:any}} source
  * @param {{maxFiles?:number,maxBytesPerFile?:number,maxChunks?:number,previousChunks?:any[]}} options */
 export async function readLocalSource(source, options = {}) {
   const root = await rootDir(source);
@@ -271,7 +290,7 @@ export async function readLocalSource(source, options = {}) {
   const maxBytes = limit(options.maxBytesPerFile, MAX_BYTES, MAX_BYTES);
   const maxChunks = limit(options.maxChunks, 1200, 4096);
   const paths = listFiles(root).filter(
-    (p) => TABLE.test(p) || /\.pdf$/i.test(p) || CODE_EXT.test(p) || TEXT.test(p),
+    (p) => TABLE.test(p) || /\.(?:pdf|docx|pptx)$/i.test(p) || CODE_EXT.test(p) || TEXT.test(p),
   );
   const previous = new Map();
   for (const row of options.previousChunks ?? []) {
@@ -292,7 +311,13 @@ export async function readLocalSource(source, options = {}) {
     }
     try {
       const { bytes, fileVersion } = await readBytes(root, rel, maxBytes);
-      const hash = createHash("sha256").update(PARSER_VERSION).update(bytes).digest("hex");
+      const byteHash = createHash("sha256").update(bytes).digest("hex");
+      const docling = /\.pdf$/i.test(rel) ? doclingConfig(root, source.docling) : null;
+      const hash = createHash("sha256")
+        .update(PARSER_VERSION)
+        .update(JSON.stringify(docling))
+        .update(byteHash)
+        .digest("hex");
       const old = previous.get(rel);
       if (
         old?.length &&
@@ -304,7 +329,7 @@ export async function readLocalSource(source, options = {}) {
         reusedFiles++;
         continue;
       }
-      const result = convert(rel, bytes, cap);
+      const result = convert(rel, bytes, cap, docling);
       truncated ||= result.truncated;
       const total = result.chunks.length;
       for (const [ordinal, row] of result.chunks.entries()) {
@@ -315,6 +340,9 @@ export async function readLocalSource(source, options = {}) {
           locator: redactSecrets(row.locator),
           text: row.text,
           hash,
+          ...(ordinal === 0
+            ? { byteHash, sizeBytes: bytes.length, structure: result.structure ?? null }
+            : {}),
           fileVersion,
           ordinal,
           total,
@@ -383,4 +411,22 @@ export function eligibleLocalRows(source, rows) {
     eligible.clear();
   }
   return eligible;
+}
+
+/** Read an explicitly named, current table with the same ignore, path and redaction
+ * checks as the index. Cells are inert strings. Pass only the verified schema/rows to SQL. */
+export async function relationalTable(source, { path, sheet }) {
+  if (typeof path !== "string" || !safePath(path) || !TABLE.test(path))
+    throw new Error("Expected an allowed relative CSV, TSV, XLS or XLSX path");
+  if (sheet !== undefined && (typeof sheet !== "string" || !sheet || sheet.length > 128))
+    throw new Error("Invalid worksheet name");
+  const root = await rootDir(source);
+  if (!listFiles(root, [path]).includes(path)) throw new Error("Table is ignored or unavailable");
+  const { bytes, fileVersion } = await readBytes(root, path, MAX_BYTES);
+  const parsed = table("relational", extname(path).toLowerCase(), bytes, { sheet });
+  for (const col of parsed.columns)
+    if (redactSecrets(col) !== col)
+      throw new Error("Sensitive column header cannot be exposed through SQL");
+  parsed.rows = parsed.rows.map((row) => row.map((v) => (v === null ? null : redactSecrets(v))));
+  return { ...parsed, path, fileVersion, sha256: createHash("sha256").update(bytes).digest("hex") };
 }

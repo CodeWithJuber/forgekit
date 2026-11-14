@@ -83,6 +83,7 @@ def credential_column(label):
 
 def index(sheets_iter, limit):
     chunks = []
+    structure = []
     truncated = False
     def emit(name, start, end, lines):
         loc = f"rows {start}-{end}" if start != end else f"row {start}"
@@ -92,9 +93,13 @@ def index(sheets_iter, limit):
 
     for name, rows in sheets_iter:
         first = next(rows, None)
+        meta = {"sheet": name, "indexedRows": 0, "columnCount": 0, "columns": []}
+        if len(structure) < 32:
+            structure.append(meta)
         if first is None:
             continue
         header = row_values(first)
+        meta.update(columnCount=len(header), columns=[c[:120] for c in header[:32]])
         masked = [i for i, key in enumerate(header) if credential_column(key)]
         start = end = 1
         header_text = "Columns: " + json.dumps(header, ensure_ascii=False)
@@ -105,6 +110,7 @@ def index(sheets_iter, limit):
                 truncated = True
                 end -= 1
                 break
+            meta["indexedRows"] = end - 1
             cells = row_values(row)
             for i in masked:
                 if i < len(cells):
@@ -113,15 +119,15 @@ def index(sheets_iter, limit):
             if len(lines) > 1 and (len(lines) >= 16 or sum(map(len, lines)) + len(line) > 1500):
                 emit(name, start, end - 1, lines)
                 if len(chunks) >= limit:
-                    return {"chunks": chunks, "truncated": True}
+                    return {"chunks": chunks, "truncated": True, "structure": {"sheets": structure}}
                 start = end
                 lines = [header_text[:800]]
             truncated |= len(line) > 1000
             lines.append(line[:1000])
         if len(chunks) >= limit:
-            return {"chunks": chunks, "truncated": True}
+            return {"chunks": chunks, "truncated": True, "structure": {"sheets": structure}}
         emit(name, start, end, lines)
-    return {"chunks": chunks, "truncated": truncated}
+    return {"chunks": chunks, "truncated": truncated, "structure": {"sheets": structure}}
 
 
 def exact_number(raw):
@@ -211,6 +217,41 @@ def aggregate(sheets_iter, opts):
     return result
 
 
+def relational(sheets_iter, selected):
+    result = None
+    for name, rows in sheets_iter:
+        if selected is not None and selected != name:
+            continue
+        if result is not None:
+            raise TableError("multiple sheets: select a sheet explicitly")
+        header = [str(c).strip() for c in row_values(next(rows, []))]
+        if not header or len(header) > 80 or any(not c or len(c) > 128 or any(ord(ch) < 32 for ch in c) for c in header):
+            raise TableError("expected up to 80 nonempty, bounded column headers")
+        if len(set(c.lower() for c in header)) != len(header):
+            raise TableError("ambiguous duplicate column headers")
+        visible = [i for i,c in enumerate(header) if not credential_column(c)]
+        if not visible:
+            raise TableError("table has no selectable columns")
+        result = {"sheet":name, "columns":[header[i] for i in visible], "rows":[]}
+        size = 0
+        for n,row in enumerate(rows, 1):
+            if n > MAX_ROWS:
+                raise TableError("table exceeds row limit")
+            cells = row_values(row)
+            if not any(cells):
+                continue
+            if len(cells) > len(header) and any(cells[len(header):]):
+                raise TableError("table row exceeds header")
+            values = [cells[i] if i < len(cells) and cells[i] != "" else None for i in visible]
+            size += sum(len(v.encode()) if v else 0 for v in values) + 5 * len(values)
+            if size > 2 * 1024**2:
+                raise TableError("table exceeds in-memory SQL data limit")
+            result["rows"].append(values)
+    if result is None:
+        raise TableError("sheet not found")
+    return result
+
+
 def main():
     mode, ext, settings = sys.argv[1:]
     opts = json.loads(settings)
@@ -225,7 +266,12 @@ def main():
         raise TableError("file exceeds byte limit")
     tables = sheets(data, ext)
     try:
-        result = index(tables, opts["limit"]) if mode == "index" else aggregate(tables, opts)
+        if mode == "index":
+            result = index(tables, opts["limit"])
+        elif mode == "relational":
+            result = relational(tables, opts.get("sheet"))
+        else:
+            result = aggregate(tables, opts)
     finally:
         tables.close()
     print(json.dumps(result, ensure_ascii=True))

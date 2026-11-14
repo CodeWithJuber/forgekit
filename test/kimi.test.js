@@ -1,6 +1,4 @@
-// Kimi Code target. Kimi reads AGENTS.md natively (merged from the project root to the working
-// directory, `${KIMI_AGENTS_MD}`), so forge writes no Kimi-specific file: the canonical rules
-// reach it through the shared AGENTS.md, like Codex, Copilot and OpenClaw.
+// Kimi uses root AGENTS.md, trusted workspace MCP and a separate per-user hook plugin.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +17,9 @@ test("kimi is a known, selectable tool with its own on-disk sign and aliases", (
   const root = fixture();
   mkdirSync(join(root, ".kimi"));
   assert.deepEqual(detectTools(root), ["kimi"]);
+  const modern = fixture();
+  mkdirSync(join(modern, ".kimi-code"));
+  assert.deepEqual(detectTools(modern), ["kimi"]);
 });
 
 test("Kimi relies on the shared AGENTS.md — no second instruction file, no .kimi copy", () => {
@@ -28,7 +29,13 @@ test("Kimi relies on the shared AGENTS.md — no second instruction file, no .ki
   assert.ok(row, "sync reports a Kimi row");
   assert.equal(row.target, "AGENTS.md");
   assert.equal(row.action, "relies-on-agents");
-  assert.ok(!existsSync(join(root, ".kimi")), "nothing Kimi-specific is written");
+  assert.ok(!existsSync(join(root, ".kimi")), "no legacy instruction copy is written");
+  assert.equal(
+    JSON.parse(readFileSync(join(root, ".kimi-code", "mcp.json"), "utf8")).mcpServers[
+      "forge-cortex"
+    ].command,
+    "forge",
+  );
   assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /## Agent orchestration/);
 });
 
