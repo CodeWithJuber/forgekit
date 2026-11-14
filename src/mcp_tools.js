@@ -6,7 +6,10 @@
 
 import { EVIDENCE_TOOLS } from "./evidence_tools.js";
 
+import { HARNESS_MCP_TOOLS } from "./harness_mcp.js";
+
 export const TOOLS = [
+  ...HARNESS_MCP_TOOLS,
   ...EVIDENCE_TOOLS,
   {
     name: "cortex_lessons",

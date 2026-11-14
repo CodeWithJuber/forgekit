@@ -29,7 +29,13 @@ class LocalResponses(BaseHTTPRequestHandler):
         if not 0 < size <= 8 * 1024 * 1024:
             self.send_error(413)
             return
-        self.server.requests.append(json.loads(self.rfile.read(size)))
+        body = json.loads(self.rfile.read(size))
+        self.server.requests.append(body)
+        step = getattr(self.server, "supervised_step", 0)
+        item = None
+        if step == 1:
+            self.server.supervised_step = 2
+            item = shell_call(body.get("tools", []))
         reply = "Fixture complete."
         message = {"type": "message", "id": "msg_fixture", "role": "assistant",
                    "status": "completed", "content": [{"type": "output_text", "text": reply,
@@ -49,10 +55,50 @@ class LocalResponses(BaseHTTPRequestHandler):
             ("response.output_item.done", {"output_index": 0, "item": message}),
             ("response.completed", {"response": response}),
         ]
+        if item:
+            completed = {**response, "output": [item]}
+            events = [
+                ("response.created", {"response": {**completed, "status": "in_progress", "output": []}}),
+                ("response.output_item.added", {"output_index": 0,
+                    "item": {**item, "arguments": "", "status": "in_progress"}}),
+                ("response.function_call_arguments.delta", {"output_index": 0, "item_id": item["id"],
+                    "delta": item["arguments"]}),
+                ("response.function_call_arguments.done", {"output_index": 0, "item_id": item["id"],
+                    "arguments": item["arguments"]}),
+                ("response.output_item.done", {"output_index": 0, "item": item}),
+                ("response.completed", {"response": completed}),
+            ]
         for sequence, (kind, fields) in enumerate(events):
             body = {"type": kind, "sequence_number": sequence, **fields}
             self.wfile.write(f"event: {kind}\ndata: {json.dumps(body)}\n\n".encode())
         self.wfile.flush()
+
+
+def shell_call(tools):
+    # Use the protocol and tool name advertised by this CLI. Some Codex versions
+    # group functions in namespaces, others list each top-level function directly.
+    for group in tools:
+        namespaced = group.get("type") == "namespace"
+        for t in (group.get("tools", []) if namespaced else [group]):
+            name = t.get("name")
+            if t.get("type", "function") != "function" or name not in {"exec_command", "shell_command", "shell"}:
+                continue
+            props = (t.get("parameters") or {}).get("properties", {})
+            command = "echo bypassed > native-bypass.txt"
+            if "cmd" in props:
+                args = {"cmd": command}
+            elif (props.get("command") or {}).get("type") == "array":
+                args = {"command": ["sh", "-c", command]}
+            elif "command" in props:
+                args = {"command": command}
+            else:
+                continue
+            item = {"type": "function_call", "id": "fc_fixture", "call_id": "call_fixture",
+                    "status": "completed", "name": name, "arguments": json.dumps(args)}
+            if namespaced:
+                item["namespace"] = group["name"]
+            return item
+    return None
 
 
 def verify(codex, folder):
@@ -135,6 +181,31 @@ trust_level = "trusted"
                              f"(value={marker in messages}, file={'procedures.csv' in messages}, "
                              f"locator={'rows 1-2' in messages})")
         print(f"{expected} delivered the external CSV row and locator to the first loopback request.")
+
+        run([forge, "harness", "init", "--hosts", "codex", "--supervised"])
+        server.requests.clear()
+        server.supervised_step = 1
+        # Use a workspace-write sandbox for the negative control. A read-only
+        # sandbox also rejects the operation; we specifically need hook evidence.
+        guarded = subprocess.run(
+            [codex, "exec", "--ephemeral", "--json", "--sandbox", "workspace-write",
+             "--dangerously-bypass-hook-trust", "--disable", "shell_snapshot",
+             "Review the failing calculator."],
+            cwd=project, env=env, text=True, capture_output=True,
+            stdin=subprocess.DEVNULL, timeout=90)
+        if guarded.returncode or not server.requests:
+            raise SystemExit("Supervised Codex did not complete a native session: " +
+                             (guarded.stdout + guarded.stderr)[-1600:])
+        first = json.dumps(server.requests[0].get("input", []))
+        later = json.dumps([r.get("input", []) for r in server.requests[1:]])
+        if "forge_harness_run" not in first or "forge-cortex" not in first:
+            raise SystemExit("First Codex model request omitted the supervised MCP routing instruction")
+        if "supervised ForgeKit" not in later or (project / "native-bypass.txt").exists():
+            kinds = [(t.get("type"), t.get("name")) for t in server.requests[0].get("tools", [])]
+            raise SystemExit(f"Missing native supervised tool denial: requests={len(server.requests)}, "
+                             f"tools={kinds}, followup={later[-1600:]}, trace={guarded.stdout[-1200:]}")
+        print(f"{expected} delivered the supervised MCP routing instruction and denied the native "
+              "shell write before execution in a workspace-write sandbox.")
     finally:
         server.shutdown()
         server.server_close()

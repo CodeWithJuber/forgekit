@@ -71,7 +71,12 @@ function entry(hostId, nativeEvent, { bootstrap = false } = {}) {
   const command = hookCommand(hostId, nativeEvent, { bootstrap });
   const powershell = hookCommand(hostId, nativeEvent, { shell: "powershell" });
   const what = `${BRAND.brand} guards (${as})`;
-  if (host.layout === "flat") return { command, timeout: secs };
+  if (host.layout === "flat")
+    return {
+      command,
+      timeout: secs,
+      ...(nativeEvent === "beforeMCPExecution" ? { failClosed: true } : {}),
+    };
   if (host.layout === "copilot")
     return { type: "command", bash: command, powershell, cwd: ".", timeoutSec: secs };
   return {

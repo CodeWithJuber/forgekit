@@ -91,7 +91,7 @@ test("PreToolUse protect-paths matcher covers NotebookEdit (HI-08)", () => {
     assert.ok(matcher, `${name}: protect-paths PreToolUse group present`);
     for (const tool of ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"]) {
       assert.ok(
-        matcher.split("|").includes(tool),
+        matcher === "*" || matcher.split("|").includes(tool),
         `${name}: protect-paths matcher must include ${tool} (got: ${matcher})`,
       );
     }
@@ -137,7 +137,10 @@ test("PreToolUse protect-paths also covers Read in both manifests (B6)", () => {
     const tools = (manifest.hooks?.PreToolUse ?? [])
       .filter((g) => (g.hooks ?? []).some((h) => hookText(h).includes("protect-paths.sh")))
       .flatMap((g) => (g.matcher ?? "").split("|"));
-    assert.ok(tools.includes("Read"), `${name}: protect-paths must run on Read (got: ${tools})`);
+    assert.ok(
+      tools.includes("*") || tools.includes("Read"),
+      `${name}: protect-paths must run on Read (got: ${tools})`,
+    );
   }
 });
 
@@ -156,7 +159,10 @@ test("PreToolUse protect-paths also covers Grep, Glob and NotebookRead in all th
       .filter((g) => (g.hooks ?? []).some((h) => hookText(h).includes("protect-paths.sh")))
       .flatMap((g) => (g.matcher ?? "").split("|"));
     for (const tool of ["Read", "Grep", "Glob", "NotebookRead"])
-      assert.ok(tools.includes(tool), `${name}: protect-paths must run on ${tool} (got: ${tools})`);
+      assert.ok(
+        tools.includes("*") || tools.includes(tool),
+        `${name}: protect-paths must run on ${tool} (got: ${tools})`,
+      );
   }
 });
 

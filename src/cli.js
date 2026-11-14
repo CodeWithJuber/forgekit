@@ -68,6 +68,7 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
   ...evidenceHandlers,
   ...memoryHandlers,
   ...claimHandlers,

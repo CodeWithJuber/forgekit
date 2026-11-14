@@ -1,0 +1,27 @@
+name: Native Kimi supervised harness
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'global/**'
+      - 'kimi.plugin.json'
+      - 'scripts/test-native-kimi-harness.py'
+      - '.github/workflows/native-kimi-harness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  supervised-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install pinned Kimi Code
+        run: npm install --prefix "$RUNNER_TEMP/native-kimi" --no-audit --no-fund --ignore-scripts @moonshot-ai/kimi-code@2.6.2
+      - name: Verify native hooks and supervised MCP with loopback providers
+        run: python3 scripts/test-native-kimi-harness.py --kimi "$RUNNER_TEMP/native-kimi/node_modules/.bin/kimi"

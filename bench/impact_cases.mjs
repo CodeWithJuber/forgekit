@@ -90,7 +90,8 @@
 //   - src/source_remote.js hashes remote connection scope
 //   - src/sources.js hashes the workspace and local source scope
 //   (src/ledger_store.js:586 also names it in a doc comment — same file, already labeled.)
-//   No test file references contentHash directly.
+//   The harness components below hash stable identities, approvals, edits and verifier output.
+//   test/harness_jobs.test.js locates the private queue namespace to test isolation.
 
 export const IMPACT_CASES = [
   {
@@ -156,6 +157,13 @@ export const IMPACT_CASES = [
       "src/auto_adoption.js",
       "src/evidence.js",
       "src/source_local.js",
+      "src/harness_council.js",
+      "src/harness_jobs.js",
+      "src/harness_policy.js",
+      "src/harness_spend.js",
+      "src/harness_tools.js",
+      "src/harness_verify.js",
+      "test/harness_jobs.test.js",
       "src/source_remote.js",
       "src/sources.js",
     ],

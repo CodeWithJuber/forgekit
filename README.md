@@ -28,7 +28,7 @@ client’s first model request.
 
 | Inventory | Count |
 |---|---|
-| CLI commands (`forge --help`) | 60 |
+| CLI commands (`forge --help`) | 61 |
 | Lifecycle hook commands across six events (`hooks/hooks.json`) | 19 |
 | Config emitters (`src/emit/`, excluding the shared helper) | 14 |
 | Installable skill packs (`skills/`) | 3 |
@@ -472,6 +472,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge context`       | budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed                                                                                                                                                                                                         |
 |                         | `forge route`         | recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes                                                                                                                 |
 |                         | `forge orchestration` | agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global                                   |
+|                         | `forge harness`       | run host-neutral supervised tasks with policy, budgets, verification and replayable evidence                                                                                                                                                                                                        |
 |                         | `forge advisor`       | Claude Code's advisor tool — a stronger second model consulted at decision points: set the advisor per repo (emitted into .claude/settings.json by sync, with an Advisor rule section in AGENTS.md) or --global, check a main/advisor pairing before Claude Code refuses it, list accepted pairings |
 |                         | `forge verify`        | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                                                                                             |
 |                         | `forge demo`          | scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)                                                                                                                                                                             |
@@ -585,6 +586,17 @@ commit `eb68ea9` and does not measure the optional embedding path. Current
 embedding behavior is defined by [`src/embed.js`](src/embed.js) and
 [`test/embed.test.js`](test/embed.test.js).
 
+## Run a supervised coding task
+
+`forge harness init --hosts kimi,codex` creates a reviewable project policy, routing table,
+budgets, job definitions and extension lock. Start a compatible local model, run the project checks
+and use `forge harness run "Investigate the failing test"`. A run records tool decisions, usage,
+the verifier output and its exit reason. Choose `--supervised` on first init to mediate native tools
+on supported, trusted hosts. For an existing harness, edit its policy and use `forge harness trust`.
+MCP clients can call `forge_harness_run` and `forge_harness_status`. Remote model routes require an
+operator fingerprint in `FORGE_HARNESS_TRUSTED_ROUTES`. A rootless container verifier can use
+`XDG_RUNTIME_DIR` to find the operator’s local runtime. See the [setup and acceptance guide](docs/HARNESS.md).
+
 ## Agent roles and MCP tools
 
 Use `forge prompts show reviewer` to print a portable role brief, or `forge team "<task>" --handoff kimi` to prepare evidence for an independent reviewer. Nine role briefs cover planning, research, coding, debugging, review, security, testing, memory and coordination. The Claude Code plugin also registers five native role definitions:
@@ -598,7 +610,7 @@ Use `forge prompts show reviewer` to print a portable role brief, or `forge team
 For an independent task, the team runner can launch a Kimi or Codex client with a supplied brief.
 The lead applies changes and verifies the result. See the [worker options and billing](docs/V2-IMPLEMENTATION.md).
 
-The built-in MCP server advertises 34 tools through `tools/list`, including:
+The built-in MCP server advertises 36 tools through `tools/list`, including:
 
 - pre-action checks: `substrate_check`, `preflight_check`, `assumption_gate`, `route_task`,
   `dep_check`;
@@ -670,7 +682,7 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 34 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 36 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
 | **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
 
@@ -724,7 +736,7 @@ This table describes architecture, not a claim of superiority or equivalent prod
 | Memory | Content-addressed claims, provenance, oracle-weighted validity, time decay, and git-native union merge | No hosted synchronization, managed database, enterprise tenancy, or RBAC |
 | Retrieval | MinHash retrieval by default; optional external embeddings; proof-gated code reuse | No vector database or general enterprise corpus pipeline |
 | Routing | A visible deterministic recommendation with optional bounded LLM input; LiteLLM alias config emission | Does not proxy traffic, manage quotas, perform failover, or hold provider keys |
-| Tool use | A stdio JSON-RPC MCP server with 34 advertised tools | Does not implement the model/client loop that chooses and executes tool calls autonomously |
+| Tool use | A stdio JSON-RPC MCP server with 36 advertised tools | Does not implement the model/client loop that chooses and executes tool calls autonomously |
 | Agent roles | Portable role briefs, an optional specialist runner and five native Claude Code roles | The active host owns edits and the lead verifies worker findings |
 | Verification | Repository tests, provenance, structural and security lenses, limited benchmark suites | No managed GenAI evaluation service, production telemetry, online evaluation, or broad red-team certification |
 

@@ -3,6 +3,7 @@
 // reuses `atlas` to flag calls to symbols that exist nowhere in the codebase
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
@@ -54,8 +55,16 @@ const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 // turns it off. stderr is never echoed (an unborn HEAD is a state, not an error to print).
 const GIT_SAFE = ["-c", "core.fsmonitor=false"];
 
+// The supervised verifier pins a system Git and a child-only PATH for the entire
+// authenticated receipt check, including recursive submodule fingerprints.
+const verificationGit = new AsyncLocalStorage();
+export function withVerificationGit(binary, path, verify) {
+  return verificationGit.run({ binary, env: { ...process.env, PATH: path } }, verify);
+}
+
 function gitStrict(args, cwd) {
-  return execFileSync("git", [...GIT_SAFE, ...args], {
+  return execFileSync(verificationGit.getStore()?.binary ?? "git", [...GIT_SAFE, ...args], {
+    env: verificationGit.getStore()?.env,
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -65,7 +74,8 @@ function gitStrict(args, cwd) {
 
 function git(args, cwd) {
   try {
-    return execFileSync("git", [...GIT_SAFE, ...args], {
+    return execFileSync(verificationGit.getStore()?.binary ?? "git", [...GIT_SAFE, ...args], {
+      env: verificationGit.getStore()?.env,
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
