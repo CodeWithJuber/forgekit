@@ -22,6 +22,7 @@ Run the commands in the project where your agent works.
 | --- | --- |
 | Claude Code | Run `forge init --tools claude` and `forge hooks on --hosts claude` in the checkout. Open Claude Code, trust the project and enable the project MCP server if prompted. The optional native plugin can also be installed from the ForgeKit marketplace. |
 | Kimi Code | Run `forge init --tools kimi` and `forge hooks on --hosts kimi`. In Kimi, trust the workspace, run the printed `/plugins install` command and then `/reload`. Kimi reads the project MCP entry from `.kimi-code/mcp.json`. |
+| OpenCode | Run `forge init --tools opencode` and `forge hooks on --hosts opencode`. OpenCode loads `.opencode/plugins/forgekit.js` on the next session, reads the shared `AGENTS.md`, and finds the project MCP entry in `opencode.json`. Set `FORGE_CLI` when `forge` is not the command on `PATH`. |
 | Local Codex | Run `forge init --tools codex` and `forge hooks on --hosts codex`. In a trusted project, review the hooks with `/hooks`. The Codex plugin also bundles native hooks, skills and MCP configuration. |
 | Another stdio MCP client | Register a server named `forge-cortex` with command `forge` and arguments `["cortex-mcp"]`. Start it in the project directory or supply the project's absolute path through `FORGE_ROOT`. |
 

@@ -61,6 +61,7 @@ export const KNOWN_TOOLS = [
   "roo",
   "openclaw",
   "kimi",
+  "opencode",
 ];
 
 // Every on-disk sign that a repo already uses a tool — the evidence `forge init` needs to
@@ -80,6 +81,7 @@ const TOOL_MARKERS = {
   roo: [".roo", ".roomodes"],
   openclaw: [".openclaw"],
   kimi: [".kimi-code", ".kimi"],
+  opencode: [".opencode", "opencode.json", "opencode.jsonc"],
 };
 
 // Names people type for a tool whose canonical key differs.
@@ -90,6 +92,7 @@ const TOOL_ALIASES = {
   "claude-code": "claude",
   "kimi-cli": "kimi",
   "kimi-code": "kimi",
+  "open-code": "opencode",
 };
 
 /**
@@ -150,6 +153,7 @@ const TOOL_KEYS = [
   ["roo", /^Roo/],
   ["openclaw", /^OpenClaw/],
   ["kimi", /^Kimi/],
+  ["opencode", /^OpenCode/],
 ];
 
 const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);

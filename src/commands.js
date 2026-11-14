@@ -177,13 +177,13 @@ export const COMMANDS = {
   },
   hooks: {
     summary:
-      "run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)",
+      "run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor, Copilot and OpenCode (cloud agents and CI included)",
     usage:
       "forge hooks [status | on | off | run <host> <event>] [--hosts a,b] [--bootstrap] [--json]",
     flags: [
       {
         flag: "--hosts <a,b>",
-        desc: "with `on`: only these hosts (claude, codex, gemini, cursor, copilot) instead of every tool the repo emits for",
+        desc: "with `on`: only these hosts (claude, codex, gemini, cursor, copilot, opencode) instead of every tool the repo emits for",
       },
       {
         flag: "--bootstrap",

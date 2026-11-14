@@ -60,6 +60,7 @@ The table comes from ForgeKit’s host adapters. Each cell shows the client even
 | Cursor         | —                                 | `beforeShellExecution`, `beforeMCPExecution`, `preToolUse` | `postToolUseFailure`              |
 | GitHub Copilot | —                                 | `preToolUse`                                               | `postToolUseFailure`              |
 | Kimi Code      | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
+| OpenCode       | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
 | Devin          | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
 <!-- forge:render:host-hooks:end -->
 

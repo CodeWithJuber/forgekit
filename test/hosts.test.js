@@ -1077,7 +1077,15 @@ test("planHooks: each agent's file, in its own shape", () => {
     doc("claude", { bootstrap: true }).hooks.PreToolUse[0].hooks[0].timeout,
     HOOK_TIMEOUT_S.PreToolUse,
   );
-  assert.deepEqual(HOOK_HOSTS, ["claude", "codex", "gemini", "cursor", "copilot", "kimi"]);
+  assert.deepEqual(HOOK_HOSTS, [
+    "claude",
+    "codex",
+    "gemini",
+    "cursor",
+    "copilot",
+    "kimi",
+    "opencode",
+  ]);
 });
 
 test("planHooks: only forge's own entries are ever touched; turning off leaves no trace", () => {
@@ -1102,7 +1110,9 @@ test("planHooks: only forge's own entries are ever touched; turning off leaves n
   // Off: byte for byte what the person had.
   assert.equal(planHooks(on, "claude", { enable: false }).next, `${before}\n`);
   // A file forge created is removed entirely when turned off; a version number is not content.
-  for (const host of HOOK_HOSTS.filter((id) => HOSTS[id].file)) {
+  for (const host of HOOK_HOSTS.filter(
+    (id) => HOSTS[id].file && HOSTS[id].layout !== "module",
+  )) {
     const created = planHooks(null, host).next;
     assert.equal(planHooks(created, host, { enable: false }).next, null, host);
   }
@@ -1157,11 +1167,12 @@ test("applyHooks / hooksStatus / emitProjectHooks: on, current, stale, off", () 
     cursor: "on",
     copilot: "on",
     kimi: "off",
+    opencode: "on",
     devin: "via claude",
   });
   assert.deepEqual(
     emitProjectHooks({ targetRoot: root, config: on }).map((r) => r.action),
-    [...Array(5).fill("unchanged"), "manual"],
+    [...Array(5).fill("unchanged"), "manual", "unchanged"],
   );
   // The files hold yesterday's commands (here: no bootstrap, config now asks for one) → stale.
   const boot = { hooks: { project: true, bootstrap: true } };
@@ -1204,7 +1215,7 @@ test("forge hooks: on writes every file, status reads them back, off removes the
       env: { ...process.env, FORGE_DEPGATE: "0" },
     });
   const on = JSON.parse(run(["on", "--json"]).stdout);
-  assert.deepEqual([on.enabled, on.rows.length], [true, 6]);
+  assert.deepEqual([on.enabled, on.rows.length], [true, 7]);
   assert.deepEqual(
     JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8")).hooks,
     { project: true },

@@ -9,6 +9,7 @@ import { isDeepStrictEqual } from "node:util";
 import { BRAND } from "./brand.js";
 import { HOOK_TIMEOUT_S, planHooks } from "./emit/hooks.js";
 import { emitMcp } from "./emit/mcp.js";
+import { planPlugin } from "./emit/opencode.js";
 import { GENERIC_HOST, genericHarnessServer, parseHarnessHosts } from "./harness_hosts.js";
 import { installedHarnessPython } from "./harness_python.js";
 import { HOSTS, isForgeHookCommand, kimiPluginEnabled } from "./hosts.js";
@@ -165,6 +166,13 @@ export function checkHarnessDrift(root, hosts) {
           "manual",
           "Installation, trust and reload belong to this Kimi profile",
         );
+      } else if (target?.layout === "module") {
+        check(host, "project hooks", target.file, () => {
+          const text = read(root, target.file);
+          const plan = planPlugin(text);
+          if (plan.error) throw new Error(plan.error);
+          return plan.next === text;
+        });
       } else if (target?.file || target?.via) {
         const id = target.via ?? host,
           file = HOSTS[id].file;
