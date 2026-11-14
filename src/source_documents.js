@@ -23,7 +23,7 @@ export function doclingConfig(root, config) {
     if (typeof config.artifactsPath !== "string" || !isAbsolute(config.artifactsPath))
       throw new Error("Layout extraction needs an absolute local artifactsPath");
     artifactsPath = realpathSync.native(config.artifactsPath);
-    const rel = relative(root, artifactsPath);
+    const rel = relative(realpathSync.native(root), artifactsPath);
     if (
       (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)) ||
       !statSync(artifactsPath).isDirectory()

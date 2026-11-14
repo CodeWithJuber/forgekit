@@ -53,7 +53,8 @@ test("HTTP presets and custom URLs respect host formats, workspace trust, and re
   const cfg = readForgeConfig(root);
   assert.deepEqual(cfg.mcp.integrations, ["docs"]);
   assert.match(cfg.mcp.remotes.docs, /^[a-f0-9]{64}$/);
-  assert.ok(!JSON.stringify(cfg).includes(url));
+  // A fresh repository records only the binding digest. Every HTTP endpoint stays private.
+  assert.doesNotMatch(JSON.stringify(cfg), /https?:\/\//i);
   assert.deepEqual(JSON.parse(read(root, ".mcp.json")).mcpServers.docs, {
     type: "http",
     url,

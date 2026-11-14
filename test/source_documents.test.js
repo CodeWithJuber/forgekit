@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -102,6 +102,13 @@ test("offline Docling mode uses explicit external models; state policy cannot br
     () => doclingConfig(source.root, { mode: "scans", artifactsPath: source.root }),
     /outside/,
   );
+  if (process.platform !== "win32") {
+    const alias = join(source.temp, "aliased-root");
+    symlinkSync(source.root, alias, "dir");
+    const inside = join(source.root, "nested-models");
+    mkdirSync(inside);
+    assert.throws(() => doclingConfig(alias, { mode: "layout", artifactsPath: inside }), /outside/);
+  }
   assert.throws(
     () =>
       doclingConfig(source.root, { mode: "scans", artifactsPath: models, languages: ["--other"] }),
