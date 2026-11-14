@@ -90,6 +90,17 @@ export const COMMANDS = {
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
     "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
+  harness: {
+    summary:
+      "run host-neutral supervised tasks with policy, budgets, verification and replayable evidence",
+    usage:
+      "forge harness init|trust|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
+    examples: [
+      "forge harness init --hosts kimi,codex",
+      'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
+      "forge harness jobs tick",
+    ],
+  },
   develop: {
     summary:
       "assemble a development plan, search prior solutions, assess security and select verification for the current change",
@@ -551,6 +562,7 @@ export const GROUPS = {
     "context",
     "route",
     "orchestration",
+    "harness",
     "advisor",
     "verify",
     "demo",

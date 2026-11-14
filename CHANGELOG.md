@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `forge harness` runs coding tasks through a host-neutral permission gate, bounded model loop and independent verifier. It adds private replayable traces, evidence-linked memory, pinned extensions, a durable job queue and measured specialist delegation.
+
 - `forge team` plans separate read-only specialist checks. Explicit Claude worker runs share a spending limit and report their results to the lead.
 - `forge integrations find` checks matching MCP packages against current registry metadata. Explicit and allowlisted automatic installation pin tools in the user's state directory.
 - `forge develop` connects task planning, reusable code examples, security review and test selection. `--verify` executes the repository checks and reports their results.

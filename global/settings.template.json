@@ -148,7 +148,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -159,7 +159,12 @@
               "PreToolUse",
               "~/.forge/guards/protect-paths.sh"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
           {
             "type": "command",
             "command": "node",
@@ -209,21 +214,6 @@
               "PreToolUse",
               "~/.forge/guards/cortex.sh",
               "pre-edit"
-            ]
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Glob|NotebookRead",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "~/.forge/guards/run.mjs",
-              "--event",
-              "PreToolUse",
-              "~/.forge/guards/protect-paths.sh"
             ]
           }
         ]

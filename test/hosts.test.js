@@ -368,7 +368,11 @@ test("guardChain: hooks/hooks.json is the single list — matchers decide, the r
   assert.ok(pre("Bash").includes("protect-paths.sh"));
   assert.ok(pre("Write").includes("dep-gate.sh"), "manifest edits reach dep-gate");
   assert.deepEqual(pre("Read"), ["protect-paths.sh"]);
-  assert.deepEqual(pre("SomeUnknownTool"), []);
+  assert.deepEqual(
+    pre("SomeUnknownTool"),
+    ["protect-paths.sh"],
+    "supervised mode gates unknown tools too",
+  );
   assert.equal(guards({ hook_event_name: "SessionStart", source: "startup" }).length, 2);
   assert.deepEqual(guards({ hook_event_name: "SessionStart", source: "compact" }), []);
   assert.ok(guards({ hook_event_name: "Stop" }).includes("completion-gate.sh"));

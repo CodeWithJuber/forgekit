@@ -139,6 +139,7 @@ export const HOSTS = {
       beforeSubmitPrompt: { as: "UserPromptSubmit", block: true },
       // A shell command fires both events; this one can pause for a human, so it owns Bash.
       beforeShellExecution: { as: "PreToolUse", tool: "Bash", lift: ["command"], ask: true },
+      beforeMCPExecution: { as: "PreToolUse", ask: true },
       preToolUse: { as: "PreToolUse", skipTools: ["Bash"] },
       postToolUse: { as: "PostToolUse", context: true },
       postToolUseFailure: { as: "PostToolUseFailure", context: true },
@@ -731,6 +732,8 @@ export function render(hostId, nativeEvent, verdict) {
       return def.ask
         ? say.ask(e, verdict.reason, context)
         : say.deny(e, `${verdict.reason}${NO_CONFIRM}`);
+    if (hostId === "cursor" && nativeEvent === "beforeMCPExecution")
+      return json({ permission: "allow" });
     return context ? say.context(e, context) : nothing;
   }
   if (verdict.block && def.block) return say.block(e, verdict.block);
@@ -913,13 +916,24 @@ export async function runHook({
   /** @type {Reply} */
   const silent = { stdout: "", stderr: "", exit: 0 };
   try {
-    if (hooksDisabled(env) || !HOSTS[host]?.events[event]) return silent;
+    const def = HOSTS[host]?.events[event];
+    if (!def) return silent;
     let payload = {};
+    let invalidPayload = false;
     try {
       payload = JSON.parse(input || "{}");
     } catch {
-      return silent;
+      if (def.as !== "PreToolUse") return silent;
+      invalidPayload = true;
     }
+    // Test supervision before any silent guard opt-out, alias normalisation, or duplicate
+    // event shortcut. Missing and malformed tool identities resolve to a deny when active.
+    if (def.as === "PreToolUse") {
+      const { nativeHarnessDenial } = await import("./harness_native.js");
+      const reason = nativeHarnessDenial({ host, event, payload, env });
+      if (reason) return render(host, event, { decision: "deny", reason, context: "", block: "" });
+    }
+    if (invalidPayload || hooksDisabled(env)) return silent;
     // An agent that reads Claude Code's file is served by its own channel when it has one,
     // and by its own rules (tool names, what it can express) when it does not.
     let as = host;
@@ -965,6 +979,15 @@ export async function runHook({
     const chains = norm.payloads.map((p) => ({ payload: p, steps: guardChain(p, manifest) }));
     const runs = await Promise.all(chains.map((c) => run(c.steps, c.payload, { env })));
     const verdict = merge(runs.flat().map((r) => interpret(norm.event, r)));
+    if (
+      norm.def.context &&
+      ["SessionStart", "UserPromptSubmit", "PostToolUse"].includes(norm.event)
+    ) {
+      const { nativeHarnessInstruction } = await import("./harness_native.js");
+      const instruction = nativeHarnessInstruction(payload, env);
+      if (instruction && !verdict.context.includes(instruction))
+        verdict.context = join2(instruction, verdict.context, "\n\n");
+    }
     if (defer && norm.event === "UserPromptSubmit")
       queueQuery(as, first.cwd, sid, verdict.block ? "" : first.prompt);
     if (norm.event === "PostToolUse") {

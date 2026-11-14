@@ -35,7 +35,14 @@ import { TOOLS } from "./mcp_tools.js";
 
 export { TOOLS };
 
-async function callTool(name, args = {}) {
+async function callTool(name, args = {}, host = undefined) {
+  if (name === "forge_harness_run" || name === "forge_harness_status") {
+    const { harnessMcp } = await import("./harness_mcp.js");
+    return harnessMcp(root, name, args, host);
+  }
+  const { nativeHarnessPolicy } = await import("./harness_config.js");
+  if (nativeHarnessPolicy(root))
+    throw new Error("Supervised project: use forge_harness_run or forge_harness_status");
   if (EVIDENCE_TOOLS.some((tool) => tool.name === name)) return evidenceTool(root, name, args);
   if (name === "cortex_lessons") {
     const files = args.files ?? [];
@@ -240,10 +247,14 @@ async function callTool(name, args = {}) {
 }
 
 /** Handle one JSON-RPC message; returns a response object, or null for notifications. */
-export async function handle(msg) {
+export async function handle(msg, session = { host: undefined }) {
   const { id, method, params } = msg;
   if (id === undefined || String(method).startsWith("notifications/")) return null;
   if (method === "initialize") {
+    // Host identity is a compatibility hint only. It grants no permissions.
+    const client = String(params?.clientInfo?.name ?? "").toLowerCase();
+    const match = /^(kimi|codex|claude|gemini|cursor|copilot)(?:$|[- _])/i.exec(client);
+    session.host = match?.[1];
     return {
       jsonrpc: "2.0",
       id,
@@ -254,11 +265,17 @@ export async function handle(msg) {
       },
     };
   }
-  if (method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+  if (method === "tools/list") {
+    const { nativeHarnessPolicy } = await import("./harness_config.js");
+    const list = nativeHarnessPolicy(root)
+      ? TOOLS.filter((t) => t.name === "forge_harness_run" || t.name === "forge_harness_status")
+      : TOOLS;
+    return { jsonrpc: "2.0", id, result: { tools: list } };
+  }
   if (method === "tools/call") {
     let text;
     try {
-      text = await callTool(params?.name, params?.arguments);
+      text = await callTool(params?.name, params?.arguments, session.host);
     } catch (err) {
       // A throwing handler (unwritable .forge, corrupt store, …) must still ANSWER — a
       // request with no reply leaves the MCP client waiting until its own timeout.
@@ -293,6 +310,7 @@ export async function handle(msg) {
 
 export function serve(input = process.stdin, output = process.stdout) {
   const rl = createInterface({ input });
+  const session = { host: undefined };
   rl.on("line", (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -302,7 +320,7 @@ export function serve(input = process.stdin, output = process.stdout) {
     } catch {
       return; // ignore malformed frames
     }
-    handle(msg)
+    handle(msg, session)
       .then((res) => {
         if (res) output.write(`${JSON.stringify(res)}\n`);
       })

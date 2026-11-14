@@ -1,0 +1,29 @@
+name: Harness container verification
+on:
+  pull_request:
+    paths:
+      - 'src/harness*.js'
+      - 'test/harness_verify.test.js'
+      - '.github/workflows/harness-container.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-project-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Docker Official Images Alpine 3.21, linux/amd64 manifest from docker-library/repo-info.
+      - name: Preload the pinned test image
+        run: docker pull alpine@sha256:2d8a11041a92082ba21e364dec73559ce44f1de69b60fa68315f6d3774e59117
+      - name: Verify isolation and failure reporting
+        env:
+          HARNESS_REAL_CONTAINER: '1'
+          HARNESS_CANARY: synthetic-host-value
+        run: node --test --import ./test/_setup.js test/harness_verify.test.js

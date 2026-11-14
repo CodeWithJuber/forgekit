@@ -1,0 +1,21 @@
+name: Portable harness acceptance
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Run harness fixtures and host drift checks
+        run: node --test --import ./test/_setup.js test/harness*.test.js

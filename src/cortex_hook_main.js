@@ -24,6 +24,7 @@ import {
   processSession,
   readSession,
 } from "./cortex_hook.js";
+import { nativeHarnessInstruction } from "./harness_native.js";
 import { autoAdoptionNotice, failureQuery, hookEvidence } from "./hook_evidence.js";
 import { mergedLessons } from "./ledger_read.js";
 import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
@@ -170,6 +171,7 @@ async function main() {
     const { activePromptProfile, showDevelopmentPrompt } = await import("./development_profile.js");
     const profile = activePromptProfile(root);
     const block = [
+      nativeHarnessInstruction(hook),
       orientation,
       profile === "off" ? "" : showDevelopmentPrompt("master", profile).prompt,
       startupBlock(root, today, undefined, { record: true }),
@@ -296,6 +298,7 @@ async function main() {
         ? ""
         : await hookEvidence(root, hook.prompt, result.reuse);
       const combined = [
+        nativeHarnessInstruction(hook),
         evidence,
         adoption,
         advisory ? [advisory, advisorLine].filter(Boolean).join("\n") : advisorLine,

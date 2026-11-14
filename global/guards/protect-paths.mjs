@@ -24,7 +24,7 @@
 // and interpreter-driven access (`python -c 'open(".env")…'`, `node -e …`) are DELIBERATELY out
 // of scope. This layer sits behind the permission system and secret-redact.sh: best-effort
 // hardening, never a boundary.
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
@@ -1118,6 +1118,15 @@ async function main() {
   } catch {
     deny("cannot parse the hook payload — blocking to fail closed");
     return;
+  }
+  // install.sh symlinks these guards into the installed package. A historic loose
+  // standalone copy has no package modules and retains its own path checks. Resolve
+  // only relative to this module, never from PATH, the workspace or the payload.
+  const nativeBridge = new URL("../../src/harness_native.js", import.meta.url);
+  if (existsSync(nativeBridge)) {
+    const { nativeHarnessDenial } = await import(nativeBridge.href);
+    const reason = nativeHarnessDenial({ host: "claude", event: "PreToolUse", payload: data });
+    if (reason) deny(reason);
   }
   const inp = data.tool_input ?? {};
   const d = protectPathsDecision({

@@ -629,7 +629,7 @@ export function searchSources(root, query, { budget = 600, sourceId = undefined 
       if (source.provider !== "local") continue;
       const rows = candidates.filter((c) => c.entry.source.id === source.id).map((c) => c.r);
       if (!rows.length) continue;
-      const paths = eligibleLocalRows(source, rows);
+      const paths = eligibleLocalRows(source, rows, sourceWorkspaceRoot(root));
       allowed.set(source.id, paths);
       if (rows.some((r) => !paths.has(r.path)))
         warnings.push(
@@ -702,7 +702,12 @@ export function openSourceMirror(root, id) {
     const allowed = new Set();
     if (source.provider === "local")
       for (let i = 0; i < items.length; i += 64)
-        for (const p of eligibleLocalRows(source, items.slice(i, i + 64))) allowed.add(p);
+        for (const p of eligibleLocalRows(
+          source,
+          items.slice(i, i + 64),
+          sourceWorkspaceRoot(root),
+        ))
+          allowed.add(p);
     const visible = source.provider === "local" ? items.filter((r) => allowed.has(r.path)) : items;
     return {
       meta,
@@ -720,7 +725,7 @@ export function openSourceMirror(root, id) {
         if (current.provider === "local") {
           for (let i = 0; i < visible.length; i += 64) {
             const group = visible.slice(i, i + 64);
-            if (eligibleLocalRows(current, group).size !== group.length)
+            if (eligibleLocalRows(current, group, sourceWorkspaceRoot(root)).size !== group.length)
               throw new Error("Local permissions or content changed during the mirror read; retry");
           }
         }

@@ -15,6 +15,7 @@ import { lstat, open, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { harnessChildPath, installedHarnessProgram } from "./harness_python.js";
 import { redactSecrets } from "./secrets.js";
 import { doclingConfig, extractDocument } from "./source_documents.js";
 import { CODE_EXT, contentHash, IGNORE_DIRS, toPosix, userStateDir } from "./util.js";
@@ -44,7 +45,7 @@ function limit(value, fallback, ceiling) {
 
 // An empty index makes even an accidentally tracked, ignored credential file ineligible.
 // Standalone folders get a disposable empty Git directory, leaving the source untouched.
-function listFiles(root, only = null, timeout = 8000) {
+function listFiles(root, only = null, timeout = 8000, requester = undefined) {
   // Use the OS-native resolver consistently. On Windows the legacy sync resolver
   // can keep an 8.3 alias (RUNNER~1) which the async/native resolver expands.
   const state = resolve(userStateDir());
@@ -61,8 +62,10 @@ function listFiles(root, only = null, timeout = 8000) {
   if (inState(root)) throw new Error("Forge private state cannot be used as a source");
   const temp = mkdtempSync(join(tmpdir(), "forge-source-"));
   try {
+    const excluded = requester ? [requester] : [];
     const env = {
       ...process.env,
+      PATH: harnessChildPath(root, excluded),
       GIT_INDEX_FILE: join(temp, "index"),
       GIT_OPTIONAL_LOCKS: "0",
       LC_ALL: "C",
@@ -75,8 +78,9 @@ function listFiles(root, only = null, timeout = 8000) {
       "GIT_CONFIG_COUNT",
     ])
       delete env[key];
+    const git = installedHarnessProgram(root, "git", excluded);
     const run = (args) =>
-      spawnSync("git", ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
+      spawnSync(git, ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args], {
         cwd: root,
         env,
         encoding: "utf8",
@@ -379,7 +383,7 @@ export async function aggregateLocalTable(source, options) {
  * network, or full-tree traversal occurs on this path.
  * @param {{root:string}} source @param {Array<{path:string,fileVersion?:string}>} rows
  * @returns {Set<string>} */
-export function eligibleLocalRows(source, rows) {
+export function eligibleLocalRows(source, rows, requester = undefined) {
   const eligible = new Set();
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > 64) return eligible;
   try {
@@ -390,7 +394,7 @@ export function eligibleLocalRows(source, rows) {
         .map((r) => [r.path, r.fileVersion]),
     );
     if (!files.size) return eligible;
-    for (const rel of listFiles(root, [...files.keys()], 1000)) {
+    for (const rel of listFiles(root, [...files.keys()], 1000, requester)) {
       if (!files.has(rel)) continue;
       const path = resolve(root, rel);
       let fd;
