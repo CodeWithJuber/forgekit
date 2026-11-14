@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:f
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { developmentPlan } from "./development.js";
+import { activePromptProfile, profileGuidance } from "./development_profile.js";
 import { teamPlan } from "./evidence_team.js";
 import { researchPointers, researchPublic } from "./public_research.js";
 import { reusePeek } from "./reuse.js";
@@ -108,13 +109,20 @@ export function buildEvidence(task, { root = process.cwd(), hook = false, reuse:
   const symbols = symbolCandidates(root, query);
   const pointers = researchPointers(query);
   const manifests = MANIFESTS.filter((path) => existsSync(join(root, path)));
-  const team = teamPlan(query, { root, evidence: { hits: sources.hits, symbols, manifests } });
+  const selectedProfile = activePromptProfile(root);
+  const team = teamPlan(query, {
+    root,
+    profile: selectedProfile,
+    evidence: { hits: sources.hits, symbols, manifests },
+  });
   const development = developmentPlan(query, {
     root,
     hook,
     evidence: { hits: sources.hits, symbols, manifests, reuse, pointers, team },
   });
+  const profile = profileGuidance(selectedProfile, query, { hits: sources.hits, symbols });
   const rows = [];
+  if (profile) rows.push(profile.text);
   if (team.mode === "parallel") rows.push(team.text);
   if (
     hook &&
@@ -153,6 +161,7 @@ export function buildEvidence(task, { root = process.cwd(), hook = false, reuse:
     pointers,
     team,
     development,
+    ...(profile ? { promptProfile: profile } : {}),
     warnings,
   };
 }
@@ -261,7 +270,18 @@ export async function runEvidence(task, options = {}) {
       return [];
     }
   };
-  const [web, adoption] = await Promise.all([lookup, tools()]);
+  const kernel = async () => {
+    try {
+      const { recallHikmah } = await import("./hikmah_recall.js");
+      return await recallHikmah(options.root ?? process.cwd(), task);
+    } catch {
+      return { enabled: false, hits: [], warning: "Hikmah memory unavailable" };
+    }
+  };
+  const [web, adoption, hikmah] = await Promise.all([lookup, tools(), kernel()]);
+  const lessons = hikmah.hits.map(
+    (h) => "Verified public Hikmah lesson (source data): " + JSON.stringify(h),
+  );
   const toolRows = adoption.map(
     (c) =>
       `Community tool: ${c.id}${c.version ? `@${clean(c.version, 50)}` : ""} — ${"license" in c ? `registry checked, license ${clean(c.license, 60)}` : clean(c.warning)}. ${clean(c.upstream, 230)}`,
@@ -303,11 +323,12 @@ export async function runEvidence(task, options = {}) {
       `Public research ${web.cached ? "(cached)" : "(this lookup)"}${web.checkedAt ? ` ${web.checkedAt}` : ""}. Verify upstream before reuse.`,
     );
   }
-  const text = [local.text, ...toolRows, ...publicRows].filter(Boolean).join("\n");
+  const text = [local.text, ...lessons, ...toolRows, ...publicRows].filter(Boolean).join("\n");
   return {
     ...local,
     web,
     adoption,
+    hikmah,
     text: text.length > cap ? `${text.slice(0, cap - 2)} …` : text,
   };
 }

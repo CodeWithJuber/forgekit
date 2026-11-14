@@ -323,6 +323,15 @@ export function gateDecision({
     verifyEvidence?.status === "PASS" &&
     verifyEvidence?.codeStateMatches === true &&
     verifyEvidence?.authentic !== false; // B7: a hand-written stamp carries no valid MAC
+  // A current signed suspect result overrides weaker evidence such as a touched test.
+  // Stale and unauthenticated reports cannot veto unrelated work.
+  if (
+    verifyEvidence?.status === "SUSPECT" &&
+    verifyEvidence.fresh &&
+    verifyEvidence.codeStateMatches &&
+    verifyEvidence.authentic === true
+  )
+    return { allow: false, row: "suspect-test-coverage", classes };
   const hasTestFile =
     substantiveTests == null ? classes.test.length > 0 : substantiveTests.length > 0;
   const testEvidence = strongVerify || e2eEvidence === true || hasTestFile;
@@ -401,6 +410,8 @@ export function repairReason(
     unattributed = 0,
   } = {},
 ) {
+  if (row === "suspect-test-coverage")
+    return `The current verification receipt flags potentially weakened test coverage. Inspect testIntegrity.findings in .forge/provenance.json under event. Recover missing coverage or explain the intentional test change to an independent reviewer. Rerun ${BRAND.cli} verify against the same baseline before claiming a passing result.`;
   const uiRow = row === "ui-without-evidence";
   const walked = codeFiles.length ? codeFiles : uiRow ? (classes.ui ?? []) : [];
   let likelyDocs = [];
@@ -608,7 +619,7 @@ export function stopGate(root, sid, hook = {}) {
           codeStateMatches,
           // No key available anywhere (unwritable state dir) → degrade to unsigned rather
           // than blocking a session that can never produce a signed stamp.
-          authentic: mac == null || prov?.signature === mac,
+          authentic: mac == null ? status !== "SUSPECT" : prov?.signature === mac,
         };
       }
     } catch {}

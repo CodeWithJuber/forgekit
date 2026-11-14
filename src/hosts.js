@@ -41,6 +41,7 @@ import { isAbsolute, join } from "node:path";
 import { GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
 import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
+import { readForgeConfig } from "./repo_config.js";
 import { readJsonSafe, userStateDir } from "./util.js";
 
 /** The events forge has guards for — Claude Code's names, the shape every guard reads.
@@ -55,7 +56,7 @@ import { readJsonSafe, userStateDir } from "./util.js";
 /** @typedef {{label: string, tool: string, file: string|null, layout: "groups"|"flat"|"copilot",
  *    dialect: keyof typeof DIALECTS, events: Record<string, HostEvent>,
  *    tools: Record<string, string>, timeoutMs?: boolean, named?: boolean, matchAll?: string,
- *    windows?: string, detect?: string[], via?: string, trust: string}} Host */
+ *    windows?: string, detect?: string[], via?: string, plugin?: boolean, trust: string}} Host */
 
 /** @type {Record<string, HostEvent>} */
 const CLAUDE_EVENTS = {
@@ -176,6 +177,24 @@ export const HOSTS = {
       task: "Task",
     },
     trust: "the cloud agent reads this file from the default branch only",
+  },
+  kimi: {
+    label: "Kimi Code",
+    tool: "kimi",
+    file: null,
+    plugin: true,
+    layout: "groups",
+    dialect: "kimi",
+    events: {
+      SessionStart: { as: "SessionStart" },
+      UserPromptSubmit: { as: "UserPromptSubmit", context: true, block: true },
+      PreToolUse: { as: "PreToolUse" },
+      PostToolUse: { as: "PostToolUse" },
+      PostToolUseFailure: { as: "PostToolUseFailure" },
+      Stop: { as: "Stop", block: true },
+    },
+    tools: {},
+    trust: "install the per-user ForgeKit plugin with /plugins install, then /reload",
   },
   // Devin (the CLI and the desktop app that was Windsurf) reads Claude Code's settings file,
   // so it has no file of its own: the claude channel serves it, with Devin's own limits.
@@ -373,7 +392,17 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
     const source = String(pick(data, FIELDS.source) ?? "startup");
     base.source = SOURCES[source] ?? source;
   }
-  if (def.as === "UserPromptSubmit") base.prompt = String(pick(data, FIELDS.prompt) ?? "");
+  if (def.as === "UserPromptSubmit") {
+    const prompt = pick(data, FIELDS.prompt);
+    // Kimi sends multimodal prompt parts; only textual parts are valid search terms.
+    base.prompt =
+      hostId === "kimi" && Array.isArray(prompt)
+        ? prompt
+            .filter((p) => p?.type === "text" && typeof p.text === "string")
+            .map((p) => p.text)
+            .join(" ")
+        : String(prompt ?? "");
+  }
   // A host that counts stop-hook rounds (Cursor) says the same thing as `stop_hook_active`.
   if (def.as === "Stop")
     base.stop_hook_active = Boolean(data.stop_hook_active) || Number(data.loop_count) > 0;
@@ -405,7 +434,7 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
     ...(typeof code === "number" ? { exitCode: code } : {}),
     ...(def.as === "PostToolUseFailure"
       ? {
-          error: String(data.error ?? data.error_message ?? "Tool failed"),
+          error: String(data.error?.message ?? data.error ?? data.error_message ?? "Tool failed"),
           is_interrupt: data.is_interrupt === true,
           failure_type: data.failure_type,
         }
@@ -664,6 +693,12 @@ export const DIALECTS = {
         ? json({ followup_message: reason })
         : json({ continue: false, user_message: reason }),
   },
+  kimi: {
+    deny: (_e, reason) => ({ stdout: "", stderr: reason, exit: 2 }),
+    ask: (_e, reason) => ({ stdout: "", stderr: reason, exit: 2 }),
+    context: (_e, context) => json({ message: context }),
+    block: (_e, reason) => ({ stdout: "", stderr: reason, exit: 2 }),
+  },
   copilot: {
     deny: (_e, reason) => json({ permissionDecision: "deny", permissionDecisionReason: reason }),
     ask: (_e, reason) => json({ permissionDecision: "ask", permissionDecisionReason: reason }),
@@ -881,6 +916,20 @@ export async function runHook({
     // An agent that reads Claude Code's file is served by its own channel when it has one,
     // and by its own rules (tool names, what it can express) when it does not.
     let as = host;
+    if (host === "kimi") {
+      // Kimi launches plugin hooks in its managed copy. Only the payload identifies
+      // the actual workspace. Respect a project's explicit hook opt-out.
+      const cwd = pick(payload, FIELDS.cwd);
+      if (typeof cwd !== "string" || !isAbsolute(cwd)) return silent;
+      const { sourceWorkspaceRoot } = await import("./sources.js");
+      const cfg = readForgeConfig(sourceWorkspaceRoot(cwd));
+      if (
+        cfg.corrupt ||
+        cfg.hooks?.project === false ||
+        (Array.isArray(cfg.hooks?.hosts) && !cfg.hooks.hosts.includes("kimi"))
+      )
+        return silent;
+    }
     if (host === "claude") {
       const actual = detectHost(env);
       const cwd = String(pick(payload, FIELDS.cwd) ?? process.cwd());

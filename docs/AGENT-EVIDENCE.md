@@ -46,7 +46,7 @@ forge evidence "Investigate retries in our HTTP client" --json
 forge evidence "Choose a retry helper" --web "Node.js fetch Retry-After idempotent requests"
 ```
 
-The relative path in the aggregation example starts at the configured `manuals` root. `forge sources sync` refreshes all configured sources. For a single provider, pass its source ID. `--mcp` tells the route command that your client has a connected server for the source. The command reports the route. For an individual REST read, use `forge sources read <source-id> <record-id>` or the provider-neutral `forge_source_read` MCP tool with that source. Supply a Jira issue key/ID, a numeric Confluence page ID, or the project-local GitLab issue/MR IID. For example, `!42` in a GitLab project corresponds to IID `42`. Longer live bodies support `--offset` and `--limit` in UTF-16 code units. Pass the returned `nextOffset` to request the next page. The default limit is 8,000 and the maximum is 16,000. A write needs the host's live tool or an authenticated provider client.
+The relative path in the aggregation example starts at the configured `manuals` root. `forge sources sync` refreshes all configured sources. For a single provider, pass its source ID. `--mcp` tells the route command that your client has a connected server for the source. The command reports the route. For an individual REST read, use `forge sources read <source-id> <record-id>` or the provider-neutral `forge_source_read` MCP tool with that source. Supply a Jira issue key/ID, a numeric Confluence page ID, or the project-local GitLab issue/MR IID. For example, `!42` in a GitLab project corresponds to IID `42`. Longer live bodies support `--offset` and `--limit` in UTF-16 code units. Pass the returned `nextOffset` to request the next page. The default limit is 8,000 and the maximum is 16,000. The optional version-checked Confluence update is described below. Other live mutations use an authenticated provider client.
 
 For a configured HTTP MCP endpoint, add an `mcp` object to the relevant source in the private config. For example, an authenticated Jira Cloud source can use `{"url":"https://mcp.atlassian.com/v2/mcp","tokenEnv":"ATLASSIAN_MCP_ACCESS_TOKEN"}`. Run `forge sources probe tickets` to inspect the tools it actually advertises. Set `mcp.tool` to that endpoint's exact record-read tool name, then run `forge sources route tickets read --fresh --probe`. The probe initializes MCP and lists available tools. The host performs the subsequent provider MCP call. Use an issued access token for the endpoint. OAuth setup/refresh and scoped REST credentials are separate. [MCP HTTP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 
@@ -141,11 +141,40 @@ A local result establishes what was visible at the last successful sync. For que
 
 Remote sync credentials depend on the provider. The Cloud Atlassian REST adapter uses a site-compatible API token plus email, its Data Center adapter uses a bearer PAT, and the GitLab adapter sends the configured token as `PRIVATE-TOKEN`. Site-specific OAuth, SSO or scoped-token gateways can use a compatible host MCP client or need an additional REST adapter.
 
-Source configuration and snapshots are scoped to the current workspace and OS user. A changed remote credential, site, provider or project/space selects a different identity or source scope. Source search excludes remote snapshots past their configured `ttlSeconds` (default 900). Refresh after permission changes and for a question about current state. An entry could have changed immediately after it was fetched, even within the TTL. A completed full refresh drops removed records. While refresh is running, readers temporarily treat that source as unavailable. The most recently started refresh owns publication. An older overlapping refresh cannot restore superseded rows. A failed sync invalidates the affected remote snapshot. Check source status for the failure and retry after credentials, connectivity or rate limits recover. A token rotation requires a fresh sync.
+Source configuration and snapshots are scoped to the current workspace and OS user. A changed remote credential, site, provider or project/space selects a different identity or source scope. Source search excludes remote snapshots past their configured `ttlSeconds` (default 900). Refresh after permission changes and for a question about current state. An entry could have changed immediately after it was fetched, even within the TTL. Every completed remote refresh checks which record IDs the identity can currently see and drops missing records from the active generation. While refresh is running, readers temporarily treat that source as unavailable. The most recently started refresh owns publication. An older overlapping refresh cannot restore superseded rows. A failed sync invalidates the affected remote snapshot. Check source status for the failure and retry after credentials, connectivity or rate limits recover. A token rotation requires a fresh sync.
 
 Each workspace supports up to 12 configured sources. A snapshot is capped at 1,200 chunks and the search index at 12 MiB per source. Search processes at most 20 distinct query terms and emits at most 12 hits. The default search budget is 600 estimated tokens, using 3.6 characters per token. Local extraction can return a partial result with warnings for truncated or unsupported files. Check these fields before treating a negative result as exhaustive.
 
-This version covers Jira issue summaries, descriptions and status, Confluence page titles and bodies, and GitLab project issues or MRs. Configure a second GitLab source to mirror both resource types. Attachments, discussions, comments, commit diffs and provider audit logs require their own live tools or future adapters. A full refresh traverses scope on every run. Overlapping incremental cursors with periodic full reconciliation are a future scale optimization.
+This version covers Jira issue summaries, descriptions and status, Confluence page titles and bodies, and GitLab project issues or MRs. Configure a second GitLab source to mirror both resource types. Attachments, discussions, comments, commit diffs and provider audit logs require their own live tools or future adapters. The first sync or an explicit `--full` fetches the entire scoped collection. Later syncs read changed bodies with a 15-minute overlap on Jira and GitLab. Confluence's server-local CQL date boundary rounds its hour overlap outward to a whole day. A second paginated traversal checks currently visible IDs each time. A newly accessible back-dated item or a conflicting update triggers full backfill. Some GitLab endpoints return complete rows during that traversal. A 429 ends the attempt. The private source records the retry deadline and suppresses repeat calls for that credential scope until it passes.
+
+### Browse and query a private mirror
+
+```sh
+forge sources get manuals --limit 10
+forge sources get manuals usage.csv
+forge sources get manuals usage.csv --chunk 0
+forge sources sql reviews 'SELECT status, count(*) FROM items GROUP BY status'
+forge sources sync reviews --full
+```
+
+`forge_source_search` returns ranked snippets, an item ID and a zero-based chunk number on newly synced snapshots. `forge_mirror_get` returns a paged list of items, then a manifest with locators when given an item ID, then the selected excerpt when given a chunk. Local manifests include byte size and SHA-256, sheet headers and indexed data-row counts or the number of extracted PDF pages when the corresponding reader recorded them. Check the partial flag and per-item completeness before drawing conclusions.
+
+`forge_mirror_sql` runs one read-only SQLite SELECT for the selected source. The `items` table exposes `id, path, title, kind, status, updated_at, fetched_at, source, chunk_count`. The `chunks` table has `item_id, ordinal, locator, text`. The response includes column names, row arrays, the snapshot's observation time and truncation. The query is bounded to 1,000 rows, 128 KiB and a CPU/time budget. It requires Python 3 with sqlite3. Remote queries reuse a private per-generation read-only database. Local queries recheck the working tree and materialize only readable rows in memory. Use `forge sources aggregate` for exact numeric operations over the underlying spreadsheet cells. A 500-record synthetic GitLab fixture yielded 100 closed and 400 open items. The first grouped query took 97 ms including materialization, followed by seven queries at 36–46 ms. Each query reused the local snapshot. [SQLite authorizer](https://www.sqlite.org/c3ref/set_authorizer.html)
+
+For joins across current local files, pass one to four named tables. Each descriptor selects an allow-listed relative CSV, TSV, XLS or XLSX path and an optional visible sheet. ForgeKit parses the complete selected input within configured byte and row limits, omits credential columns, rechecks permission and file identity, and returns each input hash. Files are opened by ForgeKit before running the SQL. SQLite runs in memory with external file access and extensions unavailable. Headers form the column names. Cells retain their string representation for joins such as SKU `001`. Use `decimal_sum` for exact decimal totals and `decimal_avg` for averages rounded to 34 significant digits.
+
+```sh
+forge sources sql manuals 'SELECT c.region, decimal_sum(i.amount) FROM invoices i JOIN customers c ON c.id=i.customer_id GROUP BY c.region' --tables '[{"name":"invoices","path":"invoices.xlsx","sheet":"Orders"},{"name":"customers","path":"customers.csv"}]'
+```
+
+For an editable Confluence source, set `"allowWrites":true` in the private source config and use a credential with page-edit access. Read the cached page manifest for its version. Prepare the complete desired page body in Confluence storage format. The following example targets one existing page.
+
+```sh
+forge sources get design 12345
+forge sources update-page design 12345 --version 7 --title "Retry policy" --body-file retry-policy.xhtml
+```
+
+ForgeKit re-reads that page in the configured space, compares its version and updated time, and sends the incremented version in the provider's update. A conflicting edit aborts and refreshes the local item. The write path re-reads the current version before reporting success and never automatically resends an uncertain PUT. The result distinguishes a conflict, an unconfirmed request and an applied update awaiting verification. Use the vendor's supported live path for Jira and GitLab mutations. [Confluence Cloud](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/) · [Confluence Data Center](https://developer.atlassian.com/server/confluence/rest/v1001/api-group-content-resource/)
 
 ## Local documents and tabular data
 
@@ -189,7 +218,7 @@ For a concrete stack choice, first discard candidates that fail the project's su
 * **Duplicate implementations.** Normalize AST token shingles and generate approximate candidates with MinHash and locality-sensitive hashing. For b bands of r hashes, a pair with Jaccard similarity s has candidate probability `1−(1−sʳ)ᵇ` under independent hashing. Verify candidates by actual structure, public contract and tests. Distinct functions with similar boilerplate should remain easy to dismiss.
 * **Context budget.** Compare current value-density assembly with greedy marginal selection `[relevance(i) − μ·max similarity(i, selected)] / estimatedTokens(i)`. Reserve space for required definitions and verification evidence. Deduplicate citations before applying the budget. Evaluate code and Arabic/English documents separately because character-to-token ratios differ.
 * **Sharing and promotion.** A proposed cross-project claim names scope, version, source, evidence and expiry. Two independent successful reuse events suggest a candidate for review. An owner selects the intended audience and checks the proposed claim's contents. Share the minimal verified lesson through the team's authorized repository. Evaluate the outcome of consuming it on a new repo against memory disabled.
-* **Scale and maintenance.** Introduce incremental API watermarks with an overlap window, idempotent upserts and periodic full permission/deletion reconciliation if full refresh latency or rate limiting becomes material. Store cursor and result in one transaction. Compare per-file content hashes with a directory hash tree on real corpora. Introduce a search DB, sidecar or hosted service only if it delivers an observed gain for the team.
+* **Scale and maintenance.** Track delta and ID-reconciliation request sizes on the actual tenant, including 429s and newly granted access. The observation watermark publishes with its successful generation. Compare per-file content hashes with a directory hash tree on real corpora. Introduce a search DB, sidecar or hosted service only if it delivers an observed gain for the team.
 
 ## Existing community options
 
@@ -234,3 +263,62 @@ Start with 20 representative tasks across at least two repos. Include a mechanic
 | Candidate extensions | Test an AST clone detector (for example jscpd), reference-linked cross-repo memory promotion, local embeddings with RRF, and OCR on their own fixture slices. | Ship each candidate only when paired tests show benefit after CPU time, maintenance, false positives and source isolation are counted. [jscpd](https://github.com/kucherenko/jscpd) |
 
 For a larger study, compare registry-first package checks with the existing installation guard, local lexical search with hybrid retrieval and bounded snippets with full-document context. Context length alone is a weak success measure. In controlled long-context experiments, retrieval accuracy varied with where the relevant information appeared. [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/)
+
+### Connect an external or locally installed MCP
+
+Run `forge integrations list` to view project choices. For a known endpoint use
+`forge integrations select deepwiki`. The `github` preset selects the remote
+repositories toolset in read-only mode. To use a different service, pass its
+Streamable HTTP URL. A local loopback address may use HTTP. A remote address
+requires HTTPS.
+
+```sh
+forge integrations connect team-git --url https://git.example.org/api/v4/mcp
+forge integrations connect internal-docs --url https://docs.example.org/mcp --token-env DOCS_MCP_TOKEN --probe
+forge integrations local codebase-memory-mcp --binary /opt/tools/codebase-memory-mcp
+forge integrations local docs-worker --binary /opt/mcp/bin/python --arg /opt/mcp/docs_worker.py --pass-env DOCS_API_KEY
+forge integrations remove internal-docs
+```
+
+Connect uses the current repository's selected hosts. With `--probe`, ForgeKit
+negotiates MCP and lists tools before writing the config. A host that supports
+OAuth can start its own login flow on first use. CLI probes for authenticated
+servers need a compatible bearer access token. `--token-env` writes a reference
+for Claude, Codex, Cursor, Gemini, VS Code and Kimi. Zed, Roo and Continue accept
+the unauthenticated configuration or can use their own authentication where
+supported. ForgeKit reports skipped host and authentication combinations.
+
+A local integration takes an installed executable plus repeatable `--arg` and
+`--pass-env` options. For a Python or Node interpreter the first argument must
+be the absolute installed entry-point script. ForgeKit checks the program and
+absolute argument files by SHA-256 before each launch. After an upgrade, remove
+and rebind the reviewed executable. Project files contain a launcher and binding
+reference. Each developer binds their own installation. The server receives its
+working directory and basic runtime environment. Pass other required environment
+variables explicitly by name. An approved executable runs as the current user.
+The code-graph integration is a local pilot with a user-supplied installation.
+[GitHub remote toolsets](https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md)
+· [Codebase Memory manual MCP configuration](https://github.com/DeusData/codebase-memory-mcp#manual-mcp-configuration)
+
+### Search Word, PowerPoint and scanned PDFs
+
+Local `.docx` and `.pptx` ingestion uses Python's standard library. Word text
+carries body paragraph or table-row locations. PowerPoint text carries the
+displayed slide number, preserves presentation order and skips hidden slides.
+The reader ignores notes, external relationships and unsupported embedded content.
+
+An optional source-level `docling` setting enables a local PDF pipeline.
+
+```json
+{"id":"manuals","provider":"local","root":"/work/manuals","docling":{"mode":"scans","artifactsPath":"/opt/docling-models","languages":["eng","ara"]}}
+```
+
+`scans` tries Poppler first and falls back when extraction fails or a page has
+no text. `layout` requests Docling for every PDF in that source. Install Docling,
+Tesseract and the requested OCR languages separately and prefetch the Docling
+models. Linux requires libseccomp. macOS requires sandbox-exec. The worker
+denies network access to its process and children. Windows reports the optional
+offline pipeline as unavailable. Check inferred tables against the originals
+before relying on their values. Format support and network isolation have
+fixtures. A benchmark of OCR accuracy on company documents requires that corpus.
+[Docling local model setup](https://docling-project.github.io/docling/usage/advanced_options/)

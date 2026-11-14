@@ -199,6 +199,8 @@ function documentOf({ provider, base, scope, resource }, row) {
     return {
       id,
       recordId: String(row.key),
+      kind: "issue",
+      status: fields.status?.name ?? null,
       title: `${row.key} ${fields.summary}`,
       text: [fields.status?.name, adfText(fields.description)].filter(Boolean).join("\n"),
       url: `${base}/browse/${encodeURIComponent(row.key)}`,
@@ -212,6 +214,9 @@ function documentOf({ provider, base, scope, resource }, row) {
     return {
       id,
       recordId: id,
+      kind: "page",
+      version: Number.isSafeInteger(row.version?.number) ? row.version.number : null,
+      status: row.status ?? null,
       title: row.title,
       text: storageText(row.body.storage.value),
       url: `${base}/pages/viewpage.action?pageId=${encodeURIComponent(id)}`,
@@ -241,6 +246,8 @@ function documentOf({ provider, base, scope, resource }, row) {
   return {
     id,
     recordId: String(row.iid),
+    kind: resource === "issues" ? "issue" : "merge_request",
+    status: row.state ?? null,
     title: `${resource === "issues" ? "#" : "!"}${row.iid} ${row.title}`,
     text: [row.state, row.description].filter(Boolean).join("\n"),
     url: url.href,
@@ -250,12 +257,21 @@ function documentOf({ provider, base, scope, resource }, row) {
 
 async function pageJson(response) {
   if (!response.ok) {
-    const retry = response.status === 429 && Number(response.headers.get("retry-after"));
+    const hint = response.headers.get("retry-after");
+    const seconds =
+      hint && /^\d+$/.test(hint) ? Number(hint) : (Date.parse(hint) - Date.now()) / 1000;
+    const retry =
+      response.status === 429
+        ? Number.isFinite(seconds) && seconds > 0
+          ? Math.ceil(seconds)
+          : 60
+        : 0;
+    const retryAt = retry ? Math.min(8e15, Date.now() + retry * 1000) : undefined;
     const error = new Error(
       `Source returned HTTP ${response.status}${retry > 0 ? ` (retry in ${retry}s)` : ""}`,
     );
     await response.body?.cancel().catch(() => {});
-    throw Object.assign(error, { status: response.status });
+    throw Object.assign(error, { status: response.status, retryAt });
   }
   const chunks = [];
   let length = 0;
@@ -337,16 +353,39 @@ export async function fetchRemoteRecord(
  * never returns partial documents. checkpoint is the local observation time, not a remote
  * transaction ID. A full replacement reconciles permission changes and deletions.
  * @param {any} source trusted, user-owned provider config
- * @param {{env?:Record<string,string>, fetchImpl?:typeof fetch, maxPages?:number}} [options]
+ * @param {{env?:Record<string,string>, fetchImpl?:typeof fetch, maxPages?:number, since?:string, idsOnly?:boolean}} [options]
  */
 export async function fetchRemoteSource(
   source,
-  { env = process.env, fetchImpl = fetch, maxPages = 100 } = {},
+  { env = process.env, fetchImpl = fetch, maxPages = 100, since = undefined, idsOnly = false } = {},
 ) {
   if (!Number.isSafeInteger(maxPages) || maxPages < 1) throw new Error("Invalid page limit");
   const conn = connection(source, env);
   const page = initialPage(conn);
   const checkpoint = new Date().toISOString();
+  const frozen = Date.parse(since);
+  if (since !== undefined && !Number.isFinite(frozen)) throw new Error("Invalid source watermark");
+  const overlap = conn.provider === "confluence" ? 60 : 15;
+  if (since && conn.provider === "gitlab")
+    page.searchParams.set("updated_after", new Date(frozen - overlap * 60000).toISOString());
+  if (since && conn.provider !== "gitlab") {
+    // Relative server-time filters are independent of the Jira/Confluence account timezone.
+    const minutes = Math.max(1, Math.ceil((Date.now() - frozen) / 60000) + overlap);
+    const field = conn.provider === "jira" ? "jql" : "cql";
+    const base = page.searchParams.get(field).split(" ORDER BY ")[0];
+    const date = conn.provider === "jira" ? "updated" : "lastmodified";
+    // CQL supports startOfDay with an offset. Round outward to whole days to
+    // include today's boundary across server time zones. JQL supports relative minutes.
+    const predicate =
+      conn.provider === "jira" ? `"-${minutes}m"` : `startOfDay("-${Math.ceil(minutes / 1440)}d")`;
+    page.searchParams.set(field, `${base} AND ${date} >= ${predicate} ORDER BY ${date} ASC`);
+  }
+  if (idsOnly) {
+    if (conn.provider === "jira") page.searchParams.set("fields", "updated");
+    if (conn.provider === "confluence") page.searchParams.set("expand", "version");
+    if (conn.provider === "gitlab" && conn.resource === "merge_requests")
+      page.searchParams.set("view", "simple");
+  }
   const documents = new Map();
   const visited = new Set();
   let size = 0;
@@ -364,13 +403,76 @@ export async function fetchRemoteSource(
           : body;
     if (!Array.isArray(rows)) throw new Error("Invalid provider result collection");
     for (const row of rows) {
-      const doc = documentOf(conn, row);
+      const doc = idsOnly
+        ? {
+            id: row?.id,
+            recordId:
+              conn.provider === "jira" ? row?.key : conn.provider === "gitlab" ? row?.iid : row?.id,
+            updatedAt:
+              conn.provider === "jira"
+                ? row?.fields?.updated
+                : conn.provider === "gitlab"
+                  ? row?.updated_at
+                  : row?.version?.when,
+          }
+        : documentOf(conn, row);
+      if (doc.id == null || doc.recordId == null)
+        throw new Error("Provider omitted a record identifier");
+      doc.id = String(doc.id);
+      doc.recordId = String(doc.recordId);
       size += Buffer.byteLength(JSON.stringify(doc));
       if (size > SNAPSHOT_BYTES) throw new Error("Source snapshot exceeds the size limit");
       documents.set(doc.id, doc);
     }
     const next = pagination(conn, body, headers, page, rows.length);
-    if (!next) return { documents: [...documents.values()], mode: "full", checkpoint };
+    if (!next)
+      return {
+        documents: [...documents.values()],
+        mode: idsOnly ? "ids" : since ? "incremental" : "full",
+        checkpoint,
+      };
     page.searchParams.set(next[0], next[1]);
   }
+}
+
+/** One Confluence update against the version the caller already re-read. Never retry a
+ * potentially applied PUT. Both APIs require a new version number on a page update. */
+export async function putConfluencePage(source, recordId, { title, storage, expectedVersion }) {
+  if (source.provider !== "confluence" || source.allowWrites !== true)
+    throw new Error("Enable allowWrites on a configured Confluence source to update pages");
+  if (
+    !/^\d{1,128}$/.test(recordId) ||
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 1 ||
+    expectedVersion >= Number.MAX_SAFE_INTEGER ||
+    typeof title !== "string" ||
+    !title.trim() ||
+    title.length > 255 ||
+    typeof storage !== "string" ||
+    !storage.trim() ||
+    Buffer.byteLength(storage) > 1024 * 1024
+  )
+    throw new Error(
+      "Provide a numeric page ID, a positive version, title and storage-format body up to 1 MiB",
+    );
+  const conn = connection(source, process.env);
+  const cloud = conn.deployment === "cloud";
+  const path = cloud ? "api/v2/pages" : "rest/api/content";
+  const body = {
+    id: recordId,
+    title,
+    status: "current",
+    version: { number: expectedVersion + 1 },
+    ...(cloud
+      ? { body: { representation: "storage", value: storage } }
+      : { type: "page", body: { storage: { representation: "storage", value: storage } } }),
+  };
+  const response = await fetch(`${conn.base}/${path}/${encodeURIComponent(recordId)}`, {
+    method: "PUT",
+    redirect: "error",
+    signal: AbortSignal.timeout(20000),
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...conn.auth },
+    body: JSON.stringify(body),
+  });
+  return pageJson(response);
 }

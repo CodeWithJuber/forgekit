@@ -6,13 +6,13 @@ const MAX_PAGES = 12;
 const MAX_TOOLS = 1000;
 const TOOL_NAME = /^[\w.-]{1,128}$/;
 
-function endpoint(source, env) {
-  const config = source?.mcp;
-  if (!["jira", "confluence", "gitlab"].includes(source?.provider) || !config?.url)
-    throw new Error("Configure an enterprise source with mcp.url");
+/** Validate a Streamable HTTP address before probing it or emitting a client config. */
+export function validatedMcpUrl(value) {
+  if (typeof value !== "string" || value.length > 2048 || /[\s\p{Cc}\p{Cf}$\\{}]/u.test(value))
+    throw new Error("Invalid MCP endpoint");
   let url;
   try {
-    url = new URL(config.url);
+    url = new URL(value);
   } catch {
     throw new Error("Invalid MCP endpoint");
   }
@@ -21,10 +21,15 @@ function endpoint(source, env) {
     (url.protocol !== "https:" && !(local && url.protocol === "http:")) ||
     url.username ||
     url.password ||
-    url.hash ||
-    url.search
+    value.includes("?") ||
+    value.includes("#")
   )
     throw new Error("Set mcp.url to an HTTPS endpoint without credentials, query or fragment");
+  return url.href;
+}
+
+function endpoint(config, env) {
+  const url = validatedMcpUrl(config?.url);
   const tool = config.tool ?? null;
   if (tool !== null && (typeof tool !== "string" || !TOOL_NAME.test(tool)))
     throw new Error("Invalid configured MCP tool name");
@@ -37,7 +42,7 @@ function endpoint(source, env) {
       throw new Error("Missing or invalid credential for mcp.tokenEnv");
     headers.set("Authorization", `Bearer ${token}`);
   }
-  return { url: url.href, headers, tool };
+  return { url, headers, tool };
 }
 
 function message(raw) {
@@ -112,11 +117,19 @@ async function readResult(response, id) {
  * @param {any} source Trusted source config from getSource()
  * @param {{env?:Record<string,string>,fetchImpl?:typeof fetch,timeoutMs?:number}} [options]
  */
-export async function probeSourceMcp(
-  source,
+export async function probeSourceMcp(source, options = {}) {
+  if (!["jira", "confluence", "gitlab"].includes(source?.provider) || !source?.mcp?.url)
+    throw new Error("Configure an enterprise source with mcp.url");
+  return probeMcpEndpoint(source.mcp, options);
+}
+
+/** @param {any} config Explicitly configured HTTP endpoint and optional token name
+ * @param {{env?:Record<string,string>,fetchImpl?:typeof fetch,timeoutMs?:number}} [options] */
+export async function probeMcpEndpoint(
+  config,
   { env = process.env, fetchImpl = fetch, timeoutMs = 8000 } = {},
 ) {
-  const { url, headers, tool } = endpoint(source, env);
+  const { url, headers, tool } = endpoint(config, env);
   const signal = AbortSignal.timeout(
     Number.isInteger(timeoutMs) ? Math.min(20000, Math.max(1, timeoutMs)) : 8000,
   );

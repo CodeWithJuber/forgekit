@@ -102,7 +102,8 @@ export const COMMANDS = {
   team: {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
-    usage: 'forge team "<task>" [--max-workers N] [--run claude --budget-usd N]',
+    usage:
+      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N]',
     examples: [
       'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
     ],
@@ -127,7 +128,7 @@ export const COMMANDS = {
     summary:
       "sync scoped project sources privately and search, route live reads or aggregate local tables",
     usage:
-      "forge sources init|status|sync [id]|probe <id>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
+      "forge sources init|status|sync [id] [--full]|update-page <id> <page> --version N --title TITLE --body-file FILE|probe <id>|get <id> [item] [--chunk N]|sql <id> <SELECT>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
     flags: [
       { flag: "--source <id>", desc: "restrict search to one configured source" },
       { flag: "--budget <tokens>", desc: "estimated token budget for search excerpts" },
@@ -508,11 +509,22 @@ export const COMMANDS = {
       "forge docs impact --since main",
     ],
   },
+  hikmah: {
+    summary: "bind a local Hikmah kernel ledger and recall its verified public lessons",
+    usage:
+      "forge hikmah on --binary <absolute-path> --store <absolute-path> | recall <query> | status | off",
+  },
+  prompts: {
+    summary: "choose a workspace development profile or show a portable prompt and specialist role",
+    usage:
+      "forge prompts list | use engineering|quran|off | status | show <master|pain-id|role-id> [--profile engineering|quran]",
+    examples: ["forge prompts use engineering", "forge prompts show master --profile quran"],
+  },
   integrations: {
     summary:
-      "find and install pinned community tools for a task, or manage opt-in third-party MCP config",
+      "choose project integrations, register custom packages and connect hosted or self-managed MCP endpoints",
     usage:
-      'forge integrations find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
+      'forge integrations list [--json] | select [id] | connect <id> [--url URL] [--token-env NAME] | local <id> --binary PATH [--arg ARG] | register <descriptor.json> | unregister <id> | find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
     examples: [
       'forge integrations find "test a browser checkout flow"',
       "forge integrations install playwright",
@@ -545,9 +557,20 @@ export const GROUPS = {
     "precommit",
     "test-select",
   ],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "claim", "handoff", "decide", "know"],
+  Memory: [
+    "hikmah",
+    "cortex",
+    "recall",
+    "remember",
+    "brain",
+    "ledger",
+    "claim",
+    "handoff",
+    "decide",
+    "know",
+  ],
   Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
-  Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
+  Config: ["prompts", "brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [
     "taste",
     "uicheck",

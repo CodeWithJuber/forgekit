@@ -277,3 +277,12 @@ test("rankReport degrades on a corrupt atlas.json and clamps a negative --top", 
   assert.ok(r.built);
   assert.equal(r.topFiles.length, 1, "negative top clamps to 1 instead of slicing the whole graph");
 });
+
+test("personalized PageRank redistributes dangling mass to task seeds; stale seeds fall back", () => {
+  const atlas = hubAtlas();
+  const rank = pagerank(atlas, { seeds: ["a.js::fa", "a.js::fa", "unknown"] });
+  assert.ok(rank.get("a.js::fa") > 0 && rank.get("util.js::help") > 0);
+  assert.equal(rank.get("b.js::fb"), 0);
+  assert.ok(Math.abs([...rank.values()].reduce((a, b) => a + b, 0) - 1) < 1e-8);
+  assert.deepEqual(pagerank(atlas, { seeds: ["unknown"] }), pagerank(atlas));
+});

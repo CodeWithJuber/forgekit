@@ -38,7 +38,7 @@ reference on the same day):
 | **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | not supported in the agent |
 | **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | not supported in the agent |
 | **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | not supported in the agent |
-| **Kimi Code** | root `AGENTS.md`, merged by Kimi from the project root to the working directory ([kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) — tested (emission) | not supported (not verified for a repo-local file) | not supported | not supported in the agent |
+| **Kimi Code** | Shared root `AGENTS.md` | Trusted workspace `.kimi-code/mcp.json` | Per-user ForgeKit plugin runs SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure and Stop. A real Kimi 2.6.2 prompt delivered indexed source evidence. | PreToolUse can deny; Stop and UserPromptSubmit can block. Kimi observes post-tool events asynchronously. |
 | **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
 | **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
 
@@ -90,7 +90,7 @@ names tests found by filename convention as suggestions. A syntax success does n
 a passing project suite. The existing Stop gate evaluates verification and session evidence.
 Edits made entirely inside a shell command can bypass this post-edit callback.
 
-The prompt hook runs evidence retrieval directly in Claude Code, local Codex and Gemini CLI.
+The prompt hook runs evidence retrieval directly in Claude Code, local Codex, Gemini CLI and Kimi Code.
 Cursor and Copilot command hooks use the first subsequent tool result that accepts context.
 A tool-free turn on those hosts receives no injected evidence. The deferred query is redacted,
 user-private and scoped to the workspace and session. The excerpt is retrieved at delivery.
@@ -109,6 +109,10 @@ post-edit parser result and the explicit test-execution status. A local mock rec
 The Codex CLI installed and enabled the bundle in an isolated configuration. The available
 sandbox could not start a nested Codex model session, so the Codex delivery test runs its
 packaged hook command with the documented payload.
+
+For Kimi Code, run `forge init --tools kimi` from the repository to configure its project MCP server, then start Kimi in that directory and trust the workspace. Install the ForgeKit directory as a native user plugin with `/plugins install /absolute/path/to/forgekit`, then `/reload`. The directory must contain `kimi.plugin.json` and its packaged code. Kimi also accepts a GitHub URL pinned to a revision containing this manifest. The plugin is installed once per user. `forge hooks on --hosts kimi` displays the local install command and records this repo's selection. `forge hooks status` reads the Kimi install record. `forge hooks off` opts this repo out. To disable the plugin for all projects use `/plugins disable forgekit` followed by `/reload`. [Kimi plugins](https://moonshotai.github.io/kimi-code/en/customization/plugins) · [Hook events](https://moonshotai.github.io/kimi-code/en/customization/hooks) · [Workspace MCP](https://moonshotai.github.io/kimi-code/en/customization/mcp)
+
+On 14 November 2026 an isolated Kimi Code 2.6.2 CLI loaded the packaged plugin, processed an ordinary user prompt and sent the matching synthetic handbook CSV row, its source path and row locator to a local OpenAI-compatible model fixture in the first request. Kimi runs the plugin command in the managed plugin directory and sends the workspace path in the hook payload. The adapter uses that workspace for retrieval. Kimi accepts prompt context in the `message` field. Outputs from post-tool event hooks do not inject evidence into the current turn. In the same test, the trusted workspace MCP client completed initialization and requested the ForgeKit tool list. Its asynchronous startup is independent of the prompt hook. A separately launched Kimi review worker received its task evidence in a temporary workspace. Its model request included the brief and advertised zero tools.
 
 Local Codex requires hook trust. Review the plugin or project commands in `/hooks` after
 installation or an update. Codex cloud orchestration does not execute these local commands.

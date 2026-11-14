@@ -41,7 +41,8 @@ most deeply exercised integration.
 | Cursor, Gemini CLI, Copilot | ✅ | ✅ | Project hooks |
 | Zed, Continue | ✅ | ✅ | — |
 | Devin | ✅ | — | Via trusted Claude project hooks |
-| Aider, OpenClaw, Kimi Code | ✅ | — | — |
+| Kimi Code | ✅ | Project MCP | Native user plugin |
+| Aider, OpenClaw | ✅ | — | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Why it wins, measured:
@@ -77,11 +78,13 @@ It does three jobs:
 >   exercise than Claude Code. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
 >   is tested and in daily use.
 > - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). The other eleven tools receive native config (most also an MCP server entry; Aider,
->   Windsurf/Devin and Kimi Code do not). Codex, Gemini CLI, Cursor, Copilot and Devin can run
+>   guards). MCP registration and hook coverage for the other tools vary by host.
+>   Codex, Gemini CLI, Cursor, Copilot and Devin can run
 >   the guards automatically once a repository opts in with `forge hooks on`; that adapter is
 >   tested against each vendor's documented hook protocol but has not been exercised inside
 >   those agents the way the Claude Code path has. Local Codex also accepts trusted bundled hooks.
+>   Kimi Code loads its native plugin per user and accepts project MCP in a trusted workspace.
+>   A normal prompt on Kimi Code 2.6.2 delivered local source evidence into a loopback model request.
 >   Prompt and failure delivery varies by host. See [Agent evidence](docs/AGENT-EVIDENCE.md).
 >   On OpenClaw specifically, rules arrive via `AGENTS.md` project context; the config-only
 >   path uses a one-command MCP registration, while installing the package as a compatible
@@ -134,6 +137,10 @@ forge verify                             # 3. did the change pass the suites tha
 ```
 
 ### Automatic evidence for coding agents
+
+For Kimi Code, `KIMI_CODE_HOME` selects the user profile where the native plugin is enabled. The project MCP connections live in `.kimi-code/mcp.json`. For Codex, enable the repository’s hooks in a trusted session.
+
+Choose the agents your project uses. For example, `forge init --tools kimi,codex` prepares both clients. Run `forge integrations` to browse packages and remote servers, or `forge integrations select` for the interactive picker. Select each integration separately. Use `forge integrations connect <id> --url <endpoint>` for a hosted or self-managed MCP server and `forge integrations register <descriptor.json>` for a custom npm tool. `forge integrations list --json` shows the recorded selection and `forge integrations remove <id>` disconnects it from the project. Read the [implementation and host setup guide](docs/V2-IMPLEMENTATION.md) for Kimi's native plugin, Codex hook trust, portable agents and command examples.
 
 Use `forge develop "<task>"` to inspect the development plan and research evidence. Use `forge develop "<task>" --verify` to run the project checks for the current tree.
 
@@ -470,7 +477,8 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge demo`          | scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)                                                                                                                                                                             |
 |                         | `forge precommit`     | commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)                                                                                                                                                                                                             |
 |                         | `forge test-select`   | smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)                                                                                                                                                                               |
-| **Memory**              | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                              |
+| **Memory**              | `forge hikmah`        | bind a local Hikmah kernel ledger and recall its verified public lessons                                                                                                                                                                                                                            |
+|                         | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                              |
 |                         | `forge recall`        | manage cross-session memory (list / add / consolidate)                                                                                                                                                                                                                                              |
 |                         | `forge remember`      | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                                                                                                     |
 |                         | `forge brain`         | show / rebuild the portable project memory index                                                                                                                                                                                                                                                    |
@@ -485,10 +493,11 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge harden`        | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                                                                                                |
 |                         | `forge radar`         | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                                                                                                  |
 |                         | `forge hooks`         | run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)                                                                                                                                        |
-| **Config**              | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
+| **Config**              | `forge prompts`       | choose a workspace development profile or show a portable prompt and specialist role                                                                                                                                                                                                                |
+|                         | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
 |                         | `forge atlas`         | build / query the code-graph (where-is-Y, has-symbol)                                                                                                                                                                                                                                               |
 |                         | `forge stack`         | detect this repo's real stack (languages, frameworks, test commands) from its manifests                                                                                                                                                                                                             |
-|                         | `forge integrations`  | find and install pinned community tools for a task, or manage opt-in third-party MCP config                                                                                                                                                                                                         |
+|                         | `forge integrations`  | choose project integrations, register custom packages and connect hosted or self-managed MCP endpoints                                                                                                                                                                                              |
 |                         | `forge cost`          | real per-day spend via ccusage + measured stage factors (--stages)                                                                                                                                                                                                                                  |
 |                         | `forge budget`        | cost governance — per-day and per-task spend budgets, alert threshold, and an opt-in circuit breaker the cost guard enforces                                                                                                                                                                        |
 |                         | `forge models`        | each tier's model family resolved to a concrete model — newest in the provider's live catalog (else the shipped snapshot), with its price and where both came from                                                                                                                                  |
@@ -662,7 +671,7 @@ table is default-branch commit
 
 | Evidence level | What belongs here |
 | --- | --- |
-| **Implemented and tested in the Node runtime** | CLI and config emitters; 31 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
+| **Implemented and tested in the Node runtime** | CLI and config emitters; 34 MCP tools; agent memory and sync; code-context assembly; optional embedding adapter; LLM provider adapters; heuristic impact analysis; lifecycle guardrails; verification; benchmark harness; release automation |
 | **Research or integration demonstration** | Five declarative Claude Code agent roles; Python router/gate and impact-oracle packages; a 30-task live routing demonstration; support for external embedding providers; configuration emitted for integrations other than the deeply tested Claude Code path |
 | **Not claimed by this repository** | A collaborating multi-agent runtime; LangGraph, LangChain, Semantic Kernel, AutoGen, CrewAI, or Copilot Studio; Azure OpenAI or Azure AI Foundry; a vector database; enterprise-document RAG; business-system or RPA connectors; production Python deployment; multi-tenant cloud operation, SLA/SLO, Kubernetes, or infrastructure as code |
 

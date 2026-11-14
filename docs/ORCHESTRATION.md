@@ -68,13 +68,7 @@ rules do:
 | Aider | `.aider.conf.yml` has `read: AGENTS.md` |
 | Continue | `.continue/rules/00-forge.md` carries the same text |
 
-**Kimi Code.** Kimi Code CLI reads `AGENTS.md` without any extra file. Its documentation lists
-the system-prompt variable `${KIMI_AGENTS_MD}` as the "merged `AGENTS.md` content from project
-root to working directory (including `.kimi/AGENTS.md`)"
-([kimi-cli docs, customization/agents.md](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md),
-checked 2026-10). So Forgekit adds `kimi` as a target that relies on `AGENTS.md`. It writes no
-`.kimi/AGENTS.md` copy, because Kimi would merge it in a second time. It also writes no Kimi MCP
-config and no hooks, because a repo-local path for those was not verified.
+**Kimi Code.** Kimi reads project rules from the shared `AGENTS.md`. Select `kimi` during ForgeKit setup for trusted workspace MCP configuration in `.kimi-code/mcp.json`. The per-user plugin supplies automatic prompt hooks and exposes ForgeKit's skills. See [host setup](INTEGRATIONS.md) and [Kimi agent configuration](https://moonshotai.github.io/kimi-code/en/customization/agents).
 
 ## Turning rules on and off
 

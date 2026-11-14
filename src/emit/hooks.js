@@ -15,6 +15,7 @@
 // The command never fails a tool call on a machine without forge: it checks for the CLI first
 // and exits 0 when it is absent.
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { BRAND } from "../brand.js";
 import { HOSTS, isForgeHookCommand, userLevelWired } from "../hosts.js";
@@ -153,6 +154,12 @@ export function planHooks(text, hostId, { enable = true, bootstrap = false } = {
  */
 export function applyHooks(root, hostId, { enable = true, bootstrap = false } = {}) {
   const host = HOSTS[hostId];
+  if (host?.plugin) {
+    const note = enable
+      ? `In Kimi run /plugins install ${BRAND.root}, then /reload. This user-level install is shared by all projects.`
+      : "The project now opts out. Use /plugins disable forgekit in Kimi to disable it across projects.";
+    return { tool: host.label, target: "Kimi /plugins", action: "manual", note };
+  }
   if (!host?.file) return null;
   const path = join(root, host.file);
   const text = existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -173,8 +180,8 @@ export function applyHooks(root, hostId, { enable = true, bootstrap = false } = 
   };
 }
 
-/** The hosts that have a hook file of their own. */
-export const HOOK_HOSTS = Object.keys(HOSTS).filter((id) => HOSTS[id].file);
+/** Hosts that accept a project file or an explicit native-plugin setup choice. */
+export const HOOK_HOSTS = Object.keys(HOSTS).filter((id) => HOSTS[id].file || HOSTS[id].plugin);
 
 /**
  * Which hosts a repository's config selects: `hooks.hosts` when it names some, else every host
@@ -208,6 +215,22 @@ export function emitProjectHooks({ targetRoot, config, emits }) {
 export function hooksStatus(root, { config = {}, home } = {}) {
   const bootstrap = config?.hooks?.bootstrap === true;
   const hosts = Object.entries(HOSTS).map(([id, host]) => {
+    if (host.plugin) {
+      const kimiHome = process.env.KIMI_CODE_HOME || join(home || homedir(), ".kimi-code");
+      const records = readJsonSafe(join(kimiHome, "plugins", "installed.json"));
+      const record =
+        Array.isArray(records?.plugins) && records.plugins.find((r) => r?.id === BRAND.pkg);
+      const policyOff =
+        config?.hooks?.project === false ||
+        (Array.isArray(config?.hooks?.hosts) && !config.hooks.hosts.includes(id));
+      return {
+        host: id,
+        label: host.label,
+        file: null,
+        state: record?.enabled === true && !policyOff ? "enabled in Kimi" : "off",
+        note: host.trust,
+      };
+    }
     if (!host.file) {
       const through = HOSTS[host.via ?? ""];
       const on = through?.file ? isForgeHookCommand(readText(join(root, through.file))) : false;

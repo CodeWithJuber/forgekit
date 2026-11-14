@@ -29,8 +29,17 @@ import {
   MCP_TARGET_FILES,
   mcpTargetFilesFor,
   removeMcp,
+  targetDefinition,
   validateServerName,
 } from "./emit/mcp.js";
+import {
+  bindingDigest,
+  forgetBinding,
+  readBinding,
+  remoteDefinition,
+  saveBinding,
+  validBinding,
+} from "./remote_endpoints.js";
 import { readForgeConfig, recordedTools, writeForgeConfig } from "./repo_config.js";
 
 /** The catalog of known optional integrations. Keep each entry honest about what running it
@@ -105,7 +114,23 @@ function mcpRecord(cfg) {
         stableVersion(version),
     ),
   );
-  return { integrations, adopted, versions };
+  const privateBindings = (records) =>
+    Object.fromEntries(
+      Object.entries(records ?? {}).filter(
+        ([id, key]) =>
+          /^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) &&
+          !(id in Object.prototype) &&
+          id !== "forge-cortex" &&
+          validBinding(key),
+      ),
+    );
+  return {
+    integrations,
+    adopted,
+    versions,
+    remotes: privateBindings(raw.remotes),
+    local: privateBindings(raw.local),
+  };
 }
 
 /**
@@ -154,7 +179,10 @@ function registryServers() {
 export const stableVersion = (v) =>
   typeof v === "string" && /^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/.test(v);
 
-function integrationServer(name, rec) {
+function integrationServer(name, rec, targetRoot) {
+  if (Object.hasOwn(rec.local, name))
+    return { command: BRAND.cli, args: ["integrations", "serve-local", name] };
+  if (Object.hasOwn(rec.remotes, name)) return readBinding(targetRoot, name, rec.remotes[name]);
   const version = Object.hasOwn(rec.versions, name) && rec.versions[name];
   return version
     ? { command: BRAND.cli, args: ["integrations", "run", name, version] }
@@ -162,11 +190,20 @@ function integrationServer(name, rec) {
 }
 
 /** Registry ∪ recorded integrations (that exist in the catalog) — the full managed set. */
-function managedServers(rec) {
+function managedServers(rec, targetRoot, unbound = []) {
   const servers = { ...registryServers() };
-  for (const name of rec.integrations)
-    if (Object.hasOwn(INTEGRATIONS, name) || Object.hasOwn(rec.versions, name))
-      servers[name] = integrationServer(name, rec);
+  for (const name of rec.integrations) {
+    if (
+      !Object.hasOwn(INTEGRATIONS, name) &&
+      !Object.hasOwn(rec.versions, name) &&
+      !Object.hasOwn(rec.remotes, name) &&
+      !Object.hasOwn(rec.local, name)
+    )
+      continue;
+    const definition = integrationServer(name, rec, targetRoot);
+    if (definition) servers[name] = definition;
+    else unbound.push(name);
+  }
   return servers;
 }
 
@@ -193,8 +230,13 @@ export function managedMcpState(targetRoot) {
     };
   }
   const rec = mcpRecord(cfg);
+  const unbound = [];
+  const servers = managedServers(rec, targetRoot, unbound);
   return {
-    servers: managedServers(rec),
+    servers,
+    ...(unbound.length
+      ? { warning: `Connect the following HTTP endpoints in this workspace: ${unbound.join(", ")}` }
+      : {}),
     owns: adoptionOwns(rec.adopted),
     corrupt: false,
   };
@@ -211,10 +253,17 @@ export function managedMcpState(targetRoot) {
  */
 export function addIntegration(
   name,
-  { targetRoot = process.cwd(), adopt = false, version = undefined } = {},
+  {
+    targetRoot = process.cwd(),
+    adopt = false,
+    version = undefined,
+    remote = undefined,
+    localBinding = undefined,
+  } = {},
 ) {
   const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
-  if (!m && !version) return { ok: false, reason: `unknown integration: ${name}` };
+  if (!m && !version && !remote && !localBinding)
+    return { ok: false, reason: `unknown integration: ${name}` };
   try {
     validateServerName(name);
   } catch (err) {
@@ -229,11 +278,62 @@ export function addIntegration(
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const rec = mcpRecord(cfg);
+  if (localBinding || Object.hasOwn(rec.local, name)) {
+    if (
+      !validBinding(localBinding) ||
+      name in Object.prototype ||
+      Object.hasOwn(registryServers(), name) ||
+      m ||
+      version ||
+      remote ||
+      Object.hasOwn(rec.remotes, name) ||
+      Object.hasOwn(rec.versions, name)
+    )
+      return {
+        ok: false,
+        reason:
+          "Name is reserved or bound to another integration; remove the old binding before changing transport",
+      };
+    if (rec.local[name] && rec.local[name] !== localBinding)
+      return { ok: false, reason: "Remove this integration before changing its installed program" };
+    rec.local[name] = localBinding;
+  }
+  if (
+    remote &&
+    (m || version || Object.hasOwn(rec.versions, name) || Object.hasOwn(registryServers(), name))
+  )
+    return { ok: false, reason: "Name is already used by a package or built-in integration" };
+  if (!remote && Object.hasOwn(rec.remotes, name))
+    return {
+      ok: false,
+      reason: "Remove the HTTP integration before using this name for a package",
+    };
+  if (remote) {
+    const definition = remoteDefinition(name, remote.url, remote.tokenEnv);
+    const selection = recordedTools(cfg);
+    const supported =
+      mcpTargetFilesFor(selection).some((target) => targetDefinition(target, definition)) ||
+      ((selection === null || selection.includes("continue")) &&
+        targetDefinition("continue", definition));
+    if (!supported)
+      return {
+        ok: false,
+        reason:
+          "The selected clients do not support this HTTP transport and authentication combination",
+      };
+    if (Object.hasOwn(rec.remotes, name) && rec.remotes[name] !== bindingDigest(definition)) {
+      return {
+        ok: false,
+        reason: "Remove this endpoint before changing its address or authentication",
+      };
+    }
+    rec.remotes[name] = saveBinding(targetRoot, name, definition);
+  }
   if (version !== undefined && !stableVersion(version))
     return { ok: false, reason: "Invalid integration version" };
   if (version) rec.versions[name] = version;
-  const server = integrationServer(name, rec);
-  const servers = { ...managedServers(rec), [name]: server };
+  const server = integrationServer(name, rec, targetRoot);
+  const servers = { ...managedServers(rec, targetRoot), [name]: server };
   // Only the tools `forge init` recorded for this repo (every tool when none are), the same
   // set `forge sync` emits for, so adding a server never creates an unused tool's config.
   const tools = recordedTools(cfg);
@@ -246,7 +346,8 @@ export function addIntegration(
   const anyForeign = targets.some((t) => foreign.has(t));
   const newAdoptions = [];
   for (const t of targets)
-    if (!foreign.has(t) || adopt) newAdoptions.push({ server: name, target: t });
+    if (targetDefinition(t, server) && (!foreign.has(t) || adopt))
+      newAdoptions.push({ server: name, target: t });
   const owns = adoptionOwns([...rec.adopted, ...newAdoptions]);
   // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row.
   const rows = emitMcp({ targetRoot, servers, owns, tools });
@@ -271,6 +372,8 @@ export function addIntegration(
       integrations,
       adopted,
       ...(version ? { versions: { ...cur.versions, [name]: version } } : {}),
+      ...(localBinding ? { local: { ...cur.local, [name]: localBinding } } : {}),
+      ...(remote ? { remotes: { ...cur.remotes, [name]: rec.remotes[name] } } : {}),
     };
     return c;
   });
@@ -297,10 +400,18 @@ export function claimEmittedIntegrations(targetRoot = process.cwd()) {
   const claimed = [];
   for (const name of rec.integrations) {
     const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
-    if (!m && !Object.hasOwn(rec.versions, name)) continue;
+    if (
+      !m &&
+      !Object.hasOwn(rec.versions, name) &&
+      !Object.hasOwn(rec.remotes, name) &&
+      !Object.hasOwn(rec.local, name)
+    )
+      continue;
     let foreign;
     try {
-      foreign = foreignTargets(targetRoot, name, integrationServer(name, rec));
+      const def = integrationServer(name, rec, targetRoot);
+      if (!def) continue;
+      foreign = foreignTargets(targetRoot, name, def);
     } catch {
       continue; // an unreadable target: claim nothing for this server
     }
@@ -337,7 +448,12 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const before = mcpRecord(cfg);
-  if (!m && !Object.hasOwn(before.versions, name))
+  if (
+    !m &&
+    !Object.hasOwn(before.versions, name) &&
+    !Object.hasOwn(before.remotes, name) &&
+    !Object.hasOwn(before.local, name)
+  )
     return { ok: false, reason: `unknown integration: ${name}` };
   const adoptedName = (a) => (typeof a === "string" ? a : a.server);
   const wasRecorded =
@@ -345,12 +461,13 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
   if (!wasRecorded) return { ok: true, name, removed: false, rows: [] };
   const owns = adoptionOwns(before.adopted);
   // Clean disk FIRST (ME-10). A per-target cleanup failure surfaces as an `error` row.
+  const def = integrationServer(name, before, targetRoot);
   const rows = removeMcp({
     targetRoot,
     name,
     removeJsonEntry: (target, current) =>
       owns(target, name) ||
-      JSON.stringify(current) === JSON.stringify(integrationServer(name, before)),
+      (def && JSON.stringify(current) === JSON.stringify(targetDefinition(target, def))),
   });
   const failed = rows.filter((r) => r.action === "error");
   if (failed.length)
@@ -368,14 +485,20 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
     const integrations = cur.integrations.filter((n) => n !== name);
     const adopted = expandAdopted(cur.adopted).filter((a) => a.server !== name);
     delete cur.versions[name];
+    delete cur.remotes[name];
+    delete cur.local[name];
     c.mcp = {
       ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
       integrations,
       adopted,
       ...(c.mcp?.versions ? { versions: cur.versions } : {}),
+      ...(c.mcp?.remotes ? { remotes: cur.remotes } : {}),
+      ...(c.mcp?.local ? { local: cur.local } : {}),
     };
     return c;
   });
   if (w.ok === false) return { ok: false, reason: w.reason };
+  if (Object.hasOwn(before.local, name)) forgetBinding(targetRoot, name, before.local[name]);
+  if (Object.hasOwn(before.remotes, name)) forgetBinding(targetRoot, name, before.remotes[name]);
   return { ok: true, name, removed: true, rows };
 }

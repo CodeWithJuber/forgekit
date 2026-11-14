@@ -190,7 +190,11 @@ async function callTool(name, args = {}) {
   }
   if (name === "rank_code") {
     const { rankReport } = await import("./rank.js");
-    return JSON.stringify(rankReport(root, { top: Number(args.top ?? 15) || 15 }), null, 2);
+    return JSON.stringify(
+      rankReport(root, { top: Number(args.top ?? 15) || 15, task: args.task }),
+      null,
+      2,
+    );
   }
   if (name === "dep_check") {
     const { depgateDecision, parseVetArg, vetPackages } = await import("./depgate.js");

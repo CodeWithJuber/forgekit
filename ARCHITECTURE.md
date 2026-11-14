@@ -58,7 +58,7 @@ The four layers, brand-named and emitted cross-tool:
   drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
   compaction; a guard does not. Every enforceable invariant belongs here.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 31 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
+  exposing 34 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
   ledger ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
 
@@ -526,7 +526,7 @@ an **MCP server** for Roo Code and VS Code.
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
-| **Kimi Code**      | `AGENTS.md` merged from project root to working dir (`${KIMI_AGENTS_MD}`, [kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) | Rely on root `AGENTS.md`; no `.kimi/AGENTS.md` copy (it would be merged twice), no MCP or hooks claimed |
+| **Kimi Code** | Shared `AGENTS.md`, trusted workspace `.kimi-code/mcp.json`, per-user `kimi.plugin.json` | The native prompt hook runs the bundled Node CLI and returns evidence in Kimi's `message` field; PreToolUse can block an action. [Setup and verification](docs/INTEGRATIONS.md) |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
@@ -671,16 +671,16 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>170 files"]
-  src["src<br/>159 files"]
+  test["test<br/>182 files"]
+  src["src<br/>178 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
-  scripts["scripts<br/>10 files"]
+  scripts["scripts<br/>11 files"]
   bench["bench<br/>6 files"]
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 353 --> src
+  test -- 375 --> src
   bench -- 12 --> src
   test -- 8 --> global
   scripts -- 6 --> src

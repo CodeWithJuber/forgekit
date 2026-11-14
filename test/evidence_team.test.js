@@ -82,3 +82,49 @@ test("missing data in one specialist is surfaced without discarding a peer repor
   });
   assert.equal(r2.workers.length, 0);
 });
+
+test("engineering profiles wait for explicit independent work, except an independent reviewer", (t) => {
+  const root = fixture(t);
+  assert.equal(teamPlan(task, { root, profile: "engineering" }).mode, "single");
+  const review = teamPlan("Independent review of this one-line patch", {
+    root,
+    profile: "engineering",
+  });
+  assert.equal(review.assignments.length, 1);
+  assert.equal(review.assignments[0].promptCard.id, "reviewer");
+  assert.equal(review.assignments[0].access, "read-only");
+});
+test("scoped decomposition uses worker estimates, disjoint paths and an explicit merge owner", (t) => {
+  const root = fixture(t);
+  const decomposition = {
+    mode: "parallel",
+    owner: "lead",
+    merge: "One comparison table and a focused regression check",
+    streams: [
+      {
+        id: "parse",
+        role: "adoption",
+        estimatedMinutes: 45,
+        paths: ["services/parser"],
+        acceptance: "Provide the parser's published contract",
+      },
+      {
+        id: "validate",
+        role: "verification",
+        estimatedMinutes: 35,
+        paths: ["services/verify"],
+        acceptance: "Return a reproducer and expected test outcome",
+      },
+    ],
+  };
+  const get = () => teamPlan(task, { root, profile: "engineering", decomposition });
+  assert.equal(get().assignments.length, 2);
+  assert.equal(get().lead.mergeDeliverable, decomposition.merge);
+  assert.match(get().assignments[1].brief, /services\/verify/);
+  decomposition.streams[1].estimatedMinutes = 15;
+  assert.match(get().reason, /30 minutes/);
+  decomposition.streams[1].estimatedMinutes = 40;
+  decomposition.streams[1].paths = ["SERVICES/PARSER/test"];
+  assert.equal(get().mode, "single");
+  assert.match(get().reason, /overlap/);
+});

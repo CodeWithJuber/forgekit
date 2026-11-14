@@ -10,6 +10,46 @@ const tool = (name, description, properties, required) => ({
 
 export const EVIDENCE_TOOLS = [
   tool(
+    "forge_hikmah_recall",
+    "Retrieve verified, public and uncontested lessons from the kernel explicitly bound to this workspace.",
+    { query: str("Local recall query"), limit: { type: "integer", minimum: 1, maximum: 10 } },
+    ["query"],
+  ),
+  tool(
+    "forge_mirror_get",
+    "Read a configured source's cached manifest, item metadata, or one cited chunk.",
+    {
+      sourceId,
+      id: str("Optional item ID from the manifest"),
+      chunk: { type: "integer", minimum: 0 },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1 },
+    },
+    ["sourceId"],
+  ),
+  tool(
+    "forge_mirror_sql",
+    "Run a bounded read-only SQL SELECT on items and chunks in one authorized local source snapshot.",
+    {
+      sourceId,
+      sql: str("One read-only SELECT on items/chunks or explicitly selected local tables"),
+      tables: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: str("Alias for the table"),
+            path: str("Relative path in this source"),
+            sheet: str("Optional sheet"),
+          },
+          required: ["name", "path"],
+          additionalProperties: false,
+        },
+      },
+    },
+    ["sourceId", "sql"],
+  ),
+  tool(
     "forge_develop",
     "Plan a change from existing code and live research through implementation, security review and verification. Returns observed evidence and planned steps.",
     {
@@ -33,7 +73,15 @@ export const EVIDENCE_TOOLS = [
   tool(
     "forge_team_plan",
     "Plan independent read-only specialist assignments for a complex task. Leaves paid execution to the host or explicit CLI.",
-    { task: str("Task for the lead"), maxWorkers: { type: "integer", minimum: 1, maximum: 6 } },
+    {
+      task: str("Task for the lead"),
+      maxWorkers: { type: "integer", minimum: 1, maximum: 6 },
+      decomposition: {
+        type: "object",
+        description:
+          "Optional scoped team brief: mode, owner, merge and 2–3 streams with id, role, paths, estimatedMinutes and acceptance; or mode review.",
+      },
+    },
     ["task"],
   ),
   tool(
@@ -109,6 +157,21 @@ export const EVIDENCE_TOOLS = [
 ];
 
 export async function evidenceTool(root, name, args) {
+  if (name === "forge_hikmah_recall")
+    return JSON.stringify(
+      await (await import("./hikmah_recall.js")).recallHikmah(root, args.query, {
+        limit: args.limit,
+      }),
+    );
+  if (name === "forge_mirror_get" || name === "forge_mirror_sql") {
+    const { mirrorGet, mirrorSql } = await import("./source_mirror.js");
+    const { sourceId, ...options } = args;
+    return JSON.stringify(
+      name === "forge_mirror_get"
+        ? await mirrorGet(root, sourceId, options)
+        : await mirrorSql(root, sourceId, options.sql, { tables: options.tables }),
+    );
+  }
   if (name === "forge_develop") {
     const { runEvidence } = await import("./evidence.js");
     const report = await runEvidence(args.task, { root, web: args.web });
@@ -132,6 +195,7 @@ export async function evidenceTool(root, name, args) {
       teamPlan(args.task, {
         root,
         maxWorkers: args.maxWorkers,
+        decomposition: args.decomposition,
         evidence: buildEvidence(args.task, { root }),
       }),
     );
