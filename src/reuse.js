@@ -944,11 +944,15 @@ export function reuseQuery(root, spec, { slice = "", atlas = null, nowDay = 0 } 
 /** Read-only lookup for the ambient/hook path — never appends evidence or metrics
  *  (hooks must not write on every prompt; the explicit gate meters instead).
  *  @returns {ReturnType<typeof lookup>} */
-export function reusePeek(root, spec, { slice = "", atlas = null, nowDay = 0 } = {}) {
+export function reusePeek(
+  root,
+  spec,
+  { slice = "", atlas = null, nowDay = 0, offline = false } = {},
+) {
   const dir = repoLedger(root);
   if (!existsSync(join(dir, "claims"))) return { tier: "miss", reasons: [], sim: "minhash" };
   const claims = loadClaims(dir);
-  const sim = specSim(root, spec, claims);
+  const sim = offline ? null : specSim(root, spec, claims);
   const r = lookup(claims, spec, { slice, atlas, nowDay, sim, root });
   r.sim = simLabel(sim);
   return r;

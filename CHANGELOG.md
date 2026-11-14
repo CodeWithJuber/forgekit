@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `forge team` plans separate read-only specialist checks. Explicit Claude worker runs share a spending limit and report their results to the lead.
+- `forge integrations find` checks matching MCP packages against current registry metadata. Explicit and allowlisted automatic installation pin tools in the user's state directory.
+- `forge develop` connects task planning, reusable code examples, security review and test selection. `--verify` executes the repository checks and reports their results.
+- Coding prompts and tool failures can retrieve cited project evidence automatically on supported hosts. `forge evidence` discovers reusable symbols, prior team artifacts and public implementation candidates.
+- `forge sources` indexes private folders, PDFs, spreadsheets, Jira, Confluence and GitLab for an individual working tree. It supports scoped live record reads, time-bounded remote snapshots and full-table numeric aggregation.
+
 ## [1.15.0] - 2026-11-13
 
 ### Added

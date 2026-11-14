@@ -17,12 +17,17 @@ start paying off on day two.
 
 ## 1. Install (once)
 
-The recommended paths need no token and no clone:
+Choose the install path for your coding tool. To use changes on a development branch, install that checkout.
 
 ```bash
-# Claude Code / Codex — the plugin (guards auto-wire, nothing to merge)
+# Claude Code plugin
 /plugin marketplace add CodeWithJuber/forgekit
 /plugin install forgekit
+
+# Local Codex CLI, using the checked-out build
+codex plugin marketplace add /absolute/path/to/forgekit
+codex plugin add forgekit@forge
+# Open /hooks in Codex to review and trust its commands.
 
 # Any tool — the CLI, from public npm
 npm install -g @codewithjuber/forgekit

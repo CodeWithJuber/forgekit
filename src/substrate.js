@@ -397,7 +397,9 @@ export function substrateCheck(
   const reuse = (() => {
     try {
       const opts = { atlas, nowDay: epochDay() };
-      const r = allowBuild ? reuseQuery(root, text, opts) : reusePeek(root, text, opts);
+      const r = allowBuild
+        ? reuseQuery(root, text, opts)
+        : reusePeek(root, text, { ...opts, offline: true });
       return {
         tier: r.tier,
         artifact: r.artifact

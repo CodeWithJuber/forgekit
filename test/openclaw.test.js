@@ -33,8 +33,8 @@ test("the published package carries an OpenClaw-compatible Codex bundle", () => 
   const mcp = JSON.parse(readFileSync(join(root, manifest.mcpServers), "utf8"));
 
   assert.equal(manifest.name, "forgekit");
-  assert.equal(manifest.skills, "global/tools");
-  assert.equal(manifest.mcpServers, ".mcp.json");
+  assert.equal(manifest.skills, "./global/tools");
+  assert.equal(manifest.mcpServers, "./.mcp.json");
   assert.ok(existsSync(join(root, manifest.skills, "cognitive-substrate", "SKILL.md")));
   assert.deepEqual(mcp.mcpServers["forge-cortex"], {
     command: "forge",

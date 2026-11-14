@@ -199,6 +199,23 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "--event",
+              "PostToolUseFailure",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "failure"
+            ]
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

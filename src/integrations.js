@@ -42,6 +42,12 @@ export const INTEGRATIONS = {
     network: "yes — `npx -y` downloads and executes the package on every session start",
     why: "live library-documentation lookup",
   },
+  playwright: {
+    server: { command: "npx", args: ["-y", "@playwright/mcp@0.0.85", "--isolated"] },
+    pkg: "@playwright/mcp@0.0.85",
+    network: "downloads the package; controls a browser and visits pages chosen by the agent",
+    why: "browser automation, accessibility snapshots and UI tests",
+  },
 };
 
 export function listIntegrations() {
@@ -56,7 +62,7 @@ export function listIntegrations() {
 /** Describe what `add <name>` would do, without writing anything. `writes` lists the files
  *  it would touch: those of the tool set `forge init` recorded (every tool when none is). */
 export function planIntegration(name, { targetRoot = process.cwd() } = {}) {
-  const m = INTEGRATIONS[name];
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
   if (!m) return { ok: false, reason: `unknown integration: ${name}` };
   const cfg = readForgeConfig(targetRoot);
   const tools = cfg.corrupt ? null : recordedTools(cfg);
@@ -89,7 +95,17 @@ function mcpRecord(cfg) {
             typeof a.target === "string"),
       )
     : [];
-  return { integrations, adopted };
+  const versions = Object.fromEntries(
+    Object.entries(raw.versions ?? {}).filter(
+      ([name, version]) =>
+        /^[a-z0-9][a-z0-9_-]{0,63}$/.test(name) &&
+        !(name in Object.prototype) &&
+        name !== "forge-cortex" &&
+        typeof version === "string" &&
+        stableVersion(version),
+    ),
+  );
+  return { integrations, adopted, versions };
 }
 
 /**
@@ -133,11 +149,24 @@ function registryServers() {
   return JSON.parse(readFileSync(p, "utf8"));
 }
 
+// Only a known server ID and an exact numeric release can reach a managed stdio command.
+// Arbitrary commands/paths read from a project's config are never execution authority.
+export const stableVersion = (v) =>
+  typeof v === "string" && /^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/.test(v);
+
+function integrationServer(name, rec) {
+  const version = Object.hasOwn(rec.versions, name) && rec.versions[name];
+  return version
+    ? { command: BRAND.cli, args: ["integrations", "run", name, version] }
+    : INTEGRATIONS[name].server;
+}
+
 /** Registry ∪ recorded integrations (that exist in the catalog) — the full managed set. */
 function managedServers(rec) {
   const servers = { ...registryServers() };
   for (const name of rec.integrations)
-    if (INTEGRATIONS[name]) servers[name] = INTEGRATIONS[name].server;
+    if (Object.hasOwn(INTEGRATIONS, name) || Object.hasOwn(rec.versions, name))
+      servers[name] = integrationServer(name, rec);
   return servers;
 }
 
@@ -180,9 +209,12 @@ export function managedMcpState(targetRoot) {
  * unless `adopt: true` (--adopt) claims it. `res.adopted` reports whether pre-existing
  * divergent entries were claimed.
  */
-export function addIntegration(name, { targetRoot = process.cwd(), adopt = false } = {}) {
-  const m = INTEGRATIONS[name];
-  if (!m) return { ok: false, reason: `unknown integration: ${name}` };
+export function addIntegration(
+  name,
+  { targetRoot = process.cwd(), adopt = false, version = undefined } = {},
+) {
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
+  if (!m && !version) return { ok: false, reason: `unknown integration: ${name}` };
   try {
     validateServerName(name);
   } catch (err) {
@@ -197,7 +229,11 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const rec = mcpRecord(cfg);
-  const servers = { ...managedServers(rec), [name]: m.server };
+  if (version !== undefined && !stableVersion(version))
+    return { ok: false, reason: "Invalid integration version" };
+  if (version) rec.versions[name] = version;
+  const server = integrationServer(name, rec);
+  const servers = { ...managedServers(rec), [name]: server };
   // Only the tools `forge init` recorded for this repo (every tool when none are), the same
   // set `forge sync` emits for, so adding a server never creates an unused tool's config.
   const tools = recordedTools(cfg);
@@ -206,7 +242,7 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
   // gets nothing written, so it is never claimed: a same-name entry a person adds there later
   // stays theirs, even once that tool joins the set (ME-08).
   const targets = mcpTargetFilesFor(tools);
-  const foreign = foreignTargets(targetRoot, name, m.server);
+  const foreign = foreignTargets(targetRoot, name, server);
   const anyForeign = targets.some((t) => foreign.has(t));
   const newAdoptions = [];
   for (const t of targets)
@@ -234,6 +270,7 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
       ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
       integrations,
       adopted,
+      ...(version ? { versions: { ...cur.versions, [name]: version } } : {}),
     };
     return c;
   });
@@ -259,11 +296,11 @@ export function claimEmittedIntegrations(targetRoot = process.cwd()) {
   const targets = mcpTargetFilesFor(recordedTools(cfg));
   const claimed = [];
   for (const name of rec.integrations) {
-    const m = INTEGRATIONS[name];
-    if (!m) continue;
+    const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
+    if (!m && !Object.hasOwn(rec.versions, name)) continue;
     let foreign;
     try {
-      foreign = foreignTargets(targetRoot, name, m.server);
+      foreign = foreignTargets(targetRoot, name, integrationServer(name, rec));
     } catch {
       continue; // an unreadable target: claim nothing for this server
     }
@@ -292,8 +329,7 @@ export function claimEmittedIntegrations(targetRoot = process.cwd()) {
  * and reported. Second remove is a no-op.
  */
 export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
-  const m = INTEGRATIONS[name];
-  if (!m) return { ok: false, reason: `unknown integration: ${name}` };
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
   const cfg = readForgeConfig(targetRoot);
   if (cfg.corrupt)
     return {
@@ -301,6 +337,8 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const before = mcpRecord(cfg);
+  if (!m && !Object.hasOwn(before.versions, name))
+    return { ok: false, reason: `unknown integration: ${name}` };
   const adoptedName = (a) => (typeof a === "string" ? a : a.server);
   const wasRecorded =
     before.integrations.includes(name) || before.adopted.some((a) => adoptedName(a) === name);
@@ -311,7 +349,8 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
     targetRoot,
     name,
     removeJsonEntry: (target, current) =>
-      owns(target, name) || JSON.stringify(current) === JSON.stringify(m.server),
+      owns(target, name) ||
+      JSON.stringify(current) === JSON.stringify(integrationServer(name, before)),
   });
   const failed = rows.filter((r) => r.action === "error");
   if (failed.length)
@@ -328,10 +367,12 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
     const cur = mcpRecord(c);
     const integrations = cur.integrations.filter((n) => n !== name);
     const adopted = expandAdopted(cur.adopted).filter((a) => a.server !== name);
+    delete cur.versions[name];
     c.mcp = {
       ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
       integrations,
       adopted,
+      ...(c.mcp?.versions ? { versions: cur.versions } : {}),
     };
     return c;
   });

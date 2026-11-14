@@ -245,6 +245,38 @@ export function truncateToBudget(text, cap) {
   };
 }
 
+/** Keep structured decisions intact at the byte cap. Cutting serialized JSON turns an
+ * injected advisory into a parse error and can also erase a guard's blocking verdict. */
+export function budgetHookOutput(text, cap) {
+  if (Buffer.byteLength(text) <= cap) return text;
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return truncateToBudget(text, cap).text;
+  }
+  const out = json?.hookSpecificOutput;
+  if (typeof out?.additionalContext !== "string") return text;
+  const context = out.additionalContext;
+  const suffix = "\n[truncated to hook budget]";
+  // Measure the serialized prefix, including escaping and the envelope. If the metadata
+  // alone exceeds the budget, preserve it (it may contain a blocking decision).
+  out.additionalContext = "";
+  const room =
+    cap - Buffer.byteLength(JSON.stringify(json)) - Buffer.byteLength(JSON.stringify(suffix));
+  if (room <= 0) return JSON.stringify(json);
+  let lo = 0;
+  let hi = context.length;
+  while (lo < hi) {
+    const end = Math.ceil((lo + hi) / 2);
+    if (Buffer.byteLength(JSON.stringify(context.slice(0, end))) - 2 <= room) lo = end;
+    else hi = end - 1;
+  }
+  if (lo > 0 && /[\uD800-\uDBFF]/u.test(context[lo - 1])) lo--;
+  out.additionalContext = context.slice(0, lo) + suffix;
+  return JSON.stringify(json);
+}
+
 /**
  * Run a guard with inherited stdio and return the exit code to report: `bash <script> …args`, or
  * `node <twin.mjs> …args` for a guard with a Node twin. `--fail-closed` before the script (or
@@ -328,7 +360,7 @@ export function runGuard(
   if (r.status !== 2 && out) {
     const budget = loadBudget({ env });
     const cap = (eventName && budget.events[eventName]) || budget.default_bytes;
-    out = truncateToBudget(out, cap).text;
+    out = budgetHookOutput(out, cap);
   }
   if (out) process.stdout.write(out);
   if (failClosed && r.status !== 0 && r.status !== 2) return failed(`the guard exited ${r.status}`);

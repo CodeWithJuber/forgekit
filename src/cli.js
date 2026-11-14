@@ -11,6 +11,7 @@ import budgetHandlers from "./cli/budget.js";
 import claimHandlers from "./cli/claim.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
+import evidenceHandlers from "./cli/evidence.js";
 import memoryHandlers from "./cli/memory.js";
 import orchestrationHandlers from "./cli/orchestration.js";
 import routingHandlers from "./cli/routing.js";
@@ -67,6 +68,7 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  ...evidenceHandlers,
   ...memoryHandlers,
   ...claimHandlers,
   ...verificationHandlers,
@@ -97,7 +99,7 @@ async function run(argv) {
     process.exitCode = printCommandHelp(cmd);
     return;
   }
-  maybeFirstRunHint(cmd);
+  if (!(cmd === "integrations" && argv[1] === "run")) maybeFirstRunHint(cmd);
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -636,6 +638,10 @@ HANDLERS.docs = async (argv) => {
   return;
 };
 HANDLERS.integrations = async (argv) => {
+  if (["find", "install", "run", "auto"].includes(argv[1])) {
+    const { handleAdoption } = await import("./cli/evidence.js");
+    return handleAdoption(argv);
+  }
   const { listIntegrations, planIntegration, addIntegration, removeIntegration } = await import(
     "./integrations.js"
   );

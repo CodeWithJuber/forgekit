@@ -1160,7 +1160,7 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ name: "x", scripts: { test: "node --test test/a.test.js" } }),
+    JSON.stringify({ name: "x", type: "module", scripts: { test: "node --test test/a.test.js" } }),
   );
   mkdirSync(join(root, "test"), { recursive: true });
   writeFileSync(

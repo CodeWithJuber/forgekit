@@ -11,6 +11,7 @@ import { report as costReport } from "./cost_report.js";
 import { dashData, dashSummary } from "./dash.js";
 import { diagnose } from "./diagnose.js";
 import { doctor } from "./doctor.js";
+import { EVIDENCE_TOOLS, evidenceTool } from "./evidence_tools.js";
 import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
@@ -35,6 +36,7 @@ import { TOOLS } from "./mcp_tools.js";
 export { TOOLS };
 
 async function callTool(name, args = {}) {
+  if (EVIDENCE_TOOLS.some((tool) => tool.name === name)) return evidenceTool(root, name, args);
   if (name === "cortex_lessons") {
     const files = args.files ?? [];
     const symbols = args.symbols ?? [];
