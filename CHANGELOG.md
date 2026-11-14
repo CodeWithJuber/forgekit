@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-14
+
 ### Added
 
 - `forge harness` runs coding tasks through a host-neutral permission gate, bounded model loop and independent verifier. It adds private replayable traces, evidence-linked memory, pinned extensions, a durable job queue and measured specialist delegation.
@@ -3818,7 +3820,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.15.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.16.0...HEAD
+[1.16.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.1...v1.15.0
 [1.14.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.13.1...v1.14.0
