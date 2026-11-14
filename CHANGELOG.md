@@ -20,6 +20,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `forge dash` shows project setup and supervised run outcomes alongside saved knowledge, activity and code impact. The **New run** form launches a task through the project’s trusted harness and verifier.
+- Supervised setup accepts Claude Code, Codex, Kimi and other host selections. The `generic` selection prints a stdio MCP server definition for another client.
+- After default-branch changes, the docs workflow refreshes recorded CLI demos and previews, reports affected guides and requests auto-merge for generated changes.
+
 - Updated the README, onboarding and documentation site with a supervised setup walkthrough, current host support and recorded CLI demonstrations. The integrations guide links the native Kimi and Codex checks and describes each client's activation step.
 
 ## [1.15.0] - 2026-11-13

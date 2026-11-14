@@ -489,8 +489,8 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="649.2" y="131" class="t-muted" font-size="8" text-anchor="middle">Capture result and trace</text>
         </g>
 
-        <g id="node-request" data-node-id="request" data-node-label="Start a task" tabindex="0" role="button" aria-label="Focus Start a task, MCP · CLI · job worker, Run loop" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MCP · CLI · job worker" data-node-context="Run loop">
-          <title>Start a task · MCP · CLI · job worker · Run loop</title>
+        <g id="node-request" data-node-id="request" data-node-label="Submit a task" tabindex="0" role="button" aria-label="Focus Submit a task, Dashboard, CLI, MCP, worker, Run loop" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="Dashboard, CLI, MCP, worker" data-node-context="Run loop">
+          <title>Submit a task · Dashboard, CLI, MCP, worker · Run loop</title>
           <rect x="48" y="217" width="188" height="52" rx="6" class="c-mask"/>
           <rect x="48" y="217" width="188" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 223) scale(0.6875)">
@@ -499,8 +499,8 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" x="142" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Start a task</text>
-          <text x="142" y="255" class="t-muted" font-size="8" text-anchor="middle">MCP · CLI · job worker</text>
+          <text data-node-label="" x="142" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Submit a task</text>
+          <text x="142" y="255" class="t-muted" font-size="8" text-anchor="middle">Dashboard, CLI, MCP, worker</text>
         </g>
 
         <g id="node-turn" data-node-id="turn" data-node-label="Model turn" tabindex="0" role="button" aria-label="Focus Model turn, Budgeted route and context, Run loop" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Budgeted route and context" data-node-context="Run loop">

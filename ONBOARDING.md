@@ -78,22 +78,20 @@ Change a rule later by editing `source/rules.json` (or dropping a per-repo
 forge sync                 # recompiles into each selected tool; idempotent (only rewrites what changed)
 ```
 
-### Supervise Kimi and Codex in this checkout
+### Supervise a coding host in this checkout
 
 For a fresh harness, install the CLI on the machine running the coding agent and use Python 3.11+
 with SQLite FTS5. From the project root, run:
 
 ```bash
-forge harness init --hosts kimi,codex --supervised
+forge harness init --hosts claude,codex,kimi --supervised
 forge harness status
-forge harness drift --hosts kimi,codex
+forge harness drift --hosts claude,codex,kimi
 ```
 
-In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`.
-In local Codex, trust the project and review the commands in `/hooks`. A passing drift check
-confirms the generated files. Start the configured local model or connect a reviewed model
+Select only the hosts you use. In Claude Code, trust the checkout and enable the project MCP server if prompted. In Codex, review the project commands in `/hooks`. In Kimi, trust the workspace and run the printed `/plugins install …` command followed by `/reload`. For another stdio client, choose `--hosts generic` during setup and apply the printed registration in the client. A passing drift check confirms the generated files. Start the configured local model or connect a reviewed model
 endpoint before asking the host to run a supervised task. The [first-run example](docs/HARNESS.md#a-first-verifiable-run)
-includes an acceptance criterion and a check you can reproduce.
+includes an acceptance criterion and a check you can reproduce. Run `forge dash` in the checkout to inspect setup and run outcomes in your browser.
 
 ### Select integrations and context
 

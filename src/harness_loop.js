@@ -150,6 +150,15 @@ export async function runHarness(options) {
   const record = openHarnessRun(root, id);
   let state = record.state;
   try {
+    // Dashboard retries bind the full original form, including acceptance criteria.
+    // Its digest survives input hooks, secret redaction and trace retention.
+    if (state && options.inputDigest !== undefined) {
+      if (state.inputDigest !== options.inputDigest)
+        throw Object.assign(new Error("Run ID belongs to different input"), {
+          code: "RUN_INPUT_CONFLICT",
+        });
+      if (!options.resume) return record.view(state);
+    }
     if (options.resume && !state) throw new Error("Cannot resume unknown harness run");
     if (
       state &&
@@ -160,8 +169,11 @@ export async function runHarness(options) {
       throw new Error("Run ID belongs to a different task");
     if (state && !options.resume) return record.view(state);
     const fresh = !state;
-    if (fresh) state = initialState(id, options.request);
-    else if (!RESUMABLE.has(state.status) && state.status !== "running") return record.view(state);
+    if (fresh) {
+      state = initialState(id, options.request);
+      if (options.inputDigest !== undefined) state.inputDigest = options.inputDigest;
+    } else if (!RESUMABLE.has(state.status) && state.status !== "running")
+      return record.view(state);
     const s = state,
       request = s.request;
     const profile = request.profile ?? "coder";
@@ -188,9 +200,14 @@ export async function runHarness(options) {
     function elapsed() {
       s.usage.milliseconds = previousMs + Math.ceil(performance.now() - clock);
     }
+    let firstCheckpoint = true;
     function save() {
       elapsed();
       record.save(s);
+      if (firstCheckpoint) {
+        firstCheckpoint = false;
+        options.onCheckpoint?.();
+      }
     }
     const busEvents = new Set();
     function captureBus() {

@@ -9,10 +9,11 @@ import { isDeepStrictEqual } from "node:util";
 import { BRAND } from "./brand.js";
 import { HOOK_TIMEOUT_S, planHooks } from "./emit/hooks.js";
 import { emitMcp } from "./emit/mcp.js";
+import { GENERIC_HOST, genericHarnessServer, parseHarnessHosts } from "./harness_hosts.js";
 import { installedHarnessPython } from "./harness_python.js";
 import { HOSTS, isForgeHookCommand, kimiPluginEnabled } from "./hosts.js";
 import { managedMcpState } from "./integrations.js";
-import { KNOWN_TOOLS, parseTools, readForgeConfig } from "./repo_config.js";
+import { readForgeConfig } from "./repo_config.js";
 
 function read(root, path) {
   const realRoot = realpathSync.native(root);
@@ -117,10 +118,7 @@ export function checkHarnessDrift(root, hosts) {
   if (cfg.corrupt) throw new Error("Invalid project host configuration");
   if (!requested || (Array.isArray(requested) && !requested.length))
     throw new Error("Choose the expected hosts for the drift check");
-  const selected = parseTools(requested);
-  if (selected.unknown.length)
-    throw new Error(`Unknown coding hosts: ${selected.unknown.join(", ")}`);
-  const chosen = selected.tools ?? KNOWN_TOOLS;
+  const chosen = parseHarnessHosts(requested);
   const checks = [];
   function check(host, component, path, run) {
     try {
@@ -145,6 +143,17 @@ export function checkHarnessDrift(root, hosts) {
   try {
     if (state.warning) note("project", "mcp", "manual", state.warning);
     for (const tool of chosen) {
+      if (tool === GENERIC_HOST) {
+        checks.push({
+          host: tool,
+          component: "stdio MCP",
+          status: "manual",
+          reason:
+            "Register forge-cortex in your client and call forge_harness_run or forge_harness_status. Native client tools use its own permissions.",
+          mcpServers: { "forge-cortex": genericHarnessServer(root) },
+        });
+        continue;
+      }
       const host = Object.keys(HOSTS).find((k) => HOSTS[k].tool === tool) ?? tool;
       const target = HOSTS[host];
       if (host === "kimi") {

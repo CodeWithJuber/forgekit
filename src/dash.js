@@ -3,10 +3,9 @@
 // separated from SERVING (serve → a node:http stdlib server) so the payload is
 // testable without sockets. One self-contained HTML page (src/dash.html — inline
 // CSS/JS, no CDN, no framework, no build step), localhost-only by default, zero
-// runtime deps. Exactly the two writes the spec names (§2) exist — POST /api/ratify
-// (human-only ḥikma promotion, mints a decision claim) and POST /api/retract
-// (tombstone with a reason). Both are append-only, so the dashboard can never
-// corrupt the ledger; everything else stays read-only.
+// runtime deps. POST /api/harness/runs starts the local, policy-gated executor.
+// Two separate ledger actions are append-only: ratify mints a decision claim
+// and retract records a tombstone with a reason.
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -14,6 +13,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { impact, load as loadAtlas } from "./atlas.js";
 import { estimateSpendFromLogs } from "./cost_report.js";
+import { dashHarness } from "./dash_harness.js";
 import { authorTrust, claimText, retrieve, val, validOutcome } from "./ledger.js";
 import {
   getClaimByPrefix,
@@ -296,21 +296,26 @@ export function claimsData(
     all = loadClaims(repoLedger(root));
   } catch {}
   const query = String(q ?? "").trim();
+  const wantKind = String(kind ?? "").trim();
+  const candidates = wantKind ? all.filter((claim) => claim.kind === wantKind) : all;
   let ranked;
   if (query) {
-    ranked = retrieve(query, all, { nowDay, budget: budget * 2 });
+    // Retrieval also scores recency and confidence. Only lexical hits belong in
+    // search results; applying the display cap earlier can hide older matches.
+    ranked = retrieve(query, candidates, { nowDay, budget: candidates.length }).filter(
+      ({ rel }) => rel > 0,
+    );
   } else {
-    ranked = all
+    ranked = candidates
       .filter((c) => !c.tombstone)
       .map((claim) => ({ claim, score: null }))
       .sort(
         (a, b) => val(b.claim, nowDay) - val(a.claim, nowDay) || (a.claim.id < b.claim.id ? -1 : 1),
       );
   }
-  let rows = ranked.map(({ claim, score }) => claimBrowseRow(claim, nowDay, score));
-  const wantKind = String(kind ?? "").trim();
-  if (wantKind) rows = rows.filter((r) => r.kind === wantKind);
-  rows = rows.slice(0, budget);
+  const rows = ranked
+    .slice(0, budget)
+    .map(({ claim, score }) => claimBrowseRow(claim, nowDay, score));
   return {
     q: query,
     kind: wantKind,
@@ -433,7 +438,7 @@ const sendJson = (res, code, body) => {
   res.end(JSON.stringify(body));
 };
 
-/** Small JSON body reader for the two POSTs — capped so a runaway client can't buffer
+/** Small JSON body reader for dashboard actions — capped so a runaway client can't buffer
  *  unbounded bytes into a localhost convenience server. */
 const BODY_CAP = 64 * 1024;
 const readBody = (req) =>
@@ -480,7 +485,8 @@ async function handleWrite(root, pathname, req, res) {
   return sendJson(res, r.ok ? 200 : 400, { ...r, id: hit.id });
 }
 
-const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract"]);
+const RUN_PATH = "/api/harness/runs";
+const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract", RUN_PATH]);
 
 // Access control (review F13). The dashboard is a localhost convenience server with no login,
 // so it defends itself in three layers:
@@ -556,8 +562,9 @@ export function writeAllowed(req, { boundHost, port, token }) {
  * The dashboard server: GET / → the page, GET /api/data → dashData, GET
  * /api/history → metrics trends, GET /api/claims?q=&kind= → memory browser, GET
  * /api/radar → dependency rings (cache-only), GET /api/timeline → durable event
- * stream, GET /api/impact?target=X → blast radius (when an atlas exists), POST
- * /api/ratify and POST /api/retract → the spec's two append-only writes. Else 404.
+ * stream, GET /api/impact?target=X → blast radius (when an atlas exists).
+ * GET /api/harness → private local setup and run summaries. POST /api/harness/runs →
+ * local task intake; POST /api/ratify and POST /api/retract → append-only ledger actions.
  * Localhost-only by default — pass a host explicitly to expose it, on your own head. Every
  * route checks the Host header; writes also need the page's session token (see above).
  * @param {string} root
@@ -572,6 +579,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
   const boundHost = String(host)
     .replace(/^\[|\]$/g, "")
     .toLowerCase();
+  let launcher;
   const server = createServer((req, res) => {
     const addr = server.address();
     const bound = {
@@ -598,6 +606,20 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
         });
         return;
       }
+      if (url.pathname === RUN_PATH) {
+        if (!LOOPBACK_HOSTS.has(boundHost))
+          return sendJson(res, 403, { error: "Start runs from a local dashboard." });
+        if (req.headers["content-type"]?.split(";")[0].trim() !== "application/json")
+          return sendJson(res, 415, { error: "Send a JSON task." });
+        launcher ??= import("./dash_run.js").then(({ createDashboardLauncher }) =>
+          createDashboardLauncher(root),
+        );
+        Promise.all([readBody(req).then(JSON.parse), launcher])
+          .then(([body, start]) => start(body, req.headers["idempotency-key"]))
+          .then(({ code, body }) => sendJson(res, code, body))
+          .catch(() => sendJson(res, 400, { error: "Invalid JSON task." }));
+        return;
+      }
       handleWrite(root, url.pathname, req, res).catch(() =>
         sendJson(res, 400, { error: "bad request body" }),
       );
@@ -605,7 +627,7 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
     }
     if (req.method !== "GET")
       return sendJson(res, 404, {
-        error: "GET only — the two writes are POST /api/ratify and POST /api/retract",
+        error: "Use GET for dashboard data or POST to an action endpoint.",
       });
     if (url.pathname === "/") {
       res.writeHead(200, {
@@ -618,6 +640,8 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       });
       return res.end(html);
     }
+    if (url.pathname === "/api/harness")
+      return sendJson(res, 200, dashHarness(root, LOOPBACK_HOSTS.has(boundHost)));
     if (url.pathname === "/api/data") return sendJson(res, 200, dashData(root));
     if (url.pathname === "/api/history") return sendJson(res, 200, historyData(root));
     if (url.pathname === "/api/radar") return sendJson(res, 200, radarData(root));

@@ -68,21 +68,20 @@ forge models --json        # the full resolution
 
 ## `forge dash`
 
-Local dashboard over the ledger, metrics, and blast radius. Read-mostly: the only writes
-are the two human-driven actions `POST /api/ratify` and `POST /api/retract`.
+Open the local dashboard from the project you want to inspect:
 
-- **Every route checks `Host`.** Reads included, a request whose `Host` is not this loopback
-  address and port is refused with `403`, which blocks DNS rebinding.
-- **Writes need the page's session token.** The server mints a random token at start-up,
-  embeds it in the page it serves, and requires it back in the `x-forge-token` header. A
-  browser `Origin` must be exactly this server's origin, so a page on another localhost port
-  cannot write. A script that POSTs must read the token from the page first.
-- **Spend is labeled.** Missing session logs render as "spend unknown", never `$0`, and a
-  model without a price is "unpriced".
-
-```bash
-forge dash                 # localhost-only (default port 4242)
+```sh
+forge dash             # open the printed loopback URL (default port 4242)
+forge dash --port 4243 # use a different port
 ```
+
+<Frame>
+  <img src="/images/dashboard.png" alt="Project dashboard showing the latest verification results in a sample workspace." />
+</Frame>
+
+Start in **Overview**. Choose **Coding hosts** to check project configuration for Claude Code, Codex, Kimi or a generic MCP client. With a trusted harness and a model route running, choose **New run**. Enter the task and optional acceptance criteria (one per line) and choose **Start run**. The configured route and project budgets apply. Open **Runs** to read the outcome, inspect the reason and copy the next command to your terminal. [Set up a coding host and record a verified run](/guides/supervised-runs).
+
+Use **Project memory** to search saved knowledge, **Code tools** to check change impact and **Usage** to view recorded cost and activity. Estimated Claude spend needs local session logs. A person can ratify or retract a saved claim from the live dashboard. For an offline snapshot of project knowledge and activity, run `forge report`.
 
 ## `forge brand`
 

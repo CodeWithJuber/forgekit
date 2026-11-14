@@ -46,10 +46,10 @@
       ],
       "title": "Supervised runs from request to verified result",
       "receipt": {
-        "specSha256": "89fe34596ca5a6c104674a56c9cdea8a95b6a5f71a2ecf9f5f117dad6a2a114d",
-        "svgSha256": "63236d7c371cf1326f0b866e492e13812d5583bfeb7b094f00ba402d99522cc1",
-        "artifactSha256": "c50a43dd74847e57fb6b7190ff209af65eb4468bb0586630a4ddc9b34098f90f",
-        "artifactBytes": 805043,
+        "specSha256": "6f5efbbdb1530e365e337568f99363ac5212b42121ef66076fb0d5d0d668c4bc",
+        "svgSha256": "c639a16523c24829c5ff7ca96ebd0b6a2a2d8e5b68fde30bb25e289eac3ceb5f",
+        "artifactSha256": "2217470d459b6b2e3960b4505abac798c968f20cde00b3d4c04b41c656db7716",
+        "artifactBytes": 805059,
         "checks": "9/9 showcase"
       }
     },

@@ -94,9 +94,9 @@ export const COMMANDS = {
     summary:
       "run host-neutral supervised tasks with policy, budgets, verification and replayable evidence",
     usage:
-      "forge harness init|trust|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
+      "forge harness init|connect|trust|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
     examples: [
-      "forge harness init --hosts kimi,codex",
+      "forge harness init --hosts claude,codex,kimi,generic --supervised",
       'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
       "forge harness jobs tick",
     ],
@@ -482,7 +482,18 @@ export const COMMANDS = {
       "forge uicheck design src/components/*.tsx --theme src/app/globals.css",
     ],
   },
-  dash: "live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius",
+  dash: {
+    summary:
+      "open a local project dashboard to inspect runs, check agent setup and review project memory",
+    usage: "forge dash [--port N]",
+    flags: [
+      {
+        flag: "--port <N>",
+        desc: "listen on this local port (default 4242). Use 0 to choose a free port.",
+      },
+    ],
+    examples: ["forge dash", "forge dash --port 4243"],
+  },
   report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
   brand: "print the active brand token map",
   docs: {

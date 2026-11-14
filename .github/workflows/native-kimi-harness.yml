@@ -6,6 +6,7 @@ on:
       - 'global/**'
       - 'kimi.plugin.json'
       - 'scripts/test-native-kimi-harness.py'
+      - 'scripts/native_harness_fixture.py'
       - '.github/workflows/native-kimi-harness.yml'
   workflow_dispatch:
 permissions:

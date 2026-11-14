@@ -266,12 +266,13 @@ so never raises the tier. Either way the floors and gate run on the deterministi
 
 ### `forge harness` — run and verify a coding task
 
-For a new project, `forge harness init --hosts kimi,codex --supervised` creates policy, routing,
-budgets, jobs and an extension lockfile. Trust the project and enable the printed client hooks.
-`forge harness drift --hosts kimi,codex` checks the generated configuration.
+For a new project, `forge harness init --hosts claude,codex,kimi --supervised` creates policy, routing,
+budgets, jobs and an extension lockfile. Select only the hosts you use. The `generic` host ID prints server settings for any stdio MCP client. Trust the project and enable the selected client’s hooks or MCP connection.
+`forge harness drift --hosts claude,codex,kimi` checks the generated configuration.
 
 | Command | When to use it |
 | --- | --- |
+| `forge harness connect --hosts claude,generic` | Add hosts to an existing trusted harness and print any manual client setup. |
 | `forge harness routes` | Inspect endpoint and model choices before starting a run. Start the configured model service. |
 | `forge harness run "<task>" --accept "<criterion>"` | Execute through the project policy. Supply a verifier appropriate for the task. |
 | `forge harness show RUN_ID` | Inspect status, reason, evidence and billed or estimated usage. |
@@ -762,10 +763,7 @@ fix (`run forge docs render`), while tree-derived output (the repo map, diagram 
 is a warning — moving a file never fails an unrelated PR, but a new command with a
 stale table always does. The changelog page is an error too: edit `CHANGELOG.md`, then
 run `forge docs render` in the same change. A stale diagram fact is a warning: re-rendering
-needs a browser, so after each merge to `master` the `docs-autoupdate` workflow runs
-`forge docs render` and `build --stale` and opens (or updates) one
-"docs: auto-update" PR, listing the prose `forge docs impact` flags for a person to check
-([docs/diagrams/README.md](diagrams/README.md#automatic-updates)).
+needs a browser. After a push to `master`, the documentation workflow runs the doc renderer, stale diagram build and media checks. Changes to CLI demos, social cards or the dashboard can regenerate checked-in images. Use `node scripts/docs-media.mjs plan` to inspect media drift locally. [Generated content and prose review](diagrams/README.md#automatic-updates)
 
 ### `forge docs sync` — which prose did this diff make stale?
 
@@ -1788,41 +1786,37 @@ Forge uicheck interact — browser interaction checks
   recorded as behavioral evidence on design claim e7a90b12cd34
 ```
 
+<a id="project-dashboard"></a>
+
 ### `forge dash [--port N]` — the local dashboard
 
-A read-only lens over `.forge/` — stdlib `node:http`, localhost-only, one
-self-contained HTML page (no CDN, no build step). Panels: Ledger (claims with val bars,
-contested claims, per-author trust), Cost/Cache (measured stage counters — stage
-self-estimates, not end-to-end spend; a stage with no logs is unknown, not $0), Impact
-(blast-radius explorer), Radar (dependency-currency rings read from the `.forge/radar.json`
-cache), Trends (per-stage metrics history as inline-SVG sparklines), Memory browser
-(ranked recall search over the ledger with confidence + freshness bars), and Session
-timeline (durable mint/tombstone events across sessions). The page live-refreshes every 5s,
-paused while the tab is hidden. Every claim row shows its `forge ledger blame` command.
-The only two writes are the human-driven `POST /api/ratify` and `POST /api/retract`.
-Every route, reads included, refuses a request whose `Host` is not this loopback address
-and port, with `403`; that blocks DNS rebinding. A write also needs the per-session token
-the server embeds in its own page (sent back as the `x-forge-token` header). When a browser
-sends an `Origin`, it must be exactly this server's origin, so a page on another localhost
-port cannot write either. A script that POSTs must read the token from the page first.
-Binding a non-loopback `--host` turns the `Host` check off; that exposure is your choice.
+Run this inside the checkout you want to inspect. Open the printed URL in your browser. The default is `http://127.0.0.1:4242`. Press Ctrl+C in the terminal to stop the server.
 
-```console
-$ forge dash
-Forge dash — read-only lens on .forge/
-
-  http://127.0.0.1:4242  (localhost-only · Ctrl-C to stop)
+```sh
+forge dash
+# Choose another port if one is already in use
+forge dash --port 4243
 ```
+
+![Project dashboard with setup and verification results for a sample workspace](assets/dashboard.png)
+
+| When you want to… | Open | What to look for |
+| --- | --- | --- |
+| See what needs your attention | **Overview** | Check whether run supervision is set up and how the most recent runs ended. |
+| Understand a failed or paused task | **Runs** | Open the run to inspect its outcome, reason and suggested next step. Copy any command you want to run in your terminal. |
+| Connect Claude Code, Codex, Kimi or another client | **Coding hosts** | Check which hosts this checkout selected and whether their configuration is on disk. Complete trust or plugin activation in the coding client. |
+| Review a saved fact | **Project memory** | Search existing claims and inspect their evidence before confirming or retracting one. |
+| Review cost or a code change | **Usage** or **Code tools** | Inspect measured activity, available spend data, dependencies and predicted change impact. |
+
+An empty run history means no run is recorded in this checkout. To start one, configure a trusted harness, its model route and its verifier. In **Overview** or **Runs**, choose **New run**. Enter the task and any acceptance criteria (one per line), then choose **Start run**. The request uses this project’s configured model and tool permissions, including any model charges. Follow the returned run ID in **Runs**. The dashboard accepts one active submission at a time. When private state cannot be read, the dashboard shows the read error. [Configure a verifier](HARNESS.md#a-first-verifiable-run)
+
+Session spend estimates come from local Claude logs when available. Missing logs leave spend unknown. For a file or symbol impact lookup, build the project index with `forge atlas build`.
+
+Opening the dashboard reads local state. Starting a run invokes the project harness. In **Project memory**, a person can also confirm or retract a saved claim. The CLI binds the HTTP server to loopback. Write requests require the local page’s session token and a matching browser origin.
 
 ### `forge report [--out <path>]` — the static HTML report
 
-The offline twin of `forge dash`: instead of serving a live localhost lens, it renders
-ONE self-contained HTML file — no server, no fetch, no CDN, no JavaScript needed to read
-it — that you can open offline, email, or attach to a PR. It reuses the same `dashData`
-payload, buckets `.forge/metrics.jsonl` into a 90-day activity sparkline (server-side
-inline SVG), and folds in the tech-radar cache (`.forge/radar.json`) when present. The
-palette is the brand's own token block (`rootTokensCss`), so the report matches the
-dashboard exactly. Default output is `.forge/report.html`; `--out` overrides it.
+Generate a standalone HTML file to review project knowledge, measured stage activity and dependency data offline. The report includes the ledger snapshot, 90 days of activity and available radar data. The interactive dashboard provides the live host setup and run inspector. The default output is `.forge/report.html`. Use `--out` to choose another path.
 
 ```console
 $ forge report

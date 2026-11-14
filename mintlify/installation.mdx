@@ -20,9 +20,9 @@ Run the commands in the project where your agent works.
 
 | Host | Setup |
 | --- | --- |
+| Claude Code | Run `forge init --tools claude` and `forge hooks on --hosts claude` in the checkout. Open Claude Code, trust the project and enable the project MCP server if prompted. The optional native plugin can also be installed from the ForgeKit marketplace. |
 | Kimi Code | Run `forge init --tools kimi` and `forge hooks on --hosts kimi`. In Kimi, trust the workspace, run the printed `/plugins install` command and then `/reload`. Kimi reads the project MCP entry from `.kimi-code/mcp.json`. |
 | Local Codex | Run `forge init --tools codex` and `forge hooks on --hosts codex`. In a trusted project, review the hooks with `/hooks`. The Codex plugin also bundles native hooks, skills and MCP configuration. |
-| Claude Code | In the client, run `/plugin marketplace add CodeWithJuber/forgekit` and `/plugin install forgekit`. The plugin registers its lifecycle hooks. |
 | Another stdio MCP client | Register a server named `forge-cortex` with command `forge` and arguments `["cortex-mcp"]`. Start it in the project directory or supply the project's absolute path through `FORGE_ROOT`. |
 
 For gated model and tool execution, follow [supervised project setup](/guides/supervised-runs). The [host matrix](https://github.com/CodeWithJuber/forgekit/blob/master/docs/INTEGRATIONS.md) describes the events available in each client.

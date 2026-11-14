@@ -12,6 +12,7 @@ import {
   renderDocs,
   renderFile,
   renderGroupsTable,
+  renderHostHooks,
   renderMcpToolsTable,
   renderRepoMap,
   spliceBlock,
@@ -35,6 +36,23 @@ test("renderGroupsTable and renderMcpToolsTable derive fully from their registri
   assert.ok(groups.includes("**Labs (experimental)**"), "group labels come from GROUPS keys");
   const tools = renderMcpToolsTable();
   for (const t of TOOLS) assert.ok(tools.includes(`\`${t.name}\``), `tool row for ${t.name}`);
+});
+
+test("host table distinguishes context injection from a notification and uses native event names", () => {
+  const rows = renderHostHooks()
+    .split("\n")
+    .map((line) =>
+      line
+        .split("|")
+        .slice(1, -1)
+        .map((c) => c.trim()),
+    );
+  assert.deepEqual(
+    rows.find(([host]) => host === "Claude Code"),
+    ["Claude Code", "`UserPromptSubmit`", "`PreToolUse`", "`PostToolUseFailure`"],
+  );
+  assert.equal(rows.find(([host]) => host === "Kimi Code")[3], "—");
+  assert.equal(rows.find(([host]) => host === "Gemini CLI")[1], "`BeforeAgent`");
 });
 
 test("mermaidInit carries the two brand identity hexes the diagram check enforces", () => {

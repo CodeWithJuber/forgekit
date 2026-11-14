@@ -1,6 +1,6 @@
 # Supervised coding runs
 
-ForgeKit can run a task through a model, a gated tool registry and a verifier. The CLI, the ForgeKit MCP server and the job worker use the same executor. A run ID identifies its task, decisions, tool calls, usage and final evidence. A model saying it has finished starts verification.
+ForgeKit can run a task through a model, a gated tool registry and a verifier. The CLI, local dashboard, ForgeKit MCP server and job worker use the same executor. A run ID identifies its task, decisions, tool calls, usage and final evidence. A model saying it has finished starts verification.
 
 [![A supervised task branches into a policy-checked tool call or verification, with a bounded repair path](diagrams/supervised-run.svg)](https://jubershaikh.com/forgekit/diagrams/supervised-run.html)
 
@@ -9,13 +9,15 @@ ForgeKit can run a task through a model, a gated tool registry and a verifier. T
 Use a checkout of the project you want to work on. Install this version of the ForgeKit CLI on your PATH. Use Node 20+ and a Python installation outside the project with SQLite support. The Codex configuration check uses Python 3.11+ for TOML. Generated control files use JSON syntax, which is valid YAML. Install PyYAML for the selected interpreter if you want to use indented YAML syntax.
 
 ```sh
-forge harness init --hosts kimi,codex --supervised
+forge harness init --hosts claude,codex,kimi --supervised
 forge harness status
-forge harness drift --hosts kimi,codex
+forge harness drift --hosts claude,codex,kimi
 forge harness routes
 ```
 
-Fresh initialization creates five files under `harness/` and records a private activation for this checkout. Review version-controlled configuration from another checkout, then run `forge harness trust` locally. Review and repeat trust after changing the four control files. The lockfile uses separate per-extension approval. On an existing initialized project, change `policy.yaml` to select `nativeMode` and `hosts`, trust the change, then set up the chosen hosts using `forge init --tools kimi,codex` and `forge hooks on --hosts kimi,codex`. A second harness initialization preserves existing controls.
+Select only the clients used by this checkout. With `forge harness init --supervised`, ForgeKit uses recorded host choices or detects project configuration. A new checkout with no host markers receives generic MCP setup. Use `--hosts generic` explicitly for a client with its own stdio configuration. `forge harness init` also supports CLI-only work.
+
+Fresh initialization creates five files under `harness/` and records a private activation for this checkout. Review version-controlled configuration from another checkout, then run `forge harness trust` locally. Review and repeat trust after changing the four control files. The lockfile uses separate per-extension approval. To add hosts to an existing trusted harness, run `forge harness connect --hosts claude,generic`. Existing host choices and the project’s current mode are preserved. When it adds host names, the command writes the policy as JSON-compatible YAML. To switch an existing host-led project into supervised mode, change `nativeMode` in `harness/policy.yaml` to `supervised`, review the change and run `forge harness trust`.
 
 | File | What the team chooses |
 | --- | --- |
@@ -29,14 +31,37 @@ Use `--supervised` for a project whose native pre-tool hooks should send work th
 
 | Host | Activation and boundary |
 | --- | --- |
+| Claude Code | Open the trusted checkout with the ForgeKit CLI on PATH. Project hooks are in `.claude/settings.json`. Enable the project’s `forge-cortex` entry in `.mcp.json` if Claude prompts. Check the connection in the client with `/mcp`. |
 | Kimi Code | Trust the workspace. Run the printed `/plugins install /absolute/path/to/forgekit` command, then `/reload`. The native plugin is per user. The project MCP file is `.kimi-code/mcp.json`. |
 | Local Codex | Open a trusted project and inspect the generated commands in `/hooks`. The MCP config and native hooks are under `.codex/`. |
-| Claude Code, Gemini CLI, Cursor, Copilot | Select the host at setup. ForgeKit translates the supported pre-tool events into the client’s deny or allow response. Trust, reload, cloud availability and tool naming are client-specific. |
-| Other MCP hosts | Register `forge` with arguments `["cortex-mcp"]` as a stdio server in the target project. Use `forge_harness_run` and `forge_harness_status`. A shell-only or instruction-only agent can invoke the CLI. |
+| Gemini CLI, Cursor, Copilot | Select the host at setup. ForgeKit translates the supported pre-tool events into the client’s deny or allow response. Trust, reload, cloud availability and tool naming are client-specific. |
+| Other stdio MCP hosts (`generic`) | Copy the registration printed by setup into the client. It runs `forge` with arguments `["cortex-mcp"]` and `FORGE_ROOT` set to the checkout’s absolute path. Connect to the server in that client. For a shell-only agent, invoke `forge harness run` from the checkout. |
 
 In supervised projects the ForgeKit MCP server accepts those two harness tools. An MCP run accepts `task` and an optional array of `acceptance` strings. Approval administration, extension review, route trust and memory sharing are operator commands. The client hook fixtures and the read-only drift check exercise six host dialects. A green drift report establishes the managed entries on disk. The [host matrix](INTEGRATIONS.md) records separate native-client delivery results.
 
 The [native acceptance results](INTEGRATIONS.md#supervise-a-coding-run) record client versions, first-prompt delivery and blocked writes.
+
+### Check a normal prompt
+
+After starting a model route and configuring verification, ask the host an ordinary project question such as “Find the retry limit in this repo and report its source.” In Claude Code, Codex and Kimi, look for the run tool in the client transcript. In another stdio client, call `forge_harness_run` with `{"task":"Find the retry limit","acceptance":["Report the limit and its source"]}`. Use the returned ID with `forge_harness_status` as `{"id":"<run-id>"}`. External shell or editor actions are mediated only when the host supplies a supported hook.
+
+Run `forge dash` from the checkout to inspect host setup. With a trusted harness and a running model route, choose **New run**, enter the task and optional acceptance criteria, then choose **Start run**. Follow its ID in **Runs**. A setup check tests configuration. A completed run also has a verification outcome. [Dashboard guide](GUIDE.md#project-dashboard)
+
+### Hook coverage by host
+
+The table comes from ForgeKit’s host adapters. Each cell shows the client event that implements the behavior. A dash indicates that the adapter has no matching event with that capability. For a generic MCP client, invoke the two supervised tools directly.
+
+<!-- forge:render:host-hooks:begin (generated by `forge docs render` — do not edit) -->
+| Host           | Adds context at prompt submission | Checks tools before execution                              | Adds context after a tool failure |
+| -------------- | --------------------------------- | ---------------------------------------------------------- | --------------------------------- |
+| Claude Code    | `UserPromptSubmit`                | `PreToolUse`                                               | `PostToolUseFailure`              |
+| Codex          | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
+| Gemini CLI     | `BeforeAgent`                     | `BeforeTool`                                               | —                                 |
+| Cursor         | —                                 | `beforeShellExecution`, `beforeMCPExecution`, `preToolUse` | `postToolUseFailure`              |
+| GitHub Copilot | —                                 | `preToolUse`                                               | `postToolUseFailure`              |
+| Kimi Code      | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
+| Devin          | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
+<!-- forge:render:host-hooks:end -->
 
 ## Select and verify a model route
 

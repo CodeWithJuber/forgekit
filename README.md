@@ -75,8 +75,7 @@ It does three jobs:
 >   checks are advisory unless you enable enforcement, and most integrations have less real-world
 >   exercise than Claude Code. The core (`init`, `sync`, `substrate`, `impact`, `ledger`, guards)
 >   is tested and in daily use.
-> - **Claude Code is the deepest-tested integration** (full plugin, ambient `UserPromptSubmit`
->   guards). MCP registration and hook coverage for the other tools vary by host.
+> - **Claude Code 2.1.325** invoked the supervised run and status tools on a normal prompt and received a signed suite receipt. Its pre-tool hook denied a direct Bash write. [Claude acceptance workflow](.github/workflows/native-claude-harness.yml)
 >   In a trusted workspace, the first model request from Codex CLI 0.169.0 included a source
 >   excerpt and routing instructions. Kimi Code 2.6.2 discovered and called the supervised MCP
 >   tool on an ordinary prompt, then received a signed test receipt. Both clients blocked a direct
@@ -112,6 +111,14 @@ forge doctor                             # verify providers, hooks, and MCP wiri
 forge demo                               # watch the gate catch a real defect (green → broken → green)
 ```
 
+Open the local project dashboard from the same directory:
+
+```bash
+forge dash
+```
+
+Open the printed loopback URL. Choose **Coding hosts** to check setup. With a trusted harness and a model route running, choose **New run** to submit a task and **Runs** to inspect its outcome. [Dashboard guide](docs/GUIDE.md#project-dashboard)
+
 Then run a pre-action check inside a repository:
 
 ```bash
@@ -137,7 +144,7 @@ forge verify                             # 3. did the change pass the suites tha
 
 For Kimi Code, `KIMI_CODE_HOME` selects the user profile where the native plugin is enabled. The project MCP connections live in `.kimi-code/mcp.json`. For Codex, enable the repository’s hooks in a trusted session.
 
-Choose the agents your project uses. For example, `forge init --tools kimi,codex` prepares both clients. Run `forge integrations` to browse packages and remote servers, or `forge integrations select` for the interactive picker. Select each integration separately. Use `forge integrations connect <id> --url <endpoint>` for a hosted or self-managed MCP server and `forge integrations register <descriptor.json>` for a custom npm tool. `forge integrations list --json` shows the recorded selection and `forge integrations remove <id>` disconnects it from the project. Read the [implementation and host setup guide](docs/V2-IMPLEMENTATION.md) for Kimi's native plugin, Codex hook trust, portable agents and command examples.
+Choose the agents your project uses. For example, `forge init --tools claude,codex,kimi` prepares these three clients. Run `forge integrations` to browse packages and remote servers, or `forge integrations select` for the interactive picker. Select each integration separately. Use `forge integrations connect <id> --url <endpoint>` for a hosted or self-managed MCP server and `forge integrations register <descriptor.json>` for a custom npm tool. `forge integrations list --json` shows the recorded selection and `forge integrations remove <id>` disconnects it from the project. Read the [implementation and host setup guide](docs/V2-IMPLEMENTATION.md) for per-host activation, portable agents and command examples.
 
 Use `forge develop "<task>"` to inspect the development plan and research evidence. Use `forge develop "<task>" --verify` to run the project checks for the current tree.
 
@@ -507,7 +514,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge lean`          | scope-minimality (M5) — measure the diff's footprint vs what the task asked for                                                                                                                                                                                                                     |
 |                         | `forge anchor`        | goal-drift check — are your actual (git) changes still on the stated goal?                                                                                                                                                                                                                          |
 |                         | `forge diagnose`      | doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation                                                                                                                                                                                                            |
-|                         | `forge dash`          | live dashboard: ledger, metrics trends, radar, memory browser, timeline, blast radius                                                                                                                                                                                                               |
+|                         | `forge dash`          | open a local project dashboard to inspect runs, check agent setup and review project memory                                                                                                                                                                                                         |
 |                         | `forge report`        | emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server                                                                                                                                                                                                                   |
 |                         | `forge deja`          | anti-repetition — have you done this task before? ranks prior solved/verified sessions                                                                                                                                                                                                              |
 |                         | `forge reuse`         | proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats                                                                                                                                                                                                                        |
@@ -592,14 +599,12 @@ From a fresh project checkout, use Node 20+ and Python with SQLite FTS5 support.
 also supports the Codex TOML configuration check.
 
 ```bash
-forge harness init --hosts kimi,codex --supervised
+forge harness init --hosts claude,codex,kimi --supervised
 forge harness status
-forge harness drift --hosts kimi,codex
+forge harness drift --hosts claude,codex,kimi
 ```
 
-In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`.
-In local Codex, trust the workspace and review the project hooks in `/hooks`. Drift checks inspect
-the generated project files. Your client controls its local trust and plugin activation.
+In Claude Code, trust the checkout and enable the project’s `forge-cortex` MCP server if prompted. In local Codex, review the project hooks in `/hooks`. In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`. Select just the hosts you use. For another stdio MCP client, choose `--hosts generic` and copy the printed server settings into that client.
 
 Start the configured model endpoint. The default is a local Chat Completions server at
 `http://127.0.0.1:11434/v1` serving `qwen2.5-coder:7b`. In a project with a trusted test suite,

@@ -88,6 +88,8 @@ export async function runProjectHarness(root, raw, options = {}) {
       ],
       resume: resumed?.id,
       signal: options.signal,
+      onCheckpoint: options.onCheckpoint,
+      inputDigest: options.inputDigest,
     });
   } finally {
     releaseExtensions();

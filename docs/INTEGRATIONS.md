@@ -1,6 +1,6 @@
 # Integrations — what each tool actually gets
 
-Choose your coding hosts with `forge init --tools kimi,codex`. Each host receives its supported project instructions, MCP entries or hooks.
+Choose your coding hosts with `forge init --tools claude,codex,kimi`. Each host receives its supported project instructions, MCP entries or hooks.
 "Supported" hides four different things, so this page lists them separately for every tool:
 
 1. **Config emission** — forge writes the tool's native rules file (or relies on one the tool
@@ -56,13 +56,14 @@ with `forge evidence "your task"`.
 
 ### Supervise a coding run
 
-In a trusted checkout, run `forge harness init --hosts kimi,codex --supervised`. In Kimi, follow the printed plugin install command and run `/reload`. In local Codex, review the generated commands in `/hooks`. Configure a model route before starting a run. `forge harness drift --hosts kimi,codex` checks the project files. To verify activation in the client, submit a normal coding prompt and inspect the resulting tool call or hook trace. [Model setup and first verified run](HARNESS.md)
+In a trusted checkout, run `forge harness init --hosts claude,codex,kimi --supervised`. In Claude Code, trust the workspace and enable the project MCP server if prompted. In Kimi, follow the printed plugin install command and run `/reload`. In local Codex, review the generated commands in `/hooks`. Configure a model route before starting a run. `forge harness drift --hosts claude,codex,kimi` checks the project files. To verify activation in the client, submit a normal coding prompt and inspect the resulting tool call or hook trace. [Model setup and first verified run](HARNESS.md)
 
 | Client | Evidence from the acceptance run |
 | --- | --- |
+| Claude Code 2.1.325 | Tested both the project configuration and the packaged plugin in a checkout with the project hooks removed. On each path a normal prompt discovered the run and status tools, read the fixture through the harness and obtained a signed suite receipt. The hook denied a direct Bash write. [Repeat the native acceptance check](../.github/workflows/native-claude-harness.yml) |
 | Kimi Code 2.6.2 | An ordinary prompt reached `forge_harness_run`. The run read the fixture, returned a signed test receipt and exposed matching status. The hook denied a subsequent direct native write. [Kimi run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328450/job/132430513107) |
 | Codex CLI 0.169.0 | The first request contained the retrieved row, its locator and the routing instruction. The hook denied a direct shell write inside a writable sandbox. [Codex run](https://github.com/CodeWithJuber/forgekit/actions/runs/43589328444/job/132430512728) |
-| Other stdio MCP clients | Register `forge cortex-mcp` in the project and invoke `forge_harness_run` and `forge_harness_status`. Automatic routing depends on the host's lifecycle callbacks. Actions outside those callbacks use the host's own permissions. |
+| Other stdio MCP clients | Use `forge harness init --hosts generic --supervised`. Apply the printed server registration in the client and invoke `forge_harness_run` and `forge_harness_status`. Automatic routing depends on the host's lifecycle callbacks. Actions outside those callbacks use the host's own permissions. |
 
 For business systems, choose the source independently of the coding host. A scoped Jira project, Confluence space, GitLab project or local document folder can be synced once and queried by another configured client in the same workspace. Use a live record read when the current version matters. [Cloud and self-hosted source setup, local queries and refresh rules](AGENT-EVIDENCE.md)
 

@@ -1,6 +1,6 @@
 ---
 title: "Supervised coding runs"
-description: "Run Kimi, Codex or another MCP client through project permissions, spend limits and an independent verifier."
+description: "Run Claude Code, Codex, Kimi or another MCP client through project permissions, spend limits and an independent verifier."
 ---
 
 ## Activate a project
@@ -8,9 +8,9 @@ description: "Run Kimi, Codex or another MCP client through project permissions,
 In the repository where the agent will work, use a ForgeKit build with `forge harness`, Node.js 20+ and Python 3.11+ with SQLite. Choose the hosts your team uses.
 
 ```sh
-forge harness init --hosts kimi,codex --supervised
+forge harness init --hosts claude,codex,kimi --supervised
 forge harness status
-forge harness drift --hosts kimi,codex
+forge harness drift --hosts claude,codex,kimi
 forge harness routes
 ```
 
@@ -18,14 +18,16 @@ forge harness routes
   <img src="/images/supervised-setup.gif" alt="A terminal initializes a supervised Kimi and Codex project, prints the Kimi plugin installation step and inspects project status and drift." />
 </Frame>
 
-In Kimi, trust the workspace, run the printed `/plugins install` command and then `/reload`. In local Codex, open the trusted project and review its commands in `/hooks`. A passing drift check confirms the generated files on disk. Use a normal coding prompt to check that the client actually calls the harness.
+In Claude Code, trust the checkout and enable its `forge-cortex` MCP server if prompted. In Kimi, trust the workspace, run the printed `/plugins install` command and then `/reload`. In local Codex, open the trusted project and review its commands in `/hooks`. A passing drift check confirms the generated files on disk. Use a normal coding prompt to check that the client actually calls the harness.
 
-For another client that supports stdio MCP, register `forge cortex-mcp` in the working directory. Invoke `forge_harness_run` with `task` and optional `acceptance` strings, then inspect the returned run ID with `forge_harness_status`. Automatic interception depends on the host's callbacks.
+To add Claude or another client to an existing trusted harness, run `forge harness connect --hosts claude,generic`. This adds their setup and preserves the project’s selected mode.
+
+For another client that supports stdio MCP, initialize with `forge harness init --hosts generic --supervised` and copy the printed server settings into the client. They include the checkout’s absolute path. Invoke `forge_harness_run` with `task` and optional `acceptance` strings, then inspect the returned run ID with `forge_harness_status`. Automatic interception depends on the host's callbacks. Open the [local dashboard](/cli/config#forge-dash) with `forge dash` to inspect run history from the same checkout.
 
 ## Model and verification
 
 <Frame>
-  <img src="/images/diagrams/supervised-run.svg" alt="A project run passes from the CLI, MCP or job worker into a bounded model and tool loop. Permission and verification checks determine which actions execute and which results become evidence." />
+  <img src="/images/diagrams/supervised-run.svg" alt="A project run passes from the dashboard, CLI, MCP client or job worker into a bounded model and tool loop. Permission and verification checks determine which actions execute and which results become evidence." />
 </Frame>
 
 The default model route expects a local Chat Completions server with tool support at `http://127.0.0.1:11434/v1`, serving `qwen2.5-coder:7b`. Start that server and install the model before running a task. For another endpoint, review `harness/routing.yaml`, run `forge harness trust` and inspect the pin printed by `forge harness routes`. Paid routes also require configured prices and positive run, daily and project budgets.

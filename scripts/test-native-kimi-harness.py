@@ -1,31 +1,22 @@
 #!/usr/bin/env python3
 """Exercise a real Kimi prompt, supervised MCP run and native denial with two loopback providers."""
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import secrets
 import shlex
 import shutil
 import subprocess
 import tempfile
 import threading
 
-ROOT = Path(__file__).resolve().parent.parent
+from native_harness_fixture import HarnessModel, prepare_project, ROOT, TASK, tool
+
 PREFIX = "mcp__forge-cortex__forge_harness_"
-TASK = "Verify the synthetic calculator unit suite."
 
 
-def tool(name, args, number):
-    return {"id": f"call_{number}", "type": "function",
-            "function": {"name": name, "arguments": json.dumps(args)}}
-
-
-class LocalModels(BaseHTTPRequestHandler):
-    def log_message(self, *_):
-        pass
-
+class LocalModels(HarnessModel):
     def do_POST(self):
         size = int(self.headers["Content-Length"])
         if self.path != "/v1/chat/completions" or not 0 < size < 8 * 1024 * 1024:
@@ -36,22 +27,6 @@ class LocalModels(BaseHTTPRequestHandler):
             self.harness_reply(body)
         else:
             self.kimi_reply(body)
-
-    def harness_reply(self, body):
-        self.server.inner.append(body)
-        if len(self.server.inner) == 1:
-            message = {"role": "assistant", "content": None,
-                       "tool_calls": [tool("read_file", {"path": "calculator.txt"}, 1)]}
-        else:
-            message = {"role": "assistant", "content": "Finished the requested local check."}
-        payload = {"id": "inner", "model": "harness-fixture",
-                   "choices": [{"index": 0, "finish_reason": "tool_calls" if "tool_calls" in message else "stop",
-                                "message": message}],
-                   "usage": {"prompt_tokens": 20, "completion_tokens": 8}}
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
 
     def kimi_reply(self, body):
         history = self.server.outer
@@ -117,20 +92,7 @@ def verify(kimi, folder, server):
     (khome / "config.toml").write_text("telemetry = false\nauto_session_title = false\n")
     run("git", "init", "-q")
     run("forge", "harness", "init", "--hosts", "kimi", "--supervised")
-    routing_file = repo / "harness" / "routing.yaml"
-    routing = json.loads(routing_file.read_text())
-    route = routing["routes"][0]
-    route.update(baseUrl=url, model="harness-fixture")
-    routing_file.write_text(json.dumps(routing))
-    run("forge", "harness", "trust")
-    module = (ROOT / "src" / "harness_router.js").as_uri()
-    code = f'import {{harnessRouteFingerprint as f}} from {json.dumps(module)};console.log(f(JSON.parse(process.argv[1])))'
-    env["FORGE_HARNESS_TRUSTED_ROUTES"] = run(node, "--input-type=module", "-e", code, json.dumps(route))
-    marker = "case-" + secrets.token_hex(12)
-    (repo / "calculator.txt").write_text(marker)
-    (repo / "package.json").write_text(json.dumps({"name": "native-calc", "scripts": {"test": "node --test calculator.test.js"}}))
-    (repo / "calculator.test.js").write_text('require("node:test")("sum",()=>require("node:assert/strict").equal(1+2,3))\n')
-    run("forge", "verify", "--json")
+    marker = prepare_project(repo, env, run, node, url)
     run(kimi, "-p", TASK)
     if len(server.outer) != 4 or len(server.inner) != 2:
         raise RuntimeError(f"Expected 4 Kimi and 2 harness requests; received {len(server.outer)} and {len(server.inner)}")

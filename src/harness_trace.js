@@ -10,6 +10,7 @@ import {
   linkSync,
   lstatSync,
   mkdirSync,
+  opendirSync,
   openSync,
   readdirSync,
   readFileSync,
@@ -38,15 +39,10 @@ function runDir(root, id) {
   return join(privateWorkspaceFile(root, "harness-runs").replace(/\.json$/, ""), harnessDigest(id));
 }
 
-function readState(dir) {
+function readState(dir, maxBytes = 64 * 1024 * 1024) {
   const file = join(dir, "record.json");
   const st = lstatSync(file);
-  if (
-    !st.isFile() ||
-    st.nlink !== 1 ||
-    realpathSync.native(dir) !== dir ||
-    st.size > 64 * 1024 * 1024
-  )
+  if (!st.isFile() || st.nlink !== 1 || realpathSync.native(dir) !== dir || st.size > maxBytes)
     throw new Error("Unsafe harness record");
   const record = JSON.parse(readFileSync(file, "utf8"));
   if (record.version !== 1 || !Array.isArray(record.events))
@@ -138,10 +134,14 @@ function claimLease(dir) {
         throw new Error("Invalid harness lease release");
     } else {
       if (owner.host !== host || !Number.isSafeInteger(owner.pid) || owner.pid < 1)
-        throw new Error("Harness run has an active or unverifiable writer");
+        throw Object.assign(new Error("Harness run has an active or unverifiable writer"), {
+          code: "HARNESS_WRITER_BUSY",
+        });
       try {
         process.kill(owner.pid, 0);
-        throw new Error("Harness run already has a writer");
+        throw Object.assign(new Error("Harness run already has a writer"), {
+          code: "HARNESS_WRITER_BUSY",
+        });
       } catch (e) {
         if (e.code !== "ESRCH") throw e;
       }
@@ -168,7 +168,10 @@ function claimLease(dir) {
   try {
     publish(ownerPath(n), { host, pid: process.pid, token });
   } catch (e) {
-    if (e.code === "EEXIST") throw new Error("Harness run already has a writer");
+    if (e.code === "EEXIST")
+      throw Object.assign(new Error("Harness run already has a writer"), {
+        code: "HARNESS_WRITER_BUSY",
+      });
     throw e;
   }
   return { recovered, release: () => publish(join(dir, `released-${n}.json`), { token }) };
@@ -338,6 +341,55 @@ function records(root) {
         existsSync(join(parent, e.name, "record.json")),
     )
     .map((e) => readState(join(parent, e.name)));
+}
+/** Return projected records for the dashboard without loading the full run archive.
+ * Metadata scans and replay work are bounded separately. An unreadable, oversized
+ * or corrupt record is reported to the caller without hiding other valid runs. */
+export function recentHarnessRuns(root, summarize) {
+  const parent = dirname(runDir(root, "index"));
+  const candidates = [];
+  let moreRuns = false;
+  let runsUnavailable = false;
+  if (!existsSync(parent)) return { runs: [], moreRuns, runsUnavailable };
+  if (realpathSync.native(parent) !== parent) throw new Error("Unsafe harness records directory");
+  const dir = opendirSync(parent);
+  try {
+    let entry;
+    let scanned = 0;
+    while ((entry = dir.readSync()) !== null) {
+      if (++scanned > 4096) {
+        moreRuns = true;
+        break;
+      }
+      if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
+      const path = join(parent, entry.name);
+      try {
+        const st = lstatSync(join(path, "record.json"));
+        if (!st.isFile() || st.nlink !== 1) throw new Error("Unsafe harness record");
+        candidates.push({ path, mtime: st.mtimeMs, size: st.size });
+      } catch (error) {
+        // A newly opened run can exist briefly before its first checkpoint.
+        if (error.code !== "ENOENT") runsUnavailable = true;
+      }
+    }
+  } finally {
+    dir.closeSync();
+  }
+  candidates.sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path));
+  moreRuns ||= candidates.length > 20;
+  let remaining = 8 * 1024 * 1024;
+  const runs = [];
+  for (const candidate of candidates.slice(0, 20)) {
+    try {
+      const maxBytes = Math.min(remaining, 2 * 1024 * 1024);
+      if (candidate.size > maxBytes) throw new Error("Dashboard replay budget exceeded");
+      remaining -= candidate.size;
+      runs.push(summarize(readState(candidate.path, candidate.size)));
+    } catch {
+      runsUnavailable = true;
+    }
+  }
+  return { runs, moreRuns, runsUnavailable };
 }
 export function harnessRunStats(root) {
   const statuses = {},
