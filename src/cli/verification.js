@@ -50,11 +50,15 @@ HANDLERS.verify = async (argv) => {
     if (r.verdict !== "CONFIRMED") process.exitCode = 1;
     return;
   }
+  const baseIndex = argv.indexOf("--base");
+  const base = baseIndex < 0 ? "HEAD" : argv[baseIndex + 1];
+  if (!base || base.startsWith("-")) throw new Error("Supply a Git revision after --base");
   if (argv.includes("--deep")) {
     const { verifyDeep, LENSES } = await import("../consensus.js");
     // `--llm` opts the reviewer panel in for this run; otherwise FORGE_LLM decides.
     const r = verifyDeep({
       targetRoot: process.cwd(),
+      base,
       llm: argv.includes("--llm") ? true : undefined,
     });
     if (json) {
@@ -109,9 +113,11 @@ HANDLERS.verify = async (argv) => {
         ? paint("PASS", "ok")
         : r.status === "NOT_CONFIGURED"
           ? paint("NOT VERIFIED — no test runner configured (NOT_CONFIGURED)", "warn")
-          : r.status === "INCOMPLETE"
-            ? paint(`NOT VERIFIED — tests incomplete${detail ? ` (${detail})` : ""}`, "warn")
-            : paint("BLOCKED — cross-family consensus says defect", "err");
+          : r.status === "SUSPECT"
+            ? paint(`SUSPECT — review changed test coverage (${detail})`, "warn")
+            : r.status === "INCOMPLETE"
+              ? paint(`NOT VERIFIED — tests incomplete${detail ? ` (${detail})` : ""}`, "warn")
+              : paint("BLOCKED — cross-family consensus says defect", "err");
     console.log(`\n  ${verdictLine}`);
     if (!r.ok) process.exitCode = 1;
     return;
@@ -121,6 +127,7 @@ HANDLERS.verify = async (argv) => {
   // WHERE it stopped. Silent under --json (machine-readable stdout stays clean).
   const r = verify({
     targetRoot: process.cwd(),
+    base,
     onProgress: json
       ? undefined
       : ({ label, phase, status }) =>
@@ -145,10 +152,24 @@ HANDLERS.verify = async (argv) => {
       ? `✓ pass (${t.runner ?? "project suite"})`
       : t.status === "FAIL"
         ? `✗ FAIL (${t.runner ?? "project suite"})`
-        : t.status === "INCOMPLETE"
-          ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
-          : `— NOT CONFIGURED (${nc?.reason ?? "no test runner detected"})`;
+        : t.status === "SUSPECT"
+          ? "SUSPECT — review changed test coverage"
+          : t.status === "INCOMPLETE"
+            ? `— INCOMPLETE: ${t.output || (t.detected ?? []).join(", ") || "test run did not complete"}`
+            : `— NOT CONFIGURED (${nc?.reason ?? "no test runner detected"})`;
   console.log(`  tests:            ${testsLine}`);
+  if (r.testIntegrity.status !== "clear") {
+    console.log(`  test integrity:   ${r.testIntegrity.reason}`);
+    for (const row of r.testIntegrity.findings)
+      console.log(
+        `    ${JSON.stringify(row.file)}${row.line ? `:${row.line}` : ""} — ${row.reason}`,
+      );
+  }
+  if (r.duplicates.status !== "OFF") {
+    console.log(`  duplicate gate:   ${r.duplicates.status} (${r.duplicates.reason})`);
+    for (const { first, second } of r.duplicates.findings)
+      console.log(`    ${first.file}:${first.line} and ${second.file}:${second.line}`);
+  }
   if (nc) {
     console.log(`  missing:          ${nc.detail}`);
     console.log(`  fix:              ${nc.fix}`);

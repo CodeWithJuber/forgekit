@@ -33,6 +33,9 @@ noticing. Commands are organized into six groups (the last is experimental).
   </Card>
 </CardGroup>
 
+For `forge harness`, see [Supervised coding runs](/guides/supervised-runs). For
+`forge sources`, `forge evidence` and `forge develop`, see [Project sources and research](/guides/project-evidence).
+
 ## Conventions
 
 - **Advisory by default.** Set `FORGE_ENFORCE=1` to turn the substrate into a hard block
@@ -83,7 +86,7 @@ These commands and flags are available and documented in their group pages:
 | `forge precommit`      | Quality  | Commit-level verification gate.                 |
 | `forge radar`          | Quality  | Dependency-currency rings.                      |
 | `forge vet`            | Quality  | Vet a package before it is added (dep-gate).    |
-| `forge hooks`          | Quality  | Run the guards by themselves in every agent.    |
+| `forge hooks`          | Quality  | Run guards on supported native events.    |
 | `forge report`         | Config   | Static HTML report of the repo's Forge state.   |
 | `forge tools`          | Config   | Primary-tool selection + gitignore wiring.      |
 | `forge verify --deep`  | Quality  | Multi-lens consensus verification.              |

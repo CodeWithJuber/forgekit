@@ -99,7 +99,9 @@ async function codeFacts(codeRoot) {
   const { ALL_KINDS } = await import("./semantic_guard.js");
   const { DORMANT_VAL } = await import("./ledger.js");
   const { DEPGATE_THRESHOLDS, CACHE_DAYS, ECOSYSTEMS } = await import("./depgate.js");
+  const { HARNESS_MCP_TOOLS } = await import("./harness_mcp.js");
   return {
+    harnessMcpNames: HARNESS_MCP_TOOLS.map((tool) => tool.name),
     hooks: json("hooks/hooks.json"),
     minConfidence: json("source/substrate.json").llm?.minConfidence,
     nativeTools: NATIVE_CONFIG_TOOLS.length,
@@ -124,6 +126,7 @@ const HOOK_EVENTS = [
   ["prompt-submit", "UserPromptSubmit"],
   ["pre-tool", "PreToolUse"],
   ["post-tool", "PostToolUse"],
+  ["tool-failure", "PostToolUseFailure"],
   ["stop", "Stop"],
 ];
 
@@ -140,6 +143,12 @@ export const FACTS = [
     at: '"id": "native-configs"',
     field: "label",
     value: (c) => `Native configs for ${inWords(c.nativeTools)} tools`,
+  },
+  {
+    diagram: "supervised-run.workflow",
+    at: '"title": "MCP entry points"',
+    field: "items[0]",
+    value: (c) => c.harnessMcpNames.join(" · "),
   },
   {
     diagram: "reuse-cache.workflow",

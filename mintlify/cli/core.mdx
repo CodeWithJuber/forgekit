@@ -7,18 +7,16 @@ The Core group bootstraps a repo and keeps it healthy.
 
 ## `forge init`
 
-Scaffold this repo's config — emits the tools it uses (Claude + detected, or `--tools`) from
-one shared source.
+Generate project configuration for your selected coding hosts.
 
 ```bash
 forge init
-forge init --tools claude,cursor        # choose the tools explicitly (or --tools all)
+forge init --tools kimi,codex        # choose the tools explicitly (or --tools all)
 ```
 
-Emits `AGENTS.md`, Claude Code's `CLAUDE.md` and `.mcp.json`, and the config of every tool
-the repo already shows signs of (`.cursor/`, `.codex/`, `.gemini/`,
-`.github/copilot-instructions.md`, …) — plus the `.gitattributes` union-merge rule the
-ledger needs. `--tools all` emits every tool (`.aider.conf.yml`, Roo Code and VS Code MCP
+Emits shared `AGENTS.md`, host-specific files and the `.gitattributes` merge rule for the
+ledger. With no recorded choice, ForgeKit detects the hosts already used in the repo.
+An empty repo retains the historical Claude Code default. `--tools all` emits every tool (`.aider.conf.yml`, Roo Code and VS Code MCP
 config, and the rest). The selection is recorded in `.forge/forge.config.json` (`tools`) so
 later `forge sync` runs emit the same set; re-run `forge init --tools …` to change it.
 

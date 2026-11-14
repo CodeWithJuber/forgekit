@@ -1,28 +1,19 @@
 # forgekit — architecture
 
-> **A beta toolkit for shared evidence-referenced memory, heuristic change-impact analysis,
-> and explicit verification around coding agents.** A language model keeps no durable state
-> between independent calls and sees only a bounded context window, so on its own it does not
-> carry what your team learned, cannot see the parts of the repository an edit affects unless
-> they are in context, and cannot enforce rules on itself. forgekit is the **cognitive
-> substrate** — the layer that runs _before_ the model edits code, supplying evidence-referenced
-> ("proof-carrying") memory, heuristic impact analysis, and guardrails — and a **cross-tool
-> config compiler** that delivers it as native config into every tool at once.
+ForgeKit combines a cross-host configuration compiler with a local coding-agent runtime.
+In ordinary mode the host makes tool calls and ForgeKit supplies context and checks. In a
+supervised project the host can delegate a task to ForgeKit, which gates actions, budgets model
+requests and records a verifier result.
 
-This document is the architecture reference. It is organized around four diagrams:
+| State | Location and owner |
+| --- | --- |
+| Project rules, atlas and team ledger | `source/`, `.forge/atlas.json` and `.forge/ledger/`. Ledger claims can travel through git. |
+| Supervised project controls | `harness/` contains policy, routes, budgets, jobs and the extension lockfile. A local operator trusts reviewed controls. |
+| Private working state | Source snapshots, approvals, harness memory, traces, queued work and spending records live under the user's private state directory. Scopes control which stored records a run may recall. |
 
-1. the four-layer config compiler (one source → native configs),
-2. the pre-action gate pipeline (`forge substrate`),
-3. the proof-carrying-memory ledger and team merge,
-4. the reuse / context loop.
-
-The runtime is **zero-dependency Node**. The code graph is `.forge/atlas.json` — plain
-JSON, not a database. The ledger is a directory of content-addressed claims under
-`.forge/ledger/`, committable to git. Optional tiers (`FORGE_EMBED` embeddings,
-Playwright for `uicheck visual`) are opt-in and add no required dependencies.
-
-Every command referenced below is real and wired in `src/cli.js`. Run `forge --help`
-for the full list.
+The Node CLI has zero runtime npm dependencies. The supervised runtime uses Python 3 and SQLite
+with FTS5. Optional document readers, model endpoints and a container verifier have their own
+setup requirements. [Harness setup](docs/HARNESS.md) · [Source setup](docs/AGENT-EVIDENCE.md)
 
 ## Locked decisions
 
@@ -31,8 +22,7 @@ for the full list.
   Brand stored as **one token** (the `brand` key in `brand.json`); rebrand = 1 edit.
 - **Distributable id = `forgekit`** (npm package + marketplace id) — fixed even if
   the brand token changes, so a rename never breaks install.
-- **Scope = full multi-tool day 1** — ten tools plus MCP, from one canonical source (eleven
-  since Kimi Code joined as an `AGENTS.md` reader).
+- **Host coverage.** Eleven hosts receive native config from one canonical source. Roo Code and VS Code receive MCP entries.
 - **Install = all three channels** (plugin + hardened installer + npm CLI), all
   three pointing at the _same_ tree ("one tree, three front doors").
 - **Own `lean` + `atlas`** — as _thin layers over proven primitives_, not
@@ -44,7 +34,7 @@ You author the substrate once. `forge sync` compiles that source into each tool'
 native config. The four layers are how the brain is expressed; the compiler is how it
 is delivered.
 
-[![forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, guards that run in every agent, mcp); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
+[![forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, supported host hooks and MCP); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
 
@@ -53,18 +43,26 @@ The four layers, brand-named and emitted cross-tool:
 - **tools** (`~/.forge/tools/` → `~/.claude/skills/`) — model-invoked capabilities.
 - **crew** (`~/.forge/crew/` → `~/.claude/agents/`) — isolated sub-agents
   (scout / verifier / frontend-verifier / independent-reviewer / doc-sync).
-- **guards** (`~/.forge/guards/` → `settings.json` hooks) — **the only layer that
-  _enforces_ rather than suggests.** A guard is a deterministic hook the model cannot
-  drift from. Prose rules in CLAUDE.md get acknowledged and then forgotten after
-  compaction; a guard does not. Every enforceable invariant belongs here.
+- **guards** (`~/.forge/guards/` → `settings.json` hooks) — deterministic checks at lifecycle events supported by a trusted host. The supervised executor also checks its own tool calls.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 22 MCP tools: the substrate checks (`substrate_check` / `predict_impact` /
+  exposing 36 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
-  ledger ratify/retract), and ops/health — the full table is in docs/GUIDE.md.
+  ledger ratify/retract), and operations and health checks. [Tool reference](docs/GUIDE.md#mcp-tools)
 
 Cross-cutting concerns thread through all four: **atlas** (the code graph), **lean**
 (minimalism — shipped as _both_ a tool and a Stop-guard, so it applies whether or not
 the model invokes it), and **recall** (memory).
+
+## Inside a supervised run
+
+[![A coding host or queued job enters the same supervised run. Policy and budgets gate tool calls. A verifier can accept the result, request a repair or close the run with evidence.](docs/diagrams/supervised-run.svg)](https://jubershaikh.com/forgekit/diagrams/supervised-run.html)
+
+1. The CLI, MCP server or job worker supplies a task and its acceptance criteria to the executor. The executor combines these with scoped memory and cited workspace evidence within the context budget.
+2. The router selects an eligible Chat Completions endpoint. The policy checks each proposed tool's arguments, stage and approval requirements. The built-in tools list, read and write eligible workspace files.
+3. When the model reports completion, the verifier evaluates the current tree. A failed check can trigger a bounded repair. The trace records the final status, evidence and usage.
+4. A later session can inspect the run by ID. Trust, permission grants and memory sharing are operator actions. Native hooks cover calls the client forwards to them.
+
+For routine work the default is one agent. The optional council records paired trials before adopting a multi-worker shape for a task class. [Verifier modes, memory scopes and council trials](docs/HARNESS.md)
 
 ## 2. The pre-action gate — `forge substrate`
 
@@ -250,8 +248,9 @@ runs `bump.mjs auto`: it releases only when a `feat`/`fix`/`perf`/breaking commi
 (or `[Unreleased]` was hand-written), synthesizing changelog notes from commit subjects
 when none exist, and exits `3` (a clean skip, not a failure) otherwise — so a chore/docs
 merge never spams the registry. A release goes out as a `release/vX.Y.Z` PR that a maintainer
-merges (closing and reopening it first, since a PR opened with `GITHUB_TOKEN` starts no CI);
-that merge tags the release and runs `release.yml`.
+reviews and merges after its checks pass. If GitHub shows **Approve workflows to run**, a
+maintainer reviews the change and approves the pending runs. The merge triggers tagging and the
+release workflow. [Release procedure](docs/RELEASING.md)
 
 **Runtime model resolution (`src/model_catalog.js`, `src/http_cache.js`).** A tier names a
 model _family_; `model_tiers.json` keeps a snapshot of ids and prices only as data of last
@@ -534,7 +533,7 @@ an **MCP server** for Roo Code and VS Code.
 | **Zed**            | first match of a precedence list incl. `AGENTS.md`                       | Emit `AGENTS.md` + doctor flags any earlier-precedence legacy file shadowing it                        |
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
-| **Kimi Code**      | `AGENTS.md` merged from project root to working dir (`${KIMI_AGENTS_MD}`, [kimi-cli docs](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/agents.md)) | Rely on root `AGENTS.md`; no `.kimi/AGENTS.md` copy (it would be merged twice), no MCP or hooks claimed |
+| **Kimi Code** | Shared `AGENTS.md`, trusted workspace `.kimi-code/mcp.json`, per-user `kimi.plugin.json` | The native prompt hook runs the bundled Node CLI and returns evidence in Kimi's `message` field; PreToolUse can block an action. [Setup and verification](docs/INTEGRATIONS.md) |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
@@ -680,22 +679,22 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  test["test<br/>156 files"]
-  src["src<br/>142 files"]
+  src["src<br/>208 files"]
+  test["test<br/>196 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
-  scripts["scripts<br/>10 files"]
+  scripts["scripts<br/>12 files"]
   bench["bench<br/>6 files"]
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 330 --> src
+  test -- 421 --> src
   bench -- 12 --> src
-  test -- 7 --> global
+  test -- 8 --> global
   scripts -- 6 --> src
+  src -- 6 --> global
   examples -- 4 --> src
   test -- 4 --> scripts
-  src -- 3 --> global
   test -- 2 --> bench
   global --> src
 ```

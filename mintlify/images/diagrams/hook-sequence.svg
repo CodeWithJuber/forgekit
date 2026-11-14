@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1500 696" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase" style="" width="1500" height="696" xmlns="http://www.w3.org/2000/svg"><style>
+<svg viewBox="0 0 1500 776" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase" style="" width="1500" height="776" xmlns="http://www.w3.org/2000/svg"><style>
 /*
 JetBrains Mono variable WOFF2 subsets from Google Fonts service revision v24.
 These fixed bytes are shared by the viewer and its SVG/raster exports.
@@ -447,17 +447,19 @@ rect.c-bg-rect { fill: var(--bg); }
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="2" x="48" y="372" width="1404" height="130" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="3" x="48" y="516" width="1404" height="94" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="3" x="48" y="516" width="1404" height="58" rx="10" class="c-lane" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="4" x="48" y="588" width="1404" height="94" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 157 142 L 157 631" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 559.6666666666667 142 L 559.6666666666667 631" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 962.3333333333334 142 L 962.3333333333334 631" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 1365 142 L 1365 631" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 157 142 L 157 711" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 559.6666666666667 142 L 559.6666666666667 711" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 962.3333333333334 142 L 962.3333333333334 711" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 1365 142 L 1365 711" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
-        <rect x="554.6666666666667" y="163" width="10" height="442" rx="3" class="c-mask"/>
-        <rect x="554.6666666666667" y="163" width="10" height="442" rx="3" class="c-frontend" stroke-width="1"/>
+        <rect x="554.6666666666667" y="163" width="10" height="514" rx="3" class="c-mask"/>
+        <rect x="554.6666666666667" y="163" width="10" height="514" rx="3" class="c-frontend" stroke-width="1"/>
         <rect x="957.3333333333334" y="163" width="10" height="46" rx="3" class="c-mask"/>
         <rect x="957.3333333333334" y="163" width="10" height="46" rx="3" class="c-security" stroke-width="1"/>
         <rect x="957.3333333333334" y="271" width="10" height="82" rx="3" class="c-mask"/>
@@ -466,8 +468,10 @@ rect.c-bg-rect { fill: var(--bg); }
         <rect x="957.3333333333334" y="379" width="10" height="46" rx="3" class="c-security" stroke-width="1"/>
         <rect x="957.3333333333334" y="451" width="10" height="46" rx="3" class="c-mask"/>
         <rect x="957.3333333333334" y="451" width="10" height="46" rx="3" class="c-security" stroke-width="1"/>
-        <rect x="957.3333333333334" y="523" width="10" height="82" rx="3" class="c-mask"/>
-        <rect x="957.3333333333334" y="523" width="10" height="82" rx="3" class="c-security" stroke-width="1"/>
+        <rect x="957.3333333333334" y="523" width="10" height="46" rx="3" class="c-mask"/>
+        <rect x="957.3333333333334" y="523" width="10" height="46" rx="3" class="c-security" stroke-width="1"/>
+        <rect x="957.3333333333334" y="595" width="10" height="82" rx="3" class="c-mask"/>
+        <rect x="957.3333333333334" y="595" width="10" height="82" rx="3" class="c-security" stroke-width="1"/>
 
         <!-- Messages -->
         <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="SessionStart: recall-load · cortex session-start" data-edge-key="0" data-edge-id="session-start">
@@ -502,19 +506,19 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="reads CACHED atlas only; never builds it in a hook" data-edge-key="4" data-edge-id="cached-atlas">
+        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="look up cached symbols and scoped source excerpts" data-edge-key="4" data-edge-id="cached-atlas">
           <path data-composition-edge-from="hooks" data-composition-edge-to="state" data-composition-edge-id="cached-atlas" data-composition-points="969.3333333333334,312;1358,312" d="M 969.3333333333334 312 L 1358 312" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="1027.6666666666667" y="292" width="272" height="16" rx="3" class="c-mask"/>
-          <text x="1163.6666666666667" y="302" class="t-backend" font-size="9" text-anchor="middle">reads CACHED atlas only; never builds it in a hook</text>
+          <rect x="1030.2666666666667" y="292" width="266.8" height="16" rx="3" class="c-mask"/>
+          <text x="1163.6666666666667" y="302" class="t-backend" font-size="9" text-anchor="middle">look up cached symbols and scoped source excerpts</text>
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="substrate advisory: suggested model · impact · verify checklist" data-edge-key="5" data-edge-id="advisory">
+        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="return cited evidence, routing and checks" data-edge-key="5" data-edge-id="advisory">
           <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="advisory" data-composition-points="955.3333333333334,348;566.6666666666667,348" d="M 955.3333333333334 348 L 566.6666666666667 348" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="591.2" y="328" width="339.6" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="338" class="t-muted" font-size="9" text-anchor="middle">substrate advisory: suggested model · impact · verify checklist</text>
+          <rect x="648.4" y="328" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="338" class="t-muted" font-size="9" text-anchor="middle">return cited evidence, routing and checks</text>
         </g>
         </g>
 
@@ -550,27 +554,43 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="Stop: completion-gate · lean-guard · session-learner · cortex stop" data-edge-key="10" data-edge-id="stop">
-          <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="stop" data-composition-points="566.6666666666667,528;955.3333333333334,528" d="M 566.6666666666667 528 L 955.3333333333334 528" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="PostToolUseFailure: cortex failure" data-edge-key="10" data-edge-id="tool-failure">
+          <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="tool-failure" data-composition-points="566.6666666666667,528;955.3333333333334,528" d="M 566.6666666666667 528 L 955.3333333333334 528" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="583.4" y="508" width="355.2" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="518" class="t-backend" font-size="9" text-anchor="middle">Stop: completion-gate · lean-guard · session-learner · cortex stop</text>
+          <rect x="666.6" y="508" width="188.8" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="518" class="t-backend" font-size="9" text-anchor="middle">PostToolUseFailure: cortex failure</text>
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="cortex stop: distill lessons into the ledger" data-edge-key="11" data-edge-id="distill">
-          <path data-composition-edge-from="hooks" data-composition-edge-to="state" data-composition-edge-id="distill" data-composition-points="969.3333333333334,564;1358,564" d="M 969.3333333333334 564 L 1358 564" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="return relevant evidence for the failed call" data-edge-key="11" data-edge-id="failure-evidence">
+          <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="failure-evidence" data-composition-points="955.3333333333334,564;566.6666666666667,564" d="M 955.3333333333334 564 L 566.6666666666667 564" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="1043.2666666666667" y="544" width="240.8" height="16" rx="3" class="c-mask"/>
-          <text x="1163.6666666666667" y="554" class="t-backend" font-size="9" text-anchor="middle">cortex stop: distill lessons into the ledger</text>
+          <rect x="640.6" y="544" width="240.8" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="554" class="t-muted" font-size="9" text-anchor="middle">return relevant evidence for the failed call</text>
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="session ends | agent told what is missing" data-edge-key="12" data-edge-id="stop-result">
-          <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="stop-result" data-composition-points="955.3333333333334,600;566.6666666666667,600" d="M 955.3333333333334 600 L 566.6666666666667 600" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="Stop: completion-gate · lean-guard · session-learner · cortex stop" data-edge-key="12" data-edge-id="stop">
+          <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="stop" data-composition-points="566.6666666666667,600;955.3333333333334,600" d="M 566.6666666666667 600 L 955.3333333333334 600" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="648.4" y="580" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="590" class="t-muted" font-size="9" text-anchor="middle">session ends | agent told what is missing</text>
+          <rect x="583.4" y="580" width="355.2" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="590" class="t-backend" font-size="9" text-anchor="middle">Stop: completion-gate · lean-guard · session-learner · cortex stop</text>
+        </g>
+        </g>
+
+        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="cortex stop: distill lessons into the ledger" data-edge-key="13" data-edge-id="distill">
+          <path data-composition-edge-from="hooks" data-composition-edge-to="state" data-composition-edge-id="distill" data-composition-points="969.3333333333334,636;1358,636" d="M 969.3333333333334 636 L 1358 636" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g>
+          <rect x="1043.2666666666667" y="616" width="240.8" height="16" rx="3" class="c-mask"/>
+          <text x="1163.6666666666667" y="626" class="t-backend" font-size="9" text-anchor="middle">cortex stop: distill lessons into the ledger</text>
+        </g>
+        </g>
+
+        <g data-edge-from="hooks" data-edge-to="agent" data-edge-label="session ends | agent told what is missing" data-edge-key="14" data-edge-id="stop-result">
+          <path data-composition-edge-from="hooks" data-composition-edge-to="agent" data-composition-edge-id="stop-result" data-composition-points="955.3333333333334,672;566.6666666666667,672" d="M 955.3333333333334 672 L 566.6666666666667 672" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g>
+          <rect x="648.4" y="652" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="662" class="t-muted" font-size="9" text-anchor="middle">session ends | agent told what is missing</text>
         </g>
         </g>
 
@@ -588,8 +608,12 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="62" y="363" class="t-dim" font-size="9" font-weight="600">Tool call</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="3">
-          <rect x="56" y="494" width="42" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="507" class="t-dim" font-size="9" font-weight="600">Stop</text>
+          <rect x="56" y="494" width="92" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="507" class="t-dim" font-size="9" font-weight="600">On tool failure</text>
+        </g>
+        <g data-graph-role="segment-label" data-segment-id="4">
+          <rect x="56" y="566" width="42" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="579" class="t-dim" font-size="9" font-weight="600">Stop</text>
         </g>
 
         <!-- Participants -->
@@ -628,35 +652,35 @@ rect.c-bg-rect { fill: var(--bg); }
           <text data-node-label="" x="962.3333333333334" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">forgekit hooks</text>
         </g>
 
-        <g id="node-state" data-node-id="state" data-node-label=".forge/ state" tabindex="0" role="button" aria-label="Focus .forge/ state, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-context="Sequence participant">
-          <title>.forge/ state · Sequence participant</title>
+        <g id="node-state" data-node-id="state" data-node-label="Project data" tabindex="0" role="button" aria-label="Focus Project data, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-context="Sequence participant">
+          <title>Project data · Sequence participant</title>
           <rect x="1270" y="72" width="190" height="54" rx="6" class="c-mask"/>
           <rect x="1270" y="72" width="190" height="54" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(1276 78) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" x="1365" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">.forge/ state</text>
+          <text data-node-label="" x="1365" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Project data</text>
         </g>
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="622" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="642" data-legend-width="78">
-            <path d="M 40 639 L 74 639" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-            <text x="83" y="642" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="702" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="722" data-legend-width="78">
+            <path d="M 40 719 L 74 719" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+            <text x="83" y="722" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="642" data-legend-width="73">
-            <path d="M 140 639 L 174 639" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
-            <text x="183" y="642" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="722" data-legend-width="73">
+            <path d="M 140 719 L 174 719" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+            <text x="183" y="722" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="642" data-legend-width="83">
-            <path d="M 235 639 L 269 639" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
-            <text x="278" y="642" class="t-muted" font-size="10" font-weight="500">security</text>
+          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="722" data-legend-width="83">
+            <path d="M 235 719 L 269 719" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+            <text x="278" y="722" class="t-muted" font-size="10" font-weight="500">security</text>
           </g>
-          <g data-legend-semantic-kind="default" data-legend-x="340" data-legend-baseline="642" data-legend-width="118">
-            <path d="M 340 639 L 374 639" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-            <text x="383" y="642" class="t-muted" font-size="10" font-weight="500">default message</text>
+          <g data-legend-semantic-kind="default" data-legend-x="340" data-legend-baseline="722" data-legend-width="118">
+            <path d="M 340 719 L 374 719" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+            <text x="383" y="722" class="t-muted" font-size="10" font-weight="500">default message</text>
           </g>
         </g>
       </svg>

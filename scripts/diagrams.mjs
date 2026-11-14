@@ -10,7 +10,7 @@
  *                                        identical blob once)
  *   docs/diagrams/diagrams.json          the manifest: each diagram's id, type, title, the docs
  *                                        that embed it, and the receipt of its last verified
- *                                        render (source + artifact sha256, the archify pin)
+ *                                        render (source, HTML and SVG sha256, the archify pin)
  *
  * The interactive HTML (~0.8 MB per diagram, byte-deterministic for a given source and archify
  * commit) is not committed: the Pages build renders it from the pinned commit and refuses to
@@ -21,8 +21,9 @@
  *   node scripts/diagrams.mjs check                  offline: sources match their receipts,
  *                                                    every source is registered, SVGs present
  *   node scripts/diagrams.mjs validate [id…]         archify showcase validation
- *   node scripts/diagrams.mjs build [id…] [--no-svg] validate + render + re-export the SVG and
+ *   node scripts/diagrams.mjs build [id…]            validate + render + re-export the SVG and
  *                                                    rewrite the receipts (after editing a source)
+ *   node scripts/diagrams.mjs build [id…] --no-svg validate the HTML without updating receipts
  *   node scripts/diagrams.mjs build --stale          the same, for only the diagrams whose source
  *                                                    no longer matches its receipt (what the
  *                                                    docs-autoupdate workflow runs)
@@ -127,6 +128,10 @@ export function checkDiagrams(root) {
       problems.push(
         `${where}: ${svgPath(entry)} is missing — run \`node scripts/diagrams.mjs build ${entry.id}\``,
       );
+    else if (sha256(readFileSync(svg)) !== entry.receipt?.svgSha256)
+      problems.push(
+        `${where}: ${svgPath(entry)} differs from its render receipt — run \`node scripts/diagrams.mjs build ${entry.id}\``,
+      );
     else if (onDocsSite(entry)) {
       const copy = path.join(root, mintlifySvgPath(entry));
       if (!existsSync(copy) || !readFileSync(copy).equals(readFileSync(svg)))
@@ -167,7 +172,7 @@ export function checkDiagrams(root) {
 
 /**
  * The diagrams a `build` must redo: a source that changed since its receipt, a missing
- * receipt, or a missing SVG. A pin bump (archify commit) makes every diagram stale.
+ * receipt, or a missing or modified SVG. A pin bump (archify commit) makes every diagram stale.
  * @param {string} root
  * @param {{archify?: {commit?: string}, diagrams?: any[]}} manifest
  * @returns {any[]} manifest entries
@@ -178,7 +183,8 @@ export function staleDiagrams(root, manifest) {
     if (pinMoved || !entry.receipt) return true;
     const src = path.join(root, sourcePath(entry));
     if (!existsSync(src) || sha256(readFileSync(src)) !== entry.receipt.specSha256) return true;
-    return !existsSync(path.join(root, svgPath(entry)));
+    const svg = path.join(root, svgPath(entry));
+    return !existsSync(svg) || sha256(readFileSync(svg)) !== entry.receipt.svgSha256;
   });
 }
 
@@ -408,15 +414,14 @@ async function main(argv) {
       : ids.length
         ? manifest.diagrams.filter((d) => ids.includes(d.id))
         : manifest.diagrams;
-    if (!pick.length) {
-      // Nothing to render: no archify fetch, no browser, and the receipts stay as they are.
-      process.stdout.write("ok: every diagram matches its receipt — nothing to render\n");
-      return 0;
-    }
     const unknown = ids.filter((i) => !manifest.diagrams.some((d) => d.id === i));
     if (unknown.length) {
       process.stderr.write(`unknown diagram id(s): ${unknown.join(", ")}\n`);
       return 2;
+    }
+    if (!pick.length) {
+      process.stdout.write("ok: every diagram matches its receipt — nothing to render\n");
+      return 0;
     }
     const { dir, cli } = ensureArchify(root);
     const work = mkdtempSync(path.join(tmpdir(), "forge-diagrams-"));
@@ -432,10 +437,18 @@ async function main(argv) {
         }
         const html = path.join(work, `${entry.id}.html`);
         const r = render(root, cli, entry, html);
+        if (flags.has("--no-svg")) {
+          process.stdout.write(
+            `ok  ${entry.id}  HTML validated; use build without --no-svg to record a complete render\n`,
+          );
+          continue;
+        }
         entry.title = JSON.parse(readFileSync(src, "utf8")).meta?.title ?? entry.id;
-        if (!flags.has("--no-svg")) await exportSvg(dir, html, path.join(root, svgPath(entry)));
+        const svg = path.join(root, svgPath(entry));
+        await exportSvg(dir, html, svg);
         entry.receipt = {
           specSha256: r.specification.sha256,
+          svgSha256: sha256(readFileSync(svg)),
           artifactSha256: r.artifact.sha256,
           artifactBytes: r.artifact.bytes,
           checks:
@@ -448,7 +461,7 @@ async function main(argv) {
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
-    if (cmd === "build") {
+    if (cmd === "build" && !flags.has("--no-svg")) {
       manifest.archify = { ...ARCHIFY, license: "MIT" };
       writeFileSync(path.join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
       syncDocsSiteCopies(root, manifest);

@@ -11,7 +11,7 @@ Install the CLI, scaffold config for the tools this repo uses from one source, a
 
 ```bash
 npm i -g @codewithjuber/forgekit
-forge init          # emit native config for Claude + the tools this repo uses (--tools all: every tool)
+forge init          # detect the repo's tools (Claude on a fresh repo, --tools all for every tool)
 forge doctor        # health-check tools, guards, MCP, and drift
 ```
 

@@ -4,7 +4,13 @@
 // server (which imports doctor.js — that import cycle cost every doctor run the
 // whole tool tree's startup and was one require-order bug away from breaking).
 
+import { EVIDENCE_TOOLS } from "./evidence_tools.js";
+
+import { HARNESS_MCP_TOOLS } from "./harness_mcp.js";
+
 export const TOOLS = [
+  ...HARNESS_MCP_TOOLS,
+  ...EVIDENCE_TOOLS,
   {
     name: "cortex_lessons",
     description:
@@ -223,6 +229,10 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        task: {
+          type: "string",
+          description: "Optional task naming symbols or files to seed personalized PageRank",
+        },
         top: {
           type: "number",
           description: "how many files/symbols to return (default 15)",

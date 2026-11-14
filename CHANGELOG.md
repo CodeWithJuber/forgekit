@@ -8,30 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Diagrams follow the code, and docs update themselves after a merge.** Labels in the
-  Archify diagram sources that state something the code decides — the guards each hook event
-  runs (`hooks/hooks.json`), how many tools get a native config, the reuse serve floor, the
-  ledger's trust bands, the semantic guard's kinds, dep-gate's thresholds — are now bound to
-  that code (`src/diagram_facts.js`). `forge docs render` rewrites a stale label (that one
-  field, every other byte untouched) and names the diagrams to re-render; `forge docs check`
-  lists the drift as a warning; a test keeps every bound label equal to the code.
-  `node scripts/diagrams.mjs build --stale` re-renders only diagrams whose source moved. A new
-  workflow, `docs-autoupdate.yml`, runs both after each push to `master` and opens (or
-  updates, or closes when nothing is left) one "docs: auto-update" PR, listing the prose that
-  `forge docs impact` flags for a person to check. Like the release PR it starts no CI by
-  itself: close and reopen it before merging.
+- `forge harness` runs coding tasks through a host-neutral permission gate, bounded model loop and independent verifier. It adds private replayable traces, evidence-linked memory, pinned extensions, a durable job queue and measured specialist delegation.
+
+- `forge team` plans separate read-only specialist checks. Explicit Claude worker runs share a spending limit and report their results to the lead.
+- `forge integrations find` checks matching MCP packages against current registry metadata. Explicit and allowlisted automatic installation pin tools in the user's state directory.
+- `forge develop` connects task planning, reusable code examples, security review and test selection. `--verify` executes the repository checks and reports their results.
+- Coding prompts and tool failures can retrieve cited project evidence automatically on supported hosts. `forge evidence` discovers reusable symbols, prior team artifacts and public implementation candidates.
+- `forge sources` indexes private folders, PDFs, spreadsheets, Jira, Confluence and GitLab for an individual working tree. It supports scoped live record reads, time-bounded remote snapshots and full-table numeric aggregation.
+
+- Architecture diagrams show the host-led and supervised coding paths. Hook labels and selected diagram values follow the configuration or policy that defines them. The docs workflow refreshes stale generated output on a pull request after changes land on the default branch.
 
 ### Changed
 
-- **The docs and every diagram describe 1.15 again.** All diagram sources dated from 1.7.2.
-  A new diagram shows how dep-gate vets a package. The hook diagram now shows dep-gate,
-  "ask" answers and the SessionStart orientation block; the reuse, ledger and verify diagrams
-  match the 1.7.3/1.7.4 rules (a byte-exact reuse key, near hits served for review, exact
-  duplicates only, unbound code → INCOMPLETE); the memory diagrams name the evidence sources
-  that exist (no CI or human-accept writer is wired yet). Prose across the README, guide,
-  architecture, integrations, release and docs-site pages now covers `forge hooks` for other
-  agents, eleven native-config tools, the release PR's close-and-reopen step and the current
-  counts.
+- Updated the README, onboarding and documentation site with a supervised setup walkthrough, current host support and recorded CLI demonstrations. The integrations guide links the native Kimi and Codex checks and describes each client's activation step.
 
 ## [1.15.0] - 2026-11-13
 

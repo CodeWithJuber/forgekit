@@ -1,0 +1,44 @@
+---
+title: "Supervised coding runs"
+description: "Run Kimi, Codex or another MCP client through project permissions, spend limits and an independent verifier."
+---
+
+## Activate a project
+
+In the repository where the agent will work, use a ForgeKit build with `forge harness`, Node.js 20+ and Python 3.11+ with SQLite. Choose the hosts your team uses.
+
+```sh
+forge harness init --hosts kimi,codex --supervised
+forge harness status
+forge harness drift --hosts kimi,codex
+forge harness routes
+```
+
+<Frame>
+  <img src="/images/supervised-setup.gif" alt="A terminal initializes a supervised Kimi and Codex project, prints the Kimi plugin installation step and inspects project status and drift." />
+</Frame>
+
+In Kimi, trust the workspace, run the printed `/plugins install` command and then `/reload`. In local Codex, open the trusted project and review its commands in `/hooks`. A passing drift check confirms the generated files on disk. Use a normal coding prompt to check that the client actually calls the harness.
+
+For another client that supports stdio MCP, register `forge cortex-mcp` in the working directory. Invoke `forge_harness_run` with `task` and optional `acceptance` strings, then inspect the returned run ID with `forge_harness_status`. Automatic interception depends on the host's callbacks.
+
+## Model and verification
+
+<Frame>
+  <img src="/images/diagrams/supervised-run.svg" alt="A project run passes from the CLI, MCP or job worker into a bounded model and tool loop. Permission and verification checks determine which actions execute and which results become evidence." />
+</Frame>
+
+The default model route expects a local Chat Completions server with tool support at `http://127.0.0.1:11434/v1`, serving `qwen2.5-coder:7b`. Start that server and install the model before running a task. For another endpoint, review `harness/routing.yaml`, run `forge harness trust` and inspect the pin printed by `forge harness routes`. Paid routes also require configured prices and positive run, daily and project budgets.
+
+In a trusted project with an existing test suite, `forge verify` runs the suite and records its result. The default harness verifier requires a passing receipt for the current checkout and code state. For a read-only task you can verify first and then run:
+
+```sh
+forge verify
+forge harness run "Find the retry limit in the HTTP client" --accept "Report the configured retry limit"
+```
+
+Inspect `forge harness show RUN_ID` for the reported limit, its source, verification evidence and usage. The suite receipt records which tests passed. To check an exact file value independently, use the [runnable JSON assertion example](https://github.com/CodeWithJuber/forgekit/blob/master/docs/HARNESS.md#a-first-verifiable-run). For repeated edits, bind a reviewed container verifier with `forge harness verifier set container.json` so tests can run against the changed workspace.
+
+## Adding a second agent
+
+Start with a single agent. Each supervised specialist gets a scoped brief and a budget. Compare paired runs for the same task class before enabling a reviewer, parallel workers or a council for routine use. The [orchestration guide](/guides/agent-orchestration) also covers host-led development using shared rules.

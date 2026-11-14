@@ -476,8 +476,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="595" y="112" class="t-muted" font-size="9" text-anchor="middle">content hash · DO-NOT-EDIT headers</text>
         </g>
 
-        <g id="node-native-configs" data-node-id="native-configs" data-node-label="Native configs for eleven tools" tabindex="0" role="button" aria-label="Focus Native configs for eleven tools, CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …" data-node-context="Architecture component">
-          <title>Native configs for eleven tools · CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · … · Architecture component</title>
+        <g id="node-native-configs" data-node-id="native-configs" data-node-label="Native configs for eleven tools" tabindex="0" role="button" aria-label="Focus Native configs for eleven tools, CLI, IDE and agent instruction files, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="CLI, IDE and agent instruction files" data-node-context="Architecture component">
+          <title>Native configs for eleven tools · CLI, IDE and agent instruction files · Architecture component</title>
           <rect x="860" y="60" width="340" height="76" rx="6" class="c-mask"/>
           <rect x="860" y="60" width="340" height="76" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(866 66) scale(0.6875)">
@@ -485,7 +485,7 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" x="1030" y="96" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Native configs for eleven tools</text>
-        <text x="1030" y="112" class="t-muted" font-size="9" text-anchor="middle">CLAUDE.md · AGENTS.md · .cursor · .gemini · .aider · …</text>
+        <text x="1030" y="112" class="t-muted" font-size="9" text-anchor="middle">CLI, IDE and agent instruction files</text>
         </g>
 
         <g id="node-tools" data-node-id="tools" data-node-label="tools" tabindex="0" role="button" aria-label="Focus tools, model-invoked skills, the four layers" aria-pressed="false" data-node-kind="backend" data-node-sublabel="model-invoked skills" data-node-context="the four layers">
@@ -510,8 +510,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="465" y="309" class="t-muted" font-size="9" text-anchor="middle">isolated sub-agents</text>
         </g>
 
-        <g id="node-guards" data-node-id="guards" data-node-label="guards · enforced" tabindex="0" role="button" aria-label="Focus guards · enforced, deterministic hooks · every agent, the four layers" aria-pressed="false" data-node-kind="security" data-node-sublabel="deterministic hooks · every agent" data-node-context="the four layers">
-          <title>guards · enforced · deterministic hooks · every agent · the four layers</title>
+        <g id="node-guards" data-node-id="guards" data-node-label="guards · enforced" tabindex="0" role="button" aria-label="Focus guards · enforced, supported native tool events, the four layers" aria-pressed="false" data-node-kind="security" data-node-sublabel="supported native tool events" data-node-context="the four layers">
+          <title>guards · enforced · supported native tool events · the four layers</title>
           <rect x="660" y="260" width="230" height="70" rx="6" class="c-mask"/>
           <rect x="660" y="260" width="230" height="70" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(666 266) scale(0.6875)">
@@ -519,18 +519,18 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" x="775" y="293" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">guards · enforced</text>
-        <text x="775" y="309" class="t-muted" font-size="9" text-anchor="middle">deterministic hooks · every agent</text>
+        <text x="775" y="309" class="t-muted" font-size="9" text-anchor="middle">supported native tool events</text>
         </g>
 
-        <g id="node-mcp" data-node-id="mcp" data-node-label="mcp" tabindex="0" role="button" aria-label="Focus mcp, substrate · memory · dep_check, the four layers" aria-pressed="false" data-node-kind="backend" data-node-sublabel="substrate · memory · dep_check" data-node-context="the four layers">
-          <title>mcp · substrate · memory · dep_check · the four layers</title>
+        <g id="node-mcp" data-node-id="mcp" data-node-label="mcp" tabindex="0" role="button" aria-label="Focus mcp, substrate · memory · harness, the four layers" aria-pressed="false" data-node-kind="backend" data-node-sublabel="substrate · memory · harness" data-node-context="the four layers">
+          <title>mcp · substrate · memory · harness · the four layers</title>
           <rect x="970" y="260" width="230" height="70" rx="6" class="c-mask"/>
           <rect x="970" y="260" width="230" height="70" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(976 266) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" x="1085" y="293" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">mcp</text>
-        <text x="1085" y="309" class="t-muted" font-size="9" text-anchor="middle">substrate · memory · dep_check</text>
+        <text x="1085" y="309" class="t-muted" font-size="9" text-anchor="middle">substrate · memory · harness</text>
         </g>
 
         <g id="node-local-events" data-node-id="local-events" data-node-label="Local events" tabindex="0" role="button" aria-label="Focus Local events, cortex · recall · reuse · diagnose, Architecture component" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="cortex · recall · reuse · diagnose" data-node-context="Architecture component">

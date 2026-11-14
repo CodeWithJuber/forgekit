@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "How forgekit fits around a coding agent",
+    "title": "How ForgeKit supports a host-led coding session",
     "locale": "en",
     "quality_profile": "showcase"
   },

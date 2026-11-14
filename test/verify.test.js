@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   renameSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -1160,7 +1161,7 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
   const root = gitRepo();
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ name: "x", scripts: { test: "node --test test/a.test.js" } }),
+    JSON.stringify({ name: "x", type: "module", scripts: { test: "node --test test/a.test.js" } }),
   );
   mkdirSync(join(root, "test"), { recursive: true });
   writeFileSync(
@@ -1178,4 +1179,38 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
     events.some((e) => e.phase === "done" && e.status === "PASS"),
     "a done pulse",
   );
+});
+
+test("a skipped baseline test produces a signed SUSPECT verdict despite a green suite", {
+  skip: NO_NPM_SPAWN,
+}, (t) => {
+  const root = fixtureWithTestScript("node --test accounts.test.cjs");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, "accounts.test.cjs");
+  const source =
+    'const test = require("node:test");\nconst assert = require("node:assert/strict");\ntest("rejects unauthorized accounts", () => assert.equal(401, 401));\n';
+  writeFileSync(file, source);
+  const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  git("add", ".");
+  git("commit", "-qm", "acceptance case");
+  git("branch", "test-baseline");
+  writeFileSync(file, source.replace('test("rejects', 'test.skip("rejects'));
+  git("commit", "-qam", "skip the rejection check");
+  const result = verify({ targetRoot: root, base: "test-baseline" });
+  assert.equal(result.tests.executed[0].status, "PASS");
+  assert.equal(result.ok, false);
+  assert.equal(result.tests.status, "SUSPECT");
+  assert.ok(result.testIntegrity.findings.some((f) => f.file === "accounts.test.cjs"));
+  const [event] = readVerifyEvents(root);
+  assert.equal(event.authenticated, true);
+  assert.equal(event.testIntegrity.status, "suspect");
+  assert.ok(event.suites[0].durationMs >= 0);
+  assert.deepEqual(event.suites[0].reportedCounts, {
+    total: 1,
+    pass: 0,
+    fail: 0,
+    cancelled: 0,
+    skipped: 1,
+    todo: 0,
+  });
 });

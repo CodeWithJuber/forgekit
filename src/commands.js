@@ -11,13 +11,13 @@
 export const COMMANDS = {
   init: {
     summary:
-      "scaffold this repo's config — emits the tools it uses (Claude + detected, or --tools) from one shared source",
+      "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
       "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Default: the set an earlier init recorded, else Claude plus every tool the repo already uses (.cursor/, .codex/, .github/copilot-instructions.md, …). Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",
@@ -90,6 +90,71 @@ export const COMMANDS = {
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
     "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
+  harness: {
+    summary:
+      "run host-neutral supervised tasks with policy, budgets, verification and replayable evidence",
+    usage:
+      "forge harness init|trust|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
+    examples: [
+      "forge harness init --hosts kimi,codex",
+      'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
+      "forge harness jobs tick",
+    ],
+  },
+  develop: {
+    summary:
+      "assemble a development plan, search prior solutions, assess security and select verification for the current change",
+    usage: 'forge develop "<task>" [--web "<public search terms>"] [--verify] [--json]',
+    examples: [
+      'forge develop "Fix a PostgreSQL deadlock" --web "postgres application retry deadlock"',
+      'forge develop "Verify the retry fix" --verify --json',
+    ],
+  },
+  team: {
+    summary:
+      "plan independent read-only agents for complex work and optionally run them with a shared budget",
+    usage:
+      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N]',
+    examples: [
+      'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
+    ],
+  },
+  evidence: {
+    summary:
+      "find existing code, cached source excerpts and public research candidates before editing or debugging",
+    usage: 'forge evidence "<task>" [--web "<public query>"] [--json]',
+    flags: [
+      {
+        flag: "--web <terms>",
+        desc: "send these separately supplied public terms to discovery providers",
+      },
+      { flag: "--json", desc: "include provenance and source warnings" },
+    ],
+    examples: [
+      'forge evidence "Investigate PostgreSQL deadlocks"',
+      'forge evidence "Choose a parser" --web "streaming XLSX Node.js"',
+    ],
+  },
+  sources: {
+    summary:
+      "sync scoped project sources privately and search, route live reads or aggregate local tables",
+    usage:
+      "forge sources init|status|sync [id] [--full]|update-page <id> <page> --version N --title TITLE --body-file FILE|probe <id>|get <id> [item] [--chunk N]|sql <id> <SELECT>|read <id> <record>|search <query>|route <id> <operation>|aggregate <id> <path> <operation>",
+    flags: [
+      { flag: "--source <id>", desc: "restrict search to one configured source" },
+      { flag: "--budget <tokens>", desc: "estimated token budget for search excerpts" },
+      { flag: "--fresh --mcp", desc: "route a live operation through an available MCP server" },
+      {
+        flag: "--column X --group-by Y --sheet Z",
+        desc: "select table columns and worksheet for aggregation",
+      },
+    ],
+    examples: [
+      "forge sources init",
+      'forge sources search "retry policy" --budget 400',
+      "forge sources aggregate docs usage.csv sum --column minutes",
+    ],
+  },
   recall: "manage cross-session memory (list / add / consolidate)",
   catalog: "Start Here — list every tool, crew, and guard with a one-line why",
   scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
@@ -455,8 +520,28 @@ export const COMMANDS = {
       "forge docs impact --since main",
     ],
   },
-  integrations:
-    "opt-in third-party MCP servers (e.g. context7) — add records the managed set and writes only with --yes (--adopt claims a same-name entry); remove reverses it",
+  hikmah: {
+    summary: "bind a local Hikmah kernel ledger and recall its verified public lessons",
+    usage:
+      "forge hikmah on --binary <absolute-path> --store <absolute-path> | recall <query> | status | off",
+  },
+  prompts: {
+    summary: "choose a workspace development profile or show a portable prompt and specialist role",
+    usage:
+      "forge prompts list | use engineering|quran|off | status | show <master|pain-id|role-id> [--profile engineering|quran]",
+    examples: ["forge prompts use engineering", "forge prompts show master --profile quran"],
+  },
+  integrations: {
+    summary:
+      "choose project integrations, register custom packages and connect hosted or self-managed MCP endpoints",
+    usage:
+      'forge integrations list [--json] | select [id] | connect <id> [--url URL] [--token-env NAME] | local <id> --binary PATH [--arg ARG] | register <descriptor.json> | unregister <id> | find "<task>" | install <id> | auto on <id>... | auto off|status | add <id> [--yes] | remove <id>',
+    examples: [
+      'forge integrations find "test a browser checkout flow"',
+      "forge integrations install playwright",
+      "forge integrations auto status",
+    ],
+  },
 };
 
 // Groups order the --help surface from the stable reliability loop down to experiments.
@@ -468,20 +553,36 @@ export const GROUPS = {
   Substrate: [
     "substrate",
     "preflight",
+    "evidence",
+    "team",
+    "develop",
+    "sources",
     "impact",
     "scope",
     "context",
     "route",
     "orchestration",
+    "harness",
     "advisor",
     "verify",
     "demo",
     "precommit",
     "test-select",
   ],
-  Memory: ["cortex", "recall", "remember", "brain", "ledger", "claim", "handoff", "decide", "know"],
+  Memory: [
+    "hikmah",
+    "cortex",
+    "recall",
+    "remember",
+    "brain",
+    "ledger",
+    "claim",
+    "handoff",
+    "decide",
+    "know",
+  ],
   Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
-  Config: ["brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
+  Config: ["prompts", "brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
   "Labs (experimental)": [
     "taste",
     "uicheck",

@@ -1,69 +1,37 @@
 #!/usr/bin/env python3
-"""Render social/OG images with one visual language.
+"""Build the Mintlify and GitHub social cards from the shared ForgeKit brand art."""
+import json
+import os
+from pathlib import Path
 
-Usage:  python3 scripts/make-social-images.py
-Writes:
-  mintlify/images/og-image.png        1200x630  (docs site og:image)
-  .github/assets/social-preview.png   1280x640  (repo Settings -> Social preview upload)
-"""
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from PIL import Image, ImageDraw, ImageFont
-
-BG = (13, 17, 23)
-ACCENT = (242, 100, 48)  # forgekit brand primary
-WHITE = (230, 237, 243)
-GRAY = (154, 164, 178)
-GREEN = (126, 231, 135)
-MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-MONO_B = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+ROOT = Path(__file__).resolve().parents[1]
+FONTS = Path(os.environ.get("FORGE_DEMO_FONTS", "/usr/share/fonts/truetype/dejavu"))
+COLORS = json.loads((ROOT / "brand.json").read_text())["colors"]["dark"]
 
 
-def card(w, h, path):
-    img = Image.new("RGB", (w, h), BG)
-    d = ImageDraw.Draw(img)
-    # keep all content inside a 60px safe inset (surfaces crop edges)
-    m = 60
-    # wordmark
-    f_wm = ImageFont.truetype(SANS_B, 96)
-    d.text((m, m + 10), "forge", font=f_wm, fill=WHITE)
-    w_forge = d.textlength("forge", font=f_wm)
-    d.text((m + w_forge, m + 10), "kit", font=f_wm, fill=ACCENT)
-    # tagline
-    f_tag = ImageFont.truetype(SANS, 34)
-    d.text(
-        (m, m + 140),
-        "Reliability infrastructure for AI coding agents",
-        font=f_tag,
-        fill=GRAY,
-    )
-    # feature chips row
-    f_chip = ImageFont.truetype(MONO, 20)
-    chips = ["evidence-linked memory", "blast-radius analysis", "guardrails", "cost governance"]
-    cx = m
-    cy = m + 235
-    for chip in chips:
-        tw = d.textlength(chip, font=f_chip)
-        d.rounded_rectangle([cx, cy, cx + tw + 36, cy + 52], radius=26, outline=(60, 68, 82))
-        d.text((cx + 18, cy + 10), chip, font=f_chip, fill=GRAY)
-        cx += tw + 36 + 18
-    # terminal motif
-    f_mono = ImageFont.truetype(MONO, 30)
-    y0 = h - m - 150
-    d.rectangle([m, y0, w - m, y0 + 110], fill=(22, 27, 34))
-    d.text((m + 28, y0 + 34), "$", font=f_mono, fill=GREEN)
-    d.text(
-        (m + 28 + d.textlength("$ ", font=f_mono), y0 + 34),
-        "forge budget set --daily 10 --per-task 2",
-        font=f_mono,
-        fill=WHITE,
-    )
-    # cursor block
-    cx = m + 28 + d.textlength("$ forge budget set --daily 10 --per-task 2 ", font=f_mono)
-    d.rectangle([cx, y0 + 36, cx + 16, y0 + 36 + 30], fill=WHITE)
-    img.save(path)
-    print("wrote", path)
+def card(width, height, path):
+    art = ROOT / "docs/assets/og-background.webp"
+    with Image.open(art) as source:
+        image = ImageOps.fit(source.convert("RGB"), (width, height))
+    draw = ImageDraw.Draw(image)
+    margin = 70
+    def put(y, text, file, size, color):
+        font = ImageFont.truetype(str(FONTS / file), size)
+        box = draw.textbbox((margin, y), text, font=font)
+        if box[2] > width * .60 or box[3] > height - 45:
+            raise ValueError(f"Text crosses the safe region: {text}")
+        draw.text((margin, y), text, fill=COLORS[color], font=font)
+    put(58, "forgekit", "DejaVuSans-Bold.ttf", 42, "brand-2")
+    put(172, "Supervised runs", "DejaVuSans-Bold.ttf", 60, "text")
+    put(246, "for coding agents", "DejaVuSans-Bold.ttf", 60, "text")
+    draw.line((margin, 365, margin + 100, 365), width=3, fill=COLORS["brand"])
+    put(407, "Project evidence, tool permissions", "DejaVuSans.ttf", 29, "text")
+    put(455, "and verified outcomes.", "DejaVuSans.ttf", 29, "text")
+    put(height - 95, "CLI  /  MCP  /  Native hooks", "DejaVuSansMono.ttf", 21, "muted")
+    image.quantize(colors=192, method=Image.Quantize.MEDIANCUT).save(ROOT / path, optimize=True)
+    print(f"{path}: {width} × {height}")
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@
 //   (test/dash.test.js:69 mentions the name only inside an assertion message — a string,
 //    not a reference — so it is NOT labeled as a dependent.)
 //
-// contentHash (src/util.js) — 11 files. The widest fan-out in the set, and the case that
+// contentHash (src/util.js) — 16 files. The widest fan-out in the set, and the case that
 // used to carry a documented FALSE NEGATIVE: src/atlas.js binds it to an alias,
 // `const hash = contentHash;` at :190, with no call parentheses, and the old import regex
 // captured module paths rather than named bindings, so no edge reached atlas.js. That is
@@ -84,8 +84,14 @@
 //   - src/ledger_store.js imports it (:43) and calls it (:414, :598)
 //   - src/reuse.js        imports it (:15) and calls it (:94, :116, :400)
 //   - src/uiinteract.js   imports it (:19) and calls it (:46)
+//   - src/auto_adoption.js hashes the approved catalog binding and workspace
+//   - src/evidence.js hashes public research cache keys
+//   - src/source_local.js hashes file chunk identities
+//   - src/source_remote.js hashes remote connection scope
+//   - src/sources.js hashes the workspace and local source scope
 //   (src/ledger_store.js:586 also names it in a doc comment — same file, already labeled.)
-//   No test file references contentHash directly.
+//   The harness components below hash stable identities, approvals, edits and verifier output.
+//   test/harness_jobs.test.js locates the private queue namespace to test isolation.
 
 export const IMPACT_CASES = [
   {
@@ -148,6 +154,18 @@ export const IMPACT_CASES = [
       "src/ledger_store.js",
       "src/reuse.js",
       "src/uiinteract.js",
+      "src/auto_adoption.js",
+      "src/evidence.js",
+      "src/source_local.js",
+      "src/harness_council.js",
+      "src/harness_jobs.js",
+      "src/harness_policy.js",
+      "src/harness_spend.js",
+      "src/harness_tools.js",
+      "src/harness_verify.js",
+      "test/harness_jobs.test.js",
+      "src/source_remote.js",
+      "src/sources.js",
     ],
     editedFile: "src/util.js",
   },

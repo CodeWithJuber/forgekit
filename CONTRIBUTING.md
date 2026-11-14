@@ -70,12 +70,22 @@ We'd rather give a clear "not now" than merge something that adds maintenance bu
 
 ## Releasing (maintainers)
 
-Releases are almost automatic: **merging a `feat`/`fix`/`perf`/breaking change to
-`master` opens a release PR**; chore/docs-only merges skip cleanly. The bot opens that PR
-with `GITHUB_TOKEN`, so its CI does not start by itself: close and reopen it, merge it once
-the checks pass, and the merge cuts the release (tag → npm publish → GitHub Release). A manual **Actions → Bump version** dispatch is still available. The
-full runbook (and the one-time npm trusted-publisher setup) is in
-[docs/RELEASING.md](./docs/RELEASING.md).
+Merging a shippable change or hand-written release note to `master` can open or update
+a release PR. Review the latest head and select **Approve workflows to run** when GitHub
+shows the approval banner. Once the required checks pass, merging the release PR starts
+tagging, npm publication and the GitHub Release. Maintainers can also use **Actions →
+Bump version**. [Release runbook and trusted-publisher setup](./docs/RELEASING.md)
+
+## Updating documentation and visuals
+
+Run `node src/cli.js docs render` after changing CLI commands, MCP tools, release notes
+or other generated tables. For architecture figures, run
+`node scripts/diagrams.mjs build --stale`, `node scripts/diagrams.mjs sync` and
+`node scripts/diagrams.mjs check`. Keep
+the source, receipt and rendered SVGs in the same PR. The docs workflow repeats the
+checks on `master` and proposes any generated changes on `docs/auto-update`. For the
+GIFs and social previews, rerun the relevant renderer and review the frames or image
+before committing. [Diagram sources](./docs/diagrams/README.md) · [Media renderers](./docs/assets/README.md)
 
 ## Sign your work (DCO)
 

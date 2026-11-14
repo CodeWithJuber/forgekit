@@ -11,6 +11,7 @@ import budgetHandlers from "./cli/budget.js";
 import claimHandlers from "./cli/claim.js";
 // Domain command handlers live in their own modules (review A03); the presentation helpers
 // every handler shares are defined once in ./cli/shared.js.
+import evidenceHandlers from "./cli/evidence.js";
 import memoryHandlers from "./cli/memory.js";
 import orchestrationHandlers from "./cli/orchestration.js";
 import routingHandlers from "./cli/routing.js";
@@ -67,6 +68,8 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
+  ...evidenceHandlers,
   ...memoryHandlers,
   ...claimHandlers,
   ...verificationHandlers,
@@ -97,7 +100,7 @@ async function run(argv) {
     process.exitCode = printCommandHelp(cmd);
     return;
   }
-  maybeFirstRunHint(cmd);
+  if (!(cmd === "integrations" && ["run", "serve-local"].includes(argv[1]))) maybeFirstRunHint(cmd);
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -193,7 +196,7 @@ HANDLERS.init = async (argv) => {
   const profileIdx = argv.indexOf("--profile");
   const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
   // --tools <list> (or --tools=<list>): the agent tools to emit config for. Omitted = the set an
-  // earlier init recorded, else Claude plus the tools this repo already uses.
+  // earlier init recorded, else the detected hosts (Claude on a fresh repo).
   const toolsEq = argv.find((a) => a.startsWith("--tools="));
   const toolsIdx = argv.indexOf("--tools");
   const tools = toolsEq
@@ -247,7 +250,7 @@ HANDLERS.init = async (argv) => {
   const toolOrigin = {
     "--tools": "from --tools",
     config: "recorded in .forge/forge.config.json",
-    detected: "Claude + tools found in this repo",
+    detected: "auto-detected, with Claude as the fallback",
   }[toolsResult.source];
   console.log(
     `  tools:    ${toolsResult.tools === null ? "all" : toolsResult.tools.join(", ")} (${toolOrigin}) — change with \`${BRAND.cli} init --tools <list|all>\``,
@@ -285,7 +288,7 @@ HANDLERS.init = async (argv) => {
   } else if (settings?.action === "unchanged" && "path" in settings) {
     console.log(`  settings: already up to date (${settings.path})`);
   } else if (settings?.action === "skipped") {
-    console.log("  settings: skipped (--no-settings)");
+    console.log(`  settings: skipped (${settings.reason})`);
   } else if (settings?.action === "error") {
     // RA-04: repo files above were still emitted, but the settings merge FAILED —
     // surface it on stderr and fail the command instead of a quiet exit 0.
@@ -667,14 +670,29 @@ HANDLERS.docs = async (argv) => {
   } catch {}
   return;
 };
+HANDLERS.prompts = async (argv) =>
+  (await import("./development_profile.js")).handleDevelopmentPrompts(argv);
 HANDLERS.integrations = async (argv) => {
-  const { listIntegrations, planIntegration, addIntegration, removeIntegration } = await import(
-    "./integrations.js"
-  );
+  if (["connect", "endpoints", "local", "serve-local"].includes(argv[1]))
+    return (await import("./remote_integrations.js")).handleRemoteIntegration(argv);
+  if ([undefined, "list", "select", "status", "register", "unregister"].includes(argv[1])) {
+    const { handleChoices } = await import("./cli/integration_choices.js");
+    const { handleRemoteIntegration } = await import("./remote_integrations.js");
+    const { ENDPOINTS } = await import("./remote_endpoints.js");
+    const presets = Object.entries(ENDPOINTS).map(([id, p]) => ({ id, description: p.purpose }));
+    return handleChoices(argv, presets, handleRemoteIntegration);
+  }
+  const { sourceWorkspaceRoot } = await import("./sources.js");
+  const root = sourceWorkspaceRoot(process.cwd());
+  if (["find", "install", "run", "auto"].includes(argv[1])) {
+    const { handleAdoption } = await import("./cli/evidence.js");
+    return handleAdoption(argv);
+  }
+  const { planIntegration, addIntegration, removeIntegration } = await import("./integrations.js");
   const sub = argv[1];
   if (sub === "add") {
     const name = argv[2];
-    const plan = planIntegration(name, { targetRoot: process.cwd() });
+    const plan = planIntegration(name, { targetRoot: root });
     if (!plan.ok) {
       console.error(plan.reason);
       process.exitCode = 1;
@@ -697,7 +715,7 @@ HANDLERS.integrations = async (argv) => {
       return;
     }
     const res = addIntegration(name, {
-      targetRoot: process.cwd(),
+      targetRoot: root,
       adopt: argv.includes("--adopt"),
     });
     heading(`${BRAND.brand} integrations — add ${name}\n`);
@@ -714,7 +732,7 @@ HANDLERS.integrations = async (argv) => {
   }
   if (sub === "remove") {
     const name = argv[2];
-    const res = removeIntegration(name, { targetRoot: process.cwd() });
+    const res = removeIntegration(name, { targetRoot: root });
     heading(`${BRAND.brand} integrations — remove ${name}\n`);
     if (res.ok === false) {
       console.error(`  ${res.reason}`);
@@ -731,14 +749,7 @@ HANDLERS.integrations = async (argv) => {
       console.log(`  ! ${r.target}: ${r.note}`);
     return;
   }
-  // Default: list what's available.
-  heading(`${BRAND.brand} integrations — opt-in third-party MCP servers\n`);
-  for (const it of listIntegrations()) {
-    console.log(`  ${it.name.padEnd(12)} ${it.why}  (${it.pkg})`);
-  }
-  console.log(`\n  Add one with:     ${BRAND.cli} integrations add <name>`);
-  console.log(`  Remove one with:  ${BRAND.cli} integrations remove <name>`);
-  return;
+  throw new Error("Unknown integrations command. Run forge integrations --help");
 };
 HANDLERS.recall = async (argv) => {
   const r = await import("./recall.js");
@@ -856,7 +867,11 @@ HANDLERS.rank = async (argv) => {
   const json = argv.includes("--json");
   const ti = argv.indexOf("--top");
   const top = ti >= 0 ? Math.max(1, Number(argv[ti + 1]) || 15) : 15;
-  const r = rankReport(process.cwd(), { top });
+  const taskIndex = argv.indexOf("--task");
+  const task = taskIndex < 0 ? undefined : argv[taskIndex + 1];
+  if (taskIndex >= 0 && (!task || task.startsWith("--")))
+    throw new Error("Supply search terms after --task");
+  const r = rankReport(process.cwd(), { top, task });
   if (!r.built) {
     console.error(`  no index — run \`${BRAND.cli} atlas build\` first`);
     process.exitCode = 1;
@@ -1676,6 +1691,8 @@ HANDLERS.handoff = async (argv) => {
   return;
 };
 HANDLERS.decide = async (argv) => {
+  if (argv[1] === "compare")
+    return (await import("./decision_compare.js")).compareCommand(argv.slice(2), process.cwd());
   const { appendDecision, listDecisions } = await import("./decide.js");
   const json = argv.includes("--json");
   const text = argv

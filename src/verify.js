@@ -3,6 +3,7 @@
 // reuses `atlas` to flag calls to symbols that exist nowhere in the codebase
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
@@ -21,6 +22,7 @@ import { arch, availableParallelism, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
+import { duplicateGate } from "./duplicate_gate.js";
 import { readForgeConfig } from "./repo_config.js";
 import {
   analyzeRecursiveTestRun,
@@ -30,6 +32,7 @@ import {
   reachesWorkspace,
   scriptShellProblem,
 } from "./stack.js";
+import { assessTestIntegrity } from "./test_integrity.js";
 import { userStateDir } from "./util.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
@@ -52,8 +55,16 @@ const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 // turns it off. stderr is never echoed (an unborn HEAD is a state, not an error to print).
 const GIT_SAFE = ["-c", "core.fsmonitor=false"];
 
+// The supervised verifier pins a system Git and a child-only PATH for the entire
+// authenticated receipt check, including recursive submodule fingerprints.
+const verificationGit = new AsyncLocalStorage();
+export function withVerificationGit(binary, path, verify) {
+  return verificationGit.run({ binary, env: { ...process.env, PATH: path } }, verify);
+}
+
 function gitStrict(args, cwd) {
-  return execFileSync("git", [...GIT_SAFE, ...args], {
+  return execFileSync(verificationGit.getStore()?.binary ?? "git", [...GIT_SAFE, ...args], {
+    env: verificationGit.getStore()?.env,
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -63,7 +74,8 @@ function gitStrict(args, cwd) {
 
 function git(args, cwd) {
   try {
-    return execFileSync("git", [...GIT_SAFE, ...args], {
+    return execFileSync(verificationGit.getStore()?.binary ?? "git", [...GIT_SAFE, ...args], {
+      env: verificationGit.getStore()?.env,
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -275,7 +287,7 @@ export const CODE_STATE_SCHEME = "manifest-v3";
  *     bind otherwise makes a PASS INCOMPLETE.
  * Malformed values are dropped, never trusted.
  * @param {string} root
- * @returns {{workspaces: "auto"|"root", exclude: string[], generated: string[], external: string[]}}
+ * @returns {{workspaces: "auto"|"root", exclude: string[], generated: string[], external: string[], duplicates?: boolean}}
  */
 export function verifyConfig(root) {
   let raw = {};
@@ -289,6 +301,7 @@ export function verifyConfig(root) {
     exclude: strings(raw?.exclude),
     generated: strings(raw?.generated),
     external: strings(raw?.external),
+    ...(raw?.duplicates === true ? { duplicates: true } : {}),
   };
 }
 
@@ -488,6 +501,7 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
     section("head", head ?? "");
     section("generated", JSON.stringify(generated));
     section("external", JSON.stringify(external));
+    if (config.duplicates) section("verify.duplicates", "true");
     // Unborn HEAD (no commit yet): index-vs-worktree + staged covers the whole change.
     section(
       "worktree",
@@ -567,6 +581,8 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  * @property {string} [signal]         terminating signal, if any
  * @property {boolean} [timedOut]      true when the suite was killed for exceeding the timeout
  * @property {string} [output]         tail of the suite's own output (failures)
+ * @property {number} [durationMs]      observed elapsed milliseconds for an actual attempt
+ * @property {ReturnType<typeof observedTestCounts>} [reportedCounts] counts printed by a recognized runner, or null
  */
 /**
  * Which package dirs needed a verdict, and which got one (review F08). `required` is "." (the
@@ -593,7 +609,7 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  * @typedef {object} VerifyTests
  * @property {boolean} ran
  * @property {boolean} [passed]
- * @property {"PASS"|"FAIL"|"INCOMPLETE"|"NOT_CONFIGURED"} status
+ * @property {"PASS"|"FAIL"|"INCOMPLETE"|"NOT_CONFIGURED"|"SUSPECT"} status
  * @property {string} [runner]
  * @property {boolean} [timedOut]
  * @property {string[]} [detected]
@@ -646,6 +662,28 @@ function isExecutable(r, cwd) {
     EXECUTORS.has(r.bin) &&
     (r.bin === "pytest" || existsSync(join(cwd, "package.json")))
   );
+}
+
+/**
+ * Node's test runner emits this ordered summary in TAP and spec reporters. Only
+ * complete, consistent counts are reportable. A successful exit alone supplies
+ * no count, and other runner formats keep their count field empty.
+ */
+function observedTestCounts(stdout) {
+  if (typeof stdout !== "string") return null;
+  const tail = stdout.slice(-4096).replaceAll("\r\n", "\n").trimEnd();
+  const match =
+    /^(?:#|ℹ) tests (\d+)\n(?:#|ℹ) suites \d+\n(?:#|ℹ) pass (\d+)\n(?:#|ℹ) fail (\d+)\n(?:#|ℹ) cancelled (\d+)\n(?:#|ℹ) skipped (\d+)\n(?:#|ℹ) todo (\d+)\n(?:#|ℹ) duration_ms [\d.]+$/m.exec(
+      tail,
+    );
+  if (!match || match.index + match[0].length !== tail.length) return null;
+  const [total, pass, fail, cancelled, skipped, todo] = match.slice(1).map(Number);
+  if (
+    ![total, pass, fail, cancelled, skipped, todo].every(Number.isSafeInteger) ||
+    total !== pass + fail + cancelled + skipped + todo
+  )
+    return null;
+  return { total, pass, fail, cancelled, skipped, todo };
 }
 
 /**
@@ -1043,22 +1081,35 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       notExecuted.push(label);
       continue;
     }
+    const startedMs = performance.now();
     try {
       // Heartbeat (item 7): a suite that hangs shows WHERE it stopped, on stderr
       // (stdout stays machine-readable for --json). The per-suite timeout below is
       // the watchdog; this line is the pulse.
       onProgress?.({ label, phase: "start" });
-      execFileSync(r.bin, r.args ?? [], {
+      const stdout = execFileSync(r.bin, r.args ?? [], {
         cwd: dir,
         encoding: "utf8",
         stdio: "pipe",
         timeout,
         env: suiteEnv(),
       });
-      executed.push({ label, status: "PASS", ...where, exitCode: 0 });
+      executed.push({
+        label,
+        status: "PASS",
+        ...where,
+        exitCode: 0,
+        durationMs: Math.round(performance.now() - startedMs),
+        reportedCounts: observedTestCounts(stdout),
+      });
       onProgress?.({ label, phase: "done", status: "PASS" });
     } catch (e) {
-      const classified = { ...classifySuiteFailure(e, { label, bin: r.bin, timeout }), ...where };
+      const classified = {
+        ...classifySuiteFailure(e, { label, bin: r.bin, timeout }),
+        ...where,
+        durationMs: Math.round(performance.now() - startedMs),
+        reportedCounts: observedTestCounts(e.stdout),
+      };
       executed.push(classified);
       onProgress?.({ label, phase: "done", status: classified.status });
     }
@@ -1282,14 +1333,25 @@ export function readVerifyEvents(root) {
  * other evidence (router outcomes, ledger refs) can cite a run by id.
  * @param {{targetRoot?: string, base?: string, onProgress?: (e: {label: string, phase: "start"|"done", status?: string}) => void}} [opts]
  * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
- *   changedFiles: string[], added: string}}
+ *   changedFiles: string[], added: string, duplicates: ReturnType<typeof duplicateGate>, testIntegrity: ReturnType<typeof assessTestIntegrity>}}
  *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER
  *   when nothing ran. `changedFiles` includes untracked files; `added` includes their contents.
  */
 export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress } = {}) {
+  // Normalize the ref before it reaches a diff. An explicit missing comparison cannot
+  // support a change review; an unborn HEAD still has an index and untracked files.
+  if (typeof base !== "string" || !base || base.startsWith("-") || /[\p{Cc}\p{Cf}]/u.test(base))
+    throw new Error("Supply a Git revision as the verification baseline");
+  const revision = git(
+    ["rev-parse", "--verify", "--end-of-options", `${base}^{commit}`],
+    targetRoot,
+  ).trim();
+  if (!revision && base !== "HEAD")
+    throw new Error("Verification baseline does not resolve to a commit");
+  const diffArgs = ["diff", "--no-ext-diff", "--no-textconv"];
   const diff =
-    git(["diff", "--unified=0", base], targetRoot) ||
-    git(["diff", "--unified=0", "--cached"], targetRoot);
+    (revision && git([...diffArgs, "--unified=0", revision, "--"], targetRoot)) ||
+    git([...diffArgs, "--unified=0", "--cached", "--"], targetRoot);
   const diffAdded = diff
     .split("\n")
     .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
@@ -1309,8 +1371,8 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   const changedFiles = [
     ...new Set([
       ...(
-        git(["diff", "--name-only", base], targetRoot) ||
-        git(["diff", "--name-only", "--cached"], targetRoot)
+        (revision && git([...diffArgs, "--name-only", revision, "--"], targetRoot)) ||
+        git([...diffArgs, "--name-only", "--cached", "--"], targetRoot)
       )
         .split("\n")
         .filter(Boolean),
@@ -1339,6 +1401,31 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   const plan = planSuites(targetRoot);
   const pre = computeCodeState(targetRoot);
   const tests = runTests(targetRoot, { plan, onProgress });
+  const duplicates = duplicateGate(targetRoot, base);
+  if (duplicates.status === "FAIL" || duplicates.status === "INCOMPLETE") {
+    // A passed unit suite and failed clone check have independent outcomes. Preserve
+    // actual suite rows while binding the combined verification verdict to the receipt.
+    if (duplicates.status === "FAIL" || tests.status !== "FAIL") {
+      tests.status = duplicates.status;
+      tests.passed = false;
+    }
+    tests.output = [tests.output, `${duplicates.label}: ${duplicates.reason}`]
+      .filter(Boolean)
+      .join("; ");
+  }
+  const testIntegrity = assessTestIntegrity(targetRoot, revision || base);
+  if (testIntegrity.status !== "clear") {
+    // Preserve actual execution outcomes (including genuine failures) in the suite rows.
+    // A green suite cannot certify dropped checks. A scan that lacked a baseline or
+    // exceeded its bounds is explicitly incomplete, rather than evidence of tampering.
+    if (tests.status === "PASS") {
+      tests.status = testIntegrity.status === "suspect" ? "SUSPECT" : "INCOMPLETE";
+      tests.passed = false;
+    }
+    tests.output = [tests.output, `Test integrity: ${testIntegrity.reason}`]
+      .filter(Boolean)
+      .join("; ");
+  }
   const post = computeCodeState(targetRoot);
   const finishedAt = new Date().toISOString();
   // F10: the tree moved while the suites ran. Neither state is the one that was tested, so
@@ -1380,12 +1467,16 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
     startedAt,
     finishedAt,
     status: tests.status,
+    testIntegrity,
     suites: (tests.executed ?? []).map((s) => ({
       label: s.label,
       cwd: s.cwd ?? ".",
       covers: s.covers ?? ["."],
       status: s.status,
       exitCode: s.exitCode ?? null,
+      ...(s.durationMs !== undefined
+        ? { durationMs: s.durationMs, reportedCounts: s.reportedCounts }
+        : {}),
     })),
     notExecuted: tests.notExecuted ?? [],
     coverage: tests.coverage ?? null,
@@ -1417,6 +1508,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
     event,
     symbolsChecked: symbols.length,
     unknownSymbols: unknown,
+    duplicates,
   };
   // MAC the claim (B7): a hand-written stamp in `.forge/` is not test evidence.
   signProvenance(provenance);
@@ -1436,5 +1528,5 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   const ok = tests.status === "PASS";
   // `added` (added diff lines + untracked file bodies) rides along for the deep lenses
   // (consensus.js: secrets + reviewer read the same bytes this pass already parsed).
-  return { ok, provenance, unknown, tests, changedFiles, added };
+  return { ok, provenance, unknown, tests, changedFiles, added, duplicates, testIntegrity };
 }

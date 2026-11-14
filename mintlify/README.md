@@ -18,7 +18,7 @@ mintlify/
   concepts/            # config compiler, PCM, pre-action gate, cross-session memory,
                        #   verification gates, model routing
   cli/                 # overview + one page per command GROUP
-  guides/              # zero-config onboarding, team memory, radar deps
+  guides/              # onboarding, memory, dependencies, orchestration, supervised runs, sources
   changelog/           # overview.mdx — generated from CHANGELOG.md by `forge docs render`
 ```
 
@@ -51,7 +51,7 @@ handles deploys. The only CI added is an advisory broken-link check
 ## Editing
 
 - Pages are MDX with `title` + `description` frontmatter.
-- Navigation lives in `docs.json` under `navigation.tabs[].groups[].pages`; page ids are
+- Navigation lives in `docs.json` under `navigation.languages[].tabs[].groups[].pages`; page ids are
   file paths relative to this folder, without the `.mdx` extension.
 - Keep content grounded in the real repo docs — Forge has a "no mock data / metrics must
   be real" ethos. Do not add invented features or benchmark numbers.

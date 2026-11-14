@@ -40,7 +40,7 @@ was validated here.
    refreshes the docs-site copy and rewrites the receipt. The first run fetches the pinned
    Archify commit into `.cache/archify/`. To use an existing checkout of that commit, set
    `FORGE_ARCHIFY_DIR`. To choose the browser, set `ARCHIFY_CHROME`.
-3. Commit the source, the SVG, its `mintlify/images/diagrams/` copy and `diagrams.json`
+3. Commit the source, the SVG, any `mintlify/images/diagrams/` copy and `diagrams.json`
    together.
 
 To add a diagram, create its source and add an entry `{ "id", "type", "usedIn": [] }` to
@@ -51,7 +51,7 @@ To add a diagram, create its source and add an entry `{ "id", "type", "usedIn": 
 
 Some labels state something the code decides: the guards each hook event runs, how many
 tools get a native config, the reuse serve floor, the ledger's trust bands, the semantic
-guard's kinds, dep-gate's thresholds. `src/diagram_facts.js` binds each one to the code
+guard's kinds, dep-gate's thresholds and the supervised MCP tool names. `src/diagram_facts.js` binds each one to the code
 (`FACTS`: a source, a marker that names exactly one line, a field, and a function of the
 code). `forge docs render` rewrites a stale fact (that field only, every other byte as it
 was) and names the diagrams to re-render; `forge docs check` lists the drift as a warning.
@@ -61,20 +61,17 @@ the code, or if a marker no longer names exactly one line.
 
 ## Automatic updates
 
-`.github/workflows/docs-autoupdate.yml` runs after every push to `master` that touches
-code, hooks, guards, `source/` or the diagrams:
+`.github/workflows/docs-autoupdate.yml` checks generated documentation after every push to `master`. It can also be started manually.
 
 1. `forge docs render` regenerates the machine-owned doc surfaces and the diagram facts.
-2. `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source no
-   longer matches its receipt (nothing is fetched when none has changed).
+2. `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source or SVG
+   no longer matches its receipt (nothing is fetched when none has changed).
 3. If anything changed, the result is force-pushed to the `docs/auto-update` branch and one
    PR is opened or updated. Its body lists the prose that `forge docs impact` says
    mentions what the merge changed: prose is never regenerated, only flagged. When nothing
    needs changing, a leftover PR is closed.
 
-The PR is opened with `GITHUB_TOKEN`, which starts no other workflow, so close and reopen it
-to run CI before merging (the same step as the release PR). Do not push to
-`docs/auto-update` by hand; the next run overwrites it.
+A maintainer can select **Approve workflows to run** on the latest automation PR commit when GitHub requests review. Wait for checks on that commit before merging. The workflow manages the contents of `docs/auto-update`. [GitHub token event behavior](https://docs.github.com/en/actions/concepts/security/github_token)
 
 ## Embedding
 
@@ -100,7 +97,8 @@ to run CI before merging (the same step as the release PR). Do not push to
   - a `usedIn` file no longer embeds its diagram
   - the receipts were written by an Archify commit other than the pinned one
 - `node scripts/diagrams.mjs build --stale` re-renders only the diagrams whose source, receipt
-  or SVG moved (every diagram after an Archify pin bump).
+  or SVG changed (every diagram after an Archify pin bump). The SVG hash catches manual edits even when the same edit was made to both copies.
+- Add `--no-svg` to check the interactive HTML without Chromium. Recording a new receipt requires the full export.
 - `node scripts/diagrams.mjs sync` refreshes the docs-site copies without rendering.
 - `node scripts/diagrams.mjs site <dir>` is what the Pages workflow runs. It renders every
   page, verifies each against its receipt, and writes the gallery.

@@ -29,8 +29,17 @@ import {
   MCP_TARGET_FILES,
   mcpTargetFilesFor,
   removeMcp,
+  targetDefinition,
   validateServerName,
 } from "./emit/mcp.js";
+import {
+  bindingDigest,
+  forgetBinding,
+  readBinding,
+  remoteDefinition,
+  saveBinding,
+  validBinding,
+} from "./remote_endpoints.js";
 import { readForgeConfig, recordedTools, writeForgeConfig } from "./repo_config.js";
 
 /** The catalog of known optional integrations. Keep each entry honest about what running it
@@ -41,6 +50,12 @@ export const INTEGRATIONS = {
     pkg: "@upstash/context7-mcp@3.2.2",
     network: "yes — `npx -y` downloads and executes the package on every session start",
     why: "live library-documentation lookup",
+  },
+  playwright: {
+    server: { command: "npx", args: ["-y", "@playwright/mcp@0.0.85", "--isolated"] },
+    pkg: "@playwright/mcp@0.0.85",
+    network: "downloads the package; controls a browser and visits pages chosen by the agent",
+    why: "browser automation, accessibility snapshots and UI tests",
   },
 };
 
@@ -56,7 +71,7 @@ export function listIntegrations() {
 /** Describe what `add <name>` would do, without writing anything. `writes` lists the files
  *  it would touch: those of the tool set `forge init` recorded (every tool when none is). */
 export function planIntegration(name, { targetRoot = process.cwd() } = {}) {
-  const m = INTEGRATIONS[name];
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
   if (!m) return { ok: false, reason: `unknown integration: ${name}` };
   const cfg = readForgeConfig(targetRoot);
   const tools = cfg.corrupt ? null : recordedTools(cfg);
@@ -89,7 +104,33 @@ function mcpRecord(cfg) {
             typeof a.target === "string"),
       )
     : [];
-  return { integrations, adopted };
+  const versions = Object.fromEntries(
+    Object.entries(raw.versions ?? {}).filter(
+      ([name, version]) =>
+        /^[a-z0-9][a-z0-9_-]{0,63}$/.test(name) &&
+        !(name in Object.prototype) &&
+        name !== "forge-cortex" &&
+        typeof version === "string" &&
+        stableVersion(version),
+    ),
+  );
+  const privateBindings = (records) =>
+    Object.fromEntries(
+      Object.entries(records ?? {}).filter(
+        ([id, key]) =>
+          /^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) &&
+          !(id in Object.prototype) &&
+          id !== "forge-cortex" &&
+          validBinding(key),
+      ),
+    );
+  return {
+    integrations,
+    adopted,
+    versions,
+    remotes: privateBindings(raw.remotes),
+    local: privateBindings(raw.local),
+  };
 }
 
 /**
@@ -133,11 +174,36 @@ function registryServers() {
   return JSON.parse(readFileSync(p, "utf8"));
 }
 
+// Only a known server ID and an exact numeric release can reach a managed stdio command.
+// Arbitrary commands/paths read from a project's config are never execution authority.
+export const stableVersion = (v) =>
+  typeof v === "string" && /^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/.test(v);
+
+function integrationServer(name, rec, targetRoot) {
+  if (Object.hasOwn(rec.local, name))
+    return { command: BRAND.cli, args: ["integrations", "serve-local", name] };
+  if (Object.hasOwn(rec.remotes, name)) return readBinding(targetRoot, name, rec.remotes[name]);
+  const version = Object.hasOwn(rec.versions, name) && rec.versions[name];
+  return version
+    ? { command: BRAND.cli, args: ["integrations", "run", name, version] }
+    : INTEGRATIONS[name].server;
+}
+
 /** Registry ∪ recorded integrations (that exist in the catalog) — the full managed set. */
-function managedServers(rec) {
+function managedServers(rec, targetRoot, unbound = []) {
   const servers = { ...registryServers() };
-  for (const name of rec.integrations)
-    if (INTEGRATIONS[name]) servers[name] = INTEGRATIONS[name].server;
+  for (const name of rec.integrations) {
+    if (
+      !Object.hasOwn(INTEGRATIONS, name) &&
+      !Object.hasOwn(rec.versions, name) &&
+      !Object.hasOwn(rec.remotes, name) &&
+      !Object.hasOwn(rec.local, name)
+    )
+      continue;
+    const definition = integrationServer(name, rec, targetRoot);
+    if (definition) servers[name] = definition;
+    else unbound.push(name);
+  }
   return servers;
 }
 
@@ -164,8 +230,13 @@ export function managedMcpState(targetRoot) {
     };
   }
   const rec = mcpRecord(cfg);
+  const unbound = [];
+  const servers = managedServers(rec, targetRoot, unbound);
   return {
-    servers: managedServers(rec),
+    servers,
+    ...(unbound.length
+      ? { warning: `Connect the following HTTP endpoints in this workspace: ${unbound.join(", ")}` }
+      : {}),
     owns: adoptionOwns(rec.adopted),
     corrupt: false,
   };
@@ -180,9 +251,19 @@ export function managedMcpState(targetRoot) {
  * unless `adopt: true` (--adopt) claims it. `res.adopted` reports whether pre-existing
  * divergent entries were claimed.
  */
-export function addIntegration(name, { targetRoot = process.cwd(), adopt = false } = {}) {
-  const m = INTEGRATIONS[name];
-  if (!m) return { ok: false, reason: `unknown integration: ${name}` };
+export function addIntegration(
+  name,
+  {
+    targetRoot = process.cwd(),
+    adopt = false,
+    version = undefined,
+    remote = undefined,
+    localBinding = undefined,
+  } = {},
+) {
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
+  if (!m && !version && !remote && !localBinding)
+    return { ok: false, reason: `unknown integration: ${name}` };
   try {
     validateServerName(name);
   } catch (err) {
@@ -197,7 +278,62 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const rec = mcpRecord(cfg);
-  const servers = { ...managedServers(rec), [name]: m.server };
+  if (localBinding || Object.hasOwn(rec.local, name)) {
+    if (
+      !validBinding(localBinding) ||
+      name in Object.prototype ||
+      Object.hasOwn(registryServers(), name) ||
+      m ||
+      version ||
+      remote ||
+      Object.hasOwn(rec.remotes, name) ||
+      Object.hasOwn(rec.versions, name)
+    )
+      return {
+        ok: false,
+        reason:
+          "Name is reserved or bound to another integration; remove the old binding before changing transport",
+      };
+    if (rec.local[name] && rec.local[name] !== localBinding)
+      return { ok: false, reason: "Remove this integration before changing its installed program" };
+    rec.local[name] = localBinding;
+  }
+  if (
+    remote &&
+    (m || version || Object.hasOwn(rec.versions, name) || Object.hasOwn(registryServers(), name))
+  )
+    return { ok: false, reason: "Name is already used by a package or built-in integration" };
+  if (!remote && Object.hasOwn(rec.remotes, name))
+    return {
+      ok: false,
+      reason: "Remove the HTTP integration before using this name for a package",
+    };
+  if (remote) {
+    const definition = remoteDefinition(name, remote.url, remote.tokenEnv);
+    const selection = recordedTools(cfg);
+    const supported =
+      mcpTargetFilesFor(selection).some((target) => targetDefinition(target, definition)) ||
+      ((selection === null || selection.includes("continue")) &&
+        targetDefinition("continue", definition));
+    if (!supported)
+      return {
+        ok: false,
+        reason:
+          "The selected clients do not support this HTTP transport and authentication combination",
+      };
+    if (Object.hasOwn(rec.remotes, name) && rec.remotes[name] !== bindingDigest(definition)) {
+      return {
+        ok: false,
+        reason: "Remove this endpoint before changing its address or authentication",
+      };
+    }
+    rec.remotes[name] = saveBinding(targetRoot, name, definition);
+  }
+  if (version !== undefined && !stableVersion(version))
+    return { ok: false, reason: "Invalid integration version" };
+  if (version) rec.versions[name] = version;
+  const server = integrationServer(name, rec, targetRoot);
+  const servers = { ...managedServers(rec, targetRoot), [name]: server };
   // Only the tools `forge init` recorded for this repo (every tool when none are), the same
   // set `forge sync` emits for, so adding a server never creates an unused tool's config.
   const tools = recordedTools(cfg);
@@ -206,11 +342,12 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
   // gets nothing written, so it is never claimed: a same-name entry a person adds there later
   // stays theirs, even once that tool joins the set (ME-08).
   const targets = mcpTargetFilesFor(tools);
-  const foreign = foreignTargets(targetRoot, name, m.server);
+  const foreign = foreignTargets(targetRoot, name, server);
   const anyForeign = targets.some((t) => foreign.has(t));
   const newAdoptions = [];
   for (const t of targets)
-    if (!foreign.has(t) || adopt) newAdoptions.push({ server: name, target: t });
+    if (targetDefinition(t, server) && (!foreign.has(t) || adopt))
+      newAdoptions.push({ server: name, target: t });
   const owns = adoptionOwns([...rec.adopted, ...newAdoptions]);
   // Emit FIRST (ME-10). A per-target write failure surfaces as an `error` row.
   const rows = emitMcp({ targetRoot, servers, owns, tools });
@@ -234,6 +371,9 @@ export function addIntegration(name, { targetRoot = process.cwd(), adopt = false
       ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
       integrations,
       adopted,
+      ...(version ? { versions: { ...cur.versions, [name]: version } } : {}),
+      ...(localBinding ? { local: { ...cur.local, [name]: localBinding } } : {}),
+      ...(remote ? { remotes: { ...cur.remotes, [name]: rec.remotes[name] } } : {}),
     };
     return c;
   });
@@ -259,11 +399,19 @@ export function claimEmittedIntegrations(targetRoot = process.cwd()) {
   const targets = mcpTargetFilesFor(recordedTools(cfg));
   const claimed = [];
   for (const name of rec.integrations) {
-    const m = INTEGRATIONS[name];
-    if (!m) continue;
+    const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
+    if (
+      !m &&
+      !Object.hasOwn(rec.versions, name) &&
+      !Object.hasOwn(rec.remotes, name) &&
+      !Object.hasOwn(rec.local, name)
+    )
+      continue;
     let foreign;
     try {
-      foreign = foreignTargets(targetRoot, name, m.server);
+      const def = integrationServer(name, rec, targetRoot);
+      if (!def) continue;
+      foreign = foreignTargets(targetRoot, name, def);
     } catch {
       continue; // an unreadable target: claim nothing for this server
     }
@@ -292,8 +440,7 @@ export function claimEmittedIntegrations(targetRoot = process.cwd()) {
  * and reported. Second remove is a no-op.
  */
 export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
-  const m = INTEGRATIONS[name];
-  if (!m) return { ok: false, reason: `unknown integration: ${name}` };
+  const m = Object.hasOwn(INTEGRATIONS, name) ? INTEGRATIONS[name] : null;
   const cfg = readForgeConfig(targetRoot);
   if (cfg.corrupt)
     return {
@@ -301,17 +448,26 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
       reason: `${cfg.path} is not valid JSON — cannot update the managed-set record (fix or delete it)`,
     };
   const before = mcpRecord(cfg);
+  if (
+    !m &&
+    !Object.hasOwn(before.versions, name) &&
+    !Object.hasOwn(before.remotes, name) &&
+    !Object.hasOwn(before.local, name)
+  )
+    return { ok: false, reason: `unknown integration: ${name}` };
   const adoptedName = (a) => (typeof a === "string" ? a : a.server);
   const wasRecorded =
     before.integrations.includes(name) || before.adopted.some((a) => adoptedName(a) === name);
   if (!wasRecorded) return { ok: true, name, removed: false, rows: [] };
   const owns = adoptionOwns(before.adopted);
   // Clean disk FIRST (ME-10). A per-target cleanup failure surfaces as an `error` row.
+  const def = integrationServer(name, before, targetRoot);
   const rows = removeMcp({
     targetRoot,
     name,
     removeJsonEntry: (target, current) =>
-      owns(target, name) || JSON.stringify(current) === JSON.stringify(m.server),
+      owns(target, name) ||
+      (def && JSON.stringify(current) === JSON.stringify(targetDefinition(target, def))),
   });
   const failed = rows.filter((r) => r.action === "error");
   if (failed.length)
@@ -328,13 +484,21 @@ export function removeIntegration(name, { targetRoot = process.cwd() } = {}) {
     const cur = mcpRecord(c);
     const integrations = cur.integrations.filter((n) => n !== name);
     const adopted = expandAdopted(cur.adopted).filter((a) => a.server !== name);
+    delete cur.versions[name];
+    delete cur.remotes[name];
+    delete cur.local[name];
     c.mcp = {
       ...(typeof c.mcp === "object" && c.mcp ? c.mcp : {}),
       integrations,
       adopted,
+      ...(c.mcp?.versions ? { versions: cur.versions } : {}),
+      ...(c.mcp?.remotes ? { remotes: cur.remotes } : {}),
+      ...(c.mcp?.local ? { local: cur.local } : {}),
     };
     return c;
   });
   if (w.ok === false) return { ok: false, reason: w.reason };
+  if (Object.hasOwn(before.local, name)) forgetBinding(targetRoot, name, before.local[name]);
+  if (Object.hasOwn(before.remotes, name)) forgetBinding(targetRoot, name, before.remotes[name]);
   return { ok: true, name, removed: true, rows };
 }

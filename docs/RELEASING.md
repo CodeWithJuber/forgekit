@@ -20,13 +20,11 @@ The two phases exist because branch protection (required status checks,
 the release PR lets the required checks run first, and the merge is then an ordinary
 protected-branch merge.
 
-**The release PR needs one manual step before it can merge.** `bump.yml` pushes the release
-branch and opens the PR with `GITHUB_TOKEN`, and GitHub starts no workflow from that token's
-events, so `ci.yml` never runs on the release PR by itself and its required checks stay
-pending. Close and reopen the release PR to start them, then merge it once they pass. Every
-later push to `master` force-pushes the release branch again (with no CI), so do this right
-before merging. When a newer release supersedes a pending one (a `feat:` after a pending
-patch), `bump.yml` opens the new PR and closes the old one.
+On the release PR, review the latest commit and select **Approve workflows to run** in
+the merge box when GitHub requests it. A collaborator with write access can approve
+the runs. Merge after the required checks pass on the latest head. The bot refreshes the
+branch and release notes as changes land on `master`. A new head can need its own
+approval. [GitHub Actions behavior](https://docs.github.com/en/actions/concepts/security/github_token)
 
 ## Merge → release PR → merge → release (the default)
 
@@ -41,8 +39,8 @@ On a push to `master`, `bump.yml` first checks whether the push **merged a relea
   - **Something shippable landed** (a `feat:`, `fix:`, `perf:`, or breaking `type!:` /
     `BREAKING CHANGE` commit since the last tag, **or** a hand-written `[Unreleased]`
     section): it bumps, rotates the CHANGELOG, commits `chore(release): vX.Y.Z` to
-    `release/vX.Y.Z`, and opens (or updates) the release PR. Close and reopen that PR so
-    its checks run, merge it, and the release cuts itself.
+    `release/vX.Y.Z`, and opens (or updates) the release PR. Approve any waiting checks on its latest head. Merging the
+    verified PR starts phase 2.
   - **Nothing shippable** (only `chore`/`docs`/`test`/`ci`/`style`/`build`/`refactor`
     commits and an empty `[Unreleased]`): `bump.mjs` exits `3` and the workflow **skips
     cleanly** — no tag, no PR, no publish, CI stays green. So a docs-only or
@@ -56,9 +54,8 @@ On a push to `master`, `bump.yml` first checks whether the push **merged a relea
 The release PR carries the full CHANGELOG section in its body. If a newer shippable
 merge lands while a release PR is still open, the bot force-pushes the updated release
 commit to the same branch (the version is recomputed from *all* commits since the last
-tag) and closes any superseded release PRs. There is no loop: branch pushes don't
-re-trigger this workflow (it only listens on `master`), and pushes made with
-`GITHUB_TOKEN` never trigger other workflows (GitHub's recursion guard).
+tag), refreshes its PR description from the same changelog section, and closes any
+superseded release PRs. The bump workflow listens for pushes to `master`.
 
 ## The manual flow (still supported)
 

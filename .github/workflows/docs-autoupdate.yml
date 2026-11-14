@@ -1,33 +1,15 @@
-# Docs auto-update: after code lands on master, regenerate what the code decides.
-#
-# `forge docs render` rewrites the machine-owned doc surfaces and the diagram facts: labels
-# in docs/diagrams/src bound to the code (the hook chain, tool counts, thresholds — see
-# src/diagram_facts.js). A diagram whose source changed is then re-rendered with the pinned
-# Archify in headless Chrome (`scripts/diagrams.mjs build --stale`). When anything changed,
-# the result goes to ONE branch, docs/auto-update, and ONE open PR, force-pushed on every run
-# so it always reflects the newest master; when nothing needs changing, a leftover PR is
-# closed. Prose cannot be regenerated: the PR body lists the docs that mention what the merge
-# changed (`forge docs impact`) for a person to check.
-#
-# Like the release PR (docs/RELEASING.md), this PR is opened with GITHUB_TOKEN, and GitHub
-# starts no workflow from that token's events: close and reopen it to run CI, then merge.
-# Do not push to docs/auto-update by hand; the next run overwrites it.
+# Regenerate tracked documentation from the merged tree. Each run owns one
+# proposal branch. Release notes, brand changes, new tests and documentation
+# edits can all affect generated output, so every push to master is checked.
 name: Docs auto-update
 
 on:
   push:
     branches: [master]
-    paths:
-      - "src/**"
-      - "hooks/**"
-      - "global/**"
-      - "source/**"
-      - "docs/diagrams/**"
-      - "scripts/diagrams.mjs"
   workflow_dispatch: {}
 
 concurrency:
-  group: docs-autoupdate
+  group: docs-autoupdate-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -35,76 +17,97 @@ permissions:
 
 jobs:
   update:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      contents: write # push the docs/auto-update branch
-      pull-requests: write # open, update or close its PR
+      contents: write
+      pull-requests: write
     env:
       FORGE_NO_HINT: "1"
       BRANCH: docs/auto-update
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2 # HEAD~1, so `docs impact` can diff what the merge changed
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
-
-      - name: List prose that mentions what changed
-        run: node src/cli.js docs impact --since HEAD~1 --min-confidence 0.7 > "$RUNNER_TEMP/impact.txt" 2>&1 || true
-
-      - name: Regenerate docs and diagram facts
-        run: node src/cli.js docs render
-
-      - name: Re-render diagrams whose source changed
+      - name: List prose affected by the push
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
+          if ! git rev-parse --verify --quiet "${BEFORE:-HEAD^}^{commit}" > /dev/null; then
+            BEFORE=HEAD^
+          fi
+          node src/cli.js docs impact --since "${BEFORE:-HEAD^}" --min-confidence 0.7 > "$RUNNER_TEMP/impact.txt"
+
+      - name: Regenerate and verify docs and diagrams
+        run: |
+          node src/cli.js docs render
           ARCHIFY_CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)" \
             node scripts/diagrams.mjs build --stale
+          node scripts/diagrams.mjs sync
+          node scripts/diagrams.mjs check
+          node src/cli.js docs render --check
 
       - name: Open, update or close the docs PR
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          OPEN="$(gh pr list --base master --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "::notice::Docs and diagrams already match the code."
-            if [ -n "$OPEN" ]; then
-              gh pr close "$OPEN" --comment "master already matches the code; nothing left to update."
+          gh auth setup-git
+          # A rerun of an older successful build must not update a newer proposal.
+          refs=$(git ls-remote origin refs/heads/master "refs/heads/$BRANCH")
+          master=$(awk '$2 == "refs/heads/master" {print $1}' <<< "$refs")
+          expected=$(awk -v branch="refs/heads/$BRANCH" '$2 == branch {print $1}' <<< "$refs")
+          if [[ "$master" != "$GITHUB_SHA" ]]; then
+            echo "::notice::master advanced; skipping this superseded run."
+            exit 0
+          fi
+          OPEN="$(gh pr list --base master --head "$BRANCH" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')"
+          # Only the outputs owned by the two renderers belong in this commit.
+          git add -A -- '*.md' '*.mdx' docs/diagrams mintlify/images/diagrams
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "::error::The renderer changed a file outside the documentation outputs."
+            git status --short
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            if [[ -n "$OPEN" ]]; then
+              gh pr close "$OPEN"
             fi
+            echo "::notice::Docs and diagrams match master."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          git add -A
-          git commit -q -m "docs: auto-update rendered docs and diagrams" \
-            -m "Regenerated from ${GITHUB_SHA::7} by .github/workflows/docs-autoupdate.yml."
-          git push --force origin "HEAD:$BRANCH"
+          git commit -q -s -m "docs: refresh generated documentation" \
+            -m "Regenerated from $GITHUB_SHA by docs-autoupdate.yml."
+          git push --force-with-lease="refs/heads/$BRANCH:$expected" origin "HEAD:refs/heads/$BRANCH"
           BODY="$RUNNER_TEMP/body.md"
           {
-            echo "Regenerated from \`${GITHUB_SHA::7}\` by \`.github/workflows/docs-autoupdate.yml\`: the machine-owned doc surfaces and the diagram labels bound to the code (\`forge docs render\`, \`src/diagram_facts.js\`), then the diagrams whose source changed (\`node scripts/diagrams.mjs build --stale\`)."
+            echo "Regenerated from \`$GITHUB_SHA\` with \`forge docs render\` and the pinned diagram renderer."
             echo
-            echo "**Before merging:** close and reopen this PR so CI runs (a PR opened with \`GITHUB_TOKEN\` starts no workflow). Every later push to \`master\` force-pushes this branch again."
+            echo "Review the latest head and select **Approve workflows to run** in the merge box if GitHub requests approval. [GitHub Actions behavior](https://docs.github.com/en/actions/concepts/security/github_token)"
             echo
-            echo "### Changed"
+            echo "### Changed files"
+            echo
             echo '```'
             git show --stat --format= HEAD
             echo '```'
             echo
-            echo "### Prose to check by hand"
-            echo "Prose is not regenerated. These docs mention what the merge changed (\`forge docs impact\`, confidence ≥ 0.7):"
+            echo "### Related prose to review"
+            echo
             echo '```'
             head -n 60 "$RUNNER_TEMP/impact.txt"
             echo '```'
           } > "$BODY"
-          if [ -n "$OPEN" ]; then
+          if [[ -n "$OPEN" ]]; then
             gh pr edit "$OPEN" --body-file "$BODY"
-            echo "::notice::Updated docs PR #$OPEN."
           else
             gh pr create --base master --head "$BRANCH" \
-              --title "docs: auto-update rendered docs and diagrams" --body-file "$BODY"
+              --title "docs: refresh generated documentation" --body-file "$BODY"
           fi

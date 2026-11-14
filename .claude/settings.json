@@ -79,7 +79,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -90,7 +90,12 @@
               "PreToolUse",
               "${CLAUDE_PROJECT_DIR}/global/guards/protect-paths.sh"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
           {
             "type": "command",
             "command": "node",
@@ -125,21 +130,6 @@
               "PreToolUse",
               "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
               "pre-edit"
-            ]
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Glob|NotebookRead",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
-              "--event",
-              "PreToolUse",
-              "${CLAUDE_PROJECT_DIR}/global/guards/protect-paths.sh"
             ]
           }
         ]
@@ -194,6 +184,23 @@
               "PostToolUse",
               "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
               "capture"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/global/guards/run.mjs",
+              "--event",
+              "PostToolUseFailure",
+              "${CLAUDE_PROJECT_DIR}/global/guards/cortex.sh",
+              "failure"
             ]
           }
         ]

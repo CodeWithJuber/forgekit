@@ -42,6 +42,7 @@ const DETECT = [
   { tool: "windsurf", marker: ".windsurf" },
   { tool: "roo", marker: ".roo" },
   { tool: "openclaw", marker: ".openclaw" },
+  { tool: "kimi", marker: ".kimi-code" },
   { tool: "kimi", marker: ".kimi" },
 ];
 
@@ -78,7 +79,7 @@ const TOOL_MARKERS = {
   windsurf: [".windsurf", ".windsurfrules", ".devin"],
   roo: [".roo", ".roomodes"],
   openclaw: [".openclaw"],
-  kimi: [".kimi"],
+  kimi: [".kimi-code", ".kimi"],
 };
 
 // Names people type for a tool whose canonical key differs.

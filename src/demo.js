@@ -23,7 +23,11 @@ function scaffold(root) {
   git(["config", "core.fileMode", "false"], root);
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ name: "forge-demo", scripts: { test: "node --test" } }, null, 2),
+    JSON.stringify(
+      { name: "forge-demo", type: "module", scripts: { test: "node --test" } },
+      null,
+      2,
+    ),
   );
   writeFileSync(join(root, "add.js"), "export const add = (a, b) => a + b;\n");
   mkdirSync(join(root, "test"), { recursive: true });

@@ -73,6 +73,8 @@
                   "guides/team-memory",
                   "guides/radar-deps",
                   "guides/agent-orchestration",
+                  "guides/supervised-runs",
+                  "guides/project-evidence",
                   "guides/advisor"
                 ]
               }
@@ -118,7 +120,7 @@
     "primary": {
       "type": "button",
       "label": "Get started",
-      "href": "https://github.com/CodeWithJuber/forgekit#start-in-60-seconds"
+      "href": "/quickstart"
     }
   },
   "footer": {
@@ -146,7 +148,7 @@
   "seo": {
     "metatags": {
       "og:title": "forgekit — reliability infrastructure for AI coding agents",
-      "og:description": "Evidence-linked memory, blast-radius analysis, guardrails, and cost governance for Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed, Continue, and OpenClaw.",
+      "og:description": "Evidence-linked memory, blast-radius analysis, guardrails, and cost governance for coding agents including Kimi Code, Codex and Claude Code.",
       "og:image": "/images/og-image.png",
       "og:type": "website",
       "twitter:card": "summary_large_image",

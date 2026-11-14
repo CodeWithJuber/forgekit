@@ -10,8 +10,8 @@
 // uncertainty escalates to the full suite. The impact leg is HEURISTIC (the atlas is
 // regex-derived, not a parser) and the output says so; it narrows the run, it never
 // certifies the change. `forge verify` remains the verdict.
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { heading } from "./cli/shared.js";
@@ -106,16 +106,12 @@ export function mapToTests(root, srcFiles) {
     }
     if (!found) {
       try {
-        const out = execSync(
-          `grep -l "${base}" test/*.test.js test/*.test.ts 2>/dev/null || true`,
-          {
-            cwd: root,
-            encoding: "utf8",
-            timeout: 10000,
-          },
-        );
-        for (const m of out.trim().split("\n").filter(Boolean)) {
-          if (!tests.includes(m)) tests.push(m);
+        for (const entry of readdirSync(join(root, "test"), { withFileTypes: true })) {
+          if (!entry.isFile() || !/\.test\.(?:js|ts)$/.test(entry.name)) continue;
+          const rel = `test/${entry.name}`;
+          const path = join(root, rel);
+          if (statSync(path).size <= 1024 * 1024 && readFileSync(path, "utf8").includes(base))
+            tests.push(rel);
         }
       } catch {
         /* ignore — no mapping is not a failure */
@@ -214,25 +210,28 @@ export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
       .filter(Boolean);
   const git = (args) => {
     try {
-      return execSync(`git ${args}`, {
+      return execFileSync("git", args, {
         cwd,
         encoding: "utf8",
-        timeout: 15000,
-      }).trim();
+        timeout: 4000,
+        maxBuffer: 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
     } catch {
       return null;
     }
   };
   if (base) {
-    const out = git(`diff --name-only ${base}...${head || "HEAD"}`);
-    return out ? out.split("\n").filter(Boolean) : [];
+    if (base.startsWith("-") || head?.startsWith("-")) return [];
+    const out = git(["diff", "--name-only", "-z", `${base}...${head || "HEAD"}`, "--"]);
+    return out ? out.split("\0").filter(Boolean) : [];
   }
   const files = new Set();
-  const staged = git("diff --cached --name-only");
-  const unstaged = git("diff --name-only");
-  const untracked = git("ls-files --others --exclude-standard");
+  const staged = git(["diff", "--cached", "--name-only", "-z"]);
+  const unstaged = git(["diff", "--name-only", "-z"]);
+  const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
   for (const out of [staged, unstaged, untracked]) {
-    if (out) for (const f of out.split("\n").filter(Boolean)) files.add(f);
+    if (out) for (const f of out.split("\0").filter(Boolean)) files.add(f);
   }
   return files.size ? [...files].sort() : null;
 }

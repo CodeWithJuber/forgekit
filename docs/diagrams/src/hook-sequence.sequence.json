@@ -6,48 +6,52 @@
     "locale": "en",
     "quality_profile": "showcase",
     "column_fit": "spread",
-    "viewBox": [1500, 696]
+    "viewBox": [1500, 776]
   },
   "participants": [
     { "id": "developer", "type": "external", "label": "Developer" },
     { "id": "agent", "type": "frontend", "label": "Claude Code (agent)" },
     { "id": "hooks", "type": "security", "label": "forgekit hooks" },
-    { "id": "state", "type": "database", "label": ".forge/ state" }
+    { "id": "state", "type": "database", "label": "Project data" }
   ],
   "segments": [
     { "from": 156, "to": 214, "label": "Session start" },
     { "from": 228, "to": 358, "label": "Prompt" },
     { "from": 372, "to": 502, "label": "Tool call" },
-    { "from": 516, "to": 610, "label": "Stop" }
+    { "from": 516, "to": 574, "label": "On tool failure" },
+    { "from": 588, "to": 682, "label": "Stop" }
   ],
   "messages": [
     { "id": "session-start", "from": "agent", "to": "hooks", "y": 168, "label": "SessionStart: recall-load · cortex session-start" },
     { "id": "inject-context", "from": "hooks", "to": "agent", "y": 204, "label": "inject orientation + lessons + last handoff (.forge/state.md)", "variant": "return" },
     { "id": "prompt", "from": "developer", "to": "agent", "y": 240, "label": "prompt", "variant": "emphasis" },
     { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt · preflight" },
-    { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "reads CACHED atlas only; never builds it in a hook" },
-    { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "substrate advisory: suggested model · impact · verify checklist", "variant": "return" },
+    { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "look up cached symbols and scoped source excerpts" },
+    { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "return cited evidence, routing and checks", "variant": "return" },
     { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex", "variant": "security" },
     { "id": "allow-deny", "from": "hooks", "to": "agent", "y": 420, "label": "allow | ask | deny", "variant": "return" },
     { "id": "post-tool", "from": "agent", "to": "hooks", "y": 456, "label": "PostToolUse: format-on-edit · secret-redact · cortex capture" },
     { "id": "capture", "from": "hooks", "to": "state", "y": 492, "label": "cortex capture: signals + evidence" },
-    { "id": "stop", "from": "agent", "to": "hooks", "y": 528, "label": "Stop: completion-gate · lean-guard · session-learner · cortex stop" },
-    { "id": "distill", "from": "hooks", "to": "state", "y": 564, "label": "cortex stop: distill lessons into the ledger" },
-    { "id": "stop-result", "from": "hooks", "to": "agent", "y": 600, "label": "session ends | agent told what is missing", "variant": "return" }
+    { "id": "tool-failure", "from": "agent", "to": "hooks", "y": 528, "label": "PostToolUseFailure: cortex failure" },
+    { "id": "failure-evidence", "from": "hooks", "to": "agent", "y": 564, "label": "return relevant evidence for the failed call", "variant": "return" },
+    { "id": "stop", "from": "agent", "to": "hooks", "y": 600, "label": "Stop: completion-gate · lean-guard · session-learner · cortex stop" },
+    { "id": "distill", "from": "hooks", "to": "state", "y": 636, "label": "cortex stop: distill lessons into the ledger" },
+    { "id": "stop-result", "from": "hooks", "to": "agent", "y": 672, "label": "session ends | agent told what is missing", "variant": "return" }
   ],
   "activations": [
-    { "participant": "agent", "from": 163, "to": 605, "type": "frontend" },
+    { "participant": "agent", "from": 163, "to": 677, "type": "frontend" },
     { "participant": "hooks", "from": 163, "to": 209, "type": "security" },
     { "participant": "hooks", "from": 271, "to": 353, "type": "security" },
     { "participant": "hooks", "from": 379, "to": 425, "type": "security" },
     { "participant": "hooks", "from": 451, "to": 497, "type": "security" },
-    { "participant": "hooks", "from": 523, "to": 605, "type": "security" }
+    { "participant": "hooks", "from": 523, "to": 569, "type": "security" },
+    { "participant": "hooks", "from": 595, "to": 677, "type": "security" }
   ],
   "cards": [
     { "dot": "amber", "title": "Advisory by default", "items": ["UserPromptSubmit output is advisory by default", "PreToolUse: protect-paths denies secret paths and dangerous writes, dep-gate denies invented or malicious packages; the others advise or ask"] },
     { "dot": "rose", "title": "Completion gate", "items": ["Code changes need test evidence (a test, a fresh passing forge verify, or e2e) and a doc or state update"] },
     { "dot": "slate", "title": "secret-redact", "items": ["Scrubs secrets from tool output after the tool runs"] },
-    { "dot": "emerald", "title": ".forge/ state", "items": ["ledger · atlas cache · metrics"] },
-    { "dot": "cyan", "title": "Every agent", "items": ["forge hooks on runs this chain in Codex, Gemini CLI, Cursor and Copilot too"] }
+    { "dot": "emerald", "title": "Project data", "items": ["ledger · atlas cache · metrics"] },
+    { "dot": "cyan", "title": "Other coding hosts", "items": ["Kimi, Codex, Gemini CLI, Cursor and Copilot use host-specific events. Their supported actions and trust settings differ."] }
   ]
 }

@@ -1,0 +1,56 @@
+---
+title: "Project sources and research"
+description: "Retrieve a cited passage from a local cache, route a fresh ticket read and find existing code before implementing a change."
+---
+
+## Index a folder or a second repository
+
+Run these commands in the working tree that should use the evidence.
+
+```sh
+forge sources init
+forge sources status
+```
+
+Edit the private config file printed by the command. For example, add a local source named `manuals` pointing at the folder that contains your documents. Replace the path with an existing directory.
+
+```json
+{
+  "sources": [
+    {"id": "manuals", "provider": "local", "root": "/work/manuals"}
+  ]
+}
+```
+
+```sh
+forge sources sync manuals
+forge sources search "retry limit" --source manuals --budget 700
+forge sources get manuals policies.pdf --chunk 0
+forge sources aggregate manuals usage.csv sum --column minutes --group-by team
+```
+
+Search returns bounded excerpts with source locations. Change the example file and column names to match your folder. For an exact total, aggregate the table across all its rows. PDF extraction uses Poppler for text; optional OCR handles scanned pages. CSV, TSV, XLS and XLSX support table reads. Each additional folder or repository is an explicit local source.
+
+## Choose a Jira, Confluence or GitLab read
+
+Configure the source’s deployment, instance URL, project or space and credential environment variable. Use your own identity. The [source configuration examples](https://github.com/CodeWithJuber/forgekit/blob/master/docs/AGENT-EVIDENCE.md#set-up-a-workspace) cover Cloud and self-hosted deployments.
+
+| Need | Operation |
+| --- | --- |
+| Search across items or reuse an earlier result | Sync the selected source and query its local mirror. Refresh it when freshness or permissions matter. |
+| Read a current ticket through connected MCP | Use `forge sources route tickets read --fresh --probe` for a configured MCP endpoint and record-read tool. The route reports the choice; your client calls the provider. |
+| Fetch one current record by ID using REST | Run `forge sources read tickets ENG-123`. Supply the configured source ID and the record ID accepted by that provider. |
+| Build or refresh a scoped cache | Configure the Jira project, Confluence space or GitLab project and resource, then run `forge sources sync SOURCE_ID`. |
+
+## Search for an existing implementation
+
+```sh
+forge evidence "Choose a retry helper" --web "Node.js fetch Retry-After idempotent requests"
+forge develop "Compare retry helpers for our HTTP client"
+forge integrations list
+forge integrations select
+```
+
+Only supply public technical terms to `--web`. Public discovery can return GitHub, Stack Overflow and npm results. When a licensed code excerpt is available, follow its source and verify compatibility with your installed version. The integration selector can register a reviewed endpoint or install the selected package. Its noninteractive form accepts a specific ID, for example `forge integrations select playwright`.
+
+For real coding hosts, connection and prompt delivery differ. See [Installation](/installation) and the [native client evidence](https://github.com/CodeWithJuber/forgekit/blob/master/docs/AGENT-EVIDENCE.md#troubleshoot-a-silent-plugin).

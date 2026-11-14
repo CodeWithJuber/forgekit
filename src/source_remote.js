@@ -1,0 +1,478 @@
+// Read complete, bounded evidence snapshots from scoped provider APIs. Credentials come
+// only from the caller's trusted personal configuration. Hook/search paths never fetch.
+import { contentHash, stripTrailingSlashes } from "./util.js";
+
+const PAGE_SIZE = 50;
+const PAGE_BYTES = 8 * 1024 * 1024;
+const SNAPSHOT_BYTES = 32 * 1024 * 1024;
+
+function envValue(env, name, field) {
+  if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`Set ${field} to an environment variable name`);
+  }
+  if (!Object.hasOwn(env, name) || !env[name]) throw new Error(`Missing credential for ${field}`);
+  return env[name];
+}
+
+function connection(source, env) {
+  const { provider, deployment } = source;
+  if (!["jira", "confluence", "gitlab"].includes(provider))
+    throw new Error("Unknown remote provider");
+  if (!["cloud", "self-hosted"].includes(deployment)) throw new Error("Unknown deployment");
+  let url;
+  try {
+    url = new URL(source.baseUrl);
+  } catch {
+    throw new Error("Invalid source baseUrl");
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (
+    (url.protocol !== "https:" && !(local && url.protocol === "http:")) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Set baseUrl to the HTTPS site root, including any context path");
+  }
+  const base = stripTrailingSlashes(url.href);
+  const value = provider === "confluence" ? source.space : source.project;
+  if ((typeof value !== "string" && typeof value !== "number") || !String(value).trim()) {
+    throw new Error(
+      provider === "confluence"
+        ? "Set the Confluence space key"
+        : "Set the project key, path or ID",
+    );
+  }
+  const scope = String(value).trim();
+  if (
+    provider === "gitlab" &&
+    scope.split("/").some((part) => !part || part === "." || part === ".." || /[%\\?#]/.test(part))
+  ) {
+    throw new Error("Set a GitLab numeric project ID or namespace/project path");
+  }
+  const resource = provider === "gitlab" ? (source.resource ?? "issues") : "";
+  if (provider === "gitlab" && !["issues", "merge_requests"].includes(resource))
+    throw new Error("Unsupported GitLab resource");
+  const token = envValue(env, source.tokenEnv, "tokenEnv");
+  const basic = deployment === "cloud" && provider !== "gitlab";
+  const email = basic ? envValue(env, source.emailEnv, "emailEnv") : "";
+  const auth =
+    provider === "gitlab"
+      ? { "PRIVATE-TOKEN": token }
+      : {
+          Authorization: basic
+            ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
+            : `Bearer ${token}`,
+        };
+  return { provider, deployment, base, scope, resource, auth };
+}
+
+/** Opaque partition for private cached data. A credential change starts an empty partition. */
+export function remoteScope(source, env = process.env) {
+  return contentHash(JSON.stringify(connection(source, env)));
+}
+
+/** Pick a transport. Live writes are delegated to the signed-in host or its provider client. */
+export function routeSource({
+  operation = "read",
+  fresh = false,
+  cacheAvailable = false,
+  mcpAvailable = false,
+} = {}) {
+  if (operation === "bulk") return "api";
+  if (!["search", "read", "write"].includes(operation)) throw new Error("Unknown source operation");
+  if (operation !== "write" && !fresh && cacheAvailable) return "cache";
+  return mcpAvailable ? "mcp" : "api";
+}
+
+function initialPage({ provider, deployment, base, scope, resource }) {
+  const literal = JSON.stringify(scope);
+  if (provider === "jira") {
+    const path = deployment === "cloud" ? "rest/api/3/search/jql" : "rest/api/2/search";
+    const query = new URLSearchParams({
+      jql: `project = ${literal} ORDER BY key ASC`,
+      fields: "summary,description,status,updated",
+      maxResults: String(PAGE_SIZE),
+    });
+    return new URL(`${base}/${path}?${query}`);
+  }
+  if (provider === "confluence") {
+    const query = new URLSearchParams({
+      cql: `type = page AND space = ${literal} ORDER BY title ASC`,
+      expand: "body.storage,version",
+      limit: String(PAGE_SIZE),
+    });
+    return new URL(`${base}/rest/api/content/search?${query}`);
+  }
+  const query = new URLSearchParams({
+    scope: "all",
+    state: "all",
+    order_by: "created_at",
+    sort: "asc",
+    per_page: String(PAGE_SIZE),
+    page: "1",
+  });
+  return new URL(`${base}/api/v4/projects/${encodeURIComponent(scope)}/${resource}?${query}`);
+}
+
+// Only copy the pagination parameter onto the known request URL. A provider-supplied
+// absolute link, including one outside the instance, is never an authenticated destination.
+function pagination(connection, body, headers, page, count) {
+  const { provider, deployment } = connection;
+  if (provider === "jira" && deployment === "cloud") {
+    if (body.nextPageToken) return ["nextPageToken", String(body.nextPageToken)];
+    if (body.isLast !== true) throw new Error("Jira search omitted its completion marker");
+    return null;
+  }
+  if (provider === "jira") {
+    const start = Number(page.searchParams.get("startAt") || 0);
+    if (!Number.isSafeInteger(body.total) || body.total < 0 || (body.startAt ?? start) !== start)
+      throw new Error("Invalid Jira pagination");
+    if (start + count >= body.total) return null;
+    if (!count) throw new Error("Incomplete Jira pagination");
+    return ["startAt", String(start + count)];
+  }
+  if (provider === "confluence") {
+    if (!body._links?.next) return null;
+    const next = new URL(body._links.next, page);
+    for (const key of ["cursor", "start"]) {
+      const value = next.searchParams.get(key);
+      if (value) return [key, value];
+    }
+    throw new Error("Unknown Confluence pagination");
+  }
+  const nextPage = headers.get("x-next-page");
+  if (nextPage === "") return null;
+  const link = headers.get("link") ?? "";
+  const nextLink = link.match(/<([^>]+)>\s*;\s*rel="next"/i);
+  const next = nextPage ?? (nextLink && new URL(nextLink[1], page).searchParams.get("page"));
+  const current = Number(page.searchParams.get("page"));
+  if (next) {
+    if (!/^\d+$/.test(next) || Number(next) <= current)
+      throw new Error("Invalid GitLab pagination");
+    return ["page", next];
+  }
+  // Some proxies omit GitLab's pagination headers. A full page requires another read.
+  return count >= PAGE_SIZE ? ["page", String(current + 1)] : null;
+}
+
+function adfText(node) {
+  if (typeof node === "string") return node;
+  if (!node) return "";
+  if (node.type === "text") return String(node.text ?? "");
+  if (node.type === "hardBreak") return "\n";
+  return Array.isArray(node.content)
+    ? node.content.map(adfText).join(node.type === "paragraph" ? "" : "\n")
+    : "";
+}
+
+function storageText(html) {
+  // Storage XHTML wraps code blocks in CDATA. Keep the code verbatim, even when it
+  // contains literal tags; drop markup only in the surrounding storage document.
+  return String(html ?? "")
+    .split(/<!\[CDATA\[([\s\S]*?)\]\]>/)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part
+            .replace(/<[^<>]*>/g, " ")
+            .replace(
+              /&(amp|lt|gt|quot|apos|nbsp);/g,
+              (_match, entity) =>
+                ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " })[entity],
+            )
+            .replace(/\s+/g, " "),
+    )
+    .join("")
+    .trim();
+}
+
+function documentOf({ provider, base, scope, resource }, row) {
+  if (typeof row?.id !== "string" && typeof row?.id !== "number")
+    throw new Error("Provider returned a record without an ID");
+  const id = String(row.id);
+  if (provider === "jira") {
+    if (!row.key || typeof row.fields?.summary !== "string")
+      throw new Error("Incomplete Jira record");
+    const fields = row.fields;
+    return {
+      id,
+      recordId: String(row.key),
+      kind: "issue",
+      status: fields.status?.name ?? null,
+      title: `${row.key} ${fields.summary}`,
+      text: [fields.status?.name, adfText(fields.description)].filter(Boolean).join("\n"),
+      url: `${base}/browse/${encodeURIComponent(row.key)}`,
+      updatedAt: fields.updated ?? null,
+    };
+  }
+  if (typeof row.title !== "string") throw new Error("Incomplete provider record");
+  if (provider === "confluence") {
+    if (typeof row.body?.storage?.value !== "string")
+      throw new Error("Confluence did not return the expanded page body");
+    return {
+      id,
+      recordId: id,
+      kind: "page",
+      version: Number.isSafeInteger(row.version?.number) ? row.version.number : null,
+      status: row.status ?? null,
+      title: row.title,
+      text: storageText(row.body.storage.value),
+      url: `${base}/pages/viewpage.action?pageId=${encodeURIComponent(id)}`,
+      updatedAt: row.version?.when ?? null,
+    };
+  }
+  if (row.iid == null) throw new Error("GitLab did not return a project-local ID");
+  // Prefer the canonical URL for numeric project IDs; never put returned credentials or
+  // an external host in an evidence citation.
+  let url;
+  try {
+    url = new URL(row.web_url);
+  } catch {}
+  if (
+    !url ||
+    url.origin !== new URL(base).origin ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    if (/^\d+$/.test(scope)) throw new Error("Missing canonical GitLab web URL");
+    url = new URL(
+      `${base}/${scope.split("/").map(encodeURIComponent).join("/")}/-/${resource}/${encodeURIComponent(row.iid)}`,
+    );
+  }
+  return {
+    id,
+    recordId: String(row.iid),
+    kind: resource === "issues" ? "issue" : "merge_request",
+    status: row.state ?? null,
+    title: `${resource === "issues" ? "#" : "!"}${row.iid} ${row.title}`,
+    text: [row.state, row.description].filter(Boolean).join("\n"),
+    url: url.href,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+async function pageJson(response) {
+  if (!response.ok) {
+    const hint = response.headers.get("retry-after");
+    const seconds =
+      hint && /^\d+$/.test(hint) ? Number(hint) : (Date.parse(hint) - Date.now()) / 1000;
+    const retry =
+      response.status === 429
+        ? Number.isFinite(seconds) && seconds > 0
+          ? Math.ceil(seconds)
+          : 60
+        : 0;
+    const retryAt = retry ? Math.min(8e15, Date.now() + retry * 1000) : undefined;
+    const error = new Error(
+      `Source returned HTTP ${response.status}${retry > 0 ? ` (retry in ${retry}s)` : ""}`,
+    );
+    await response.body?.cancel().catch(() => {});
+    throw Object.assign(error, { status: response.status, retryAt });
+  }
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of response.body) {
+    length += chunk.length;
+    if (length > PAGE_BYTES) throw new Error("Source page exceeds the size limit");
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("Source returned invalid JSON");
+  }
+}
+
+async function requestJson(url, conn, fetchImpl) {
+  const response = await fetchImpl(url.href, {
+    headers: { Accept: "application/json", ...conn.auth },
+    redirect: "error",
+    signal: AbortSignal.timeout(20000),
+  });
+  return { body: await pageJson(response), headers: response.headers };
+}
+
+/** Read a single live record with the configured project's credentials. Jira accepts a
+ *  key or ID, Confluence a page ID, GitLab a project-local issue or MR IID.
+ * @param {any} source @param {string|number} recordId
+ * @param {{env?:Record<string,string>, fetchImpl?:typeof fetch}} [options]
+ */
+export async function fetchRemoteRecord(
+  source,
+  recordId,
+  { env = process.env, fetchImpl = fetch } = {},
+) {
+  const conn = connection(source, env);
+  const id = String(recordId);
+  const valid = conn.provider === "jira" ? /^(?:[A-Z][A-Z0-9_]*-)?[0-9]+$/i : /^[0-9]+$/;
+  if (id.length > 128 || !valid.test(id)) throw new Error("Invalid record ID for this source");
+  const missing = () =>
+    Object.assign(new Error("Record unavailable in configured source"), { status: 404 });
+  const url = initialPage(conn);
+  let row;
+  if (conn.provider === "confluence") {
+    // Page IDs are tenant-wide. Combine the ID with the configured space in the
+    // supported CQL endpoint so another space's page body never crosses the wire.
+    url.searchParams.set(
+      "cql",
+      `type = page AND space = ${JSON.stringify(conn.scope)} AND id = ${id}`,
+    );
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("expand", "space,version,body.storage");
+    const { body } = await requestJson(url, conn, fetchImpl);
+    row = body?.results?.[0];
+    if (String(row?.id) !== id || row?.space?.key !== conn.scope) throw missing();
+  } else if (conn.provider === "jira") {
+    const version = conn.deployment === "cloud" ? "3" : "2";
+    const target = new URL(`${conn.base}/rest/api/${version}/issue/${encodeURIComponent(id)}`);
+    target.searchParams.set("fields", "project,summary,description,status,updated");
+    row = (await requestJson(target, conn, fetchImpl)).body;
+    const project = row?.fields?.project;
+    if (
+      String(project?.id) !== conn.scope &&
+      project?.key?.toUpperCase() !== conn.scope.toUpperCase() &&
+      project?.name !== conn.scope
+    )
+      throw missing();
+  } else {
+    url.pathname += `/${id}`;
+    url.search = "";
+    row = (await requestJson(url, conn, fetchImpl)).body;
+    if (String(row?.iid) !== id) throw missing();
+    if (/^\d+$/.test(conn.scope) && String(row?.project_id) !== conn.scope) throw missing();
+  }
+  return { ...documentOf(conn, row), fetchedAt: new Date().toISOString() };
+}
+
+/**
+ * Get a full per-credential snapshot in provider pages. A failed or truncated traversal
+ * never returns partial documents. checkpoint is the local observation time, not a remote
+ * transaction ID. A full replacement reconciles permission changes and deletions.
+ * @param {any} source trusted, user-owned provider config
+ * @param {{env?:Record<string,string>, fetchImpl?:typeof fetch, maxPages?:number, since?:string, idsOnly?:boolean}} [options]
+ */
+export async function fetchRemoteSource(
+  source,
+  { env = process.env, fetchImpl = fetch, maxPages = 100, since = undefined, idsOnly = false } = {},
+) {
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1) throw new Error("Invalid page limit");
+  const conn = connection(source, env);
+  const page = initialPage(conn);
+  const checkpoint = new Date().toISOString();
+  const frozen = Date.parse(since);
+  if (since !== undefined && !Number.isFinite(frozen)) throw new Error("Invalid source watermark");
+  const overlap = conn.provider === "confluence" ? 60 : 15;
+  if (since && conn.provider === "gitlab")
+    page.searchParams.set("updated_after", new Date(frozen - overlap * 60000).toISOString());
+  if (since && conn.provider !== "gitlab") {
+    // Relative server-time filters are independent of the Jira/Confluence account timezone.
+    const minutes = Math.max(1, Math.ceil((Date.now() - frozen) / 60000) + overlap);
+    const field = conn.provider === "jira" ? "jql" : "cql";
+    const base = page.searchParams.get(field).split(" ORDER BY ")[0];
+    const date = conn.provider === "jira" ? "updated" : "lastmodified";
+    // CQL supports startOfDay with an offset. Round outward to whole days to
+    // include today's boundary across server time zones. JQL supports relative minutes.
+    const predicate =
+      conn.provider === "jira" ? `"-${minutes}m"` : `startOfDay("-${Math.ceil(minutes / 1440)}d")`;
+    page.searchParams.set(field, `${base} AND ${date} >= ${predicate} ORDER BY ${date} ASC`);
+  }
+  if (idsOnly) {
+    if (conn.provider === "jira") page.searchParams.set("fields", "updated");
+    if (conn.provider === "confluence") page.searchParams.set("expand", "version");
+    if (conn.provider === "gitlab" && conn.resource === "merge_requests")
+      page.searchParams.set("view", "simple");
+  }
+  const documents = new Map();
+  const visited = new Set();
+  let size = 0;
+  while (true) {
+    if (visited.has(page.href)) throw new Error("Source repeated a page");
+    if (visited.size >= maxPages)
+      throw new Error("Source page limit reached; narrow the configured project or space");
+    visited.add(page.href);
+    const { body, headers } = await requestJson(page, conn, fetchImpl);
+    const rows =
+      conn.provider === "jira"
+        ? body?.issues
+        : conn.provider === "confluence"
+          ? body?.results
+          : body;
+    if (!Array.isArray(rows)) throw new Error("Invalid provider result collection");
+    for (const row of rows) {
+      const doc = idsOnly
+        ? {
+            id: row?.id,
+            recordId:
+              conn.provider === "jira" ? row?.key : conn.provider === "gitlab" ? row?.iid : row?.id,
+            updatedAt:
+              conn.provider === "jira"
+                ? row?.fields?.updated
+                : conn.provider === "gitlab"
+                  ? row?.updated_at
+                  : row?.version?.when,
+          }
+        : documentOf(conn, row);
+      if (doc.id == null || doc.recordId == null)
+        throw new Error("Provider omitted a record identifier");
+      doc.id = String(doc.id);
+      doc.recordId = String(doc.recordId);
+      size += Buffer.byteLength(JSON.stringify(doc));
+      if (size > SNAPSHOT_BYTES) throw new Error("Source snapshot exceeds the size limit");
+      documents.set(doc.id, doc);
+    }
+    const next = pagination(conn, body, headers, page, rows.length);
+    if (!next)
+      return {
+        documents: [...documents.values()],
+        mode: idsOnly ? "ids" : since ? "incremental" : "full",
+        checkpoint,
+      };
+    page.searchParams.set(next[0], next[1]);
+  }
+}
+
+/** One Confluence update against the version the caller already re-read. Never retry a
+ * potentially applied PUT. Both APIs require a new version number on a page update. */
+export async function putConfluencePage(source, recordId, { title, storage, expectedVersion }) {
+  if (source.provider !== "confluence" || source.allowWrites !== true)
+    throw new Error("Enable allowWrites on a configured Confluence source to update pages");
+  if (
+    !/^\d{1,128}$/.test(recordId) ||
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 1 ||
+    expectedVersion >= Number.MAX_SAFE_INTEGER ||
+    typeof title !== "string" ||
+    !title.trim() ||
+    title.length > 255 ||
+    typeof storage !== "string" ||
+    !storage.trim() ||
+    Buffer.byteLength(storage) > 1024 * 1024
+  )
+    throw new Error(
+      "Provide a numeric page ID, a positive version, title and storage-format body up to 1 MiB",
+    );
+  const conn = connection(source, process.env);
+  const cloud = conn.deployment === "cloud";
+  const path = cloud ? "api/v2/pages" : "rest/api/content";
+  const body = {
+    id: recordId,
+    title,
+    status: "current",
+    version: { number: expectedVersion + 1 },
+    ...(cloud
+      ? { body: { representation: "storage", value: storage } }
+      : { type: "page", body: { storage: { representation: "storage", value: storage } } }),
+  };
+  const response = await fetch(`${conn.base}/${path}/${encodeURIComponent(recordId)}`, {
+    method: "PUT",
+    redirect: "error",
+    signal: AbortSignal.timeout(20000),
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...conn.auth },
+    body: JSON.stringify(body),
+  });
+  return pageJson(response);
+}

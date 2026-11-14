@@ -58,7 +58,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -69,7 +69,12 @@
               "PreToolUse",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/protect-paths.sh"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
           {
             "type": "command",
             "command": "node",
@@ -119,21 +124,6 @@
               "PreToolUse",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
               "pre-edit"
-            ]
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Glob|NotebookRead",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
-              "--event",
-              "PreToolUse",
-              "${CLAUDE_PLUGIN_ROOT}/global/guards/protect-paths.sh"
             ]
           }
         ]
@@ -188,6 +178,23 @@
               "PostToolUse",
               "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
               "capture"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/run.mjs",
+              "--event",
+              "PostToolUseFailure",
+              "${CLAUDE_PLUGIN_ROOT}/global/guards/cortex.sh",
+              "failure"
             ]
           }
         ]

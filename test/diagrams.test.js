@@ -39,7 +39,11 @@ function fixture() {
         type: "workflow",
         title: "A flow",
         usedIn: ["README.md"],
-        receipt: { specSha256: sha(source), artifactSha256: "a".repeat(64) },
+        receipt: {
+          specSha256: sha(source),
+          svgSha256: sha("<svg/>"),
+          artifactSha256: "a".repeat(64),
+        },
       },
     ],
   };
@@ -64,6 +68,14 @@ test("staleDiagrams: only a diagram whose source, receipt or SVG moved is rebuil
     f.write("docs/diagrams/src/flow.workflow.json", '{"meta":{"title":"A flow"}}\n');
     assert.deepEqual(staleDiagrams(f.root, f.manifest), []);
     assert.equal(staleDiagrams(f.root, moved).length, 1, "a pin bump makes every diagram stale");
+    f.write("docs/diagrams/flow.svg", "<svg>edited export</svg>");
+    assert.ok(
+      checkDiagrams(f.root).some((p) => /flow\.svg differs from its render receipt/.test(p)),
+    );
+    assert.deepEqual(
+      staleDiagrams(f.root, f.manifest).map((d) => d.id),
+      ["flow"],
+    );
     rmSync(join(f.root, "docs/diagrams/flow.svg"));
     assert.equal(staleDiagrams(f.root, f.manifest).length, 1, "a missing SVG is rebuilt");
   } finally {

@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Supervised runs from request to verified result",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "actions", "label": "Tool calls" },
+    { "id": "executor", "label": "Run loop" },
+    { "id": "checks", "label": "Verification" }
+  ],
+  "mainPath": ["request", "turn", "verify", "done"],
+  "semanticChecks": {
+    "allowedRoots": ["request"],
+    "allowedTerminals": ["done"],
+    "requiredEdges": [
+      { "from": "turn", "to": "gate" },
+      { "from": "gate", "to": "tool" },
+      { "from": "tool", "to": "turn" },
+      { "from": "verify", "to": "turn" },
+      { "from": "verify", "to": "done" }
+    ]
+  },
+  "nodes": [
+    { "id": "request", "lane": "executor", "col": 0, "type": "frontend", "label": "Start a task", "sublabel": "MCP · CLI · job worker", "width": 188 },
+    { "id": "turn", "lane": "executor", "col": 1, "type": "backend", "label": "Model turn", "sublabel": "Budgeted route and context", "width": 216 },
+    { "id": "gate", "lane": "actions", "col": 1, "type": "security", "label": "Check policy", "sublabel": "Profile, stage, arguments", "width": 216 },
+    { "id": "tool", "lane": "actions", "col": 2, "type": "backend", "label": "Execute scoped tool", "sublabel": "Capture result and trace", "width": 216 },
+    { "id": "verify", "lane": "checks", "col": 2, "type": "security", "label": "Verify the work", "sublabel": "Run the configured check", "width": 216 },
+    { "id": "done", "lane": "checks", "col": 3, "type": "database", "label": "Return verified result", "sublabel": "Run ID, evidence and usage", "width": 220 }
+  ],
+  "edges": [
+    { "id": "open-run", "from": "request", "to": "turn" },
+    { "id": "tool-requested", "from": "turn", "to": "gate", "label": "tool call", "role": "branch" },
+    { "id": "allow-action", "from": "gate", "to": "tool", "label": "permitted" },
+    { "id": "new-context", "from": "tool", "to": "turn", "label": "tool output", "role": "return", "fromSide": "bottom", "toSide": "right" },
+    { "id": "candidate", "from": "turn", "to": "verify", "label": "answer ready", "fromSide": "right", "toSide": "top" },
+    { "id": "repair", "from": "verify", "to": "turn", "label": "repair available", "role": "return", "fromSide": "left", "toSide": "bottom" },
+    { "id": "pass", "from": "verify", "to": "done", "label": "passed", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "MCP entry points", "items": ["forge_harness_run · forge_harness_status"] },
+    { "dot": "amber", "title": "When a call needs approval", "items": ["The run parks before the action. An operator grants the exact call and resumes the run."] },
+    { "dot": "rose", "title": "When a limit is reached", "items": ["A failed check after the repair limit ends the run with its failure evidence. Exhausted budgets also stop the loop."] }
+  ]
+}

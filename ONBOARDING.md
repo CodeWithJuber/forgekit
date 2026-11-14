@@ -17,12 +17,17 @@ start paying off on day two.
 
 ## 1. Install (once)
 
-The recommended paths need no token and no clone:
+Choose the install path for your coding tool. To use changes on a development branch, install that checkout.
 
 ```bash
-# Claude Code / Codex — the plugin (Claude Code guards auto-wire; Codex: run `forge hooks on`)
+# Claude Code plugin
 /plugin marketplace add CodeWithJuber/forgekit
 /plugin install forgekit
+
+# Local Codex CLI, using the checked-out build
+codex plugin marketplace add /absolute/path/to/forgekit
+codex plugin add forgekit@forge
+# Open /hooks in Codex to review and trust its commands.
 
 # Any tool — the CLI, from public npm
 npm install -g @codewithjuber/forgekit
@@ -72,6 +77,30 @@ Change a rule later by editing `source/rules.json` (or dropping a per-repo
 ```bash
 forge sync                 # recompiles into each selected tool; idempotent (only rewrites what changed)
 ```
+
+### Supervise Kimi and Codex in this checkout
+
+For a fresh harness, install the CLI on the machine running the coding agent and use Python 3.11+
+with SQLite FTS5. From the project root, run:
+
+```bash
+forge harness init --hosts kimi,codex --supervised
+forge harness status
+forge harness drift --hosts kimi,codex
+```
+
+In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`.
+In local Codex, trust the project and review the commands in `/hooks`. A passing drift check
+confirms the generated files. Start the configured local model or connect a reviewed model
+endpoint before asking the host to run a supervised task. The [first-run example](docs/HARNESS.md#a-first-verifiable-run)
+includes an acceptance criterion and a check you can reproduce.
+
+### Select integrations and context
+
+Run `forge integrations select` to choose a package or a remote MCP endpoint. For a private
+folder, Jira project, Confluence space or GitLab project, run `forge sources init`, edit the
+private configuration file it prints, then run `forge sources sync`. A coding prompt can then
+retrieve a cited page or spreadsheet row on supported hosts. [Configuration examples](docs/AGENT-EVIDENCE.md)
 
 ## 3. Use the cognitive substrate
 
