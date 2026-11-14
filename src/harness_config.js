@@ -11,22 +11,21 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { readHarnessConfigData } from "./harness_config_data.js";
 import { defaultHarnessPolicy } from "./harness_policy.js";
 import { defaultHarnessRouting } from "./harness_router.js";
+import { outsideWorkspace } from "./private_paths.js";
 import { userStateDir } from "./util.js";
 
 const names = ["policy", "routing", "budgets", "jobs"];
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 function bindingPath(root) {
-  const state = resolve(userStateDir());
-  let existing = state;
-  while (!existsSync(existing) && dirname(existing) !== existing) existing = dirname(existing);
-  const canonical = resolve(realpathSync.native(existing), relative(existing, state));
-  const rel = relative(realpathSync.native(root), canonical);
-  if (!rel || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)))
-    throw new Error("Private state must be outside the project");
+  const canonical = outsideWorkspace(
+    root,
+    userStateDir(),
+    "Private state must be outside the project",
+  );
   return join(canonical, "harness-activation", `${hash(realpathSync.native(root))}.json`);
 }
 function readBinding(root, path = bindingPath(root)) {

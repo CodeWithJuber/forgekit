@@ -2,14 +2,15 @@
 // worktrees. SQLite serialises reservation/settlement even across separate CLI processes.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, mkdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   harnessChildPath,
   installedHarnessProgram,
   installedHarnessPython,
 } from "./harness_python.js";
+import { outsideWorkspace } from "./private_paths.js";
 import { contentHash, userStateDir } from "./util.js";
 
 const script = fileURLToPath(new URL("./harness_spend.py", import.meta.url));
@@ -35,13 +36,11 @@ function privateLedger(root) {
     throw new Error("Cannot determine project identity for spend limits");
   const common = gitState.status === 0 ? gitState.stdout.trim() : "";
   const project = contentHash(common ? realpathSync.native(common) : work);
-  const state = resolve(userStateDir());
-  let parent = state;
-  while (!existsSync(parent)) parent = dirname(parent);
-  const physical = resolve(realpathSync.native(parent), relative(parent, state));
-  const inside = relative(work, physical);
-  if (!inside || (inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside)))
-    throw new Error("Keep harness spend state outside the workspace");
+  const physical = outsideWorkspace(
+    work,
+    userStateDir(),
+    "Keep harness spend state outside the workspace",
+  );
   const dir = join(physical, "harness-spend");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (realpathSync.native(dir) !== dir) throw new Error("Unsafe spend store directory");

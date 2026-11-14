@@ -17,8 +17,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { secretKind } from "../global/guards/protect-paths.mjs";
+import { containsPath, physicalPath } from "./private_paths.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { contentHash, userStateDir } from "./util.js";
 
@@ -38,11 +39,6 @@ const safeSegment = (name) =>
   !Array.from(name).some((ch) => ch.charCodeAt(0) < 32) &&
   !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) &&
   !badName.test(name);
-const within = (root, path) => {
-  const r = relative(root, path);
-  return r === "" || (r !== ".." && !r.startsWith(`..${sep}`) && !isAbsolute(r));
-};
-
 function target(root, path, kind, request) {
   if (typeof path !== "string" || path.length > 1024)
     throw new Error("Expected a workspace-relative path");
@@ -68,8 +64,9 @@ function target(root, path, kind, request) {
     )
       throw new Error("Expected an unlinked regular file or directory");
   }
-  const state = resolve(userStateDir());
-  if (within(state, resolved)) throw new Error("Tool access to private harness state is denied");
+  const state = physicalPath(userStateDir());
+  if (containsPath(state, resolved))
+    throw new Error("Tool access to private harness state is denied");
   const scope = request?.scope;
   if (kind === "write" && scope !== undefined) {
     if (

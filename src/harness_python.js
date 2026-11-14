@@ -1,12 +1,9 @@
 // npm scripts prepend writable checkout directories to PATH. A Python shim in
 // such a directory must never receive private harness state or inherited credentials.
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
-import { delimiter, isAbsolute, join, relative, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 
-function outside(workspace, path) {
-  const rel = relative(workspace, path);
-  return isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`);
-}
+import { containsPath } from "./private_paths.js";
 
 /** Child-only PATH excludes relative entries and aliases into a writable tree. */
 export function harnessChildPath(root, additionalRoots = []) {
@@ -17,7 +14,7 @@ export function harnessChildPath(root, additionalRoots = []) {
       if (!isAbsolute(dir)) return false;
       try {
         const real = realpathSync.native(dir);
-        return workspaces.every((w) => outside(w, real) && outside(w, dir));
+        return workspaces.every((w) => !containsPath(w, real) && !containsPath(w, dir));
       } catch {
         return false;
       }
@@ -37,8 +34,11 @@ export function installedHarnessProgram(root, program, additionalRoots = []) {
     const candidate = join(dir, name);
     try {
       const binary = realpathSync.native(candidate);
+      const parent = realpathSync.native(dirname(candidate));
       if (
-        !workspaces.every((w) => outside(w, binary) && outside(w, candidate)) ||
+        workspaces.some(
+          (w) => containsPath(w, binary) || containsPath(w, parent) || containsPath(w, candidate),
+        ) ||
         !statSync(binary).isFile()
       )
         continue;

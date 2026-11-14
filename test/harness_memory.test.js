@@ -1,15 +1,26 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { listJobs } from "../src/harness_jobs.js";
 import {
   assembleHarnessContext,
   createHarnessMemory,
   harnessRepoSlices,
 } from "../src/harness_memory.js";
-
 import { harnessMemoryCommand } from "../src/harness_memory_cli.js";
+import { approvalStore } from "../src/harness_policy.js";
+import { reserveHarnessSpend } from "../src/harness_spend.js";
+import { createHarnessTools } from "../src/harness_tools.js";
 import { initSources, syncSources } from "../src/sources.js";
 
 function fixture(t) {
@@ -192,6 +203,28 @@ test("private state cannot be placed in the source checkout", (t) => {
   const { a } = fixture(t);
   process.env.FORGE_HOME = join(a, "new-state");
   assert.throws(() => createHarnessMemory(a), /outside the checkout/);
+});
+
+test("a workspace junction cannot expose private stores through a new or existing directory", (t) => {
+  const { a, b } = fixture(t);
+  const alias = join(b, "workspace");
+  symlinkSync(realpathSync.native(a), alias, "junction");
+  const state = join(alias, "new-state");
+  process.env.FORGE_HOME = state;
+  const stores = [
+    () => createHarnessMemory(a),
+    () => approvalStore(a),
+    () => listJobs(a),
+    () => reserveHarnessSpend(a, { dailyUsd: 1, projectUsd: 1 }, 0),
+    () => initSources(a),
+  ];
+  for (const open of stores) assert.throws(open, /outside/);
+  assert.equal(existsSync(state), false);
+  mkdirSync(state);
+  writeFileSync(join(state, "entry.json"), "sensitive");
+  const read = createHarnessTools().find((tool) => tool.name === "read_file");
+  assert.throws(() => read.execute({ path: "new-state/entry.json" }, { root: a }), /private/);
+  for (const open of stores) assert.throws(open, /outside/);
 });
 
 test("harness workspace evidence reads only current configured source locators", async (t) => {

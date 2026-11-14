@@ -2,28 +2,26 @@
 
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installedHarnessPython } from "./harness_python.js";
+import { outsideWorkspace, physicalPath } from "./private_paths.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { sourceWorkspaceRoot } from "./sources.js";
 import { contentHash, userStateDir } from "./util.js";
 
 const service = fileURLToPath(new URL("./harness_jobs_store.py", import.meta.url));
-function canonical(path) {
-  if (existsSync(path)) return realpathSync(path);
-  return join(canonical(dirname(path)), path.slice(dirname(path).length));
-}
 export function queueStore(root, op, data = {}) {
   const project = sourceWorkspaceRoot(root);
-  const privateRoot = canonical(resolve(userStateDir()));
+  const privateRoot = outsideWorkspace(
+    project,
+    userStateDir(),
+    "FORGE_HOME must be outside the working tree",
+  );
   const directory = join(privateRoot, "harness-jobs", contentHash(project));
-  if (canonical(directory) !== directory)
+  if (physicalPath(directory) !== directory)
     throw new Error("Queue workspace namespace cannot point to another directory");
-  const rel = relative(project, directory);
-  if (rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)))
-    throw new Error("FORGE_HOME must be outside the working tree");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   for (const suffix of ["", "-journal", "-wal", "-shm"]) {
     const stat = lstatSync(join(directory, `jobs.sqlite3${suffix}`), { throwIfNoEntry: false });

@@ -16,8 +16,9 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { itemIndex } from "./mirror_items.js";
+import { outsideWorkspace } from "./private_paths.js";
 import { redactSecrets } from "./secrets.js";
 import { eligibleLocalRows, readLocalSource } from "./source_local.js";
 import {
@@ -39,10 +40,6 @@ const STOP = new Set(
     " ",
   ),
 );
-const within = (dir, path) => {
-  const rel = relative(dir, path);
-  return !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
-};
 const tokenList = (value) =>
   (
     String(value)
@@ -69,10 +66,11 @@ export function sourceWorkspaceRoot(root) {
 }
 function configPathFor(root) {
   const tree = sourceWorkspaceRoot(root);
-  const state = resolve(userStateDir(), "sources");
-  // A custom FORGE_HOME inside a checkout must not turn private files into tracked inputs.
-  if (within(tree, state))
-    throw new Error("Set FORGE_HOME outside the working tree for private source caches");
+  const state = outsideWorkspace(
+    tree,
+    resolve(userStateDir(), "sources"),
+    "Set FORGE_HOME outside the working tree for private source caches",
+  );
   return join(state, contentHash(tree), "config.json");
 }
 

@@ -2,10 +2,11 @@
 // reference an observation, but cannot create an observation or choose another checkout.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installedHarnessPython } from "./harness_python.js";
+import { outsideWorkspace } from "./private_paths.js";
 import { symbolCandidates } from "./reuse_symbols.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { searchSources, sourceWorkspaceRoot } from "./sources.js";
@@ -20,18 +21,12 @@ const showList = (values) =>
   Array.isArray(values) ? values.map(content).join("\n") : content(values);
 const repoScope = (root) => `repo-${digest(sourceWorkspaceRoot(root))}`;
 
-function inside(root, child) {
-  const path = relative(root, child);
-  return !isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`);
-}
-
 function stateFile(root) {
-  const state = resolve(userStateDir(), "harness-memory");
-  let base = state;
-  while (!existsSync(base)) base = dirname(base);
-  const physical = resolve(realpathSync.native(base), relative(base, state));
-  if (inside(sourceWorkspaceRoot(root), physical))
-    throw new Error("Harness memory requires a private FORGE_HOME outside the checkout");
+  const physical = outsideWorkspace(
+    sourceWorkspaceRoot(root),
+    resolve(userStateDir(), "harness-memory"),
+    "Harness memory requires a private FORGE_HOME outside the checkout",
+  );
   mkdirSync(physical, { recursive: true, mode: 0o700 });
   const db = join(physical, "memory.sqlite");
   if (process.platform !== "win32") {
