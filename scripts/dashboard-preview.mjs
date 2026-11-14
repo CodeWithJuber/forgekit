@@ -206,15 +206,19 @@ async function capture(check) {
     browser = new driver.ChromeVisualBrowser(chrome);
     const sid = await browser.sessionPromise;
     const send = (method, params = {}) => browser.cdp.send(method, params, sid, 30000);
+    const runtimeResult = async (method, params) => {
+      const result = await send(method, params);
+      if (result.exceptionDetails)
+        throw Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+      return result.result;
+    };
     const evaluate = async (expression) => {
-      const result = await send("Runtime.evaluate", {
+      const result = await runtimeResult("Runtime.evaluate", {
         expression,
         awaitPromise: true,
         returnByValue: true,
       });
-      if (result.exceptionDetails)
-        throw Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
-      return result.result?.value;
+      return result.value;
     };
     const wait = async (test, label) => {
       for (let i = 0; i < 100; i++) {
@@ -232,10 +236,24 @@ async function capture(check) {
         deviceScaleFactor: 1,
         mobile: false,
       });
-    const click = (selector) =>
-      evaluate(
-        `(() => {const e=document.querySelector(${JSON.stringify(selector)}); if(!e || !e.getClientRects().length)throw Error("Hidden or absent: "+${JSON.stringify(selector)}); e.click();})()`,
-      );
+    const click = async (selector) => {
+      const { objectId } = await runtimeResult("Runtime.evaluate", { expression: "document" });
+      try {
+        await runtimeResult("Runtime.callFunctionOn", {
+          objectId,
+          functionDeclaration: `function (selector) {
+            const element = this.querySelector(selector);
+            if (!element || !element.getClientRects().length) {
+              throw Error("Hidden or absent: " + selector);
+            }
+            element.click();
+          }`,
+          arguments: [{ value: selector }],
+        });
+      } finally {
+        await send("Runtime.releaseObject", { objectId });
+      }
+    };
     await view(1440, 960);
     await send("Emulation.setTimezoneOverride", { timezoneId: "UTC" });
     await send("Emulation.setEmulatedMedia", {
