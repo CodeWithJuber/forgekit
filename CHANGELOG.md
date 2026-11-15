@@ -6,10 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-15
+
 ### Added
 
 - OpenCode host adapter: a generated `.opencode/plugins/forgekit.js` forwards session, prompt, tool and stop events to `forge hooks run opencode`, `opencode.json` receives the project MCP entry, and `forge hooks`, `forge sync` and harness drift recognise the host.
 - Task-aware live skills, plugins, tools and hooks discovery with source-backed fit reasons, setup guidance and automatic hook recommendations. `forge discover` configures private global/workspace settings and TypeSafe Jev advice for discovery, routing, preflight, planning and debugging.
+
+### Fixed
+
+- Cached local evidence uses the same bounded Git timeout as source sync, so slow Git startup on busy hosts does not prematurely discard unchanged files during agent hooks.
 
 ## [1.17.1] - 2026-11-14
 
@@ -3846,7 +3852,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.1...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.15.0...v1.16.0
