@@ -21,7 +21,7 @@ The workflow checks the rendered output, publishes its generated changes on `doc
 
 The Actions job summary also lists handwritten guide references affected by a change, including runs that produce no generated diff. The generator uses measured CLI output, tracked templates and published assets. Authors revise prose where an API or behavior change needs a new explanation.
 
-Reproduce the Linux renderer with Node 22.14.0, Python 3.12.10 and Git. Run in Bash on x86-64 Linux:
+Reproduce the Linux renderer with Node 22.14.0, Python 3.12 and Git. Run in Bash on x86-64 Linux:
 
 ```sh
 tools_dir=$(mktemp -d)
