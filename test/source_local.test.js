@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import childProcess, { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -327,4 +328,57 @@ test("cached reads recheck changed, deleted, newly ignored, and replaced linked 
   if (process.platform !== "win32")
     symlinkSync(join(source.root, "valid.md"), join(source.root, "link.md"));
   assert.deepEqual([...eligibleLocalRows(source, first.chunks)], ["valid.md"]);
+});
+
+test("cached reads tolerate slow Git startup and still fail closed when Git times out", async (t) => {
+  const { source, write } = fixture(t);
+  for (const file of ["valid.md", "changed.md", "deleted.md", "ignored.md"])
+    write(file, "indexed evidence");
+  const first = await readLocalSource(source);
+  assert.equal(eligibleLocalRows(source, first.chunks).size, 4);
+  write("changed.md", "different evidence");
+  rmSync(join(source.root, "deleted.md"));
+  write(".gitignore", "ignored.md\n");
+
+  // Exercise real Git with a delayed process start, not a fabricated list of allowed files.
+  // Keep the production timeout so the former one-second budget actually expires.
+  const run = childProcess.spawnSync;
+  let phase = "ls-files";
+  let forceTimeout = false;
+  let delayed;
+  const mock = t.mock.method(childProcess, "spawnSync", (command, args, options) => {
+    if (!args.includes(phase)) return run(command, args, options);
+    delayed = run(
+      process.execPath,
+      [
+        "-e",
+        `const { spawnSync } = require("node:child_process");
+         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+         const result = spawnSync(process.argv[1], JSON.parse(process.argv[2]));
+         if (result.stdout) process.stdout.write(result.stdout);
+         if (result.stderr) process.stderr.write(result.stderr);
+         process.exit(result.status ?? 1);`,
+        command,
+        JSON.stringify(args),
+      ],
+      { ...options, ...(forceTimeout ? { timeout: 25 } : {}) },
+    );
+    return delayed;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mock.mock.restore();
+    syncBuiltinESMExports();
+  });
+
+  assert.deepEqual(
+    [...eligibleLocalRows(source, first.chunks)],
+    ["valid.md"],
+    delayed?.error?.message,
+  );
+  forceTimeout = true;
+  for (phase of ["rev-parse", "init", "ls-files"]) {
+    assert.deepEqual([...eligibleLocalRows(source, first.chunks)], [], phase);
+    assert.equal(delayed.error?.code, "ETIMEDOUT", phase);
+  }
 });

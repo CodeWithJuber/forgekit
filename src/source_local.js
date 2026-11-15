@@ -45,7 +45,7 @@ function limit(value, fallback, ceiling) {
 
 // An empty index makes even an accidentally tracked, ignored credential file ineligible.
 // Standalone folders get a disposable empty Git directory, leaving the source untouched.
-function listFiles(root, only = null, timeout = 8000, requester = undefined) {
+function listFiles(root, only = null, requester = undefined) {
   // Use the OS-native resolver consistently. On Windows the legacy sync resolver
   // can keep an 8.3 alias (RUNNER~1) which the async/native resolver expands.
   const state = resolve(userStateDir());
@@ -84,7 +84,8 @@ function listFiles(root, only = null, timeout = 8000, requester = undefined) {
         cwd: root,
         env,
         encoding: "utf8",
-        timeout,
+        // Candidate-only queries still pay Git's process startup cost on busy hosts.
+        timeout: 8000,
         maxBuffer: 8 * 1024 * 1024,
       });
     const probe = run(["rev-parse", "--is-inside-work-tree"]);
@@ -394,7 +395,7 @@ export function eligibleLocalRows(source, rows, requester = undefined) {
         .map((r) => [r.path, r.fileVersion]),
     );
     if (!files.size) return eligible;
-    for (const rel of listFiles(root, [...files.keys()], 1000, requester)) {
+    for (const rel of listFiles(root, [...files.keys()], requester)) {
       if (!files.has(rel)) continue;
       const path = resolve(root, rel);
       let fd;
