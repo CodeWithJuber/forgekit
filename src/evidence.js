@@ -1,66 +1,20 @@
 // Evidence reads local project and source data. Automatic discovery maps the task to
 // a closed vocabulary before a network call. Free-form text leaves only via --web.
 
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { developmentPlan } from "./development.js";
 import { activePromptProfile, profileGuidance } from "./development_profile.js";
+import { discoverTools, publicQuery, RESEARCH_TASK } from "./discovery.js";
+import { advisorSettings } from "./discovery_config.js";
 import { teamPlan } from "./evidence_team.js";
+import { lookupPublic } from "./public_lookup.js";
 import { researchPointers, researchPublic } from "./public_research.js";
 import { reusePeek } from "./reuse.js";
 import { symbolCandidates } from "./reuse_symbols.js";
 import { searchSources, sourceWorkspaceRoot } from "./sources.js";
-import { contentHash, epochDay, readJsonSafe, userStateDir } from "./util.js";
-
-const TOPICS = [
-  [/\b(postgres(?:ql)?|psql)\b/i, "PostgreSQL"],
-  [/\b(next\.?js|nextjs)\b/i, "Next.js"],
-  [/\breact\b/i, "React"],
-  [/\b(node\.?js|nodejs|npm)\b/i, "Node.js"],
-  [/\b(spring boot|springboot)\b/i, "Spring Boot"],
-  [/\bpython\b/i, "Python"],
-  [/\b(rust|cargo)\b/i, "Rust"],
-  [/\b(?:Go|golang|go modules?)\b/, "Golang"],
-  [/\bjava\b/i, "Java"],
-  [/\btypescript\b/i, "TypeScript"],
-  [/\bredis\b/i, "Redis"],
-  [/\b(kubernetes|k8s)\b/i, "Kubernetes"],
-  [/\bdocker\b/i, "Docker"],
-  [/\bgraphql\b/i, "GraphQL"],
-  [/\bjira\b/i, "Jira"],
-  [/\bconfluence\b/i, "Confluence"],
-  [/\bgitlab\b/i, "GitLab"],
-  [/\b(mcp|model context protocol)\b/i, "MCP"],
-];
-const PROBLEMS = [
-  [/\b(deadlocks?)\b/i, "deadlock"],
-  [/\b(race conditions?|concurren(?:cy|t))\b/i, "concurrency"],
-  [/\b(timeouts?|timed out|etimedout)\b/i, "timeout"],
-  [/\b(econnreset|connection reset)\b/i, "ECONNRESET"],
-  [/\b(econnrefused|connection refused)\b/i, "ECONNREFUSED"],
-  [/\b(memory leaks?|out of memory|oomkilled)\b/i, "memory management"],
-  [/\b(rate limit(?:ing|ed)?|backoff)\b/i, "rate limiting"],
-  [/\b(paginat(?:e|ed|ion)|cursor pagination)\b/i, "pagination"],
-  [/\b(xlsx?|spreadsheet)\b/i, "Excel parser"],
-  [/\bcsv\b/i, "CSV parser"],
-  [/\bpdf\b/i, "PDF parser"],
-  [/\b(oauth2?|oidc)\b/i, "OAuth"],
-  [/\b(cache|caching)\b/i, "caching"],
-  [/\bretr(y|ies)\b/i, "retry"],
-  [/\b(indexing|retrieval)\b/i, "retrieval"],
-];
-const RESEARCH_TASK =
-  /\b(research|compar(?:e|ison)|evaluat\w*|alternatives?|best|libraries|library|sdk|framework|build|implement|integrat\w*|debug|error|fail\w*|fix|crash\w*|banao|bana|masla|dikkat)\b/i;
-
-function publicQuery(task) {
-  const match = (rows) => rows.filter(([pattern]) => pattern.test(task)).map(([, label]) => label);
-  const tech = match(TOPICS).slice(0, 2);
-  const problem = match(PROBLEMS).slice(0, 2);
-  if (!problem.length && (!RESEARCH_TASK.test(task) || !tech.length)) return "";
-  return [...tech, ...problem].join(" ");
-}
+import { epochDay } from "./util.js";
 
 const MANIFESTS = [
   "package.json",
@@ -79,8 +33,11 @@ const clean = (v, cap = 200) =>
     .slice(0, cap);
 
 /** Local evidence for a prompt/failure. The prompt path can pass the already computed reuse verdict.
- * @param {string} task @param {{root?:string,hook?:boolean,reuse?:any}} options */
-export function buildEvidence(task, { root = process.cwd(), hook = false, reuse: prior } = {}) {
+ * @param {string} task @param {{root?:string,hook?:boolean,reuse?:any,jevCall?:(payload:object)=>object}} options */
+export function buildEvidence(
+  task,
+  { root = process.cwd(), hook = false, reuse: prior, jevCall } = {},
+) {
   if (typeof task !== "string" || !task.trim()) throw new Error("Supply a task or failure message");
   root = sourceWorkspaceRoot(root);
   const query = task.slice(0, 10000);
@@ -118,6 +75,7 @@ export function buildEvidence(task, { root = process.cwd(), hook = false, reuse:
   const development = developmentPlan(query, {
     root,
     hook,
+    jevCall,
     evidence: { hits: sources.hits, symbols, manifests, reuse, pointers, team },
   });
   const profile = profileGuidance(selectedProfile, query, { hits: sources.hits, symbols });
@@ -166,84 +124,26 @@ export function buildEvidence(task, { root = process.cwd(), hook = false, reuse:
   };
 }
 
-// Only derived public queries are cached. A short failure backoff avoids repeated
-// timeouts on successive tool calls. Explicit, separately authored research always fetches.
-async function publicEvidence(query, hook, explicit, search, includeExamples) {
-  const folder = join(userStateDir(), "public-research");
-  const path = join(
-    folder,
-    `${contentHash(JSON.stringify([query, includeExamples, process.env.FORGE_WEB_SEARCH_PROVIDER ?? ""]))}.json`,
-  );
-  if (!explicit) {
-    const stored = readJsonSafe(path);
-    if (
-      stored?.expiresAt > Date.now() &&
-      Array.isArray(stored?.report?.results) &&
-      Array.isArray(stored.report.warnings)
-    )
-      return { ...stored.report, cached: true };
-  }
-  const discover = search(query, { limit: hook ? 1 : 3, timeoutMs: hook ? 1250 : 10000 });
-  const optionalWeb = async () => {
-    if (!process.env.FORGE_WEB_SEARCH_PROVIDER || search !== researchPublic) return null;
-    const { searchWebSolutions } = await import("./web_solutions.js");
-    return searchWebSolutions(query, { limit: hook ? 2 : 4, timeoutMs: hook ? 1200 : 7000 });
-  };
-  const [discovery, searchEngine] = await Promise.all([discover, optionalWeb()]);
-  let examples = null;
-  if (
-    includeExamples &&
-    search === researchPublic &&
-    discovery.results.some((row) => row.provider === "GitHub" || row.acceptedAnswerUrl)
-  ) {
-    const { findCodeExamples } = await import("./code_examples.js");
-    examples = await findCodeExamples(query, {
-      repositories: discovery.results,
-      limit: hook ? 1 : 3,
-      timeoutMs: hook ? 1100 : 15000,
-    });
-  }
-  const report = { ...discovery, examples, searchEngine };
-  if (!explicit) {
-    const ttl =
-      report.warnings.length ||
-      report.examples?.warnings?.length ||
-      report.searchEngine?.warnings?.length
-        ? 60000
-        : 6 * 60 * 60 * 1000;
-    const tmp = `${path}.${randomUUID()}`;
-    try {
-      mkdirSync(folder, { recursive: true, mode: 0o700 });
-      writeFileSync(tmp, JSON.stringify({ expiresAt: Date.now() + ttl, report }), { mode: 0o600 });
-      renameSync(tmp, path);
-    } catch {
-      /* A read-only user directory still permits a live result. */
-    } finally {
-      try {
-        rmSync(tmp, { force: true });
-      } catch {}
-    }
-  }
-  return { ...report, cached: false };
-}
-
-/** @param {string} task @param {{root?:string,hook?:boolean,reuse?:any,web?:string,search?:typeof researchPublic}} options */
+/** @param {string} task @param {{root?:string,hook?:boolean,reuse?:any,web?:string,search?:typeof researchPublic,
+ * jevCall?:(payload:object)=>object}} options */
 export async function runEvidence(task, options = {}) {
+  options = { ...options, root: sourceWorkspaceRoot(options.root ?? process.cwd()) };
   const local = buildEvidence(task, options);
   const explicit = options.web !== undefined;
-  const query = explicit ? options.web : publicQuery(task.slice(0, 10000));
+  const query = explicit ? options.web : publicQuery(task.slice(0, 10000), options.root);
   const cap = options.hook ? 2600 : 12000;
   const network = process.env.FORGE_NO_CATALOG_FETCH !== "1" || options.search;
-  const automatic = process.env.FORGE_EVIDENCE_WEB !== "0";
+  const automatic = advisorSettings(options.root).recommendations;
   const wantWeb = (explicit || query) && (explicit || automatic) && network;
   const lookup = wantWeb
-    ? publicEvidence(
-        query,
-        !!options.hook,
-        explicit,
-        options.search ?? researchPublic,
-        explicit || (!local.symbols.length && (!local.reuse || local.reuse.tier === "miss")),
-      )
+    ? lookupPublic(query, {
+        root: options.root,
+        hook: !!options.hook,
+        fresh: explicit,
+        search: options.search ?? researchPublic,
+        examples:
+          explicit || (!local.symbols.length && (!local.reuse || local.reuse.tier === "miss")),
+      })
     : explicit
       ? {
           checkedAt: null,
@@ -264,7 +164,7 @@ export async function runEvidence(task, options = {}) {
         offline: !automatic || process.env.FORGE_NO_CATALOG_FETCH === "1",
         timeoutMs: options.hook ? 1100 : 10000,
       });
-      return report.candidates;
+      return report.candidates.map((c) => ({ ...c, checkedAt: report.checkedAt }));
     } catch (err) {
       local.warnings.push(`Tool catalog: ${clean(err.message)}`);
       return [];
@@ -278,7 +178,14 @@ export async function runEvidence(task, options = {}) {
       return { enabled: false, hits: [], warning: "Hikmah memory unavailable" };
     }
   };
-  const [web, adoption, hikmah] = await Promise.all([lookup, tools(), kernel()]);
+  const adoptionLookup = tools();
+  const discoveries = discoverTools(task, { ...options, seed: lookup, adoption: adoptionLookup });
+  const [web, adoption, hikmah, recommendations] = await Promise.all([
+    lookup,
+    adoptionLookup,
+    kernel(),
+    discoveries,
+  ]);
   const lessons = hikmah.hits.map(
     (h) => "Verified public Hikmah lesson (source data): " + JSON.stringify(h),
   );
@@ -323,12 +230,21 @@ export async function runEvidence(task, options = {}) {
       `Public research ${web.cached ? "(cached)" : "(this lookup)"}${web.checkedAt ? ` ${web.checkedAt}` : ""}. Verify upstream before reuse.`,
     );
   }
-  const text = [local.text, ...lessons, ...toolRows, ...publicRows].filter(Boolean).join("\n");
+  const text = [
+    recommendations.best ? recommendations.text.slice(0, options.hook ? 1000 : 6000) : "",
+    local.text,
+    ...lessons,
+    ...toolRows,
+    ...publicRows,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return {
     ...local,
     web,
     adoption,
     hikmah,
+    recommendations,
     text: text.length > cap ? `${text.slice(0, cap - 2)} …` : text,
   };
 }

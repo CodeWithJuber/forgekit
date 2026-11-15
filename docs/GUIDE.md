@@ -33,7 +33,7 @@ Every command is real and wired. Grouped by what it does:
 | **Substrate**           | `forge substrate` · `forge preflight` · `forge evidence` · `forge team` · `forge develop` · `forge sources` · `forge impact` · `forge scope` · `forge context` · `forge route` · `forge orchestration` · `forge harness` · `forge advisor` · `forge verify` · `forge demo` · `forge precommit` · `forge test-select` |
 | **Memory**              | `forge hikmah` · `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge claim` · `forge handoff` · `forge decide` · `forge know`                                                                                                                                               |
 | **Quality**             | `forge scan` · `forge vet` · `forge spec` · `forge harden` · `forge radar` · `forge hooks`                                                                                                                                                                                                                           |
-| **Config**              | `forge prompts` · `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                                                                                              |
+| **Config**              | `forge prompts` · `forge discover` · `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                                                                           |
 | **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                                                                                                                 |
 <!-- forge:render:command-groups:end -->
 
@@ -260,9 +260,11 @@ $ forge route "add a refund endpoint for payments" --mode unattended
 
 `key` in `--json` is the generic tier key (`haiku` / `sonnet` / `opus` / `fable`) a lead agent
 maps to its own tool's model names. Set the mode once with
-`forge orchestration set route.mode unattended` (see below). Without `FORGE_LLM=1` there is
-no vote; with it but without `TYPESAFE_API_KEY`, the text model's vote carries no probability and
-so never raises the tier. Either way the floors and gate run on the deterministic score.
+`forge orchestration set route.mode unattended` (see below). Enable Jev with
+`forge discover setup --global --decisions on` and `TYPESAFE_API_KEY`, or use
+`FORGE_LLM=1` for the existing proposer layer. With the latter but without a TypeSafe key,
+the text model's vote carries no probability and never raises the tier.
+The floors and gate run on the deterministic score. [Discovery and decision setup](DISCOVERY.md)
 
 ### `forge harness` — run and verify a coding task
 

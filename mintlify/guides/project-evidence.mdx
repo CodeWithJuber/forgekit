@@ -54,3 +54,28 @@ forge integrations select
 Only supply public technical terms to `--web`. Public discovery can return GitHub, Stack Overflow and npm results. When a licensed code excerpt is available, follow its source and verify compatibility with your installed version. The integration selector can register a reviewed endpoint or install the selected package. Its noninteractive form accepts a specific ID, for example `forge integrations select playwright`.
 
 For real coding hosts, connection and prompt delivery differ. See [Installation](/installation) and the [native client evidence](https://github.com/CodeWithJuber/forgekit/blob/master/docs/AGENT-EVIDENCE.md#troubleshoot-a-silent-plugin).
+
+## Live skills, plugins, tools and hooks
+
+```sh
+forge discover find "React browser testing skills plugins tools and hooks"
+forge discover setup --global --decisions on --search serper
+forge discover status
+```
+
+`find` searches afresh and explains the best observed task fit, its source,
+lookup time, available maintenance/license metadata and setup path.
+Prompt and failure hooks include bounded recommendations with cached public research.
+Automatic searches use known task/stack labels; raw private prompts stay local.
+Use `--web "<public terms>"` for a separately authored public query.
+
+Jev advice needs `TYPESAFE_API_KEY` in the agent host's environment. Google via
+Serper needs `SERPER_API_KEY`; `--search brave` uses `BRAVE_SEARCH_API_KEY`.
+GitHub, npm and Stack Overflow discovery work without those keys.
+Omit `--global` for private workspace overrides. `forge discover reset` restores
+inheritance; `FORGE_EVIDENCE_WEB=0` disables automatic public recommendations.
+
+Jev selects among known candidates and advises routing, preflight, planning and
+debugging. Invalid or unavailable responses retain deterministic advice.
+Discovery does not install results or change verification verdicts.
+See the [full setup and decision contract](https://github.com/CodeWithJuber/forgekit/blob/master/docs/DISCOVERY.md).

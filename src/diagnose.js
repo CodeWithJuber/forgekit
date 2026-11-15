@@ -10,6 +10,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { lastRouteEscalation } from "./cost_report.js";
+import { chooseAdvice } from "./decisions.js";
 import { hasSecret, mintClaim } from "./ledger.js";
 import { putClaim, repoLedger } from "./ledger_store.js";
 import { contentHash, epochDay, gitAuthor } from "./util.js";
@@ -101,22 +102,62 @@ export function recordFailure(root, { errorText, file = "", symbol = "", t = Dat
  * so the 4th/5th hit re-resolves to the SAME claim instead of minting duplicates.
  * @param {string} root
  * @param {{errorText: string, file?: string, symbol?: string, note?: string, task?: string,
- *          t?: number, nowDay?: number}} opts
+ *          t?: number, nowDay?: number, llm?:boolean, jevCall?:(payload:object)=>object}} opts
  *   `note` is the human root-cause statement if the caller has one; defaults to the
  *   normalized error head. `task` is the task text this failure came out of — when it
  *   matches a routing decision this repo recorded, the directive names that decision's
  *   escalation tier instead of saying "one tier" (see `escalationTier` below).
  *   `nowDay` (epoch days) is the claim's mint day.
  * @returns {{thrash: boolean, signature: string, count: number, claimId?: string,
- *            escalate?: string, escalateTo?: string, reason?: string}}
+ *            escalate?: string, escalateTo?: string, reason?: string, advice?:ReturnType<typeof chooseAdvice>}}
  */
 export function diagnose(
   root,
-  { errorText, file = "", symbol = "", note = "", task = "", t, nowDay },
+  {
+    errorText,
+    file = "",
+    symbol = "",
+    note = "",
+    task = "",
+    t,
+    nowDay,
+    llm = undefined,
+    jevCall = undefined,
+  },
 ) {
   const rec = recordFailure(root, { errorText, file, symbol, ...(t !== undefined && { t }) });
   const { signature, count, head } = rec;
-  if (count < THRASH_K) return { thrash: false, signature, count };
+  const errorClass =
+    [
+      ["dependency", /module not found|cannot find module|ERESOLVE/i],
+      ["permission", /EACCES|unauthorized|forbidden/i],
+      ["timeout", /timeout|timed out|ETIMEDOUT/i],
+      ["assertion", /assertion|expected.*actual/i],
+    ].find(([, pattern]) => /** @type {RegExp} */ (pattern).test(errorText))?.[0] ?? "unknown";
+  const advice = chooseAdvice({
+    root,
+    llm,
+    call: jevCall,
+    state: { errorClass, recurrences: count, hasFile: Boolean(file), hasSymbol: Boolean(symbol) },
+    choices: {
+      reproduce: "Capture a minimal failing case and its expected behavior.",
+      inspect: "Trace the failing operation and its callers to test a specific causal hypothesis.",
+      ...(errorClass === "dependency"
+        ? {
+            environment:
+              "Compare installed dependency versions and runtime configuration with the failing environment.",
+          }
+        : {}),
+      ...(errorClass === "timeout"
+        ? {
+            instrument:
+              "Measure the failing operation and its downstream latency before changing timeouts.",
+          }
+        : {}),
+    },
+    fallback: errorClass === "dependency" ? "environment" : "reproduce",
+  });
+  if (count < THRASH_K) return { thrash: false, signature, count, advice };
   const minted = mintClaim({
     kind: "diagnosis",
     // file/symbol are already baked into the signature — the body stays exactly the
@@ -127,15 +168,22 @@ export function diagnose(
     t: nowDay ?? epochDay(),
   });
   if (!minted.ok)
-    return { thrash: true, signature, count, reason: "reason" in minted ? minted.reason : "" };
+    return {
+      thrash: true,
+      signature,
+      count,
+      advice,
+      reason: "reason" in minted ? minted.reason : "",
+    };
   const put = putClaim(repoLedger(root), minted.claim);
-  if (!put.ok) return { thrash: true, signature, count, reason: put.reason };
+  if (!put.ok) return { thrash: true, signature, count, advice, reason: put.reason };
   const short = minted.claim.id.slice(0, 8);
   const tier = escalationTier(root, task);
   return {
     thrash: true,
     signature,
     count,
+    advice,
     claimId: minted.claim.id,
     ...(tier ? { escalateTo: tier } : {}),
     escalate:

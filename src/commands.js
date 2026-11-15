@@ -110,6 +110,17 @@ export const COMMANDS = {
       'forge develop "Verify the retry fix" --verify --json',
     ],
   },
+  discover: {
+    summary:
+      "find task-fit skills, plugins, tools and hooks; configure global/workspace Jev advice",
+    usage:
+      'forge discover find "<task>" [--web "<public terms>"] [--json] | setup [--global] [--decisions on|off] [--recommendations on|off] [--search off|serper|brave] [--model jev-latest] | status | reset [--global]',
+    examples: [
+      "forge discover setup --global --decisions on --search serper",
+      'forge discover find "React browser testing skills and hooks" --json',
+      "forge discover status",
+    ],
+  },
   team: {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
@@ -593,7 +604,17 @@ export const GROUPS = {
     "know",
   ],
   Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
-  Config: ["prompts", "brand", "atlas", "stack", "integrations", "cost", "budget", "models"],
+  Config: [
+    "prompts",
+    "discover",
+    "brand",
+    "atlas",
+    "stack",
+    "integrations",
+    "cost",
+    "budget",
+    "models",
+  ],
   "Labs (experimental)": [
     "taste",
     "uicheck",

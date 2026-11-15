@@ -44,11 +44,19 @@ test("an ordinary task retrieves private rows and discloses only known public co
   assert.match(first.text, /LOCAL_CANARY/);
   assert.match(first.text, /public hint/);
   assert.equal(first.web.cached, false);
+  const initialQueries = [...queries];
   assert.equal((await runEvidence(prompt, { root, hook: true, search })).web.cached, true);
-  assert.deepEqual(queries, ["PostgreSQL deadlock"]);
+  assert.deepEqual(queries, initialQueries, "all automatic lookups share the cache");
+  assert.ok(queries.includes("PostgreSQL deadlock"));
+  assert.ok(
+    queries.every((q) =>
+      ["PostgreSQL deadlock", "PostgreSQL agent skill", "deadlock tool"].includes(q),
+    ),
+  );
   const explicit = await runEvidence(prompt, { root, web: "postgres locks", search });
   assert.equal(explicit.web.cached, false);
-  assert.deepEqual(queries, ["PostgreSQL deadlock", "postgres locks"]);
+  assert.ok(queries.includes("postgres locks"));
+  assert.ok(queries.length > initialQueries.length);
 });
 
 test("an unrecognized task or disabled automatic research makes zero public requests", async (t) => {
