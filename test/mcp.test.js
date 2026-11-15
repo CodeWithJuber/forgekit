@@ -17,6 +17,7 @@ const JSON_TARGETS = [
   [".roo/mcp.json", "mcpServers"],
   [".zed/settings.json", "context_servers"],
   [".vscode/mcp.json", "servers"],
+  ["opencode.json", "mcp"],
 ];
 
 function assertServersEverywhere(root, names, when) {
@@ -57,6 +58,26 @@ test("sync emits MCP config into each tool's real format (forge server only, no 
     readFileSync(join(root, ".continue", "mcpServers", "forge-cortex.yaml"), "utf8"),
     /mcpServers:/,
   );
+});
+
+test("OpenCode MCP: local server uses the `mcp` bucket and an array command", () => {
+  const root = fixture();
+  sync({ targetRoot: root, tools: ["opencode"] });
+  const doc = JSON.parse(readFileSync(join(root, "opencode.json"), "utf8"));
+  assert.deepEqual(doc.mcp["forge-cortex"], {
+    type: "local",
+    command: ["forge", "cortex-mcp"],
+    enabled: true,
+  });
+  // A user's own top-level keys and servers survive a second sync untouched.
+  const mine = JSON.parse(readFileSync(join(root, "opencode.json"), "utf8"));
+  mine.theme = "mine";
+  mine.mcp.mine = { type: "local", command: ["mine"], enabled: true };
+  writeFileSync(join(root, "opencode.json"), JSON.stringify(mine, null, 2));
+  sync({ targetRoot: root, tools: ["opencode"] });
+  const after = JSON.parse(readFileSync(join(root, "opencode.json"), "utf8"));
+  assert.equal(after.theme, "mine");
+  assert.ok(after.mcp.mine, "user server preserved");
 });
 
 test("integrations add context7 writes it (opt-in) after not being present by default", async () => {

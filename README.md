@@ -39,6 +39,7 @@ verification result, enable the [supervised harness](docs/HARNESS.md).
 | Zed, Continue | ✅ | ✅ | — |
 | Windsurf / Devin | ✅ | — | Devin can use trusted Claude project hooks |
 | Kimi Code | ✅ | Project MCP | Native user plugin |
+| OpenCode | ✅ | Project MCP | Generated JavaScript plugin |
 | Aider | ✅ | — | — |
 | OpenClaw | ✅ | Operator registration or bundle | — |
 | Roo Code, VS Code | — | ✅ | — |
@@ -142,13 +143,13 @@ forge verify                             # 3. did the change pass the suites tha
 
 ### Automatic evidence for coding agents
 
-For Kimi Code, `KIMI_CODE_HOME` selects the user profile where the native plugin is enabled. The project MCP connections live in `.kimi-code/mcp.json`. For Codex, enable the repository’s hooks in a trusted session.
+For Kimi Code, `KIMI_CODE_HOME` selects the user profile where the native plugin is enabled. The project MCP connections live in `.kimi-code/mcp.json`. For Codex, enable the repository’s hooks in a trusted session. OpenCode loads the generated `.opencode/plugins/forgekit.js` on its next session; set `FORGE_CLI` when `forge` is not the command on `PATH`.
 
 Choose the agents your project uses. For example, `forge init --tools claude,codex,kimi` prepares these three clients. Run `forge integrations` to browse packages and remote servers, or `forge integrations select` for the interactive picker. Select each integration separately. Use `forge integrations connect <id> --url <endpoint>` for a hosted or self-managed MCP server and `forge integrations register <descriptor.json>` for a custom npm tool. `forge integrations list --json` shows the recorded selection and `forge integrations remove <id>` disconnects it from the project. Read the [implementation and host setup guide](docs/V2-IMPLEMENTATION.md) for per-host activation, portable agents and command examples.
 
 Use `forge develop "<task>"` to inspect the development plan and research evidence. Use `forge develop "<task>" --verify` to run the project checks for the current tree.
 
-In a project, run `forge hooks on --hosts claude,codex` to install the project hooks for those hosts. A supported, trusted hook retrieves relevant code locations and source excerpts on a coding prompt or tool failure. To add private sources, run `forge sources init`, edit the configuration file it prints, then run `forge sources sync`. The cache stays in your user state directory.
+In a project, run `forge hooks on --hosts claude,codex` to install the project hooks for those hosts. A supported, trusted hook retrieves relevant code locations and source excerpts on a coding prompt or tool failure. OpenCode has no shell hooks, so forge writes a small JavaScript plugin instead; it calls the same `forge hooks run opencode <event>` entry point and is a no-op when the CLI is absent. Set `FORGE_CLI` to point at a non-standard forge binary. To add private sources, run `forge sources init`, edit the configuration file it prints, then run `forge sources sync`. The cache stays in your user state directory.
 
 Run `forge evidence "investigate retry timeouts"` to inspect the same evidence directly. For an unfamiliar capability, `forge integrations find "<task>"` looks for a suitable community tool. `forge team "<task>"` shows whether independent specialist work is warranted. The [setup and research guide](docs/AGENT-EVIDENCE.md) covers supported hosts, local PDFs and spreadsheets, public research, and Jira, Confluence and GitLab on cloud and self-hosted deployments.
 
@@ -501,7 +502,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge spec`          | spec-as-contract — init (OpenSpec) / lock / check drift                                                                                                                                                                                                                                             |
 |                         | `forge harden`        | wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings                                                                                                                                                                                                                |
 |                         | `forge radar`         | dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h                                                                                                                                                                                                  |
-|                         | `forge hooks`         | run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (cloud agents and CI included)                                                                                                                                        |
+|                         | `forge hooks`         | run the guards by themselves in every agent — project-level hook files for Claude Code, Codex, Gemini CLI, Cursor, Copilot and OpenCode (cloud agents and CI included)                                                                                                                              |
 | **Config**              | `forge prompts`       | choose a workspace development profile or show a portable prompt and specialist role                                                                                                                                                                                                                |
 |                         | `forge discover`      | find task-fit skills, plugins, tools and hooks; configure global/workspace Jev advice                                                                                                                                                                                                               |
 |                         | `forge brand`         | print the active brand token map                                                                                                                                                                                                                                                                    |
@@ -607,7 +608,7 @@ forge harness status
 forge harness drift --hosts claude,codex,kimi
 ```
 
-In Claude Code, trust the checkout and enable the project’s `forge-cortex` MCP server if prompted. In local Codex, review the project hooks in `/hooks`. In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`. Select just the hosts you use. For another stdio MCP client, choose `--hosts generic` and copy the printed server settings into that client.
+In Claude Code, trust the checkout and enable the project’s `forge-cortex` MCP server if prompted. In local Codex, review the project hooks in `/hooks`. In Kimi, trust the workspace, run the printed `/plugins install …` command and then `/reload`. OpenCode loads `.opencode/plugins/forgekit.js` on the next session. Select just the hosts you use. For another stdio MCP client, choose `--hosts generic` and copy the printed server settings into that client.
 
 Start the configured model endpoint. The default is a local Chat Completions server at
 `http://127.0.0.1:11434/v1` serving `qwen2.5-coder:7b`. In a project with a trusted test suite,

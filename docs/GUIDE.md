@@ -1917,7 +1917,7 @@ full rule: [substrate-v2 plan 05 §3](plans/substrate-v2/05-cost-model.md#3-acce
 | `forge budget`                   | Cost governance: `set --daily 10 --per-task 2 [--alert-at 0.8] [--hard\|--soft]` writes budgets to `.forge/forge.config.json`; `status` is the spend meter; the cost guard alerts at the threshold and, over budget, asks (soft, default) or blocks (`--hard`, opt-in circuit breaker); `clear` removes budgets.                                                                                                                                                                                                                                                                                                                                                                     |
 | `forge scan <target>`            | Vet a skill/MCP (SKILL.md/.mcp.json) for injection/RCE/exfil before install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `forge vet <pkg…>`               | Vet a package before it is added (dep-gate), in nine ecosystems (`ecosystem:name[@version]`): on its registry? listed malicious? how new and thin? `--cmd "<install command>"` vets a whole command line; `--json` prints the evidence. |
-| `forge hooks [on\|off\|status]`   | Run the guards by themselves in every agent: `on` writes project-level hook files for Claude Code, Codex, Gemini CLI, Cursor and Copilot (`--hosts a,b` narrows, `--bootstrap` installs forge at session start on a machine without it); `off` removes exactly what forge wrote; `run <host> <event>` is what the agents call. |
+| `forge hooks [on\|off\|status]`   | Run the guards by themselves in every agent: `on` writes project-level hook files for Claude Code, Codex, Gemini CLI, Cursor, Copilot and OpenCode (a generated JavaScript plugin; `--hosts a,b` narrows, `--bootstrap` installs forge at session start on a machine without it); `off` removes exactly what forge wrote; `run <host> <event>` is what the agents call. |
 | `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines (binary files get the credential-format grammars only, not the entropy leg). `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode.                                                                                                                                                                                                                                                                                                     |
 | `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -2131,11 +2131,19 @@ express — so a new agent is a row, and no guard changes.
 | GitHub Copilot (CLI and cloud agent) | `.github/hooks/forge.json` | context | — | deny · ask | context | continue |
 | Devin (CLI and desktop, formerly Windsurf) | reads `.claude/settings.json` | context | context | deny · context | context | continue |
 | Kimi Code | user-installed `kimi.plugin.json` | event | context · block | deny | asynchronous event | block |
+| OpenCode | `.opencode/plugins/forgekit.js` | context attempt | context attempt · block | deny · ask-as-block | context attempt | advisory event |
 
 What an event cannot express degrades the safe way. An **ask** in an agent with no confirm
 step becomes a block that says so — never a silent pass. Context an event cannot carry is
 dropped. Codex and Copilot send a whole patch as one tool call; it is read for the files it
 touches, so `protect-paths` and dep-gate see each one (the first eight; the rest is reported).
+OpenCode 1.18.x runs the generated plugin's `experimental.chat.system.transform` hook but does
+not deliver what it appends to `output.system`; its rules arrive through `AGENTS.md` and its
+tool guard still blocks.
+Its Stop handler observes `session.idle` and queues a block reason as advisory context; it
+cannot prevent completion. The plugin needs a ForgeKit CLI containing the OpenCode adapter.
+Version 1.17.0 returns no verdict for OpenCode events, so the generated plugin fails open with
+that CLI.
 
 Three things keep it from getting in the way:
 
@@ -2171,7 +2179,7 @@ files in step with the installed version.
 What each tool actually gets — config emission vs MCP registration vs automatic hooks vs
 blocking enforcement, with how each claim is backed — is in
 [docs/INTEGRATIONS.md](INTEGRATIONS.md). The short version: Claude Code gets automatic hooks
-from `forge init`. Codex, Gemini CLI, Cursor and Copilot can use project hooks. Devin can read the Claude hook configuration. Kimi requires its user-level plugin in a trusted workspace. Other agents can use emitted instructions, MCP or the CLI.
+from `forge init`. Codex, Gemini CLI, Cursor and Copilot can use project hooks. Devin can read the Claude hook configuration. Kimi requires its user-level plugin in a trusted workspace. OpenCode loads the generated `.opencode/plugins/forgekit.js`; set `FORGE_CLI` when the binary is not `forge` on `PATH`. Other agents can use emitted instructions, MCP or the CLI.
 
 The stdio server starts with `forge cortex-mcp`. In ordinary mode it advertises **36 MCP tools**. In trusted supervised projects it advertises only `forge_harness_run` and `forge_harness_status`. The table lists the full registry.
 

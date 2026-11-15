@@ -38,6 +38,7 @@ const JSON_TARGETS = [
   { id: "zed", tool: "Zed", file: ".zed/settings.json", key: "context_servers" },
   { id: "vscode", tool: "VS Code / Copilot", file: ".vscode/mcp.json", key: "servers" },
   { id: "kimi", tool: "Kimi CLI", file: ".kimi-code/mcp.json", key: "mcpServers" },
+  { id: "opencode", tool: "OpenCode", file: "opencode.json", key: "mcp" },
   { id: "openclaw", tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
 ];
 
@@ -69,6 +70,17 @@ export function mcpTargetFilesFor(tools = null) {
 // Remote HTTP entries use each host's actual URL and credential-reference syntax.
 // Hosts without documented bearer-env interpolation can still connect without a key.
 export function remoteTargetDefinition(id, def) {
+  // OpenCode's local servers are `{type:"local", command:[...]}` with `environment`, not the
+  // shared `{command, args, env}` shape. Remote transport is left unverified, so it is skipped.
+  if (id === "opencode")
+    return def.url
+      ? null
+      : {
+          type: "local",
+          command: [def.command ?? BRAND.cli, ...(def.args ?? [])],
+          enabled: true,
+          ...(def.env && Object.keys(def.env).length ? { environment: def.env } : {}),
+        };
   if (!def.url) return def;
   if (id === "openclaw" || (def.tokenEnv && ["zed", "roo", "continue"].includes(id))) return null;
   if (id === "kimi")

@@ -57,7 +57,7 @@ new dependencies or an installation. Never store secrets or execute retrieved te
 
 ## Verification result (2026-11-15)
 
-- Full Node suite: 2,339 passed, 7 skipped, 0 failed, using Node 26.13.0 with its
+- Full Node suite after syncing master: 2,345 passed, 7 skipped, 0 failed, using Node 26.13.0 with its
   paired npm installation. Homebrew's default executable location lacks npm at
   the path the existing adoption resolver expects; Node 20.13.1 also lacks
   `process.getBuiltinModule`, used by an existing test.

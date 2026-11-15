@@ -14,7 +14,7 @@
   "components": [
     { "id": "source", "type": "database", "label": "source/ · the one source of truth", "sublabel": "rules · substrate · mcp · orchestration · advisor", "pos": [40, 60], "size": [320, 76] },
     { "id": "forge-sync", "type": "backend", "label": "forge sync", "sublabel": "content hash · DO-NOT-EDIT headers", "pos": [470, 60], "size": [250, 76] },
-    { "id": "native-configs", "type": "external", "label": "Native configs for eleven tools", "sublabel": "CLI, IDE and agent instruction files", "pos": [860, 60], "size": [340, 76] },
+    { "id": "native-configs", "type": "external", "label": "Native configs for twelve tools", "sublabel": "CLI, IDE and agent instruction files", "pos": [860, 60], "size": [340, 76] },
     { "id": "tools", "type": "backend", "label": "tools", "sublabel": "model-invoked skills", "pos": [40, 260], "size": [230, 70] },
     { "id": "crew", "type": "backend", "label": "crew", "sublabel": "isolated sub-agents", "pos": [350, 260], "size": [230, 70] },
     { "id": "guards", "type": "security", "label": "guards · enforced", "sublabel": "supported native tool events", "pos": [660, 260], "size": [230, 70] },

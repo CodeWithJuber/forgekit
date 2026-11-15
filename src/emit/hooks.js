@@ -21,6 +21,7 @@ import { BRAND } from "../brand.js";
 import { HOSTS, isForgeHookCommand, kimiPluginEnabled, userLevelWired } from "../hosts.js";
 import { readJsonSafe } from "../util.js";
 import { writeIfChanged } from "./_shared.js";
+import { applyPlugin, planPlugin } from "./opencode.js";
 
 /** Seconds a host waits for one hook, per canonical event. */
 export const HOOK_TIMEOUT_S = Object.freeze({
@@ -165,6 +166,16 @@ export function applyHooks(root, hostId, { enable = true, bootstrap = false } = 
       : "The project now opts out. Use /plugins disable forgekit in Kimi to disable it across projects.";
     return { tool: host.label, target: "Kimi /plugins", action: "manual", note };
   }
+  // OpenCode carries hooks in a generated JavaScript plugin, not a JSON hook file.
+  if (host?.layout === "module") {
+    const row = applyPlugin(root, { enable });
+    return {
+      tool: host.label,
+      target: host.file,
+      ...row,
+      note: enable ? `${row.note} · ${host.trust}` : row.note,
+    };
+  }
   if (!host?.file) return null;
   const path = join(root, host.file);
   const text = existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -242,6 +253,17 @@ export function hooksStatus(root, { config = {}, home } = {}) {
         file: through?.file ?? null,
         state: on ? `via ${host.via}` : "off",
         note: host.trust,
+      };
+    }
+    if (host.layout === "module") {
+      const text = readText(join(root, host.file));
+      const { next, error } = planPlugin(text);
+      return {
+        host: id,
+        label: host.label,
+        file: host.file,
+        state: text === null || error ? "off" : next === text ? "on" : "stale",
+        note: error ?? host.trust,
       };
     }
     const text = readText(join(root, host.file));
