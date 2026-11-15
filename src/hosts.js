@@ -53,7 +53,7 @@ import { readJsonSafe, userStateDir } from "./util.js";
  *  (ask → deny) or is dropped. `emptyJson`: an empty reply must still be a JSON object.
  *  @typedef {{as: CanonEvent, tool?: string, lift?: string[], skipTools?: string[],
  *    ask?: boolean, context?: boolean, block?: boolean, emptyJson?: boolean}} HostEvent */
-/** @typedef {{label: string, tool: string, file: string|null, layout: "groups"|"flat"|"copilot",
+/** @typedef {{label: string, tool: string, file: string|null, layout: "groups"|"flat"|"copilot"|"module",
  *    dialect: keyof typeof DIALECTS, events: Record<string, HostEvent>,
  *    tools: Record<string, string>, timeoutMs?: boolean, named?: boolean, matchAll?: string,
  *    windows?: string, detect?: string[], via?: string, plugin?: boolean, trust: string}} Host */
@@ -197,6 +197,36 @@ export const HOSTS = {
     tools: {},
     trust: "install the per-user ForgeKit plugin with /plugins install, then /reload",
   },
+  // OpenCode has no shell hooks: a JavaScript plugin carries the same guard chain. The
+  // emitter writes `.opencode/plugins/forgekit.js`; OpenCode loads it automatically.
+  opencode: {
+    label: "OpenCode",
+    tool: "opencode",
+    file: ".opencode/plugins/forgekit.js",
+    layout: "module",
+    dialect: "opencode",
+    events: {
+      SessionStart: { as: "SessionStart", context: true },
+      UserPromptSubmit: { as: "UserPromptSubmit", context: true, block: true },
+      PreToolUse: { as: "PreToolUse", ask: true, context: true },
+      PostToolUse: { as: "PostToolUse", context: true },
+      Stop: { as: "Stop", block: true },
+    },
+    tools: {
+      bash: "Bash",
+      edit: "Edit",
+      write: "Write",
+      read: "Read",
+      grep: "Grep",
+      glob: "Glob",
+      webfetch: "WebFetch",
+      websearch: "WebSearch",
+      task: "Task",
+      list: "LS",
+      patch: "Edit",
+    },
+    trust: "the plugin loads on the next session; a missing forge CLI is a no-op",
+  },
   // Devin (the CLI and the desktop app that was Windsurf) reads Claude Code's settings file,
   // so it has no file of its own: the claude channel serves it, with Devin's own limits.
   devin: {
@@ -244,6 +274,7 @@ export const INPUT_FIELDS = Object.freeze({
   content: ["content", "contents", "file_text", "new_content"],
   old_string: ["old_string", "old_str", "oldString"],
   new_string: ["new_string", "new_str", "newString"],
+  patch: ["patch", "patchText", "patch_text"],
 });
 
 /** How a session began, in the three words the guard manifest matches on. A host's own word
@@ -708,6 +739,14 @@ export const DIALECTS = {
         ? { stdout: context, stderr: "", exit: 2 }
         : json({ additionalContext: context }),
     block: (_e, reason) => json({ decision: "block", reason }),
+  },
+  // The OpenCode plugin reads one JSON verdict and decides what to do with it: throw to
+  // block a tool or prompt, append context to the next system prompt.
+  opencode: {
+    deny: (_e, reason) => json({ decision: "deny", reason }),
+    ask: (_e, reason) => json({ decision: "ask", reason }),
+    context: (_e, context) => json({ context }),
+    block: (_e, reason) => json({ block: reason }),
   },
 };
 

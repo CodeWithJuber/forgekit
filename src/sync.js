@@ -19,6 +19,7 @@ import { emitProjectHooks } from "./emit/hooks.js";
 import kimi from "./emit/kimi.js";
 import { emitMcp } from "./emit/mcp.js";
 import openclaw from "./emit/openclaw.js";
+import opencode from "./emit/opencode.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
@@ -45,6 +46,7 @@ const MODULES = [
   continueTool,
   openclaw,
   kimi,
+  opencode,
 ];
 
 /** The tools that get a native config file, one name each (Claude Code has two emitters). */

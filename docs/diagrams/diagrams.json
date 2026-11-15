@@ -29,9 +29,9 @@
       ],
       "title": "forgekit: one source, native configs, enforced guards, evidence-carrying memory",
       "receipt": {
-        "specSha256": "010120857c89d6c6226c396e0a2d8a4299e45b15c98966963957fdea329ad495",
-        "svgSha256": "ae85fd70076ddd3afac9377018e339fedc372b1fa64cad46faf571ba95a16530",
-        "artifactSha256": "cdb3b0b42694ac647d8e02010a4a72003aaf0ab49a3b5ed3b8d34a3a05890c5d",
+        "specSha256": "db003030e6a82b073e3bec4af8763e949824aefe867847134f1e90acc1d85d96",
+        "svgSha256": "ff0d99c6fe5400e915e7cc5a1b8aea106eb1254b7d6c93713106616553687b8b",
+        "artifactSha256": "1f7dc8fa296cb752c786025ba4a2cf5df27f0ab723686d0f5dce1f3ea351e616",
         "artifactBytes": 810986,
         "checks": "9/9 showcase"
       }

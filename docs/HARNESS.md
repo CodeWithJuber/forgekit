@@ -60,8 +60,14 @@ The table comes from ForgeKit’s host adapters. Each cell shows the client even
 | Cursor         | —                                 | `beforeShellExecution`, `beforeMCPExecution`, `preToolUse` | `postToolUseFailure`              |
 | GitHub Copilot | —                                 | `preToolUse`                                               | `postToolUseFailure`              |
 | Kimi Code      | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
+| OpenCode       | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
 | Devin          | `UserPromptSubmit`                | `PreToolUse`                                               | —                                 |
 <!-- forge:render:host-hooks:end -->
+
+The OpenCode row identifies the forwarded event, not proof of model-visible context.
+In the OpenCode 1.18.31 smoke check, `experimental.chat.system.transform` ran but its appended
+context did not reach the model. See the [integration matrix](INTEGRATIONS.md) for the CLI
+dependency and advisory-only Stop handling.
 
 ## Select and verify a model route
 
