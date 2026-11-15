@@ -672,6 +672,7 @@ HANDLERS.docs = async (argv) => {
 };
 HANDLERS.prompts = async (argv) =>
   (await import("./development_profile.js")).handleDevelopmentPrompts(argv);
+HANDLERS.discover = async (argv) => (await import("./cli/discovery.js")).discover(argv);
 HANDLERS.integrations = async (argv) => {
   if (["connect", "endpoints", "local", "serve-local"].includes(argv[1]))
     return (await import("./remote_integrations.js")).handleRemoteIntegration(argv);
@@ -1798,6 +1799,7 @@ HANDLERS.diagnose = async (argv) => {
   } else {
     console.log(`  below the thrash threshold (${THRASH_K}) — recorded; keep going.`);
   }
+  if (r.advice) console.log(`  Debugging advice (${r.advice.source}): ${r.advice.reason}`);
   return; // advisory — halting the retry loop is the AGENT's move, not an exit code
 };
 HANDLERS.lean = async (argv) => {

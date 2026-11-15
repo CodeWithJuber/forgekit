@@ -1,10 +1,10 @@
 // forge jev — TypeSafe System One (Jev) client. Jev is not a text LLM: it takes a `state`
 // plus typed `questions` (choice / score / noul) and returns typed answers with probabilities
-// and confidence in ~150ms — the fast proposer for faculties whose judgment is already a
-// classification, rating, or yes/no (route's complexity band, preflight's assumption gate).
+// and confidence — a proposer for classification, rating, or yes/no decisions.
 //
 // Same design contract as src/adjudicate.js, restated for a typed API:
-//   - OPT-IN. Off unless the LLM layer is enabled (llmEnabled) AND TYPESAFE_API_KEY is set.
+//   - OPT-IN. Off unless enabled by personal discovery settings / FORGE_LLM / explicit
+//     `llm:true`, AND TYPESAFE_API_KEY is set.
 //     Without the key every function here returns null and behavior is byte-identical.
 //   - FAIL-SAFE. Any error/timeout/non-2xx/garble/secret → null. A null NEVER changes a
 //     verdict; callers fall back to the text-LLM proposer, then to the deterministic rubric.
@@ -12,7 +12,7 @@
 //     The key travels via the child's env (_FORGE_JEV_KEY) — never in argv, never logged.
 // API contract: https://docs.typesafe.ai/api.md
 import { spawnSync } from "node:child_process";
-import { llmEnabled } from "./adjudicate.js";
+import { advisorSettings } from "./discovery_config.js";
 import { hasSecret } from "./secrets.js";
 import { clamp01 } from "./util.js";
 
@@ -30,13 +30,15 @@ export function jevBaseUrl() {
 }
 
 /**
- * Is the Jev proposer layer active for this call? Same opt-in as the text-LLM layer
- * (`llmEnabled`) plus the key. One switch governs both proposers; Jev is simply preferred
- * when its credentials exist.
- * @param {{llm?:boolean}} [opts]
+ * Explicit call settings, then FORGE_LLM, then personal workspace/global preferences.
+ * A saved Jev preference does not enable the text-LLM fallback.
+ * @param {{llm?:boolean,root?:string}} [opts]
  */
 export function jevEnabled(opts = {}) {
-  return llmEnabled(opts) && Boolean(jevKey());
+  return (
+    (typeof opts.llm === "boolean" ? opts.llm : advisorSettings(opts.root).decisions) &&
+    Boolean(jevKey())
+  );
 }
 
 /** A Choice question: pick one option from `criteria` (option → rubric description). */
@@ -137,7 +139,7 @@ export function systemOne({ state, questions, model = "jev-latest", timeoutMs = 
     if (!jevKey()) return null;
     if (!questions || typeof questions !== "object" || !Object.keys(questions).length) return null;
     const stateText = typeof state === "string" ? state : JSON.stringify(state);
-    if (hasSecret(stateText)) return null; // never send a secret to the model
+    if (hasSecret(stateText) || hasSecret(JSON.stringify(questions))) return null;
     const payload = { state, model, questions };
     const raw = call ? call(payload) : httpCall(payload, timeoutMs);
     if (!raw || typeof raw !== "object" || !raw.answers || typeof raw.answers !== "object")

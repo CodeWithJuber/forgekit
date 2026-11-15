@@ -85,7 +85,8 @@
 //   - src/reuse.js        imports it (:15) and calls it (:94, :116, :400)
 //   - src/uiinteract.js   imports it (:19) and calls it (:46)
 //   - src/auto_adoption.js hashes the approved catalog binding and workspace
-//   - src/evidence.js hashes public research cache keys
+//   - src/public_lookup.js hashes public research cache keys (extracted from evidence.js)
+//   - src/discovery.js hashes public candidate identities
 //   - src/source_local.js hashes file chunk identities
 //   - src/source_remote.js hashes remote connection scope
 //   - src/sources.js hashes the workspace and local source scope
@@ -155,7 +156,8 @@ export const IMPACT_CASES = [
       "src/reuse.js",
       "src/uiinteract.js",
       "src/auto_adoption.js",
-      "src/evidence.js",
+      "src/public_lookup.js",
+      "src/discovery.js",
       "src/source_local.js",
       "src/harness_council.js",
       "src/harness_jobs.js",

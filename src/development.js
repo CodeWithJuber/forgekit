@@ -2,6 +2,7 @@
 // verification verdict. Prompt hooks inspect bounded evidence and never run Git or tests.
 import { existsSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
+import { chooseAdvice } from "./decisions.js";
 import { resolveRoutePolicy } from "./orchestration.js";
 import { assessTask, referencedEntities } from "./preflight.js";
 import { riskMatches } from "./route_policy.js";
@@ -60,11 +61,12 @@ const safeFile = (p) =>
 
 /**
  * @param {string} task
- * @param {{root?:string,evidence?:any,changedFiles?:string[],hook?:boolean}} options
+ * @param {{root?:string,evidence?:any,changedFiles?:string[],hook?:boolean,llm?:boolean,
+ * jevCall?:(payload:object)=>object}} options
  */
 export function developmentPlan(
   task,
-  { root = process.cwd(), evidence = {}, changedFiles, hook = false } = {},
+  { root = process.cwd(), evidence = {}, changedFiles, hook = false, llm, jevCall } = {},
 ) {
   if (typeof task !== "string" || !task.trim()) throw new Error("Supply a development task");
   if (changedFiles !== undefined && !Array.isArray(changedFiles))
@@ -199,6 +201,34 @@ export function developmentPlan(
     action:
       "Capture the first failing assertion. Reproduce it, revise the cause, review the new diff, and rerun the same failing check before broad verification.",
   };
+  const focus = chooseAdvice({
+    root,
+    llm: focused ? false : llm,
+    call: jevCall,
+    timeoutMs: hook ? 800 : 5000,
+    state: {
+      mode,
+      changedFileCount: files.length,
+      riskCategories: security
+        .map((s) => s.category)
+        .filter((c) => Object.hasOwn(CATEGORY_ADVICE, c)),
+      localReuse: Boolean(
+        symbols.length > 0 || (evidence.reuse?.tier && evidence.reuse.tier !== "miss"),
+      ),
+      acceptanceQuestions: acceptance.length,
+    },
+    choices: {
+      acceptance: "Clarify the observable acceptance case before editing.",
+      inspect: "Inspect existing declarations and their callers before choosing an implementation.",
+      ...(mode === "repair"
+        ? { reproduce: "Capture a minimal reproduction before changing the cause." }
+        : {}),
+      ...(security.length
+        ? { boundary: "Inspect the affected trust boundary and its denied-input case." }
+        : {}),
+    },
+    fallback: mode === "repair" ? "reproduce" : "acceptance",
+  });
   const text = focused
     ? "Development: locate the wording, make the requested edit and check the result in context."
     : [
@@ -227,6 +257,7 @@ export function developmentPlan(
           : "supplied",
     acceptanceQuestions: acceptance,
     repair,
-    text,
+    focus,
+    text: `${text} Planning focus (${focus.source}): ${focus.reason}`,
   };
 }

@@ -95,7 +95,15 @@ Priority: Kimi emitter → correction mining → CRDT merge → relay → dashbo
 
 ## 6. JEV adapter roadmap
 
-`src/jev.js`: TypeSafe System One client (~160 lines), typed questions (choice/score/noul), ~150ms, opt-in (`TYPESAFE_API_KEY` + `FORGE_LLM=1`), fail-safe null (byte-identical fallback), zero-dep raw-HTTPS transport. Today: 2 call sites (`route.js` complexity band, `preflight.js` assumption gate). Three new adapters, all off the hot hook path, all propose-only, all behind the existing opt-in gate:
+`src/jev.js`: TypeSafe System One client with typed questions (choice/score/noul),
+opt-in credentials and fail-safe null, using zero-dependency HTTPS transport.
+`src/decisions.js` shares that boundary across routing, preflight, task-fit discovery,
+planning focus and debugging advice. Personal global/workspace settings come from
+`forge discover setup`; explicit `FORGE_LLM` and call options retain precedence.
+The new advice uses bounded public metadata or category/count signals and cannot
+clear verification or thrash escalation. See [setup and privacy](DISCOVERY.md).
+
+The following deeper adapters remain roadmap work, separate from advisory next-step selection:
 
 1. **Verify-failure triage (build first, effort S).** `classifySuiteFailure` calls every non-zero exit FAIL — flakes mint false lessons and feed doom-loop counters. Ask Jev: *genuine defect or environment flake?* ≥0.7 → FAIL; ≤0.3 → FLAKE (retry advisory, no lesson, no doom-loop feed); between → today's behavior. Jev off → byte-identical.
 2. **Lesson contradiction arbitration (effort M).** Conflicting lesson pairs today rot in a "manual review" list. Keep the deterministic MinHash pre-filter; Jev arbitrates only its output. At high conflict, quarantine the lower-confidence lesson through the existing lifecycle (no new states). No mutation without two judges (token guard AND Jev).
@@ -124,4 +132,4 @@ Priority: Kimi emitter → correction mining → CRDT merge → relay → dashbo
 - Repo review: full tree @ v1.8.0 (2026-09-28) — README, package.json, `src/`, `test/` (131 files), `.github/workflows/`, releases.
 - `research/cognitive-substrate/sources/painpoints_report.md` (mid-2026 field report) and `stack_landscape.md`.
 - Fresh pain-point research, 2026-09-27/28: Reddit (r/ClaudeCode, r/vibecoding, r/cursor), X/Threads AI-dev accounts, Hacker News, GitHub issues (anthropics/claude-code, openai/codex, MoonshotAI/kimi-cli, github/copilot-cli), GitHub Community Discussions, vibewatch digests, Google GTIG Sept 2026 report.
-- JEV: `src/jev.js` (builds on `src/adjudicate.js`'s `llmEnabled`) + call sites in `src/route.js`, `src/preflight.js`.
+- JEV: `src/jev.js`, `src/decisions.js`, `src/discovery_config.js`; callers in routing, preflight, development, diagnosis and discovery.

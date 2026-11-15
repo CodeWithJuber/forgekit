@@ -5,7 +5,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
-import { jevEnabled, noul, systemOne } from "./jev.js";
+import { askDecision } from "./decisions.js";
+import { jevEnabled, noul } from "./jev.js";
 import { sigmoid } from "./predictor.js";
 import { CODE_EXT } from "./util.js";
 
@@ -399,12 +400,12 @@ export function buildAssumptionNouls(task) {
  * @param {string} task
  * @param {object} [opts]
  * @param {boolean} [opts.llm]
+ * @param {string} [opts.root]
  * @param {(payload:object)=>object} [opts.call] injectable Jev transport (tests)
  */
-export function assessTaskJev(task, { llm, call } = {}) {
-  if (!jevEnabled({ llm })) return null;
+export function assessTaskJev(task, { llm, root, call } = {}) {
   const { state, questions } = buildAssumptionNouls(task);
-  const res = systemOne({ state, questions, call });
+  const res = askDecision({ root, llm, state, questions, call });
   if (!res) return null;
   const values = [];
   for (const k of DIM_KEYS) {
@@ -578,16 +579,16 @@ export function preflightRepo(
   const det = assessTask(text, { askThreshold });
   // M2 proposer: only when opted in. The rubric is the external judge; the model refines it
   // within bounds and can add grounded questions. Fail-safe: null proposal keeps `det`.
-  if (!llmEnabled({ llm }))
+  if (!llmEnabled({ llm }) && !jevEnabled({ root, llm }))
     return {
       ...gap,
       assumption: { ...det, provenance: { path: "deterministic" } },
     };
   const proposal =
-    assessTaskJev(text, { llm, call: jevCall }) ??
-    assessTaskLLM(text, {
-      run: run || buildRunner({ model, timeoutMs }),
-    });
+    assessTaskJev(text, { root, llm, call: jevCall }) ??
+    (llmEnabled({ llm })
+      ? assessTaskLLM(text, { run: run || buildRunner({ model, timeoutMs }) })
+      : null);
   const grounded = (q) => {
     const { symbols, files } = referencedEntities(q);
     return symbols.some(hasSymbol) || files.some((f) => existsSync(join(root, f)));

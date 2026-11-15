@@ -8,7 +8,8 @@ import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
 import { matchingLessons } from "./cortex.js";
 import { gitChurn, grepFanout } from "./cortex_features.js";
 import { recordRoute, routeRef } from "./cost_report.js";
-import { choice, jevEnabled, systemOne } from "./jev.js";
+import { askDecision } from "./decisions.js";
+import { choice } from "./jev.js";
 import { mergedLessons } from "./ledger_read.js";
 import { setOverlap } from "./math.js";
 import { printableLine } from "./model_catalog.js";
@@ -551,12 +552,12 @@ export function buildComplexityChoice(task) {
  * @param {string} task
  * @param {object} [opts]
  * @param {boolean} [opts.llm]
+ * @param {string} [opts.root]
  * @param {(payload:object)=>object} [opts.call] injectable Jev transport (tests)
  */
-export function complexityJev(task, { llm, call } = {}) {
-  if (!jevEnabled({ llm })) return null;
+export function complexityJev(task, { llm, root, call } = {}) {
   const { state, questions } = buildComplexityChoice(task);
-  const res = systemOne({ state, questions, call });
+  const res = askDecision({ root, llm, state, questions, call });
   const ans = res?.answers?.band;
   if (!ans) return null;
   const band = ans.choice.toLowerCase();
@@ -645,10 +646,11 @@ export function routeTask(
   // may change (band-to-band, confidence-gated, lower-only — see its doc). Jev (typed, ~150ms)
   // is the preferred proposer when its key is configured; the text-LLM runner is the fallback,
   // and a null from either is ignored (fail-safe).
-  const proposal = llmEnabled({ llm })
-    ? (complexityJev(task, { llm, call: jevCall }) ??
-      complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) }))
-    : null;
+  const proposal =
+    complexityJev(task, { root, llm, call: jevCall }) ??
+    (llmEnabled({ llm })
+      ? complexityLLM(task, { run: run || buildRunner({ model, timeoutMs }) })
+      : null);
   const verdict = reconcileRoute(detScore, proposal, {
     bidirectional,
     minConfidence,

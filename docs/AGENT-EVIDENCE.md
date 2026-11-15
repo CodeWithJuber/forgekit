@@ -108,6 +108,11 @@ In plan mode every stage is proposed. `--verify` runs the existing repository ve
 
 ## Choosing evidence during a change
 
+Live artifact recommendations also appear in evidence and prompt/failure context.
+Use `forge discover find "<task>"` for a fresh skills/plugins/tools/hooks comparison,
+or `forge discover setup --global --decisions on --search serper` to configure
+task-fit Jev advice and Google search defaults. [Setup, privacy and fallback behavior](DISCOVERY.md)
+
 | Situation | First action | Evidence to keep |
 | --- | --- | --- |
 | Mechanical rename or typo | Find its references and run a focused check. | Affected paths, test or diff. |
