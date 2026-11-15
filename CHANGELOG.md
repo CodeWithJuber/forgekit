@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-11-15
+
+### Added
+
+- add task-aware recommendations and typed advice
+- add an OpenCode host adapter
+
+### Fixed
+
+- allow bounded Git startup time for cached reads
+- make adapter checks portable and clarify limits
+
 ## [1.18.0] - 2026-11-15
 
 ### Added
@@ -3852,7 +3864,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.18.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.0...HEAD
+[1.19.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.16.0...v1.17.0
