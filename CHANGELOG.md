@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - OpenCode host adapter: a generated `.opencode/plugins/forgekit.js` forwards session, prompt, tool and stop events to `forge hooks run opencode`, `opencode.json` receives the project MCP entry, and `forge hooks`, `forge sync` and harness drift recognise the host.
 
+### Fixed
+
+- `forge harness init` and `forge harness connect` keep a repository's recorded bootstrap in the hook files they write. They used to drop it, so a fresh machine never installed the CLI and every guard hook stayed silent until `forge sync` ran.
+
 ## [1.17.0] - 2026-11-14
 
 ### Added

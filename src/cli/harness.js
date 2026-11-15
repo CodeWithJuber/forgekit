@@ -49,7 +49,10 @@ async function setupHosts(root, chosen, additive = false) {
     hooks: { ...cfg.hooks, project: true, hosts: [...new Set([...installed, ...ids])] },
   }));
   if (!saved.ok) throw new Error("Could not record project hooks");
-  return ids.map((id) => applyHooks(root, id, { enable: true })).filter(Boolean);
+  // Re-emit the way `forge sync` does: a repository that recorded a bootstrap keeps it, so a
+  // session start on a fresh machine still installs the CLI instead of exiting quietly.
+  const bootstrap = saved.config.hooks?.bootstrap === true;
+  return ids.map((id) => applyHooks(root, id, { enable: true, bootstrap })).filter(Boolean);
 }
 
 async function command(root, op, args) {
