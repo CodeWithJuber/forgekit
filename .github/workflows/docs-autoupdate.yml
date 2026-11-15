@@ -53,7 +53,9 @@ jobs:
       - uses: actions/setup-python@v6
         if: steps.plan.outputs.tools == 'true'
         with:
-          python-version: '3.12.10'
+          # Float the minor: an exact patch (3.12.10) has no build for the
+          # Ubuntu 26.04 runner image, which failed this job three times.
+          python-version: '3.12'
 
       - name: Prepare pinned image and browser tools
         if: steps.plan.outputs.tools == 'true'
