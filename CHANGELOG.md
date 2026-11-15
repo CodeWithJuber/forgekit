@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Native `forge workflow` delivery flows inspired by Tencent/LoopForge: size-based routes, fresh stage runs, private report artifacts, requirement and final acceptance gates, and resumable/retryable execution through the existing supervised harness.
+
 ### Fixed
 
 - `forge harness init` and `forge harness connect` keep a repository's recorded bootstrap in the hook files they write. They used to drop it, so a fresh machine never installed the CLI and every guard hook stayed silent until `forge sync` ran.

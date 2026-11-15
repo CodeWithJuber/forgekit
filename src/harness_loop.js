@@ -546,7 +546,14 @@ export async function runHarness(options) {
             let verdict;
             try {
               verdict = await bounded((child) =>
-                verify({ root, request: structuredClone(request), signal: child, id, runId: id }),
+                verify({
+                  root,
+                  request: structuredClone(request),
+                  signal: child,
+                  id,
+                  runId: id,
+                  answer: candidate,
+                }),
               );
             } catch (e) {
               if (e.status) {
@@ -565,6 +572,7 @@ export async function runHarness(options) {
               command: evidenceText(verdict?.command ?? "project verification", 500),
               scope: verdict?.scope ?? "adapter",
               fingerprint: verdict?.fingerprint,
+              ...(verdict?.checkout ? { checkout: verdict.checkout } : {}),
             };
             log("evaluate", ok ? "verify.passed" : "verify.failed", { ...s.evidence });
             save();

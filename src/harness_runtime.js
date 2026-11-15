@@ -10,13 +10,23 @@ import { createHarnessModel } from "./harness_router.js";
 import { createHarnessTools } from "./harness_tools.js";
 import { readHarnessRun } from "./harness_trace.js";
 import { createHarnessVerifier } from "./harness_verify.js";
+import { workflowStage, workflowVerifier } from "./workflow_contract.js";
 
 /** @param {string} root @param {any} raw @param {any} options */
 export async function runProjectHarness(root, raw, options = {}) {
   const config = loadHarnessConfig(root);
-  const resumed = options.resume
-    ? readHarnessRun(root, typeof options.resume === "string" ? options.resume : raw.id)
-    : null;
+  let resumed = null;
+  if (options.resume) {
+    try {
+      resumed = readHarnessRun(root, typeof options.resume === "string" ? options.resume : raw.id);
+    } catch (error) {
+      // The workflow checkpoint may precede the harness's first checkpoint.
+      // Only the coordinator can resubmit that exact persisted request.
+      if (error.code !== "ENOENT" || !options.workflowStage) throw error;
+    }
+  }
+  if (resumed && options.workflowStage && resumed.request.workflowStage !== options.workflowStage)
+    throw new Error("Cannot change a saved workflow stage");
   const input = resumed?.request ?? raw;
   const request = normalizeHarnessRequest(input, {
     channel: input.channel ?? "cli",
@@ -29,6 +39,13 @@ export async function runProjectHarness(root, raw, options = {}) {
     request.background = true;
   const profile = config.policy.profiles[request.profile];
   if (!profile) throw new Error(`Unknown harness profile ${request.profile}`);
+  const stageName = options.workflowStage ?? resumed?.request.workflowStage;
+  const stage = stageName ? workflowStage(stageName) : null;
+  if (stage && request.profile !== stage.profile)
+    throw new Error("Workflow stage does not match its harness profile");
+  // Keep stage restrictions on direct operator `harness resume` too. Raw intake
+  // cannot select this field or opt into report-only verification.
+  if (stage) Object.assign(request, { workflowStage: stageName });
   const worker = request.channel === "worker";
   if (input.triggerEvidence) request.triggerEvidence = input.triggerEvidence;
   const hooks = createHarnessHooks();
@@ -59,13 +76,14 @@ export async function runProjectHarness(root, raw, options = {}) {
     for (const item of extensions.active) extensions.unload(item.name);
   };
   try {
+    const projectVerifier = createHarnessVerifier(options.verifier ?? (await localVerifier(root)));
     return await runHarness({
       root,
       request,
       policy: config.policy,
       budget,
       model,
-      verify: createHarnessVerifier(options.verifier ?? (await localVerifier(root))),
+      verify: stage ? workflowVerifier(stageName, projectVerifier) : projectVerifier,
       memory: createHarnessMemory(root, {
         team: config.policy.memory?.team,
         personal: config.policy.memory?.personal === true,
@@ -73,7 +91,10 @@ export async function runProjectHarness(root, raw, options = {}) {
       hooks,
       policyDigest: config.digest,
       releaseExtensions,
-      tools: () => (worker ? [] : [...builtin, ...extensions.tools]),
+      tools: () =>
+        worker
+          ? []
+          : [...builtin, ...extensions.tools].filter((t) => !stage?.readOnly || t.risk === "read"),
       working: () => [
         ...extensions.skills.map((s) => ({ id: s.name, text: s.instructions, score: 1 })),
         ...(input.triggerEvidence

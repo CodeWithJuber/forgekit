@@ -23,9 +23,14 @@ Node CLI, choose the hosts your repo uses, and keep their rules in one place. Fo
 configuration for eleven tools. For a task that needs approval gates, spending limits and a recorded
 verification result, enable the [supervised harness](docs/HARNESS.md).
 
+[Native delivery workflows](docs/WORKFLOWS.md) add requirements, design,
+implementation, independent review, testing and final acceptance on that harness.
+The workflow design is inspired by [Tencent/LoopForge](https://github.com/Tencent/LoopForge);
+see the [attribution and implementation boundaries](docs/WORKFLOWS.md#attribution).
+
 | Inventory | Count |
 |---|---|
-| CLI commands (`forge --help`) | 61 |
+| CLI commands (`forge --help`) | 62 |
 | Lifecycle hook commands across six events (`hooks/hooks.json`) | 18 |
 | Config emitters (`src/emit/`, excluding the shared helper) | 14 |
 | Installable skill packs (`skills/`) | 3 |
@@ -479,6 +484,7 @@ and output live in [`docs/GUIDE.md`](docs/GUIDE.md).
 |                         | `forge route`         | recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes                                                                                                                 |
 |                         | `forge orchestration` | agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global                                   |
 |                         | `forge harness`       | run host-neutral supervised tasks with policy, budgets, verification and replayable evidence                                                                                                                                                                                                        |
+|                         | `forge workflow`      | deliver staged native workflows with separate roles, persisted reports, approvals and project verification                                                                                                                                                                                          |
 |                         | `forge advisor`       | Claude Code's advisor tool — a stronger second model consulted at decision points: set the advisor per repo (emitted into .claude/settings.json by sync, with an Advisor rule section in AGENTS.md) or --global, check a main/advisor pairing before Claude Code refuses it, list accepted pairings |
 |                         | `forge verify`        | independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)                                                                                                                                                                                             |
 |                         | `forge demo`          | scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)                                                                                                                                                                             |

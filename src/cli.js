@@ -69,6 +69,7 @@ function printHelp() {
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
   harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
+  workflow: async (argv) => (await import("./cli/workflow.js")).handleWorkflow(argv),
   ...evidenceHandlers,
   ...memoryHandlers,
   ...claimHandlers,

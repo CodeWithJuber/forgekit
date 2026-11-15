@@ -118,7 +118,7 @@ export function auditHarnessRun(root, id, tools = undefined) {
 // Each lease generation is immutable. Hard-link publication arbitrates concurrent
 // claimants, including two processes that both proved the previous owner died.
 // No check-then-unlink can accidentally remove a newer writer's lease.
-function claimLease(dir) {
+export function claimHarnessLease(dir) {
   const host = hostname();
   const ownerPath = (n) => join(dir, `writer-${n}.json`);
   const latest = readdirSync(dir).reduce((max, file) => {
@@ -213,7 +213,7 @@ export function openHarnessRun(root, id = randomUUID()) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (realpathSync.native(dir) !== dir) throw new Error("Unsafe harness run directory");
   const file = join(dir, "record.json");
-  const lease = claimLease(dir);
+  const lease = claimHarnessLease(dir);
   try {
     const state = existsSync(file) ? readState(dir) : null;
     function save(s) {

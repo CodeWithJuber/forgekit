@@ -110,6 +110,33 @@ export const COMMANDS = {
       'forge develop "Verify the retry fix" --verify --json',
     ],
   },
+  workflow: {
+    summary:
+      "deliver staged native workflows with separate roles, persisted reports, approvals and project verification",
+    usage:
+      "forge workflow create <task> --size small|medium|large --accept <criterion> | status|run|resume <id> | approve <id> --stage <name> --digest <sha256> | retry <id> --from <stage> --reason <text>",
+    flags: [
+      { flag: "--size <size>", desc: "small, medium (default) or large; selects the stage route" },
+      {
+        flag: "--accept <criterion>",
+        desc: "required acceptance criterion; repeat for additional criteria",
+      },
+      {
+        flag: "--stage <name> --digest <sha256>",
+        desc: "approve the exact pending requirement or summary report",
+      },
+      {
+        flag: "--from <stage> --reason <text>",
+        desc: "retry from an attempted stage and invalidate downstream approvals",
+      },
+      { flag: "--json", desc: "machine-readable output (also the default)" },
+    ],
+    examples: [
+      'forge workflow create "Fix retry handling" --size medium --accept "Retry tests pass"',
+      "forge workflow run <id>",
+      "forge workflow status <id>",
+    ],
+  },
   team: {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
@@ -574,6 +601,7 @@ export const GROUPS = {
     "route",
     "orchestration",
     "harness",
+    "workflow",
     "advisor",
     "verify",
     "demo",

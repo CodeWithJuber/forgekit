@@ -2,6 +2,10 @@
 
 ForgeKit can run a task through a model, a gated tool registry and a verifier. The CLI, local dashboard, ForgeKit MCP server and job worker use the same executor. A run ID identifies its task, decisions, tool calls, usage and final evidence. A model saying it has finished starts verification.
 
+For staged delivery with requirements, implementation, independent review and
+operator acceptance, use [native workflows](WORKFLOWS.md). Each stage runs through
+this executor with its own role and persisted report.
+
 [![A supervised task branches into a policy-checked tool call or verification, with a bounded repair path](diagrams/supervised-run.svg)](https://jubershaikh.com/forgekit/diagrams/supervised-run.html)
 
 ## Start with your coding hosts
