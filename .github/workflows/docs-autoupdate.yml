@@ -50,7 +50,7 @@ jobs:
           JS
         id: plan
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: steps.plan.outputs.tools == 'true'
         with:
           # Float the minor: an exact patch (3.12.10) has no build for the
