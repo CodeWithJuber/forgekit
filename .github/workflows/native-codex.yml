@@ -24,6 +24,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
       - name: Install pinned Codex CLI
         run: npm install --prefix "$RUNNER_TEMP/forge-native-host" --no-audit --no-fund --ignore-scripts @openai/codex@0.169.0

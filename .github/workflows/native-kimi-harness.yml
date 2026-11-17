@@ -21,6 +21,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 24
       - name: Install pinned Kimi Code
         run: npm install --prefix "$RUNNER_TEMP/native-kimi" --no-audit --no-fund --ignore-scripts @moonshot-ai/kimi-code@2.6.2
