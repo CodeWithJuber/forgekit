@@ -23,6 +23,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 24
       - name: Install pinned Claude Code CLI
         run: npm install --prefix "$RUNNER_TEMP/native-claude" --no-audit --no-fund @anthropic-ai/claude-code@2.1.325

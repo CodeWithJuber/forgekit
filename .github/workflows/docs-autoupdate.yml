@@ -34,6 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22.14.0
 
       - name: Identify generated Markdown and source changes
