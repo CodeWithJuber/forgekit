@@ -12,6 +12,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   quoted `|` (an `rg 'python|node|bun'` alternation, a commit message, a heredoc doc example)
   no longer blocks. `| "bash"` is now caught, and `sh -c`, `eval` and `ssh` strings are still
   checked as code.
+- protect-paths: `env -S STRING` / `--split-string` runs STRING as the command instead of
+  skipping it as an option value, so `| env -S bash` and `env -S 'cat .env'` are blocked.
 
 ## [1.19.0] - 2026-11-15
 

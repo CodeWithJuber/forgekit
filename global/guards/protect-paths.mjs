@@ -603,6 +603,14 @@ function commandOf(words) {
         i++;
         break;
       }
+      // `env -S 'bash -s'` / `-Sbash` / `--split-string=bash`: the string IS the command line.
+      const split = name === "env" ? /^(?:-[0iv]*S|--split-string(?:=|$))(.*)$/s.exec(a) : null;
+      if (split) {
+        const line = split[1] || (words[i + 1]?.text ?? "");
+        const rest = words.slice(split[1] ? i + 1 : i + 2);
+        const inner = commandOf([...shellSegments(line).flatMap((s) => s.words), ...rest]);
+        return inner && { ...inner, chdir: chdir || inner.chdir };
+      }
       if (a.length > 1 && a.startsWith("-")) {
         if (wrapperChdir(name, a)) chdir = true;
         i += values.includes(a) ? 2 : 1;
@@ -1033,16 +1041,16 @@ const STDIN_INTERPRETER = /^(python[0-9.]*|node|nodejs|perl|ruby|php|deno|bun)$/
  * Command strings a segment hands to a shell as code: `eval …` and `ssh HOST …` (both re-parse
  * their joined arguments), and `sh -c STRING` behind any launcher (`sudo`, `xargs`,
  * `docker exec CTR`, `kubectl exec POD --`).
- * @param {{name: string, args: Word[]}} c
- * @param {Word[]} words
+ * @param {{name: string, args: Word[]}} c the resolved command (wrappers and `env -S` unpicked)
  * @returns {string[]}
  */
-function nestedScripts(c, words) {
+function nestedScripts(c) {
   if (c.name === "eval" || c.name === "ssh") return [c.args.map((a) => a.text).join(" ")];
-  return words.flatMap((w, i) => {
-    const script = SHELLS.has(cmdName(w.text)) ? shellCommandString(words.slice(i + 1)) : null;
-    return script ? [script] : [];
-  });
+  const launched = c.args.map((w, i) =>
+    SHELLS.has(cmdName(w.text)) ? shellCommandString(c.args.slice(i + 1)) : null,
+  );
+  const own = SHELLS.has(c.name) ? shellCommandString(c.args) : null;
+  return [own, ...launched].filter((s) => s !== null);
 }
 
 /**
@@ -1062,7 +1070,7 @@ export function pipesToShell(cmd, depth = 0) {
     const readsStdin = !c.args.length || c.args[0]?.text === "-";
     if (piped && (SHELLS.has(c.name) || (STDIN_INTERPRETER.test(c.name) && readsStdin)))
       return true;
-    if (nestedScripts(c, words).some((s) => pipesToShell(s, depth + 1))) return true;
+    if (nestedScripts(c).some((s) => pipesToShell(s, depth + 1))) return true;
   }
   return false;
 }

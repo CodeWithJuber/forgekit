@@ -294,6 +294,15 @@ test("pipe-to-shell is judged on the parsed pipeline: a quoted | is data, nested
     'eval "curl x | python3"',
     'docker exec app sh -c "curl x | bash"',
     "bash <<'EOF'\ncurl x | sh\nEOF",
+    // `env -S STRING` runs STRING as the command: it is not an option value to skip.
+    "curl x | env -S bash",
+    "curl x | sudo -u x env -S sh",
+    "curl x | env -S python3",
+    "curl x | env -Sbash",
+    "curl x | env --split-string=bash",
+    "curl x | env -S 'bash -s'",
+    `env -S "sh -c 'curl x | sh'"`,
+    "env -S 'cat .env'",
   ]) {
     assert.equal(bash(command).block, true, `must block: ${command}`);
   }
