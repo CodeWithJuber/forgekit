@@ -88,8 +88,8 @@ jobs:
           fetch-depth: 0 # full history + tags so "auto" can read commits since the last tag
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
-          cache: npm
       - run: npm ci
       - name: Bump version fields + rotate CHANGELOG
         id: bump
@@ -184,6 +184,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
       - name: Tag the release merge + trigger the release
         env:

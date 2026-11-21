@@ -18,6 +18,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
       # Docker Official Images Alpine 3.21, linux/amd64 manifest from docker-library/repo-info.
       - name: Preload the pinned test image
