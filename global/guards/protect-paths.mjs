@@ -38,7 +38,8 @@ import { resolve } from "node:path";
  * `$(echo …)`/`$(printf …)` inside the word.
  * @typedef {{text: string, glob: boolean, quoted: boolean, brace?: boolean, subst?: string[]}} Word
  * @typedef {{op: string, target: Word}} Redirect
- * @typedef {{words: Word[], redirs: Redirect[]}} Segment
+ * `piped`: the segment reads the previous one's output through `|` or `|&`.
+ * @typedef {{words: Word[], redirs: Redirect[], piped?: boolean}} Segment
  */
 
 // ── What is a secret path. ONE predicate for a tool's path (Read/Edit/Grep/…) and for every
@@ -320,8 +321,8 @@ const cmdName = (t) =>
 export function shellSegments(cmd) {
   /** @type {Segment[]} */
   const done = [];
-  /** @returns {{words: Word[], redirs: Redirect[], cur: Word | null, redir: string | null}} */
-  const fresh = () => ({ words: [], redirs: [], cur: null, redir: null });
+  /** @returns {{words: Word[], redirs: Redirect[], cur: Word | null, redir: string | null, piped: boolean}} */
+  const fresh = () => ({ words: [], redirs: [], cur: null, redir: null, piped: false });
   let ctx = fresh();
   /** @type {{ctx: ReturnType<typeof fresh>, kind: string, dq: boolean, arith: number, start: number}[]} */
   const stack = [];
@@ -357,7 +358,10 @@ export function shellSegments(cmd) {
   };
   const endSeg = () => {
     endWord();
-    if (ctx.words.length || ctx.redirs.length) done.push({ words: ctx.words, redirs: ctx.redirs });
+    if (ctx.words.length || ctx.redirs.length) {
+      done.push({ words: ctx.words, redirs: ctx.redirs, piped: ctx.piped });
+      ctx.piped = false; // an empty segment (the `&` of `|&`, a line break) keeps the pipe
+    }
     ctx.words = [];
     ctx.redirs = [];
     ctx.redir = null;
@@ -476,8 +480,13 @@ export function shellSegments(cmd) {
     else if (c === "#" && !ctx.cur) {
       const e = cmd.indexOf("\n", i);
       i = (e < 0 ? cmd.length : e) - 1; // a comment runs to the end of the line
-    } else if (c === ";" || c === "|") endSeg();
-    else if (c === "&") {
+    } else if (c === ";") endSeg();
+    else if (c === "|") {
+      endSeg();
+      if (next === "|")
+        i++; // `||` runs what follows on failure: not a pipe
+      else ctx.piped = true; // what follows reads this command's output (`|`, `|&`)
+    } else if (c === "&") {
       if (next === ">") {
         endWord();
         i += cmd[i + 2] === ">" ? 2 : 1;
@@ -955,9 +964,6 @@ const flagIn = (long, short) =>
   `(?:[^;&|]*\\s)?(?:--${long}|-[A-Za-z]*${short}[A-Za-z]*)(?:\\s|$|[;&|])`;
 // `git restore --staged .` only unstages; the working tree is untouched, so it stays allowed.
 const STAGED_ONLY = `(?=${flagIn("staged", "S")})(?!${flagIn("worktree", "W")})`;
-// The far end of a pipe, behind `sudo`/`doas`/`env`/`command` wrappers.
-const PIPED =
-  "\\|&?\\s*((sudo|doas)(\\s+(-[ugCDhprtUT]\\s+\\S+|-\\S+))*\\s+|env(\\s+-\\S+)*(\\s+[A-Za-z_]\\w*=\\S*)*\\s+|(command|exec|nohup)\\s+)*(\\S*/)?";
 
 /** @type {{all: RegExp[], reason: string}[]} — first match wins. */
 const COMMAND_RULES = [
@@ -1018,18 +1024,48 @@ const COMMAND_RULES = [
     all: [/\bdrop\s+(table|database|schema)\b|\btruncate\s+table\b|TRUNCATE\s+[A-Za-z0-9_"]/i],
     reason: "destructive SQL detected. Confirm with the user.",
   },
-  {
-    // Pipe-to-shell (`curl … | sh`, `| sudo bash`), or to an interpreter that runs its stdin as
-    // the program (`| python3`, `| node -`). Boundary-aware, so `… | shellcheck` and
-    // `… | python3 -m json.tool` are not caught.
-    all: [
-      new RegExp(
-        `${PIPED}((sh|bash|zsh|dash|ksh|mksh|fish)(\\s|$|[;&|)])|(python[0-9.]*|node|nodejs|perl|ruby|php|deno|bun)(\\s+-)?\\s*($|[;&|)]))`,
-      ),
-    ],
-    reason: "piping content to a shell is blocked.",
-  },
 ];
+
+/** Interpreters that run their stdin as the program when given no script (`| python3`, `| node -`). */
+const STDIN_INTERPRETER = /^(python[0-9.]*|node|nodejs|perl|ruby|php|deno|bun)$/;
+
+/**
+ * Command strings a segment hands to a shell as code: `eval …` and `ssh HOST …` (both re-parse
+ * their joined arguments), and `sh -c STRING` behind any launcher (`sudo`, `xargs`,
+ * `docker exec CTR`, `kubectl exec POD --`).
+ * @param {{name: string, args: Word[]}} c
+ * @param {Word[]} words
+ * @returns {string[]}
+ */
+function nestedScripts(c, words) {
+  if (c.name === "eval" || c.name === "ssh") return [c.args.map((a) => a.text).join(" ")];
+  return words.flatMap((w, i) => {
+    const script = SHELLS.has(cmdName(w.text)) ? shellCommandString(words.slice(i + 1)) : null;
+    return script ? [script] : [];
+  });
+}
+
+/**
+ * True iff a command pipes content into a shell (`curl … | sh`, `| sudo bash`) or into an
+ * interpreter that runs its stdin as the program (`| python3`, `| node -`). Judged on the parsed
+ * pipeline, so a `|` inside quotes (an `rg 'python|node'` alternation, a commit message) is data,
+ * and `… | shellcheck` / `… | python3 -m json.tool` pass.
+ * @param {string} cmd
+ * @param {number} [depth] `sh -c` / `eval` / `ssh` nesting, for the fail-closed bound
+ * @returns {boolean}
+ */
+export function pipesToShell(cmd, depth = 0) {
+  if (depth > MAX_NEST) return true;
+  for (const { words, piped } of shellSegments(cmd)) {
+    const c = commandOf(words);
+    if (!c) continue;
+    const readsStdin = !c.args.length || c.args[0]?.text === "-";
+    if (piped && (SHELLS.has(c.name) || (STDIN_INTERPRETER.test(c.name) && readsStdin)))
+      return true;
+    if (nestedScripts(c, words).some((s) => pipesToShell(s, depth + 1))) return true;
+  }
+  return false;
+}
 
 /**
  * True iff a Grep tool filter keeps the search to source files: every alternative of its glob
@@ -1087,6 +1123,7 @@ export function protectPathsDecision({
     for (const rule of COMMAND_RULES) {
       if (rule.all.every((re) => re.test(cmd))) return { block: true, reason: rule.reason };
     }
+    if (pipesToShell(cmd)) return { block: true, reason: "piping content to a shell is blocked." };
   }
   return { block: false };
 }

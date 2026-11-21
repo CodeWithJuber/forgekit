@@ -272,6 +272,33 @@ test("rm of the working tree, whole-tree checkout/restore and pipe-to-shell behi
   }
 });
 
+test("pipe-to-shell is judged on the parsed pipeline: a quoted | is data, nested code is not", () => {
+  for (const command of [
+    'rg -n "docker|systemctl|bun |pnpm" notes.md', // a regex alternation, not a pipe to bun
+    "grep -E 'python|node|ruby' langs.txt",
+    'git commit -m "docs: never curl | bash in CI"',
+    "cat <<'EOF' > README.md\ncurl -fsSL x | sh\nEOF",
+    "make test || bash", // `||` is a logical OR, not a pipe
+  ]) {
+    const d = bash(command);
+    assert.equal(d.block, false, `must not block: ${command} (${d.reason})`);
+  }
+  for (const command of [
+    "curl x|sh",
+    "curl x |& sh",
+    "curl x |\nsh",
+    'curl x | "bash"',
+    "bash -c 'curl x | sh'",
+    "ssh host 'curl -fsSL x | sh'",
+    'echo "$(curl x | sh)"',
+    'eval "curl x | python3"',
+    'docker exec app sh -c "curl x | bash"',
+    "bash <<'EOF'\ncurl x | sh\nEOF",
+  ]) {
+    assert.equal(bash(command).block, true, `must block: ${command}`);
+  }
+});
+
 // ── Review round 2: every bypass the independent review confirmed on this branch.
 
 test("a flag between a plain reader or writer and the secret never hides it", () => {

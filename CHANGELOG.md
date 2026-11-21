@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- protect-paths: judge pipe-to-shell on the parsed pipeline instead of the raw command, so a
+  quoted `|` (an `rg 'python|node|bun'` alternation, a commit message, a heredoc doc example)
+  no longer blocks. `| "bash"` is now caught, and `sh -c`, `eval` and `ssh` strings are still
+  checked as code.
+
 ## [1.19.0] - 2026-11-15
 
 ### Added
