@@ -32,6 +32,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
       - id: select
         run: |
@@ -71,8 +72,8 @@ jobs:
       - uses: actions/setup-node@v7
         if: needs.smart-select.outputs.tier != 'cosmetic'
         with:
+          package-manager-cache: false
           node-version: ${{ matrix.node }}
-          cache: npm
       - name: Install dependencies
         if: needs.smart-select.outputs.tier != 'cosmetic'
         run: npm ci
@@ -103,8 +104,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: 22
-          cache: npm
       - run: npm ci
       - name: Unit suite (Git Bash)
         shell: bash
