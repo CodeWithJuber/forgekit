@@ -954,8 +954,21 @@ export function init({
 
 function skillDescription(dir) {
   try {
-    const match = readFileSync(join(dir, "SKILL.md"), "utf8").match(/description:\s*(.*)/);
-    return match ? match[1].trim() : "";
+    const text = readFileSync(join(dir, "SKILL.md"), "utf8");
+    const match = text.match(/^description:[ \t]*(.*)$/m);
+    if (!match) return "";
+    // A folded or literal YAML scalar (`description: >-`) keeps its text on the indented
+    // lines that follow.
+    if (/^[>|][+-]?$/.test(match[1].trim())) {
+      const rest = text.slice((match.index ?? 0) + match[0].length).split("\n");
+      const lines = [];
+      for (const line of rest.slice(1)) {
+        if (line.trim() && !/^\s/.test(line)) break;
+        lines.push(line.trim());
+      }
+      return lines.filter(Boolean).join(" ");
+    }
+    return match[1].trim();
   } catch {
     return "";
   }

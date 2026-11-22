@@ -305,6 +305,9 @@ test("catalog indexes tools (with a why), crew, and guards", () => {
     c.tools.every((t) => t.why.length > 0),
     "every tool has a one-line why",
   );
+  // A folded YAML description (`description: >-`) is read through, not shown as ">-".
+  for (const t of c.tools)
+    assert.ok(/^[A-Za-z]/.test(t.why) && t.why.length >= 20, `${t.name}: "${t.why}"`);
   assert.ok(c.crew.includes("scout"), "has scout crew");
   assert.ok(c.guards.includes("cost-budget"), "has cost-budget guard");
   assert.ok(!c.guards.includes("_guardlib"), "excludes the sourced lib");

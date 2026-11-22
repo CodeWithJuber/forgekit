@@ -202,7 +202,10 @@ async function main() {
     // Ambient cognitive substrate: assumption gate + (when an atlas is already cached)
     // model routing, blast-radius, memory, and minimality — surfaced before the agent acts.
     // allowBuild:false keeps it cheap and never writes .forge/ from a hook; advisory only.
-    if (typeof hook.prompt === "string" && hook.prompt.trim()) {
+    // A subagent's hand-back and a background-task notice go through UserPromptSubmit like a
+    // typed prompt. They are reports, not requests: no advisory, no card, no lookups.
+    const harness = /^\s*(<(agent-message|task-notification)\b|\[SYSTEM NOTIFICATION\b)/;
+    if (typeof hook.prompt === "string" && hook.prompt.trim() && !harness.test(hook.prompt)) {
       const result = substrateCheck(root, hook.prompt, {
         allowBuild: false,
         sessionId: hook.session_id || null,

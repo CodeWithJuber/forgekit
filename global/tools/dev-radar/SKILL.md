@@ -1,7 +1,6 @@
 ---
 name: dev-radar
 description: Pull current, real-world software-dev signal on demand from GitHub trending, Reddit, research papers, and blogs — filtered to the user's stack, hype-filtered, with verified sources. Use when the user asks "what's new/trending", "latest in <tech>", "should I adopt X", or wants a dev digest. Coding topics only.
-disable-model-invocation: true
 ---
 
 # Dev radar

@@ -277,9 +277,9 @@ export const INPUT_FIELDS = Object.freeze({
   patch: ["patch", "patchText", "patch_text"],
 });
 
-/** How a session began, in the three words the guard manifest matches on. A host's own word
- *  for the same thing maps here; anything else (a compaction) passes through and matches no
- *  guard, exactly as in Claude Code. */
+/** How a session began, in the words the guard manifest matches on (startup, resume, clear,
+ *  compact). A host's own word for the same thing maps here; anything else passes through and
+ *  runs only a guard whose matcher names it, exactly as in Claude Code. */
 export const SOURCES = Object.freeze({ new: "startup", fork: "resume" });
 
 /** Environment variables an agent sets to its project root — a payload with no `cwd` falls
