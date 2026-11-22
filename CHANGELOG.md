@@ -14,6 +14,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - the SessionStart guards run again after a compaction (`startup|resume|clear|compact`). The
   compaction summary dropped the orientation and lessons, so a long Claude Code session lost
   them
+- Claude Code can load the `dev-radar` skill on its own again; `disable-model-invocation`
+  hid it from the model
 
 ## [1.19.1] - 2026-11-17
 
