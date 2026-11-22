@@ -113,8 +113,8 @@ test("a resumed session skips the orientation but keeps the lessons and the base
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
   assert.doesNotMatch(ctx, new RegExp(`${BRAND.brand} active`));
   assert.match(ctx, /Lessons learned on this repo/);
-  // startup and clear still get it.
-  for (const source of ["startup", "clear"]) {
+  // startup, clear and a compaction (whose summary drops the earlier block) still get it.
+  for (const source of ["startup", "clear", "compact"]) {
     const s = feed("session-start", { session_id: `r-${source}`, cwd: fresh, source });
     assert.match(JSON.parse(s.stdout).hookSpecificOutput.additionalContext, /FORGE_ORIENT=0/);
   }

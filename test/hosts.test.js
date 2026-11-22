@@ -374,7 +374,9 @@ test("guardChain: hooks/hooks.json is the single list — matchers decide, the r
     "supervised mode gates unknown tools too",
   );
   assert.equal(guards({ hook_event_name: "SessionStart", source: "startup" }).length, 2);
-  assert.deepEqual(guards({ hook_event_name: "SessionStart", source: "compact" }), []);
+  // Compaction summarizes away what the hooks injected, so the same two guards run again.
+  assert.equal(guards({ hook_event_name: "SessionStart", source: "compact" }).length, 2);
+  assert.deepEqual(guards({ hook_event_name: "SessionStart", source: "unknown" }), []);
   assert.ok(guards({ hook_event_name: "Stop" }).includes("completion-gate.sh"));
   // A security guard that cannot run must block; an advisory one must not.
   const steps = guardChain({ hook_event_name: "PreToolUse", tool_name: "Bash" });

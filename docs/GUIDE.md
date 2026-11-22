@@ -2012,9 +2012,10 @@ masks leaked values after the tool runs.
 
 Three more ambient layers ride the same hooks:
 
-**Session rehydration (SessionStart).** Every start and `/clear` leads with an orientation
-block (`src/orient.js`, under 900 bytes: the workflow rules, which crew agent to use when, the MCP
-tools; a resume skips it, `FORGE_ORIENT=0` hides it). After it come lessons, the anchored goal,
+**Session rehydration (SessionStart).** Every start, `/clear` and compaction leads with an
+orientation block (`src/orient.js`, under 900 bytes: the workflow rules, which crew agent to use
+when, the MCP tools; a resume skips it, `FORGE_ORIENT=0` hides it). A compaction summarizes
+away what the hook injected earlier, so the block is injected again. After it come lessons, the anchored goal,
 the handoff snapshot (`.forge/state.md`), the last 10 commits, and any uncommitted changes —
 and every session start records the session's git baseline (`HEAD`) that the
 completion gate and `forge docs sync` diff against. A `--resume` never moves the baseline.

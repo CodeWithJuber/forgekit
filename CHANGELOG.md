@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- the SessionStart guards run again after a compaction (`startup|resume|clear|compact`). The
+  compaction summary dropped the orientation and lessons, so a long Claude Code session lost
+  them
+
 ## [1.19.1] - 2026-11-17
 
 ### Fixed

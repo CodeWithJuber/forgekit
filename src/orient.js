@@ -4,9 +4,10 @@
 // the repo has history with us, so a plugin install used to start in silence: no sign the
 // plugin was active, and none of the workflow rules (global/CLAUDE.md is a template the
 // plugin does not install). This block fills that gap in under 900 bytes — it is paid on every
-// startup and /clear, so it says only what Claude Code does not already show (agent and tool
-// descriptions are in their own lists; names plus a few words of "when" are enough). A resumed
-// session skips it: its transcript already carries the block. Kill switch: FORGE_ORIENT=0.
+// startup, /clear and compaction (the summary drops what a hook injected earlier), so it says
+// only what Claude Code does not already show (agent and tool descriptions are in their own
+// lists; names plus a few words of "when" are enough). A resumed session skips it: its
+// transcript already carries the block. Kill switch: FORGE_ORIENT=0.
 import { BRAND } from "./brand.js";
 import { TOOLS } from "./mcp_tools.js";
 
