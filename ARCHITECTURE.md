@@ -686,7 +686,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 445 --> src
+  test -- 447 --> src
   scripts -- 14 --> src
   bench -- 12 --> src
   test -- 8 --> global

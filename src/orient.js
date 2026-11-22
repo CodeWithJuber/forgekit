@@ -33,6 +33,28 @@ export const ORIENT_CREW = [
   ["doc-sync", "stale docs"],
 ];
 
+/** `when: tool, tool` phrases for the orientation tools found in `names`, so a renamed or
+ *  unlisted tool is never advertised.
+ *  @param {string[]} names */
+function toolHints(names) {
+  const known = new Set(names);
+  return ORIENT_TOOLS.flatMap(([when, tools]) => {
+    const live = tools.filter((n) => known.has(n));
+    return live.length ? [`${when}: ${live.join(", ")}`] : [];
+  });
+}
+
+/** MCP `instructions` for the cortex server. A host that defers MCP tool schemas shows the
+ *  model only the tool names plus this text, so without it nothing says when to look a tool
+ *  up. `names` is what the server lists; "" when it lists none of the orientation tools.
+ *  @param {string[]} [names] */
+export function mcpInstructions(names = TOOLS.map((t) => t.name)) {
+  const hints = toolHints(names);
+  return hints.length
+    ? `${BRAND.brand} pre-action checks and repo memory for coding work. Use these tools without waiting to be asked — ${hints.join("; ")}.`
+    : "";
+}
+
 /** True when the user turned the orientation off (`FORGE_ORIENT=0`, `false`, `off`, `no`). */
 export function orientDisabled(env = process.env) {
   return /^(0|false|off|no)$/i.test(String(env.FORGE_ORIENT ?? "").trim());
@@ -42,11 +64,7 @@ export function orientDisabled(env = process.env) {
  *  already holds it). `source` is the SessionStart payload's `source`. Pure: no I/O. */
 export function orientationBlock(env = process.env, { source = "" } = {}) {
   if (orientDisabled(env) || source === "resume") return "";
-  const known = new Set(TOOLS.map((t) => t.name));
-  const tools = ORIENT_TOOLS.flatMap(([when, names]) => {
-    const live = names.filter((n) => known.has(n));
-    return live.length ? [`${when}: ${live.join(", ")}`] : [];
-  });
+  const tools = toolHints(TOOLS.map((t) => t.name));
   return [
     `## ${BRAND.brand} active (${BRAND.pkg})`,
     "- Explore → plan → code → verify; plan first only for multi-file or unfamiliar work.",
