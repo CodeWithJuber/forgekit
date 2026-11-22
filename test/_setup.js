@@ -38,12 +38,29 @@ for (const key of SCRUB_EXACT) delete process.env[key];
 
 // An empty home, not a missing one. os.homedir() honours $HOME (POSIX) / $USERPROFILE
 // (Windows) and is not cached, so every ~/.forge, ~/.claude and ~/.gitconfig read lands in
-// throwaway space. This is also what makes `git init` deterministic: no inherited
-// init.defaultBranch, and no commit.gpgsign, which would otherwise block the suite on a
-// passphrase prompt.
+// throwaway space. This is also what makes `git init` deterministic: no init.defaultBranch
+// inherited from ~/.gitconfig.
 const home = mkdtempSync(join(tmpdir(), "forge-test-home-"));
 process.env.HOME = home;
 process.env.USERPROFILE = home;
+
+// Fixture commits and tags are never signed. The sandboxed $HOME does not cover this: a
+// signing rule also arrives from /etc/gitconfig, $GIT_CONFIG_GLOBAL or the caller's own
+// GIT_CONFIG_* pairs, and then every fixture `git commit` / `git tag` either waits on a
+// passphrase or fails outright — a signer that needs an agent session variable cannot run
+// once CLAUDE_* is scrubbed above (64 failures on a self-hosted runner, none in CI).
+// APPENDED after any pairs already exported, never replacing them: git reads the pairs in
+// order and the last value wins, so the caller's other settings survive and these still
+// apply. An explicit `git -c` outranks the environment, so a test that wants signing back
+// can still ask for it.
+// A missing, empty or malformed count is no pairs at all (NaN || 0).
+let pairs = Math.max(Number.parseInt(process.env.GIT_CONFIG_COUNT ?? "", 10) || 0, 0);
+for (const key of ["commit.gpgsign", "tag.gpgsign", "tag.forceSignAnnotated"]) {
+  process.env[`GIT_CONFIG_KEY_${pairs}`] = key;
+  process.env[`GIT_CONFIG_VALUE_${pairs}`] = "false";
+  pairs += 1;
+}
+process.env.GIT_CONFIG_COUNT = String(pairs);
 
 // The last uninjected model call. Faculties that build their own runner (src/substrate.js,
 // src/route.js, src/anchor.js, src/preflight.js) reach the real `claude` binary when it is

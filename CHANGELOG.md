@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- keep fixture commits and tags unsigned when Git signing is forced
+
 ## [1.19.1] - 2026-11-17
 
 ### Fixed
