@@ -8,7 +8,13 @@ import { fileURLToPath } from "node:url";
 import { BRAND } from "../src/brand.js";
 import { load } from "../src/lessons_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
-import { ORIENT_CREW, ORIENT_MAX_BYTES, ORIENT_TOOLS, orientationBlock } from "../src/orient.js";
+import {
+  ORIENT_CREW,
+  ORIENT_MAX_BYTES,
+  ORIENT_SKILLS,
+  ORIENT_TOOLS,
+  orientationBlock,
+} from "../src/orient.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
 // FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
@@ -113,8 +119,8 @@ test("a resumed session skips the orientation but keeps the lessons and the base
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
   assert.doesNotMatch(ctx, new RegExp(`${BRAND.brand} active`));
   assert.match(ctx, /Lessons learned on this repo/);
-  // startup and clear still get it.
-  for (const source of ["startup", "clear"]) {
+  // startup, clear and a compaction (whose summary drops the earlier block) still get it.
+  for (const source of ["startup", "clear", "compact"]) {
     const s = feed("session-start", { session_id: `r-${source}`, cwd: fresh, source });
     assert.match(JSON.parse(s.stdout).hookSpecificOutput.additionalContext, /FORGE_ORIENT=0/);
   }
@@ -146,6 +152,17 @@ test("orientation names only real MCP tools and shipped crew, within the Session
   assert.deepEqual(ORIENT_CREW.map(([name]) => name).sort(), [...shipped].sort());
   const block = orientationBlock({});
   for (const [, names] of ORIENT_TOOLS) for (const n of names) assert.ok(block.includes(n), n);
+  // Skills tied to a moment in the session, not to a kind of prompt (the protocol cards name
+  // those). With many skills installed a host lists a skill by name only, so say when.
+  const ships = (name) =>
+    ["../global/tools/", "../skills/"].some((base) =>
+      existsSync(new URL(`${base}${name}/SKILL.md`, import.meta.url)),
+    );
+  assert.ok(ORIENT_SKILLS.length >= 4);
+  for (const [name, when] of ORIENT_SKILLS) {
+    assert.ok(ships(name), `skill ${name} ships`);
+    assert.ok(block.includes(`${name} (${when})`), name);
+  }
   const budget = JSON.parse(readFileSync(new URL("../hooks/budget.json", import.meta.url), "utf8"))
     .events.SessionStart;
   const bytes = Buffer.byteLength(block);

@@ -12,6 +12,7 @@ import { dashData, dashSummary } from "./dash.js";
 import { diagnose } from "./diagnose.js";
 import { doctor } from "./doctor.js";
 import { EVIDENCE_TOOLS, evidenceTool } from "./evidence_tools.js";
+import { mcpInstructions } from "./orient.js";
 import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
 import { routeTask } from "./route.js";
 import { decompose } from "./scope.js";
@@ -34,6 +35,14 @@ const today = epochDay;
 import { TOOLS } from "./mcp_tools.js";
 
 export { TOOLS };
+
+/** The tools this server lists: all of them, or only the harness pair in a supervised project. */
+async function listedTools() {
+  const { nativeHarnessPolicy } = await import("./harness_config.js");
+  return nativeHarnessPolicy(root)
+    ? TOOLS.filter((t) => t.name === "forge_harness_run" || t.name === "forge_harness_status")
+    : TOOLS;
+}
 
 async function callTool(name, args = {}, host = undefined) {
   if (name === "forge_harness_run" || name === "forge_harness_status") {
@@ -255,6 +264,13 @@ export async function handle(msg, session = { host: undefined }) {
     const client = String(params?.clientInfo?.name ?? "").toLowerCase();
     const match = /^(kimi|codex|claude|gemini|cursor|copilot)(?:$|[- _])/i.exec(client);
     session.host = match?.[1];
+    // When to reach for which tool. Hosts that defer tool schemas show the model only the
+    // tool names and this text. The handshake never fails over it: unreadable harness state
+    // means no instructions here, and tools/list reports the problem.
+    let instructions = "";
+    try {
+      instructions = mcpInstructions((await listedTools()).map((t) => t.name));
+    } catch {}
     return {
       jsonrpc: "2.0",
       id,
@@ -262,15 +278,12 @@ export async function handle(msg, session = { host: undefined }) {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
         serverInfo: { name: "forge-cortex", version: PKG_VERSION },
+        ...(instructions ? { instructions } : {}),
       },
     };
   }
   if (method === "tools/list") {
-    const { nativeHarnessPolicy } = await import("./harness_config.js");
-    const list = nativeHarnessPolicy(root)
-      ? TOOLS.filter((t) => t.name === "forge_harness_run" || t.name === "forge_harness_status")
-      : TOOLS;
-    return { jsonrpc: "2.0", id, result: { tools: list } };
+    return { jsonrpc: "2.0", id, result: { tools: await listedTools() } };
   }
   if (method === "tools/call") {
     let text;

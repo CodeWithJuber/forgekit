@@ -199,7 +199,8 @@ mtime-vs-baseline (the baseline file's mtime _is_ session start).
 **Session anchoring (SessionStart, `src/session.js`).** Records `HEAD` once per session
 (`.forge/sessions/<sid>.base`; resume keeps it), prunes week-old session artifacts, and
 injects: an orientation block (`src/orient.js`: the workflow rules, which crew agent to use
-when, the MCP tools; under 900 bytes, skipped on resume, `FORGE_ORIENT=0` hides it), learned
+when, the session skills, the MCP tools; under 900 bytes, skipped on resume, injected again after a compaction,
+`FORGE_ORIENT=0` hides it), learned
 lessons, the anchored goal, the handoff snapshot, recent commits, and
 uncommitted changes — a fresh session orients on evidence, not priors.
 
@@ -685,7 +686,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 445 --> src
+  test -- 447 --> src
   scripts -- 14 --> src
   bench -- 12 --> src
   test -- 8 --> global

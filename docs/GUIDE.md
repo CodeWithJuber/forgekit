@@ -2012,9 +2012,10 @@ masks leaked values after the tool runs.
 
 Three more ambient layers ride the same hooks:
 
-**Session rehydration (SessionStart).** Every start and `/clear` leads with an orientation
-block (`src/orient.js`, under 900 bytes: the workflow rules, which crew agent to use when, the MCP
-tools; a resume skips it, `FORGE_ORIENT=0` hides it). After it come lessons, the anchored goal,
+**Session rehydration (SessionStart).** Every start, `/clear` and compaction leads with an
+orientation block (`src/orient.js`, under 900 bytes: the workflow rules, which crew agent to use
+when, the skills tied to a session moment (resuming, pausing, an unclear edit), the MCP tools; a resume skips it, `FORGE_ORIENT=0` hides it). A compaction summarizes
+away what the hook injected earlier, so the block is injected again. After it come lessons, the anchored goal,
 the handoff snapshot (`.forge/state.md`), the last 10 commits, and any uncommitted changes —
 and every session start records the session's git baseline (`HEAD`) that the
 completion gate and `forge docs sync` diff against. A `--resume` never moves the baseline.
@@ -2024,6 +2025,9 @@ exemplar k-NN math as model routing (labeled examples + overlap similarity — e
 adding rows, including Hinglish ones, never by editing regexes). A work intent
 (bugfix / feature / refactor / release) injects a ~6-line protocol card once per run of
 that intent; questions get no ceremony, and below-confidence prompts get nothing.
+Each card ends with the skills to load and the crew agent to hand work to for that kind
+of work. A message the agent host submits by itself (a subagent's hand-back, a
+background-task notice) is a report, not a request, so it gets no card and no advisory.
 `FORGE_INTENT=0` disables.
 
 **The completion gate (Stop).** The deterministic floor under "done": when the session

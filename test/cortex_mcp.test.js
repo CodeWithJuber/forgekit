@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
 import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
+import { MCP_TOOL_GUIDE, mcpInstructions, ORIENT_TOOLS } from "../src/orient.js";
 import { fakeGithubPat } from "./_fixtures.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
@@ -24,6 +27,67 @@ test("handle: initialize advertises the forge-cortex server", async () => {
     params: {},
   });
   assert.equal(r.result.serverInfo.name, "forge-cortex");
+});
+
+test("handle: initialize carries instructions that say when to use the listed tools", async () => {
+  const r = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+  const text = r.result.instructions;
+  assert.equal(typeof text, "string");
+  assert.ok(text.startsWith(BRAND.brand), "leads with the brand");
+  // A host cuts server instructions at 4,096 characters; these stay well under it.
+  assert.ok(text.length <= 2000, `instructions are ${text.length} characters`);
+  for (const [when, names] of MCP_TOOL_GUIDE) {
+    assert.ok(text.includes(`${when}: `), when);
+    for (const n of names) assert.ok(text.includes(n), `names ${n}`);
+  }
+});
+
+test("the MCP tool guide says when to use every registered tool, once", () => {
+  const guided = MCP_TOOL_GUIDE.flatMap(([, names]) => names);
+  assert.deepEqual([...guided].sort(), TOOLS.map((t) => t.name).sort());
+  assert.equal(new Set(guided).size, guided.length, "no tool sits in two groups");
+  // The orientation's short list is part of the guide, under the same words.
+  const guide = new Map(MCP_TOOL_GUIDE.map(([when, names]) => [when, names]));
+  for (const [when, names] of ORIENT_TOOLS)
+    for (const n of names) assert.ok(guide.get(when)?.includes(n), `${when}: ${n}`);
+  // Tools that install, propose a ledger change or start a run are never in the "without
+  // waiting to be asked" part.
+  const onRequest = MCP_TOOL_GUIDE.filter(([, , mode]) => mode === "ask").flatMap(([, n]) => n);
+  for (const n of ["forge_tool_install", "forge_ledger_ratify", "forge_ledger_retract"])
+    assert.ok(onRequest.includes(n), n);
+  for (const n of ["forge_harness_run", "forge_harness_status"])
+    assert.ok(onRequest.includes(n), n);
+});
+
+test("mcpInstructions: a tool the server does not list is never advertised", () => {
+  assert.equal(mcpInstructions([]), "");
+  // A supervised workspace lists only the harness pair, and only that pair is named.
+  const supervised = mcpInstructions(["forge_harness_run", "forge_harness_status"]);
+  assert.match(supervised, /supervised runs: forge_harness_run, forge_harness_status/);
+  assert.doesNotMatch(supervised, /substrate_check|forge_ledger_query|without waiting/);
+  const one = mcpInstructions(["forge_diagnose"]);
+  assert.match(one, /repeat failure: forge_diagnose/);
+  assert.doesNotMatch(one, /substrate_check|forge_ledger_query|forge_harness_run/);
+});
+
+test("initialize still answers when the harness activation is unreadable — no instructions", () => {
+  // The handshake must not depend on harness state: a broken binding used to surface only at
+  // tools/list, and a host that gets an error from initialize never connects at all.
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-init-"));
+  const state = mkdtempSync(join(tmpdir(), "forge-mcp-state-"));
+  const digest = createHash("sha256").update(realpathSync.native(root)).digest("hex");
+  mkdirSync(join(state, "harness-activation"), { recursive: true });
+  writeFileSync(join(state, "harness-activation", `${digest}.json`), "{}");
+  const r = spawnSync("node", [SERVER], {
+    input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`,
+    encoding: "utf8",
+    env: { ...process.env, FORGE_ROOT: root, FORGE_HOME: state },
+    timeout: 10000,
+  });
+  const reply = JSON.parse(r.stdout.trim().split("\n")[0]);
+  assert.equal(reply.error, undefined, "initialize answers with a result");
+  assert.equal(reply.result.serverInfo.name, "forge-cortex");
+  assert.equal("instructions" in reply.result, false);
 });
 
 test("handle: tools/list exposes the cortex + preflight tools", async () => {
