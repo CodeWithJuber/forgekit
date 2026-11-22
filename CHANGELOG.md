@@ -8,9 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- the `forge-cortex` MCP server now sends `instructions` saying when to use its tools. Hosts
-  that defer tool schemas (Claude Code, Codex) show the model only the tool names and this
-  text, so the tools were rarely called without it
+- the `forge-cortex` MCP server now sends `instructions` saying when to use each of its tools.
+  Hosts that defer tool schemas (Claude Code, Codex) show the model only the tool names and
+  this text, so the tools were rarely called without it. Tools that install something,
+  propose a ledger change or start a run are listed as "only when the task calls for it"
+- the protocol cards and the SessionStart orientation now name the skills to load and the
+  crew agent to use. With many skills installed, a host lists a skill by name only, and
+  nothing else told the model when to load one
+- the prompt hook no longer treats a subagent's hand-back or a background-task notice as the
+  user's prompt: no advisory, no protocol card and no lookups for those
+- `forge catalog` shows the description of a skill that folds it over several lines
+  (`description: >-`); it showed `>-`
 - the SessionStart guards run again after a compaction (`startup|resume|clear|compact`). The
   compaction summary dropped the orientation and lessons, so a long Claude Code session lost
   them

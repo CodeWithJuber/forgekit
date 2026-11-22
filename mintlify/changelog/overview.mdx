@@ -22,7 +22,10 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 **Fixed**
 
-- the `forge-cortex` MCP server now sends `instructions` saying when to use its tools.
+- the `forge-cortex` MCP server now sends `instructions` saying when to use each of its tools.
+- the protocol cards and the SessionStart orientation now name the skills to load and the crew agent to use.
+- the prompt hook no longer treats a subagent's hand-back or a background-task notice as the user's prompt: no advisory, no protocol card and no lookups for those
+- `forge catalog` shows the description of a skill that folds it over several lines (`description: >-`); it showed `>-`
 - the SessionStart guards run again after a compaction (`startup|resume|clear|compact`).
 - Claude Code can load the `dev-radar` skill on its own again; `disable-model-invocation` hid it from the model
 

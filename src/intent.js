@@ -133,6 +133,59 @@ export function classifyIntent(text, { k = 3, minConf = 0.25 } = {}) {
   return { intent, confidence: Number(confidence.toFixed(3)), neighbors: sims };
 }
 
+/** The skills and crew agents each kind of work calls for — data. A host with many skills
+ *  installed lists a skill by name only, so the card is where the model learns when to load
+ *  one. Every name is a shipped skill or crew agent (the test holds it).
+ *  @type {Record<string, { skills: Array<[string, string]>, crew: Array<[string, string]> }>} */
+export const INTENT_HELPERS = {
+  bugfix: {
+    skills: [
+      ["problem-solver", "root cause"],
+      ["self-improve", "a check keeps failing"],
+    ],
+    crew: [["verifier", "review the fix"]],
+  },
+  feature: {
+    skills: [
+      ["explore-plan-code", "multi-file or unfamiliar"],
+      ["reuse-first", "before new code"],
+      ["tech-selector", "choosing a library"],
+      ["ui-workflow", "UI work"],
+    ],
+    crew: [
+      ["scout", "explore"],
+      ["verifier", "review the diff"],
+      ["frontend-verifier", "UI changes"],
+    ],
+  },
+  refactor: {
+    skills: [
+      ["forge-impact", "blast radius"],
+      ["lean", "smallest change"],
+      ["code-modernization", "legacy or migration"],
+    ],
+    crew: [["independent-reviewer", "before merge"]],
+  },
+  release: {
+    skills: [
+      ["forge-verify", "gates before commit or push"],
+      ["sync-docs", "stale docs"],
+      ["handoff", "when you finish"],
+    ],
+    crew: [
+      ["doc-sync", "many stale docs"],
+      ["independent-reviewer", "before merge"],
+    ],
+  },
+};
+
+/** The card's last line: which skills to load and which crew agent to hand work to. */
+function helpers(intent) {
+  const list = (pairs) => pairs.map(([name, when]) => `${name} (${when})`).join(", ");
+  const { skills, crew } = INTENT_HELPERS[intent];
+  return `Skills to load: ${list(skills)}. Crew: ${list(crew)}.`;
+}
+
 /** Protocol cards — data. `question`/`none` deliberately have no card (no ceremony). */
 export const PROTOCOL_CARDS = {
   bugfix: [
@@ -142,6 +195,7 @@ export const PROTOCOL_CARDS = {
     `3. Write the failing test BEFORE the fix; \`${BRAND.cli} diagnose "<error>"\` if this failure has repeated.`,
     `4. \`${BRAND.cli} impact <file>\` — sweep the blast radius (callers, configs, docs).`,
     `5. Full suite green, then \`${BRAND.cli} docs sync\` + \`${BRAND.cli} handoff\` — the gate checks.`,
+    helpers("bugfix"),
   ].join("\n"),
   feature: [
     `## Feature protocol (${BRAND.brand})`,
@@ -151,6 +205,7 @@ export const PROTOCOL_CARDS = {
     `4. \`${BRAND.cli} impact\` / \`${BRAND.cli} scope\` before building — know the full artifact list.`,
     "5. Docs, tests, and configs move IN THE SAME PASS as the code, not later.",
     `6. \`${BRAND.cli} verify\` before claiming done.`,
+    helpers("feature"),
   ].join("\n"),
   refactor: [
     `## Refactor protocol (${BRAND.brand})`,
@@ -158,6 +213,7 @@ export const PROTOCOL_CARDS = {
     `2. \`${BRAND.cli} scope <files>\` — find the coupled files you didn't name.`,
     `3. Sweep every old name — code AND prose: \`${BRAND.cli} docs sync\` after the rename.`,
     `4. \`${BRAND.cli} lean\` — keep the footprint proportional to the ask.`,
+    helpers("refactor"),
   ].join("\n"),
   release: [
     `## Release protocol (${BRAND.brand})`,
@@ -165,6 +221,7 @@ export const PROTOCOL_CARDS = {
     `2. \`${BRAND.cli} docs check\` — commands/env/tools tables must match the code.`,
     "3. Version bump + tag; release notes from the changelog.",
     `4. \`${BRAND.cli} verify\` as the final gate before shipping.`,
+    helpers("release"),
   ].join("\n"),
 };
 

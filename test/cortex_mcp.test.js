@@ -12,7 +12,7 @@ import { handle } from "../src/cortex_mcp.js";
 import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
-import { mcpInstructions, ORIENT_TOOLS } from "../src/orient.js";
+import { MCP_TOOL_GUIDE, mcpInstructions, ORIENT_TOOLS } from "../src/orient.js";
 import { fakeGithubPat } from "./_fixtures.js";
 
 // Default is now ledger-only; these cases exercise the legacy FILE store (the
@@ -34,24 +34,40 @@ test("handle: initialize carries instructions that say when to use the listed to
   const text = r.result.instructions;
   assert.equal(typeof text, "string");
   assert.ok(text.startsWith(BRAND.brand), "leads with the brand");
-  // A host cuts server instructions at 4,096 characters; these stay far under it.
-  assert.ok(text.length <= 1000, `instructions are ${text.length} characters`);
-  const registry = new Set(TOOLS.map((t) => t.name));
-  for (const [when, names] of ORIENT_TOOLS) {
+  // A host cuts server instructions at 4,096 characters; these stay well under it.
+  assert.ok(text.length <= 2000, `instructions are ${text.length} characters`);
+  for (const [when, names] of MCP_TOOL_GUIDE) {
     assert.ok(text.includes(`${when}: `), when);
-    for (const n of names) {
-      assert.ok(registry.has(n), `${n} is a registered tool`);
-      assert.ok(text.includes(n), `names ${n}`);
-    }
+    for (const n of names) assert.ok(text.includes(n), `names ${n}`);
   }
 });
 
+test("the MCP tool guide says when to use every registered tool, once", () => {
+  const guided = MCP_TOOL_GUIDE.flatMap(([, names]) => names);
+  assert.deepEqual([...guided].sort(), TOOLS.map((t) => t.name).sort());
+  assert.equal(new Set(guided).size, guided.length, "no tool sits in two groups");
+  // The orientation's short list is part of the guide, under the same words.
+  const guide = new Map(MCP_TOOL_GUIDE.map(([when, names]) => [when, names]));
+  for (const [when, names] of ORIENT_TOOLS)
+    for (const n of names) assert.ok(guide.get(when)?.includes(n), `${when}: ${n}`);
+  // Tools that install, propose a ledger change or start a run are never in the "without
+  // waiting to be asked" part.
+  const onRequest = MCP_TOOL_GUIDE.filter(([, , mode]) => mode === "ask").flatMap(([, n]) => n);
+  for (const n of ["forge_tool_install", "forge_ledger_ratify", "forge_ledger_retract"])
+    assert.ok(onRequest.includes(n), n);
+  for (const n of ["forge_harness_run", "forge_harness_status"])
+    assert.ok(onRequest.includes(n), n);
+});
+
 test("mcpInstructions: a tool the server does not list is never advertised", () => {
-  // A supervised workspace lists only the harness pair, so there is nothing to say.
-  assert.equal(mcpInstructions(["forge_harness_run", "forge_harness_status"]), "");
+  assert.equal(mcpInstructions([]), "");
+  // A supervised workspace lists only the harness pair, and only that pair is named.
+  const supervised = mcpInstructions(["forge_harness_run", "forge_harness_status"]);
+  assert.match(supervised, /supervised runs: forge_harness_run, forge_harness_status/);
+  assert.doesNotMatch(supervised, /substrate_check|forge_ledger_query|without waiting/);
   const one = mcpInstructions(["forge_diagnose"]);
   assert.match(one, /repeat failure: forge_diagnose/);
-  assert.doesNotMatch(one, /substrate_check|forge_ledger_query/);
+  assert.doesNotMatch(one, /substrate_check|forge_ledger_query|forge_harness_run/);
 });
 
 test("initialize still answers when the harness activation is unreadable — no instructions", () => {
