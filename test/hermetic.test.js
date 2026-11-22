@@ -8,7 +8,9 @@
 // failure mode a hermetic boundary prevents, and only a test can notice the boundary is gone.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { homedir, userInfo } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir, userInfo } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { envVarsRead } from "../src/docs_check.js";
 
@@ -67,6 +69,43 @@ test("canary: a hostile env cannot reach a test process", () => {
         FORCE_COLOR: "1",
       },
     },
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// The sandboxed $HOME only moves ~/.gitconfig. A signing rule also arrives from
+// /etc/gitconfig, $GIT_CONFIG_GLOBAL or the caller's own GIT_CONFIG_* pairs, and a signer
+// that needs an agent session variable (CLAUDE_*, scrubbed by _setup) then fails every
+// fixture `git commit` and `git tag`: 64 failures on a self-hosted runner, none in CI.
+test("canary: forced git signing cannot reach a fixture repo", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-hermetic-git-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // node as the signer: it rejects gpg's flags and exits non-zero on every platform, so any
+  // signing attempt fails without a fixture script. gpg.format is pinned because a
+  // developer's own `gpg.format=ssh` would route around gpg.program.
+  const forced = [
+    ["commit.gpgsign", "true"],
+    ["tag.gpgsign", "true"],
+    ["tag.forceSignAnnotated", "true"],
+    ["gpg.format", "openpgp"],
+    ["gpg.program", process.execPath],
+  ];
+  /** @type {NodeJS.ProcessEnv} */
+  const env = { ...process.env, GIT_CONFIG_COUNT: String(forced.length) };
+  forced.forEach(([key, value], i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = key;
+    env[`GIT_CONFIG_VALUE_${i}`] = value;
+  });
+  const canary =
+    "import{execFileSync}from'node:child_process';" +
+    "const g=(...a)=>execFileSync('git',['-c','user.name=t','-c','user.email=t@example.invalid',...a],{encoding:'utf8',stdio:'pipe'});" +
+    "g('init','-q');g('commit','-q','--allow-empty','-m','x');g('tag','-a','v1','-m','x');g('tag','v2');" +
+    // The caller's own pairs must survive: _setup appends, it never replaces.
+    "if(g('config','--get','gpg.program').trim()!==process.execPath)throw new Error('caller GIT_CONFIG_* pairs were clobbered');";
+  const r = spawnSync(
+    process.execPath,
+    ["--import", new URL("./_setup.js", import.meta.url).href, "--input-type=module", "-e", canary],
+    { cwd: dir, encoding: "utf8", env },
   );
   assert.equal(r.status, 0, r.stderr);
 });

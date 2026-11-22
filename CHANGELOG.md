@@ -8,6 +8,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- keep fixture commits and tags unsigned when Git signing is forced
 - the `forge-cortex` MCP server now sends `instructions` saying when to use each of its tools.
   Hosts that defer tool schemas (Claude Code, Codex) show the model only the tool names and
   this text, so the tools were rarely called without it. Tools that install something,
