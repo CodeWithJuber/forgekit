@@ -106,6 +106,87 @@ test("secret-redact emits nothing for a clean structured response", () => {
   assert.equal(r.out.trim(), "", "unchanged object must produce no rewrite at all");
 });
 
+// Encoded media is not text. Claude Code hands the model an image or a PDF as base64, and
+// base64 is full of long mixed-case runs the entropy detector reads as tokens. A rewrite
+// that swaps those runs for [REDACTED] is still a string, so the host accepts it and the
+// API then rejects the image ("invalid base64 data"). Bytes are deterministic so the
+// samples never change between runs.
+function mediaBase64(head) {
+  let seed = 7;
+  const tail = Buffer.from(
+    Array.from({ length: 3000 }, () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return (seed >> 16) & 0xff;
+    }),
+  );
+  return Buffer.concat([Buffer.from(head, "latin1"), tail]).toString("base64");
+}
+const MEDIA = {
+  png: mediaBase64("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
+  jpeg: mediaBase64("\xff\xd8\xff\xe0\x00\x10JFIF"),
+  gif: mediaBase64("GIF89a"),
+  webp: mediaBase64("RIFF\x24\x0c\x00\x00WEBPVP8 "),
+  pdf: mediaBase64("%PDF-1.7\n"),
+};
+
+test("secret-redact leaves an image or PDF that Read returns byte-identical", () => {
+  for (const [kind, base64] of Object.entries(MEDIA)) {
+    const r = run({
+      tool_name: "Read",
+      tool_input: { file_path: `/tmp/sample.${kind}` },
+      tool_response:
+        kind === "pdf"
+          ? { type: "pdf", file: { filePath: "/tmp/sample.pdf", base64, originalSize: 3009 } }
+          : { type: "image", file: { base64, type: `image/${kind}`, originalSize: 3009 } },
+    });
+    assert.equal(r.code, 0);
+    assert.equal(r.out.trim(), "", `${kind}: encoded media must not be rewritten`);
+  }
+});
+
+test("secret-redact leaves an image that Bash reports as a data URI untouched", () => {
+  for (const stdout of [
+    `data:image/png;base64,${MEDIA.png}`,
+    `data:image/png;base64,${MEDIA.png}\n`,
+  ]) {
+    const r = run({
+      tool_name: "Bash",
+      tool_response: { stdout, stderr: "", interrupted: false, isImage: true },
+    });
+    assert.equal(r.code, 0);
+    assert.equal(r.out.trim(), "", JSON.stringify(stdout.slice(-3)));
+  }
+});
+
+test("secret-redact still masks the text beside an image it leaves alone", () => {
+  const secret = fakeAnthropic("AAAAbbbbCCCCddddEEEEffff");
+  const r = run({
+    tool_name: "mcp__browser__screenshot",
+    tool_response: [
+      { type: "text", text: `saved, session token ${secret}` },
+      { type: "image", data: MEDIA.png, mimeType: "image/png" },
+    ],
+  });
+  assert.equal(r.code, 0);
+  const updated = JSON.parse(r.out).hookSpecificOutput.updatedToolOutput;
+  assert.match(updated[0].text, /REDACTED/);
+  assert.doesNotMatch(updated[0].text, /AAAAbbbbCCCCddddEEEE/);
+  assert.equal(updated[1].data, MEDIA.png, "the image survives the rewrite byte for byte");
+});
+
+test("secret-redact scans a string that only starts like encoded media", () => {
+  const secret = fakeAnthropic("AAAAbbbbCCCCddddEEEEffff");
+  // No media signature: base64 that is not an image is still a candidate token.
+  const blob = run({ tool_response: { stdout: mediaBase64("not media ") } });
+  assert.match(blob.out, /REDACTED/, "unrecognised base64 is still scanned");
+  // A media signature, then text: the leaf is not one encoded file, so all of it is scanned.
+  for (const stdout of [`${MEDIA.png}\nTOKEN=${secret}`, `/9j/ ${secret}`]) {
+    const r = run({ tool_response: { stdout } });
+    assert.match(r.out, /REDACTED/);
+    assert.doesNotMatch(r.out, /AAAAbbbbCCCCddddEEEE/, "the secret after the image is gone");
+  }
+});
+
 // RA-06: a broken redactor must never fail silently — the unredacted output would
 // pass straight through. Copying the .mjs to a dir with no ../../src/secrets.js makes
 // its dynamic import throw, exercising the degradation path.

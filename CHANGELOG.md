@@ -25,6 +25,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them
 - Claude Code can load the `dev-radar` skill on its own again; `disable-model-invocation`
   hid it from the model
+- the `secret-redact` guard no longer cuts up an image or a PDF. Read hands the model such a
+  file as base64, the entropy detector took runs of it for tokens, and the API then refused
+  the image ("invalid base64 data"). A string that is one whole base64 PNG, JPEG, GIF, WebP
+  or PDF now passes through unchanged; text beside it is still scanned
 
 ## [1.19.1] - 2026-11-17
 

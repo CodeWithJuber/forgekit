@@ -11,12 +11,26 @@
 // recursive and type-preserving: strings are redacted in place, arrays/objects keep their
 // exact keys and structure, and every non-string leaf (numbers, booleans, null) passes
 // through untouched. A string response stays a string; an object response stays an object.
+//
+// One kind of string is not text: a file handed to the model as base64 (Read on an image
+// or a PDF, an MCP screenshot). Base64 is full of long mixed-case runs, so the entropy
+// detector cut it up, the result was still a string of the right shape, and the API then
+// refused the image ("invalid base64 data"). Such a leaf passes through byte-identical.
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+// The whole string is base64 and starts with the bytes PNG, JPEG, GIF, WebP or PDF must
+// start with, optionally behind a `data:` URI prefix (how Bash reports an image). A string
+// that merely starts like one and goes on as text does not match, so it is still scanned;
+// only whitespace may follow (a command's trailing newline). Linear time: one anchored
+// pass, no nested quantifiers.
+const ENCODED_MEDIA =
+  /^(?:data:[\w.+-]+\/[\w.+-]+;base64,)?(?:iVBORw0KGgo|\/9j\/|R0lGOD[dl]h|UklGR[A-Za-z0-9+/]{6}XRUJQ|JVBERi0)[A-Za-z0-9+/]*={0,2}\s*$/;
+
 /** Recursively redact every string leaf while preserving the value's exact structure. */
 function redactValue(value, redactSecrets) {
-  if (typeof value === "string") return redactSecrets(value);
+  if (typeof value === "string")
+    return ENCODED_MEDIA.test(value) ? value : redactSecrets(value);
   if (Array.isArray(value))
     return value.map((v) => redactValue(v, redactSecrets));
   if (value && typeof value === "object") {
