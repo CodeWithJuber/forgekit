@@ -94,7 +94,7 @@
     "developer-tools"
   ],
   "devDependencies": {
-    "@biomejs/biome": "2.6.6",
+    "@biomejs/biome": "2.6.8",
     "@types/node": "^26",
     "typescript": "^6"
   }
