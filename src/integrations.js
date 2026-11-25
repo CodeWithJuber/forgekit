@@ -32,6 +32,7 @@ import {
   targetDefinition,
   validateServerName,
 } from "./emit/mcp.js";
+import { projectForgeLauncher } from "./forge_launcher.js";
 import {
   bindingDigest,
   forgetBinding,
@@ -168,10 +169,18 @@ function expandAdopted(adopted) {
 }
 
 /** The built-in server registry (source/mcp.json) — implicitly managed, always emitted. */
-function registryServers() {
+function registryServers(targetRoot = null) {
   const p = join(BRAND.root, "source", "mcp.json");
   if (!existsSync(p)) return {};
-  return JSON.parse(readFileSync(p, "utf8"));
+  const servers = JSON.parse(readFileSync(p, "utf8"));
+  if (targetRoot && servers["forge-cortex"]?.command === BRAND.cli) {
+    const launcher = projectForgeLauncher(targetRoot);
+    servers["forge-cortex"] = {
+      ...launcher,
+      args: [...launcher.args, ...servers["forge-cortex"].args],
+    };
+  }
+  return servers;
 }
 
 // Only a known server ID and an exact numeric release can reach a managed stdio command.
@@ -191,7 +200,7 @@ function integrationServer(name, rec, targetRoot) {
 
 /** Registry ∪ recorded integrations (that exist in the catalog) — the full managed set. */
 function managedServers(rec, targetRoot, unbound = []) {
-  const servers = { ...registryServers() };
+  const servers = { ...registryServers(targetRoot) };
   for (const name of rec.integrations) {
     if (
       !Object.hasOwn(INTEGRATIONS, name) &&
@@ -223,7 +232,7 @@ export function managedMcpState(targetRoot) {
   const cfg = readForgeConfig(targetRoot);
   if (cfg.corrupt) {
     return {
-      servers: { ...registryServers() },
+      servers: { ...registryServers(targetRoot) },
       owns: () => false,
       corrupt: true,
       warning: `${cfg.path} is not valid JSON — MCP emitted registry-only; recorded integrations left untouched (fix or delete it)`,

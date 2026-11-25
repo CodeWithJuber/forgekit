@@ -1,18 +1,7 @@
-// forge lessons storage — persistence for the self-correcting core. Lessons are one
-// file each under .forge/lessons/ (git-committable, human-auditable), episodes are an
-// append-only JSONL. Flat front-matter, not YAML: zero runtime deps and still readable/
-// diffable. Secret-refusal is reused from recall (never persist a credential).
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+// Historical lesson and episode formats, retained for reading and migration.
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasSecret } from "./secrets.js";
-import { ledgerOnly } from "./util.js";
 
 export const lessonsDir = (root = process.cwd()) => join(root, ".forge", "lessons");
 
@@ -50,12 +39,19 @@ export function serialize(lesson) {
 
 /** Pure: file text → lesson object (inverse of serialize). */
 export function parse(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const m = text.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!m) throw new Error("invalid lesson file (no front-matter)");
   const fm = {};
   for (const line of m[1].split("\n")) {
     const i = line.indexOf(":");
     if (i > 0) fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  function number(field, fallback) {
+    if (fm[field] === undefined || fm[field] === "") return fallback;
+    const value = Number(fm[field]);
+    if (!Number.isSafeInteger(value) || value < 0)
+      throw new Error(`invalid lesson file (${field})`);
+    return value;
   }
   const body = m[2].trim();
   const [whatWentWrong] = body.split(/\n\n\*\*Fix:\*\*/);
@@ -72,54 +68,18 @@ export function parse(text) {
     },
     whatWentWrong: whatWentWrong.trim(),
     correctedBehavior: fix ? fix[1].trim() : "",
-    evidenceCount: Number(fm.evidence) || 0,
-    contradictionCount: Number(fm.contradiction) || 0,
-    quarantineReconfirms: Number(fm.quarantineReconfirms) || 0,
-    createdDay: Number(fm.created) || 0,
-    lastConfirmedDay: Number(fm.lastConfirmed) || 0,
-    halfLifeDays: Number(fm.halfLifeDays) || 45,
+    evidenceCount: number("evidence", 0),
+    contradictionCount: number("contradiction", 0),
+    quarantineReconfirms: number("quarantineReconfirms", 0),
+    createdDay: number("created", 0),
+    lastConfirmedDay: number("lastConfirmed", 0),
+    halfLifeDays: number("halfLifeDays", 45),
     provenance: { episodes: listOf(fm.episodes), signals: listOf(fm.signals) },
   };
 }
 
-/** Persist one lesson. Refuses secret-like content (store a pointer, never the value). */
-export function save(root, lesson) {
-  const text = serialize(lesson);
-  if (hasSecret(text)) {
-    return {
-      ok: false,
-      reason: "refused: lesson looks like it contains a secret/credential",
-    };
-  }
-  // Legacy-store retirement: the ledger already holds this lesson (recordLessonEvent
-  // shadows every save), so under FORGE_LEDGER_ONLY skip the .md file — the ledger is
-  // the store. The secret check above still runs so nothing unsafe is minted either way.
-  if (ledgerOnly()) return { ok: true, ledgerOnly: true };
-  const dir = lessonsDir(root);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${lesson.id}.md`), text);
-  return { ok: true };
-}
-
-/** Load every persisted lesson (episodes.jsonl is skipped — only .md files are lessons).
- *  A single malformed/half-written file is skipped, not fatal — one bad file must never take
- *  down memory retrieval, routing, and the pre-edit advisory (everywhere `load` is called). */
-export function load(root) {
-  const dir = lessonsDir(root);
-  if (!existsSync(dir)) return [];
-  const out = [];
-  for (const f of readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .sort()) {
-    try {
-      out.push(parse(readFileSync(join(dir, f), "utf8")));
-    } catch (err) {
-      if (process.env.FORGE_DEBUG === "1")
-        process.stderr.write(`forge lessons: skipping ${f}: ${err?.message ?? err}\n`);
-    }
-  }
-  return out;
-}
+/** Validate the complete lesson, including provenance, before writing a claim. */
+export const lessonIsSafe = (lesson) => !hasSecret(serialize(lesson));
 
 /** Append a correction episode to the audit log (independent evidence, never overwritten). */
 export function appendEpisode(root, episode) {

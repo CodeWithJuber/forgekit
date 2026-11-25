@@ -45,7 +45,7 @@ const SOURCE_LABEL = {
 };
 
 async function status(root, json, settingsPath) {
-  const { resolveAdvisor, suggestAdvisor, loadAdvisorPack } = await import("../advisor.js");
+  const { resolveAdvisor, loadAdvisorPack } = await import("../advisor.js");
   const { userConfigPath } = await import("../repo_config.js");
   const state = resolveAdvisor(root, { settingsPath });
   if (json)
@@ -63,10 +63,9 @@ async function status(root, json, settingsPath) {
     );
   } else {
     console.log("  advisor: not configured");
-    const hint = suggestAdvisor(state.main.model) ?? "opus";
     console.log(
       paint(
-        `  \`${BRAND.cli} advisor set ${hint}\` pairs ${hint} with this repo's sessions; Claude Code's own \`/advisor\` saves a personal pick instead.`,
+        `  See the documented Claude Code pairs with \`${BRAND.cli} advisor pairings\`. Use \`${BRAND.cli} models --workload advisor\` for account inventory and measured results.`,
         "dim",
       ),
     );
@@ -102,9 +101,7 @@ async function status(root, json, settingsPath) {
 }
 
 async function pairings(main, json) {
-  const { acceptedAdvisors, loadAdvisorPack, rankModel, suggestAdvisor } = await import(
-    "../advisor.js"
-  );
+  const { acceptedAdvisors, loadAdvisorPack, rankModel } = await import("../advisor.js");
   const pack = loadAdvisorPack();
   if (main) {
     const m = rankModel(main);
@@ -112,24 +109,28 @@ async function pairings(main, json) {
     if (json)
       return console.log(
         JSON.stringify(
-          { main: m, accepted: rows, aliases, suggest: suggestAdvisor(main) },
+          {
+            main: m,
+            accepted: rows,
+            aliases,
+            suggest: null,
+            verified: pack.ranking.verified,
+            source: pack.ranking.source,
+          },
           null,
           2,
         ),
       );
     console.log(`  main model: ${m.label}${m.note ? paint(` — ${m.note}`, "dim") : ""}`);
-    if (m.status === "older" || m.status === "unknown")
+    if (m.rank === null)
       return console.log(
         `  ${paint("!", "warn")} ${m.note ?? `${m.raw} is not a Claude model ${BRAND.brand} recognises`}`,
       );
     console.log(`  accepted advisors: ${rows.map((r) => r.label).join(", ")}`);
     console.log(`  aliases that work: ${aliases.join(", ") || "(none)"}`);
-    const s = suggestAdvisor(main);
-    if (s) console.log(`  suggested: ${s}`);
     return;
   }
-  const table = pack.ranking.rows
-    .filter((r) => r.advises !== false || r.family === "haiku")
+  const table = [...pack.ranking.rows]
     .sort((a, b) => a.rank - b.rank)
     .map((r) => ({
       main: r.label,
@@ -145,12 +146,7 @@ async function pairings(main, json) {
     );
   heading(`${BRAND.brand} advisor — accepted pairings (verified ${pack.ranking.verified})\n`);
   for (const row of table) console.log(`  ${row.main.padEnd(12)} ← ${row.accepted.join(", ")}`);
-  console.log(
-    paint(
-      `\n  an advisor must rank at or above the main model; haiku never advises. ${pack.ranking.source}`,
-      "dim",
-    ),
-  );
+  console.log(paint(`\n  Compatibility source: ${pack.ranking.source}`, "dim"));
 }
 
 HANDLERS.advisor = async (argv) => {

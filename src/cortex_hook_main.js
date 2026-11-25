@@ -13,6 +13,7 @@
 import {
   applyDistillation,
   lessonsForContext,
+  pendingCorrections,
   recordServedLessons,
   startupBlock,
 } from "./cortex.js";
@@ -23,6 +24,7 @@ import {
   doomLoopAdvisory,
   processSession,
   readSession,
+  summaryEvents,
 } from "./cortex_hook.js";
 import { nativeHarnessInstruction } from "./harness_native.js";
 import { autoAdoptionNotice, failureQuery, hookEvidence } from "./hook_evidence.js";
@@ -38,7 +40,7 @@ async function enrichCreated(root, results) {
   if (!created.length) return;
   const { distill } = await import("./cortex_distill.js");
   for (const r of created) {
-    const lesson = mergedLessons(root, epochDay()).find((l) => l.id === r.id);
+    const lesson = pendingCorrections(root).find((l) => l.id === r.id);
     if (!lesson) continue;
     const better = distill({
       context: lesson.trigger,
@@ -46,17 +48,6 @@ async function enrichCreated(root, results) {
     });
     if (!better) continue;
     applyDistillation(root, r.id, better);
-    // A7 auto-routing: a distilled lesson whose prose reads like a settled decision or
-    // a durable repo fact ALSO lands in that home (decisions.md / ledger) — confidently
-    // (≥0.5) routed knowledge reaches the shelf the next session actually reads.
-    // Fail-open like everything in this file: routing must never break the distill loop.
-    try {
-      const { routeFact, storeFact } = await import("./knowledge_router.js");
-      const text = `${better.correctedBehavior} — ${better.whatWentWrong}`;
-      const route = routeFact(text);
-      if ((route.home === "decision" || route.home === "ledger-fact") && route.confidence >= 0.5)
-        storeFact(root, text, { route });
-    } catch {}
   }
 }
 
@@ -97,23 +88,34 @@ async function main() {
       if (review) emit("PostToolUse", review);
     }
   } else if (mode === "failure") {
+    const event = classifyEvent(hook);
+    if (
+      event?.type === "bash" &&
+      "exitCode" in event &&
+      Number.isInteger(event.exitCode) &&
+      event.exitCode !== 0
+    )
+      appendSessionEvent(root, sid, event);
+    const failure = failureQuery(hook);
     const text = await hookEvidence(
       root,
-      [failureQuery(hook), hook.pending_query].filter(Boolean).join("\n"),
+      [failure, hook.pending_query].filter(Boolean).join("\n"),
+      undefined,
+      Boolean(failure),
     );
     if (text) emit("PostToolUseFailure", text);
   } else if (mode === "stop") {
     const events = readSession(root, sid);
     if (events.length) {
-      const results = processSession(root, events, today);
+      const results = processSession(root, events, today, { sessionId: sid });
       // Anti-repetition: a first-try success mints no mistake episode, so its trace
       // would vanish at clearSession. Mint one `summary` claim of the solved task FIRST
       // (before the log is cleared) — `forge deja` then finds it next time. Fail-safe;
       // kill switch FORGE_DEJA=0.
-      if (process.env.FORGE_DEJA !== "0") {
+      if (process.env.FORGE_DEJA === "1") {
         try {
           const { recordSessionSummary } = await import("./deja.js");
-          recordSessionSummary(root, sid, events, today);
+          recordSessionSummary(root, sid, summaryEvents(root, sid, events), today);
         } catch {}
       }
       clearSession(root, sid);
@@ -145,6 +147,11 @@ async function main() {
       if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
     } catch {}
   } else if (mode === "session-start") {
+    if (hook.hook_event_name === "SessionStart" && hook.model) {
+      const { recordHostModel } = await import("./host_models.js");
+      const { detectHost } = await import("./hosts.js");
+      if (!detectHost(process.env)) recordHostModel("claude", "SessionStart", hook);
+    }
     // Prune BEFORE anchoring: pruning after would delete the very baseline a >7-day
     // resume just preserved (the anchor then re-records fresh, which is the right
     // semantics for a week-old session anyway). Then record WHERE the repo stands so
@@ -206,9 +213,19 @@ async function main() {
     // typed prompt. They are reports, not requests: no advisory, no card, no lookups.
     const harness = /^\s*(<(agent-message|task-notification)\b|\[SYSTEM NOTIFICATION\b)/;
     if (typeof hook.prompt === "string" && hook.prompt.trim() && !harness.test(hook.prompt)) {
+      const { classifyIntent, intentCard, isDialogueTurn } = await import("./intent.js");
+      const intent = classifyIntent(hook.prompt, { root, intent: hook.intent });
+      if (isDialogueTurn(hook.prompt, { intent: intent.intent })) {
+        const instruction = nativeHarnessInstruction(hook);
+        if (instruction) emit("UserPromptSubmit", instruction);
+        return;
+      }
       const result = substrateCheck(root, hook.prompt, {
         allowBuild: false,
         sessionId: hook.session_id || null,
+        requiredFiles: Array.isArray(hook.required_files)
+          ? hook.required_files.filter((p) => typeof p === "string")
+          : [],
       });
       // Best-effort metrics recording — fills the cost dashboard pipeline without
       // blocking the hook. A failing write is silently swallowed.
@@ -222,8 +239,8 @@ async function main() {
           stage: "gate",
           outcome: result.assumption?.shouldAsk ? "halt" : "pass",
         });
-        if (result.route?.key) {
-          record(root, { stage: "route", tier: result.route.tier });
+        if (result.route?.model?.id) {
+          record(root, { stage: "route", tier: result.route.model.id });
         }
       } catch {}
       const gate = enforceDecision(result);
@@ -268,16 +285,23 @@ async function main() {
           appendSessionEvent(root, sid, {
             type: "assumption",
             missing: (a.missing ?? []).map((m) => m.key),
-            questions: (a.questions ?? []).slice(0, 3),
+            // Model-authored questions can repeat incidental details from the prompt.
+            // Store only dimension keys in the portable session trail.
           });
       } catch {}
-      const advisory = substrateContext(result);
-      // Intent protocol card (exemplar k-NN, once per run of the same intent) rides the
+      const scoped = result.entities.files.length > 0 || result.entities.symbols.length > 0;
+      const grounded =
+        intent.intent !== "none" ||
+        scoped ||
+        result.route.status === "measured" ||
+        result.goalAnchor?.drift ||
+        result.assumption.shouldAsk;
+      const advisory = grounded ? substrateContext(result) : "";
+      // A selected work protocol is emitted once per run of that intent on the
       // SAME emit — one hook process must write one JSON object.
       let card = "";
       try {
-        const { intentCard } = await import("./intent.js");
-        card = intentCard(root, sid, hook.prompt);
+        card = intentCard(root, sid, hook.prompt, intent);
       } catch {}
       // Anti-repetition advisory: one line when a prior solved task closely matches this
       // prompt (cache-only ledger read, never a fetch). Kill switch FORGE_DEJA=0.
@@ -291,10 +315,7 @@ async function main() {
       let advisorLine = "";
       try {
         const { advisorNudge } = await import("./advisor.js");
-        const { resolveRoutePolicy } = await import("./orchestration.js");
-        const { riskMatches } = await import("./route_policy.js");
-        const risk = riskMatches(hook.prompt, resolveRoutePolicy(root).riskCategories).length > 0;
-        advisorLine = advisorNudge(root, { ...result, risk });
+        advisorLine = advisorNudge(root, result);
       } catch {}
       const adoption = await autoAdoptionNotice(root, hook.prompt);
       const evidence = hook.defer_evidence

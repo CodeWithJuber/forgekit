@@ -20,7 +20,14 @@ import {
   storesVerbatim,
   val,
 } from "./ledger.js";
-import { appendEvidence, loadClaims, putClaim, readEvidence, repoLedger } from "./ledger_store.js";
+import {
+  ambientLookup,
+  appendEvidence,
+  loadClaims,
+  putClaim,
+  readEvidence,
+  repoLedger,
+} from "./ledger_store.js";
 import { record as recordMetric } from "./metrics.js";
 import {
   jsImports,
@@ -947,11 +954,11 @@ export function reuseQuery(root, spec, { slice = "", atlas = null, nowDay = 0 } 
 export function reusePeek(
   root,
   spec,
-  { slice = "", atlas = null, nowDay = 0, offline = false } = {},
+  { slice = "", atlas = null, nowDay = 0, offline = false, candidates = undefined } = {},
 ) {
   const dir = repoLedger(root);
   if (!existsSync(join(dir, "claims"))) return { tier: "miss", reasons: [], sim: "minhash" };
-  const claims = loadClaims(dir);
+  const claims = candidates ?? (offline ? ambientLookup(dir, spec).claims : loadClaims(dir));
   const sim = offline ? null : specSim(root, spec, claims);
   const r = lookup(claims, spec, { slice, atlas, nowDay, sim, root });
   r.sim = simLabel(sim);

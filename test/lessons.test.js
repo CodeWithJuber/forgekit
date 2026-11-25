@@ -28,26 +28,36 @@ test("scoreMistake: two families fire; S6 solo fires; weak S5 solo does NOT", ()
   assert.equal(scoreMistake([{ signal: "S5" }]).fires, false, "a stray 'no' never mints a lesson");
   assert.equal(
     scoreMistake([{ signal: "S5" }, { signal: "S1" }]).fires,
-    true,
-    "human + outcome (2 families) fires",
+    false,
+    "wording is inferred and cannot corroborate an outcome",
   );
 });
 
-test("scoreMistake: noisy-OR is bounded and monotonic, anti-signal scales down", () => {
-  const strong = scoreMistake([{ signal: "S1" }, { signal: "S4" }]).p;
-  const damped = scoreMistake([
+test("scoreMistake reports sources once and abstains on ambiguous or unrecognized inputs", () => {
+  const events = Array.from({ length: 100 }, () => ({ signal: "S2" }));
+  const observed = scoreMistake([
+    ...events,
+    { signal: "S3" },
     { signal: "S1", anti: 0.3 },
-    { signal: "S4", anti: 0.3 },
-  ]).p;
-  assert.ok(strong < 1 && strong > 0, "bounded in (0,1)");
-  assert.ok(damped < strong, "experiment marker (anti) lowers mistake probability");
+    { signal: "unknown" },
+  ]);
+  assert.deepEqual(observed, {
+    signals: ["S2", "S3"],
+    families: ["behavioral"],
+    explicit: false,
+    corroborated: false,
+    fires: false,
+  });
+  assert.deepEqual(scoreMistake([]).families, []);
+  assert.deepEqual(scoreMistake(null).families, []);
+  assert.equal(Object.hasOwn(observed, "p"), false);
 });
 
 test("classify routes distill / accumulate / discard", () => {
-  assert.equal(classify([{ signal: "S6" }, { signal: "S1" }]), "distill"); // p high + fires
-  // two behavioral signals: enough mistake-probability to accumulate, but gated from distilling
+  assert.equal(classify([{ signal: "S6" }, { signal: "S1" }]), "distill");
+  // Both came from the same source.
   assert.equal(classify([{ signal: "S2" }, { signal: "S3" }]), "accumulate");
-  assert.equal(classify([{ signal: "S2", anti: 0.3 }]), "discard"); // damped, below 0.4
+  assert.equal(classify([{ signal: "S2", anti: 0.3 }]), "discard");
 });
 
 test("anti-self-reinforcement: injection never confirms; sustained contradiction quarantines", () => {
@@ -74,7 +84,7 @@ test("decay: an unconfirmed lesson fades over time", () => {
   assert.ok(stale < fresh / 3, "≈quartered after two half-lives");
 });
 
-test("matchScore: symbol hit beats file-glob beats keyword", () => {
+test("matchScore: computes coverage for each recorded trigger channel", () => {
   const l = newLesson({
     id: "m",
     trigger: {
@@ -84,8 +94,8 @@ test("matchScore: symbol hit beats file-glob beats keyword", () => {
     },
   });
   assert.equal(matchScore(l, { symbols: ["validateToken"] }), 1.0);
-  assert.equal(matchScore(l, { files: ["src/auth/session.ts"] }), 0.6);
-  assert.equal(matchScore(l, { keywords: ["jwt"] }), 0.3);
+  assert.equal(matchScore(l, { files: ["src/auth/session.ts"] }), 1);
+  assert.equal(matchScore(l, { keywords: ["jwt"] }), 1);
   assert.equal(matchScore(l, { files: ["src/db/index.ts"] }), 0);
 });
 
@@ -94,7 +104,7 @@ test("matchScore: keyword tier is graded — same-module partial overlap earns p
   const exact = matchScore(l, { keywords: ["src/auth/login.js"] });
   const sibling = matchScore(l, { keywords: ["src/auth/session.js"] });
   const unrelated = matchScore(l, { keywords: ["docs/readme.md"] });
-  assert.equal(exact, 0.3, "full overlap keeps the historical tier value");
+  assert.equal(exact, 1, "complete overlap covers the recorded trigger");
   assert.ok(sibling > 0 && sibling < exact, "same module scores between 0 and exact");
   assert.equal(unrelated, 0, "no shared tokens → no match");
 });
@@ -106,6 +116,10 @@ test("matchScore: generic path tokens (src, js, index) never create cross-module
   assert.equal(matchScore(l, { keywords: ["src/cortex_hook_main.js"] }), 0);
   const cfg = newLesson({ id: "c", trigger: { keywords: ["config.js"] } });
   assert.equal(matchScore(cfg, { keywords: ["src/anything_else.js"] }), 0);
+  const novel = newLesson({ id: "n", trigger: { keywords: ["unlisted/処理/login.xyzzy"] } });
+  const sibling = matchScore(novel, { keywords: ["unlisted/処理/session.xyzzy"] });
+  assert.ok(sibling > 0 && sibling < 1);
+  assert.equal(matchScore(novel, { keywords: ["unlisted/購入/login.xyzzy"] }), 0);
 });
 
 test("selectForInjection: relevance-ranked, capped, overflow becomes a pointer (never silent)", () => {

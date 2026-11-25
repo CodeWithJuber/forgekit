@@ -1,0 +1,14 @@
+{
+  "name": "team-guide",
+  "version": "1.0.0",
+  "source": "Local development team",
+  "license": "MIT",
+  "description": "Read the release acceptance checklist",
+  "tools": [
+    {
+      "name": "release-checklist",
+      "reference": "references/release.md",
+      "description": "Read the reviewed release acceptance checklist"
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { build, impact } from "../src/atlas.js";
 import { assessTask, preflightRepo } from "../src/preflight.js";
-import { routeTask, rubricComplexity } from "../src/route.js";
+import { routeTask } from "../src/route.js";
 import { recordBaseline } from "../src/session.js";
 import { renderSubstrate, substrateCheck } from "../src/substrate.js";
 
@@ -20,25 +20,11 @@ function repo() {
   return root;
 }
 
-test("assumption gate asks on under-specified work", () => {
-  const r = assessTask("Fix the bug.");
+test("assumption gate asks on a missing declared input", () => {
+  const r = assessTask("Fix the bug.", { requirements: [{ path: "fixture", present: false }] });
   assert.equal(r.shouldAsk, true);
-  assert.equal(r.risk, "high");
+  assert.equal(r.risk, "unmet");
   assert.ok(r.questions.length > 0);
-});
-
-test("routing rubric separates trivial, moderate, and premium tasks", () => {
-  assert.equal(rubricComplexity("Write is_prime(n). is_prime(7) -> True. Python.").band, "cheap");
-  assert.equal(
-    rubricComplexity("Implement an LRU cache class with O(1) get/put. Python.").band,
-    "mid",
-  );
-  assert.equal(
-    rubricComplexity(
-      "Design and implement a thread-safe bounded blocking queue with condition-variable signaling.",
-    ).band,
-    "premium",
-  );
 });
 
 test("atlas impact follows reverse dependencies", () => {
@@ -84,21 +70,22 @@ test("substrateCheck returns one professional pre-action contract", () => {
   );
   assert.equal(typeof r.okToProceed, "boolean");
   assert.ok(r.assumption);
-  assert.ok(r.route.model.id);
+  assert.equal(r.route.model, null);
   assert.ok(Array.isArray(r.impact.impactedFiles));
   assert.ok(Array.isArray(r.verification.checklist));
 });
 
-test("routeTask uses text rubric to avoid under-routing moderate standalone tasks", () => {
+test("standalone tasks with no verified outcomes receive an unrated route", () => {
   const root = repo();
   const r = routeTask(root, "Implement an LRU cache class with O(1) get and put. JavaScript.");
-  assert.ok(["sonnet", "opus", "fable"].includes(r.key), `got ${r.key}`);
+  assert.equal(r.status, "unrated");
 });
 
 test("preflightRepo includes assumption report", () => {
   const root = repo();
   const r = preflightRepo(root, "Optimize it.");
-  assert.equal(r.assumption.shouldAsk, true);
+  assert.equal(r.assumption.risk, "unknown");
+  assert.equal(r.assumption.shouldAsk, false);
 });
 
 test("substrateCheck (llm off by default): provenance is deterministic across faculties", () => {
@@ -106,7 +93,7 @@ test("substrateCheck (llm off by default): provenance is deterministic across fa
   const r = substrateCheck(root, "Refactor computeTax in math.js", { allowBuild: true });
   assert.equal(r.llm.enabled, false);
   assert.equal(r.llm.provenance.assumption, "deterministic");
-  assert.equal(r.llm.provenance.route, "deterministic");
+  assert.equal(r.llm.provenance.route, "insufficient-evidence");
   assert.ok(Array.isArray(r.guarantees.llmVerified), "llmVerified bucket is present");
 });
 
@@ -118,7 +105,7 @@ test("substrateCheck (llm on, explicit): opt-in flag threads through and stays f
   // way the substrate must not throw and must still return a coherent contract.
   const r = substrateCheck(root, "Update computeTax in math.js", { llm: true });
   assert.equal(r.llm.enabled, true);
-  assert.ok(r.route.model.id, "still returns a routed model");
+  assert.equal(r.route.model, null, "LLM consent supplies no routing evidence");
   assert.equal(typeof r.okToProceed, "boolean");
   assert.ok(["deterministic", "llm-verified", "llm-agreed"].includes(r.llm.provenance.goalAnchor));
 });
@@ -165,7 +152,7 @@ test("enforceDecision: off by default → never blocks", async () => {
   assert.equal(enforceDecision(r, { enforce: false }).block, false);
 });
 
-test("enforceDecision (enforcing): blocks a vacuous prompt, not a specified one", async () => {
+test("enforceDecision (enforcing): blocks a missing declared prerequisite", async () => {
   const { enforceDecision } = await import("../src/substrate.js");
   const vacuous = {
     assumption: { hardUnderspecified: true, questions: ["What should this produce?"] },
@@ -173,7 +160,7 @@ test("enforceDecision (enforcing): blocks a vacuous prompt, not a specified one"
   };
   const g = enforceDecision(vacuous, { enforce: true });
   assert.equal(g.block, true);
-  assert.match(g.reason, /no concrete anchor/);
+  assert.match(g.reason, /declared prerequisite/);
   const specified = {
     assumption: { hardUnderspecified: false, questions: [] },
     impact: { impactedFiles: ["a.js"] },

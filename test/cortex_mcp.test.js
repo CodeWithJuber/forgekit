@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { build as buildAtlas, has } from "../src/atlas.js";
 import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
@@ -13,11 +14,8 @@ import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
 import { MCP_TOOL_GUIDE, mcpInstructions, ORIENT_TOOLS } from "../src/orient.js";
+import { epochDay } from "../src/util.js";
 import { fakeGithubPat } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 test("handle: initialize advertises the forge-cortex server", async () => {
   const r = await handle({
@@ -27,6 +25,16 @@ test("handle: initialize advertises the forge-cortex server", async () => {
     params: {},
   });
   assert.equal(r.result.serverInfo.name, "forge-cortex");
+});
+
+test("an unfamiliar MCP client sees the boundaries of its tool permissions", async () => {
+  const session = { host: undefined };
+  const reply = await handle(
+    { id: 1, method: "initialize", params: { clientInfo: { name: "Local Research Planner" } } },
+    session,
+  );
+  assert.equal(session.host, undefined);
+  assert.match(reply.result.instructions, /client controls its native tools and permissions/);
 });
 
 test("handle: initialize carries instructions that say when to use the listed tools", async () => {
@@ -98,6 +106,7 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
     "cortex_status",
     "preflight_check",
     "route_task",
+    "forge_models",
     "scope_files",
     "forge_cost",
     "forge_dash_data",
@@ -114,6 +123,21 @@ test("handle: tools/list exposes the cortex + preflight tools", async () => {
   ]) {
     assert.ok(names.includes(t), `exposes ${t}`);
   }
+});
+
+test("MCP exposes offline model inventory and honors profile constraints in recommendations", async () => {
+  const call = async (name, args) =>
+    (await handle({ id: 2, method: "tools/call", params: { name, arguments: args } })).result;
+  const listing = JSON.parse(
+    (await call("forge_models", { profile: "anthropic" })).content[0].text,
+  );
+  assert.equal(listing.modelControl.nativeAgent, "host-managed");
+  assert.equal(listing.profiles[0].status, "credential-missing");
+  const routing = JSON.parse(
+    (await call("route_task", { profile: "anthropic", task: "read docs", band: "high" })).content[0]
+      .text,
+  );
+  assert.equal(routing.ok, false);
 });
 
 test("rank_code without an atlas answers built:false over stdio, never a throw", () => {
@@ -148,6 +172,42 @@ test("handle: notifications get no response; unknown methods error", async () =>
 
 const SERVER = fileURLToPath(new URL("../src/cortex_mcp.js", import.meta.url));
 
+test("MCP preflight distinguishes partial, resolved and unreferenced tasks", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-preflight-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const names = ["alphaSymbol", "betaSymbol"];
+  for (const name of names)
+    writeFileSync(join(root, name + ".js"), `export function ${name}() {}\n`);
+  const partial = buildAtlas({ root, cap: 1 });
+  const indexed = names.find((s) => has(partial, s));
+  const unchecked = names.find((s) => !has(partial, s));
+  assert.ok(indexed && unchecked);
+  const call = (task) => {
+    const req = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "preflight_check", arguments: { task } },
+    };
+    const child = spawnSync(process.execPath, [SERVER], {
+      input: JSON.stringify(req) + "\n",
+      encoding: "utf8",
+      env: { ...process.env, FORGE_ROOT: root },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout).result.content[0].text;
+  };
+  const mixed = call(`Update \`${indexed}\` and \`${unchecked}\``);
+  assert.match(mixed, /partial repository index/i);
+  assert.match(mixed, /1 file.*indexed.*1 omitted/i);
+  assert.ok(mixed.includes(unchecked));
+  assert.doesNotMatch(mixed, /all clear/i);
+  assert.match(call(`Update \`${indexed}\``), /all clear/i);
+  assert.match(call("continue"), /no named code references/i);
+  buildAtlas({ root });
+  assert.match(call(`Update \`${indexed}\` and \`${unchecked}\``), /all clear/i);
+});
+
 test("live server over stdio returns learned lessons for a repo", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-mcp-"));
   const session = () => [
@@ -157,8 +217,8 @@ test("live server over stdio returns learned lessons for a repo", () => {
     { type: "edit", file: "src/tax.ts" },
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
-  processSession(root, session(), 1);
-  processSession(root, session(), 2); // → active lesson
+  processSession(root, session(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(root, session(), epochDay(), { sessionId: "second-session" }); // → active lesson
 
   const requests = [
     JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
@@ -184,7 +244,7 @@ test("live server over stdio returns learned lessons for a repo", () => {
   assert.match(call.result.content[0].text, /tax\.ts/);
 });
 
-test("forge_remember writes a fact to .forge/brain/ via stdio", () => {
+test("forge_remember makes a private proposal and only human approval publishes it", async () => {
   const root = mkdtempSync(join(tmpdir(), "forge-mcp-rem-"));
   mkdirSync(join(root, ".forge", "brain"), { recursive: true });
   const requests = [
@@ -210,9 +270,35 @@ test("forge_remember writes a fact to .forge/brain/ via stdio", () => {
     .split("\n")
     .map((l) => JSON.parse(l));
   const call = responses.find((x) => x.id === 2);
-  assert.match(call.result.content[0].text, /Remembered/);
-  const written = readFileSync(join(root, ".forge", "brain", "facts", "test-fact.md"), "utf8");
-  assert.match(written, /testing MCP write/);
+  const id = /Private proposal ([0-9a-f]{64})/.exec(call.result.content[0].text)?.[1];
+  assert.ok(id);
+  assert.equal(existsSync(join(root, ".forge", "brain", "facts", "test-fact.md")), false);
+  assert.deepEqual(loadClaims(repoLedger(root)), []);
+  const { listProposals, reviewProposal, proposeMemory } = await import(
+    "../src/memory_proposals.js"
+  );
+  const { privateMemoryDir } = await import("../src/private_memory.js");
+  const proposals = privateMemoryDir(root, "proposals");
+  const damaged = "0".repeat(64);
+  writeFileSync(
+    join(proposals, damaged + ".json"),
+    JSON.stringify({ id: damaged, name: "ordinary", body: "text" }),
+  );
+  writeFileSync(join(proposals, "1".repeat(64) + ".json"), "{");
+  assert.deepEqual(
+    listProposals(root).map((p) => p.id),
+    [id],
+  );
+  assert.throws(() => reviewProposal(root, damaged, true), /Damaged proposal/);
+  reviewProposal(root, id, true);
+  assert.equal(
+    loadClaims(repoLedger(root)).find((c) => c.kind === "fact")?.body.text,
+    "testing MCP write",
+  );
+  const other = proposeMemory(root, "test-fact", "different value");
+  assert.throws(() => reviewProposal(root, other.id, true), /Conflict/);
+  reviewProposal(root, other.id, false);
+  assert.deepEqual(listProposals(root), []);
 });
 
 test("handle: a tool handler that throws still gets a JSON-RPC error reply (no client hang)", async () => {
@@ -231,7 +317,7 @@ test("handle: a tool handler that throws still gets a JSON-RPC error reply (no c
   const r = spawnSync("node", [SERVER], {
     input: `${requests}\n`,
     encoding: "utf8",
-    env: { ...process.env, FORGE_ROOT: root },
+    env: { ...process.env, FORGE_ROOT: root, FORGE_HOME: root },
     timeout: 10000,
   });
   const responses = r.stdout
@@ -351,4 +437,17 @@ test("forge_remember reports a refusal instead of claiming it remembered", () =>
   assert.match(out[1], /Not remembered/);
   assert.match(out[1], /secret/i);
   assert.deepEqual(JSON.parse(out[2]).items, [], "and nothing was stored");
+});
+
+test("malformed MCP frame gets parse error and next request succeeds", () => {
+  const r = spawnSync("node", [SERVER], {
+    input: '{broken\n{"jsonrpc":"2.0","id":3,"method":"tools/list"}\n',
+    encoding: "utf8",
+  });
+  const replies = r.stdout
+    .trim()
+    .split("\n")
+    .map((s) => JSON.parse(s));
+  assert.equal(replies.find((x) => x.id === null)?.error.code, -32700);
+  assert.ok(replies.find((x) => x.id === 3)?.result.tools.length);
 });

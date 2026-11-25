@@ -2,6 +2,7 @@
 // and where any prior evidence about them came from. The shipped file (data/models.json) is a
 // starting point; `.forge/models.json` in a project adds models, overrides prices or provider
 // ids, and can disable entries. No model, vendor or tier is named anywhere in router code.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { violations } from "../schema.js";
@@ -16,6 +17,8 @@ const MODEL_SPEC = /** @type {import("../schema.js").Spec} */ ({
     id: { type: "string", nonEmpty: true, max: 200 },
     label: { type: "string", max: 200 },
     org: { type: "string", max: 200 },
+    price_source: { type: "string", max: 1000, nullable: true },
+    price_as_of: { type: "string", pattern: /^\d{4}-\d{2}-\d{2}$/, nullable: true },
     price_in: { type: "number", min: 0, max: 1e6, nullable: true },
     price_out: { type: "number", min: 0, max: 1e6, nullable: true },
     enabled: { type: "boolean" },
@@ -63,6 +66,10 @@ export function loadRegistry(root) {
         const prev = byId.get(m.id) ?? {};
         byId.set(m.id, {
           ...prev,
+          ...((Object.hasOwn(m, "price_in") && m.price_in !== prev.price_in) ||
+          (Object.hasOwn(m, "price_out") && m.price_out !== prev.price_out)
+            ? { price_source: null, price_as_of: null }
+            : {}),
           ...m,
           providers: { ...(prev.providers ?? {}), ...(m.providers ?? {}) },
         });
@@ -82,4 +89,18 @@ export function loadRegistry(root) {
 export function servableBy(registry, provider) {
   if (!provider || provider === "any") return registry.models.map((m) => m.id);
   return registry.models.filter((m) => m.providers?.[provider]).map((m) => m.id);
+}
+
+// Persist a public transport fingerprint with an outcome. Re-pointing a registry name
+// to another deployment must not transfer the old quality or price to the new one.
+export function outcomeBinding(profile, modelId) {
+  if (!modelId || !profile?.baseUrl) return null;
+  const fields = [
+    profile.name,
+    profile.type,
+    profile.format ?? "",
+    profile.baseUrl.replace(/\/+$/, ""),
+    modelId,
+  ];
+  return createHash("sha256").update(JSON.stringify(fields)).digest("hex");
 }

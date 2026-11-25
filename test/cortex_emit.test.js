@@ -5,10 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { processSession } from "../src/cortex_hook.js";
 import { canonical } from "../src/sync.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { epochDay } from "../src/util.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-emit-"));
 const brokenSession = () => [
@@ -26,8 +23,8 @@ test("a fresh repo's canonical AGENTS.md has no lessons block (no noise)", () =>
 
 test("once a lesson is active, it is inlined into AGENTS.md for every tool to read", () => {
   const root = fixture();
-  processSession(root, brokenSession(), 1);
-  processSession(root, brokenSession(), 2); // → active
+  processSession(root, brokenSession(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(root, brokenSession(), epochDay(), { sessionId: "second-session" }); // → active
   const body = canonical(root);
   assert.match(
     body,

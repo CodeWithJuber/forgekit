@@ -45,9 +45,6 @@ export const ADVISOR_SETTINGS_KEY = "advisorModel";
 export const DISABLE_ADVISOR_ENV = "CLAUDE_CODE_DISABLE_ADVISOR_TOOL";
 /** Variables that turn Claude Code's feature-flag fetching off; the advisor needs it, so it stays off. */
 export const FLAG_FETCH_OFF_ENV = ["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_TELEMETRY"];
-/** The family aliases Claude Code accepts for `advisorModel` (haiku can never advise). */
-export const ADVISOR_ALIASES = ["sonnet", "opus", "fable"];
-
 let packCache = null;
 
 /** The shipped pack (source/advisor.json), parsed once per process. */
@@ -67,8 +64,6 @@ const isObj = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 // `claude-sonnet-5-5`, `anthropic/claude-sonnet-5.5`, `claude-sonnet-5-5[1m]` and a Bedrock
 // `us.anthropic.claude-sonnet-5-5-v1:0` all read as Sonnet 5.5.
 // ---------------------------------------------------------------------------
-
-const FAMILIES = ["haiku", "sonnet", "opus", "fable", "mythos"];
 
 /** A version string from the table ("4.5") or an id's parsed version ([4, 5]) as "4.5". */
 const versionKey = (v) =>
@@ -106,7 +101,8 @@ export function parseModel(raw) {
       note: "opusplan plans on Opus and executes on Sonnet; checked as Opus, the stricter side",
     };
   const tokens = tokenize(bare);
-  const family = FAMILIES.find((f) => tokens.has(f)) ?? null;
+  const family =
+    loadAdvisorPack().ranking.rows.find((row) => tokens.has(row.family))?.family ?? null;
   const version = family ? versionOf(bare) : null;
   return {
     raw: text,
@@ -128,11 +124,12 @@ const familyRows = (family) =>
  *   alias    a family alias — resolved to the family's newest row (what Claude Code's built-in
  *            default advances to with each release);
  *   newer    a version above the newest row Forge knows — Claude Code validates it at launch;
+ *   unlisted a version between documented releases with no pairing evidence;
  *   older    a version below the oldest row — it predates the advisor and cannot pair;
  *   unknown  not a Claude model family Forge recognises.
  * @param {unknown} raw
  * @returns {{raw:string, family:string|null, version:string|null, label:string, rank:number|null,
- *   advises:boolean, status:"known"|"alias"|"newer"|"older"|"unknown", note?:string}}
+ *   advises:boolean|null, status:"known"|"alias"|"newer"|"unlisted"|"older"|"unknown", note?:string}}
  */
 export function rankModel(raw) {
   const p = parseModel(raw);
@@ -172,13 +169,14 @@ export function rankModel(raw) {
       note: `${label} predates the advisor (the oldest ${title} it supports is ${rows[0].label})`,
     };
   const newest = rows[rows.length - 1];
+  const above = compareVersionKeys(p.version, newest.version) > 0;
   return {
     ...base,
     label,
-    rank: newest.rank,
-    advises: newest.advises !== false,
-    status: "newer",
-    note: `${label} is newer than ${BRAND.brand}'s pairing table (verified ${loadAdvisorPack().ranking.verified}); ranked as ${newest.label}, and Claude Code validates the pairing at launch`,
+    rank: null,
+    advises: null,
+    status: above ? "newer" : "unlisted",
+    note: `${label} is ${above ? "newer than" : "absent from"} ${BRAND.brand}'s pairing table dated ${loadAdvisorPack().ranking.verified}. Claude Code checks compatibility at launch.`,
   };
 }
 
@@ -204,7 +202,7 @@ export function checkPairing(main, advisor) {
     );
   if (a.status === "older")
     return out(false, "unknown-advisor", a.note ?? `${a.label} cannot act as an advisor`);
-  if (!a.advises)
+  if (a.advises === false)
     return out(false, "cannot-advise", `${a.label} can call the advisor but cannot act as one`);
   if (!m)
     return out(
@@ -224,51 +222,40 @@ export function checkPairing(main, advisor) {
       "main-unsupported",
       `${m.label} does not support the advisor (Haiku 4.5, Sonnet 4.6, Opus 4.6 or later, or Fable); ${a.label} would not be attached`,
     );
-  if (/** @type {number} */ (a.rank) < /** @type {number} */ (m.rank))
+  if (a.rank === null || m.rank === null)
+    return out(
+      null,
+      "unverified",
+      (a.rank === null ? a : m).note ?? "The pairing has no documented rank.",
+    );
+  if (a.rank < m.rank)
     return out(
       false,
       "below",
       `${a.label} ranks below ${m.label} and cannot advise it (an advisor must rank at or above the main model)`,
-    );
-  if (a.status === "newer" || m.status === "newer")
-    return out(
-      null,
-      "unverified",
-      `${a.label} advising ${m.label}: ${(a.status === "newer" ? a : m).note}`,
     );
   return out(true, "ok", `${a.label} advises ${m.label}`);
 }
 
 /**
  * Every table row that may advise `main`, newest-ranked first, and which aliases resolve to one
- * of them. Pure. An unknown or unset main model accepts every advising row.
+ * of them. An omitted main lists the catalog. A main without compatibility evidence yields no rows.
  * @param {unknown} [main]
  * @returns {{rows:{family:string, version:string, label:string, rank:number}[], aliases:string[]}}
  */
 export function acceptedAdvisors(main) {
   const m = main ? rankModel(main) : null;
+  if (m && m.rank === null) return { rows: [], aliases: [] };
   const floor = m && typeof m.rank === "number" ? m.rank : Number.NEGATIVE_INFINITY;
   const rows = loadAdvisorPack()
     .ranking.rows.filter((r) => r.advises !== false && r.rank >= floor)
     .sort((a, b) => b.rank - a.rank || compareVersionKeys(b.version, a.version))
     .map(({ family, version, label, rank }) => ({ family, version, label, rank }));
-  const aliases = ADVISOR_ALIASES.filter((alias) => {
+  const aliases = loadAdvisorPack().ranking.aliases.filter((alias) => {
     const r = rankModel(alias);
     return typeof r.rank === "number" && r.rank >= floor;
   });
   return { rows, aliases };
-}
-
-/**
- * The pairing the docs recommend for a main model's family: Opus for Haiku and Sonnet (routine
- * work on the cheap model, planning and completion checks on the stronger one), a second Opus for
- * Opus, Fable for Fable. Pure; null for an unrecognised family.
- * @param {unknown} main
- * @returns {string|null} an advisor alias
- */
-export function suggestAdvisor(main) {
-  const { family } = parseModel(main);
-  return family ? (loadAdvisorPack().ranking.suggest[family] ?? null) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -454,7 +441,7 @@ export function advisorSection(root = process.cwd(), layers) {
  * a risk area. Empty otherwise, and always empty while an environment variable keeps the advisor
  * off. Never throws.
  * @param {string} root
- * @param {{assumption?:{shouldAsk?:boolean}, route?:{key?:string}, risk?:boolean}} result the
+ * @param {{assumption?:{shouldAsk?:boolean}, route?:{status?:string,tier?:string}, risk?:boolean}} result the
  *   substrate result (`risk` may be precomputed by the caller)
  * @param {{env?:Record<string,string|undefined>}} [opts]
  * @returns {string}
@@ -463,14 +450,14 @@ export function advisorNudge(root, result, { env = process.env } = {}) {
   try {
     const state = resolveAdvisor(root, { env });
     if (!state.model || state.disabled) return "";
-    const premium = ["opus", "fable"].includes(String(result?.route?.key ?? ""));
+    const premium = result?.route?.status === "measured" && result.route.tier === "high";
     const decision = Boolean(result?.assumption?.shouldAsk) || premium || Boolean(result?.risk);
     if (!decision) return "";
     const why = result?.assumption?.shouldAsk
       ? "the task is under-specified"
       : result?.risk
         ? "the task touches a risk area"
-        : "the task routes to a premium tier";
+        : "the selected model ranks in the high verified workload band";
     const warn =
       state.pairing && state.pairing.ok === false
         ? ` (note: ${state.pairing.reason}, so Claude Code may not attach it)`
@@ -531,7 +518,7 @@ export function validateAdvisorModel(raw) {
     };
   if (r.status === "older")
     return { ok: false, reason: r.note ?? `${r.label} cannot act as an advisor` };
-  if (!r.advises)
+  if (r.advises === false)
     return {
       ok: false,
       reason: `${r.label} can call the advisor but cannot act as one — pick sonnet, opus or fable`,

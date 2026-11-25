@@ -2,12 +2,19 @@
 // and presentation are separated from domain operations; each domain's handlers live in one
 // module, and the domain logic stays in the modules they import). cli.js registers these into
 // its dispatch table; nothing here runs at import time.
-import { BRAND, bar, heading, paint } from "./shared.js";
+import { BRAND, heading, paint } from "./shared.js";
 
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {};
 
 HANDLERS.cost = async (argv) => {
+  if (argv[1] === "pilot") {
+    const { rolloutCommand } = await import("../rollout_eval.js");
+    return rolloutCommand(
+      argv.slice(2).filter((arg) => arg !== "--json"),
+      "cost",
+    );
+  }
   // `--stages` is the P8 measured report (per-stage factors from .forge/metrics.jsonl);
   // the default path stays the ccusage per-day spend view, untouched.
   if (argv.includes("--stages")) {
@@ -65,6 +72,63 @@ HANDLERS.cost = async (argv) => {
 };
 
 HANDLERS.models = async (argv) => {
+  const value = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
+  const schema = value("--schema");
+  const valued = ["--profile", "--workload", "--capability", "--availability", "--max-age"];
+  const filters = ["--refresh", "--offline", ...valued].some((flag) => argv.includes(flag));
+  if (
+    (argv.includes("--schema") && !["1", "2"].includes(schema)) ||
+    (schema === "1" && filters) ||
+    (argv.includes("--refresh") && argv.includes("--offline")) ||
+    valued.some((flag) => argv.includes(flag) && (!value(flag) || value(flag).startsWith("--")))
+  )
+    throw new Error("Use --schema 1 or 2, one refresh mode, and a value for each filter");
+  if (schema !== "1") {
+    const { modelInventory } = await import("../model_inventory.js");
+    const inv = modelInventory(process.cwd(), {
+      profile: value("--profile"),
+      workload: value("--workload"),
+      capability: value("--capability"),
+      availability: value("--availability"),
+      maxAge: value("--max-age"),
+      refresh: argv.includes("--offline") ? false : argv.includes("--refresh") ? true : undefined,
+    });
+    if (argv.includes("--json")) return console.log(JSON.stringify(inv, null, 2));
+    heading(`${BRAND.brand} models — provider inventory (${inv.workload})\n`);
+    for (const p of inv.profiles) {
+      console.log(`  ${p.profile}  ${p.status}${p.checkedAt ? `  ${p.checkedAt}` : ""}`);
+      for (const band of ["high", "medium", "low", "unrated"]) {
+        const group = p.models.filter((m) => m.rating.band === band);
+        if (!group.length) continue;
+        console.log(`    ${band}`);
+        for (const m of group) {
+          const ops = m.capabilities?.join(", ") || "unknown";
+          const price = m.price
+            ? `USD ${m.price.input}/${m.price.output} per million input/output tokens (${m.price.source})`
+            : "unknown";
+          const last = m.lastCall ? `${m.lastCall.latencyMs} ms at ${m.lastCall.at}` : "unknown";
+          const cost =
+            m.lastCall?.costUsd != null ? `USD ${m.lastCall.costUsd} (provider report)` : "unknown";
+          console.log(
+            `      ${m.id}  ${m.availability}  checked ${m.availabilityEvidence.checkedAt ?? "unknown"}`,
+          );
+          console.log(
+            `        capabilities ${ops} · price ${price} · last call latency ${last} · last call cost ${cost}`,
+          );
+          if (m.workloadAttemptCost)
+            console.log(
+              `        workload mean USD ${m.workloadAttemptCost.meanUsd} over ${m.workloadAttemptCost.n} operator-reported attempts`,
+            );
+        }
+      }
+      if (!p.models.length) console.log("    No matching model rows.");
+    }
+    for (const h of inv.nativeHosts)
+      console.log(
+        `  ${h.host}  host-managed  reported model ${h.reportedModel ?? "unknown"}${h.observedAt ? " at " + h.observedAt : ""}`,
+      );
+    return;
+  }
   // What each tier resolves to RIGHT NOW: family → newest model in the active provider's live
   // catalog (else the shipped snapshot), priced from OpenRouter's catalog (else the snapshot).
   const { describeResolution, PRICING_VERIFIED, resolveTiers } = await import("../model_tiers.js");
@@ -72,7 +136,7 @@ HANDLERS.models = async (argv) => {
   const root = process.cwd();
   const provider = activeProvider(root);
   const tiers = resolveTiers({ root, provider });
-  const override = envModelOverride();
+  const override = envModelOverride(provider) || provider.selectedModel;
   if (argv.includes("--json"))
     return console.log(
       JSON.stringify(
@@ -113,7 +177,7 @@ HANDLERS.models = async (argv) => {
   );
   console.log(
     paint(
-      "  cache: .forge/cache/ — reused while the response's own Cache-Control/Expires says fresh, else revalidated (ETag); FORGE_NO_CATALOG_FETCH=1 stays offline",
+      "  cache: private user state — reused while the response's own Cache-Control/Expires says fresh, else revalidated (ETag); FORGE_NO_CATALOG_FETCH=1 stays offline",
       "dim",
     ),
   );
@@ -121,6 +185,20 @@ HANDLERS.models = async (argv) => {
 };
 
 HANDLERS.route = async (argv) => {
+  if (argv[1] === "monitor") {
+    const args = argv.slice(2).filter((a) => a !== "--json");
+    if (args.length !== 1 || args[0].startsWith("-"))
+      throw new Error("Usage: forge route monitor <observations.json> [--json]");
+    const { basename, dirname, join, resolve } = await import("node:path");
+    const { realpathSync } = await import("node:fs");
+    const { readBounded } = await import("../harness_verify.js");
+    const { monitorModel } = await import("../model_monitor.js");
+    const input = resolve(args[0]);
+    const file = join(realpathSync.native(dirname(input)), basename(input));
+    const data = readBounded(file, 16 * 1024 * 1024).bytes;
+    console.log(JSON.stringify(monitorModel(JSON.parse(data.toString("utf8"))), null, 2));
+    return;
+  }
   const r = await import("../route.js");
   if (argv[1] === "gateway") {
     const result = r.emitGatewayConfig(process.cwd());
@@ -130,33 +208,20 @@ HANDLERS.route = async (argv) => {
     }
     console.log(`  wrote ${result} — LiteLLM tiers: forge-simple / forge-medium / forge-complex.`);
     console.log("  next: pin+install litellm, run it, point ANTHROPIC_BASE_URL at it, then");
-    console.log(
-      "        REQUEST the tier `forge route` recommends (a plain claude-* request passes through).",
-    );
+    console.log("        REQUEST an explicit gateway alias or provider model ID.");
     return;
   }
   if (argv[1] === "calibrate") {
-    // Advisory → gated promotion (ROADMAP): measure whether an affine calibration of the
-    // routing rubric beats the raw rubric on a held-out split of the HAND-LABELLED fixture
-    // (there is no outcome data). Advisory — routing keeps the rubric unless the gate
-    // promotes AND a caller adopts the calibration, which nothing in src/ does.
-    const res = r.calibrateRouting();
-    if (argv.includes("--json")) return console.log(JSON.stringify(res, null, 2));
-    heading(`${BRAND.brand} route calibrate — rubric calibration check (measured gate)\n`);
-    console.log(`  samples: ${res.n} hand-labelled task phrase(s) — no routing outcomes exist`);
-    if (res.baselineMetric !== undefined)
-      console.log(
-        `  held-out MAE: rubric ${res.baselineMetric} · calibrated ${res.candidateMetric}`,
-      );
-    console.log(
-      res.mode === "candidate"
-        ? `  → PROMOTE calibration — ${res.reason} (a=${res.model.a.toFixed(3)}, b=${res.model.b.toFixed(3)})`
-        : `  → keep the rubric — ${res.reason}`,
-    );
-    console.log(
-      "\n  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,",
-    );
-    console.log("  and calibrating on real routing outcomes needs data forge does not record");
+    const index = argv.indexOf("--workload");
+    const result = r.calibrateRouting(process.cwd(), index < 0 ? undefined : argv[index + 1]);
+    if (argv.includes("--json")) console.log(JSON.stringify(result, null, 2));
+    else if (!result.models.length)
+      console.log("No model has two distinct verified tasks for leave-one-task-out calibration.");
+    else
+      for (const m of result.models)
+        console.log(
+          `  ${m.id} · ${m.interval.n} verified tasks · leave-one-task-out Brier ${m.leaveOneTaskOutBrier.toFixed(4)}`,
+        );
     return;
   }
   if (["universal", "outcome", "fit", "models"].includes(argv[1]) || argv.includes("--universal")) {
@@ -164,104 +229,41 @@ HANDLERS.route = async (argv) => {
   }
   const json = argv.includes("--json");
   const apply = argv.includes("--apply");
-  const allowTop = argv.includes("--allow-top");
-  const readOnly = argv.includes("--read-only");
   const flagValue = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
-  const providerName = flagValue("--provider");
-  const mode = /** @type {"conservative"|"unattended"|undefined} */ (flagValue("--mode"));
-  const FLAGS = new Set(["--json", "--apply", "--allow-top", "--read-only"]);
-  const VALUED = new Set(["--provider", "--mode"]);
+  const flags = new Set(["--json", "--apply", "--allow-top", "--read-only"]);
+  const valued = new Set(["--provider", "--mode", "--workload", "--objective", "--band"]);
   const task = argv
     .slice(1)
-    .filter((a, i) => !FLAGS.has(a) && !VALUED.has(a) && !VALUED.has(argv[i]))
+    .filter((a, i) => !flags.has(a) && !valued.has(a) && !valued.has(argv[i]))
     .join(" ");
-  if (!task) {
-    console.error(
-      'usage: forge route "<task>" [--mode conservative|unattended] [--read-only] [--allow-top] [--apply] [--provider <name>] [--json]   |   forge route gateway',
+  if (!task)
+    throw new Error(
+      'Usage: forge route "<task>" [--provider NAME] [--workload NAME] [--objective SPEC] [--band BAND] [--apply] [--json]',
     );
-    process.exitCode = 1;
-    return;
-  }
-  const { ROUTE_MODES, resolveRoutePolicy } = await import("../orchestration.js");
-  if (mode !== undefined && !ROUTE_MODES.includes(mode)) {
-    console.error(`  --mode expects ${ROUTE_MODES.join(" | ")}`);
-    process.exitCode = 1;
-    return;
-  }
-  if (providerName) {
-    const { setProvider } = await import("../providers.js");
-    const sr = setProvider(process.cwd(), providerName);
-    if (!sr.ok) {
-      console.error(`  ${sr.reason}`);
-      process.exitCode = 1;
-      return;
-    }
-  }
-  const policy = resolveRoutePolicy(process.cwd());
-  const rec = r.routeTask(process.cwd(), task, {
-    policy,
-    mode,
-    writesCode: !readOnly,
-    allowTop,
+  const mode = flagValue("--mode");
+  if (mode && !["conservative", "unattended"].includes(mode)) throw new Error("Unknown route mode");
+  const root = process.cwd();
+  const rec = r.routeTask(root, task, {
+    profile: flagValue("--provider"),
+    workload: flagValue("--workload"),
+    objective: flagValue("--objective"),
+    band: flagValue("--band"),
+    allowTop: argv.includes("--allow-top"),
   });
-  r.meterRoute(process.cwd(), task, rec);
-  // The policy block a lead agent reads from --json: the final tier key (generic: haiku / sonnet /
-  // opus / fable — map it to your tool's model names), the mode, and every step that moved it.
-  const routing = rec.policy ?? {
-    key: rec.key,
-    base: rec.key,
-    mode: mode ?? policy.mode,
-    steps: [],
-    risk: [],
-    writesCode: !readOnly,
-    topTier: { gate: policy.topTier, allowTop, allowed: false },
-  };
-  // The recommendation is a tier (a model family); its concrete id and price are resolved here,
-  // in the command — routeTask stays network-free because the hooks run it. BOTH output modes
-  // resolve, so a script reading --json never sees a different model than the text prints.
-  const { describeResolution, resolveTierModel, resolveTierPrice, withSnapshotStaleness } =
-    await import("../model_tiers.js");
-  const { activeProvider } = await import("../providers.js");
-  const opts = { root: process.cwd(), provider: activeProvider(process.cwd()) };
-  const resolved = withSnapshotStaleness(resolveTierModel(rec.key, opts), rec.key, opts);
-  const price = resolveTierPrice(rec.key, { ...opts, resolved });
-  if (json) {
-    // `model` stays the snapshot row (its shape is public); `resolved` is what would be called.
-    console.log(JSON.stringify({ ...rec, policy: routing, resolved, price }, null, 2));
-  } else {
-    heading(`${BRAND.brand} route — cheapest capable model\n`);
-    const name =
-      resolved?.source === "catalog" && resolved.displayName
-        ? resolved.displayName
-        : rec.model.name;
-    console.log(
-      `  → ${paint(name, "accent")}  (${rec.tier}, ${price ? `${price.inCost}/${price.outCost} per M tok, ${price.source === "catalog" ? "live price" : "current effective"}` : "price unknown"})`,
-    );
-    if (resolved) console.log(`    model: ${resolved.id} — ${describeResolution(resolved)}`);
-    console.log(`    ${rec.model.use}`);
-    console.log(
-      `    complexity ${bar(rec.score, 8)} ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
-    );
-    console.log(
-      `    signals: ${rec.signals.files} file(s), fan-out ${rec.signals.fanout}, churn ${rec.signals.churn}, past-mistakes ${rec.signals.pastMistakes}, ambiguity ${rec.signals.ambiguity.toFixed(2)}`,
-    );
-    console.log(
-      `    mode: ${routing.mode} · tier key: ${routing.key}${routing.steps.length ? ` (policy: ${routing.steps.map((s) => s.step).join(", ")})` : ""}`,
-    );
+  r.meterRoute(root, task, rec);
+  if (apply && rec.ok) {
+    const { applyRoute, setProfileModel, inventoryProfiles } = await import("../providers.js");
+    const profile = inventoryProfiles(root).find((p) => p.name === rec.profile);
+    if (profile.type === "anthropic") {
+      const applied = applyRoute(null, { exactId: rec.model.id });
+      if (!applied.ok) throw new Error(applied.reason);
+    } else setProfileModel(root, rec.profile, rec.model.id);
   }
-  if (apply) {
-    const { applyRoute } = await import("../providers.js");
-    const ar = applyRoute(rec.key);
-    if (ar.ok) {
-      if (!json) console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
-    } else {
-      if (!json) console.error(`\n  apply failed: ${ar.reason}`);
-      process.exitCode = 1;
-    }
-  } else if (!json) {
-    console.log(
-      `\n  advisory · apply: \`${BRAND.cli} route "<task>" --apply\` · gateway: \`${BRAND.cli} route gateway\``,
-    );
+  if (apply && !rec.ok) process.exitCode = 1;
+  if (json) console.log(JSON.stringify({ ...rec, ...(apply ? { applied: rec.ok } : {}) }, null, 2));
+  else {
+    console.log(r.describeRoute(rec));
+    if (apply && rec.ok) console.log(`Applied ${rec.model.id} to ${rec.profile}.`);
   }
   return;
 };
@@ -283,6 +285,8 @@ async function routeUniversalCli(argv) {
     "--depth",
     "--attempt",
     "--verify-run",
+    "--band",
+    "--workload",
   ]);
   const words = argv
     .slice(1)
@@ -297,7 +301,7 @@ async function routeUniversalCli(argv) {
     const rows = reg.models.map((m) => ({
       id: m.id,
       org: m.org ?? null,
-      status: fit?.models.includes(m.id) ? "fitted" : "cold",
+      status: (fit?.observedModels ?? fit?.models)?.includes(m.id) ? "fitted" : "cold",
       providers: Object.keys(m.providers ?? {}),
       price: m.price_in != null ? `${m.price_in}/${m.price_out}` : null,
     }));
@@ -337,6 +341,8 @@ async function routeUniversalCli(argv) {
     try {
       const row = U.recordOutcome(root, {
         task,
+        workload: val("--workload"),
+        profile: val("--provider"),
         model: val("--model"),
         passed,
         cost,
@@ -358,11 +364,30 @@ async function routeUniversalCli(argv) {
   }
   let rec;
   try {
-    rec = U.routeUniversal(root, task, {
-      objective: val("--objective"),
-      provider: val("--provider") ?? "any",
-      maxDepth: val("--depth") ? Number(val("--depth")) : undefined,
-    });
+    const objective = val("--objective");
+    const maxDepth = val("--depth") ? Number(val("--depth")) : undefined;
+    if (
+      argv.includes("--band") ||
+      argv.includes("--workload") ||
+      (val("--provider") && val("--provider") !== "any")
+    ) {
+      const { inventoryRoute } = await import("../model_inventory.js");
+      rec = inventoryRoute(root, task, {
+        profile: val("--provider"),
+        band: val("--band"),
+        workload: val("--workload"),
+        refresh: argv.includes("--refresh"),
+        allowTop: argv.includes("--allow-top"),
+        objective,
+        maxDepth,
+      });
+    } else {
+      rec = U.routeUniversal(root, task, {
+        provider: val("--provider") ?? "any",
+        objective,
+        maxDepth,
+      });
+    }
   } catch (e) {
     console.error(`  ${e.message}`);
     process.exitCode = 1;
@@ -373,10 +398,12 @@ async function routeUniversalCli(argv) {
     if (!rec.ok) process.exitCode = 1;
     return;
   }
-  if (!rec.ok) {
-    console.error(`  ${rec.feasible === false ? "INFEASIBLE — " : ""}${rec.reason}`);
+  if (!("cascade" in rec)) {
+    console.error(
+      `  ${"feasible" in rec && rec.feasible === false ? "INFEASIBLE — " : ""}${rec.reason}`,
+    );
     // F12: the least-bad cascade is shown only as an explicit, labeled fallback.
-    const fb = rec.fallback;
+    const fb = "fallback" in rec && rec.fallback;
     if (fb)
       console.error(
         `  fallback (does NOT meet the objective): ${fb.cascade.map((c) => c.model).join(" → ")} · P(success) ${fb.pSuccess.toFixed(2)} · expected $${fb.expectedCost.toFixed(3)} (an estimated $${fb.estimatedCostIfAllAttemptsRun.toFixed(3)} if every attempt runs)`,

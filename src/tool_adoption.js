@@ -20,6 +20,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { vetPackages } from "./depgate.js";
 import { addIntegration, stableVersion } from "./integrations.js";
+import { npmCliPath } from "./npm_runtime.js";
 import { researchPointers } from "./public_research.js";
 import { heuristicScan } from "./skillgate.js";
 import { userStateDir } from "./util.js";
@@ -220,22 +221,9 @@ export function unregisterCatalogTool(root, id) {
   });
 }
 
-// npm already ships node-semver. Resolve from the npm installation paired with the
-// current Node executable, never from project-controlled node_modules or PATH.
-function npmCliPath() {
-  const dir = dirname(process.execPath);
-  const paths = [
-    join(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-    join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
-    join(dir, "..", "share", "nodejs", "npm", "bin", "npm-cli.js"),
-  ];
-  const path = paths.find((p) => existsSync(p));
-  if (!path) throw new Error("Install npm alongside the Node executable");
-  return realpathSync(path);
-}
-function nodeFits(range, runtime) {
+function nodeFits(range, runtime, root) {
   if (!range || range === "*") return true;
-  const npmRequire = createRequire(npmCliPath());
+  const npmRequire = createRequire(npmCliPath(root));
   return npmRequire("semver").satisfies(runtime, range);
 }
 
@@ -335,7 +323,13 @@ async function resolveCandidate(tool, opts) {
       "Registry name, stable version or upstream repository did not match the catalog",
     );
   if (m.deprecated) throw new Error("Upstream marks this release deprecated");
-  if (!nodeFits(m.engines?.node, opts.nodeVersion ?? process.versions.node))
+  if (
+    !nodeFits(
+      m.engines?.node,
+      opts.nodeVersion ?? process.versions.node,
+      opts.root ?? process.cwd(),
+    )
+  )
     throw Object.assign(
       new Error(
         `${tool.npm}@${m.version} requires Node ${m.engines.node}; use a compatible Node or an exact --version`,
@@ -464,11 +458,11 @@ function readReceipt(dir, tool, version, integrity = undefined) {
   return entry;
 }
 
-function npmInstall(stage, spec) {
+function npmInstall(stage, spec, root) {
   // An isolated cwd ignores the project's .npmrc, manifest, workspaces, and scripts.
   // Resolve npm-cli from this Node distribution on Windows, where npm.cmd needs a shell.
   const npm = process.execPath;
-  const args = [npmCliPath()];
+  const args = [npmCliPath(root)];
   args.push(
     "install",
     "--ignore-scripts",
@@ -514,7 +508,7 @@ export async function installAdoption(root, id, options = {}) {
   try {
     const tool = adoptionCatalog(root).find((t) => t.id === id);
     if (!tool) throw new Error("Unknown tool; add a reviewed entry to the private catalog");
-    const m = await resolveCandidate(tool, options);
+    const m = await resolveCandidate(tool, { ...options, root });
     const spec = {
       eco: /** @type {const} */ ("npm"),
       name: tool.npm,
@@ -550,7 +544,7 @@ export async function installAdoption(root, id, options = {}) {
           '{"name":"forge-private-tool","version":"0.0.0","private":true}\n',
           { mode: 0o600 },
         );
-        await (options.installPackage ?? npmInstall)(stage, `${tool.npm}@${m.version}`);
+        await (options.installPackage ?? npmInstall)(stage, `${tool.npm}@${m.version}`, root);
         const lock = JSON.parse(readFileSync(join(stage, "package-lock.json"), "utf8"));
         const artifact = lock.packages?.[`node_modules/${tool.npm}`];
         if (

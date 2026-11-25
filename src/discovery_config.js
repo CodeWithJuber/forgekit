@@ -4,7 +4,7 @@ import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
 import { dirname, join } from "node:path";
 import { privateWorkspaceFile } from "./workspace_preference.js";
 
-const defaults = { recommendations: true, decisions: false, search: "off", model: "jev-latest" };
+const defaults = { recommendations: false, decisions: false, search: "off", model: "jev-latest" };
 
 function validate(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -47,7 +47,7 @@ export function advisorSettings(root = process.cwd(), env = process.env) {
   const settings = { ...defaults, ...saved };
   if (env.FORGE_LLM !== undefined) settings.decisions = env.FORGE_LLM === "1";
   if (env.FORGE_EVIDENCE_WEB !== undefined)
-    settings.recommendations = env.FORGE_EVIDENCE_WEB !== "0";
+    settings.recommendations = env.FORGE_EVIDENCE_WEB === "1";
   if (env.FORGE_WEB_SEARCH_PROVIDER !== undefined) settings.search = env.FORGE_WEB_SEARCH_PROVIDER;
   return { ...settings, warnings };
 }

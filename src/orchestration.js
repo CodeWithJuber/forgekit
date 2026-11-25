@@ -6,11 +6,9 @@
 //
 // Config shape (both files; every key optional):
 //   "orchestration": { "enabled": true, "rules": { "orch.no-polling": false }, "parallelCap": 3 }
-//   "route": { "mode": "unattended", "topTier": "never", "raiseConfidence": 0.9,
-//              "midConfidence": 0.5, "writesCodeFloor": true, "riskFloor": true,
-//              "riskCategories": { "money": ["payment", …], "billing-ops": ["ledger"] } }
-// `riskCategories` replaces a category's keyword list when named (an empty list or false turns
-// that category off) and adds any category the defaults lack.
+//   "route": { "topTier": "explicit" }
+// Earlier prompt-scoring settings may exist in stored configurations. Their explicit
+// values are readable as legacy metadata and have no effect on the measured router.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
@@ -21,9 +19,9 @@ import {
   writeUserConfig,
 } from "./repo_config.js";
 
-/** The routing modes. `conservative` is the router as it always was. */
+/** Accepted labels for historical saved configurations. */
 export const ROUTE_MODES = ["conservative", "unattended"];
-/** When the top tier may be chosen: never; with --allow-top (and the score at its cutoff); or by score alone. */
+/** Operator authorization for the exact deployment assigned the top role in a profile. */
 export const TOP_TIER_GATES = ["never", "explicit", "auto"];
 
 let packCache = null;
@@ -132,55 +130,37 @@ export function orchestrationSection(root = process.cwd(), layers) {
   return { id: pack.id, title: pack.title, rules: on.map((r) => `${r.text} \`[${r.id}]\``) };
 }
 
-/**
- * The effective routing policy (defaults < global `route` < project `route`), validated: a
- * value of the wrong type or outside its range is ignored, never trusted.
- * @param {string} [root]
- * @param {{global?: Record<string, any>, project?: Record<string, any>}} [layers]
- * @returns {{mode:string, raiseConfidence:number, midConfidence:number, topTier:string,
- *   writesCodeFloor:boolean, riskFloor:boolean, riskCategories:Record<string,string[]>,
- *   sources:Record<string,string>}}
- */
+/** @param {string} [root] @param {{global?:Record<string, any>,project?:Record<string, any>}} [layers] */
 export function resolveRoutePolicy(root = process.cwd(), layers) {
-  const defaults = loadPack().route;
   const { global, project } = readLayers(root, layers);
   const out = {
-    mode: defaults.mode,
-    raiseConfidence: defaults.raiseConfidence,
-    midConfidence: defaults.midConfidence,
-    topTier: defaults.topTier,
-    writesCodeFloor: defaults.writesCodeFloor,
-    riskFloor: defaults.riskFloor,
-    riskCategories: { ...defaults.riskCategories },
-    /** @type {Record<string,string>} */
-    sources: {},
+    topTier: loadPack().route.topTier,
+    /** @type {Record<string,string[]>} */ riskCategories: {},
+    /** @type {Record<string,string>} */ sources: {},
+    /** @type {Record<string,unknown>} */ legacy: {},
   };
-  const valid = {
+  const fields = {
     mode: (v) => ROUTE_MODES.includes(v),
-    topTier: (v) => TOP_TIER_GATES.includes(v),
     raiseConfidence: unit,
     midConfidence: unit,
     writesCodeFloor: (v) => typeof v === "boolean",
     riskFloor: (v) => typeof v === "boolean",
   };
-  /** @type {[Record<string, any>, string][]} */
-  const ordered = [
-    [global, "global"],
-    [project, "project"],
-  ];
-  for (const [cfg, name] of ordered) {
-    const layer = isObj(cfg.route) ? cfg.route : {};
-    for (const [key, ok] of Object.entries(valid)) {
-      if (key in layer && ok(layer[key])) {
-        out[key] = layer[key];
-        out.sources[key] = name;
-      }
+  for (const [name, config] of Object.entries({ global, project })) {
+    const route = config?.route;
+    if (!isObj(route)) continue;
+    if (TOP_TIER_GATES.includes(route.topTier)) {
+      out.topTier = route.topTier;
+      out.sources.topTier = name;
     }
-    if (isObj(layer.riskCategories)) {
-      for (const [cat, words] of Object.entries(layer.riskCategories)) {
-        if (words === false) out.riskCategories[cat] = [];
+    for (const [key, valid] of Object.entries(fields)) {
+      if (key in route && valid(route[key])) out.legacy[key] = route[key];
+    }
+    if (isObj(route.riskCategories)) {
+      for (const [category, words] of Object.entries(route.riskCategories)) {
+        if (words === false) out.riskCategories[category] = [];
         else if (Array.isArray(words))
-          out.riskCategories[cat] = words.filter((w) => typeof w === "string" && w.trim());
+          out.riskCategories[category] = words.filter((v) => typeof v === "string" && v.trim());
       }
       out.sources.riskCategories = name;
     }
@@ -199,35 +179,10 @@ export const SETTABLE = {
     parse: (raw) => (/^[1-9]\d*$/.test(raw) ? Number(raw) : undefined),
     help: "integer ≥ 1",
   },
-  "route.mode": {
-    path: ["route", "mode"],
-    parse: (raw) => (ROUTE_MODES.includes(raw) ? raw : undefined),
-    help: ROUTE_MODES.join(" | "),
-  },
   "route.topTier": {
     path: ["route", "topTier"],
     parse: (raw) => (TOP_TIER_GATES.includes(raw) ? raw : undefined),
     help: TOP_TIER_GATES.join(" | "),
-  },
-  "route.raiseConfidence": {
-    path: ["route", "raiseConfidence"],
-    parse: (raw) => (unit(Number(raw)) && raw.trim() !== "" ? Number(raw) : undefined),
-    help: "number in [0, 1]",
-  },
-  "route.midConfidence": {
-    path: ["route", "midConfidence"],
-    parse: (raw) => (unit(Number(raw)) && raw.trim() !== "" ? Number(raw) : undefined),
-    help: "number in [0, 1]",
-  },
-  "route.writesCodeFloor": {
-    path: ["route", "writesCodeFloor"],
-    parse: (raw) => ({ on: true, off: false, true: true, false: false })[raw],
-    help: "on | off",
-  },
-  "route.riskFloor": {
-    path: ["route", "riskFloor"],
-    parse: (raw) => ({ on: true, off: false, true: true, false: false })[raw],
-    help: "on | off",
   },
 };
 

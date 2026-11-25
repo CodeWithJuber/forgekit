@@ -13,7 +13,7 @@
 //  4. Vetting — no third-party code runs unless the USER points FORGE_EMBED at it.
 //
 // Providers (FORGE_EMBED):
-//   cmd:<shell-command>  spawn it, write {"texts":[..]} to stdin, read
+//   cmd:<executable and args>  spawn it, write {"texts":[..]} to stdin, read
 //                        {"vectors":[[..]]} from stdout. The universal escape hatch:
 //                        any local model, any script, any language.
 //   http:<url>           OpenAI-compatible POST {input, model: $FORGE_EMBED_MODEL}
@@ -152,6 +152,38 @@ const HTTP_CHILD = `let raw="";process.stdin.on("data",(d)=>{raw+=d;});process.s
 
 /** One provider round-trip. Any failure (spawn error, non-zero exit, timeout, bad
  *  JSON, wrong count, malformed vectors) → null. Never throws, never logs the key. */
+// JSON argv is lossless on every platform. Legacy simple commands accept quoted words.
+function commandArgs(value) {
+  if (value.trimStart().startsWith("[")) {
+    const args = JSON.parse(value);
+    if (!Array.isArray(args) || !args[0] || !args.every((v) => typeof v === "string"))
+      throw new Error("Expected a nonempty embedding provider argv");
+    return args;
+  }
+  const args = [];
+  let word = "",
+    quote = "",
+    started = false;
+  for (const ch of value) {
+    if (quote) {
+      if (ch === quote) quote = "";
+      else word += ch;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      started = true;
+    } else if (/\s/.test(ch)) {
+      if (started) args.push(word);
+      word = "";
+      started = false;
+    } else {
+      word += ch;
+      started = true;
+    }
+  }
+  if (quote) throw new Error("Unclosed quote in embedding provider argv");
+  if (started) args.push(word);
+  return args;
+}
 function callProvider(provider, texts) {
   const timeout = Number(process.env.FORGE_EMBED_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
   const input =
@@ -160,21 +192,14 @@ function callProvider(provider, texts) {
       : JSON.stringify({ url: provider.url, model: process.env.FORGE_EMBED_MODEL, texts });
   if (input.length > MAX_INPUT_BYTES) return null;
   try {
-    const r =
-      provider.kind === "cmd"
-        ? spawnSync(provider.cmd, {
-            shell: true,
-            input,
-            encoding: "utf8",
-            timeout,
-            maxBuffer: MAX_OUTPUT_BYTES,
-          })
-        : spawnSync(process.execPath, ["-e", HTTP_CHILD], {
-            input,
-            encoding: "utf8",
-            timeout,
-            maxBuffer: MAX_OUTPUT_BYTES,
-          });
+    const [executable, ...args] =
+      provider.kind === "cmd" ? commandArgs(provider.cmd) : [process.execPath, "-e", HTTP_CHILD];
+    const r = spawnSync(executable, args, {
+      input,
+      encoding: "utf8",
+      timeout,
+      maxBuffer: MAX_OUTPUT_BYTES,
+    });
     if (r.error || r.status !== 0 || !r.stdout) return null;
     const vectors = JSON.parse(r.stdout).vectors;
     if (!Array.isArray(vectors) || vectors.length !== texts.length) return null;

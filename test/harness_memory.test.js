@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -11,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { listJobs } from "../src/harness_jobs.js";
 import {
   assembleHarnessContext,
@@ -19,6 +22,7 @@ import {
 } from "../src/harness_memory.js";
 import { harnessMemoryCommand } from "../src/harness_memory_cli.js";
 import { approvalStore } from "../src/harness_policy.js";
+import { installedHarnessPython } from "../src/harness_python.js";
 import { reserveHarnessSpend } from "../src/harness_spend.js";
 import { createHarnessTools } from "../src/harness_tools.js";
 import { initSources, syncSources } from "../src/sources.js";
@@ -358,4 +362,124 @@ test("memory CLI exposes review, authorized scope sharing and recoverable source
   );
   assert.equal(harnessMemoryCommand(a, ["source-state", "manual"]).revision, 1);
   assert.deepEqual(harnessMemoryCommand(a, ["review"]).contradictions, []);
+});
+
+test("organization sharing checks the checkout grant and selected scope on each operation", (t) => {
+  const { a, b, store } = fixture(t);
+  const org = { organization: "Example" };
+  const writer = createHarnessMemory(a, org);
+  const reader = createHarnessMemory(b, org);
+  const claim = "The mainspring uses eleven ticks";
+  const runId = "org-contract";
+  const receipt = store.observe({ runId, command: "contract", output: claim, success: true });
+  const mine = store.propose(
+    { text: claim, level: "L3", layer: "semantic", evidenceId: receipt.id },
+    { runId },
+  );
+  assert.throws(() => writer.share(mine.id, "organization"), /not granted/);
+  harnessMemoryCommand(a, ["org-grant", "example", "read"]);
+  assert.throws(() => writer.share(mine.id, "organization"), /write access/);
+  assert.throws(() => store.grantOrganization("example", "admin"), /Choose read or write/);
+  store.grantOrganization("EXAMPLE", "write");
+  const published = harnessMemoryCommand(a, [
+    "share",
+    mine.id,
+    "organization",
+    "--organization",
+    "Example",
+  ]);
+  assert.deepEqual(harnessMemoryCommand(a, ["org-grants"]), [
+    { organization: "example", access: "write" },
+  ]);
+  assert.throws(() => reader.recall("mainspring"), /not granted/);
+  harnessMemoryCommand(b, ["org-grant", "example", "read"]);
+  const [found] = harnessMemoryCommand(b, ["recall", "mainspring", "--organization", "example"]);
+  assert.equal(found.id, published.id);
+  assert.equal(found.scope, "organization");
+  assert.throws(() => reader.receipt(receipt.id), /unavailable/);
+  assert.deepEqual(createHarnessMemory(b).recall("mainspring"), []);
+  const other = createHarnessMemory(b, { organization: "different" });
+  harnessMemoryCommand(b, ["org-grant", "different", "write"]);
+  assert.deepEqual(other.recall("mainspring"), []);
+  assert.ok(reader.history(found.id).length);
+  const local = createHarnessMemory(b);
+  local.observe({
+    runId: "visible",
+    command: "contract",
+    output: "This checkout holds quartz",
+    success: true,
+  });
+  const exportWorker = fileURLToPath(new URL("../src/cloud_export.py", import.meta.url));
+  const exported = execFileSync(
+    installedHarnessPython(b),
+    [
+      "-I",
+      "-B",
+      exportWorker,
+      join(process.env.FORGE_HOME, "harness-memory", "memory.sqlite"),
+      `repo-${createHash("sha256").update(realpathSync(b)).digest("hex")}`,
+      "memory",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.match(exported, /This checkout holds quartz/);
+  assert.ok(
+    !exported.includes(claim) && !exported.includes(found.id) && !exported.includes("org_grants"),
+  );
+  const writerExport = execFileSync(
+    installedHarnessPython(a),
+    [
+      "-I",
+      "-B",
+      exportWorker,
+      join(process.env.FORGE_HOME, "harness-memory", "memory.sqlite"),
+      `repo-${createHash("sha256").update(realpathSync(a)).digest("hex")}`,
+      "memory",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.ok(JSON.parse(writerExport).items.some((i) => i.id === mine.id));
+  assert.ok(!writerExport.includes(found.id));
+  assert.equal(harnessMemoryCommand(b, ["org-revoke", "example"]).revoked, true);
+  assert.throws(() => reader.history(found.id), /not granted/);
+  assert.throws(() => reader.recall("mainspring"), /not granted/);
+});
+
+test("harness recall ranks from audited use outcomes without fabricating trials", (t) => {
+  const { store } = fixture(t);
+  const text = "The quartz runbook has twelve steps";
+  const receipt = store.observe({
+    runId: "source",
+    command: "contract",
+    output: text,
+    success: true,
+  });
+  const item = store.propose(
+    { text, level: "L3", layer: "semantic", evidenceId: receipt.id },
+    { runId: "source" },
+  );
+  const recall = () => store.recall("quartz").find((row) => row.id === item.id);
+  assert.equal(recall().ranking, "empirical-midranks-v2");
+  assert.deepEqual(recall().observedOutcomes, { passed: 0, failed: 0 });
+  for (const [runId, ok] of [
+    ["passed", true],
+    ["failed", false],
+  ]) {
+    const outcome = store.observe({
+      runId,
+      command: "suite",
+      output: "observed outcome",
+      success: ok,
+    });
+    const input = {
+      runId,
+      status: ok ? "done" : "failed",
+      evidence: outcome,
+      recallIds: [item.id],
+    };
+    store.finish(input);
+    store.finish(input);
+  }
+  assert.deepEqual(recall().observedOutcomes, { passed: 1, failed: 1 });
+  assert.ok(recall().score >= 0 && recall().score <= 1);
 });

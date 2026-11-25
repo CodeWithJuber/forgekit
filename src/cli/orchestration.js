@@ -30,7 +30,7 @@ async function list(root, json) {
     return console.log(
       JSON.stringify({ ...state, route, configs: { global: userConfigPath() } }, null, 2),
     );
-  heading(`${BRAND.brand} orchestration — agent rules and unattended routing\n`);
+  heading(`${BRAND.brand} orchestration — agent rules and model authorization\n`);
   console.log(`  ${loadPack().intro}\n`);
   console.log(
     `  pack: ${state.enabled ? "on" : "off"} (${state.enabledSource}) · parallel cap: ${state.parallelCap} (${state.parallelCapSource})`,
@@ -43,18 +43,12 @@ async function list(root, json) {
   }
   const src = (k) => paint(`(${route.sources[k] ?? "default"})`, "dim");
   console.log(`\n  routing (${BRAND.cli} route):`);
-  console.log(`    route.mode             ${route.mode} ${src("mode")}`);
   console.log(`    route.topTier          ${route.topTier} ${src("topTier")}`);
-  console.log(`    route.raiseConfidence  ${route.raiseConfidence} ${src("raiseConfidence")}`);
-  console.log(`    route.midConfidence    ${route.midConfidence} ${src("midConfidence")}`);
-  console.log(
-    `    route.writesCodeFloor  ${route.writesCodeFloor ? "on" : "off"} ${src("writesCodeFloor")}`,
-  );
-  console.log(`    route.riskFloor        ${route.riskFloor ? "on" : "off"} ${src("riskFloor")}`);
-  const cats = Object.entries(route.riskCategories)
-    .filter(([, words]) => words.length)
-    .map(([c]) => c);
-  console.log(`    risk categories        ${cats.join(", ") || "(none)"} ${src("riskCategories")}`);
+  const categories = Object.entries(route.riskCategories).filter(([, words]) => words.length);
+  if (categories.length)
+    console.log(`    declared review categories: ${categories.map(([id]) => id).join(", ")}`);
+  if (Object.keys(route.legacy).length)
+    console.log("    Older prompt-scoring settings are preserved as legacy metadata in --json.");
   console.log(
     paint(
       `\n  project: .forge/forge.config.json · global: ${userConfigPath()} · project wins.\n  Switched rules leave AGENTS.md on the next \`${BRAND.cli} sync\`.`,

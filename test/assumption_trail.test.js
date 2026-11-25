@@ -2,12 +2,13 @@
 // said something" and "the session actually recorded it for the gate and the handoff".
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { cusum } from "../src/anchor.js";
+import { appendSessionEvent, readSession as events } from "../src/cortex_hook.js";
 import { setGoal } from "../src/goal.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
@@ -28,12 +29,6 @@ function gitFixture() {
   return { root, git };
 }
 
-const events = (root, sid) =>
-  readFileSync(join(root, ".forge", "sessions", `${sid}.jsonl`), "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
-
 test("preflight records a drift score per prompt once a goal is anchored", () => {
   const { root } = gitFixture();
   setGoal(root, "improve tax calculation accuracy");
@@ -44,26 +39,27 @@ test("preflight records a drift score per prompt once a goal is anchored", () =>
   assert.ok(drift[0].score > 0, "off-goal change scored above zero");
 });
 
-test("proceeding under assumptions is RECORDED and named in the advisory", () => {
+test("a prompt with no declared constraints does not invent an assumption in shared history", () => {
   const { root } = gitFixture();
   const prompt = "refactor src/tax.js keeping behavior, verify with the test suite";
   const r = feed("preflight", { session_id: "t2", cwd: root, prompt });
   const recorded = events(root, "t2").filter((e) => e.type === "assumption");
-  assert.equal(recorded.length, 1, "assumption event persisted for the handoff");
-  assert.ok(recorded[0].missing.includes("constraints"), JSON.stringify(recorded[0]));
-  const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
-  assert.match(ctx, /Proceeding without asking under 1 recorded assumption/, ctx);
+  assert.deepEqual(recorded, []);
+  const ctx = JSON.parse(r.stdout || "{}").hookSpecificOutput?.additionalContext ?? "";
+  assert.doesNotMatch(ctx, /recorded assumption/);
+  const needs = feed("preflight", {
+    session_id: "t2",
+    cwd: root,
+    prompt: "continue",
+    required_files: ["contracts.json"],
+  });
+  assert.match(needs.stdout, /contracts\.json/);
 });
 
 test("sustained drift (CUSUM alarm) is named in the completion-gate block reason", () => {
   const { root } = gitFixture();
   feed("session-start", { session_id: "t3", cwd: root });
-  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  for (let i = 0; i < 4; i += 1)
-    appendFileSync(
-      join(root, ".forge", "sessions", "t3.jsonl"),
-      `${JSON.stringify({ type: "drift", score: 1 })}\n`,
-    );
+  for (let i = 0; i < 4; i++) appendSessionEvent(root, "t3", { type: "drift", score: 1 });
   writeFileSync(join(root, "src", "tax.js"), "export function computeTax(x){ return x*0.21 }\n");
   const r = feed("stop-gate", { session_id: "t3", cwd: root });
   const out = JSON.parse(r.stdout);

@@ -936,7 +936,9 @@ export function secretShellAccess(cmd, fsCtx = {}, depth = 0) {
 
 // ── Destructive-command rules. A command word starts at the line start, after a separator, or
 // after whitespace (so `sudo rm`, `env rm` and `/bin/rm` are all caught).
-const B = "(^|[^A-Za-z0-9_.-])([^\\s;&|]*/)?";
+// Matching starts at the executable itself. Prefix paths and wrapper words need no
+// rescanning because the recognizer searches all command-word boundaries.
+const B = "(?<![A-Za-z0-9_.-])";
 const SEG = "([^;&|]*\\s)?"; // further args inside the SAME command segment
 const END = "(?=\\s|$|[;&|)])";
 // An absolute/home path operand, or the working tree itself: `.`, `..`, `./`, `./*`, `*`.
@@ -944,7 +946,7 @@ const TARGET = `["']?(/|~|\\$HOME|\\$\\{HOME\\}|(\\.\\.?/?\\*?|\\*)["']?${END})`
 const RECUR = "(-[A-Za-z]*[rR][A-Za-z]*|--recursive)";
 // git behind an optional `env `/`command `/`VAR=val ` prefix, an absolute path, and git's own
 // global options (HI-07).
-const gitpfx = "([A-Za-z0-9_]+=\\S+\\s+|(env|command|sudo)\\s+)*(\\S*/)?git\\s+";
+const gitpfx = `${B}git\\s+`;
 const gitopt =
   "(-C\\s+\\S+\\s+|--no-pager\\s+|-c\\s+\\S+\\s+|--git-dir=\\S+\\s+|--work-tree=\\S+\\s+)*";
 // A pathspec naming the whole tree.
@@ -1082,6 +1084,11 @@ export function protectPathsDecision({
     };
   const cmd = String(command);
   if (cmd) {
+    if (Buffer.byteLength(cmd) > 32768)
+      return {
+        block: true,
+        reason: "Shell command exceeds the guard input limit. Split it into smaller operations.",
+      };
     const io = secretShellAccess(cmd, fsCtx);
     if (io) return { block: true, reason: io };
     for (const rule of COMMAND_RULES) {
@@ -1111,10 +1118,27 @@ function deny(reason) {
 async function main() {
   let raw = "";
   process.stdin.setEncoding("utf8");
-  for await (const chunk of process.stdin) raw += chunk;
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    bytes += Buffer.byteLength(chunk);
+    if (bytes > 4 * 1024 * 1024) {
+      deny("Pre-tool input exceeds the 4 MiB guard limit.");
+      return;
+    }
+    raw += chunk;
+  }
   let data;
   try {
-    data = raw.trim() ? JSON.parse(raw) : {};
+    data = JSON.parse(raw);
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !data.tool_input ||
+      typeof data.tool_input !== "object" ||
+      Array.isArray(data.tool_input)
+    )
+      throw new Error("Invalid tool input");
   } catch {
     deny("cannot parse the hook payload — blocking to fail closed");
     return;

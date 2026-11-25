@@ -22,7 +22,7 @@ export const CACHE_HEADERS = ["cache-control", "expires", "date", "age", "etag",
 
 // GET one URL: stdin {url, headers, timeoutMs, keep} → stdout {status, headers, body}. Any HTTP
 // status is returned (a 304 is an answer, not a failure); only a network error/timeout exits 1.
-const GET_CHILD = `let raw="";process.stdin.on("data",(d)=>{raw+=d;});process.stdin.on("end",async()=>{try{const{url,headers,timeoutMs,keep}=JSON.parse(raw);const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),timeoutMs||3000);try{const res=await fetch(url,{headers,signal:ac.signal});const h={};for(const k of keep){const v=res.headers.get(k);if(v!=null)h[k]=v;}const body=res.status===304?"":await res.text();process.stdout.write(JSON.stringify({status:res.status,headers:h,body}));}finally{clearTimeout(timer);}}catch(e){process.stderr.write(String((e&&e.message)||e));process.exit(1);}});`;
+const GET_CHILD = `let raw="";process.stdin.on("data",(d)=>{raw+=d;});process.stdin.on("end",async()=>{try{const{url,headers,timeoutMs,keep}=JSON.parse(raw);const ac=new AbortController();const timer=setTimeout(()=>ac.abort(),timeoutMs||3000);try{const res=await fetch(url,{headers,signal:ac.signal,redirect:"error"});const h={};for(const k of keep){const v=res.headers.get(k);if(v!=null)h[k]=v;}const body=res.status===304?"":await res.text();process.stdout.write(JSON.stringify({status:res.status,headers:h,body}));}finally{clearTimeout(timer);}}catch(e){process.stderr.write(String((e&&e.message)||e));process.exit(1);}});`;
 
 /**
  * The default transport: one synchronous GET. `FORGE_NO_CATALOG_FETCH=1` turns it off (air-gapped

@@ -2,13 +2,13 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "forge route universal: a cascade under an explicit objective",
+    "title": "Offline router: compare fitted cascades",
     "locale": "en",
     "quality_profile": "showcase",
     "views": [
-      { "id": "choose", "label": "Choose a cascade", "focus": ["route-cmd", "estimates", "choose", "recommend", "infeasible"], "note": "Task features and per-model fits select the best cascade for the objective, or INFEASIBLE." },
+      { "id": "choose", "label": "Choose a cascade", "focus": ["route-cmd", "estimates", "choose", "recommend", "infeasible"], "note": "Three measured prompt features and per-model fits select a cascade under the chosen objective." },
       { "id": "run", "label": "Run and escalate", "focus": ["recommend", "attempt", "check", "escalate", "done"], "note": "Each attempt is checked; a failure escalates to the next model in the cascade." },
-      { "id": "learn", "label": "Record and fit", "focus": ["check", "outcome", "fit"], "note": "forge route outcome records each outcome; forge route fit refits a local point estimate, shrunk toward the shipped prior." }
+      { "id": "learn", "label": "Record and fit", "focus": ["check", "outcome", "fit"], "note": "forge route fit updates the historical fit using authenticated verdicts from local first attempts." }
     ]
   },
   "lanes": [
@@ -19,17 +19,17 @@
   ],
   "mainPath": ["route-cmd", "estimates", "choose", "recommend", "attempt", "check", "done"],
   "nodes": [
-    { "id": "route-cmd", "lane": "route", "col": 0, "type": "frontend", "label": "forge route universal", "sublabel": "\"<task>\" → 12 task features", "width": 156 },
+    { "id": "route-cmd", "lane": "route", "col": 0, "type": "frontend", "label": "forge route universal", "sublabel": "\"<task>\" → 3 text measurements", "width": 156 },
     { "id": "estimates", "lane": "route", "col": 1, "type": "backend", "label": "Per model", "sublabel": "P(solve) + expected cost", "width": 132 },
     { "id": "choose", "lane": "route", "col": 2, "type": "backend", "label": "Best cascade", "sublabel": "for the objective", "width": 132 },
-    { "id": "recommend", "lane": "route", "col": 3, "type": "backend", "label": "Recommendation", "sublabel": "advice only if no provider id", "width": 150 },
+    { "id": "recommend", "lane": "route", "col": 3, "type": "backend", "label": "Recommendation", "sublabel": "offline benchmark estimate", "width": 150 },
     { "id": "infeasible", "lane": "fallbacks", "col": 3, "type": "backend", "label": "INFEASIBLE · exit 1", "sublabel": "labeled least-bad fallback", "width": 150 },
     { "id": "escalate", "lane": "fallbacks", "col": 4, "type": "external", "label": "Escalate", "sublabel": "next model in the cascade", "width": 168 },
     { "id": "attempt", "lane": "run", "col": 3, "type": "external", "label": "Attempt 1", "sublabel": "first model in cascade", "width": 150 },
     { "id": "check", "lane": "run", "col": 4, "type": "backend", "label": "Check", "sublabel": "tests / forge verify", "width": 168 },
     { "id": "done", "lane": "run", "col": 5, "type": "backend", "label": "Done", "width": 160 },
-    { "id": "outcome", "lane": "learn", "col": 4, "type": "backend", "label": "forge route outcome", "sublabel": "self-reported unless --verify-run", "width": 168 },
-    { "id": "fit", "lane": "learn", "col": 5, "type": "backend", "label": "forge route fit", "sublabel": "MAP shrinkage to shipped prior", "width": 160 }
+    { "id": "outcome", "lane": "learn", "col": 4, "type": "backend", "label": "forge route outcome", "sublabel": "link verdict with --verify-run", "width": 168 },
+    { "id": "fit", "lane": "learn", "col": 5, "type": "backend", "label": "forge route fit", "sublabel": "fit verified first attempts", "width": 160 }
   ],
   "edges": [
     { "id": "cmd-estimates", "from": "route-cmd", "to": "estimates" },
@@ -47,6 +47,6 @@
   "cards": [
     { "dot": "cyan", "title": "Per-model estimates", "items": ["P(solve): multidimensional IRT fit (correlated failures)", "Expected cost of one attempt: the cost fit"] },
     { "dot": "violet", "title": "Objective", "items": ["match-best-single | target:p | value:$ | budget:$", "INFEASIBLE says what is reachable: best P(success) or least cost"] },
-    { "dot": "amber", "title": "Caveats", "items": ["Expected cost is not a cap, and assuming independent attempts under-predicts it by 5–22%", "Outcomes are self-reported unless --verify-run ties them to a verify event"] }
+    { "dot": "amber", "title": "Caveats", "items": ["Mean modeled cost can understate the price of retries on difficult tasks", "Outcomes are link verdict with --verify-run ties them to a verify event"] }
   ]
 }

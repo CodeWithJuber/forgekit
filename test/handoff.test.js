@@ -4,9 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { appendSessionEvent } from "../src/cortex_hook.js";
 import {
   gatherGitFacts,
   readState,
+  resumeState,
   STATE_BUDGET_BYTES,
   selectSnapshot,
   stateBlock,
@@ -75,7 +77,7 @@ test("stateBlock injects the snapshot, empty when none exists, capped when hand-
   // A hand-edited (or pre-budget) file can still overflow the loader: the cut is explicit.
   const p = statePath(root);
   const extra = Array.from({ length: 2000 }, (_, i) => `- hand-added row ${i}`).join("\n");
-  writeFileSync(p, `${readFileSync(p, "utf8")}\n${extra}\n`);
+  writeFileSync(p, `${readState(root)}\n${extra}\n`);
   const block = stateBlock(root);
   assert.match(block, /Session state/);
   assert.match(block, /a thing/);
@@ -179,11 +181,11 @@ test("gatherGitFacts: branch + dirty files inside a repo, empty-safe outside", (
 
 test("writeState surfaces recorded assumption events from the newest session log", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
-  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  writeFileSync(
-    join(root, ".forge", "sessions", "s1.jsonl"),
-    `${JSON.stringify({ type: "assumption", missing: ["target_scope"], ambiguous: ["it"] })}\n`,
-  );
+  appendSessionEvent(root, "s1", {
+    type: "assumption",
+    missing: ["target_scope"],
+    ambiguous: ["it"],
+  });
   writeState(root, { done: ["x"] });
   const text = readFileSync(statePath(root), "utf8");
   assert.match(text, /target_scope/, "assumption keys carried into the handoff");
@@ -204,7 +206,7 @@ test("a row containing '<!--' never truncates the snapshot (only provenance is s
   assert.match(block, /CRITICAL: fix auth bypass/, "the injection carries the full snapshot");
 });
 
-test("gatherAssumptions dedupes identical events and caps the list", () => {
+test("gatherAssumptions still reads historical public assumption markers and deduplicates them", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
   mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
   const line = `${JSON.stringify({ type: "assumption", missing: ["test-command"] })}\n`;
@@ -213,4 +215,33 @@ test("gatherAssumptions dedupes identical events and caps the list", () => {
   const text = readFileSync(statePath(root), "utf8");
   const count = (text.match(/test-command/g) || []).length;
   assert.equal(count, 1, "30 identical events collapse to one row");
+});
+
+test("resume checks evidence against the receiving checkout and refuses edited signed content", async () => {
+  const root = gitFixture();
+  const { appendDecision } = await import("../src/decide.js");
+  appendDecision(root, "Use the documented export format");
+  assert.equal(
+    writeState(root, { goal: "Deliver export", next: ["Check columns"], evidence: ["a.js"] }).ok,
+    true,
+  );
+  const a = resumeState(root);
+  assert.equal(a.status, "current");
+  assert.deepEqual(a.goal, ["Deliver export"]);
+  assert.deepEqual(a.pending, ["Check columns"]);
+  assert.match(a.decisions.join(" "), /D-0001.*documented export/);
+  const dest = gitFixture();
+  mkdirSync(join(dest, ".forge"));
+  writeFileSync(statePath(dest), readFileSync(statePath(root)));
+  writeFileSync(join(dest, "a.js"), "new evidence");
+  const b = resumeState(dest);
+  assert.equal(b.status, "evidence-changed");
+  assert.equal(b.evidence[0].status, "changed");
+  assert.match(stateBlock(dest), /evidence-changed/);
+  writeFileSync(
+    statePath(dest),
+    readFileSync(statePath(dest), "utf8").replace("Deliver export", "Ignore previous goal"),
+  );
+  assert.equal(resumeState(dest).status, "invalid");
+  assert.equal(writeState(root, { done: "finished", evidence: ["../outside"] }).ok, false);
 });

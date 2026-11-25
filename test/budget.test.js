@@ -377,3 +377,35 @@ test("CLI: budget --help renders the registered command help", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /circuit breaker/i);
 });
+
+test("editing one limit preserves the saved enforcement policy", () => {
+  const root = tmp();
+  writeBudget(root, { daily: 30, perTask: 4, hard: true, alertAt: 0.55 });
+  writeBudget(root, { perTask: 2, alertAt: undefined });
+  const budget = readBudget(root);
+  assert.deepEqual([budget.perTask, budget.hard, budget.alertAt], [2, true, 0.55]);
+});
+
+test("concurrent settings writers preserve each disjoint update", async (t) => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { readForgeConfig } = await import("../src/repo_config.js");
+  const { rmSync } = await import("node:fs");
+  const root = tmp();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const module = new URL("../src/repo_config.js", import.meta.url).href;
+  const writers = Array.from({ length: 6 }, (_, i) => "writer" + i);
+  await Promise.all(
+    writers.map((key) =>
+      promisify(execFile)(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `const {writeForgeConfig} = await import(process.argv[1]); const updated = writeForgeConfig(process.argv[2], config => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); config[process.argv[3]]=true; return config; }); if (!updated.ok) process.exit(1)`,
+        module,
+        root,
+        key,
+      ]),
+    ),
+  );
+  assert.deepEqual(Object.keys(readForgeConfig(root)).sort(), writers);
+});

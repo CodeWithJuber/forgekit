@@ -549,3 +549,19 @@ test("verifyDeep: a secret in the added lines blocks solo", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("an opt-in reviewer reports missing model configuration and stops before retrying", () => {
+  let attempts = 0;
+  const panel = reviewerLens({
+    llm: true,
+    run: () => {
+      attempts++;
+      throw Object.assign(new Error("Configure an exact model for this profile."), {
+        code: "FORGE_MODEL_REQUIRED",
+      });
+    },
+  });
+  assert.equal(attempts, 1);
+  assert.equal(panel.ran, false);
+  assert.match(panel.reason, /Configure an exact model/);
+});

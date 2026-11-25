@@ -1,23 +1,18 @@
 import assert from "node:assert/strict";
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { newLesson } from "../src/lessons.js";
 import {
   appendEpisode,
+  lessonIsSafe,
   lessonsDir,
-  load,
   parse,
   readEpisodes,
-  save,
   serialize,
 } from "../src/lessons_store.js";
 import { fakeAnthropic } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-lessons-"));
 
@@ -63,47 +58,31 @@ test("serialize → parse round-trips every field", () => {
   assert.deepEqual(after.provenance.signals, ["S1", "S6"]);
 });
 
-test("save + load round-trips through the filesystem", () => {
-  const root = fixture();
-  assert.equal(save(root, sample()).ok, true);
-  const loaded = load(root);
-  assert.equal(loaded.length, 1);
-  assert.equal(loaded[0].id, "lsn_auth");
-  assert.equal(loaded[0].status, "active");
+test("the legacy lesson codec parses historical files including Windows line endings", () => {
+  const raw = serialize(sample());
+  assert.deepEqual(parse(raw.replaceAll("\n", "\r\n")), parse(raw));
+  assert.throws(() => parse("incomplete front matter"), /invalid lesson file/);
 });
 
-test("save refuses secret-like content (never persist a credential)", () => {
-  const root = fixture();
-  const leak = {
-    ...sample(),
-    id: "lsn_leak",
-    correctedBehavior: `use ${fakeAnthropic("abcdefghijklmnop")} as the key`,
-  };
-  const res = save(root, leak);
-  assert.equal(res.ok, false, "must refuse");
-  assert.equal(load(root).length, 0, "nothing written");
+test("validation rejects secret-shaped text before the ledger stores it", () => {
+  assert.equal(lessonIsSafe(sample()), true);
+  assert.equal(
+    lessonIsSafe({
+      ...sample(),
+      correctedBehavior: `use ${fakeAnthropic("abcdefghijklmnop")} as the key`,
+    }),
+    false,
+  );
 });
 
-test("episode log appends and reads back; load() ignores it", () => {
+test("episode log appends and reads back independently from lesson claims", () => {
   const root = fixture();
-  save(root, sample());
   appendEpisode(root, { id: "ep_1", signals: ["S1", "S6"], p: 0.82 });
   appendEpisode(root, { id: "ep_2", signals: ["S4"], p: 0.4 });
-  const eps = readEpisodes(root);
-  assert.equal(eps.length, 2);
-  assert.equal(eps[0].id, "ep_1");
-  assert.equal(eps[1].p, 0.4);
-  assert.equal(load(root).length, 1, "episodes.jsonl is not parsed as a lesson");
-});
-
-test("load skips a malformed lesson file instead of throwing (one bad file ≠ dead memory)", () => {
-  const root = fixture();
-  save(root, sample());
-  // a hand-edited / half-written file with no front-matter
-  writeFileSync(join(lessonsDir(root), "broken.md"), "not a lesson, no front-matter\n");
-  const loaded = load(root);
-  assert.equal(loaded.length, 1, "the good lesson still loads; the broken one is skipped");
-  assert.equal(loaded[0].id, "lsn_auth");
+  assert.deepEqual(
+    readEpisodes(root).map((e) => e.id),
+    ["ep_1", "ep_2"],
+  );
 });
 
 test("readEpisodes skips a corrupt JSONL line instead of discarding the whole log", () => {

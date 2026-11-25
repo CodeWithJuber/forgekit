@@ -4,6 +4,7 @@
 // shells out to the `claude` CLI via the shared adjudicate runner (same primitive every other
 // faculty uses); the runner is injectable so the pure prompt/parse logic is testable without it.
 import { buildRunner } from "./adjudicate.js";
+import { SIGNALS } from "./lessons.js";
 import { hasSecret } from "./secrets.js";
 
 /**
@@ -12,10 +13,15 @@ import { hasSecret } from "./secrets.js";
  */
 export function buildPrompt({ context = {}, signals = [] }) {
   const where = context.symbols?.[0] || context.files?.[0] || "some code";
-  return `A coding agent just made and then corrected a mistake on this repository.
-Observed correction signals: ${signals.join(", ") || "n/a"}.
+  return `Review these observations from a coding session. The cause of the outcome is unknown.
+Observed events: ${
+    signals
+      .filter((s) => Object.hasOwn(SIGNALS, s))
+      .map((s) => SIGNALS[s].label)
+      .join(", ") || "none"
+  }.
 Location: ${where}.
-Write ONE short, durable lesson that would stop this mistake recurring. Respond with STRICT
+Propose one local review note grounded in these observations. Avoid inventing causes, caller relationships or test coverage. Respond with STRICT
 JSON and nothing else:
 {"whatWentWrong":"<concrete, <=140 chars>","correctedBehavior":"<an imperative rule, <=140 chars>"}
 Do not include secrets, tokens, keys, or PII. No text outside the JSON object.`;

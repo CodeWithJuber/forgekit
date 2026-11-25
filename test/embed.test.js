@@ -346,3 +346,9 @@ test("forge ledger query / reuse query print which similarity backend served", (
   assert.match(reuseLex.stdout, /sim: minhash/);
   assert.match(reuseLex.stdout, /miss —/);
 });
+
+test("JSON argv invokes an embedding helper directly", () => {
+  withEnv({ FORGE_EMBED: "cmd:" + JSON.stringify([process.execPath, FAKE]) }, () => {
+    assert.ok(embed(["a local sample"], { root: tmp() })?.[0]?.length);
+  });
+});

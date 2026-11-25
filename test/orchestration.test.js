@@ -52,7 +52,11 @@ test("pack: every rule has a stable id, short text, a rationale and a default", 
     assert.ok(r.rationale.length > 20, `${r.id}: has a rationale`);
   }
   assert.equal(pack.params.parallelCap, 2, "parallel cap defaults to 2");
-  assert.equal(pack.route.mode, "conservative", "routing stays conservative by default");
+  assert.deepEqual(
+    pack.route,
+    { topTier: "explicit" },
+    "only the active model authorization is seeded",
+  );
   assert.equal(pack.route.topTier, "explicit");
 });
 
@@ -250,29 +254,18 @@ test("a corrupt user-level config is reported on read and never overwritten", ()
 test("route policy: defaults, then global, then project; bad values ignored", () => {
   const root = fixture();
   const d = resolveRoutePolicy(root, { global: {}, project: {} });
-  assert.equal(d.mode, "conservative");
-  assert.equal(d.raiseConfidence, 0.9);
-  assert.equal(d.midConfidence, 0.5);
   assert.equal(d.topTier, "explicit");
-  assert.equal(d.writesCodeFloor, true);
-  assert.equal(d.riskFloor, true);
-  assert.deepEqual(Object.keys(d.riskCategories).sort(), [
-    "auth",
-    "migrations",
-    "money",
-    "secrets",
-    "security",
-  ]);
+  assert.deepEqual(d.riskCategories, {});
+  assert.deepEqual(d.legacy, {});
   const p = resolveRoutePolicy(root, {
     global: { route: { mode: "unattended", topTier: "never", raiseConfidence: 0.95 } },
     project: { route: { topTier: "auto", raiseConfidence: 7, midConfidence: "high" } },
   });
-  assert.equal(p.mode, "unattended");
-  assert.equal(p.sources.mode, "global");
+  assert.equal(p.legacy.mode, "unattended");
   assert.equal(p.topTier, "auto");
   assert.equal(p.sources.topTier, "project");
-  assert.equal(p.raiseConfidence, 0.95, "an out-of-range project value is ignored");
-  assert.equal(p.midConfidence, 0.5);
+  assert.equal(p.legacy.raiseConfidence, 0.95, "an out-of-range project value is ignored");
+  assert.equal(p.legacy.midConfidence, undefined);
 });
 
 test("route policy: risk categories are overridable, removable and extendable", () => {
@@ -283,17 +276,17 @@ test("route policy: risk categories are overridable, removable and extendable", 
   assert.deepEqual(p.riskCategories.money, ["ledger entry"]);
   assert.deepEqual(p.riskCategories.security, []);
   assert.deepEqual(p.riskCategories.compliance, ["gdpr"]);
-  assert.ok(p.riskCategories.auth.includes("login"), "untouched categories keep defaults");
+  assert.equal(p.riskCategories.auth, undefined);
 });
 
 test("route policy reads the real files: project .forge/forge.config.json over the user file", () => {
   freshHome();
   const root = fixture();
-  assert.equal(setSetting(root, "route.mode", "unattended", { global: true }).ok, true);
-  assert.equal(resolveRoutePolicy(root).mode, "unattended");
-  assert.equal(setSetting(root, "route.mode", "conservative").ok, true);
-  assert.equal(resolveRoutePolicy(root).mode, "conservative");
-  assert.equal(resolveRoutePolicy(fixture()).mode, "unattended", "other repos keep the global");
+  assert.equal(setSetting(root, "route.topTier", "never", { global: true }).ok, true);
+  assert.equal(resolveRoutePolicy(root).topTier, "never");
+  assert.equal(setSetting(root, "route.topTier", "explicit").ok, true);
+  assert.equal(resolveRoutePolicy(root).topTier, "explicit");
+  assert.equal(resolveRoutePolicy(fixture()).topTier, "never", "other repos keep the global");
 });
 
 // --------------------------------------------------------------------------
@@ -309,7 +302,7 @@ test("CLI: list, off, set --global, and errors exit non-zero", () => {
   const off = run("orchestration", "off", "orch.lean-lead");
   assert.equal(off.status, 0, off.stderr);
   assert.match(off.stdout, /orch\.lean-lead: off \(project\)/);
-  const set = run("orchestration", "set", "route.mode", "unattended", "--global");
+  const set = run("orchestration", "set", "route.topTier", "never", "--global");
   assert.equal(set.status, 0, set.stderr);
   const list = run("orchestration", "list", "--json");
   assert.equal(list.status, 0, list.stderr);
@@ -317,13 +310,15 @@ test("CLI: list, off, set --global, and errors exit non-zero", () => {
   const lean = state.rules.find((r) => r.id === "orch.lean-lead");
   assert.equal(lean.enabled, false);
   assert.equal(lean.source, "project");
-  assert.equal(state.route.mode, "unattended");
-  assert.equal(state.route.sources.mode, "global");
+  assert.equal(state.route.topTier, "never");
+  assert.equal(state.route.sources.topTier, "global");
   assert.equal(state.configs.global, join(home, "forge.config.json"));
   const text = run("orchestration");
   assert.equal(text.status, 0);
   assert.match(text.stdout, /off {2}orch\.lean-lead/);
-  assert.match(text.stdout, /route\.mode {13}unattended/);
+  assert.match(text.stdout, /route\.topTier\s+never/);
+  assert.doesNotMatch(text.stdout, /raiseConfidence|riskFloor/);
+  assert.equal(run("orchestration", "set", "route.raiseConfidence", "0.95").status, 1);
   assert.equal(run("orchestration", "off", "orch.nope").status, 1);
   assert.equal(run("orchestration", "set", "route.topTier", "always").status, 1);
   assert.equal(run("orchestration", "frobnicate").status, 1);

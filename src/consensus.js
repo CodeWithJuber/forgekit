@@ -287,8 +287,20 @@ export function reviewerLens({ files = [], added = "", n = 3, llm, run } = {}) {
   const runner = run ?? buildRunner();
   const prompt = buildReviewPrompt({ files, added });
   const votes = [];
+  let unavailable;
   for (let i = 0; i < Math.max(1, n); i += 1) {
-    const v = adjudicate({ prompt, parse: parseReviewProposal, run: runner });
+    const v = adjudicate({
+      prompt,
+      parse: parseReviewProposal,
+      run: runner,
+      onUnavailable: (reason) => {
+        unavailable = reason;
+      },
+    });
+    if (unavailable) {
+      process.stderr.write(`ForgeKit reviewer unavailable. ${unavailable}\n`);
+      return { lens: "reviewer", ran: false, s: 0, verdict: "abstain", reason: unavailable, votes };
+    }
     if (v) votes.push(v);
   }
   if (votes.length < Math.ceil(Math.max(1, n) / 2))
@@ -376,7 +388,9 @@ export function verifyDeep({
     symbolsLens(core.unknown, core.provenance?.symbolsChecked),
     impactLens(atlas, changed),
     docsDriftLens(changed),
-    secretsLens(added),
+    core.reviewCoverage?.secretDetected
+      ? { lens: "secrets", ran: true, examined: true, s: 1 }
+      : secretsLens(added),
     speclockLens(targetRoot),
     reviewerLens({ files: changed, added, n: reviewers, llm, run }),
   ];

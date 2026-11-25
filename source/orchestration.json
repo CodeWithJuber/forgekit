@@ -31,8 +31,8 @@
     {
       "id": "orch.route-models",
       "default": true,
-      "text": "Pick each agent's model with `forge route \"<task>\" --json` (add `--mode unattended` for agents nobody watches). Never start at the top tier by default.",
-      "rationale": "Hand-picking the most expensive tier for routine work cost ~140M tokens in one session. Routing picks the cheapest capable tier, with floors for risky work."
+      "text": "Use forge route with the provider and workload to inspect verified model comparisons. If the workload is unrated, keep the explicitly configured deployment or ask the operator to select one.",
+      "rationale": "Model capability and cost depend on the deployment and the measured workload. The comparison records the evidence used."
     },
     {
       "id": "orch.risk-review",
@@ -54,80 +54,6 @@
     }
   ],
   "route": {
-    "mode": "conservative",
-    "raiseConfidence": 0.9,
-    "midConfidence": 0.5,
-    "topTier": "explicit",
-    "writesCodeFloor": true,
-    "riskFloor": true,
-    "riskCategories": {
-      "money": [
-        "payment",
-        "payout",
-        "billing",
-        "invoice",
-        "refund",
-        "charge",
-        "checkout",
-        "subscription",
-        "wallet",
-        "pricing",
-        "currency",
-        "transaction"
-      ],
-      "auth": [
-        "auth",
-        "authentication",
-        "authorization",
-        "login",
-        "logout",
-        "signup",
-        "password",
-        "session",
-        "oauth",
-        "sso",
-        "jwt",
-        "mfa",
-        "2fa",
-        "permission",
-        "rbac",
-        "identity"
-      ],
-      "secrets": [
-        "secret",
-        "api key",
-        "private key",
-        "credential",
-        "access token",
-        "refresh token",
-        "encryption key",
-        "keystore",
-        "vault",
-        ".env"
-      ],
-      "migrations": [
-        "migration",
-        "migrate",
-        "schema change",
-        "alter table",
-        "drop table",
-        "drop column",
-        "backfill"
-      ],
-      "security": [
-        "security",
-        "vulnerability",
-        "cve",
-        "exploit",
-        "xss",
-        "csrf",
-        "ssrf",
-        "sql injection",
-        "injection",
-        "sanitize",
-        "encryption",
-        "cors"
-      ]
-    }
+    "topTier": "explicit"
   }
 }

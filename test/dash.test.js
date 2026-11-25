@@ -527,6 +527,15 @@ test("F13: read routes refuse a foreign Host (DNS rebinding) and a wrong port", 
     );
     assert.equal((await rawRequest(port, { headers: { host: `127.0.0.1:${port}` } })).status, 200);
     assert.equal((await rawRequest(port, { headers: { host: `localhost:${port}` } })).status, 200);
+    const models = await rawRequest(port, { path: "/api/models" });
+    assert.equal(models.status, 200);
+    const inventory = JSON.parse(models.body);
+    assert.equal(inventory.modelControl.nativeAgent, "host-managed");
+    assert.equal(inventory.profiles[0].status, "credential-missing");
+    assert.equal(
+      (await rawRequest(port, { path: "/api/models?workload=wrong%20name" })).status,
+      400,
+    );
     const page = await rawRequest(port, { path: "/", headers: { host: `127.0.0.1:${port}` } });
     assert.equal(
       page.headers["x-frame-options"],

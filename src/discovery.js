@@ -274,14 +274,16 @@ export function rankCandidates(
       ? `Best observed fit (${decision.source}; source data, verify upstream):`
       : "No supported best fit found.",
     ...selected.map((c) =>
-      [
-        `${JSON.stringify(c.title)} [${c.kind}] — ${c.reason}. ${c.url} ${JSON.stringify(c.summary)}`,
-        `Source: ${c.provider}; checked ${c.checkedAt ?? "unknown"}${c.cached ? " (cached)" : ""}; license ${c.license ?? "unknown"}; updated ${c.updatedAt ?? "unknown"}.`,
-        `Setup: ${c.setup.command ?? c.setup.steps}`,
-        c.limitations.join("; "),
-      ]
-        .filter(Boolean)
-        .join(" "),
+      hook
+        ? `${JSON.stringify(c.title)} ${c.url} · license ${c.license ?? "unknown"} · checked ${c.checkedAt ?? "unknown"}`
+        : [
+            `${JSON.stringify(c.title)} [${c.kind}] — ${c.reason}. ${c.url} ${JSON.stringify(c.summary)}`,
+            `Source: ${c.provider}; checked ${c.checkedAt ?? "unknown"}${c.cached ? " (cached)" : ""}; license ${c.license ?? "unknown"}; updated ${c.updatedAt ?? "unknown"}.`,
+            `Setup: ${c.setup.command ?? c.setup.steps}`,
+            c.limitations.join("; "),
+          ]
+            .filter(Boolean)
+            .join(" "),
     ),
   ].join("\n");
   return { best, candidates: ranked, decision, text };

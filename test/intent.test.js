@@ -9,56 +9,30 @@ import { classifyIntent, INTENT_HELPERS, intentCard, PROTOCOL_CARDS } from "../s
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 
-test("classifyIntent: confidence belongs to the winning intent (deep review D9)", () => {
-  // Two release rows outvote one closer question row; the reported confidence used to be the
-  // question row's similarity — evidence for an intent that lost.
-  const r = classifyIntent("what does the release script do");
-  const best = Math.max(...r.neighbors.filter((n) => n.intent === r.intent).map((n) => n.sim));
-  assert.ok(Math.abs(r.confidence - best) < 1e-3, `confidence ${r.confidence} vs best ${best}`);
-  const top = r.neighbors[0];
-  if (top.intent !== r.intent)
-    assert.ok(r.confidence < top.sim, "and it is not the losing neighbor's similarity");
+test("unlabeled prompts in different languages never select a work protocol", () => {
+  for (const prompt of [
+    "fix the release crash",
+    "ek naya profile page banao",
+    "採用新模型",
+    "what does it do?",
+  ]) {
+    assert.deepEqual(classifyIntent(prompt), {
+      intent: "none",
+      source: "unclassified",
+      observations: 0,
+    });
+  }
+  assert.equal(classifyIntent("/forge bugfix 日本語で").intent, "bugfix");
+  assert.equal(classifyIntent("/forge nonexistent foo").source, "unrecognized");
+  assert.equal(classifyIntent("/forge feature foo", { intent: "question" }).intent, "question");
 });
-
-test("classifyIntent: each intent recognized from unseen phrasings (English)", () => {
-  assert.equal(classifyIntent("fix the crash on the settings page").intent, "bugfix");
-  assert.equal(classifyIntent("add a page to export invoices as csv").intent, "feature");
-  assert.equal(
-    classifyIntent("clean up the billing module and reduce duplication").intent,
-    "refactor",
-  );
-  assert.equal(classifyIntent("cut a release and update the changelog").intent, "release");
-  assert.equal(classifyIntent("how does the cache expiry work").intent, "question");
-});
-
-test("classifyIntent: Hinglish rows are data, not regexes — unseen variants match", () => {
-  assert.equal(classifyIntent("login page thik karo error aa raha hai").intent, "bugfix");
-  assert.equal(classifyIntent("ek naya profile page banao").intent, "feature");
-  assert.equal(classifyIntent("deploy kar do production par").intent, "release");
-});
-
-test("classifyIntent: no resemblance → none (never a guess); neighbors attribute the call", () => {
-  const vague = classifyIntent("hello there");
-  assert.equal(vague.intent, "none");
-  const r = classifyIntent("fix the race condition in the export queue");
-  assert.equal(r.intent, "bugfix");
-  assert.ok(
-    r.neighbors.length > 0 && r.neighbors[0].sim >= r.confidence - 1e-9,
-    "evidence rides along",
-  );
-});
-
-test("intentCard: question and none are silent; work intents inject once per run", () => {
+test("explicitly selected protocols are deduplicated across a session", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-intent-"));
-  assert.equal(intentCard(root, "s1", "why is startup slow"), "", "questions get no ceremony");
-  const first = intentCard(root, "s1", "fix the crash when uploading");
-  assert.match(first, /Bugfix protocol/);
-  assert.match(first, /docs sync/, "card names real machinery");
-  assert.equal(intentCard(root, "s1", "fix the other crash too"), "", "same intent deduped");
-  const switched = intentCard(root, "s1", "now add a csv export feature");
-  assert.match(switched, /Feature protocol/, "intent change re-injects");
-  const back = intentCard(root, "s1", "fix the regression this caused");
-  assert.match(back, /Bugfix protocol/, "returning to a prior intent re-injects");
+  assert.equal(intentCard(root, "s1", "fix the crash"), "");
+  assert.match(intentCard(root, "s1", "/forge bugfix repair"), /Bugfix protocol/);
+  assert.equal(intentCard(root, "s1", "/forge bugfix another task"), "");
+  assert.match(intentCard(root, "s1", "/forge feature work"), /Feature protocol/);
+  assert.match(intentCard(root, "s1", "/forge bugfix again"), /Bugfix protocol/);
 });
 
 test("intentCard: FORGE_INTENT=0 disables; cards exist only for work intents", () => {
@@ -120,7 +94,7 @@ test("preflight says nothing for a message the harness submits by itself", () =>
     assert.equal(r.stdout.trim(), "", prompt.slice(0, 30));
   }
   // The same words typed by a person still get the card.
-  const typed = feed("fix the crash in src/tax.ts when rounding");
+  const typed = feed("/forge bugfix fix the crash in src/tax.ts when rounding");
   assert.match(JSON.parse(typed.stdout).hookSpecificOutput.additionalContext, /Bugfix protocol/);
 });
 
@@ -131,14 +105,24 @@ test("preflight hook emits the card as additionalContext and dedupes on repeat",
       input: JSON.stringify({ session_id: "hook-1", cwd: root, prompt }),
       encoding: "utf8",
     });
-  const first = feed("fix the crash in src/tax.ts when rounding");
+  const first = feed("/forge bugfix fix the crash in src/tax.ts when rounding");
   assert.equal(first.status, 0);
   const out = JSON.parse(first.stdout);
   assert.match(out.hookSpecificOutput.additionalContext, /Bugfix protocol/);
-  const second = feed("fix the crash in src/tax.ts when rounding");
+  const second = feed("/forge bugfix fix the crash in src/tax.ts when rounding");
   const again = second.stdout.trim() ? JSON.parse(second.stdout) : null;
   assert.ok(
     !again || !/Bugfix protocol/.test(again.hookSpecificOutput?.additionalContext ?? ""),
     "repeat intent does not re-inject the card",
   );
+});
+
+test("the host or user can mark conversational turns without a language classifier", async () => {
+  const { isDialogueTurn } = await import("../src/intent.js");
+  for (const kind of ["question", "acknowledgement", "continuation"]) {
+    assert.equal(isDialogueTurn("…", { intent: kind }), true);
+    assert.equal(isDialogueTurn(`/forge ${kind} …`), true);
+  }
+  assert.equal(isDialogueTurn("Question about question generation", { intent: "feature" }), false);
+  assert.equal(isDialogueTurn("unlabeled free text"), false);
 });

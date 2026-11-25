@@ -34,6 +34,24 @@ stage factors:
    output. A routed-down answer that fails is not a saving; a cache hit that gets reverted is
    recorded as a *negative* entry.
 
+## Run the paired pilot locally
+
+The CLI accepts a frozen task list and two independently measured outcomes per task. It reads local files and writes new worksheets with owner-only permissions. Paid task execution, participant consent and independent verification happen in the operator's environment. The committed tests use synthetic observations. A production measurement still requires consented task records and actual bills.
+
+```sh
+forge cost pilot init suite.json
+# Fill the task definitions, controls, consent reference and margins before freezing.
+forge cost pilot freeze suite.json frozen.json
+forge cost pilot template frozen.json runs.json
+# Run both configurations against each frozen starting revision and fill both arms.
+forge cost pilot compare frozen.json runs.json --json
+```
+
+1. **Freeze the design.** Record the ForgeKit revision, selection method, consent reference, held-out status, billing scope and the controls common to both arms. Use 100 or more distinct tasks for an eligibility decision. Each task needs a repository, full commit, task text, observable rubric and one workload stratum (`repeat-heavy`, `mixed` or `cold`). Select allowed quality and completion regressions before running the trial. The template suggests five points on the 0–100 quality scale and five percentage points of completion rate. Its consent fields start empty.
+2. **Record every outcome.** Keep the generated arm configuration, starting revision and task/rubric fingerprint. For each arm record `status` (`verified`, `failed`, `abandoned`), the independent rubric's quality score, a distinct evidence locator and `actualUsd`. Include retries, escalations and failed attempts. Document any exclusions for verifier, tooling and cached usage in the frozen billing scope. Supply a billing reference for every observed charge, including a zero charge. Use JSON `null` for missing bills. Set the run ID, ISO billing date and both execution/verification attestations. Choose `source: "simulation"` for a dry run. Evidence locators and consent are operator attestations, suitable for subsequent review.
+3. **Read the comparison.** Total spend divided by independently verified completions includes spend on failed and abandoned tasks. The report shows the known subtotal, missing bill count, completion rate and abandonment rate for each arm. Missing bills or a zero verified denominator leave the affected ratio unknown. The 95% cost interval resamples matched task pairs inside each frozen workload stratum, with 2,000 draws seeded from the suite hash. It estimates each arm’s USD per verified task and the paired candidate-minus-baseline difference. A bootstrap draw with a zero denominator leaves the cost interval unavailable.
+4. **Interpret eligibility.** Each paired completion or quality difference is decomposed into a bounded gain and a bounded loss. Inverting the Bernoulli KL-Chernoff tail bound on their means and combining four tails yields a conservative 95% interval per endpoint, including when all observed differences are zero. The lower endpoints must clear the frozen noninferiority margins. Eligibility also requires an observed source, complete bills, all three strata, at least 100 tasks and a cost interval entirely below zero. Simulations always receive `simulation-only`. The decision applies to the frozen workload mix and assumes independent task pairs. Teams with related tasks from the same repository or time period should re-evaluate uncertainty at the repository or time-block level before generalizing. The comparator changes no runtime configuration.
+
 ## Measured factors
 
 | stage | factor | events | measured? |

@@ -72,14 +72,16 @@ export const EVIDENCE_TOOLS = [
   },
   tool(
     "forge_team_plan",
-    "Plan independent read-only specialist assignments for a complex task. Leaves paid execution to the host or explicit CLI.",
+    "Plan explicitly scoped read-only work and its dependencies. Paid execution requires an explicit CLI run.",
     {
       task: str("Task for the lead"),
-      maxWorkers: { type: "integer", minimum: 1, maximum: 6 },
+      host: str("Optional host ID to look up comparable prior worker timings"),
+      model: str("Optional exact model ID for a matching timing contract"),
+      maxWorkers: { type: "integer", minimum: 1 },
       decomposition: {
         type: "object",
         description:
-          "Optional scoped team brief: mode, owner, merge and 2–3 streams with id, role, paths, estimatedMinutes and acceptance; or mode review.",
+          "An optional team brief supplies a mode, owner, merge deliverable and streams with id, role, paths, acceptance, optional dependsOn IDs and estimatedMinutes. Mode review requests one independent review.",
       },
     },
     ["task"],
@@ -196,6 +198,8 @@ export async function evidenceTool(root, name, args) {
         root,
         maxWorkers: args.maxWorkers,
         decomposition: args.decomposition,
+        host: args.host,
+        model: args.model,
         evidence: buildEvidence(args.task, { root }),
       }),
     );

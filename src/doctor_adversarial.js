@@ -138,29 +138,21 @@ function probeRerouting(guardPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Attack class 2: malformed hook JSON. Truncated/garbage bytes MUST be denied
-// (fail-closed — verified). Wrong-shape payloads (empty stdin, {}, a string
-// where the object belongs) currently pass: not attacker-reachable through the
-// real hook protocol, so `warn`, not `fail` — but worth knowing, because a
-// pipeline that swallows stdin would silently disable the guard.
-// ---------------------------------------------------------------------------
-
-/** @type {{id: string, stdin: string, why: string, mustDeny: boolean}[]} */
+// Malformed pre-tool requests must receive a native deny before an action can run.
+/** @type {{id: string, stdin: string, why: string}[]} */
 const PAYLOAD_ATTACKS = [
   {
     id: "truncated-json",
     stdin: '{"tool_name":"Bash","tool_input":{"comma',
     why: "truncated JSON bytes",
-    mustDeny: true,
   },
-  { id: "garbage-stdin", stdin: "not json at all {{{", why: "non-JSON bytes", mustDeny: true },
-  { id: "empty-stdin", stdin: "", why: "empty stdin", mustDeny: false },
-  { id: "empty-object", stdin: "{}", why: "{} — no tool call described", mustDeny: false },
+  { id: "garbage-stdin", stdin: "not json at all {{{", why: "non-JSON bytes" },
+  { id: "empty-stdin", stdin: "", why: "empty stdin" },
+  { id: "empty-object", stdin: "{}", why: "{} — no tool call described" },
   {
     id: "string-tool-input",
-    stdin: '{"tool_name":"Bash","tool_input":"cat .env"}',
+    stdin: '{"tool_name":"Bash","tool_input":"pwd"}',
     why: "tool_input as a string, not an object",
-    mustDeny: false,
   },
 ];
 
@@ -168,27 +160,15 @@ const PAYLOAD_ATTACKS = [
  * @param {string} guardPath
  * @returns {AdvResult[]}
  */
-function probeMalformed(guardPath) {
+export function probeMalformed(guardPath) {
   const out = [];
   for (const p of PAYLOAD_ATTACKS) {
     const { exit } = fireGuard(guardPath, p.stdin);
     const denied = exit === 2;
     if (denied) {
       out.push(ok(`adv: ${p.id}`, `denied (exit 2, fail-closed) — ${p.why}`));
-    } else if (p.mustDeny) {
-      out.push(
-        fail(
-          `adv: ${p.id}`,
-          `BYPASSED (exit ${exit === null ? "timeout" : exit}) — ${p.why}; the guard failed open`,
-        ),
-      );
     } else {
-      out.push(
-        warn(
-          `adv: ${p.id}`,
-          `allowed (exit ${exit === null ? "timeout" : exit}) — ${p.why}; not attacker-reachable via the hook protocol, but a stdin-swallowing pipeline would silently disable the guard`,
-        ),
-      );
+      out.push(fail(`adv: ${p.id}`, `Missing deny (exit ${exit ?? "timeout"}) for ${p.why}`));
     }
   }
   return out;

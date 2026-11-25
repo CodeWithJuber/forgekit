@@ -28,14 +28,14 @@
     { "id": "prompt-submit", "from": "agent", "to": "hooks", "y": 276, "label": "UserPromptSubmit: cortex prompt · preflight" },
     { "id": "cached-atlas", "from": "hooks", "to": "state", "y": 312, "label": "look up cached symbols and scoped source excerpts" },
     { "id": "advisory", "from": "hooks", "to": "agent", "y": 348, "label": "return cited evidence, routing and checks", "variant": "return" },
-    { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex", "variant": "security" },
+    { "id": "pre-tool", "from": "agent", "to": "hooks", "y": 384, "label": "PreToolUse: protect-paths · pre-edit-impact · cost-budget · doom-loop · dep-gate · cortex", "variant": "security" },
     { "id": "allow-deny", "from": "hooks", "to": "agent", "y": 420, "label": "allow | ask | deny", "variant": "return" },
     { "id": "post-tool", "from": "agent", "to": "hooks", "y": 456, "label": "PostToolUse: format-on-edit · secret-redact · cortex capture" },
     { "id": "capture", "from": "hooks", "to": "state", "y": 492, "label": "cortex capture: signals + evidence" },
     { "id": "tool-failure", "from": "agent", "to": "hooks", "y": 528, "label": "PostToolUseFailure: cortex failure" },
     { "id": "failure-evidence", "from": "hooks", "to": "agent", "y": 564, "label": "return relevant evidence for the failed call", "variant": "return" },
     { "id": "stop", "from": "agent", "to": "hooks", "y": 600, "label": "Stop: completion-gate · lean-guard · session-learner · cortex stop" },
-    { "id": "distill", "from": "hooks", "to": "state", "y": 636, "label": "cortex stop: distill lessons into the ledger" },
+    { "id": "distill", "from": "hooks", "to": "state", "y": 636, "label": "Keep proposals private until corroborated" },
     { "id": "stop-result", "from": "hooks", "to": "agent", "y": 672, "label": "session ends | agent told what is missing", "variant": "return" }
   ],
   "activations": [
