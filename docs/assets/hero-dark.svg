@@ -73,12 +73,13 @@
     <g font-size="10.5" fill="#f2ede7">
       <text x="20" y="72">Claude Code</text>
       <text x="114" y="72">Codex</text>
-      <text x="20" y="99">Gemini CLI</text>
-      <text x="114" y="99">Cursor</text>
-      <text x="20" y="125">GitHub Copilot</text>
-      <text x="114" y="125">Kimi Code</text>
-      <text x="20" y="152">Devin</text>
-      <text x="114" y="152">Generic MCP</text>
+      <text x="20" y="92">Gemini CLI</text>
+      <text x="114" y="92">Cursor</text>
+      <text x="20" y="112">GitHub Copilot</text>
+      <text x="114" y="112">Kimi Code</text>
+      <text x="20" y="132">OpenCode</text>
+      <text x="114" y="132">Devin</text>
+      <text x="20" y="152">Generic MCP</text>
     </g>
   </g>
 
