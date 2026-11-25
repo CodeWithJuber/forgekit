@@ -83,6 +83,10 @@ test("automatic queries use repo stack and fixed vocabulary; fresh discovery byp
     queries.push(q);
     return { checkedAt: new Date().toISOString(), results: rows, warnings: [] };
   };
+  const initial = await discoverTools(task, { root, search });
+  assert.equal(initial.best, null);
+  assert.deepEqual(queries, []);
+  configureAdvisor(root, { recommendations: true });
   const first = await discoverTools(task, { root, search });
   assert.ok(first.best);
   assert.match(queries.join(" "), /React/);
@@ -184,6 +188,7 @@ test("Jev selects only existing candidates and hook evidence includes the recomm
   const root = workspace(t);
   configureAdvisor(root, { decisions: true });
   process.env.TYPESAFE_API_KEY = "test-key-not-real";
+  configureAdvisor(root, { recommendations: true });
   const search = async () => ({ checkedAt: new Date().toISOString(), results: rows, warnings: [] });
   const jevCall = (payload) => {
     assert.doesNotMatch(JSON.stringify(payload), /PRIVATE_CANARY/);

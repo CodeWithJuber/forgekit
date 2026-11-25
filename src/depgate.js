@@ -188,6 +188,44 @@ const noEvidence = () => ({
   advisories: null,
 });
 
+/** Versioned OSV query shared by pre-install vetting and explicit inventory review.
+ * A complete empty response is evidence. Incomplete pages and invalid documents are unknown.
+ * @param {{name:string,ecosystem:string,version?:string|null}} spec @param {typeof fetch} call */
+export async function osvRecords({ name, ecosystem, version }, call) {
+  const records = [];
+  const seen = new Set();
+  let page;
+  do {
+    const response = await call("https://api.osv.dev/v1/query", {
+      method: "POST",
+      redirect: "error",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        package: { name, ecosystem },
+        ...(version ? { version } : {}),
+        ...(page ? { page_token: page } : {}),
+      }),
+    });
+    if (!response?.ok) throw new Error("OSV query unavailable");
+    const doc = await response.json();
+    if (
+      !doc ||
+      typeof doc !== "object" ||
+      Array.isArray(doc) ||
+      (doc.vulns !== undefined && !Array.isArray(doc.vulns)) ||
+      Object.keys(doc).some((key) => key !== "vulns" && key !== "next_page_token") ||
+      doc.vulns?.some((v) => typeof v?.id !== "string" || !v.id)
+    )
+      throw new Error("Invalid OSV response");
+    for (const v of doc.vulns || []) if (!v.withdrawn) records.push(v);
+    page = doc.next_page_token;
+    if (page && (typeof page !== "string" || seen.has(page) || seen.size >= 32))
+      throw new Error("Incomplete OSV pagination");
+    if (page) seen.add(page);
+  } while (page);
+  return records;
+}
+
 /**
  * Gather the evidence for one package. Never throws; every source that fails leaves its
  * fields `null` (unknown) instead of a clean bill of health.
@@ -281,17 +319,10 @@ export async function probePackage(pkg, opts = {}) {
   const advisories = async () => {
     try {
       const version = pkg.version?.replace(/^v/, "");
-      const res = await call("https://api.osv.dev/v1/query", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          package: { name: ev.canonical ?? pkg.name, ecosystem: eco.osv },
-          ...(version ? { version } : {}),
-        }),
-      });
-      if (!res?.ok) return;
-      const doc = await res.json();
-      const vulns = Array.isArray(doc?.vulns) ? doc.vulns : [];
+      const vulns = await osvRecords(
+        { name: ev.canonical ?? pkg.name, ecosystem: eco.osv, version },
+        call,
+      );
       ev.malicious = [];
       /** @type {NonNullable<PkgEvidence["advisories"]>} */
       const known = [];

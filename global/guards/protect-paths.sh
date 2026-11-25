@@ -12,12 +12,10 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 MJS="$DIR/protect-paths.mjs"
-INPUT="$(cat)"
 
 if command -v node >/dev/null 2>&1 && [ -f "$MJS" ]; then
   # Propagate the verdict verbatim — an exit 2 here is what blocks the tool call.
-  printf '%s' "$INPUT" | node "$MJS"
-  exit "$?"
+  exec node "$MJS"
 fi
 
 echo "BLOCKED by protect-paths guard: node unavailable or protect-paths.mjs missing — the guard cannot evaluate this tool call, so it is blocked (install Node 20+ to restore it)." >&2

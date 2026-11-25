@@ -9,13 +9,9 @@ allowed-tools: Bash, Read
 
 ## Install
 
-```bash
-# from a forgekit checkout, or: npm install -g forgekit
-# then copy the skill into your project (or ~/.claude/skills for global use):
-cp -r skills/forge-verify .claude/skills/
-```
+With the packaged CLI installed, run `forge skills install forge-verify --host codex` in the target project. Choose `claude`, `copilot`, `cursor`, `gemini`, `opencode` or `portable` for another destination. Use `forge skills show forge-verify` to inspect the playbook without installation.
 
-Requires the `forge` CLI on PATH (`npm install -g forgekit`, or `node <checkout>/src/cli.js`).
+To copy the instructions from a ForgeKit checkout by hand, run `mkdir -p .claude/skills && cp -r skills/forge-verify .claude/skills/` or copy the same folder to your host's project skill directory. The bound command requires the ForgeKit CLI.
 
 ## When to use
 

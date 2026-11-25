@@ -1,19 +1,12 @@
 // A planning record. Only an explicit executor (forge develop --verify) can attach a
 // verification verdict. Prompt hooks inspect bounded evidence and never run Git or tests.
-import { existsSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
 import { chooseAdvice } from "./decisions.js";
-import { resolveRoutePolicy } from "./orchestration.js";
 import { assessTask, referencedEntities } from "./preflight.js";
+import { readForgeConfig, readUserConfig } from "./repo_config.js";
 import { riskMatches } from "./route_policy.js";
 import { redactSecrets } from "./secrets.js";
-import { classifyDeterministic, resolveChangedFiles } from "./test_select.js";
+import { resolveChangedFiles, selectTestsSync } from "./test_select.js";
 
-const FIX =
-  /\b(debug|diagnos\w*|bug|broken|fail(?:ed|ing|ures?)?|crash\w*|regression|deadlock|timeout|stack trace|root cause|fix|masla)\b/i;
-const SMALL = /\b(typos?|misspell\w*|punctuation|formatting|spelling)\b/i;
-const DEPENDENCY =
-  /(^|\/)(package(?:-lock)?\.json|go\.(?:mod|sum)|Cargo\.(?:toml|lock)|pom\.xml|pyproject\.toml|requirements[^/]*\.txt|composer\.(?:json|lock)|Gemfile(?:\.lock)?|pubspec\.yaml|yarn\.lock|pnpm-lock\.yaml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$/i;
 const CATEGORY_ADVICE = {
   auth: "Try a permitted identity and a denied identity against the same resource.",
   money: "Test replay, idempotency, rounding and partial failure on the affected transaction.",
@@ -35,23 +28,6 @@ const stage = (id, phase, action, commands = [], refs = []) => ({
   commands,
   refs,
 });
-function testPointers(root, files) {
-  const candidates = new Set();
-  for (const file of files.slice(0, 32)) {
-    const ext = extname(file);
-    const name = basename(file, ext);
-    if (/\btest\b|\.test\.|\.spec\.|_test\.|^test_/i.test(file)) candidates.add(file);
-    for (const candidate of [
-      join(dirname(file), `${name}.test${ext}`),
-      join(dirname(file), `${name}.spec${ext}`),
-      join("test", `${name}.test${ext}`),
-      join("tests", `test_${name}${ext}`),
-      ...(ext === ".go" ? [join(dirname(file), `${name}_test.go`)] : []),
-    ])
-      if (existsSync(join(root, candidate))) candidates.add(candidate);
-  }
-  return [...candidates].slice(0, 10);
-}
 const safeFile = (p) =>
   typeof p === "string" &&
   p.length <= 400 &&
@@ -61,12 +37,20 @@ const safeFile = (p) =>
 
 /**
  * @param {string} task
- * @param {{root?:string,evidence?:any,changedFiles?:string[],hook?:boolean,llm?:boolean,
+ * @param {{root?:string,evidence?:any,changedFiles?:string[],mode?:string,hook?:boolean,llm?:boolean,
  * jevCall?:(payload:object)=>object}} options
  */
 export function developmentPlan(
   task,
-  { root = process.cwd(), evidence = {}, changedFiles, hook = false, llm, jevCall } = {},
+  {
+    root = process.cwd(),
+    evidence = {},
+    changedFiles,
+    mode: requestedMode,
+    hook = false,
+    llm,
+    jevCall,
+  } = {},
 ) {
   if (typeof task !== "string" || !task.trim()) throw new Error("Supply a development task");
   if (changedFiles !== undefined && !Array.isArray(changedFiles))
@@ -76,32 +60,31 @@ export function developmentPlan(
   const files = observed.filter(safeFile).slice(0, 200);
   const entities = referencedEntities(objective);
   const targets = [...new Set([...files, ...entities.files.filter(safeFile)])].slice(0, 200);
-  const { riskCategories } = resolveRoutePolicy(root);
-  const signals = riskMatches(
-    [objective, ...targets].join(" ").replace(/([a-z])([A-Z])/g, "$1 $2"),
-    riskCategories,
-  );
-  if (
-    targets.some((p) => DEPENDENCY.test(p)) ||
-    /\b(?:add|install|upgrade) (?:a |the )?(?:dependency|package|sdk|library)\b/i.test(objective)
-  )
-    signals.push({ category: "dependencies", keyword: "package or manifest" });
+  // A named review policy is an operator preference. Shipped keyword lists
+  // cannot classify an unfamiliar task or authorize a narrower test run.
+  const policy = {
+    ...readUserConfig()?.route?.riskCategories,
+    ...readForgeConfig(root)?.route?.riskCategories,
+  };
+  const signals = riskMatches([objective, ...targets].join(" "), policy);
+  const changedManifests = targets.filter((path) => (evidence.manifests ?? []).includes(path));
+  if (changedManifests.length)
+    signals.push({ category: "dependencies", keyword: clean(changedManifests.join(", ")) });
   const security = signals.map((s) => ({
     ...s,
     check:
       CATEGORY_ADVICE[s.category] ??
       "Test the affected boundary and review the evidence with its owner.",
   }));
-  const tier = files.length ? classifyDeterministic(files).tier : "unselected";
-  const tests = hook ? [] : testPointers(root, targets);
-  const focused =
-    !security.length &&
-    (files.length === 0 || tier === "cosmetic") &&
-    SMALL.test(objective) &&
-    !/\b(implement|architecture|integrate|refactor|migrate|regression|crash|security|also)\b/i.test(
-      objective,
-    );
-  const mode = focused ? "focused" : FIX.test(objective) ? "repair" : "standard";
+  // The display truncates paths. The decision must account for every observed path.
+  const selection = hook || !observed.length ? null : selectTestsSync({ root, files: observed });
+  const tier = selection?.tier ?? "unselected";
+  const tests = selection?.tests ?? [];
+  const mode =
+    requestedMode ?? (evidence.verification?.tests?.status === "FAIL" ? "repair" : "standard");
+  if (!["focused", "repair", "standard"].includes(mode))
+    throw new Error("Choose a development mode: focused, repair or standard");
+  const focused = mode === "focused";
   const sources = (evidence.hits ?? [])
     .slice(0, 3)
     .map((x) => clean([x.sourceId, x.path, x.locator].filter(Boolean).join(" ")));
@@ -111,17 +94,17 @@ export function developmentPlan(
   const manifests = (evidence.manifests ?? []).slice(0, 3).map((x) => clean(x));
   const refs = [...sources, ...symbols];
   const testsAction = focused
-    ? "Inspect the changed wording in context and run its applicable spelling, docs or render check."
+    ? "Inspect the requested change in context and run its verification plan."
     : tests.length
       ? "Run the listed tests, then check affected callers and the project verification verdict."
-      : "Select affected tests from the diff and run them. Record any failing or unavailable runner.";
+      : "Run the project suite and record any failing or unavailable runner.";
   const acceptance = assessTask(objective).questions.slice(0, 3);
   const stages = [
     stage(
       "plan",
       "before",
       focused
-        ? "Locate the requested wording and identify the expected edit."
+        ? "Locate the requested change and identify the acceptance check."
         : "Define the observable success case and identify affected callers, inputs and constraints.",
       [],
       refs,
@@ -178,13 +161,7 @@ export function developmentPlan(
       ),
     );
   stages.push(
-    stage(
-      "test",
-      "after",
-      testsAction,
-      focused ? [] : ["forge test-select --json", "forge verify --json"],
-      tests,
-    ),
+    stage("test", "after", testsAction, ["forge test-select --json", "forge verify --json"], tests),
   );
   if (!focused)
     stages.push(
@@ -230,7 +207,7 @@ export function developmentPlan(
     fallback: mode === "repair" ? "reproduce" : "acceptance",
   });
   const text = focused
-    ? "Development: locate the wording, make the requested edit and check the result in context."
+    ? "Locate the requested change, make the edit and verify the result in context."
     : [
         mode === "repair"
           ? "Development: reproduce the failure first."
@@ -246,7 +223,11 @@ export function developmentPlan(
     objective,
     stages,
     security,
-    testing: { tier, tests },
+    testing: {
+      tier,
+      tests,
+      ...(selection ? { fullSuite: selection.fullSuite, reason: selection.reason } : {}),
+    },
     changedFiles: files,
     changedFilesTruncated: observed.length > files.length,
     changeInspection:

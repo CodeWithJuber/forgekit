@@ -677,24 +677,24 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>235 files"]
-  test["test<br/>210 files"]
+  src["src<br/>245 files"]
+  test["test<br/>215 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>17 files"]
+  global["global<br/>7 files"]
   bench["bench<br/>6 files"]
-  global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 466 --> src
+  test -- 483 --> src
   scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global
-  src -- 6 --> global
+  src -- 7 --> global
   test -- 5 --> scripts
   examples -- 4 --> src
   scripts -- 4 --> test
+  global -- 2 --> src
   test -- 2 --> bench
-  global --> src
 ```
 <!-- forge:render:repo-map:end -->

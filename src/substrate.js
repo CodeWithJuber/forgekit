@@ -310,7 +310,6 @@ export function substrateCheck(
   };
   const entities = referencedEntities(text);
   const preflight = preflightRepo(root, text, {
-    askThreshold,
     allowBuild,
     ...llmOpts,
   });

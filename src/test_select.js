@@ -1,216 +1,89 @@
-// forge test-select — smart test selection as a first-class command.
-//
-// The tier contract (deterministic first, judgment on top):
-//   cosmetic — docs/assets only            → lint the changed files
-//   low      — test files only              → run those test files
-//   medium   — src changes                  → impact-mapped related tests + typecheck
-//   high     — config/CLI/core/mixed/unknown → full suite (fail-safe)
-//
-// The selector chooses the SCOPE; verification itself is never skipped — any
-// uncertainty escalates to the full suite. The impact leg is HEURISTIC (the atlas is
-// regex-derived, not a parser) and the output says so; it narrows the run, it never
-// certifies the change. `forge verify` remains the verdict.
+// Test selection is an evidence query. Without a complete input graph, the
+// ordinary runner remains responsible for all tests, for every kind of file.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { heading } from "./cli/shared.js";
+import { sourceWorkspaceRoot } from "./sources.js";
+import { dependencyState, measuredImpact, registerDependencies } from "./test_dependencies.js";
 
-// ── Tier 1: deterministic signals ────────────────────────────────────────────
+function full(reason) {
+  return { tier: "high", reason, tests: [], lint: [], typecheck: true, fullSuite: true };
+}
 
-const COSMETIC_PATTERNS = [
-  /\.md$/,
-  /\.mdx$/,
-  /\.txt$/,
-  /\.rst$/,
-  /^(docs|mintlify|landing)\//,
-  /\.png$/,
-  /\.jpg$/,
-  /\.svg$/,
-  /\.ico$/,
-  /CITATION\.cff$/,
-  /LICENSE$/,
-];
-
-const TEST_FILE = /(^|\/)test\/.*\.test\.(js|ts|mjs|cjs)$/;
-const SRC_FILE = /^src\/.*\.(js|ts|mjs|cjs)$/;
-
-// Changes that ALWAYS trigger the full suite (fail-safe).
-const HIGH_RISK = [
-  /^package\.json$/,
-  /^package-lock\.json$/,
-  /^tsconfig\.json$/,
-  /^biome\.json$/,
-  /^\.github\/workflows\//,
-  /^src\/cli\.js$/, // CLI entry — everything flows through it
-  /(^|\/)test\/_setup\.(js|ts)$/, // test harness itself
-  /^global\/hooks\//, // guard hooks
-  /^bin\//,
-];
-
-/**
- * Pure tier classification from a changed-file list. No I/O.
- * @param {string[]} files repo-relative paths
- * @returns {{tier: "cosmetic"|"low"|"medium"|"high", reason: string, tests?: string[], srcFiles?: string[]}}
- */
+/** Planning callers with filenames alone cannot establish a smaller suite. */
 export function classifyDeterministic(files) {
-  if (files.length === 0) return { tier: "high", reason: "no changed files detected (fail-safe)" };
+  return full(
+    files.length
+      ? "No measured dependencies supplied for these paths"
+      : "Change set unknown (fail-safe)",
+  );
+}
 
-  const risky = files.filter((f) => HIGH_RISK.some((p) => p.test(f)));
-  if (risky.length > 0)
-    return {
-      tier: "high",
-      reason: `high-risk files: ${risky.slice(0, 3).join(", ")}`,
-    };
-
-  if (files.every((f) => COSMETIC_PATTERNS.some((p) => p.test(f))))
-    return { tier: "cosmetic", reason: "docs/assets only" };
-
-  if (files.every((f) => TEST_FILE.test(f)))
-    return { tier: "low", reason: "test files only", tests: files };
-
-  const srcFiles = files.filter((f) => SRC_FILE.test(f));
-  if (srcFiles.length > 0 && srcFiles.length === files.length)
+/** @param {{root?:string,files?:string[],head?:string,evidence?:string}} [options] */
+export function selectTestsSync({ root = process.cwd(), files = [], head, evidence } = {}) {
+  if (!files.length) return classifyDeterministic(files);
+  try {
+    const { affected, ...observation } = measuredImpact(root, files, evidence, head);
+    if (!observation.tests.length || observation.tests.length === observation.testUniverse)
+      return full("The affected set requires the full suite");
     return {
       tier: "medium",
-      reason: `src changes: ${srcFiles.length} file(s)`,
-      srcFiles,
+      reason: "Reverse closure of the complete producer-declared test dependencies",
+      lint: [],
+      typecheck: true,
+      fullSuite: false,
+      affectedCount: affected.length,
+      ...observation,
     };
-
-  return { tier: "high", reason: "mixed change types (fail-safe)" };
-}
-
-// ── Test mapping ─────────────────────────────────────────────────────────────
-
-/**
- * Map src files to their test files: convention first (`src/foo.js` →
- * `test/foo.test.js`), then a grep for test files that reference the module.
- * @param {string} root repo root
- * @param {string[]} srcFiles repo-relative src paths
- * @returns {string[]} repo-relative test paths (deduped)
- */
-export function mapToTests(root, srcFiles) {
-  const tests = [];
-  for (const src of srcFiles) {
-    const base = src
-      .split("/")
-      .pop()
-      .replace(/\.(js|ts|mjs|cjs)$/, "");
-    const candidates = [`test/${base}.test.js`, `test/${base}.test.ts`];
-    let found = false;
-    for (const c of candidates) {
-      if (existsSync(join(root, c))) {
-        tests.push(c);
-        found = true;
-      }
-    }
-    if (!found) {
-      try {
-        for (const entry of readdirSync(join(root, "test"), { withFileTypes: true })) {
-          if (!entry.isFile() || !/\.test\.(?:js|ts)$/.test(entry.name)) continue;
-          const rel = `test/${entry.name}`;
-          const path = join(root, rel);
-          if (statSync(path).size <= 1024 * 1024 && readFileSync(path, "utf8").includes(base))
-            tests.push(rel);
-        }
-      } catch {
-        /* ignore — no mapping is not a failure */
-      }
-    }
+  } catch (error) {
+    return full(
+      (error instanceof Error ? error.message : "Dependency observation unavailable") +
+        " (fail-safe)",
+    );
   }
-  return [...new Set(tests)];
 }
 
-// ── Tier 2: blast radius via the real impact API (heuristic) ─────────────────
+/** @param {Parameters<typeof selectTestsSync>[0]} [options] */
+export async function selectTests(options) {
+  return selectTestsSync(options);
+}
 
-/**
- * Union of `forge impact` over the changed src files, via the impact module
- * directly (not the CLI). HEURISTIC: the atlas is regex-derived; the result
- * narrows the test run, it never certifies the change.
- * @param {string} root repo root
- * @param {string[]} srcFiles repo-relative src paths
- * @returns {Promise<{files: string[], count: number} | null>} null when unmeasurable
- */
-export async function blastRadius(root, srcFiles) {
+export function mapToTests(root, files) {
   try {
-    const { predictImpact } = await import("./substrate.js");
-    const union = new Set();
-    for (const f of srcFiles) {
-      // basic: fixed threshold, no hazard enhancements — fast, and honest about
-      // being the heuristic leg (the hazard-weighted walk is verify's job).
-      const r = predictImpact(root, f, { basic: true });
-      // found === false means the atlas cannot see the file at all (unbuilt atlas,
-      // unresolvable target) — that is UNMEASURABLE, not "no impact". Fail safe.
-      if (r?.found !== true) return null;
-      for (const hit of r?.impactedFiles ?? []) union.add(hit);
-      union.add(f);
-    }
-    const files = [...union].sort();
-    return { files, count: files.length };
+    return measuredImpact(root, files).tests;
   } catch {
-    return null; // fail-safe: unknown → the caller escalates to high
+    return [];
   }
 }
 
-// ── The pipeline ─────────────────────────────────────────────────────────────
-
-const BLAST_RADIUS_ESCALATION = 10;
-
-/**
- * Run the tier pipeline over a changed-file list.
- * @param {{root?: string, files?: string[]}} opts
- * @returns {Promise<{tier: string, reason: string, tests: string[], lint: string[], typecheck: boolean, fullSuite: boolean}>}
- */
-export async function selectTests({ root = process.cwd(), files = [] } = {}) {
-  const result = classifyDeterministic(files);
-
-  if (result.tier === "medium" && result.srcFiles) {
-    const blast = await blastRadius(root, result.srcFiles);
-    if (blast === null) {
-      result.tier = "high";
-      result.reason += " + blast radius unmeasurable (fail-safe)";
-    } else if (blast.count > BLAST_RADIUS_ESCALATION) {
-      result.tier = "high";
-      result.reason += ` + large heuristic blast radius (${blast.count} files)`;
-    } else {
-      result.reason += ` + heuristic blast radius ${blast.count} file(s)`;
-      // Blast-radius test files run directly; src files map to their tests by convention.
-      const srcTargets = [...result.srcFiles, ...blast.files.filter((f) => SRC_FILE.test(f))];
-      const testTargets = blast.files.filter((f) => TEST_FILE.test(f));
-      result.tests = [...new Set([...testTargets, ...mapToTests(root, srcTargets)])].sort();
-    }
-    delete result.srcFiles;
+export async function blastRadius(root, files) {
+  try {
+    const { affected } = measuredImpact(root, files);
+    return { files: affected, count: affected.length, withoutTestPath: [] };
+  } catch {
+    return null;
   }
-
-  return {
-    tier: result.tier,
-    reason: result.reason,
-    tests: result.tests || [],
-    lint: result.tier === "cosmetic" ? files : [],
-    typecheck: ["medium", "high"].includes(result.tier),
-    fullSuite: result.tier === "high",
-  };
 }
 
 // ── Changed-file resolution ──────────────────────────────────────────────────
 
 /**
- * Resolve the changed-file list: explicit `--changed a,b`, a `--base/--head` diff,
- * or the working tree (staged + unstaged + untracked). Returns null when the tree
- * is CLEAN — empty scope means "nothing to select", never "run everything".
+ * Resolve explicit repo-relative paths or the working tree plus an optional ref
+ * range. Pending inputs matter because the runner consumes the working tree.
+ * Null means a known empty scope. An empty list means the change set is unknown.
  * @param {string} cwd
  * @param {{changed?: string, base?: string, head?: string}} opts
  * @returns {string[] | null}
  */
 export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
-  if (changed)
+  if (changed !== undefined)
     return changed
       .split(",")
       .map((f) => f.trim())
       .filter(Boolean);
   const git = (args) => {
     try {
-      return execFileSync("git", args, {
+      return execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
         cwd,
         encoding: "utf8",
         timeout: 4000,
@@ -221,16 +94,28 @@ export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
       return null;
     }
   };
+  const files = new Set();
   if (base) {
     if (base.startsWith("-") || head?.startsWith("-")) return [];
-    const out = git(["diff", "--name-only", "-z", `${base}...${head || "HEAD"}`, "--"]);
-    return out ? out.split("\0").filter(Boolean) : [];
+    const out = git([
+      "diff",
+      "--no-renames",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--name-only",
+      "-z",
+      `${base}...${head || "HEAD"}`,
+      "--",
+    ]);
+    if (out === null) return [];
+    for (const f of out.split("\0").filter(Boolean)) files.add(f);
   }
-  const files = new Set();
-  const staged = git(["diff", "--cached", "--name-only", "-z"]);
-  const unstaged = git(["diff", "--name-only", "-z"]);
+  const diff = ["--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", "--"];
+  const staged = git(["diff", "--cached", ...diff]);
+  const unstaged = git(["diff", ...diff]);
   const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
   for (const out of [staged, unstaged, untracked]) {
+    if (out === null) return [];
     if (out) for (const f of out.split("\0").filter(Boolean)) files.add(f);
   }
   return files.size ? [...files].sort() : null;
@@ -243,24 +128,41 @@ export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
  * Prints the test plan for the current change. Never runs tests.
  * @param {string[]} argv
  */
-export async function runTestSelect(argv) {
+export async function runTestSelect(argv, root = process.cwd()) {
+  root = sourceWorkspaceRoot(root);
   const json = argv.includes("--json");
   const flag = (name) => {
     const i = argv.indexOf(name);
     return i >= 0 && argv[i + 1] ? argv[i + 1] : undefined;
   };
-  const files = resolveChangedFiles(process.cwd(), {
+  if (argv.includes("--state")) {
+    console.log(JSON.stringify(dependencyState(root), null, 2));
+    return;
+  }
+  if (argv.includes("--register")) {
+    const input = flag("--register");
+    if (!input || input.startsWith("--"))
+      throw new Error("--register requires a protected evidence path");
+    console.log(JSON.stringify(registerDependencies(root, input), null, 2));
+    return;
+  }
+  const files = resolveChangedFiles(root, {
     changed: flag("--changed"),
     base: flag("--base"),
     head: flag("--head"),
   });
   if (files === null) {
-    const msg = "no changes in the working tree — nothing to select";
+    const msg = "no changes in the selected checkout scope";
     if (json) console.log(JSON.stringify({ tier: "none", reason: msg, tests: [] }));
     else console.log(`  ${msg}.`);
     return;
   }
-  const plan = await selectTests({ root: process.cwd(), files });
+  const plan = await selectTests({
+    root,
+    files,
+    head: flag("--head"),
+    evidence: flag("--evidence"),
+  });
   if (json) {
     console.log(JSON.stringify(plan, null, 2));
     return;
@@ -272,10 +174,6 @@ export async function runTestSelect(argv) {
   );
   if (plan.lint.length) console.log(`  lint:       ${plan.lint.join(", ")}`);
   console.log(`  typecheck:  ${plan.typecheck ? "yes" : "no"}`);
-  if (plan.tier === "medium")
-    console.log(
-      "  note:       blast radius is heuristic (regex atlas) — it narrows, never certifies",
-    );
   console.log(
     `\n  selection only — run the tests yourself, then \`${BRAND.cli} verify\` for the verdict.`,
   );

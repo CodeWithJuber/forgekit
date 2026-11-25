@@ -137,7 +137,8 @@ export function hasSecret(text, { entropy = true } = {}) {
 // Case-insensitive and tolerant of a truncated header/footer — hasSecret's PEM
 // branch is case-insensitive too, and a detected-but-unredacted block would leak
 // straight through the guard ("one truth, two verbs" means these must agree).
-const PEM_BLOCK_G = /-----BEGIN [\s\S]*?(?:-----END [^\n-]*-----|$)/gi;
+const PEM_BLOCK_G =
+  /-----BEGIN [^\r\n]*?(?:-----|(?=\r?$))(?:\r?\n(?:[A-Za-z0-9+/]+={0,2}|Proc-Type:[^\r\n]*|DEK-Info:[^\r\n]*|[ \t]*)(?=\r?$))*(?:\r?\n-----END [^\r\n]*?-----)?/gim;
 const URL_CRED_G = new RegExp(URL_CRED, "gi");
 const FORMAT_G = new RegExp(FORMATS.slice(1).join("|"), "gi");
 const CASE_FORMAT_G = new RegExp(CASE_FORMATS.join("|"), "g");

@@ -24,11 +24,15 @@ export const COMMANDS = {
     summary:
       "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
-      "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
+      "forge init [--tools <list|all>] [--review-edits | --no-review-edits] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
+        flag: "--review-edits | --no-review-edits",
+        desc: "Enable or disable a required impact review before each edit in this workspace.",
+      },
+      {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi, opencode) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",
@@ -187,11 +191,16 @@ export const COMMANDS = {
   vet: {
     summary:
       "vet a package before install (dep-gate) — is the name on its registry, is it listed malicious, how new and thin is it",
-    usage: 'forge vet <ecosystem:name[@version]>… | --cmd "<install command>" [--json]',
+    usage:
+      'forge vet <ecosystem:name[@version]>… | --cmd "<install command>" | --lockfile [path] [--json]',
     flags: [
       {
         flag: '--cmd "<command>"',
         desc: "vet every package an install command line would fetch (the PreToolUse guard's view)",
+      },
+      {
+        flag: "--lockfile [path]",
+        desc: "query OSV for exact public npm package versions in a lockfile (default package-lock.json)",
       },
       { flag: "--json", desc: "print the evidence and verdict per package as JSON" },
     ],
@@ -224,15 +233,24 @@ export const COMMANDS = {
       "forge hooks off",
     ],
   },
-  verify:
-    "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
+  verify: {
+    summary:
+      "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
+    usage:
+      "forge verify [--base <revision>] [--deep [--llm]] [--json] | forge verify --claim <receipt.json> [--json] | forge verify triage [--json]",
+    examples: ["forge verify --base HEAD --json", "forge verify --claim receipt.json"],
+  },
   demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
-  precommit:
-    "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+  precommit: {
+    summary:
+      "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+    usage: "forge precommit [--require-verified] [--json]",
+    examples: ["forge precommit --json"],
+  },
   "test-select": {
     summary:
       "smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)",
-    usage: `forge test-select [--changed <a,b>] [--base <ref> --head <ref>] [--json]`,
+    usage: `forge test-select [--changed <a,b> | --base <ref> --head <ref>] [--evidence <absolute-path>] [--json] | forge test-select --state [--json] | forge test-select --register <absolute-path>`,
     flags: [
       {
         flag: "--changed <a,b>",
@@ -242,6 +260,9 @@ export const COMMANDS = {
         flag: "--base <ref> --head <ref>",
         desc: "select for a ref range (git diff base...head) instead of the working tree",
       },
+      { flag: "--evidence <path>", desc: "use an external dependency-evidence manifest" },
+      { flag: "--register <path>", desc: "register dependency evidence for this workspace" },
+      { flag: "--state", desc: "show the inputs used to identify this verification state" },
       { flag: "--json", desc: "machine-readable plan" },
     ],
     examples: [
@@ -344,7 +365,11 @@ export const COMMANDS = {
     ],
     examples: ['forge context "update computeTax in src/tax.js" --block'],
   },
-  preflight: "assumption check — what a task names that the repo doesn't define",
+  preflight: {
+    summary: "assumption check — what a task names that the repo doesn't define",
+    usage: 'forge preflight "<task>" [--require-file <path>]... [--json]',
+    examples: ['forge preflight "Review freezeSuite in src/rollout_eval.js" --json'],
+  },
   config: "provider setup — show / switch / add providers, set default model",
   route: {
     summary:
@@ -429,7 +454,7 @@ export const COMMANDS = {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
     usage:
-      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json]",
+      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json] | forge impact --review <receipt-id> [--json]",
     flags: [
       { flag: "--json", desc: "machine-readable report" },
       {
@@ -481,7 +506,11 @@ export const COMMANDS = {
     examples: ["forge rank", "forge rank --top 5 --json"],
   },
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
-  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
+  scope: {
+    summary: "decompose files into independent clusters (+ coupled files you didn't name)",
+    usage: "forge scope <file> [file ...] [--json]",
+    examples: ["forge scope src/cost_report.js src/metrics.js --json"],
+  },
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
   decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",

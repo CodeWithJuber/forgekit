@@ -218,6 +218,7 @@ HANDLERS.init = async (argv) => {
     warnings,
     profile: profileResult,
     tools: toolsResult,
+    gitVerification,
     warmed,
   } = /** @type {any} */ (
     init({
@@ -227,6 +228,11 @@ HANDLERS.init = async (argv) => {
       settingsPath,
       onSettingsNotice: consentLine,
       tools,
+      reviewEdits: argv.includes("--no-review-edits")
+        ? false
+        : argv.includes("--review-edits")
+          ? true
+          : undefined,
       warm: !argv.includes("--no-warm"),
     })
   );
@@ -257,6 +263,13 @@ HANDLERS.init = async (argv) => {
   console.log(
     `  tools:    ${toolsResult.tools === null ? "all" : toolsResult.tools.join(", ")} (${toolOrigin}) — change with \`${BRAND.cli} init --tools <list|all>\``,
   );
+  if (gitVerification) {
+    console.log(
+      `  Git verification${gitVerification.hosts.length ? ` for ${gitVerification.hosts.join(", ")}` : ""}: ${gitVerification.message}`,
+    );
+    if (gitVerification.active && gitVerification.requested === "required")
+      console.log(`  Stage the changes and run ${BRAND.cli} verify before committing.`);
+  }
   console.log(
     `  source:   AGENTS.md (${bytes} B) — forge owns only the block between <!-- forge:begin --> and <!-- forge:end -->; edit rules in source/, re-run \`${BRAND.cli} sync\``,
   );
@@ -946,6 +959,28 @@ HANDLERS.scan = async (argv) => {
   return;
 };
 HANDLERS.vet = async (argv) => {
+  const at = argv.indexOf("--lockfile");
+  if (at >= 0) {
+    const { vetLockfile } = await import("./lockfile_vet.js");
+    const arg = argv[at + 1];
+    const report = await vetLockfile(arg && !arg.startsWith("--") ? arg : "package-lock.json");
+    if (argv.includes("--json")) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(
+        `${report.lockfile}: ${report.status} (${report.packages.length} locked package versions)`,
+      );
+      if (report.reason) console.log(report.reason);
+      for (const row of report.packages.filter((r) => r.status !== "clear")) {
+        console.log(`  ${row.name}@${row.version ?? "?"}  ${row.status}  ${row.reason || ""}`);
+        for (const v of row.advisories)
+          console.log(
+            `    ${v.id}  ${v.url}  ${v.fixedVersions.length ? `fixed in ${v.fixedVersions.join(", ")}` : "no applicable fixed version reported"}`,
+          );
+      }
+    }
+    process.exitCode = report.status === "affected" ? 1 : report.status === "unknown" ? 2 : 0;
+    return;
+  }
   // dep-gate: vet packages BEFORE they are installed (mizan — every verdict ships its evidence;
   // missing evidence never blocks). The same rule set the PreToolUse guard runs.
   const { depgateDecision, parseVetArg, vetPackages, VET_PREFIXES } = await import("./depgate.js");
@@ -1236,7 +1271,7 @@ HANDLERS.precommit = async (argv) => {
   // pre-commit hook execs this, and it can be run by hand before committing. Exit code
   // carries the decision (1 = refuse the commit); fail-open inside commitGate.
   const { commitGate, renderCommitGate } = await import("./commit_gate.js");
-  const r = commitGate(process.cwd());
+  const r = commitGate(process.cwd(), { requireVerified: argv.includes("--require-verified") });
   if (argv.includes("--json")) {
     console.log(JSON.stringify(r, null, 2));
     if (!r.allow) process.exitCode = 1;
@@ -1324,33 +1359,64 @@ HANDLERS.deja = async (argv) => {
   return;
 };
 HANDLERS.preflight = async (argv) => {
-  const { preflightRepo, clarifyBlock } = await import("./preflight.js");
+  const { preflightRepo, preflightReport } = await import("./preflight.js");
   const json = argv.includes("--json");
-  const task = argv
-    .slice(1)
-    .filter((a) => a !== "--json")
-    .join(" ");
+  const words = [],
+    requiredFiles = [];
+  for (let i = 1; i < argv.length; i++) {
+    if (argv[i] === "--json") continue;
+    if (argv[i] === "--require-file") {
+      const path = argv[++i];
+      if (!path || path.startsWith("--"))
+        throw new Error("--require-file needs a checkout-relative path");
+      requiredFiles.push(path);
+    } else words.push(argv[i]);
+  }
+  const task = words.join(" ");
   if (!task) {
     console.error('usage: forge preflight "<task description>" [--json]');
     process.exitCode = 1;
     return;
   }
-  const r = preflightRepo(process.cwd(), task);
+  const r = preflightRepo(process.cwd(), task, { requiredFiles });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
   }
   heading(`${BRAND.brand} preflight — assumption check\n`);
   console.log(
-    `  info-gap: ${r.gap.toFixed(2)}  · completeness ${r.assumption.completeness.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
+    `  info-gap: ${r.gap?.toFixed(2) ?? "unknown"}  · prerequisite coverage ${r.assumption.completeness?.toFixed(2) ?? "unknown"}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
   );
-  const block = clarifyBlock(r);
-  console.log(
-    block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
-  );
+  console.log(`\n${preflightReport(r)}`);
   return;
 };
 HANDLERS.impact = async (argv) => {
+  if (argv[1] === "--review") {
+    const args = argv.slice(2).filter((a) => a !== "--json");
+    if (args.length !== 1) throw new Error("Usage: forge impact --review <edit-id> [--json]");
+    const { reviewPreEdit } = await import("./pre_edit.js");
+    const review = await reviewPreEdit(process.cwd(), args[0]);
+    if (argv.includes("--json")) console.log(JSON.stringify(review, null, 2));
+    else {
+      const quoted = (files) => files.map((file) => JSON.stringify(file)).join(", ");
+      console.log(`Edit targets: ${quoted(review.files)}`);
+      const scope = review.plan.impact;
+      console.log(
+        scope.scope === "whole-workspace"
+          ? "Code impact: whole workspace"
+          : `Observed static dependents (${scope.dependents.length}): ${quoted(scope.dependents)}`,
+      );
+      if (scope.unindexedTargets?.length)
+        console.log(`Unindexed edit targets: ${quoted(scope.unindexedTargets)}`);
+      if (scope.omittedFiles)
+        console.log(`Static inventory omitted ${scope.omittedFiles} file(s).`);
+      console.log(
+        `Verification scope: ${review.plan.fullSuite ? "full suite" : quoted(review.plan.tests)}`,
+      );
+      console.log(review.plan.reason);
+    }
+    return;
+  }
   const { predictImpact } = await import("./substrate.js");
   const json = argv.includes("--json");
   const basic = argv.includes("--basic");

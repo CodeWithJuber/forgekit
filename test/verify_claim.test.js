@@ -125,7 +125,7 @@ test("CLI: --claim prints CONFIRMED and exits 0; STALE exits 1", () => {
   }
 });
 
-test("signProvenance still round-trips through verifyClaim (B7 binding intact)", () => {
+test("a legacy signed PASS without execution counts is historical evidence", () => {
   const dir = gitRepo();
   const stamp = signProvenance({
     tests: { status: "PASS" },
@@ -133,5 +133,5 @@ test("signProvenance still round-trips through verifyClaim (B7 binding intact)",
   });
   assert.ok(stamp.signature, "signed");
   const r = verifyClaim({ provenance: stamp, tests: { status: "PASS" }, ok: true }, { cwd: dir });
-  assert.equal(r.verdict, "CONFIRMED");
+  assert.equal(r.verdict, "UNVERIFIABLE");
 });
