@@ -21,7 +21,9 @@ import { BRAND } from "./brand.js";
 import { summary as cortexSummary } from "./cortex.js";
 import { docsCheck } from "./docs_check.js";
 import { extractHash, hashContent } from "./emit/_shared.js";
+import { executableAvailable, projectForgeLauncher } from "./forge_launcher.js";
 import { gatewayBase, gatewayModelMap } from "./gateway_model_map.js";
+import { installedHarnessPython } from "./harness_python.js";
 import {
   ensureLedgerGitattributes,
   forgePluginEnabled,
@@ -208,7 +210,49 @@ function checkPluginSettings(out, data, source, settingsPath) {
 // node (guards/hookfield.mjs), so node is the security-critical dependency and jq is not
 // needed at all — the grep fallback that used to stand in for it silently mis-parsed
 // commands containing an escaped quote, which is why it is gone.
-function checkTooling(out) {
+function checkTooling(out, targetRoot) {
+  const launcher = projectForgeLauncher(targetRoot);
+  const hookCmd = process.env.FORGE_CLI || launcher.command;
+  if (
+    executableAvailable(hookCmd) &&
+    (process.env.FORGE_CLI ||
+      !launcher.args.length ||
+      existsSync(join(targetRoot, launcher.args[0])))
+  )
+    out.push(ok("hook launcher", `${hookCmd} is executable`));
+  else
+    out.push(
+      warn(
+        "hook launcher",
+        "Set FORGE_CLI to the executable or install forge on PATH for project hooks.",
+      ),
+    );
+  if (launcher.args.length && !existsSync(join(targetRoot, launcher.args[0])))
+    out.push(
+      warn(
+        "MCP launcher",
+        "Install this project's declared ForgeKit package to enable its stdio server.",
+      ),
+    );
+  else if (executableAvailable(launcher.command))
+    out.push(ok("MCP launcher", `${launcher.command} ${launcher.args.join(" ")}`.trim()));
+  else out.push(warn("MCP launcher", `Install ${launcher.command} on the agent's PATH.`));
+  try {
+    execFileSync(
+      installedHarnessPython(targetRoot),
+      ["-I", "-c", "import sqlite3; print(sqlite3.sqlite_version)"],
+      {
+        stdio: "ignore",
+        timeout: 3000,
+      },
+    );
+    out.push(ok("python3 + sqlite", "available for the harness and cloud store"));
+  } catch {
+    out.push(
+      warn("python3 + sqlite", "Install Python 3 with sqlite3 to use the harness or cloud store."),
+    );
+  }
+
   // node powers secret redaction — its absence means tool output is NOT scanned for secrets.
   out.push(
     hasBin("node")
@@ -880,7 +924,7 @@ function runChecks(targetRoot, settingsPath, { forgeHome, guardsDir } = {}) {
   checkLayers(results);
   checkGuardsExecutable(results);
   checkPluginCompatibility(results);
-  checkTooling(results);
+  checkTooling(results, targetRoot);
   checkRedaction(results, guardsDir);
   checkInstall(results, forgeHome);
   checkDrift(results, targetRoot, tools);

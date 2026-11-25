@@ -2,6 +2,13 @@
 // and both configurations. Neither a template nor a simulation is a measured run.
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  blankCostSuite,
+  costMetadata,
+  costTask,
+  costWorksheet,
+  evaluateCostPilot,
+} from "./cost_pilot.js";
 import { hasSecret } from "./secrets.js";
 
 const VERSION = 1;
@@ -38,6 +45,7 @@ export function freezeSuite(raw) {
   )
     throw new Error("A frozen suite must have 20–1000 tasks and version 1");
   const ids = new Set();
+  const cost = raw.purpose === "cost";
   const tasks = raw.tasks
     .map((t) => {
       const id = value(t?.id, "task ID", 80);
@@ -46,20 +54,28 @@ export function freezeSuite(raw) {
       return {
         id,
         repo: value(t.repo, "repository"),
-        revision: value(t.revision, "frozen revision"),
+        revision: cost ? t.revision : value(t.revision, "frozen revision"),
+        ...(cost ? costTask(t) : {}),
         task: value(t.task, "task"),
         acceptance: value(t.acceptance, "executable acceptance or grading rubric"),
       };
     })
     .sort((a, b) => (a.id < b.id ? -1 : 1));
-  if (!["parallel", "routing", "context"].includes(raw.purpose))
-    throw new Error("Choose a parallel, routing or context evaluation");
+  if (
+    cost &&
+    new Set(tasks.map((t) => JSON.stringify([t.repo, t.revision, t.task, t.acceptance]))).size !==
+      tasks.length
+  )
+    throw new Error("Duplicate frozen cost workload");
+  if (!["parallel", "routing", "context", "cost"].includes(raw.purpose))
+    throw new Error("Choose a parallel, routing, context or cost evaluation");
   const spec = {
     version: VERSION,
     purpose: raw.purpose,
     baseline: value(raw.baseline, "baseline configuration"),
     candidate: value(raw.candidate, "candidate configuration"),
     controls: value(raw.controls, "fixed host, model, permissions and test conditions"),
+    ...(cost ? { pilot: costMetadata(raw, value) } : {}),
     tasks,
   };
   if (spec.baseline === spec.candidate) throw new Error("The two named configurations must differ");
@@ -99,6 +115,7 @@ function checkFrozen(frozen) {
 
 export function evaluateRollout(frozen, result) {
   const { spec, hash } = checkFrozen(frozen);
+  if (spec.purpose === "cost") return evaluateCostPilot(spec, hash, result, value);
   if (result?.suiteHash !== hash)
     throw new Error("Run measurements belong to a different frozen suite");
   if (
@@ -204,16 +221,23 @@ function load(path) {
   }
 }
 function save(path, data) {
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   console.log(path);
 }
 
-export function rolloutCommand(args) {
+export function rolloutCommand(args, purpose = "parallel") {
   const [action, input, output] = args;
-  if (action === "init" && args.length === 2) return save(input, blankSpec());
-  if (action === "freeze" && args.length === 3) return save(output, freezeSuite(load(input)));
+  if (action === "init" && args.length === 2)
+    return save(input, purpose === "cost" ? blankCostSuite(blankSpec()) : blankSpec());
+  if (action === "freeze" && args.length === 3) {
+    const raw = load(input);
+    if (purpose === "cost" && raw.purpose !== "cost") throw new Error("Use a frozen cost pilot");
+    return save(output, freezeSuite(raw));
+  }
   if (action === "template" && args.length === 3) {
     const { spec, hash } = checkFrozen(load(input));
+    if (spec.purpose === "cost") return save(output, costWorksheet({ spec, hash }));
+    if (purpose === "cost") throw new Error("Use a frozen cost pilot");
     const blank = Object.fromEntries([...fields, "accepted", "evidence"].map((f) => [f, null]));
     return save(output, {
       suiteHash: hash,
@@ -222,10 +246,14 @@ export function rolloutCommand(args) {
     });
   }
   if (action === "compare" && args.length === 3) {
-    console.log(JSON.stringify(evaluateRollout(load(input), load(output)), null, 2));
+    const frozen = load(input);
+    if (purpose === "cost" && frozen?.spec?.purpose !== "cost")
+      throw new Error("Use a frozen cost pilot");
+    console.log(JSON.stringify(evaluateRollout(frozen, load(output)), null, 2));
     return;
   }
+  const command = purpose === "cost" ? "forge cost pilot" : "forge team evaluate";
   throw new Error(
-    "Use forge team evaluate init <suite>, freeze <suite> <frozen>, template <frozen> <runs>, or compare <frozen> <runs>",
+    `Use ${command} init <suite>, freeze <suite> <frozen>, template <frozen> <runs>, or compare <frozen> <runs>`,
   );
 }

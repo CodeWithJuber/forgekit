@@ -68,6 +68,11 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  cloud: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.cloud(argv),
+  agents: async (argv) =>
+    (await import("./cli/components.js")).runComponentCli("agents", argv.slice(1)),
+  skills: async (argv) =>
+    (await import("./cli/components.js")).runComponentCli("skills", argv.slice(1)),
   harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
   ...evidenceHandlers,
   ...memoryHandlers,
@@ -674,6 +679,8 @@ HANDLERS.prompts = async (argv) =>
   (await import("./development_profile.js")).handleDevelopmentPrompts(argv);
 HANDLERS.discover = async (argv) => (await import("./cli/discovery.js")).discover(argv);
 HANDLERS.integrations = async (argv) => {
+  if (argv[1] === "template")
+    return (await import("./extension_template.js")).templateCommand(argv.slice(2), process.cwd());
   if (["connect", "endpoints", "local", "serve-local"].includes(argv[1]))
     return (await import("./remote_integrations.js")).handleRemoteIntegration(argv);
   if ([undefined, "list", "select", "status", "register", "unregister"].includes(argv[1])) {
@@ -769,17 +776,13 @@ HANDLERS.recall = async (argv) => {
     }
     const res = r.add(store, name, body);
     if (res.ok) {
-      // Shadow the fact into the PERSONAL ledger beside the global store (repo
-      // promotion stays an explicit act — docs/plans/substrate-v2/02-team-memory.md §3).
-      // Best-effort INCLUDING the imports: a broken bridge module must never turn an
-      // already-persisted fact into a CLI failure.
-      try {
-        const { join } = await import("node:path");
-        const { shadowFact } = await import("./ledger_bridge.js");
-        shadowFact(join(store, "ledger"), name, body);
-      } catch {}
-      // Re-index after the shadow so a ledger-only store's MEMORY.md includes the fact
-      // (its only copy now lives in the ledger, written just above).
+      const { shadowFact } = await import("./ledger_bridge.js");
+      const written = shadowFact(r.ledgerForStore(store), name, body);
+      if (!written.ok) {
+        console.error(written.reason ?? "Could not record the fact in the personal ledger");
+        process.exitCode = 1;
+        return;
+      }
       r.reindex(store);
     }
     console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
@@ -809,10 +812,23 @@ HANDLERS.atlas = async (argv) => {
     return null;
   };
   if (sub === "build") {
-    const at = a.build({ root: process.cwd() });
+    const mode = argv.includes("--ast")
+      ? "ast"
+      : argv.includes("--portable")
+        ? "portable"
+        : undefined;
+    const at = a.build({ root: process.cwd(), parser: mode });
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify(at));
+      return;
+    }
     console.log(
       `  indexed ${at.symbols.length} symbols in ${at.files} files → .forge/atlas.json${at.capped ? " (capped)" : ""}`,
     );
+    const counts = Object.entries(at.coverage.backends)
+      .map(([backend, n]) => `${backend} ${n}`)
+      .join(", ");
+    console.log(`  parser coverage: ${counts}`);
   } else if (sub === "query") {
     const at = need();
     if (!at) return;
@@ -831,7 +847,9 @@ HANDLERS.atlas = async (argv) => {
     if (!at) return;
     const name = argv[2];
     const yes = a.has(at, name);
-    console.log(`  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`);
+    console.log(
+      `  ${yes ? "✓ defined" : "✗ absent from indexed definitions (see parser coverage)"}: ${name}`,
+    );
     if (!yes) process.exitCode = 1;
   } else {
     console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);
@@ -929,6 +947,28 @@ HANDLERS.scan = async (argv) => {
   return;
 };
 HANDLERS.vet = async (argv) => {
+  const at = argv.indexOf("--lockfile");
+  if (at >= 0) {
+    const { vetLockfile } = await import("./lockfile_vet.js");
+    const arg = argv[at + 1];
+    const report = await vetLockfile(arg && !arg.startsWith("--") ? arg : "package-lock.json");
+    if (argv.includes("--json")) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(
+        `${report.lockfile}: ${report.status} (${report.packages.length} locked package versions)`,
+      );
+      if (report.reason) console.log(report.reason);
+      for (const row of report.packages.filter((r) => r.status !== "clear")) {
+        console.log(`  ${row.name}@${row.version ?? "?"}  ${row.status}  ${row.reason || ""}`);
+        for (const v of row.advisories)
+          console.log(
+            `    ${v.id}  ${v.url}  ${v.fixedVersions.length ? `fixed in ${v.fixedVersions.join(", ")}` : "no applicable fixed version reported"}`,
+          );
+      }
+    }
+    process.exitCode = report.status === "affected" ? 1 : report.status === "unknown" ? 2 : 0;
+    return;
+  }
   // dep-gate: vet packages BEFORE they are installed (mizan — every verdict ships its evidence;
   // missing evidence never blocks). The same rule set the PreToolUse guard runs.
   const { depgateDecision, parseVetArg, vetPackages, VET_PREFIXES } = await import("./depgate.js");
@@ -995,26 +1035,40 @@ HANDLERS.vet = async (argv) => {
   return;
 };
 HANDLERS.hooks = async (argv) => {
+  if (["list", "show", "invoke", "enable", "disable"].includes(argv[1]))
+    return (await import("./cli/components.js")).runComponentCli("hooks", argv.slice(1));
   // The same guards in every agent that has a hook system. `run` is what the agents call
   // (src/hosts.js); on / off / status manage the project-level files (src/emit/hooks.js).
   const sub = argv[1] ?? "status";
-  if (sub === "run") {
-    // Hot path: reply and leave. Nothing else may reach stdout or stderr, and nothing here may
-    // fail the tool call — an unreadable stdin is an empty payload.
-    const { runHook } = await import("./hosts.js");
+  if (sub === "run" || sub === "local-run") {
+    // Only the native hook reply belongs on stdout. An unreadable pre-tool payload produces a denial.
+    const { runHook, HOSTS, MAX_PRETOOL_BYTES } = await import("./hosts.js");
+    const gate = HOSTS[argv[2]]?.events[argv[3]]?.as === "PreToolUse";
     let input = "";
     if (!process.stdin.isTTY) {
+      let size = 0;
       try {
-        for await (const chunk of process.stdin) input += chunk;
-      } catch {}
+        process.stdin.setEncoding("utf8");
+        for await (const chunk of process.stdin) {
+          size += Buffer.byteLength(chunk);
+          if (gate && size > MAX_PRETOOL_BYTES) {
+            input = "";
+            break;
+          }
+          input += chunk;
+        }
+      } catch {
+        input = "";
+      }
     }
-    const reply = await runHook({ host: argv[2] ?? "", event: argv[3] ?? "", input });
+    const component = sub === "local-run" ? argv[4] || "(missing)" : undefined;
+    const reply = await runHook({ host: argv[2] ?? "", event: argv[3] ?? "", input, component });
     if (reply.stdout) process.stdout.write(reply.stdout);
     if (reply.stderr) process.stderr.write(`${reply.stderr.trimEnd()}\n`);
     process.exitCode = reply.exit;
     return;
   }
-  const { applyHooks, HOOK_HOSTS, hooksStatus, selectedHosts } = await import("./emit/hooks.js");
+  const { emitProjectHooks, reconcileProjectHooks, hooksStatus } = await import("./emit/hooks.js");
   const { HOSTS } = await import("./hosts.js");
   const { parseTools, readForgeConfig, writeForgeConfig } = await import("./repo_config.js");
   const root = process.cwd();
@@ -1032,29 +1086,37 @@ HANDLERS.hooks = async (argv) => {
           .map((n) => n.trim().toLowerCase())
           .filter(Boolean)
       : null;
-    const unknown = (names ?? []).filter((n) => !HOOK_HOSTS.includes(n));
+    const choices = new Set(Object.entries(HOSTS).flatMap(([id, host]) => [id, host.tool]));
+    const unknown = (names ?? []).filter((n) => !choices.has(n));
     if (unknown.length) {
       console.error(
-        `${BRAND.cli} hooks: unknown host(s): ${unknown.join(", ")} — choose from ${HOOK_HOSTS.join(", ")}`,
+        `${BRAND.cli} hooks: unknown host(s): ${unknown.join(", ")} — choose from ${[...choices].join(", ")}`,
       );
       process.exitCode = 1;
       return;
     }
     const enable = sub === "on";
     const bootstrap = enable && argv.includes("--bootstrap");
-    const before = readForgeConfig(root);
-    const tools =
-      typeof before.tools === "string" || Array.isArray(before.tools)
-        ? parseTools(before.tools).tools
-        : null;
+    let rows = [];
     const saved = writeForgeConfig(root, (cfg) => {
-      if (!enable) cfg.hooks = { project: false };
-      else
-        cfg.hooks = {
-          project: true,
-          ...(bootstrap ? { bootstrap: true } : {}),
-          ...(names ? { hosts: names } : {}),
-        };
+      const tools =
+        typeof cfg.tools === "string" || Array.isArray(cfg.tools)
+          ? parseTools(cfg.tools).tools
+          : null;
+      cfg.hooks = enable
+        ? {
+            project: true,
+            ...(bootstrap ? { bootstrap: true } : {}),
+            ...(names ? { hosts: names } : {}),
+          }
+        : { project: false };
+      rows = enable
+        ? emitProjectHooks({
+            targetRoot: root,
+            config: cfg,
+            emits: (key) => tools === null || tools.includes(key),
+          })
+        : reconcileProjectHooks(root, [], { showInactive: true });
       return cfg;
     });
     if (!saved.ok || !("config" in saved)) {
@@ -1064,11 +1126,6 @@ HANDLERS.hooks = async (argv) => {
       process.exitCode = 1;
       return;
     }
-    // Turning off removes forge's entries everywhere, whatever was selected when they went in.
-    const hosts = enable
-      ? selectedHosts(saved.config, (key) => tools === null || tools.includes(key))
-      : HOOK_HOSTS;
-    const rows = hosts.map((id) => applyHooks(root, id, { enable, bootstrap })).filter(Boolean);
     if (json) return console.log(JSON.stringify({ enabled: enable, bootstrap, rows }, null, 2));
     heading(`${BRAND.brand} hooks — ${enable ? "on" : "off"}\n`);
     console.log(
@@ -1087,7 +1144,7 @@ HANDLERS.hooks = async (argv) => {
     if (enable) {
       console.log(
         `\n  Commit these files: they are what a teammate's agent, CI and cloud agents read.\n` +
-          `  A machine without ${BRAND.cli} on its PATH skips them silently${bootstrap ? " (a session start installs it first)" : ` — add --bootstrap to install it at session start`}.\n` +
+          `  Set FORGE_CLI or install ${BRAND.cli} on PATH for each hook host${bootstrap ? " (a session start installs it first)" : ` — add --bootstrap to install it at session start`}.\n` +
           `  ${HOSTS.devin.label} needs no file of its own: it reads ${HOSTS.claude.file}.\n` +
           `  Off again: ${BRAND.cli} hooks off · one shell: FORGE_HOOKS=0`,
       );
@@ -1134,17 +1191,6 @@ HANDLERS.remember = async (argv) => {
     return;
   }
   const res = b.remember(b.brainStore(process.cwd()), name, body);
-  if (res.ok) {
-    // Brain is repo-scoped and git-committable → shadow into the REPO ledger.
-    try {
-      const { shadowFact } = await import("./ledger_bridge.js");
-      const { repoLedger } = await import("./ledger_store.js");
-      shadowFact(repoLedger(process.cwd()), name, body);
-    } catch {}
-    // Rebuild the inlined index after the shadow so a ledger-only brain's
-    // AGENTS.brain.md includes the fact (its only copy now lives in the ledger).
-    b.buildIndex(b.brainStore(process.cwd()));
-  }
   console.log(
     res.ok
       ? `  remembered: ${res.slug} — run \`forge sync\` to inline it into every tool`
@@ -1153,11 +1199,32 @@ HANDLERS.remember = async (argv) => {
   if (!res.ok) process.exitCode = 1;
   return;
 };
-HANDLERS.brain = async () => {
+HANDLERS.brain = async (argv) => {
+  const json = argv.includes("--json");
+  argv = argv.filter((arg) => arg !== "--json");
+  if (argv[1]) {
+    const { listProposals, reviewProposal } = await import("./memory_proposals.js");
+    if (argv[1] === "conflicts") {
+      const { factConflicts } = await import("./ledger_read.js");
+      const { repoLedger } = await import("./ledger_store.js");
+      console.log(
+        JSON.stringify(Object.fromEntries(factConflicts(repoLedger(process.cwd()))), null, 2),
+      );
+    } else if (argv[1] === "proposals")
+      console.log(JSON.stringify(listProposals(process.cwd()), null, 2));
+    else if (["approve", "reject"].includes(argv[1]) && argv[2])
+      console.log(JSON.stringify(reviewProposal(process.cwd(), argv[2], argv[1] === "approve")));
+    else {
+      console.error("usage: forge brain [proposals | approve <id> | reject <id> | conflicts]");
+      process.exitCode = 1;
+    }
+    return;
+  }
   const b = await import("./brain.js");
   const store = b.brainStore(process.cwd());
   const idx = b.buildIndex(store);
   const items = b.list(store);
+  if (json) return console.log(JSON.stringify({ ...idx, items }, null, 2));
   heading(`${BRAND.brand} brain — portable project memory\n`);
   console.log(
     items.length
@@ -1508,6 +1575,7 @@ HANDLERS.config = async (argv) => {
         baseUrl,
         envKey,
         label,
+        format: flagVal("--format"),
       });
       if (!r.ok) {
         console.error(`  ${r.reason}`);
@@ -1527,6 +1595,18 @@ HANDLERS.config = async (argv) => {
     return;
   }
   if (sub === "model") {
+    if (argv[2] === "--exact") {
+      const { setProfileModel } = await import("./providers.js");
+      const root = process.cwd(),
+        flag = argv.indexOf("--profile");
+      const selected = setProfileModel(
+        root,
+        flag >= 0 ? argv[flag + 1] : activeProvider(root).name,
+        argv[3],
+      );
+      console.log(`  model set to ${selected.model} for profile ${selected.profile}`);
+      return;
+    }
     const tier = argv[2];
     if (!tier) {
       console.error(`usage: ${BRAND.cli} config model <haiku|sonnet|opus|fable>`);
@@ -1655,15 +1735,28 @@ HANDLERS.anchor = async (argv) => {
   return; // advisory — never fails the process
 };
 HANDLERS.handoff = async (argv) => {
-  const { writeState } = await import("./handoff.js");
+  const { writeState, resumeState, stateBlock } = await import("./handoff.js");
   const json = argv.includes("--json");
+  if (argv.includes("--resume")) {
+    const result = resumeState(process.cwd());
+    if (!result.ok) process.exitCode = 1;
+    console.log(
+      json
+        ? JSON.stringify(result, null, 2)
+        : result.ok
+          ? stateBlock(process.cwd())
+          : result.reason,
+    );
+    return;
+  }
   const args = argv.slice(1).filter((a) => a !== "--json");
   // Repeatable flags collect rows; positionals are "done" rows. Piped stdin (one row
   // per line) covers agents that assemble the summary programmatically.
-  const fields = { done: [], next: [], gotchas: [], criteria: [] };
+  const fields = { done: [], next: [], gotchas: [], criteria: [], evidence: [] };
   const FLAG = {
     "--next": "next",
     "--gotcha": "gotchas",
+    "--evidence": "evidence",
     "--criteria": "criteria",
   };
   for (let i = 0; i < args.length; i += 1) {
@@ -1678,6 +1771,7 @@ HANDLERS.handoff = async (argv) => {
     } catch {}
   }
   const r = writeState(process.cwd(), fields);
+  if (!r.ok) process.exitCode = 1;
   if (json) return console.log(JSON.stringify(r, null, 2));
   if (!r.ok) {
     console.error(

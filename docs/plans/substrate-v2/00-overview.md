@@ -3,6 +3,7 @@
 > Status: **P0–P3 and P5–P7 shipped (v0.5.0); P4 context assembly and P8 evaluation are
 > partial** (see the phase table) · Owner: forgekit core · Companion to
 > [docs/cognitive-substrate/](../../cognitive-substrate/) (the paper this plan completes).
+> P5 shipped outcome feedback. Its original universal mandatory pre-edit gate remains proposed. Optional syntax-backed graph indexing is available through `forge atlas build --ast`. P8 now has a frozen paired-trial runner in `forge cost pilot`; outcome collection remains open.
 > Per-claim status lives in [docs/status/claims.json](../../status/claims.json).
 >
 > _Corrected 2026-09-26._ This block said "shipped — all phases P0–P8 landed in v0.5.0" and listed

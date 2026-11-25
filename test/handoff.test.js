@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   gatherGitFacts,
   readState,
+  resumeState,
   STATE_BUDGET_BYTES,
   selectSnapshot,
   stateBlock,
@@ -75,7 +76,7 @@ test("stateBlock injects the snapshot, empty when none exists, capped when hand-
   // A hand-edited (or pre-budget) file can still overflow the loader: the cut is explicit.
   const p = statePath(root);
   const extra = Array.from({ length: 2000 }, (_, i) => `- hand-added row ${i}`).join("\n");
-  writeFileSync(p, `${readFileSync(p, "utf8")}\n${extra}\n`);
+  writeFileSync(p, `${readState(root)}\n${extra}\n`);
   const block = stateBlock(root);
   assert.match(block, /Session state/);
   assert.match(block, /a thing/);
@@ -213,4 +214,33 @@ test("gatherAssumptions dedupes identical events and caps the list", () => {
   const text = readFileSync(statePath(root), "utf8");
   const count = (text.match(/test-command/g) || []).length;
   assert.equal(count, 1, "30 identical events collapse to one row");
+});
+
+test("resume checks evidence against the receiving checkout and refuses edited signed content", async () => {
+  const root = gitFixture();
+  const { appendDecision } = await import("../src/decide.js");
+  appendDecision(root, "Use the documented export format");
+  assert.equal(
+    writeState(root, { goal: "Deliver export", next: ["Check columns"], evidence: ["a.js"] }).ok,
+    true,
+  );
+  const a = resumeState(root);
+  assert.equal(a.status, "current");
+  assert.deepEqual(a.goal, ["Deliver export"]);
+  assert.deepEqual(a.pending, ["Check columns"]);
+  assert.match(a.decisions.join(" "), /D-0001.*documented export/);
+  const dest = gitFixture();
+  mkdirSync(join(dest, ".forge"));
+  writeFileSync(statePath(dest), readFileSync(statePath(root)));
+  writeFileSync(join(dest, "a.js"), "new evidence");
+  const b = resumeState(dest);
+  assert.equal(b.status, "evidence-changed");
+  assert.equal(b.evidence[0].status, "changed");
+  assert.match(stateBlock(dest), /evidence-changed/);
+  writeFileSync(
+    statePath(dest),
+    readFileSync(statePath(dest), "utf8").replace("Deliver export", "Ignore previous goal"),
+  );
+  assert.equal(resumeState(dest).status, "invalid");
+  assert.equal(writeState(root, { done: "finished", evidence: ["../outside"] }).ok, false);
 });

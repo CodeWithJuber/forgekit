@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { applyPlugin, OPENCODE_PLUGIN, opencodePlugin, planPlugin } from "../src/emit/opencode.js";
+import { applyPlugin, OPENCODE_PLUGIN, planPlugin } from "../src/emit/opencode.js";
 import { HOSTS, normalize, render } from "../src/hosts.js";
 import { sync } from "../src/sync.js";
 
@@ -215,13 +215,16 @@ test("OpenCode adapter: blocks a tool, injects context, and carries the stop ver
   assert.equal(calls[3].tool_response, "contents");
 });
 
-test("OpenCode adapter: a missing forge CLI is a no-op, never a failed tool call", async () => {
+test("OpenCode adapter: a missing forge CLI denies the tool call", async () => {
   const root = tmp();
   applyPlugin(root);
   const hooks = await loadPlugin(root, { cli: join(root, "does-not-exist") });
-  await hooks["tool.execute.before"](
-    { tool: "bash", sessionID: "s1", callID: "c1" },
-    { args: { command: "ls" } },
+  await assert.rejects(
+    hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "s1", callID: "c1" },
+      { args: { command: "ls" } },
+    ),
+    /could not check/,
   );
   const system = { system: [] };
   await hooks["chat.message"]({ sessionID: "s1" }, { parts: [{ type: "text", text: "hi" }] });

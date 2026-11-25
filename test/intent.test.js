@@ -142,3 +142,15 @@ test("preflight hook emits the card as additionalContext and dedupes on repeat",
     "repeat intent does not re-inject the card",
   );
 });
+
+test("dialogue replies and questions skip the new-task advisory", async () => {
+  const { isDialogueTurn } = await import("../src/intent.js");
+  for (const turn of ["Yes!", "please continue", "How does the login flow work?"])
+    assert.ok(isDialogueTurn(turn), turn);
+  for (const turn of [
+    "Yes, edit the configuration",
+    "Implement dark mode",
+    "continue debugging the build",
+  ])
+    assert.equal(isDialogueTurn(turn), false, turn);
+});

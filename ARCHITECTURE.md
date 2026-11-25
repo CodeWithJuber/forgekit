@@ -34,7 +34,7 @@ You author the substrate once. `forge sync` compiles that source into each tool'
 native config. The four layers are how the brain is expressed; the compiler is how it
 is delivered.
 
-[![forgekit's architecture: forge sync compiles source/ into native configs for eleven tools and configures the four layers (tools, crew, supported host hooks and MCP); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
+[![forgekit's architecture: forge sync compiles source/ into native configs for the selected coding hosts and configures the four layers (tools, crew, supported host hooks and MCP); local events write content-addressed claims to the PCM ledger, independent oracles move their confidence, and teammate ledgers merge through git union-merge](docs/diagrams/system.svg)](https://jubershaikh.com/forgekit/diagrams/system.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/system.html): pan, zoom, search, and trace any node.</sub>
 
@@ -45,7 +45,7 @@ The four layers, brand-named and emitted cross-tool:
   (scout / verifier / frontend-verifier / independent-reviewer / doc-sync).
 - **guards** (`~/.forge/guards/` → `settings.json` hooks) — deterministic checks at lifecycle events supported by a trusted host. The supervised executor also checks its own tool calls.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 36 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
+  exposing 37 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
   ledger ratify/retract), and operations and health checks. [Tool reference](docs/GUIDE.md#mcp-tools)
 
@@ -516,7 +516,7 @@ guards through `${CLAUDE_PROJECT_DIR}`.
 
 ## Verified cross-tool emit matrix
 
-_(All rows confirmed against vendor docs.)_ Forge emits config for **eleven tools**, plus
+_(All rows confirmed against vendor docs.)_ Forge emits config for the selected coding hosts, plus
 an **MCP server** for Roo Code and VS Code.
 
 | Tool               | Native target                                                            | How Forge emits                                                                                        |
@@ -532,6 +532,7 @@ an **MCP server** for Roo Code and VS Code.
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
 | **Kimi Code** | Shared `AGENTS.md`, trusted workspace `.kimi-code/mcp.json`, per-user `kimi.plugin.json` | The native prompt hook runs the bundled Node CLI and returns evidence in Kimi's `message` field; PreToolUse can block an action. [Setup and verification](docs/INTEGRATIONS.md) |
+| **OpenCode** | Root `AGENTS.md` | Project MCP and an optional managed JS hook plugin |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
@@ -669,7 +670,7 @@ architecture decisions (zero runtime deps, the SKILL.md standard, guard-over-pro
 
 ## Repo map (generated)
 
-Top-level directories sized by file count, edges = import counts between them —
+Top-level directories sized by files in the import graph, edges = import counts between them —
 rendered from the live import graph by `forge docs render`, so it can never drift
 from the tree it describes.
 
@@ -677,22 +678,23 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>217 files"]
-  test["test<br/>203 files"]
+  src["src<br/>246 files"]
+  test["test<br/>218 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
-  scripts["scripts<br/>16 files"]
+  scripts["scripts<br/>18 files"]
   bench["bench<br/>6 files"]
   global["global<br/>6 files"]
+  examples["examples<br/>2 files"]
   docs["docs<br/>1 file"]
-  examples["examples<br/>1 file"]
-  test -- 447 --> src
-  scripts -- 14 --> src
+  test -- 496 --> src
+  scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global
   src -- 6 --> global
   test -- 5 --> scripts
   examples -- 4 --> src
+  scripts -- 4 --> test
   test -- 2 --> bench
   global --> src
 ```

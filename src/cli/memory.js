@@ -22,6 +22,33 @@ HANDLERS.ledger = async (argv) => {
   const sub = args[1] || "stats";
   const json = argv.includes("--json");
   const nowDay = epochDay();
+  async function refreshFacts() {
+    const recall = await import("../recall.js");
+    if (personal) {
+      recall.reindex(recall.defaultStore());
+      return;
+    }
+    const brain = await import("../brain.js");
+    const store = brain.brainStore(root);
+    if (
+      brain.list(store).length ||
+      (await import("node:fs")).existsSync(store) ||
+      (await import("../ledger_read.js")).factConflicts(dir).size
+    ) {
+      recall.reindex(store);
+      brain.buildIndex(store);
+    }
+  }
+  if (sub === "index") {
+    const r = ls.rebuildAmbientIndex(dir);
+    if (!r.ok) process.exitCode = 1;
+    console.log(
+      json
+        ? JSON.stringify(r)
+        : `Indexed ${r.claims} claim(s) for prompt lookup, ${r.failed} failed.`,
+    );
+    return;
+  }
   if (sub === "stats") {
     const s = ls.stats(dir, nowDay);
     if (json) return console.log(JSON.stringify(s, null, 2));
@@ -97,6 +124,7 @@ HANDLERS.ledger = async (argv) => {
       return;
     }
     const r = ls.mergeDirs(dir, src);
+    await refreshFacts();
     if (json) return console.log(JSON.stringify(r, null, 2));
     console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
     if (r.quarantined)
@@ -194,6 +222,8 @@ HANDLERS.ledger = async (argv) => {
       process.exitCode = 1;
       return;
     }
+    ls.reindex(dir);
+    if (hit.kind === "fact") await refreshFacts();
     if (json) return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
     console.log(
       `  retracted ${hit.id.slice(0, 12)} — ${reason}${r.deduped ? " (already retracted with this record)" : ""}`,
@@ -205,6 +235,7 @@ HANDLERS.ledger = async (argv) => {
   if (sub === "compact") {
     const dryRun = argv.includes("--dry-run");
     const r = ls.compactLedger(dir, nowDay, { dryRun });
+    if (!dryRun) await refreshFacts();
     if (json) return console.log(JSON.stringify(r, null, 2));
     const rt = r.retention;
     const d = r.duplicates;
@@ -380,7 +411,7 @@ HANDLERS.ledger = async (argv) => {
   }
   if (sub === "root") {
     const lg = await import("../ledger.js");
-    const r = lg.stateRoot(ls.loadState(dir));
+    const r = lg.stateRoot(ls.loadSyncState(dir));
     if (json) return console.log(JSON.stringify(r, null, 2));
     console.log(r.root); // bare hex on stdout — scriptable ("are we in sync?" is one diff)
     return;
@@ -398,6 +429,8 @@ HANDLERS.ledger = async (argv) => {
       remote: re >= 0 ? args[re + 1] : undefined,
       ref: rf >= 0 ? args[rf + 1] : undefined,
     });
+    if (r.ok) await refreshFacts();
+    else process.exitCode = 1;
     if (json) return console.log(JSON.stringify(r, null, 2));
     heading(`${BRAND.brand} ledger sync\n`);
     if (!r.ok) {
@@ -602,27 +635,48 @@ HANDLERS.reuse = async (argv) => {
 
 HANDLERS.context = async (argv) => {
   const { assemble, renderContext } = await import("../context.js");
-  const { load: loadAtlas } = await import("../atlas.js");
+  const { build, isStale, load: loadAtlas } = await import("../atlas.js");
   const { epochDay } = await import("../util.js");
   const json = argv.includes("--json");
+  const ai = argv.indexOf("--ack");
+  const packet = argv.includes("--packet") || ai >= 0;
+  const ack = ai < 0 ? undefined : argv[ai + 1];
+  if (ai >= 0 && (!ack || ack.startsWith("--"))) {
+    console.error("--ack requires a previously retained packet revision");
+    process.exitCode = 1;
+    return;
+  }
   const bi = argv.indexOf("--budget");
-  const budget = bi >= 0 ? Number(argv[bi + 1]) || undefined : undefined;
+  const rawBudget = bi >= 0 ? argv[bi + 1] : undefined;
+  const budget = bi >= 0 ? Number(rawBudget) : undefined;
+  if (bi >= 0 && (!/^\d+$/.test(rawBudget ?? "") || !Number.isSafeInteger(budget))) {
+    console.error("--budget must be a nonnegative integer token count");
+    process.exitCode = 1;
+    return;
+  }
   const task = argv
-    .filter((a, i) => i > 0 && !a.startsWith("--") && argv[i - 1] !== "--budget")
+    .filter((a, i) => i > 0 && !a.startsWith("--") && !["--budget", "--ack"].includes(argv[i - 1]))
     .join(" ");
   if (!task) {
     console.error('usage: forge context "<task>" [--budget <tokens>] [--json]');
     process.exitCode = 1;
     return;
   }
-  const r = assemble(process.cwd(), task, {
-    atlas: loadAtlas(process.cwd()),
+  const root = process.cwd();
+  let atlas = loadAtlas(root);
+  if (packet && (!atlas || isStale(root, atlas))) atlas = build({ root });
+  const r = assemble(root, task, {
+    atlas,
+    includeSegments: packet,
     nowDay: epochDay(),
-    ...(budget ? { budget } : {}),
+    ...(budget !== undefined ? { budget } : {}),
   });
   // --block delivers the assembled context itself — the spans the summary talks about (R13).
   const withBlock = argv.includes("--block");
-  if (json) {
+  if (packet) {
+    const { createContextPacket } = await import("../context_packet.js");
+    console.log(JSON.stringify(createContextPacket(root, task, r, ack)));
+  } else if (json) {
     const { block, ...rest } = r;
     console.log(JSON.stringify(withBlock ? r : rest, null, 2));
   } else if (withBlock) {

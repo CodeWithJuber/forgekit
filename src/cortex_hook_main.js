@@ -23,6 +23,7 @@ import {
   doomLoopAdvisory,
   processSession,
   readSession,
+  summaryEvents,
 } from "./cortex_hook.js";
 import { nativeHarnessInstruction } from "./harness_native.js";
 import { autoAdoptionNotice, failureQuery, hookEvidence } from "./hook_evidence.js";
@@ -110,10 +111,10 @@ async function main() {
       // would vanish at clearSession. Mint one `summary` claim of the solved task FIRST
       // (before the log is cleared) — `forge deja` then finds it next time. Fail-safe;
       // kill switch FORGE_DEJA=0.
-      if (process.env.FORGE_DEJA !== "0") {
+      if (process.env.FORGE_DEJA === "1") {
         try {
           const { recordSessionSummary } = await import("./deja.js");
-          recordSessionSummary(root, sid, events, today);
+          recordSessionSummary(root, sid, summaryEvents(root, sid, events), today);
         } catch {}
       }
       clearSession(root, sid);
@@ -145,6 +146,11 @@ async function main() {
       if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
     } catch {}
   } else if (mode === "session-start") {
+    if (hook.hook_event_name === "SessionStart" && hook.model) {
+      const { recordHostModel } = await import("./host_models.js");
+      const { detectHost } = await import("./hosts.js");
+      if (!detectHost(process.env)) recordHostModel("claude", "SessionStart", hook);
+    }
     // Prune BEFORE anchoring: pruning after would delete the very baseline a >7-day
     // resume just preserved (the anchor then re-records fresh, which is the right
     // semantics for a week-old session anyway). Then record WHERE the repo stands so
@@ -206,6 +212,12 @@ async function main() {
     // typed prompt. They are reports, not requests: no advisory, no card, no lookups.
     const harness = /^\s*(<(agent-message|task-notification)\b|\[SYSTEM NOTIFICATION\b)/;
     if (typeof hook.prompt === "string" && hook.prompt.trim() && !harness.test(hook.prompt)) {
+      const { isDialogueTurn } = await import("./intent.js");
+      if (isDialogueTurn(hook.prompt)) {
+        const instruction = nativeHarnessInstruction(hook);
+        if (instruction) emit("UserPromptSubmit", instruction);
+        return;
+      }
       const result = substrateCheck(root, hook.prompt, {
         allowBuild: false,
         sessionId: hook.session_id || null,
@@ -268,7 +280,8 @@ async function main() {
           appendSessionEvent(root, sid, {
             type: "assumption",
             missing: (a.missing ?? []).map((m) => m.key),
-            questions: (a.questions ?? []).slice(0, 3),
+            // Model-authored questions can repeat incidental details from the prompt.
+            // Store only dimension keys in the portable session trail.
           });
       } catch {}
       const advisory = substrateContext(result);

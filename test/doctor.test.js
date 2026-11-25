@@ -35,6 +35,19 @@ test("doctor reports subsystem health in the standard vocabulary (P1-06)", () =>
   assert.equal(health["secret-redaction"], "ACTIVE");
 });
 
+test("doctor identifies a missing hook executable independently of a working MCP launcher", (t) => {
+  const root = fixture();
+  const old = process.env.FORGE_CLI;
+  t.after(() => {
+    if (old === undefined) delete process.env.FORGE_CLI;
+    else process.env.FORGE_CLI = old;
+  });
+  process.env.FORGE_CLI = join(root, "absent-forge");
+  const result = doctor({ targetRoot: root }).results.find((row) => row.label === "hook launcher");
+  assert.equal(result.status, "warn");
+  assert.match(result.note, /FORGE_CLI/);
+});
+
 test("doctor warns when a repo has more than ~6 MCP servers", () => {
   const root = fixture();
   const servers = {};

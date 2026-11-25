@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { adjudicate, asText, asUnit, buildRunner, llmEnabled } from "./adjudicate.js";
 import { build as buildAtlas, has, load as loadAtlas } from "./atlas.js";
 import { askDecision } from "./decisions.js";
+import { interventionIntent, isDialogueTurn } from "./intent.js";
 import { jevEnabled, noul } from "./jev.js";
 import { sigmoid } from "./predictor.js";
 import { CODE_EXT } from "./util.js";
@@ -287,6 +288,8 @@ function countAnchors(text) {
   );
 }
 
+// A blocking verdict needs positive evidence that the request lacks a target.
+// The advisory completeness score still handles unseen and partially specified tasks.
 export function assessTask(text, { askThreshold = 0.6 } = {}) {
   const raw = String(text || "");
   const words = raw.trim().split(/\s+/).filter(Boolean).length;
@@ -305,8 +308,7 @@ export function assessTask(text, { askThreshold = 0.6 } = {}) {
     length: Math.tanh((words - 12) / 12),
   });
   const reasons = [];
-  if (words <= 7) reasons.push("very short request");
-  if (words >= 22) reasons.push(`detailed request (${words} words)`);
+
   if (concreteness) reasons.push(`${concreteness} concrete anchor(s)`);
   if (specifics.length) reasons.push(`${specifics.length} named technical specific(s)`);
   if (vagueHits.length) reasons.push(`${vagueHits.length} vague filler(s)`);
@@ -319,17 +321,22 @@ export function assessTask(text, { askThreshold = 0.6 } = {}) {
       questions.push(d.question);
     }
   }
+  const dialogue = isDialogueTurn(raw);
+  const intent = interventionIntent(task);
   const hardUnderspecified =
-    concreteness === 0 && (words <= 10 || (vagueHits.length >= 1 && specifics.length === 0));
-  const shouldAsk = completeness < askThreshold || hardUnderspecified;
-  if (hardUnderspecified && !reasons.includes("very short request"))
-    reasons.push("no concrete anchor to act on");
-  const risk = completeness < 0.45 ? "high" : completeness < 0.7 ? "medium" : "low";
+    !dialogue && concreteness === 0 && specifics.length === 0 && intent.ask;
+  const shouldAsk =
+    hardUnderspecified ||
+    (!dialogue && completeness < askThreshold && concreteness > 0 && missing.length > 0);
+  const risk =
+    shouldAsk && completeness < 0.45 ? "high" : completeness >= 0.7 || dialogue ? "low" : "medium";
+  if (hardUnderspecified) reasons.push("Matched prior underspecified actions");
   return {
     completeness,
     risk,
     shouldAsk,
     hardUnderspecified,
+    intervention: { ...intent, dialogue },
     missing,
     questions: (shouldAsk && !questions.length
       ? ["What exactly should this produce, and how will we know it is correct?"]
@@ -579,7 +586,7 @@ export function preflightRepo(
   const det = assessTask(text, { askThreshold });
   // M2 proposer: only when opted in. The rubric is the external judge; the model refines it
   // within bounds and can add grounded questions. Fail-safe: null proposal keeps `det`.
-  if (!llmEnabled({ llm }) && !jevEnabled({ root, llm }))
+  if (det.intervention.dialogue || (!llmEnabled({ llm }) && !jevEnabled({ root, llm })))
     return {
       ...gap,
       assumption: { ...det, provenance: { path: "deterministic" } },

@@ -128,3 +128,84 @@ test("scoped decomposition uses worker estimates, disjoint paths and an explicit
   assert.equal(get().mode, "single");
   assert.match(get().reason, /overlap/);
 });
+
+test("explicit researcher and planner streams receive only their respective workspace references", async (t) => {
+  const { portableBriefs } = await import("../src/portable_team.js");
+  const plan = teamPlan("Choose a workshop slot", {
+    root: fixture(t),
+    maxWorkers: 2,
+    decomposition: {
+      mode: "parallel",
+      owner: "coordinator",
+      merge: "Choose a slot with sufficient seats",
+      streams: [
+        {
+          id: "demand",
+          role: "researcher",
+          paths: ["responses"],
+          acceptance: "Return total responses",
+          estimatedMinutes: 35,
+        },
+        {
+          id: "space",
+          role: "planner",
+          paths: ["rooms"],
+          acceptance: "Return capacity",
+          estimatedMinutes: 30,
+        },
+      ],
+    },
+    evidence: {
+      hits: [{ sourceId: "restricted-manual", path: "responses/private", locator: "page 4" }],
+      symbols: [
+        { file: "responses/count.js", line: 1, name: "count" },
+        { file: "rooms/capacity.js", line: 3, name: "capacity" },
+        { file: "responses-admin/private.js", line: 9, name: "private" },
+      ],
+    },
+  });
+  assert.deepEqual(
+    plan.assignments.map((a) => a.role),
+    ["researcher", "planner"],
+  );
+  const briefs = portableBriefs(
+    plan,
+    "Choose a workshop slot",
+    "generic",
+    "unscoped mirror contents",
+  );
+  assert.match(briefs[0].brief, /responses\/count.js:1/);
+  assert.match(briefs[1].brief, /rooms\/capacity.js:3/);
+  assert.doesNotMatch(briefs[0].brief, /rooms\/|restricted-manual|responses-admin|unscoped mirror/);
+  assert.doesNotMatch(
+    briefs[1].brief,
+    /responses\/|restricted-manual|responses-admin|unscoped mirror/,
+  );
+});
+
+test("native specialists inherit the host default or propagate an exact model with separate observed model attribution", async (t) => {
+  const root = fixture(t);
+  const calls = [];
+  const invoke = async (args) => {
+    if (args.includes("--help"))
+      return "--bare --restricted --tools --strict-mcp-config --max-budget-usd --no-session-persistence --model";
+    calls.push(args);
+    return JSON.stringify({
+      result: "Synthetic worker reply",
+      modelUsage: { "fixture-returned": {} },
+    });
+  };
+  const options = { host: "claude", budgetUsd: 0.2, invoke };
+  const defaults = await runTeam(root, task, options);
+  assert.equal(defaults.ok, true);
+  assert.equal(
+    calls.some((a) => a.includes("--model")),
+    false,
+  );
+  assert.deepEqual(defaults.workers[0].reportedModels, ["fixture-returned"]);
+  calls.length = 0;
+  const pinned = await runTeam(root, task, { ...options, model: "fixture-selected" });
+  assert.ok(calls.every((a) => a[a.indexOf("--model") + 1] === "fixture-selected"));
+  assert.equal(pinned.workers[0].requestedModel, "fixture-selected");
+  assert.deepEqual(pinned.workers[0].reportedModels, ["fixture-returned"]);
+});

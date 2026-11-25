@@ -11,6 +11,7 @@
 import { mintClaim, outcomeRecord } from "./ledger.js";
 import {
   appendEvidence,
+  getClaimByPrefix,
   loadClaims,
   putClaim,
   readEvidence,
@@ -22,9 +23,9 @@ import { load as loadLessons } from "./lessons_store.js";
 // listStored, NOT list: the bridge reconciles the FILE store against the ledger. The
 // merged `list` (P2 read flip) includes ledger-only teammate facts, which have no file
 // and would read here as "deleted from the store".
-import { listStored as listFacts, readFact } from "./recall.js";
+import { listStored as listFacts, readStoredFact } from "./recall.js";
 import { describeConflicts, sameSemantics, semanticConflicts } from "./semantic_guard.js";
-import { epochDay, gitAuthor, ledgerOnly } from "./util.js";
+import { epochDay, gitAuthor, ledgerOnly, slug } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
 const bestEffort = (fn) => {
@@ -194,30 +195,31 @@ export function supersedeLessonClaim(root, before, after, t = epochDay()) {
  * instead of leaving a stale phantom the P2 read-flip would resurrect.
  * @returns {{ok:boolean, reason?:string, id?:string, existed?:boolean}}
  */
-export function shadowFact(ledgerDir, name, text, t = epochDay()) {
+export function shadowFact(ledgerDir, name, text, t = epochDay(), { replace = true } = {}) {
   return bestEffort(() => {
     // Tombstones are permanent and ids are content-addressed, so restoring a value that
     // was superseded (v1 → v2 → v1) would land on v1's RETIRED id and leave no live fact
     // (review C4). A retired value is re-asserted as the next revision instead — the lowest
     // `rev` whose claim is not tombstoned — deterministic, so teammates doing the same
     // sequence still converge on one id. Unretired values keep the rev-0 id.
+    const observed = loadClaims(ledgerDir);
     const retired = new Set(
-      loadClaims(ledgerDir)
-        .filter((c) => c.kind === "fact" && c.tombstone)
-        .map((c) => c.id),
+      observed.filter((c) => c.kind === "fact" && c.tombstone).map((c) => c.id),
     );
     let minted = factClaim(name, text, t);
-    for (let rev = 1; minted.ok && retired.has(minted.claim.id); rev++)
+    const unusable = (id) =>
+      retired.has(id) || getClaimByPrefix(ledgerDir, id, { attic: true })?.archived;
+    for (let rev = 1; minted.ok && unusable(minted.claim.id); rev++)
       minted = factClaim(name, text, t, rev);
     if (!minted.ok) return { ok: false, reason: minted.reason };
     const put = putClaim(ledgerDir, minted.claim);
     if (!put.ok) return put;
-    for (const c of loadClaims(ledgerDir)) {
+    for (const c of replace ? observed : []) {
       if (
         c.kind === "fact" &&
         !c.tombstone &&
         c.id !== minted.claim.id &&
-        c.body?.name === minted.claim.body.name
+        (slug(c.body?.name ?? "") || "fact") === (slug(minted.claim.body.name) || "fact")
       )
         tombstone(ledgerDir, c.id, {
           author: gitAuthor(),
@@ -246,7 +248,7 @@ export function reconcileFacts(store, ledgerDir, t = epochDay()) {
     // (shadowFact) that factClaim(name, text) alone would not reproduce.
     const current = new Set();
     for (const slug of listFacts(store)) {
-      const f = readFact(store, slug);
+      const f = readStoredFact(store, slug);
       if (f) current.add(factKey(f.name, f.text));
     }
     let removed = 0;
@@ -281,7 +283,7 @@ export function importFacts(store, ledgerDir, nowDay = 0) {
   const refused = [];
   let facts = 0;
   for (const slug of listFacts(store)) {
-    const f = readFact(store, slug);
+    const f = readStoredFact(store, slug);
     if (!f) {
       refused.push(`fact ${slug}: unreadable`);
       continue;

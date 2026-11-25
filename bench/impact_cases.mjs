@@ -31,10 +31,12 @@
 //   - src/eval.js         defines it (:28) (no other same-file caller)
 //   - test/eval.test.js   imports { evalImpact } (:7) and calls it (:34) — the only referencer
 //
-// isStale (src/atlas.js) — 8 files
+// isStale (src/atlas.js) — 10 files
 //   - src/atlas.js             defines it (:1033)
 //   - src/verify.js            imports { isStale } (:11) and calls it (:456)
 //   - src/doctor.js            imports { isStale } (:18) and calls it (:249)
+//   - src/cli/memory.js       checks graph freshness before context packet assembly
+//   - src/test_select.js       checks the cached atlas before traversing affected tests
 //   - src/substrate.js         imports it ALIASED (`isStale as atlasIsStale`, :11) and calls
 //                              it twice (:177, :269) — an aliased import is still a reference
 //   - src/coupling.js          imports it ALIASED (`isStale as atlasIsStale`, :20) and calls
@@ -50,9 +52,10 @@
 //   - test/ledger.test.js imports { mergeStates } (:14) and calls it
 //   (src/ledger_sync.js:3 also names it in the module header — same file, already labeled.)
 //
-// claimText (src/ledger.js) — 11 files
+// claimText (src/ledger.js) — 12 files
 //   - src/ledger.js       defines it (:610); sketchOf() (:636), termsOf() (:637) and :880 call it
 //   - src/context.js      imports { claimText } (:13) and calls it (:185)
+//   - src/ambient_memory.js indexes claim text; content hashes identify the index and term buckets
 //   - src/dash.js         imports { claimText } (:16) and calls it (:58, :389, :400)
 //   - src/deja.js         imports { claimText } (:19) and calls it (:179)
 //   - src/ledger_store.js imports { claimText } (:26) and calls it (:663)
@@ -66,7 +69,7 @@
 //   (test/dash.test.js:69 mentions the name only inside an assertion message — a string,
 //    not a reference — so it is NOT labeled as a dependent.)
 //
-// contentHash (src/util.js) — 16 files. The widest fan-out in the set, and the case that
+// contentHash (src/util.js) has the widest fan-out in the set. This case
 // used to carry a documented FALSE NEGATIVE: src/atlas.js binds it to an alias,
 // `const hash = contentHash;` at :190, with no call parentheses, and the old import regex
 // captured module paths rather than named bindings, so no edge reached atlas.js. That is
@@ -79,6 +82,7 @@
 //   - src/cost_report.js  imports it (:14); routeRef() calls it (:212)
 //   - src/diagnose.js     imports it (:15); failureSignature() calls it (:57)
 //   - src/embed.js        imports it (:35) and calls it (:202)
+//   - src/handoff.js      hashes exported packets and checks their integrity on import
 //   - src/http_cache.js   imports it (:18); cacheFile() calls it (:124)
 //   - src/ledger.js       imports it (:18) and calls it (:136, :141, :947, :962, :963)
 //   - src/ledger_store.js imports it (:43) and calls it (:414, :598)
@@ -108,9 +112,11 @@ export const IMPACT_CASES = [
   {
     target: "isStale",
     expected: [
+      "src/cli/memory.js",
       "src/atlas.js",
       "src/verify.js",
       "src/doctor.js",
+      "src/test_select.js",
       "src/substrate.js",
       "src/coupling.js",
       "test/atlas.test.js",
@@ -127,6 +133,7 @@ export const IMPACT_CASES = [
   {
     target: "claimText",
     expected: [
+      "src/ambient_memory.js",
       "src/ledger.js",
       "src/context.js",
       "src/dash.js",
@@ -144,12 +151,17 @@ export const IMPACT_CASES = [
   {
     target: "contentHash",
     expected: [
+      "src/context_packet.js",
+      "src/ambient_memory.js",
       "src/util.js",
       "src/atlas.js",
       "src/cortex_hook.js",
       "src/cost_report.js",
       "src/diagnose.js",
       "src/embed.js",
+      "src/handoff.js",
+      "src/memory_proposals.js",
+      "src/private_memory.js",
       "src/http_cache.js",
       "src/ledger.js",
       "src/ledger_store.js",

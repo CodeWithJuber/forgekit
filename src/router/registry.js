@@ -16,6 +16,8 @@ const MODEL_SPEC = /** @type {import("../schema.js").Spec} */ ({
     id: { type: "string", nonEmpty: true, max: 200 },
     label: { type: "string", max: 200 },
     org: { type: "string", max: 200 },
+    price_source: { type: "string", max: 1000, nullable: true },
+    price_as_of: { type: "string", pattern: /^\d{4}-\d{2}-\d{2}$/, nullable: true },
     price_in: { type: "number", min: 0, max: 1e6, nullable: true },
     price_out: { type: "number", min: 0, max: 1e6, nullable: true },
     enabled: { type: "boolean" },
@@ -63,6 +65,10 @@ export function loadRegistry(root) {
         const prev = byId.get(m.id) ?? {};
         byId.set(m.id, {
           ...prev,
+          ...((Object.hasOwn(m, "price_in") && m.price_in !== prev.price_in) ||
+          (Object.hasOwn(m, "price_out") && m.price_out !== prev.price_out)
+            ? { price_source: null, price_as_of: null }
+            : {}),
           ...m,
           providers: { ...(prev.providers ?? {}), ...(m.providers ?? {}) },
         });

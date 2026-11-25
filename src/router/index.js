@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validate } from "../schema.js";
+import { passingSuiteEvidence } from "../test_counts.js";
 import { computeCodeState, readVerifyEvents } from "../verify.js";
 import { expectedCosts, fitCost } from "./cost.js";
 import { rawFeatures, standardise } from "./features.js";
@@ -197,6 +198,7 @@ const outcomeSpec = (nFeatures) =>
       attemptId: { type: "string", nonEmpty: true, max: 200 },
       task: { type: "string", pattern: /^[0-9a-f]{16}$/ },
       model: { type: "string", nonEmpty: true, max: 200 },
+      workload: { type: "string", pattern: /^[A-Za-z0-9_.-]{1,80}$/ },
       passed: { type: "boolean" },
       cost: { type: "number", min: 0, max: 1e6, nullable: true },
       features: {
@@ -237,6 +239,8 @@ function runMismatch(run, code) {
     run.post?.dirtyHash !== code.dirtyHash
   )
     return `verify run ${run.runId} verified other code than the attempt was recorded against`;
+  if (run.status === "PASS" && !passingSuiteEvidence(run.suites))
+    return "the verification event has no measured passing suite evidence";
   return null;
 }
 
@@ -298,7 +302,7 @@ function deriveProvenance(row, runs, claimed, attempt) {
  * from the events either way (readOutcomes), so the stored label is informational.
  * @param {string} root
  * @param {{task: string, model: string, passed: boolean, cost?: number|null,
- *   features?: number[]|null, attemptId?: string|null, verifyRunId?: string|null,
+ *   workload?:string, features?: number[]|null, attemptId?: string|null, verifyRunId?: string|null,
  *   registry?: {models: any[]}}} outcome
  */
 export function recordOutcome(
@@ -309,6 +313,7 @@ export function recordOutcome(
     passed,
     cost = null,
     features = null,
+    workload = "repo-verified",
     attemptId = null,
     verifyRunId = null,
     registry = loadRegistry(root),
@@ -354,6 +359,7 @@ export function recordOutcome(
   const row = {
     attemptId: id,
     at: new Date().toISOString(),
+    workload,
     task: taskRef(task),
     features: features ?? rawFeatures(root, task),
     model,

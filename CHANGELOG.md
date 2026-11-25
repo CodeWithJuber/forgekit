@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Verification receipts require observed passing checks. A selected test run records its scope. Context and file reads report missing coverage within the configured budget.
+- Memory proposals and public lookups require explicit promotion or opt-in. Concurrent settings updates retain independent edits and partial budget updates preserve hard limits.
+- Model discovery includes configured provider profiles, observed availability and workload-relative quality bands. Agents, skills and hooks can be inspected independently.
+- Added opt-in full-workspace sync with a self-hosted dashboard, browser journey receipts and an offline paired-cost evaluation workflow.
+
 ## [1.19.2] - 2026-11-22
 
 ### Fixed

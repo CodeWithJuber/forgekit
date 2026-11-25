@@ -29,8 +29,12 @@ const ENCODED_MEDIA =
 
 /** Recursively redact every string leaf while preserving the value's exact structure. */
 function redactValue(value, redactSecrets) {
-  if (typeof value === "string")
-    return ENCODED_MEDIA.test(value) ? value : redactSecrets(value);
+  if (typeof value === "string") {
+    if (ENCODED_MEDIA.test(value)) return value;
+    if (Buffer.byteLength(value, "utf8") > 1024 * 1024)
+      return "[Output withheld: text exceeds the 1 MiB redaction limit.]";
+    return redactSecrets(value);
+  }
   if (Array.isArray(value))
     return value.map((v) => redactValue(v, redactSecrets));
   if (value && typeof value === "object") {
@@ -61,10 +65,20 @@ async function main() {
   // A file:// URL, not a bare path: on Windows join() yields `C:\…\secrets.js`, which is not
   // a valid dynamic-import specifier (backslashes / drive-letter) and throws — degrading the
   // redactor to a no-op. pathToFileURL makes the import portable (no-op difference on POSIX).
-  const { redactSecrets } = await import(
-    pathToFileURL(join(here, "..", "..", "src", "secrets.js")).href
-  );
-  const red = redactValue(val, redactSecrets);
+  let red;
+  let degraded = false;
+  try {
+    const { redactSecrets } = await import(
+      pathToFileURL(join(here, "..", "..", "src", "secrets.js")).href
+    );
+    red = redactValue(val, redactSecrets);
+  } catch {
+    // Once the original shape is known, a failed scanner must withhold all text fields.
+    degraded = true;
+    const marker = "[Output withheld: ForgeKit could not check the result.]";
+    red = JSON.parse(JSON.stringify(val, (_key, leaf) => typeof leaf === "string" ? marker : leaf));
+    process.stderr.write("forge: secret redaction DEGRADED; tool output withheld.\n");
+  }
   // Emit a rewrite only when something actually changed. Compare canonically so an
   // untouched structured response produces no output at all (the common case).
   const changed =
@@ -77,17 +91,15 @@ async function main() {
         hookSpecificOutput: {
           hookEventName: "PostToolUse",
           updatedToolOutput: red,
+          ...(degraded && process.env.FORGE_GUARD_STRICT === "1"
+            ? {additionalContext:"ForgeKit redaction degraded. Tool output was withheld; repair the ForgeKit installation."} : {}),
         },
       }),
     );
   }
 }
 
-// RA-06/CR-02: never fail silently — a broken redactor means the ORIGINAL, unredacted
-// output passes through, so say so loudly on stderr. FORGE_GUARD_STRICT=1 exits 2, which
-// surfaces the stderr warning to Claude as hook feedback. NOTE: PostToolUse fires AFTER
-// the tool ran, so exit 2 here can NOT block or undo the tool call — it is visibility,
-// not enforcement. Confidentiality enforcement belongs in PreToolUse (protect-paths.sh).
+// A failure before a structured replacement can be emitted is visible to strict-mode hosts.
 main().catch((err) => {
   process.stderr.write(
     `forge: secret redaction DEGRADED (${err?.message ?? err})\n`,

@@ -32,6 +32,8 @@ import {
   readUserConfig,
   rowToolKey,
 } from "./repo_config.js";
+import { detectStack, isWorkspaceMember } from "./stack.js";
+import { readJsonSafe } from "./util.js";
 
 const MODULES = [
   codex,
@@ -132,6 +134,50 @@ function readLegacyRules(targetRoot) {
   }
 }
 
+/** Conditions are shipped with the rule pack. Evaluate only positive evidence from this
+ * checkout and its declared workspace members. Fixtures and unrelated nested manifests
+ * must never prescribe architecture for every agent. */
+function applicableSections(base, root) {
+  const stack = detectStack(root);
+  const frameworks = new Set(stack.frameworks);
+  const deps = new Set();
+  const packages = [
+    root,
+    ...stack.packageRoots
+      .filter((dir) => isWorkspaceMember(stack.workspaces, dir))
+      .map((dir) => join(root, dir)),
+  ];
+  for (const dir of packages) {
+    if (dir !== root) for (const f of detectStack(dir).frameworks) frameworks.add(f);
+    const pkg = readJsonSafe(join(dir, "package.json"));
+    for (const group of [
+      "dependencies",
+      "devDependencies",
+      "peerDependencies",
+      "optionalDependencies",
+    ])
+      if (pkg?.[group] && typeof pkg[group] === "object")
+        for (const name of Object.keys(pkg[group])) deps.add(name);
+  }
+  const enabled = new Set(
+    Object.keys(base.conditions ?? {}).filter((key) => {
+      const cond = base.conditions[key];
+      return (
+        cond.frameworks?.some((f) => frameworks.has(f)) ||
+        cond.dependencies?.some((d) => deps.has(d)) ||
+        cond.files?.some((file) => packages.some((dir) => existsSync(join(dir, file))))
+      );
+    }),
+  );
+  const applies = (item) => !item.when || item.when.some((key) => enabled.has(key));
+  return base.sections.filter(applies).map((section) => ({
+    ...section,
+    rules: section.rules
+      .filter((rule) => typeof rule === "string" || applies(rule))
+      .map((rule) => (typeof rule === "string" ? rule : rule.text)),
+  }));
+}
+
 /**
  * Resolve the rule set for a repo with explicit, deterministic override semantics (P1-03):
  *   1. profile — `minimal` replaces the pack with the core-safety section; anything else
@@ -157,9 +203,11 @@ function loadRules(targetRoot) {
   }
   if (cfg.profile === "minimal") {
     base.sections = [MINIMAL_SECTION];
-  } else if (Array.isArray(cfg.disableSections) && cfg.disableSections.length) {
-    const drop = new Set(cfg.disableSections);
-    base.sections = (base.sections || []).filter((s) => !drop.has(s.id) && !drop.has(s.title));
+  } else {
+    const drop = new Set(Array.isArray(cfg.disableSections) ? cfg.disableSections : []);
+    base.sections = applicableSections(base, targetRoot).filter(
+      (s) => !drop.has(s.id) && !drop.has(s.title),
+    );
   }
   // The orchestration pack (source/orchestration.json): appended after the profile/disable
   // step, with each rule's on/off resolved from the user-level and repo configs. The minimal

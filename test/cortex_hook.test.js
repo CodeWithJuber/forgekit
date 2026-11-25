@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   appendSessionEvent,
   classifyEvent,
+  clearSession,
   detectDoomLoop,
   detectEpisodes,
   doomLoopAdvisory,
@@ -13,6 +14,7 @@ import {
   processSession,
   readSession,
   sessionPath,
+  summaryEvents,
 } from "../src/cortex_hook.js";
 import { load } from "../src/lessons_store.js";
 import { fakeGithubPat } from "./_fixtures.js";
@@ -204,7 +206,7 @@ test("session log never stores a raw secret from a prompt or a command (B5)", ()
   log({ tool_name: "Bash", tool_input: { command: "git revert HEAD" }, exitCode: 0 });
   const raw = readFileSync(sessionPath(root, "s-b5"), "utf8");
   assert.equal(raw.includes(tok), false, "the token never reaches disk");
-  assert.match(raw, /GITHUB_TOKEN=\[REDACTED\] please/, "the prompt stays readable");
+  assert.doesNotMatch(raw, /deploy with|GITHUB_TOKEN|please/, "prompt text stays off disk");
   // Redaction must not blind the signal detectors (verbs are never secrets).
   const events = readSession(root, "s-b5");
   assert.equal(events.length, 3);
@@ -296,4 +298,22 @@ test("isE2eRun: real, unmasked end-to-end suite runs only", () => {
     "npx playwright test --pass-with-no-tests",
   ])
     assert.equal(isE2eRun(c), false, c);
+});
+
+test("opt-in prompt history is private and can be joined only in the same checkout", (t) => {
+  const old = process.env.FORGE_DEJA;
+  t.after(() => {
+    if (old === undefined) delete process.env.FORGE_DEJA;
+    else process.env.FORGE_DEJA = old;
+  });
+  process.env.FORGE_DEJA = "1";
+  const root = fixture(),
+    other = fixture();
+  appendSessionEvent(root, "p", { type: "prompt", text: "Contract 58423 for Example Client" });
+  const repoEvents = readSession(root, "p");
+  assert.doesNotMatch(JSON.stringify(repoEvents), /58423|Example Client/);
+  assert.match(JSON.stringify(summaryEvents(root, "p", repoEvents)), /58423/);
+  assert.doesNotMatch(JSON.stringify(summaryEvents(other, "p", repoEvents)), /58423/);
+  clearSession(root, "p");
+  assert.doesNotMatch(JSON.stringify(summaryEvents(root, "p", repoEvents)), /58423/);
 });

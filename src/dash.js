@@ -642,6 +642,24 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
     }
     if (url.pathname === "/api/harness")
       return sendJson(res, 200, dashHarness(root, LOOPBACK_HOSTS.has(boundHost)));
+    if (url.pathname === "/api/models") {
+      if (!LOOPBACK_HOSTS.has(boundHost))
+        return sendJson(res, 403, { error: "Model metadata is available on a local dashboard." });
+      import("./model_inventory.js")
+        .then(({ modelInventory }) =>
+          modelInventory(root, {
+            workload: url.searchParams.get("workload") ?? undefined,
+            profile: url.searchParams.get("profile") ?? undefined,
+            capability: url.searchParams.get("capability") ?? undefined,
+            availability: url.searchParams.get("availability") ?? undefined,
+            maxAge: url.searchParams.get("maxAge") ?? undefined,
+            refresh: false,
+          }),
+        )
+        .then((inventory) => sendJson(res, 200, inventory))
+        .catch(() => sendJson(res, 400, { error: "Cannot read that workload or model profile." }));
+      return;
+    }
     if (url.pathname === "/api/data") return sendJson(res, 200, dashData(root));
     if (url.pathname === "/api/history") return sendJson(res, 200, historyData(root));
     if (url.pathname === "/api/radar") return sendJson(res, 200, radarData(root));

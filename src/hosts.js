@@ -19,9 +19,7 @@
 // FIELDS (where a value lives in a payload) and DIALECTS (how a verdict is spelled). Adding an
 // agent is a table row, never a new code path. The guards themselves do not change.
 //
-// Fail-safe by construction: a missing payload, an unknown host or event, a guard that cannot
-// run — none of them blocks a tool call. Only a guard's own verdict blocks. Kill switch:
-// FORGE_HOOKS=0.
+// Indeterminate pre-tool decisions fail closed. Advisory events can degrade independently.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -37,7 +35,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
 import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
@@ -291,8 +289,9 @@ export const PROJECT_DIR_ENV = [
   "DEVIN_PROJECT_DIR",
 ];
 
-/** Files one patch may touch before the rest go unchecked (each file runs the guard chain). */
-export const MAX_PATCH_FILES = 8;
+/** Limit concurrent guard chains. Every target must be checked within the event deadline. */
+const PATCH_CONCURRENCY = 2;
+export const MAX_PRETOOL_BYTES = 4 * 1024 * 1024;
 /** One guard may take this long before it is abandoned (fail-open, or a block if fail-closed). */
 export const GUARD_TIMEOUT_MS = 25000;
 
@@ -345,6 +344,10 @@ export function parsePatch(text) {
     if (!file) continue;
     if (line.startsWith("*** ")) {
       // `*** Move to:`, `*** End of File`, `*** End Patch` — none of them is content.
+      if (line.startsWith("*** Move to: ") && file.kind === "update") {
+        const destination = line.slice("*** Move to: ".length).trim();
+        if (destination) files.push({ ...file, file_path: destination });
+      }
       if (line.startsWith("*** End Patch")) {
         closeHunk();
         file = null;
@@ -481,13 +484,26 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
   if (def.as === "PostToolUseFailure" || (def.as === "PostToolUse" && failureQuery(call)))
     return { event: def.as, def, payloads: [call], unchecked: 0 };
 
+  if (
+    def.as === "PreToolUse" &&
+    pick(data, FIELDS.tool_name) === "read_many_files" &&
+    Array.isArray(input.include) &&
+    input.include.length
+  ) {
+    const payloads = input.include.map((pattern) =>
+      typeof pattern === "string" && /[*?[{]/.test(pattern)
+        ? { ...base, tool_name: "Grep", tool_input: { path: cwd, glob: pattern } }
+        : { ...base, tool_name: "Read", tool_input: { file_path: pattern } },
+    );
+    return { event: def.as, def, payloads, unchecked: 0 };
+  }
   // A patch names its files inside the text: one edit per file, so path and manifest guards see them.
   const patchText = [input.command, input.patch, input.input].find(
     (v) => typeof v === "string" && /^\*\*\* (?:Add|Update|Delete) File: /m.test(v),
   );
   if (!patchText) return { event: def.as, def, payloads: [call], unchecked: 0 };
   const files = parsePatch(patchText);
-  const edits = files.slice(0, MAX_PATCH_FILES).map((f) => ({
+  const edits = files.map((f) => ({
     ...base,
     tool_name: f.kind === "update" ? "MultiEdit" : "Write",
     tool_input: {
@@ -497,7 +513,7 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
   }));
   // A shell command that carries a patch is still a shell command; a patch tool is only its files.
   const payloads = tool === "Bash" ? [call, ...edits] : edits;
-  return { event: def.as, def, payloads, unchecked: Math.max(0, files.length - MAX_PATCH_FILES) };
+  return { event: def.as, def, payloads, unchecked: 0 };
 }
 
 // ── the guard chain: hooks/hooks.json is the one list of what runs when ────────────────────
@@ -545,6 +561,13 @@ export function guardChain(payload, manifest = loadManifest()) {
   return steps;
 }
 
+/** Stable packaged hook ID shared by the catalog and native component callback. */
+export function hookId(args) {
+  const i = args.findIndex((arg) => arg.endsWith(".sh"));
+  if (i < 0) throw new Error("Packaged hook has no guard");
+  return [basename(args[i], ".sh"), ...args.slice(i + 1)].join("-");
+}
+
 /** @typedef {{guard: string, stdout: string, stderr: string, status: number|null, failClosed: boolean}} GuardRun */
 
 /**
@@ -577,7 +600,10 @@ export function runGuards(steps, payload, opts = {}) {
             } catch {
               return resolve(run);
             }
-            const timer = setTimeout(() => child.kill(), timeoutMs);
+            const timer = setTimeout(() => {
+              child.kill("SIGKILL");
+              resolve(run);
+            }, timeoutMs);
             child.stdout?.on("data", (d) => {
               run.stdout += d;
             });
@@ -603,7 +629,7 @@ export function runGuards(steps, payload, opts = {}) {
 
 // ── merge: many guards, one verdict ────────────────────────────────────────────────────────
 
-/** @typedef {{decision: "deny"|"ask"|"allow", reason: string, context: string, block: string}} Verdict */
+/** @typedef {{decision: "deny"|"ask"|"allow", reason: string, context: string, block: string, updatedToolOutput?: unknown}} Verdict */
 
 const RANK = { allow: 0, ask: 1, deny: 2 };
 const join2 = (/** @type {string} */ a, /** @type {string} */ b, sep = "\n") =>
@@ -650,6 +676,12 @@ export function interpret(event, run) {
     return v;
   }
   const out = json.hookSpecificOutput ?? {};
+  if (
+    event === "PostToolUse" &&
+    run.guard === "secret-redact.sh" &&
+    Object.hasOwn(out, "updatedToolOutput")
+  )
+    v.updatedToolOutput = out.updatedToolOutput;
   if (typeof out.additionalContext === "string") v.context = out.additionalContext;
   if (out.permissionDecision === "deny") stop(String(out.permissionDecisionReason ?? ""));
   else if (out.permissionDecision === "ask" && gate) {
@@ -674,6 +706,7 @@ export function merge(verdicts) {
       out.reason = join2(out.reason, v.reason);
     out.context = join2(out.context, v.context, "\n\n");
     out.block = join2(out.block, v.block);
+    if (Object.hasOwn(v, "updatedToolOutput")) out.updatedToolOutput = v.updatedToolOutput;
   }
   return out;
 }
@@ -775,6 +808,44 @@ export function render(hostId, nativeEvent, verdict) {
       return json({ permission: "allow" });
     return context ? say.context(e, context) : nothing;
   }
+  if (def.as === "PostToolUse" && Object.hasOwn(verdict, "updatedToolOutput")) {
+    const updatedToolOutput = verdict.updatedToolOutput;
+    if (hostId === "claude")
+      return json({
+        hookSpecificOutput: {
+          hookEventName: nativeEvent,
+          updatedToolOutput,
+          ...(context ? { additionalContext: context } : {}),
+        },
+        ...(verdict.block && def.block ? { decision: "block", reason: verdict.block } : {}),
+      });
+    if (hostId === "opencode") return json({ updatedToolOutput, ...(context ? { context } : {}) });
+    if (
+      hostId === "gemini" &&
+      updatedToolOutput !== null &&
+      typeof updatedToolOutput === "object" &&
+      !Array.isArray(updatedToolOutput)
+    )
+      return json({
+        hookSpecificOutput: {
+          hookEventName: nativeEvent,
+          toolResponse: updatedToolOutput,
+          ...(context ? { additionalContext: context } : {}),
+        },
+        ...(verdict.block && def.block ? { decision: "deny", reason: verdict.block } : {}),
+      });
+    const reply =
+      verdict.block && def.block
+        ? say.block(e, verdict.block)
+        : context
+          ? say.context(e, context)
+          : nothing;
+    return {
+      ...reply,
+      stderr:
+        "ForgeKit detected sensitive tool output. This host event cannot replace that output.",
+    };
+  }
   if (verdict.block && def.block) return say.block(e, verdict.block);
   return context ? say.context(e, context) : nothing;
 }
@@ -801,8 +872,8 @@ export function eventKey(payloads) {
         p.exitCode ?? "",
         p.tool_response ?? "",
         p.tool_name ?? "",
-        p.tool_input?.command ?? "",
-        p.tool_input?.file_path ?? "",
+        p.tool_input ?? {},
+        p.permission_mode ?? "",
         p.prompt ?? "",
         p.source ?? "",
       ]),
@@ -936,10 +1007,10 @@ export function kimiPluginEnabled(cfg) {
 
 /**
  * `forge hooks run <host> <event>` — one hook call, start to finish. Never throws; every path
- * that is not a guard's own verdict returns an empty, successful reply.
+ * that cannot validate a pre-tool event returns a native denial.
  * @param {{host: string, event: string, input: string, env?: NodeJS.ProcessEnv, home?: string,
  *   manifest?: ReturnType<typeof loadManifest>, run?: typeof runGuards,
- *   claim?: typeof claimEvent | null}} o
+ *   claim?: typeof claimEvent | null, component?:string}} o
  * @returns {Promise<Reply>}
  */
 export async function runHook({
@@ -951,16 +1022,22 @@ export async function runHook({
   manifest,
   run = runGuards,
   claim = claimEvent,
+  component,
 }) {
   /** @type {Reply} */
   const silent = { stdout: "", stderr: "", exit: 0 };
+  let as = host;
+  const deny = (reason) => render(as, event, { decision: "deny", reason, context: "", block: "" });
+  const def = HOSTS[host]?.events[event];
   try {
-    const def = HOSTS[host]?.events[event];
     if (!def) return silent;
+    if (def.as === "PreToolUse" && Buffer.byteLength(input) > MAX_PRETOOL_BYTES)
+      return deny("Pre-tool input exceeds the 4 MiB guard limit. Split the operation.");
     let payload = {};
     let invalidPayload = false;
     try {
-      payload = JSON.parse(input || "{}");
+      payload = JSON.parse(input);
+      invalidPayload = !payload || typeof payload !== "object" || Array.isArray(payload);
     } catch {
       if (def.as !== "PreToolUse") return silent;
       invalidPayload = true;
@@ -972,15 +1049,21 @@ export async function runHook({
       const reason = nativeHarnessDenial({ host, event, payload, env });
       if (reason) return render(host, event, { decision: "deny", reason, context: "", block: "" });
     }
-    if (invalidPayload || hooksDisabled(env)) return silent;
+    if (hooksDisabled(env)) return silent;
+    if (invalidPayload)
+      return def.as === "PreToolUse"
+        ? deny("ForgeKit could not validate the pre-tool event.")
+        : silent;
     // An agent that reads Claude Code's file is served by its own channel when it has one,
     // and by its own rules (tool names, what it can express) when it does not.
-    let as = host;
     if (host === "kimi") {
       // Kimi launches plugin hooks in its managed copy. Only the payload identifies
       // the actual workspace. Respect a project's explicit hook opt-out.
       const cwd = pick(payload, FIELDS.cwd);
-      if (typeof cwd !== "string" || !isAbsolute(cwd)) return silent;
+      if (typeof cwd !== "string" || !isAbsolute(cwd))
+        return def.as === "PreToolUse"
+          ? deny("Kimi did not identify a workspace for this tool call.")
+          : silent;
       const { sourceWorkspaceRoot } = await import("./sources.js");
       const cfg = readForgeConfig(sourceWorkspaceRoot(cwd));
       if (!kimiPluginEnabled(cfg)) return silent;
@@ -988,15 +1071,65 @@ export async function runHook({
     if (host === "claude") {
       const actual = detectHost(env);
       const cwd = String(pick(payload, FIELDS.cwd) ?? process.cwd());
+      if (component) {
+        const settings = readJsonSafe(join(env.CLAUDE_PROJECT_DIR || cwd, HOSTS.claude.file));
+        const bundled = settings?.hooks?.[event];
+        if (
+          Array.isArray(bundled) &&
+          bundled.some(
+            (group) =>
+              !group.matcher &&
+              group.hooks?.some(
+                (hook) =>
+                  isForgeHookCommand(hook.command) &&
+                  hook.command.includes(`${BRAND.cli} hooks run claude ${event}`),
+              ),
+          )
+        )
+          return silent;
+        if (actual && actual !== "claude") return silent;
+      }
       if (actual && HOSTS[actual].file && projectWired(cwd, actual)) return silent;
       if (actual && HOSTS[actual].via === "claude") as = actual;
       if (!actual && userLevelWired({ home })) return silent;
+    }
+    if (def.as === "PreToolUse") {
+      const name = def.tool || pick(payload, FIELDS.tool_name);
+      if (typeof name !== "string" || !name.trim())
+        return deny("The pre-tool event is missing a tool name.");
+      if (name.toLowerCase() === "powershell")
+        return deny(
+          "The path guard cannot validate PowerShell commands. Use a scoped native tool.",
+        );
     }
     const empty = render(as, event, { decision: "allow", reason: "", context: "", block: "" });
     const norm = normalize(as, event, payload, env);
     if (!norm?.payloads.length) return empty;
 
+    if (norm.event === "SessionStart") {
+      const { recordHostModel } = await import("./host_models.js");
+      recordHostModel(as, event, payload);
+    }
     const first = norm.payloads[0];
+    if (norm.event === "PreToolUse") {
+      for (const action of norm.payloads) {
+        const args = action.tool_input;
+        if (
+          action.tool_name === "Bash" &&
+          (typeof args.command !== "string" || !args.command.trim())
+        )
+          return deny("The shell tool event is missing its command.");
+        if (
+          ["Write", "Edit", "MultiEdit", "Read", "NotebookEdit", "NotebookRead"].includes(
+            action.tool_name,
+          )
+        ) {
+          const path = args.file_path ?? args.notebook_path;
+          if (typeof path !== "string" || !path.trim())
+            return deny("The file tool event is missing a checkable target.");
+        }
+      }
+    }
     const defer = as === "cursor" || as === "copilot";
     const sid = pick(payload, FIELDS.session_id);
     if (defer && norm.event === "UserPromptSubmit") first.defer_evidence = true;
@@ -1008,17 +1141,72 @@ export async function runHook({
     );
     // Hosts with different output capabilities must each deliver their own advice. Duplicate
     // plugin + project deliveries in ONE host can share the original execution.
-    const key = (evidenceEvent ? `${as}-` : "") + eventKey(norm.payloads);
-    const ticket = claim ? await claim({ key }) : null;
+    // Pre-tool checks depend on mutable workspace policy. Post-tool rewrites must be
+    // delivered on every callback without persisting tool output in a replay file.
+    const replayable = !component && norm.event !== "PreToolUse" && norm.event !== "PostToolUse";
+    const ticket =
+      claim && replayable
+        ? await claim({ key: `${BRAND.version}-${as}-${event}-${eventKey(norm.payloads)}` })
+        : null;
     if (ticket && "verdict" in ticket && ticket.verdict) return render(as, event, ticket.verdict);
 
     const afterTool = norm.event === "PostToolUse" || norm.event === "PostToolUseFailure";
     const pending = defer && afterTool ? takeQuery(as, first.cwd, sid) : "";
     if (pending && norm.event === "PostToolUseFailure") first.pending_query = pending;
-    const chains = norm.payloads.map((p) => ({ payload: p, steps: guardChain(p, manifest) }));
-    const runs = await Promise.all(chains.map((c) => run(c.steps, c.payload, { env })));
-    const verdict = merge(runs.flat().map((r) => interpret(norm.event, r)));
+    const deadline = performance.now() + GUARD_TIMEOUT_MS;
+    const manifestData = manifest ?? loadManifest();
+    let selectedManifest = manifestData;
+    if (component) {
+      const groups = (manifestData[norm.event] ?? [])
+        .map((group) => ({
+          ...group,
+          hooks: (group.hooks || []).filter(
+            (h) => Array.isArray(h.args) && hookId(h.args) === component,
+          ),
+        }))
+        .filter((group) => group.hooks.length);
+      if (!groups.length)
+        return norm.event === "PreToolUse"
+          ? deny("Unknown ForgeKit hook component for this event.")
+          : empty;
+      selectedManifest = { [norm.event]: groups };
+    }
+    let verdict = merge([]);
+    for (let i = 0; i < norm.payloads.length; i += PATCH_CONCURRENCY) {
+      const timeoutMs = Math.ceil(deadline - performance.now());
+      if (timeoutMs <= 0) {
+        if (norm.event === "PreToolUse")
+          return deny("The guard deadline elapsed before every target was checked.");
+        break;
+      }
+      const batch = norm.payloads.slice(i, i + PATCH_CONCURRENCY);
+      const runs = await Promise.all(
+        batch.map((p) => run(guardChain(p, selectedManifest), p, { env, timeoutMs })),
+      );
+      const results = runs.flatMap((steps, index) =>
+        steps.map((step) => {
+          const result = interpret(norm.event, step);
+          if (
+            norm.event === "PostToolUse" &&
+            step.guard === "secret-redact.sh" &&
+            (step.status !== 0 || /DEGRADED/i.test(step.stderr))
+          ) {
+            const original = batch[index].tool_response;
+            if (original !== undefined) {
+              const marker = "[Output withheld: ForgeKit could not check the result.]";
+              result.updatedToolOutput = JSON.parse(
+                JSON.stringify(original, (_k, v) => (typeof v === "string" ? marker : v)),
+              );
+            }
+          }
+          return result;
+        }),
+      );
+      verdict = merge([verdict, ...results]);
+      if (verdict.decision === "deny") return render(as, event, verdict);
+    }
     if (
+      !component &&
       norm.def.context &&
       ["SessionStart", "UserPromptSubmit", "PostToolUse"].includes(norm.event)
     ) {
@@ -1029,7 +1217,7 @@ export async function runHook({
     }
     if (defer && norm.event === "UserPromptSubmit")
       queueQuery(as, first.cwd, sid, verdict.block ? "" : first.prompt);
-    if (norm.event === "PostToolUse") {
+    if (!component && norm.event === "PostToolUse") {
       // Other hosts deliver failures inside the ordinary result, e.g. a nonzero Codex Bash exit.
       const guidance = await hookEvidence(
         first.cwd,
@@ -1037,18 +1225,14 @@ export async function runHook({
       );
       verdict.context = join2(verdict.context, guidance, "\n\n");
     }
-    if (norm.unchecked && norm.event === "PreToolUse")
-      verdict.context = join2(
-        verdict.context,
-        `${BRAND.brand}: ${norm.unchecked} more file(s) in this patch were not checked (the first ${MAX_PATCH_FILES} were).`,
-        "\n\n",
-      );
     // Only the first delivery injects source text. A duplicate replays the decision without
     // saving private excerpts in the event-claim store or injecting them twice.
     if (ticket && "publish" in ticket)
       ticket.publish(evidenceEvent ? { ...verdict, context: "" } : verdict);
     return render(as, event, verdict);
   } catch {
-    return silent;
+    return def?.as === "PreToolUse"
+      ? deny("ForgeKit could not complete the required pre-tool checks.")
+      : silent;
   }
 }

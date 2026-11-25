@@ -3,12 +3,15 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative, sep } from "node:path";
 import { activePromptProfile, showDevelopmentPrompt } from "./development_profile.js";
+import { SAFE_MODEL_ID } from "./model_catalog.js";
 import { resolveOrchestration } from "./orchestration.js";
 import { redactSecrets } from "./secrets.js";
 
 const ROLE_CARDS = {
   debug: "debugger",
   requirements: "planner",
+  planner: "planner",
+  researcher: "researcher",
   adoption: "researcher",
   reuse: "researcher",
   verification: "tester",
@@ -54,16 +57,38 @@ const clean = (s) =>
   redactSecrets(String(s ?? ""))
     .replace(/[\p{Cc}\p{Cf}]/gu, " ")
     .slice(0, 220);
-const refsFor = (e, role) =>
-  [
-    ...(role === "requirements" ? [] : (e?.symbols ?? []))
-      .slice(0, 3)
-      .map((s) => clean(`${s.file}:${s.line} (${s.name})`)),
-    ...(e?.hits ?? [])
-      .slice(0, 3)
-      .map((s) => clean([s.sourceId, s.path, s.locator].filter(Boolean).join(" "))),
-    ...(role === "adoption" ? (e?.manifests ?? []) : []).slice(0, 3).map(clean),
-  ].filter(Boolean);
+// These roles are selected explicitly in an operator's breakdown. A short task still
+// stays with its lead unless the caller supplies independent streams or requests review.
+const EXPLICIT_ROLES = {
+  planner: {
+    brief:
+      "Check the stated constraints and acceptance criteria. Cite the supplied planning material. Report missing information.",
+  },
+  researcher: {
+    brief:
+      "Check the available evidence and its limitations. Cite original sources and distinguish observations from assumptions.",
+  },
+};
+function refsFor(e, role, scope) {
+  const inScope = (path) => !scope || scope.some((p) => path === p || path.startsWith(`${p}/`));
+  const symbols =
+    role === "requirements"
+      ? []
+      : (e?.symbols ?? [])
+          .filter((s) => inScope(s.file))
+          .slice(0, 3)
+          .map((s) => clean(`${s.file}:${s.line} (${s.name})`));
+  // Mirror records carry source-relative locators. Their paths do not establish membership
+  // in a particular worktree stream. The lead can relay an approved citation explicitly.
+  const records = scope
+    ? scope.map(clean)
+    : (e?.hits ?? [])
+        .slice(0, 3)
+        .map((s) => clean([s.sourceId, s.path, s.locator].filter(Boolean).join(" ")));
+  const manifests =
+    role === "adoption" ? (e?.manifests ?? []).filter(inScope).slice(0, 3).map(clean) : [];
+  return [...new Set([...symbols, ...records, ...manifests].filter(Boolean))];
+}
 
 const REVIEW_REQUEST =
   /\b(?:independent(?:ly)? (?:code |diff |security )?review|second (?:opinion|reviewer)|adversarial review)\b/i;
@@ -75,7 +100,7 @@ const duringReview = {
 };
 const usefulText = (v) =>
   typeof v === "string" && v.trim().length > 0 && v.length <= 500 && !/[\p{Cc}\p{Cf}]/u.test(v);
-const pathOverlap = (a, b) => a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
+const pathOverlap = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 function agreedStreams(task, spec, cap) {
   if (!spec && REVIEW_REQUEST.test(task)) spec = { mode: "review" };
@@ -117,7 +142,11 @@ function agreedStreams(task, spec, cap) {
         "Three streams require an explicit three-option research or build/review/evaluation decomposition.",
     };
   for (const stream of spec.streams) {
-    if (!SPECIALISTS.some((s) => s.id === stream?.role) && stream?.role !== "review")
+    if (
+      !SPECIALISTS.some((s) => s.id === stream?.role) &&
+      stream?.role !== "review" &&
+      !Object.hasOwn(EXPLICIT_ROLES, stream?.role)
+    )
       throw new Error("Unknown stream role");
     if (
       typeof stream.id !== "string" ||
@@ -160,7 +189,9 @@ function agreedStreams(task, spec, cap) {
       deliverable = clean(stream.acceptance),
       owned = stream.paths.map(clean);
     const standard =
-      stream.role === "review" ? duringReview : SPECIALISTS.find((s) => s.id === stream.role);
+      stream.role === "review"
+        ? duringReview
+        : (EXPLICIT_ROLES[stream.role] ?? SPECIALISTS.find((s) => s.id === stream.role));
     roles.push({
       id: stream.id,
       role: stream.role,
@@ -230,7 +261,7 @@ export function teamPlan(
       dependsOn: [],
       access: "read-only",
       hostRoles: { kimi: "explore", codex: "explorer", claude: "Explore" },
-      evidence: refsFor(evidence, role),
+      evidence: refsFor(evidence, role, candidate.scope),
     };
   });
   const lead = {
@@ -308,11 +339,11 @@ function invokeClaude(args, root, input = undefined, timeout = 120000) {
 
 /** Explicit local Claude Code execution. Safe host capabilities are checked before any paid run.
  * @param {string} root @param {string} task
- * @param {{host?:string,budgetUsd?:number,maxWorkers?:number,evidence?:any,decomposition?:any,invoke?:Function}} options */
+ * @param {{host?:string,model?:string,budgetUsd?:number,maxWorkers?:number,evidence?:any,decomposition?:any,invoke?:Function}} options */
 export async function runTeam(
   root,
   task,
-  { host, budgetUsd, maxWorkers, evidence, decomposition, invoke = invokeClaude } = {},
+  { host, model, budgetUsd, maxWorkers, evidence, decomposition, invoke = invokeClaude } = {},
 ) {
   if (host !== "claude") throw new Error("The read-only worker executor requires --run claude");
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0)
@@ -322,7 +353,21 @@ export async function runTeam(
   const workerBudget = Math.floor((budgetUsd * 100) / plan.assignments.length) / 100;
   if (workerBudget < 0.01 || !Number.isFinite(workerBudget))
     throw new Error("Budget must cover at least one cent per worker");
+  const { activeProvider, envModelOverride } = await import("./providers.js");
+  const provider = activeProvider(root);
+  const compatible = provider.type === "anthropic" || provider.type === "litellm";
+  const requestedModel =
+    model ??
+    (compatible
+      ? (envModelOverride(provider) ?? (provider._catalogTrusted ? provider.selectedModel : null))
+      : null);
+  if (
+    requestedModel != null &&
+    (typeof requestedModel !== "string" || !SAFE_MODEL_ID.test(requestedModel))
+  )
+    throw new Error("Choose a valid native host model ID");
   const flags = [
+    ...(requestedModel ? ["--model"] : []),
     "--bare",
     "--restricted",
     "--tools",
@@ -357,8 +402,7 @@ export async function runTeam(
               "--no-session-persistence",
               "--tools",
               "Read,Grep,Glob",
-              "--model",
-              "haiku",
+              ...(requestedModel ? ["--model", requestedModel] : []),
               "--max-budget-usd",
               String(workerBudget),
               "--output-format",
@@ -374,6 +418,14 @@ export async function runTeam(
           id: a.id,
           ok: true,
           report: redactSecrets(reply.result).slice(0, 4000),
+          requestedModel,
+          reportedModels: Array.from(
+            new Set(
+              [reply.model, ...Object.keys(reply.modelUsage ?? {})].filter(
+                (m) => typeof m === "string" && SAFE_MODEL_ID.test(m),
+              ),
+            ),
+          ),
           estimatedCostUsd: Number.isFinite(reply.total_cost_usd) ? reply.total_cost_usd : null,
         };
       } catch (e) {

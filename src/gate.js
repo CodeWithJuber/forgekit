@@ -60,7 +60,7 @@ import {
 } from "./session.js";
 import { isTestFile } from "./substrate.js";
 import { presentationalOnly } from "./uidiff.js";
-import { computeCodeState, evidenceMac, provenanceMac } from "./verify.js";
+import { computeCodeState, evidenceMac, hasPassingReceipt, provenanceMac } from "./verify.js";
 
 // changedSet moved to session.js (the pre-action checks scope by it too); re-exported so
 // existing importers keep working.
@@ -616,10 +616,9 @@ export function stopGate(root, sid, hook = {}) {
         verifyEvidence = {
           fresh: startedAt != null && mtime > startedAt,
           status,
-          codeStateMatches,
-          // No key available anywhere (unwritable state dir) → degrade to unsigned rather
-          // than blocking a session that can never produce a signed stamp.
-          authentic: mac == null ? status !== "SUSPECT" : prov?.signature === mac,
+          codeStateMatches: codeStateMatches && (status !== "PASS" || hasPassingReceipt(prov)),
+          // A stamp can supply strong test evidence only if its signature is checkable.
+          authentic: mac != null && prov?.signature === mac,
         };
       }
     } catch {}

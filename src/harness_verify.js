@@ -17,12 +17,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { secretKind } from "../global/guards/protect-paths.mjs";
 import { harnessChildPath, installedHarnessProgram } from "./harness_python.js";
 import { createHarnessTools } from "./harness_tools.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
+import { countVerdict, observedTestCounts, passingSuiteEvidence } from "./test_counts.js";
 import { contentHash } from "./util.js";
 import { planSuites, readVerifyEvents, verifyClaim, withVerificationGit } from "./verify.js";
 
@@ -31,7 +32,7 @@ const MAX_FILES = 6000,
   MAX_BYTES = 64 * 1024 * 1024,
   MAX_FILE = 4 * 1024 * 1024;
 const commandText = (argv) => argv.map((s) => JSON.stringify(s)).join(" ");
-function readBounded(path, limit) {
+export function readBounded(path, limit) {
   const fd = openSync(
     path,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
@@ -88,7 +89,7 @@ function checkReceipt(root) {
       e.pre.head === prov.codeState.head &&
       e.post.head === e.pre.head,
   );
-  if (!event?.suites?.length || event.suites.some((s) => s.status !== "PASS" || s.exitCode !== 0))
+  if (!passingSuiteEvidence(event?.suites))
     throw new Error("Missing authenticated, passing suite event for this checkout");
   return {
     ok: true,
@@ -198,6 +199,7 @@ function snapshot(root, dest, signal) {
   if (!files.length || files.length > MAX_FILES)
     throw new Error("Use a Git worktree with 1–6000 files for the isolated verifier");
   const hash = createHash("sha256");
+  const directories = new Set([dest]);
   let total = 0,
     count = 0;
   for (const file of files) {
@@ -243,8 +245,18 @@ function snapshot(root, dest, signal) {
       .update(bytes);
     if (dest) {
       const to = join(dest, file);
-      mkdirSync(dirname(to), { mode: 0o755, recursive: true });
-      writeFileSync(to, bytes, { flag: "wx", mode });
+      let parent = dest;
+      for (const part of parts.slice(0, -1)) {
+        parent = join(parent, part);
+        if (directories.has(parent)) continue;
+        mkdirSync(parent);
+        // Keep the outer temp directory private while allowing the isolated UID to
+        // traverse the mounted tree. Explicit modes are needed with a restrictive umask.
+        chmodSync(parent, 0o755);
+        directories.add(parent);
+      }
+      writeFileSync(to, bytes, { flag: "wx", mode: 0o600 });
+      chmodSync(to, mode & 0o111 ? 0o555 : 0o444);
     }
     count++;
   }
@@ -270,7 +282,28 @@ export function validateContainerVerifier(spec) {
     throw new Error("Container timeout must be 100–120000 ms");
   return { mode: "container", runtime, image, command, timeoutMs: timeout };
 }
-async function runContainer(spec, { root, signal }) {
+/** Interpret the output of an operator-selected check that exited successfully. */
+export function isolatedOutcome(stdout, stderr) {
+  const summaries = observedTestCounts(`${stdout}\n${stderr}`);
+  let contract;
+  try {
+    contract = JSON.parse(stdout);
+  } catch {
+    // A regular test runner writes a terminal summary instead of a JSON document.
+  }
+  if (contract?.schemaVersion === 1 && contract.kind === "forge.checks") {
+    const status = countVerdict(contract.counts);
+    const reportStatus = countVerdict(summaries);
+    if (
+      summaries &&
+      (reportStatus === "FAIL" || (status === "PASS" && reportStatus === "INCOMPLETE"))
+    )
+      return { status: reportStatus, counts: summaries };
+    return { status, counts: contract.counts ?? null };
+  }
+  return { status: countVerdict(summaries), counts: summaries };
+}
+async function runContainer(spec, { root, signal }, copy = snapshot, jsonOutput = false) {
   const { runtime, image, command, timeoutMs: timeout } = validateContainerVerifier(spec);
   const bin = installedHarnessProgram(root, runtime),
     area = mkdtempSync(join(tmpdir(), "forge-harness-check-"));
@@ -296,7 +329,7 @@ async function runContainer(spec, { root, signal }) {
     chmodSync(source, 0o755);
     if (source.includes(","))
       throw new Error("Cannot mount a verifier snapshot under a comma-containing temp path");
-    const before = snapshot(root, source, signal);
+    const before = copy(root, source, signal);
     const info = await invoke(
       bin,
       ["image", "inspect", "--format", "{{json .Config.Volumes}}", image],
@@ -361,18 +394,71 @@ async function runContainer(spec, { root, signal }) {
         await invoke(bin, ["rm", "-f", name], opts);
       } catch {}
     }
-    if (snapshot(root, null, signal) !== before)
+    if (copy(root, null, signal) !== before)
       throw new Error("Workspace changed while isolated checks ran");
+    const output = redactSecrets(`${result.stdout}\n${result.stderr}`).slice(-9000);
+    if (jsonOutput)
+      return {
+        ok: true,
+        value: parseScriptOutput(result.stdout),
+        fingerprint: before,
+        scope: "isolated-script",
+        command: commandText(command),
+        output,
+      };
+    const outcome = isolatedOutcome(result.stdout, result.stderr);
     return {
-      ok: true,
+      ok: outcome.status === "PASS",
+      ...outcome,
       scope: "isolated-command",
       command: commandText(command),
       fingerprint: before,
-      output: `Verified in ${image}, exit 0.\n${redactSecrets(`${String(result.stdout)}\n${String(result.stderr)}`).slice(-9000)}`,
+      output: `${outcome.status} in ${image}, exit 0.\n${output}`,
     };
   } finally {
     rmSync(area, { recursive: true, force: true });
   }
+}
+
+function parseScriptOutput(stdout) {
+  try {
+    return JSON.parse(String(stdout));
+  } catch {
+    throw new Error("Script stdout must contain a single JSON object");
+  }
+}
+
+/** Replay a reviewed standalone script with a fresh, minimal container filesystem.
+ * The script receives the JSON input filename as argv[1] and writes one JSON value to stdout.
+ * Fixtures/expected output, credentials, and the operator's workspace are never mounted. */
+export async function isolatedScript(root, recipe, data) {
+  const interpreters = { ".mjs": ["node"], ".cjs": ["node"], ".py": ["python3", "-I", "-B"] };
+  if (!Object.hasOwn(interpreters, recipe.extension)) throw new Error("Unsupported script runtime");
+  const filename = `recipe${recipe.extension}`;
+  const request = JSON.stringify(data);
+  const fingerprint = createHash("sha256")
+    .update(recipe.source)
+    .update("\0")
+    .update(request)
+    .digest("hex");
+  const copy = (_root, dest) => {
+    if (dest) {
+      writeFileSync(join(dest, filename), recipe.source, { mode: 0o444, flag: "wx" });
+      writeFileSync(join(dest, "request.json"), request, { mode: 0o444, flag: "wx" });
+      chmodSync(join(dest, filename), 0o444);
+      chmodSync(join(dest, "request.json"), 0o444);
+    }
+    return fingerprint;
+  };
+  const spec = {
+    runtime: recipe.runtime,
+    image: recipe.image,
+    command: [...interpreters[recipe.extension], `/input/${filename}`, "/input/request.json"],
+  };
+  const result = await runContainer(spec, { root, signal: undefined }, copy, true);
+  if (!result.ok) throw new Error("Isolated script failed its runtime check");
+  if (!Object.hasOwn(result, "value")) throw new Error("Script returned no JSON value");
+  return result.value;
 }
 
 /** Options must come from the local operator. Request-file or MCP arguments cannot authorize a verifier command. */

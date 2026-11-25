@@ -230,11 +230,14 @@ async function team(argv) {
     run: { type: "string" },
     handoff: { type: "string" },
     brief: { type: "string" },
+    model: { type: "string" },
     "host-billing": { type: "boolean" },
     "timeout-seconds": { type: "string" },
     "max-workers": { type: "string" },
     "budget-usd": { type: "string" },
   });
+  if (values.model !== undefined && values.run !== "claude")
+    throw new Error("--model requires --run claude");
   const task = required(positionals.join(" "), "a task");
   const { teamPlan, runTeam } = await import("../evidence_team.js");
   const { buildEvidence } = await import("../evidence.js");
@@ -275,7 +278,7 @@ async function team(argv) {
     return;
   }
   if (!values.run) return print(teamPlan(task, options));
-  const report = await runTeam(root, task, { ...options, host: values.run });
+  const report = await runTeam(root, task, { ...options, host: values.run, model: values.model });
   print(report);
   if (!report.ok) process.exitCode = 1;
 }

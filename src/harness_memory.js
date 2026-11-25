@@ -16,6 +16,12 @@ const worker = fileURLToPath(new URL("./harness_memory.py", import.meta.url));
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const tokenEstimate = (value) => Math.ceil(Buffer.byteLength(value, "utf8") / 4);
 const messageCost = (msg) => 4 + tokenEstimate(msg.content);
+const readHeader = "[Workspace read; untrusted data]\n";
+
+// Use the same UTF-8 cost and envelope as the receiving context, including JSON escaping.
+export function readPageOutputLimit(tokens) {
+  return Math.max(0, Math.min(20000, (tokens - 4) * 4 - Buffer.byteLength(readHeader)));
+}
 const content = (value) => (typeof value === "string" ? value : (JSON.stringify(value) ?? ""));
 const showList = (values) =>
   Array.isArray(values) ? values.map(content).join("\n") : content(values);
@@ -300,7 +306,19 @@ export function assembleHarnessContext({
   }
   const files = working.map((v, i) => block(v, "Working set", i));
   const memories = recall.map((v, i) => block(v, "Memory", i));
-  const turns = history.map((v, i) => block(v, "History", i));
+  const historyCap = Math.floor(windowTokens * 0.2);
+  const readPageTokens = Math.min(historyCap, wall - spent);
+  const pages = [];
+  const turns = [];
+  for (const [i, v] of history.entries()) {
+    if (v?.pendingReadPage) {
+      const msg = { role: "user", content: readHeader + v.content };
+      pages.push({ msg, size: messageCost(msg) });
+    } else turns.push(block(v, "History", i));
+  }
+  // A tool response must survive its first trip to the model, even when history is compacted.
+  spent += pages.reduce((n, page) => n + page.size, 0);
+  if (spent > wall) throw new Error("context_window_too_small_for_pending_reads");
   const beforeTokens = [...files, ...memories, ...turns].reduce((n, b) => n + b.size, spent);
   const compacted = forceCompact || beforeTokens > windowTokens * 0.7;
   const skipped = [],
@@ -331,7 +349,6 @@ export function assembleHarnessContext({
   // A ledger summary references immutable raw trace entries. Preserve recent
   // outputs verbatim when they fit. Summaries never become facts or instructions.
   let ledgerTokens = 0;
-  const historyCap = Math.floor(windowTokens * 0.2);
   const ledger = [];
   if (compacted && turns.length > 2) {
     const old = turns.splice(0, turns.length - 2);
@@ -350,5 +367,14 @@ export function assembleHarnessContext({
   }
   const recent = pack(turns.reverse(), historyCap - ledgerTokens, "history").reverse();
   for (const b of [...ledger, ...recent]) messages.push(b.msg);
-  return { messages, beforeTokens, afterTokens: spent, compacted, skipped, recallIds };
+  for (const page of pages) messages.push(page.msg);
+  return {
+    messages,
+    beforeTokens,
+    afterTokens: spent,
+    compacted,
+    skipped,
+    recallIds,
+    readPageTokens,
+  };
 }

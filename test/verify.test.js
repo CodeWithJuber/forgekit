@@ -27,12 +27,13 @@ import {
   signProvenance,
   verify,
 } from "../src/verify.js";
+import { fakeGithubPat } from "./_fixtures.js";
 
 // A fake executable so a suite's exit code (and thus verify's verdict) is deterministic,
 // regardless of what npm/pytest do on this machine.
 const fakeBin = (dir, name, exitCode, { executable = true } = {}) => {
   const p = join(dir, name);
-  writeFileSync(p, `#!/bin/sh\nexit ${exitCode}\n`);
+  writeFileSync(p, `#!/bin/sh\nprintf '%s\\n' '1 passed in 0.01s'\nexit ${exitCode}\n`);
   if (executable) chmodSync(p, 0o755);
   return p;
 };
@@ -64,6 +65,27 @@ const gitRepo = () => {
   g("config", "core.fileMode", "false");
   return root;
 };
+
+test("review evidence reports omitted and redacted inputs independently of the checkout digest", (t) => {
+  const root = gitRepo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const marker = fakeGithubPat();
+  writeFileSync(join(root, "notes.txt"), `draft note ${marker}\n`);
+  writeFileSync(join(root, ".env"), "synthetic-private-note");
+  writeFileSync(join(root, "large.txt"), Buffer.alloc(256 * 1024, 65));
+  const result = verify({ targetRoot: root });
+  assert.ok(result.added.includes("draft note"));
+  assert.ok(!result.added.includes(marker));
+  assert.ok(!result.added.includes("synthetic-private-note"));
+  assert.equal(result.reviewCoverage.secretDetected, true);
+  assert.deepEqual(
+    new Set(result.reviewCoverage.omitted.map((row) => row.file)),
+    new Set([".env", "large.txt"]),
+  );
+  assert.ok(result.provenance.codeState.dirtyHash);
+  writeFileSync(join(root, "large.txt"), Buffer.alloc(256 * 1024, 66));
+  assert.notEqual(computeCodeState(root).dirtyHash, result.provenance.codeState.dirtyHash);
+});
 
 // A git repo whose package.json carries `scripts.test` — the shape verify's runner
 // detection and the masked-script check both read.
@@ -339,6 +361,7 @@ test("verify: a suite killed by a signal ⇒ INCOMPLETE, not FAIL (ME-02)", () =
   for (const [e, expected] of [
     [{ code: "ENOENT" }, "INCOMPLETE"],
     [{ code: "EACCES" }, "INCOMPLETE"],
+    [{ code: "ENOBUFS", status: 0 }, "INCOMPLETE"],
     [{ code: "ENOEXEC" }, "INCOMPLETE"],
     [{ code: "ETIMEDOUT" }, "INCOMPLETE"],
     [{ status: null, signal: "SIGTERM" }, "INCOMPLETE"],
@@ -921,7 +944,11 @@ test("Q02: the review's fixture verifies FAIL — the member's own failure decid
   writeFileSync(join(root, "tools", "npm"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "FAIL", JSON.stringify(r.tests.executed));
-  assert.equal(r.tests.executed.find((s) => s.cwd === ".")?.status, "PASS", "the stub exits 0");
+  assert.equal(
+    r.tests.executed.find((s) => s.cwd === ".")?.status,
+    "INCOMPLETE",
+    "the stub supplies no test results",
+  );
   assert.equal(r.tests.executed.find((s) => s.cwd === "packages/bad")?.status, "FAIL");
   assert.equal(r.tests.coverage.basis["packages/bad"], "measured");
 });
@@ -1013,6 +1040,7 @@ test("F08: a nested suite forge cannot execute leaves its package uncovered → 
   skip: NO_NPM_SPAWN,
 }, () => {
   const root = fixtureWithTestScript("node --test");
+  writeFileSync(join(root, "ok.test.cjs"), "require('node:test')('root', () => {});");
   mkdirSync(join(root, "services", "api"), { recursive: true });
   writeFileSync(join(root, "services", "api", "go.mod"), "module x\n\ngo 1.22\n");
   const r = verify({ targetRoot: root });
@@ -1090,7 +1118,7 @@ test("A01: verify records an immutable, MAC'd verifier event", { skip: NO_NPM_SP
 test("F10: interpreter caches written by a test run are not a code mutation", {
   skip: NO_NPM_SPAWN,
 }, () => {
-  const root = fixtureWithTestScript("node write-cache.cjs");
+  const root = fixtureWithTestScript("node --test write-cache.cjs");
   writeFileSync(
     join(root, "write-cache.cjs"),
     [
@@ -1181,7 +1209,7 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
   );
 });
 
-test("a skipped baseline test produces a signed SUSPECT verdict despite a green suite", {
+test("a skipped baseline test yields incomplete suite evidence and a signed integrity finding", {
   skip: NO_NPM_SPAWN,
 }, (t) => {
   const root = fixtureWithTestScript("node --test accounts.test.cjs");
@@ -1197,9 +1225,9 @@ test("a skipped baseline test produces a signed SUSPECT verdict despite a green 
   writeFileSync(file, source.replace('test("rejects', 'test.skip("rejects'));
   git("commit", "-qam", "skip the rejection check");
   const result = verify({ targetRoot: root, base: "test-baseline" });
-  assert.equal(result.tests.executed[0].status, "PASS");
+  assert.equal(result.tests.executed[0].status, "INCOMPLETE");
   assert.equal(result.ok, false);
-  assert.equal(result.tests.status, "SUSPECT");
+  assert.equal(result.tests.status, "INCOMPLETE");
   assert.ok(result.testIntegrity.findings.some((f) => f.file === "accounts.test.cjs"));
   const [event] = readVerifyEvents(root);
   assert.equal(event.authenticated, true);
@@ -1213,4 +1241,28 @@ test("a skipped baseline test produces a signed SUSPECT verdict despite a green 
     skipped: 1,
     todo: 0,
   });
+});
+
+test("a zero exit requires measured passing tests, including when the runner reports failure", {
+  skip: NO_NPM_SPAWN,
+}, (t) => {
+  const root = fixtureWithTestScript("node report.cjs");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const report = join(root, "report.cjs");
+  for (const [summary, expected] of [
+    ["no summary available", "INCOMPLETE"],
+    ["no tests ran in 0.01s", "INCOMPLETE"],
+    ["3 skipped in 0.01s", "INCOMPLETE"],
+    ["Tests: 1 failed, 2 passed, 3 total", "FAIL"],
+    ["Tests: 2 passed, 2 total", "PASS"],
+    ["Tests: 2 passed, 2 total\nTests: 0 total", "INCOMPLETE"],
+    ["Tests: 2 passed, 2 total\nTests: 1 total", "INCOMPLETE"],
+    ["Tests: 1 failed, 1 total\n# tests 1", "FAIL"],
+  ]) {
+    writeFileSync(report, `console.log(${JSON.stringify(summary)});`);
+    const result = verify({ targetRoot: root });
+    assert.equal(result.tests.status, expected, summary);
+    assert.equal(result.ok, expected === "PASS");
+    assert.equal(result.provenance.event.suites[0].exitCode, 0);
+  }
 });

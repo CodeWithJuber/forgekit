@@ -202,7 +202,7 @@ export async function runEvidence(task, options = {}) {
       publicRows.push(
         `Upstream example: ${clean(item.title)} · ${clean(item.url, 420)}${terms}${item.author ? ` · ${clean(item.author, 80)}` : ""}`,
       );
-      if (item.snippet && item.license)
+      if (!options.hook && item.snippet && item.license)
         publicRows.push(
           `Quoted code (reference): ${JSON.stringify(String(item.snippet).slice(0, options.hook ? 300 : 800))}`,
         );

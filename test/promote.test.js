@@ -27,7 +27,7 @@ test("mae is the mean absolute error; empty → 0", () => {
 const altSamples = (n) => Array.from({ length: n }, (_, i) => ({ x: i % 2, y: i % 2 }));
 
 test("promotionGate: promotes a candidate that measurably beats the baseline", () => {
-  const res = promotionGate(altSamples(40), {
+  const res = promotionGate(altSamples(80), {
     baseline: () => 0.5, // useless baseline (MAE 0.5)
     fit: () => ({}),
     predict: (_m, s) => s.x, // candidate == label → MAE 0
@@ -107,4 +107,16 @@ test("calibratedComplexity applies the calibration only when the gate promoted i
   });
   assert.equal(promoted.calibrated, true);
   assert.ok(Math.abs(promoted.score - 0.9) < 1e-9); // a=0,b=0.9 → 0.9 regardless of the base
+});
+
+test("an apparent win on four held-out cases is insufficient for a blocking model", () => {
+  const result = promotionGate(altSamples(20), {
+    baseline: () => 0.5,
+    fit: () => true,
+    predict: (_, item) => item.y,
+    label: (item) => item.y,
+  });
+  assert.equal(result.mode, "baseline");
+  assert.equal(result.holdout, 4);
+  assert.equal(result.pValue, 1 / 16);
 });

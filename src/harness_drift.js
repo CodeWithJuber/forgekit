@@ -8,8 +8,9 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { BRAND } from "./brand.js";
 import { HOOK_TIMEOUT_S, planHooks } from "./emit/hooks.js";
-import { emitMcp } from "./emit/mcp.js";
+import { emitMcp, targetMcpServers } from "./emit/mcp.js";
 import { planPlugin } from "./emit/opencode.js";
+import { projectForgeLauncher } from "./forge_launcher.js";
 import { GENERIC_HOST, genericHarnessServer, parseHarnessHosts } from "./harness_hosts.js";
 import { installedHarnessPython } from "./harness_python.js";
 import { HOSTS, isForgeHookCommand, kimiPluginEnabled } from "./hosts.js";
@@ -87,16 +88,13 @@ function mcpMatches(root, path, actual, expected) {
   } else {
     const project = JSON.parse(actual),
       generated = JSON.parse(expected);
-    const bucket = (doc) =>
-      doc?.mcpServers ?? doc?.servers ?? doc?.context_servers ?? doc?.mcp?.servers;
-    // Choose the generated host's exact bucket. An ignored key with the correct
-    // name/value cannot compensate for a deleted real registration.
-    const path = Object.keys(generated)[0];
-    wanted = bucket(generated);
-    seen = path === "mcp" ? project?.mcp?.servers : project?.[path];
+    wanted = targetMcpServers(path, generated);
+    seen = targetMcpServers(path, project);
   }
   return (
-    !!seen && Object.entries(wanted).every(([name, def]) => isDeepStrictEqual(seen[name], def))
+    !!seen &&
+    !!wanted &&
+    Object.entries(wanted).every(([name, def]) => isDeepStrictEqual(seen[name], def))
   );
 }
 function kimiManifestMatches() {
@@ -169,7 +167,7 @@ export function checkHarnessDrift(root, hosts) {
       } else if (target?.layout === "module") {
         check(host, "project hooks", target.file, () => {
           const text = read(root, target.file);
-          const plan = planPlugin(text);
+          const plan = planPlugin(text, { entrypoint: projectForgeLauncher(root).args[0] });
           if (plan.error) throw new Error(plan.error);
           return plan.next === text;
         });
@@ -177,6 +175,7 @@ export function checkHarnessDrift(root, hosts) {
         const id = target.via ?? host,
           file = HOSTS[id].file;
         const plan = planHooks(null, id, {
+          entrypoint: projectForgeLauncher(root).args[0],
           enable: true,
           bootstrap: cfg.hooks?.bootstrap === true,
         });

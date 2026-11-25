@@ -80,6 +80,13 @@ test("hasSecret/redactSecrets: PEM agrees case-insensitively (detect ⇒ redact)
   assert.equal(redactSecrets(truncated).includes("MIIEowIBAAKCAQEA"), false);
 });
 
+test("redactSecrets leaves ordinary text after an incomplete PEM block", () => {
+  assert.equal(
+    redactSecrets("-----BEGIN PRIVATE KEY-----\nYWJjZA==\nKeep this guidance."),
+    "[REDACTED]\nKeep this guidance.",
+  );
+});
+
 test("redactSecrets: masks formats, keeps surrounding text", () => {
   const key = fakeAnthropic("AAAAbbbbCCCCddddEEEEffff");
   const out = redactSecrets(`the key is ${key} and more`);

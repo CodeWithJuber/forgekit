@@ -65,3 +65,32 @@ test("the broadcast index withholds a fact the ledger's evidence refuted (and sa
   assert.doesNotMatch(block, /deploy:prod/, "its content is no longer broadcast");
   assert.match(block, /withheld: contradicted/, "and the withholding is stated, never silent");
 });
+
+test("ledger-only projections resolve archived facts and withhold diverging values", async () => {
+  const { readFact } = await import("../src/recall.js");
+  const { shadowFact } = await import("../src/ledger_bridge.js");
+  const { factConflicts } = await import("../src/ledger_read.js");
+  const { loadClaims, mergeDirs, pruneToAttic, repoLedger } = await import(
+    "../src/ledger_store.js"
+  );
+  const root = fixture(),
+    store = brainStore(root),
+    dir = repoLedger(root);
+  assert.equal(remember(store, "endpoint", "primary").ok, true);
+  const original = loadClaims(dir)[0].id;
+  assert.equal(pruneToAttic(dir, original).ok, true);
+  assert.equal(remember(store, "endpoint", "primary").ok, true);
+  assert.notEqual(loadClaims(dir)[0].id, original);
+  assert.equal(readFact(store, "endpoint")?.text, "primary");
+  assert.match(readFileSync(join(store, "MEMORY.md"), "utf8"), /endpoint/);
+  const peer = repoLedger(fixture());
+  shadowFact(peer, "endpoint", "replica");
+  mergeDirs(dir, peer);
+  assert.equal(factConflicts(dir).get("endpoint").length, 2);
+  assert.equal(readFact(store, "endpoint"), null);
+  assert.doesNotMatch(brainBlock(root), /primary|replica/);
+  assert.match(brainBlock(root), /conflicting/);
+  assert.equal(remember(store, "endpoint", "primary").ok, true);
+  assert.equal(factConflicts(dir).size, 0);
+  assert.equal(readFact(store, "endpoint").text, "primary");
+});

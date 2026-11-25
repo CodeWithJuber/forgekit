@@ -13,7 +13,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { buildHttpRunner as httpRunner } from "./llm.js";
 import { MODELS, resolveTierModel } from "./model_tiers.js";
-import { envModelOverride } from "./providers.js";
+import { activeProvider, envModelOverride } from "./providers.js";
 import { hasSecret } from "./secrets.js";
 
 /**
@@ -55,9 +55,9 @@ function hasClaude() {
  * @returns {string}
  */
 export function runnerModel(model, { root = process.cwd(), fetchImpl, env } = {}) {
-  const override = envModelOverride();
+  if (!Object.hasOwn(MODELS, model)) return model;
+  const override = envModelOverride({ type: "anthropic" });
   if (override) return override;
-  if (!MODELS[model]) return model;
   return resolveTierModel(model, { root, fetchImpl, env })?.id ?? MODELS[model].id;
 }
 
@@ -65,12 +65,30 @@ export function runnerModel(model, { root = process.cwd(), fetchImpl, env } = {}
  *  or when FORGE_LLM_HTTP=1. Falls back to `claude -p` otherwise. The model id is resolved on
  *  the FIRST call, not here: building a runner stays free on the hook path, and the catalog
  *  lookup rides along with the (much slower) model call it precedes. */
-export function buildRunner({ model = "haiku", timeoutMs = 20000 } = {}) {
+/** @param {{model?:string,timeoutMs?:number,profile?:string,root?:string,onReceipt?:Function}} options */
+export function buildRunner({
+  model = "haiku",
+  timeoutMs = 20000,
+  root = process.cwd(),
+  profile,
+  onReceipt,
+} = {}) {
   /** @type {string|null} */
   let resolved = null;
-  const modelId = () => (resolved ??= runnerModel(model));
-  if (process.env.FORGE_LLM_HTTP === "1" || !hasClaude()) {
-    return (prompt) => httpRunner({ model: modelId(), timeoutMs })(prompt);
+  const provider = activeProvider(root);
+  const modelId = () =>
+    (resolved ??=
+      Object.hasOwn(MODELS, model) && provider.selectedModel
+        ? envModelOverride(provider) || provider.selectedModel
+        : runnerModel(model, { root }));
+  if (
+    profile ||
+    provider.name !== "anthropic" ||
+    provider.baseUrl !== "https://api.anthropic.com" ||
+    process.env.FORGE_LLM_HTTP === "1" ||
+    !hasClaude()
+  ) {
+    return httpRunner({ model, timeoutMs, root, profile, onReceipt });
   }
   return (prompt) =>
     execFileSync("claude", ["-p", "--model", modelId()], {

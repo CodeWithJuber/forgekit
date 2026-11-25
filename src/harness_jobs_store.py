@@ -20,6 +20,7 @@ CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(state, available, priority, create
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, job TEXT, at INTEGER, event TEXT, detail TEXT);
 CREATE INDEX IF NOT EXISTS events_by_job ON events(job,id);
 CREATE TABLE IF NOT EXISTS schedules(name TEXT PRIMARY KEY, revision TEXT NOT NULL, cursor INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS job_outages(job TEXT PRIMARY KEY, streak INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS job_cost(job TEXT PRIMARY KEY, amount REAL NOT NULL, verified INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS class_pauses(priority INTEGER PRIMARY KEY, until_ms INTEGER, why TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trigger_events(name TEXT, at INTEGER);
@@ -89,7 +90,17 @@ def finish(d):
             amount=MAX(job_cost.amount,excluded.amount),verified=MAX(job_cost.verified,excluded.verified)""",
             (j["id"],amount,1 if d.get("verified") else 0))
     available=d["now"]
-    if status=="approval_pending":
+    if status!="provider_unavailable":
+        db.execute("DELETE FROM job_outages WHERE job=?", (j["id"],))
+    if status=="provider_unavailable":
+        db.execute("""INSERT INTO job_outages VALUES (?,1) ON CONFLICT(job) DO UPDATE SET
+                   streak=MIN(job_outages.streak+1,13)""", (j["id"],))
+        streak=db.execute("SELECT streak FROM job_outages WHERE job=?", (j["id"],)).fetchone()[0]
+        available+=min(3600000,1000*2**(streak-1))
+        db.execute("UPDATE jobs SET attempts=MAX(attempts-1,0) WHERE id=?", (j["id"],))
+        event(j["id"],d["now"],"deferred_before_dispatch",{"retryAt":available,"streak":streak})
+        state="queued"
+    elif status=="approval_pending":
         state="awaiting_approval"
     elif status=="budget_exhausted" and d["reason"] in ("daily_spend_ceiling","project_spend_ceiling"):
         until=(d["now"]//86400000+1)*86400000 if d["reason"]=="daily_spend_ceiling" else None
@@ -99,7 +110,7 @@ def finish(d):
         event(j["id"],d["now"],"class_paused",{"owner":json.loads(j["request"]).get("actor","local"),"priority":"P"+str(j["priority"]),"until":until})
     elif status=="done":
         state="done"
-    elif status in ("dispatch_error","provider_failed") and j["attempts"]<j["max_attempts"]:
+    elif status in ("dispatch_error","provider_retryable") and j["attempts"]<j["max_attempts"]:
         state="queued"
         available += 1000 * (2 ** (j["attempts"]-1))
     else:

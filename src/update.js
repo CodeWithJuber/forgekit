@@ -3,7 +3,7 @@
 // is live and how to move it forward, plus a cached freshness check the doctor surfaces.
 // FAIL-OPEN everywhere: no network, no upstream, detached HEAD, or a non-git install must
 // never throw or nag — updating is opt-in, noticing is best-effort.
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
@@ -74,7 +74,7 @@ export function applyUpdate({ root = BRAND.root } = {}) {
   maybeFetch(root, { maxAgeMs: 0 }); // force a fresh fetch before pulling
   try {
     const before = git(root, ["rev-parse", "HEAD"]);
-    execSync("git pull --ff-only", {
+    execFileSync("git", ["pull", "--ff-only"], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
     });

@@ -23,7 +23,6 @@ const COSMETIC_PATTERNS = [
   /\.mdx$/,
   /\.txt$/,
   /\.rst$/,
-  /^(docs|mintlify|landing)\//,
   /\.png$/,
   /\.jpg$/,
   /\.svg$/,
@@ -121,40 +120,64 @@ export function mapToTests(root, srcFiles) {
   return [...new Set(tests)];
 }
 
-// ── Tier 2: blast radius via the real impact API (heuristic) ─────────────────
+// ── Tier 2: reverse dependency closure of the current atlas ─────────────────
 
 /**
- * Union of `forge impact` over the changed src files, via the impact module
- * directly (not the CLI). HEURISTIC: the atlas is regex-derived; the result
- * narrows the test run, it never certifies the change.
+ * Walk resolved edges in the current atlas from changed files to all dependents.
+ * The result is a scoped test plan. Dynamic dependencies may be absent.
  * @param {string} root repo root
  * @param {string[]} srcFiles repo-relative src paths
- * @returns {Promise<{files: string[], count: number} | null>} null when unmeasurable
+ * @returns {Promise<{files: string[], count: number, withoutTestPath: string[]} | null>} null when unmeasurable
  */
 export async function blastRadius(root, srcFiles) {
   try {
-    const { predictImpact } = await import("./substrate.js");
-    const union = new Set();
-    for (const f of srcFiles) {
-      // basic: fixed threshold, no hazard enhancements — fast, and honest about
-      // being the heuristic leg (the hazard-weighted walk is verify's job).
-      const r = predictImpact(root, f, { basic: true });
-      // found === false means the atlas cannot see the file at all (unbuilt atlas,
-      // unresolvable target) — that is UNMEASURABLE, not "no impact". Fail safe.
-      if (r?.found !== true) return null;
-      for (const hit of r?.impactedFiles ?? []) union.add(hit);
-      union.add(f);
+    const { build, isStale, load } = await import("./atlas.js");
+    const cached = load(root);
+    const atlas = cached && !isStale(root, cached) ? cached : build({ root });
+    if (atlas.capped || srcFiles.some((f) => !Object.hasOwn(atlas.fileHashes, f))) return null;
+    if (
+      atlas.coverage?.mode === "ast" &&
+      (atlas.stats.imports.unresolved ||
+        Object.values(atlas.coverage.byFile).some(
+          (entry) => entry.reason || entry.limitations?.length,
+        ))
+    )
+      return null; // a partial syntax dependency graph cannot certify a reduced suite
+    const fileOf = new Map(atlas.nodes.map((node) => [node.id, node.file]));
+    const dependents = new Map();
+    const dependencies = new Map();
+    for (const edge of atlas.edges) {
+      if (edge.unresolved) continue;
+      const source = fileOf.get(edge.source),
+        target = fileOf.get(edge.target);
+      if (!source || !target || source === target) continue;
+      if (!dependents.has(target)) dependents.set(target, new Set());
+      dependents.get(target).add(source);
+      if (!dependencies.has(source)) dependencies.set(source, new Set());
+      dependencies.get(source).add(target);
     }
-    const files = [...union].sort();
-    return { files, count: files.length };
+
+    // A multi-source reverse traversal follows every measured file dependency.
+    // Cycles terminate through the visited set. Ranking scores cannot prune a caller.
+    const closure = (roots, edges) => {
+      const reached = new Set(roots);
+      for (const current of reached) {
+        for (const next of edges.get(current) ?? []) reached.add(next);
+      }
+      return reached;
+    };
+    const files = [...closure(srcFiles, dependents)].sort();
+    const tested = closure(
+      files.filter((f) => TEST_FILE.test(f)),
+      dependencies,
+    );
+    return { files, count: files.length, withoutTestPath: srcFiles.filter((f) => !tested.has(f)) };
   } catch {
     return null; // fail-safe: unknown → the caller escalates to high
   }
 }
 
 // ── The pipeline ─────────────────────────────────────────────────────────────
-
-const BLAST_RADIUS_ESCALATION = 10;
 
 /**
  * Run the tier pipeline over a changed-file list.
@@ -164,20 +187,29 @@ const BLAST_RADIUS_ESCALATION = 10;
 export async function selectTests({ root = process.cwd(), files = [] } = {}) {
   const result = classifyDeterministic(files);
 
+  if (result.tier === "low" && result.tests.some((f) => !existsSync(join(root, f)))) {
+    result.tier = "high";
+    result.reason = "test file removed or renamed (fail-safe)";
+    delete result.tests;
+  }
   if (result.tier === "medium" && result.srcFiles) {
     const blast = await blastRadius(root, result.srcFiles);
     if (blast === null) {
       result.tier = "high";
       result.reason += " + blast radius unmeasurable (fail-safe)";
-    } else if (blast.count > BLAST_RADIUS_ESCALATION) {
-      result.tier = "high";
-      result.reason += ` + large heuristic blast radius (${blast.count} files)`;
     } else {
       result.reason += ` + heuristic blast radius ${blast.count} file(s)`;
       // Blast-radius test files run directly; src files map to their tests by convention.
       const srcTargets = [...result.srcFiles, ...blast.files.filter((f) => SRC_FILE.test(f))];
       const testTargets = blast.files.filter((f) => TEST_FILE.test(f));
       result.tests = [...new Set([...testTargets, ...mapToTests(root, srcTargets)])].sort();
+      if (
+        !result.tests.length ||
+        blast.withoutTestPath.some((f) => !mapToTests(root, [f]).length)
+      ) {
+        result.tier = "high";
+        result.reason += " + no affected tests mapped (fail-safe)";
+      }
     }
     delete result.srcFiles;
   }
@@ -203,7 +235,7 @@ export async function selectTests({ root = process.cwd(), files = [] } = {}) {
  * @returns {string[] | null}
  */
 export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
-  if (changed)
+  if (changed !== undefined)
     return changed
       .split(",")
       .map((f) => f.trim())
@@ -227,10 +259,11 @@ export function resolveChangedFiles(cwd, { changed, base, head } = {}) {
     return out ? out.split("\0").filter(Boolean) : [];
   }
   const files = new Set();
-  const staged = git(["diff", "--cached", "--name-only", "-z"]);
-  const unstaged = git(["diff", "--name-only", "-z"]);
+  const staged = git(["diff", "--cached", "--no-renames", "--name-only", "-z", "--"]);
+  const unstaged = git(["diff", "--no-renames", "--name-only", "-z", "--"]);
   const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
   for (const out of [staged, unstaged, untracked]) {
+    if (out === null) return [];
     if (out) for (const f of out.split("\0").filter(Boolean)) files.add(f);
   }
   return files.size ? [...files].sort() : null;

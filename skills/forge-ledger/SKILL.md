@@ -9,12 +9,9 @@ allowed-tools: Bash, Read
 
 ## Install
 
-```bash
-# from a forgekit checkout, or: npm install -g forgekit
-cp -r skills/forge-ledger .claude/skills/
-```
+With the packaged CLI installed, run `forge skills install forge-ledger --host codex` in the target project. Choose `claude`, `copilot`, `cursor`, `gemini`, `opencode` or `portable` for another destination. Use `forge skills show forge-ledger` to inspect the playbook without installation.
 
-Requires the `forge` CLI on PATH.
+To copy the instructions from a ForgeKit checkout by hand, run `mkdir -p .claude/skills && cp -r skills/forge-ledger .claude/skills/` or copy the same folder to your host's project skill directory. The bound command requires the ForgeKit CLI.
 
 ## When to use
 

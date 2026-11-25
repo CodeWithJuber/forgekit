@@ -80,3 +80,7 @@ Conventions every example follows:
   never hand-drawn
 
 To add one, copy [`_template/`](_template/) and fill in the blanks.
+
+## Workshop planning and research
+
+Run `forge demo workshop` for a local, account-free planning exercise. It turns anonymous RSVP and room tables into a checked choice with a reusable evidence receipt. [Workshop example](./workshop-planner/README.md)

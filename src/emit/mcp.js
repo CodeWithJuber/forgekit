@@ -16,6 +16,7 @@
 // BEFORE any write (ME-11), and command strings are serialised safely into YAML/TOML.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { BRAND } from "../brand.js";
 import { hashContent, isManaged, readIfExists, writeManaged, yamlHeader } from "./_shared.js";
 
@@ -41,6 +42,12 @@ const JSON_TARGETS = [
   { id: "opencode", tool: "OpenCode", file: "opencode.json", key: "mcp" },
   { id: "openclaw", tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
 ];
+
+/** The exact registered server bucket for a host's emitted JSON config. */
+export function targetMcpServers(target, doc) {
+  const schema = JSON_TARGETS.find((t) => t.file === target);
+  return schema ? bucketAt(doc, schema.key) : null;
+}
 
 const CONTINUE_DIR = join(".continue", "mcpServers");
 const LEGACY_CONTINUE_FILE = "forge-mcp.yaml"; // pre-RA-03 combined file
@@ -195,6 +202,16 @@ function bucketAt(obj, keyPath, { create = false } = {}) {
   return cur;
 }
 
+const legacyCortex = { command: BRAND.cli, args: ["cortex-mcp"] };
+
+/** Recognize only previous, exact built-in specs when a project installs its local package. */
+function wasGlobalCortex(name, current, desired) {
+  if (name !== "forge-cortex") return false;
+  if (desired?.type === "local" && desired.command?.[0] === "node")
+    return isDeepStrictEqual(current, remoteTargetDefinition("opencode", legacyCortex));
+  return desired?.command === "node" && isDeepStrictEqual(current, legacyCortex);
+}
+
 function mergeJson(path, key, servers, owns) {
   let obj = {};
   if (existsSync(path)) {
@@ -219,7 +236,7 @@ function mergeJson(path, key, servers, owns) {
       bucket[name] = def;
       changed += 1;
     } else if (JSON.stringify(cur) !== JSON.stringify(def)) {
-      if (owns(name)) {
+      if (owns(name) || wasGlobalCortex(name, cur, def)) {
         bucket[name] = def;
         changed += 1;
       } else {
@@ -342,7 +359,13 @@ function emitCodexToml(path, servers, owns) {
       // Migration/ownership for a pre-existing plain block: claim it only when this target
       // adopted the name OR the block byte-matches a past forge emission. Anything else is
       // the user's TOML — leave it byte-identical.
-      if (owns(name) || cur.trimEnd() === legacyCodexBlock(name, def).trimEnd()) {
+      if (
+        owns(name) ||
+        cur.trimEnd() === legacyCodexBlock(name, def).trimEnd() ||
+        (name === "forge-cortex" &&
+          def.command === "node" &&
+          cur.trimEnd() === legacyCodexBlock(name, legacyCortex).trimEnd())
+      ) {
         text = text.slice(0, unmarked.start) + block + text.slice(unmarked.end);
         changed += 1;
         notes.push(`${name}: adopted unmarked block (forge markers added)`);

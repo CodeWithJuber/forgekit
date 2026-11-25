@@ -456,3 +456,48 @@ test("preflightRepo (bidirectional, integration): unresolved symbol floor blocks
   });
   assert.equal(r.assumption.shouldAsk, true, "unresolved entity keeps the gate closed");
 });
+
+test("clarification precision and abstention on a separate authored prompt sample", () => {
+  const ambiguous = [
+    "could you fix it",
+    "please fix this bug",
+    "resolve that issue",
+    "just improve it",
+    "it needs improvement",
+    "fix the issue now",
+    "please make it work",
+    "implement this thing",
+  ];
+  const ordinary = [
+    "List release notes",
+    "Review yesterday’s changes",
+    "Run the linter",
+    "Continue with the plan",
+    "Haan",
+    "okay thanks",
+    "How are errors displayed?",
+    "Why did the cache expire?",
+    "What changed in the parser?",
+    "Show me the stack trace",
+    "Replace tabs with spaces",
+    "Repair the timeout when saving drafts",
+    "Make it better by adding a subtitle",
+    "Add a note about the CLI",
+    "Plan migration steps",
+    "Export results as JSON",
+    "Update dependency hashes",
+    "Check which releases support HTTP/3",
+    "Describe the repo structure",
+    "List Python dependencies",
+    "Will you run focused tests?",
+    "Review the customer onboarding flow",
+    "Please continue debugging timestamps",
+    "Retry the most recent failing test",
+  ];
+  const ask = (t) => assessTask(t).hardUnderspecified;
+  assert.equal(ordinary.filter(ask).length, 0);
+  assert.ok(ambiguous.filter(ask).length >= 5, "catch at least five of eight vague requests");
+  assert.equal(ask("Make it better by adding keyboard focus"), false);
+  for (const t of ["yes", "continue", "what does this function do", "How are errors reported?"])
+    assert.equal(assessTask(t).shouldAsk, false);
+});

@@ -15,6 +15,8 @@ import {
   visualGate,
 } from "../src/uivisual.js";
 
+import { serveFixture } from "./_ui_server.js";
+
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const DASH = fileURLToPath(new URL("../src/dash.html", import.meta.url));
 const runCli = (args, cwd, env = {}) =>
@@ -207,7 +209,7 @@ test("visualGate: a page that paints nothing measurable is insufficient-signal, 
   const page = join(root, "blank.html");
   writeFileSync(page, "<!doctype html><title>x</title>");
   const r = await visualGate(page, { root, pw: fakePw([]) });
-  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+  assert.equal(r.ok, true, "reason" in r ? r.reason : "");
   assert.ok(r.ok); // narrow
   assert.equal(r.verdict, "insufficient-signal");
   assert.equal(r.fail, true, "the CLI exits non-zero on it");
@@ -225,8 +227,9 @@ test("live: renders dash.html and the computed styles fingerprint to the same sy
     return;
   }
   const root = tmp();
-  const r = await visualGate(DASH, { root, pw });
-  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+  const target = await serveFixture(t, DASH);
+  const r = await visualGate(target, { root, pw });
+  assert.equal(r.ok, true, "reason" in r ? r.reason : "");
   assert.ok(r.ok); // narrow
   // The rendered reality must agree with what the static fingerprint found in the
   // source: dash.html's 4px spacing base and its two deliberate radius levels.
@@ -241,6 +244,6 @@ test("live: renders dash.html and the computed styles fingerprint to the same sy
     assert.ok(s.includes(`${sep}.forge${sep}ui${sep}`), s);
     assert.ok(existsSync(s), `screenshot missing: ${s}`);
   }
-  assert.match(r.screenshots[0], /dash-1280x800\.png$/);
-  assert.match(r.screenshots[1], /dash-390x844\.png$/);
+  assert.match(r.screenshots[0], /-1280x800\.png$/);
+  assert.match(r.screenshots[1], /-390x844\.png$/);
 });

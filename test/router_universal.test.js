@@ -205,6 +205,13 @@ const logEvent = (d, event, { sign = true } = {}) => {
     v: VERIFY_EVENT_VERSION,
     verifier: "forge verify",
     checkout: checkoutId(d),
+    suites: [
+      {
+        status: "PASS",
+        exitCode: 0,
+        reportedCounts: { total: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 },
+      },
+    ],
     pre: { scheme: s.scheme, head: s.head, dirtyHash: s.dirtyHash },
     post: { head: s.head, dirtyHash: s.dirtyHash },
     ...event,

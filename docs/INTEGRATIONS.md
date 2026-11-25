@@ -26,7 +26,7 @@ The matrix covers emitted files and adapter behavior. The native checks below id
 | Tool | Config emission | MCP registration | Automatic hooks | Enforcement (blocking) |
 |---|---|---|---|---|
 | **Claude Code** | `CLAUDE.md` importing `@AGENTS.md`, plus forge's block in `AGENTS.md` — tested (emission); `advisorModel` in `.claude/settings.json` once `forge advisor set` names an advisor (the one key forge owns there) — tested (emission) | `.mcp.json` — tested (emission) | plugin `hooks/hooks.json` or `forge init`-merged `~/.claude/settings.json`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop — tested (execution) for the guard scripts; manifests tested for wiring; project-level `.claude/settings.json` after `forge hooks on`, for machines with no user-level install (it stands down where one exists) — tested (emission and execution) | yes — see [Claude Code enforcement](#claude-code-enforcement) — tested (execution) |
-| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest also points to the packaged MCP config (`forge` on PATH) | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Native 0.169.0 project prompt hook delivered source evidence. Packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
+| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest starts the bundled server with Node and its plugin root | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Native 0.169.0 project prompt hook delivered source evidence. Packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
 | **Cursor** | root `AGENTS.md`; warns when a legacy `.cursorrules` would shadow it — tested (emission) | `.cursor/mcp.json` — tested (emission) | `.cursor/hooks.json` after `forge hooks on`: sessionStart, beforeSubmitPrompt, beforeShellExecution, preToolUse, postToolUse, postToolUseFailure, stop — tested (emission); adapter tested (execution). Project hooks also run in Cursor cloud agents, which do not fire sessionStart — declared | yes after `forge hooks on` — deny and ask on shell commands, deny on other tools — tested (execution) for the adapter |
 | **Gemini CLI** | `AGENTS.md` added to `.gemini/settings.json` `context.fileName` — tested (emission) | `.gemini/settings.json` `mcpServers` — tested (emission) | `.gemini/settings.json` `hooks` after `forge hooks on`: SessionStart, BeforeAgent, BeforeTool, AfterTool, AfterAgent — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny before a tool (no "ask": an ask blocks and says so) — tested (execution) for the adapter |
 | **Aider** | `.aider.conf.yml` with `read: AGENTS.md` — tested (emission) | not supported | not supported | not supported in the agent |
@@ -67,6 +67,10 @@ In a trusted checkout, run `forge harness init --hosts claude,codex,kimi --super
 | Other stdio MCP clients | Use `forge harness init --hosts generic --supervised`. Apply the printed server registration in the client and invoke `forge_harness_run` and `forge_harness_status`. Automatic routing depends on the host's lifecycle callbacks. Actions outside those callbacks use the host's own permissions. |
 
 For business systems, choose the source independently of the coding host. A scoped Jira project, Confluence space, GitLab project or local document folder can be synced once and queried by another configured client in the same workspace. Use a live record read when the current version matters. [Cloud and self-hosted source setup, local queries and refresh rules](AGENT-EVIDENCE.md)
+
+Project hook commands accept a `FORGE_CLI` executable path. A pre-tool check denies the operation if the launcher is missing or the input cannot be validated. Each pre-tool delivery checks current permissions for every target, including rename destinations. The adapter can replace sensitive output through Claude Code, OpenCode, and Gemini object results. Other hosts receive a diagnostic when their event cannot replace the result. Copilot PowerShell tool calls require a scoped alternative while shell parsing supports POSIX syntax.
+
+A ForgeKit contributor checkout and projects declaring the npm package use a relative Node entry point for the built-in MCP server. Global installs need `forge` on the editor’s PATH. Run `forge doctor` to check launchers and Python with SQLite.
 
 ### Claude Code enforcement
 
@@ -141,15 +145,14 @@ On 14 November 2026 an isolated Kimi Code 2.6.2 CLI loaded the packaged plugin, 
 
 Local Codex requires hook trust. Review the plugin or project commands in `/hooks` after
 installation or an update. Codex cloud orchestration does not execute these local commands.
-A project hook uses the forge CLI on PATH. The Codex plugin hook uses its bundled copy and
+A project hook accepts FORGE_CLI, a declared project npm installation, or the forge CLI on PATH. The Codex plugin hook uses its bundled copy and
 requires Node on PATH. Cursor cloud agents need a writable environment and do not fire
 sessionStart. Copilot cloud reads hooks from the default branch. See the vendor references
 for [Codex](https://learn.chatgpt.com/docs/hooks), [Cursor](https://cursor.com/docs/hooks)
 and [Copilot](https://docs.github.com/en/copilot/reference/hooks-reference).
 
 An agent without a confirmation step turns a guard's ask into a block. The project commands use
-a POSIX shell or the Codex and Copilot PowerShell entries. A missing forge CLI skips a project
-hook unless bootstrap was enabled on a host with a supported startup event.
+a POSIX shell or the Codex and Copilot PowerShell entries. A missing CLI denies a pre-tool call. An enabled bootstrap can install the pinned package during a supported startup event.
 
 ### Any tool that commits through git
 
@@ -160,13 +163,15 @@ every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`
 
 ## Models and providers
 
+Use `forge models` to enumerate enabled provider profiles. Use `forge models --offline` for a private cached inventory, or `forge models --refresh --schema 2 --json` to query current metadata. An account-scoped listing and a successfully served inference request are distinct evidence. [Model and component reference](MODELS-AND-COMPONENTS.md)
+
 Model availability and prices change faster than releases, so each needs a date and a source.
 
 - **The tiered router** (`forge route`) maps a task to a tier and the tier to a model through the
   native provider adapters in `src/providers.js`: `anthropic` (Messages API), `openrouter` (the same
   Anthropic model ids as `anthropic/<id>`), `litellm` (tier aliases on a gateway you run), and
   `openai` and `gemini` (their OpenAI-compatible chat-completions endpoints, each with its own
-  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models`
+  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models --schema 1`
   prints where each resolved id and price came from.
 - **The universal router** (`forge route universal`) reads a separate registry, `data/models.json`:
   14 models from seven organisations. Only the seven Anthropic entries ship a provider id (for the
@@ -177,3 +182,17 @@ Model availability and prices change faster than releases, so each needs a date 
   Registry prices, where present, carry their source and the date checked (2026-09-22); the other
   models' costs come from the February 2026 benchmark runs behind the shipped prior. See
   [UNIVERSAL_ROUTING.md](UNIVERSAL_ROUTING.md).
+
+## Develop a plugin or adapter
+
+`forge integrations template --json` returns a versioned catalog with permission descriptions, exact CLI argument arrays, and supported MCP revisions. `forge integrations template --out plugins` creates the starter in a new project directory. It includes a working read-only reference plugin and its editable source. Review it with `forge harness extensions inspect plugins/team-guide`. Pin its digest only after reviewing the actual content. The copied README covers upgrades and removal. [Starter files](../templates/integration-developer/README.md)
+
+| Task | Entry point | Access and lifecycle |
+| --- | --- | --- |
+| Add a reviewed reference to the supervised harness | Inspect and pin `plugins/team-guide` | A local approval and a project lock pin the package bytes. Changes require a new review. |
+| Call from a non-MCP planner or script | `forge skills show forge-ledger --json`, then `forge skills run forge-ledger --json` | The caller invokes a named CLI operation with typed input. The ledger example reads stats. |
+| Use a stdio MCP client | Launch the installed ForgeKit executable with the `cortex-mcp` argument | The server offers protocol revision 2024-11-05. If a client requests a different dated revision, it receives the supported alternative and can disconnect. Client permissions govern tool use. |
+| Bind an installed stdio server | `forge integrations local team-tools --binary /opt/team/bin/team-mcp` | ForgeKit pins executable bytes and explicitly selected arguments and environment names for the worktree. Review and rebind a changed executable. |
+| Use a hosted service | `forge integrations connect team-docs --url https://docs.example.org/mcp --token-env TEAM_DOCS_READ_TOKEN` | Replace the example hostname and issue the narrowest read token at the service. The optional discovery probe accepts 2025-11-25, 2025-06-18 or 2025-03-26 Streamable HTTP revisions and verifies the returned revision. |
+
+For managed host configurations, review conflicts before using `--adopt`. Removal acts on owned entries and preserves other servers. Service credentials and ACLs enforce HTTP scopes. The inspection report and template declare the intended permissions. [MCP lifecycle and version negotiation](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)

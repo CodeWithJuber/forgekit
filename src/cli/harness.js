@@ -101,6 +101,9 @@ async function command(root, op, args) {
     init: { hosts: { type: "string" }, supervised: { type: "boolean" } },
     drift: { hosts: { type: "string" } },
     run: {
+      route: { type: "string" },
+      model: { type: "string" },
+      "model-profile": { type: "string" },
       id: { type: "string" },
       host: { type: "string" },
       profile: { type: "string" },
@@ -164,6 +167,9 @@ async function command(root, op, args) {
     process.once("SIGTERM", stop);
     try {
       const r = await runProjectHarness(root, request, {
+        route: v.route,
+        model: v.model,
+        modelProfile: v["model-profile"],
         verifier,
         host: v.host,
         resume: op === "resume" ? p[0] : undefined,

@@ -2,31 +2,14 @@
 # PostToolUse guard — redact secrets from a tool's output BEFORE it enters context, using
 # the `updatedToolOutput` hook primitive. Thin launcher: all parse/redact/emit logic lives
 # in secret-redact.mjs (Node) against the ONE source of truth (src/secrets.js), so the guard
-# no longer depends on jq. A cheap shell prefilter skips the node spawn for the common case
-# (most tool output has nothing secret-shaped). If a candidate IS present but the redactor
-# cannot run, it prints a VISIBLE degraded-security warning instead of silently passing the
-# secret through (P0-05). Advisory: PostToolUse fires after the tool already ran, so this
-# guard can surface warnings (exit 2 shows stderr to Claude) but can never block the call —
-# blocking belongs to the PreToolUse guard (protect-paths.sh) (CR-02).
+# no longer depends on jq. Stream stdin directly to the scanner so large payloads never
+# short-circuit on a prefilter's pipe. The guard reports missing dependencies on stderr.
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd -P)"
 MJS="$DIR/secret-redact.mjs"
-INPUT="$(cat)"
-
-# Fast prefilter over the raw hook JSON — skip node entirely unless a credential-shaped
-# candidate exists: a known vendor prefix, a PEM header, credentials inside a URL
-# (`scheme://user:pass@host` — short passwords have no 20-char run, so without this branch
-# the redactor was never even called), a key-ish assignment, or a 20+ char token run. It
-# must stay a SUPERSET of src/secrets.js's detectors; anything it misses is never scanned.
-printf '%s' "$INPUT" | grep -qiE -- '-----BEGIN |ghp_|github_pat_|glpat-|sk-|xox[baprs]-|AIza|ya29\.|eyJ|AKIA|ASIA|apikey_|://[^[:space:]/@"]*:[^[:space:]/@"]+@|(api[_-]?key|secret|passwd|password|token|auth|credentials?)[A-Za-z0-9_-]*["'"'"']?[[:space:]]*[:=]|[A-Za-z0-9+=_-]{20,}' || exit 0
-
 if command -v node >/dev/null 2>&1 && [ -f "$MJS" ]; then
-  # CR-02: propagate the redactor's exit status — swallowing it with an unconditional
-  # `exit 0` would erase the FORGE_GUARD_STRICT=1 degraded signal (exit 2) before Claude
-  # ever saw it.
-  printf '%s' "$INPUT" | node "$MJS"
-  exit "$?"
+  exec node "$MJS"
 fi
 
 # A secret-shaped candidate is present but we cannot redact — do NOT silently drop it.

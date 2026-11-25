@@ -75,7 +75,7 @@ export function portableBriefs(plan, task, host, context = "") {
       ...(a.promptCard ? [a.promptCard.prompt, a.promptCard.proof] : []),
       `Task: ${redactSecrets(task.slice(0, 4000))}`,
       ...a.evidence,
-      ...(context
+      ...(context && !a.scope
         ? ["Evidence from the active workspace:", redactSecrets(context).slice(0, 4800)]
         : []),
     ].join("\n"),

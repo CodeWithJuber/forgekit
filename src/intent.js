@@ -103,6 +103,168 @@ export function intentGrams(text, stop = INTENT_STOP) {
   return grams;
 }
 
+// Complete dialogue turns do not introduce a new task. Exact normalized tokens
+// avoid matching an acknowledgement embedded in a new instruction.
+const replies = [
+  "yes",
+  "no",
+  "ok",
+  "okay",
+  "thanks",
+  "thank you",
+  "continue",
+  "go ahead",
+  "please continue",
+  "haan",
+  "theek hai",
+  "aage badho",
+];
+const clarificationExamples = [
+  "fix it",
+  "optimize it",
+  "make it work somehow it is the login thing",
+  "make this better",
+  "make this work",
+  "fix the bug",
+  "please fix the checkout bug",
+  "fix the login problem",
+  "fix this",
+  "fix the issue",
+  "improve it",
+  "implement it",
+  "make it better",
+  "make it work",
+  "build the feature",
+  "make the auth better",
+  "make this thing work somehow the login thing is broken",
+  "something is broken please fix it",
+  "yeh cheez theek karo",
+  "change that stuff",
+  "clean it up",
+  "sort this out",
+];
+const actionableExamples = [
+  "run the tests",
+  "show the diff",
+  "review this repository",
+  "read the changelog",
+  "explain this method",
+  "fix the login redirect that loses the query string",
+  "make the report accessible to screen readers",
+  "yes edit the configuration",
+  "continue debugging the build",
+  "can you add password reset",
+  "run unit tests and tell me which ones fail",
+  "do it",
+  "use the existing plan",
+  "what broke and why",
+  ...INTENT_EXEMPLARS.map((e) => e.text),
+  ...replies,
+];
+const wholeTurnGrams = (text) => {
+  const tokens =
+    String(text)
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
+  return new Set([...tokens, ...tokens.slice(1).map((word, i) => `${tokens[i]} ${word}`)]);
+};
+function nearest(grams, bank) {
+  let best = { similarity: 0, text: null, coverage: 0 };
+  for (const e of bank) {
+    let overlap = 0;
+    for (const g of grams) if (e.grams.has(g)) overlap++;
+    const similarity = (2 * overlap) / (grams.size + e.grams.size || 1);
+    if (similarity > best.similarity)
+      best = { similarity, text: e.text, coverage: overlap / grams.size };
+  }
+  return best;
+}
+const bank = (rows) => rows.map((text) => ({ text, grams: wholeTurnGrams(text) }));
+const askBank = bank(clarificationExamples),
+  proceedBank = bank(actionableExamples);
+function comparison(text) {
+  const grams = wholeTurnGrams(text),
+    ask = nearest(grams, askBank),
+    proceed = nearest(grams, proceedBank);
+  return {
+    margin: ask.coverage * (ask.similarity - proceed.similarity),
+    coverage: ask.coverage,
+    nearestAsk: ask.text,
+    nearestProceed: proceed.text,
+  };
+}
+// Operating point: the strongest spurious ask on a separate set of concrete tasks.
+// A tie abstains. These authored calibration examples are distinct from evaluation.
+const calibrationTasks = [
+  "fix the bug in timezone parsing around midnight",
+  "make it work with the existing cache adapter",
+  "improve it by limiting query results to twenty",
+  "build the feature described in issue 123",
+  "clean it up by removing unused imports",
+  "make the login redirect preserve my cart",
+  "fix this markdown link to the guide",
+  "run the parser tests",
+  "make it better by using indexed reads",
+  "please fix it using atomic rename",
+  "help me understand this error",
+  "yes please continue",
+  "what is the failure rate",
+  "update the change log",
+  "summarize yesterday",
+];
+const askMargin = Math.max(0, ...calibrationTasks.map((text) => comparison(text).margin));
+export function interventionIntent(text) {
+  const match = comparison(text);
+  return { ...match, threshold: askMargin, ask: match.margin > askMargin };
+}
+const replyForms = new Set(replies.map((s) => [...wholeTurnGrams(s)].join("\u0001")));
+export function isDialogueTurn(text) {
+  const value = String(text).normalize("NFKC").trim().toLowerCase();
+  if (replyForms.has([...wholeTurnGrams(value)].join("\u0001"))) return true;
+  const grams = wholeTurnGrams(value);
+  const information = nearest(grams, questionBank).similarity;
+  const request = nearest(grams, actionBank).similarity;
+  const prefix = (value.match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 2).join(" ");
+  // An informational construction can introduce a new topic absent from the exemplars.
+  // Require grammatical evidence and a question mark for this fallback.
+  if (value.endsWith("?") && infoPrefixes.has(prefix) && !requestPrefixes.has(prefix)) return true;
+  return information > request && information > questionSimilarity;
+}
+const questionExamples = [
+  ...INTENT_EXEMPLARS.filter((e) => e.intent === "question").map((e) => e.text),
+  "where can I find the settings",
+  "how are validation errors reported",
+  "why did the build fail",
+  "where do the logs go",
+  "would this scale",
+  "are we ready",
+  "what is this for",
+  "which files changed",
+  "how can I inspect it",
+  "who owns this",
+  "what are the tradeoffs",
+  "is it documented",
+  "where is my configuration",
+];
+const questionBank = bank(questionExamples);
+const actionTexts = [
+  ...actionableExamples.filter((t) => !questionExamples.includes(t)),
+  ...clarificationExamples,
+  "would you add the integration",
+  "can you fix the build",
+  "could you edit the configuration",
+  "will you run this",
+];
+const actionBank = bank(actionTexts);
+const prefixes = (rows) =>
+  new Set(rows.map((t) => t.toLowerCase().split(/\s+/).slice(0, 2).join(" ")));
+const infoPrefixes = prefixes(questionExamples),
+  requestPrefixes = prefixes(actionTexts);
+const questionSimilarity = Math.max(
+  ...actionTexts.map((t) => nearest(wholeTurnGrams(t), questionBank).similarity),
+);
+
 const EXEMPLAR_GRAMS = INTENT_EXEMPLARS.map((e) => ({ ...e, grams: intentGrams(e.text) }));
 
 /**

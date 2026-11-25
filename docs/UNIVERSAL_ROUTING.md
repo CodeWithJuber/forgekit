@@ -161,3 +161,31 @@ The evidence that would test the router rather than its training data: fresh, ti
 ## Relation to `forge route`
 
 `forge route` (tiered: haiku / sonnet / opus / fable) is unchanged and remains the default for Claude Code model selection. The universal router is opt-in: run `forge route universal`, or set `route.objective` in `.forge/config.json` to choose its default objective.
+
+## Monitor a frozen model for regressions
+
+Run `forge route monitor observations.json --json` on an exported set of anchor results. The command reads a local JSON file of up to 16 MiB and prints `cold-start`, `normal` or `review`. Every valid outcome is advisory and exits successfully. Invalid evidence exits with an error. Review the underlying test results before changing a model’s band. The command makes zero model requests and writes no routing or model configuration.
+
+Freeze the provider, exact model ID, immutable deployment revision and evaluation protocol before collection. The protocol digest should cover the anchor definitions, grader, sampling settings, retry policy, tools and execution environment. If a provider supplies only a mutable alias and no deployment identifier, the model revision cannot be established for this comparison. A run is a fresh independent repetition of **every** anchor. Fix the evaluation horizon in runs, the smallest meaningful absolute decrease in pass rate, and the per-window false-alarm budget before inspecting outcomes.
+
+This empty, synthetic specification returns `cold-start`. Replace its identifiers and example digest with recorded provenance before evaluating a model.
+
+```json
+{
+  "schemaVersion": 1,
+  "subject": {
+    "provider": "example", "model": "model-A", "revision": "release-001",
+    "protocolSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "anchors": ["rename", "review"],
+  "alpha": 0.05, "meaningfulDrop": 0.10, "horizon": 8,
+  "independentRuns": true, "stableHistory": true,
+  "fit": [], "calibration": [], "evaluation": []
+}
+```
+
+Place baseline runs in `fit`. Put separate stable windows inside `calibration`, each containing exactly `horizon` runs. Put the subsequent window of runs directly in `evaluation`. Each run has a unique `id`, a UTC ISO `at` timestamp (seconds or milliseconds), a copy of the four `subject` fields and an `outcomes` object such as `{"rename":true,"review":false}`. All three splits use the identical anchor IDs. Run timestamps increase strictly across the entire file. Exclude infrastructure outages from collection only under a predeclared missing-data policy. Record such exclusions in the study log to avoid selectively dropping failures.
+
+For each run, compute its fraction of failed anchors `f`. Let `b` be the mean failure fraction across the fit runs and `d` the predeclared meaningful drop. Reset the one-sided CUSUM at the start of each window and update `C = max(0, C + f − b − d/2)`. Each stable calibration window supplies its maximum `C`. With `n` stable windows, the boundary is the `ceil((n+1)(1−alpha))`-th smallest calibration maximum. If the required rank exceeds `n`, the result is `cold-start`. At `alpha=0.05`, at least 19 complete calibration windows are needed. A missing fit or unfinished evaluation also returns `cold-start`.
+
+An evaluation maximum strictly above the boundary returns `review`, including the first crossing run ID. A tie returns `normal`. The empirical p-value is `(1 + number of calibration maxima ≥ evaluation maximum)/(n+1)`. Under exchangeable stable calibration and evaluation windows conditional on the separate fit data, this limits the marginal false-review probability for one fixed horizon. The input declarations describe the data collector’s assumptions. Duplicate IDs and mixed protocols can be detected from the file. Honest independence, version immutability and environmental stability require collection receipts. Repeated monitors, overlapping windows, post-hoc parameter choices and pooled model comparisons need their own error-budget design. A normal window can still miss a small degradation. [Page’s CUSUM procedure](https://doi.org/10.1093/biomet/41.1-2.100) · [Introduction to conformal prediction](https://arxiv.org/abs/2107.07511)

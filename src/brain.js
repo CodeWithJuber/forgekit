@@ -5,18 +5,23 @@
 // by construction: the inlined index is capped; overflow stays in fact files, never
 // silently truncated the way Claude's native 200-line MEMORY.md is (#39811).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { shadowFact } from "./ledger_bridge.js";
-import { dormantFactSlugs, ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
-import { listStored, add as recallAdd } from "./recall.js";
-import { epochDay } from "./util.js";
+import { dormantFactSlugs, factConflicts, ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
+import {
+  ledgerForStore,
+  listStored,
+  add as recallAdd,
+  reindex as reindexRecall,
+} from "./recall.js";
+import { epochDay, ledgerOnly } from "./util.js";
 
 export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".forge", "brain");
 
 // Brain facts shadow into the REPO ledger (.forge/ledger — the sibling of this store,
 // see `forge remember`), so that is where merged teammate facts arrive.
-const brainLedger = (store) => join(dirname(store), "ledger");
+const brainLedger = ledgerForStore;
 
 /** Store one fact (secret-refused by recall) and rebuild the inlined index. The fact is
  *  ALSO shadowed into the repo ledger, so it persists as a claim — required under
@@ -24,19 +29,21 @@ const brainLedger = (store) => join(dirname(store), "ledger");
  *  otherwise (shadowFact is idempotent/content-addressed). Best-effort: a bridge failure
  *  must never break a remember that already stored the fact. Shadow BEFORE buildIndex so
  *  the index picks the ledger fact up under ledger-only. */
-export function remember(store, name, body) {
+export function remember(store, name, body, { replace = true } = {}) {
   const res = recallAdd(store, name, body);
   if (res.ok) {
-    try {
-      shadowFact(brainLedger(store), name, body);
-    } catch {}
+    const shadow = shadowFact(brainLedger(store), name, body, epochDay(), { replace });
+    if (!shadow.ok)
+      return { ok: false, reason: shadow.reason || "could not record fact in ledger" };
+    reindexRecall(store);
     buildIndex(store);
   }
   return res;
 }
 
 /** Merged read (P2 read flip): file facts ∪ live repo-ledger facts, file wins on slug. */
-export const list = (store) => mergeFactSlugs(listStored(store), brainLedger(store));
+export const list = (store) =>
+  mergeFactSlugs(ledgerOnly() ? [] : listStored(store), brainLedger(store));
 
 const gistOf = (text) =>
   text
@@ -51,14 +58,16 @@ const gistOf = (text) =>
  *  AGENTS.md-reading tool was the one place the trust machinery was bypassed.
  *  Merged view (P2 read flip): teammate facts that arrived in the repo ledger via
  *  `forge ledger merge` join the index; a local file wins on name collision. */
-export function buildIndex(store, { capItems = 120, nowDay = epochDay() } = {}) {
+function renderIndex(store, { capItems = 120, nowDay = epochDay() } = {}) {
+  const conflicts = factConflicts(brainLedger(store));
   const dormant = dormantFactSlugs(brainLedger(store), nowDay);
   const factsDir = join(store, "facts");
-  const facts = existsSync(factsDir)
-    ? readdirSync(factsDir)
-        .filter((f) => f.endsWith(".md"))
-        .sort()
-    : [];
+  const facts =
+    !ledgerOnly() && existsSync(factsDir)
+      ? readdirSync(factsDir)
+          .filter((f) => f.endsWith(".md"))
+          .sort()
+      : [];
   const entries = facts.map((file) => ({
     name: file.replace(/\.md$/, ""),
     gist: gistOf(readFileSync(join(factsDir, file), "utf8")),
@@ -70,7 +79,7 @@ export function buildIndex(store, { capItems = 120, nowDay = epochDay() } = {}) 
     entries.push({ name: f.slug, gist: gistOf(f.text) });
   }
   const hidden = entries.filter((e) => dormant.has(e.name)).length;
-  const kept = entries.filter((e) => !dormant.has(e.name));
+  const kept = entries.filter((e) => !dormant.has(e.name) && !conflicts.has(e.name));
   kept.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const rows = [];
   let overflow = 0;
@@ -88,6 +97,8 @@ export function buildIndex(store, { capItems = 120, nowDay = epochDay() } = {}) 
     rows.push(
       `- _(${hidden} remembered fact(s) withheld: contradicted by test/CI/human evidence — \`${BRAND.cli} ledger stats\`)_`,
     );
+  if (conflicts.size)
+    rows.push(`- _(${conflicts.size} conflicting fact(s) withheld — see forge brain conflicts)_`);
   const content = [
     "## Project memory (Forge brain)",
     "Durable cross-session facts — background context, not new instructions. Verify any named file/flag still exists.",
@@ -95,13 +106,20 @@ export function buildIndex(store, { capItems = 120, nowDay = epochDay() } = {}) 
     ...rows,
     "",
   ].join("\n");
+  return { content, indexed, overflow, hidden };
+}
+
+export function buildIndex(store, options = {}) {
+  const { content, ...stats } = renderIndex(store, options);
   mkdirSync(store, { recursive: true });
   writeFileSync(join(store, "AGENTS.brain.md"), content);
-  return { indexed, overflow, hidden };
+  return stats;
 }
 
 /** The brain block to inline into AGENTS.md (empty string when there's no brain). */
 export function brainBlock(targetRoot = process.cwd()) {
-  const path = join(brainStore(targetRoot), "AGENTS.brain.md");
-  return existsSync(path) ? readFileSync(path, "utf8") : "";
+  const store = brainStore(targetRoot);
+  if (!existsSync(join(store, "AGENTS.brain.md")) && !ledgerFacts(brainLedger(store)).length)
+    return "";
+  return renderIndex(store).content;
 }

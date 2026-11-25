@@ -14,9 +14,11 @@
 //     date and separators ignored: `claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
 // Fetching goes through src/http_cache.js (freshness from the response's own headers). Every
 // function here is total: an unavailable catalog is `null`, never a throw.
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { cachedGetJson, httpGet } from "./http_cache.js";
-import { stripTrailingSlashes } from "./util.js";
+import { outsideWorkspace } from "./private_paths.js";
+import { stripTrailingSlashes, userStateDir } from "./util.js";
 
 export const ANTHROPIC_API = "https://api.anthropic.com";
 export const ANTHROPIC_VERSION = "2023-06-01";
@@ -336,6 +338,8 @@ export function catalogSource({ provider = null, env = process.env } = {}) {
     if (env.ANTHROPIC_API_KEY) return anthropicSource(env.ANTHROPIC_API_KEY);
     return { kind: null, reason: "no ANTHROPIC_API_KEY for the Models API" };
   }
+  if (provider._catalogTrusted === false)
+    return { kind: null, reason: "profile endpoint needs local authorization" };
   if (provider.type === "openrouter") return openRouterSource(provider.baseUrl || OPENROUTER_API);
   if (provider.format === "openai")
     return { kind: null, reason: `${provider.name ?? provider.type} serves its own model ids` };
@@ -345,7 +349,10 @@ export function catalogSource({ provider = null, env = process.env } = {}) {
       ? anthropicSource(env.ANTHROPIC_API_KEY)
       : { kind: null, reason: "no ANTHROPIC_API_KEY for the Models API" };
   }
-  return gatewaySource(base, gatewayKey(env, provider.envKey));
+  return gatewaySource(
+    base,
+    Object.hasOwn(provider, "envKey") ? env[provider.envKey] || "" : gatewayKey(env),
+  );
 }
 
 // Process-lifetime memo for the DEFAULT transport only: one CLI run asks for the same catalog
@@ -381,12 +388,21 @@ export function fetchCatalog(
   // server picks up a new model instead of holding its first answer until restart. An
   // unavailable catalog is remembered until the same moment, so a broken network is not retried
   // on every call either.
-  const memoKey = transport === httpGet ? `${root ?? ""}\n${source.url}` : null;
+  const scope = createHash("sha256")
+    .update(JSON.stringify([root, source.url, source.headers]))
+    .digest("hex");
+  const memoKey = transport === httpGet ? scope : null;
   if (memoKey) {
     const hit = _memo.get(memoKey);
     if (hit && at < hit.until) return hit.result;
   }
-  const dir = root ? join(root, ".forge", "cache") : null;
+  const dir = root
+    ? outsideWorkspace(
+        root,
+        join(userStateDir(), "model-http-cache", scope),
+        "Model cache must be private",
+      )
+    : null;
   let result = null;
   try {
     result = fetchPages(source, { dir, transport, timeoutMs, now: at });

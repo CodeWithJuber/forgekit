@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,6 +9,19 @@ import { assemble, renderContext, requiredSet, tokensOf } from "../src/context.j
 import { mintClaim, outcomeRecord } from "../src/ledger.js";
 import { appendEvidence, putClaim, repoLedger } from "../src/ledger_store.js";
 import { enforceDecision } from "../src/substrate.js";
+import { fakeGithubPat } from "./_fixtures.js";
+
+test("context identifies files withheld from a packet and still delivers ordinary neighbors", (t) => {
+  const { root } = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const marker = fakeGithubPat();
+  writeFileSync(join(root, "src", "private.js"), `const assignment = "${marker}";\n`);
+  const result = assemble(root, "Review src/tax.js and src/private.js", { budget: 2000 });
+  assert.ok(result.block.includes("computeTax"));
+  assert.ok(!result.block.includes(marker));
+  assert.ok(result.withheld.some((row) => row.source === "src/private.js"));
+  assert.ok(result.missing.includes("file:src/private.js"));
+});
 
 // A small repo where the required-knowledge set is unambiguous: computeTax is defined
 // in src/tax.js, called from src/checkout.js (the hop-1 dependent), covered by a
@@ -406,4 +419,26 @@ test("the token budget admits distinct evidence ahead of duplicate optional fact
   assert.match(report.block, /signed integer/);
   assert.match(report.block, /immutable transaction/);
   assert.ok(report.tokens <= 100);
+});
+
+test("context CLI honors zero tokens and rejects an invalid explicit budget", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-budget-"));
+  writeFileSync(join(root, "thing.js"), "export const thing = 3;\n");
+  const cli = join(import.meta.dirname, "..", "src", "cli.js");
+  const run = (v) =>
+    spawnSync(process.execPath, [cli, "context", "inspect thing.js", "--budget", v, "--json"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  const zero = run("0");
+  assert.equal(zero.status, 1);
+  const result = JSON.parse(zero.stdout);
+  assert.equal(result.budget, 0);
+  assert.equal(result.ok, false);
+  for (const v of ["abc", "-1", "1.5"]) {
+    const invalid = run(v);
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /nonnegative integer/);
+  }
 });

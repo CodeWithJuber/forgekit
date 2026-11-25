@@ -2,9 +2,9 @@
 // index. Refuses to persist secrets. Consolidation is deterministic (exact-dupe
 // prune) — honest: no model call, so it can't hallucinate a "merged" memory.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 // The merged read helper (P2 read flip).
-import { ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
+import { factConflicts, ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
 // Secret-refusal lives in secrets.js (format grammars + entropy gate) so no store —
 // and no shell guard — can disagree. Callers import hasSecret directly from secrets.js
 // (it is the one source of truth); recall no longer re-exports it, which previously
@@ -20,6 +20,12 @@ export function defaultStore() {
 }
 
 const factsDir = (store) => join(store, "facts");
+
+// The portable brain and personal recall expose the same file format, with different ledger roots.
+export const ledgerForStore = (store) =>
+  basename(store) === "brain" && basename(dirname(store)) === ".forge"
+    ? join(dirname(store), "ledger")
+    : join(store, "ledger");
 
 import { ledgerOnly, slug as slugify, userStateDir } from "./util.js";
 
@@ -45,7 +51,7 @@ export function add(store, name, body) {
     if (existsSync(dir)) {
       for (const file of readdirSync(dir)) {
         if (!file.endsWith(".md") || file === `${slug}.md`) continue;
-        const prev = readFact(store, file.slice(0, -3));
+        const prev = readStoredFact(store, file.slice(0, -3));
         if (prev?.name === name) rmSync(join(dir, file));
       }
     }
@@ -58,16 +64,23 @@ export function add(store, name, body) {
 /** Parse one stored fact back into {name, text} — THE parser for the fact format
  *  (`# name\n\ntext`), CRLF-tolerant so a Windows checkout can't fork the format.
  *  Everything that reads fact files (bridge import, consolidation) must use this. */
-export function readFact(store, slug) {
+export function readStoredFact(store, slug) {
   const path = join(factsDir(store), `${slug}.md`);
   if (existsSync(path)) {
     const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
     const m = raw.match(/^# (.*)\n\n([\s\S]*)$/);
     return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
   }
+  return null;
+}
+
+export function readFact(store, slug) {
+  if (factConflicts(ledgerForStore(store)).has(slug)) return null;
+  const file = !ledgerOnly() && readStoredFact(store, slug);
+  if (file) return file;
   // No file — resolve from the ledger this store shadows into. Covers a merged teammate
   // fact and, under FORGE_LEDGER_ONLY, the fact's only home. null when neither has it.
-  const f = ledgerFacts(join(store, "ledger")).find((x) => x.slug === slug);
+  const f = ledgerFacts(ledgerForStore(store)).find((x) => x.slug === slug);
   return f ? { name: f.name, text: f.text } : null;
 }
 
@@ -87,7 +100,7 @@ export function listStored(store) {
  *  store shadows into (`<store>/ledger` — see `forge recall add`). A file wins on slug
  *  collision (the file is the canonical local value). */
 export function list(store) {
-  return mergeFactSlugs(listStored(store), join(store, "ledger"));
+  return mergeFactSlugs(ledgerOnly() ? [] : listStored(store), ledgerForStore(store));
 }
 
 export function reindex(store) {

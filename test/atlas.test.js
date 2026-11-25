@@ -458,3 +458,81 @@ test("N04 round 2: extents hold across generics, type literals, overloads and le
   assert.deepEqual(extent("e.jsx", "Banner"), [[1, 9]], "an apostrophe in JSX text is not a quote");
   assert.deepEqual(extent("f.c", "f"), [[1, null]], "no extent is read across #ifdef branches");
 });
+
+test("atlas reports omitted input, keeps other files usable and retries repaired sources", () => {
+  const root = fixture();
+  const file = join(root, "large.ts");
+  writeFileSync(file, " ".repeat(140000));
+  const first = build({ root });
+  assert.equal(first.capped, true);
+  assert.deepEqual(first.omitted, [{ file: "large.ts", reason: "line length limit" }]);
+  assert.equal(has(first, "computeTax"), true);
+  assert.equal(isStale(root, first), false);
+  writeFileSync(file, "export interface Options {}\nexport type Result = number;");
+  assert.equal(isStale(root, first), true);
+  const rebuilt = build({ root });
+  assert.equal(rebuilt.capped, false);
+  assert.equal(has(rebuilt, "Options"), true);
+  assert.equal(has(rebuilt, "Result"), true);
+});
+
+test("AST indexing records real syntax, dynamic uncertainty and per-file cache reuse", () => {
+  const root = fixture();
+  writeFileSync(
+    join(root, "types.mts"),
+    "export interface Δ { value: number }\nexport class A { price(){ return 1; } }\n",
+  );
+  writeFileSync(
+    join(root, "using.ts"),
+    'import { A } from "./types.mjs";\nexport function run(path:string) { return import(path); }',
+  );
+  writeFileSync(
+    join(root, "other.py"),
+    "from b import Store\nclass Café(Store):\n    def amount(self):\n        return 5\n",
+  );
+  writeFileSync(join(root, "broken.py"), "def broken(:\n");
+  writeFileSync(join(root, "other.go"), "package demo\nfunc Ping() {}\n");
+  writeFileSync(join(root, "future.zig"), "const demo = 1;");
+  const first = build({ root, parser: "ast" });
+  assert.equal(first.coverage.byFile["types.mts"].backend, "typescript-ast");
+  assert.equal(first.coverage.byFile["other.py"].backend, "python-ast");
+  assert.ok(has(first, "Δ") && has(first, "Café"));
+  assert.equal(query(first, "price")[0].qname, "types.A.price");
+  assert.equal(query(first, "amount")[0].endLine, 4);
+  assert.ok(
+    first.edges.some(
+      (edge) => edge.kind === "imports" && edge.spec === "./types.mjs" && edge.resolved,
+    ),
+  );
+  assert.ok(first.coverage.byFile["using.ts"].limitations.includes("computed-import"));
+  assert.equal(first.coverage.byFile["broken.py"].reason, "syntax-error");
+  assert.equal(first.coverage.byFile["other.go"].reason, "unsupported-language");
+  assert.equal(first.coverage.unindexedExtensions[".zig"], 1);
+  const second = build({ root });
+  assert.equal(second.coverage.reusedFiles, Object.keys(first.fileHashes).length);
+  writeFileSync(join(root, "broken.py"), "def fixed():\n    pass\n");
+  const repaired = build({ root });
+  assert.equal(repaired.coverage.byFile["broken.py"].backend, "python-ast");
+  assert.equal(repaired.coverage.reusedFiles, second.coverage.reusedFiles - 1);
+  assert.equal(
+    build({ root, parser: "portable" }).coverage.byFile["types.mts"].backend,
+    "portable-lexical",
+  );
+});
+
+test("missing optional compiler records a fallback and invalidates when the compiler changes", (t) => {
+  const root = fixture();
+  const prior = process.env.FORGE_TYPESCRIPT_PATH;
+  t.after(() => {
+    if (prior === undefined) delete process.env.FORGE_TYPESCRIPT_PATH;
+    else process.env.FORGE_TYPESCRIPT_PATH = prior;
+  });
+  process.env.FORGE_TYPESCRIPT_PATH = join(root, "absent-compiler");
+  const degraded = build({ root, parser: "ast" });
+  assert.equal(degraded.coverage.byFile["a.js"].backend, "portable-lexical");
+  assert.equal(degraded.coverage.byFile["a.js"].reason, "parser-unavailable");
+  delete process.env.FORGE_TYPESCRIPT_PATH;
+  assert.equal(isStale(root, degraded), true);
+  const fixed = build({ root });
+  assert.equal(fixed.coverage.byFile["a.js"].backend, "typescript-ast");
+});

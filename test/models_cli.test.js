@@ -38,7 +38,7 @@ test("forge models --json: every tier, its resolved id, price and where both cam
 });
 
 test("forge models: a readable table plus one provenance line per family", () => {
-  const r = run(["models"]);
+  const r = run(["models", "--schema", "1"]);
   assert.equal(r.status, 0, r.stderr);
   for (const tier of TIER_ORDER) {
     assert.ok(r.stdout.includes(MODELS[tier].id), `${tier} id shown`);

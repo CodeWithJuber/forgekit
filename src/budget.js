@@ -161,11 +161,14 @@ export function writeBudget(root, patch) {
     const res = writeForgeConfig(root, (cfg) => {
       // `undefined` = leave the key alone; `null` = clear it. Spreading the raw
       // validated object would overwrite an existing value with undefined.
-      const patch = Object.fromEntries(
-        Object.entries(v.budget).filter(([, val]) => val !== undefined),
+      const updates = Object.fromEntries(
+        Object.entries(v.budget).filter(
+          ([key, val]) =>
+            val !== undefined && Object.hasOwn(Object(patch), key) && patch[key] !== undefined,
+        ),
       );
-      const next = { ...(cfg.budget ?? {}), ...patch };
-      for (const k of ["daily", "perTask"]) if (patch[k] === null) delete next[k];
+      const next = { ...(cfg.budget ?? {}), ...updates };
+      for (const k of ["daily", "perTask"]) if (updates[k] === null) delete next[k];
       if (Object.keys(next).length === 0) delete cfg.budget;
       else cfg.budget = next;
       return cfg;

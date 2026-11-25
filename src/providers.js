@@ -6,7 +6,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { SAFE_MODEL_ID } from "./model_catalog.js";
 import { isSnapshotId, MODELS, resolveTierModel } from "./model_tiers.js";
+import { bindingDigest, readPrivateBinding, savePrivateBinding } from "./remote_endpoints.js";
 
 const PROVIDERS_FILE = "providers.json";
 const PROVIDERS_DIR = ".forge";
@@ -30,10 +32,12 @@ function isLikelyGateway(url) {
 
 /** curl {baseUrl}/health, 2xx → true. Best-effort behavioral probe (5s cap). */
 function probeHealth(baseUrl) {
+  if (process.env.FORGE_NO_CATALOG_FETCH === "1") return false;
   try {
+    const base = cleanModelEndpoint(baseUrl);
     const out = execFileSync(
       "curl",
-      ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `${baseUrl}/health`],
+      ["-sf", "-o", "/dev/null", "-w", "%{http_code}", "--", `${base}/health`],
       { encoding: "utf8", timeout: 5000 },
     );
     return out.startsWith("2");
@@ -107,6 +111,14 @@ const BUILTIN_PROVIDERS = {
   },
 };
 
+export function builtinModelProfiles() {
+  return Object.entries(BUILTIN_PROVIDERS).map(([name, p]) => ({
+    name,
+    type: p.type,
+    aliases: Object.keys(p.models),
+  }));
+}
+
 /** Resolve the Gemini key env var name (GEMINI_API_KEY preferred, GOOGLE_API_KEY alias). */
 function geminiKeyEnv() {
   if (process.env.GEMINI_API_KEY) return "GEMINI_API_KEY";
@@ -153,7 +165,10 @@ export function activeProvider(root = process.cwd()) {
     const config = loadProviders(root);
     const name = config.active;
     const provider = config.providers[name];
-    if (provider) return { name, ...provider };
+    if (provider) {
+      const p = { ...provider, name };
+      return { ...p, _catalogTrusted: trustedModelProfile(root, p) };
+    }
   }
 
   const detected = autoDetectProvider();
@@ -166,8 +181,11 @@ export function activeProvider(root = process.cwd()) {
 }
 
 /** Explicit model override from the environment — bypasses tier-based routing when set. */
-export function envModelOverride() {
-  return process.env.ANTHROPIC_MODEL?.trim() || process.env.FORGE_MODEL?.trim() || null;
+export function envModelOverride(provider = activeProvider()) {
+  const anthropic = ["anthropic", "litellm"].includes(provider.type);
+  return (
+    (anthropic && process.env.ANTHROPIC_MODEL?.trim()) || process.env.FORGE_MODEL?.trim() || null
+  );
 }
 
 /** Resolve a tier key (haiku/sonnet/opus/fable) to the active provider's model ID.
@@ -177,12 +195,30 @@ export function envModelOverride() {
  *  or OpenRouter's list), falling back to that snapshot id. Explicit aliases (a gateway's
  *  forge-simple, another vendor's model) are returned untouched. */
 export function resolveModel(root, tierKey) {
-  const override = envModelOverride();
-  if (override) return override;
   const provider = activeProvider(root);
+  const override = envModelOverride(provider) || provider.selectedModel;
+  if (override) return override;
   const configured = provider.models?.[tierKey] ?? MODELS[tierKey]?.id ?? null;
   if (!isSnapshotId(configured, tierKey)) return configured;
   return resolveTierModel(tierKey, { root, provider })?.id ?? configured;
+}
+
+/** Pin the default exact request for this profile. A per-call exact argument wins. */
+export function setProfileModel(root, name, model) {
+  if (!SAFE_MODEL_ID.test(model ?? "")) throw new Error("Expected an exact provider model ID");
+  const cfg = loadProviders(root);
+  if (!existsSync(providersPath(root))) {
+    const active = autoDetectProvider();
+    if (active) {
+      const { name: activeName, source, ...transport } = active;
+      cfg.active = activeName;
+      cfg.providers[activeName] = transport;
+    }
+  }
+  if (!Object.hasOwn(cfg.providers, name)) throw new Error("Unknown model profile");
+  cfg.providers[name] = { ...cfg.providers[name], selectedModel: model };
+  saveProviders(root, cfg);
+  return { profile: name, model };
 }
 
 /** Switch the active provider. Returns the new active config. */
@@ -203,22 +239,142 @@ export function setProvider(root, name) {
  * Register a custom provider.
  * @param {string} root
  * @param {string} name
- * @param {{type?: string, label?: string, baseUrl?: string, envKey?: string, models?: Record<string,string>}} cfg
+ * @param {{type?: string, label?: string, baseUrl?: string, envKey?: string, format?: string, models?: Record<string,string>}} cfg
  */
 export function addProvider(root, name, cfg) {
   if (!name || !cfg.baseUrl) {
     return { ok: false, reason: "name and --base-url are required" };
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,54}$/.test(name) || name in Object.prototype)
+    return { ok: false, reason: "Invalid provider name" };
+  try {
+    cleanModelEndpoint(cfg.baseUrl);
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+  if (cfg.format && !["openai", "anthropic"].includes(cfg.format))
+    return { ok: false, reason: "--format expects openai or anthropic" };
+  if (cfg.envKey && !/^[A-Za-z_][A-Za-z_0-9]*$/.test(cfg.envKey))
+    return { ok: false, reason: "Invalid credential variable name" };
   const config = loadProviders(root);
   config.providers[name] = {
     type: cfg.type || "custom",
+    ...(cfg.format ? { format: cfg.format } : {}),
     label: cfg.label || name,
     baseUrl: cfg.baseUrl,
     envKey: cfg.envKey || "",
     models: cfg.models || Object.fromEntries(Object.entries(MODELS).map(([key, m]) => [key, m.id])),
   };
+  savePrivateBinding(root, `model-${name}`, profileBinding(config.providers[name]));
   saveProviders(root, config);
   return { ok: true, name, provider: config.providers[name] };
+}
+
+export function cleanModelEndpoint(raw) {
+  const u = new URL(raw);
+  if (
+    u.username ||
+    u.password ||
+    u.search ||
+    u.hash ||
+    !(
+      u.protocol === "https:" ||
+      (u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname))
+    )
+  )
+    throw new Error(
+      "Use an HTTPS model endpoint or HTTP loopback without credentials, query or fragment",
+    );
+  return u.href.replace(/\/+$/, "");
+}
+
+function profileBinding(p) {
+  return {
+    url: cleanModelEndpoint(p.baseUrl),
+    tokenEnv: p.envKey || "",
+    type: p.type,
+    format: p.format || null,
+  };
+}
+
+// Repo config can name a profile. Only operator environment or a privately pinned endpoint may
+// receive authentication or prompts. Include protocol and credential *name* in the pin.
+export function trustedModelProfile(root, p) {
+  try {
+    const binding = profileBinding(p);
+    const stock = BUILTIN_PROVIDERS[p.name];
+    if (
+      p.name === "gemini" &&
+      stock &&
+      p.envKey === "GOOGLE_API_KEY" &&
+      bindingDigest(profileBinding({ ...stock, envKey: "GOOGLE_API_KEY" })) ===
+        bindingDigest(binding)
+    )
+      return true;
+    if (stock && bindingDigest(profileBinding(stock)) === bindingDigest(binding)) return true;
+    const detected = autoDetectProvider();
+    if (
+      detected?.name === p.name &&
+      bindingDigest(profileBinding(detected)) === bindingDigest(binding)
+    )
+      return true;
+    return Boolean(readPrivateBinding(root, `model-${p.name}`, bindingDigest(binding)));
+  } catch {
+    return false;
+  }
+}
+
+export function inventoryProfiles(root) {
+  const cfg = loadProviders(root);
+  const found = new Map();
+  const add = (p) => found.set(p.name, p);
+  const detected = autoDetectProvider();
+  const active = existsSync(providersPath(root)) ? cfg.active : (detected?.name ?? cfg.active);
+  for (const [name, value] of Object.entries(cfg.providers)) {
+    if (
+      name === active ||
+      !BUILTIN_PROVIDERS[name] ||
+      (name !== "litellm" &&
+        !(
+          name === "anthropic" &&
+          (process.env.ANTHROPIC_BASE_URL || process.env.LITELLM_BASE_URL)
+        ) &&
+        process.env[value.envKey]) ||
+      JSON.stringify(value) !== JSON.stringify(BUILTIN_PROVIDERS[name])
+    )
+      add({ ...value, name });
+  }
+  if (detected && (!existsSync(providersPath(root)) || !found.has(detected.name))) add(detected);
+  if (
+    process.env.ANTHROPIC_AUTH_TOKEN &&
+    !found.has("anthropic") &&
+    !process.env.ANTHROPIC_BASE_URL &&
+    !process.env.LITELLM_BASE_URL
+  )
+    add({ ...BUILTIN_PROVIDERS.anthropic, name: "anthropic", envKey: "ANTHROPIC_AUTH_TOKEN" });
+  if (process.env.GOOGLE_API_KEY && !found.has("gemini"))
+    add({ ...BUILTIN_PROVIDERS.gemini, name: "gemini", envKey: "GOOGLE_API_KEY" });
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The standard credential alias is scoped to the matching vendor origin and credential slot. */
+export function profileCredential(p) {
+  let name = p.envKey;
+  if (!process.env[name]) {
+    if (
+      p.type === "gemini" &&
+      cleanModelEndpoint(p.baseUrl) === BUILTIN_PROVIDERS.gemini.baseUrl &&
+      name === "GEMINI_API_KEY"
+    )
+      name = "GOOGLE_API_KEY";
+    if (
+      p.type === "anthropic" &&
+      cleanModelEndpoint(p.baseUrl) === ANTHROPIC_DEFAULT_URL &&
+      name === "ANTHROPIC_API_KEY"
+    )
+      name = "ANTHROPIC_AUTH_TOKEN";
+  }
+  return { value: name ? (process.env[name] ?? "") : "", bearer: name === "ANTHROPIC_AUTH_TOKEN" };
 }
 
 /** List all configured providers. */
@@ -401,9 +557,16 @@ export function providerStatus(root = process.cwd()) {
         : `${prov.envKey} is NOT set — get it from the Anthropic Console (console.anthropic.com/settings/keys) or your provider's dashboard`,
     });
   }
+  if (prov._catalogTrusted === false) {
+    checks.push({
+      id: "endpoint-trust",
+      ok: false,
+      detail: "Model endpoint needs local authorization",
+    });
+  }
   const customUrl =
     prov.baseUrl && prov.baseUrl.replace(/\/+$/, "").toLowerCase() !== ANTHROPIC_DEFAULT_URL;
-  if (prov.type === "litellm") {
+  if (prov.type === "litellm" && prov._catalogTrusted !== false) {
     const reachable = probeHealth(prov.baseUrl);
     checks.push({
       id: "gateway",
@@ -412,7 +575,7 @@ export function providerStatus(root = process.cwd()) {
         ? `LiteLLM gateway reachable at ${prov.baseUrl}`
         : `LiteLLM gateway NOT reachable at ${prov.baseUrl}`,
     });
-  } else if (customUrl) {
+  } else if (prov._catalogTrusted !== false && customUrl) {
     // Behavioral evidence beats hostname spelling: an "anthropic-proxy" that answers
     // /health is actually a LiteLLM-style gateway the URL prior missed. Advisory.
     const behavesLikeGateway = probeHealth(prov.baseUrl);
@@ -454,9 +617,9 @@ export function providerStatus(root = process.cwd()) {
 /**
  * Apply a routed model recommendation to ~/.claude/settings.json.
  * @param {string} tierKey - the recommended tier (haiku/sonnet/opus/fable)
- * @param {{settingsPath?: string}} [opts]
+ * @param {{settingsPath?: string,exactId?:string}} [opts]
  */
-export function applyRoute(tierKey, { settingsPath } = {}) {
+export function applyRoute(tierKey, { settingsPath, exactId = undefined } = {}) {
   const target = settingsPath || join(homedir(), ".claude", "settings.json");
   let settings = {};
   try {
@@ -465,7 +628,8 @@ export function applyRoute(tierKey, { settingsPath } = {}) {
   const modelId = MODELS[tierKey]?.id;
   if (!modelId) return { ok: false, reason: `unknown tier "${tierKey}"` };
   const prev = settings.model;
-  settings.model = tierKey;
+  if (exactId && !SAFE_MODEL_ID.test(exactId)) return { ok: false, reason: "Invalid model id" };
+  settings.model = exactId || tierKey;
   writeFileSync(target, `${JSON.stringify(settings, null, 2)}\n`);
-  return { ok: true, model: tierKey, modelId, prev, path: target };
+  return { ok: true, model: settings.model, modelId: exactId || modelId, prev, path: target };
 }

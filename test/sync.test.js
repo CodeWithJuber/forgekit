@@ -106,7 +106,11 @@ test("a stored legacy profile name behaves as standard — the full pack (RA-14)
   sync({ targetRoot: root });
   const md = readFileSync(join(root, "AGENTS.md"), "utf8");
   assert.match(md, /## Workflow/, "full (standard) pack emitted");
-  assert.match(md, /## AI interfaces & design quality/, "no section dropped");
+  assert.doesNotMatch(
+    md,
+    /## AI interfaces & design quality/,
+    "a legacy name is not evidence of a frontend",
+  );
 });
 
 test("corrupt forge.config.json: sync fail-opens to default rules but surfaces a warning (RA-15)", () => {
@@ -231,4 +235,33 @@ test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as 
   const restored = readFileSync(p, "utf8");
   assert.doesNotMatch(restored, /quietly rewritten by hand/, "body restored from canonical");
   assert.equal(autoSyncIfDrifted(root).synced, false, "after repair: full bytes match again");
+});
+
+test("shared rules follow manifest evidence across hosts and declared workspaces", () => {
+  const root = fixture(),
+    agents = join(root, "AGENTS.md");
+  writeFileSync(join(root, "pyproject.toml"), '[project]\nname="analysis"\n');
+  sync({ targetRoot: root });
+  assert.doesNotMatch(readFileSync(agents, "utf8"), /typefaces|Zod|OpenAPI|## UI\n/);
+  const dir = join(root, "packages", "ui");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ dependencies: { react: "*", zod: "*" } }),
+  );
+  sync({ targetRoot: root });
+  assert.doesNotMatch(
+    readFileSync(agents, "utf8"),
+    /typefaces|Zod/,
+    "unrelated package is not stack evidence",
+  );
+  writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
+  sync({ targetRoot: root });
+  const web = readFileSync(agents, "utf8");
+  assert.match(web, /typefaces/);
+  assert.match(web, /Zod/);
+  assert.doesNotMatch(web, /OpenAPI|For AI-driven UIs/);
+  writeFileSync(join(dir, "openapi.yaml"), "openapi: 3.1.0");
+  sync({ targetRoot: root });
+  assert.match(readFileSync(agents, "utf8"), /OpenAPI/);
 });

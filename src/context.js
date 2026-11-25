@@ -9,12 +9,15 @@
 // asked as a derived M2 question when not. "Covered" means DELIVERED in the block: a
 // pointer to a file is a pending read, not coverage (review F03), and a block that cannot
 // fit the budget says so instead of claiming completion (review F02).
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
+import { workspaceEvidence } from "./harness_tools.js";
 import { claimText, jaccard, sketch, val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { referencedEntities } from "./preflight.js";
+import { hasSecret } from "./secrets.js";
+import { toPosix } from "./util.js";
 
 /** chars → tokens ESTIMATE (chars/3.6, consistent with the reuse estimator). It is not a
  *  model tokenizer: a hard window limit needs the target model's own tokenizer, so treat
@@ -42,14 +45,6 @@ const SOURCE_VALUE_FLOOR = 0.4;
 /** Default assembly budget in tokens (callers pass the real per-tool cap). */
 export const DEFAULT_BUDGET = 6000;
 
-const readRel = (root, rel) => {
-  try {
-    return readFileSync(join(root, rel), "utf8");
-  } catch {
-    return null;
-  }
-};
-
 // Sibling-test detection (same heuristics family as substrate's predictFailingTests,
 // local here to keep the import graph one-directional: substrate → context, never back).
 const isTestFile = (f) => /(\.|_)(test|spec)\.[jt]sx?$|(^|\/)(tests?|__tests__)\//.test(f);
@@ -64,7 +59,9 @@ function siblingTests(root, file) {
     join("test", `${base}.test${ext}`),
     join("tests", `${base}.test${ext}`),
   ];
-  return candidates.filter((c) => existsSync(join(root, c)));
+  return candidates
+    .map(toPosix)
+    .filter((c) => workspaceEvidence(root, c, { inspectOnly: true }).reason !== "missing");
 }
 
 /**
@@ -75,6 +72,7 @@ function siblingTests(root, file) {
  */
 export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 } = {}) {
   const entities = referencedEntities(String(task || ""));
+  /** @type {{key:string, kind:string, name:string, resolvable:boolean, withheld?:string}[]} */
   const R = [];
   const targetFiles = new Set();
 
@@ -87,9 +85,15 @@ export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 
     if (known) R.push({ key: `deps:${s}`, kind: "deps", name: s, resolvable: true });
   }
   for (const f of entities.files) {
-    const onDisk = existsSync(join(root, f));
-    R.push({ key: `file:${f}`, kind: "file", name: f, resolvable: onDisk });
-    if (onDisk) targetFiles.add(f);
+    const access = workspaceEvidence(root, f, { inspectOnly: true });
+    R.push({
+      key: `file:${f}`,
+      kind: "file",
+      name: f,
+      resolvable: access.available,
+      ...(access.reason && access.reason !== "missing" ? { withheld: access.reason } : {}),
+    });
+    if (access.available) targetFiles.add(f);
   }
   for (const f of targetFiles) {
     if (isTestFile(f)) continue;
@@ -160,9 +164,7 @@ function windowCoverage(defs, from, to) {
  * {key, kind: "def"|"file"|"tests", line?, endLine?}. Ordered largest → smallest; a variant
  * that is not smaller than the previous one is skipped.
  */
-function fileItem(root, rel, { needs, source, score }, atlas = null) {
-  const text = readRel(root, rel);
-  if (text === null) return null;
+function fileItem(text, rel, { needs, source, score }, atlas = null) {
   const lines = text.split("\n");
   const total = lines.length;
   const keys = needs.map((n) => n.key);
@@ -243,16 +245,21 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
  *     per-source discount breaks the preconditions those guarantees need).
  * @param {string} root
  * @param {string} task
- * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number}} [opts]
+ * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number, includeSegments?:boolean}} [opts]
  */
 export function assemble(
   root,
   task,
-  { budget = DEFAULT_BUDGET, atlas = null, claims, nowDay = 0 } = {},
+  { budget = DEFAULT_BUDGET, atlas = null, claims, nowDay = 0, includeSegments = false } = {},
 ) {
+  if (!Number.isSafeInteger(budget) || budget < 0)
+    throw new RangeError("context budget must be a nonnegative integer");
   const ledgerDir = repoLedger(root);
   const allClaims = claims ?? (existsSync(join(ledgerDir, "claims")) ? loadClaims(ledgerDir) : []);
   const required = requiredSet(root, task, { atlas, claims: allClaims, nowDay });
+  const withheld = required
+    .filter((r) => r.withheld)
+    .map((r) => ({ source: r.name, reason: r.withheld, keys: [r.key] }));
 
   // --- build candidate items, keyed by what they cover -------------------------------
   // File-backed keys are grouped per file first, so one file is one item whose variants
@@ -311,6 +318,14 @@ export function assemble(
     } else if (r.kind === "lesson") {
       const c = allClaims.find((x) => x.id === r.name);
       if (c) {
+        if (hasSecret(c.body.correctedBehavior)) {
+          withheld.push({
+            source: "ledger lesson",
+            reason: "secret-shaped-content",
+            keys: [r.key],
+          });
+          continue;
+        }
         const text = `lesson (val ${val(c, nowDay).toFixed(2)}): ${c.body.correctedBehavior}`;
         const id8 = c.id.slice(0, 8);
         items.push({
@@ -327,15 +342,28 @@ export function assemble(
     }
   }
   for (const [rel, f] of files) {
-    const it = fileItem(root, rel, f, atlas);
-    if (it) items.push(it);
+    const input = workspaceEvidence(root, rel);
+    if (!input.available || hasSecret(input.text)) {
+      withheld.push({
+        source: rel,
+        reason: input.reason ?? "secret-shaped-content",
+        keys: f.needs.map((n) => n.key),
+      });
+      continue;
+    }
+    items.push(fileItem(input.text, rel, f, atlas));
   }
   // Optional extras: trusted scope-matching facts (nice-to-have, never required).
   for (const c of allClaims) {
     if (c.kind !== "fact" || c.tombstone) continue;
     const v = val(c, nowDay);
     if (v < 0.5) continue;
-    const text = `fact: ${claimText(c)}`;
+    const fact = claimText(c);
+    if (hasSecret(fact)) {
+      withheld.push({ source: "ledger fact", reason: "secret-shaped-content", keys: [] });
+      continue;
+    }
+    const text = `fact: ${fact}`;
     items.push({
       id: `fact:${c.id.slice(0, 8)}`,
       source: "fact",
@@ -423,7 +451,8 @@ export function assemble(
       );
   }
 
-  const block = chosen.map((c) => c.item.variants[c.v].text).join(SEP);
+  const segments = chosen.map((c) => c.item.variants[c.v].text);
+  const block = segments.join(SEP);
   const covered = new Set(chosen.flatMap((c) => c.item.variants[c.v].covers));
   const pending = new Set(
     chosen.flatMap((c) => c.item.variants[c.v].pending).filter((k) => !covered.has(k)),
@@ -438,7 +467,7 @@ export function assemble(
     .filter((p) => !covered.has(p.key))
     .sort((a, b) => (a.key < b.key ? -1 : 1));
   const questions = missing
-    .filter((r) => !r.resolvable)
+    .filter((r) => !r.resolvable && !r.withheld)
     .map((r) =>
       r.kind === "def"
         ? `The task names \`${r.name}\` but the repo doesn't define it — which file implements it (or is it new)?`
@@ -454,6 +483,7 @@ export function assemble(
     budget,
     tokens: tokensOf(block),
     tokenEstimate: TOKEN_ESTIMATE,
+    ...(withheld.length ? { withheld } : {}),
     overflow,
     ...(overflow ? { dropped } : {}),
     required: required.map((r) => r.key),
@@ -471,6 +501,7 @@ export function assemble(
       covers: c.item.variants[c.v].covers,
     })),
     block,
+    ...(includeSegments ? { segments } : {}),
   };
 }
 
@@ -491,6 +522,7 @@ export function renderContext(r) {
     lines.push("", "  pending reads (pointed at, not delivered — read before acting):");
     for (const p of r.pending) lines.push(`    - ${p}`);
   }
+  for (const w of r.withheld ?? []) lines.push(`    withheld ${w.source} (${w.reason})`);
   for (const p of r.partial ?? [])
     lines.push(
       `    ~ ${p.key}: only lines ${p.shown[0]}-${p.shown[1]} shown of a definition spanning ${p.definition[0]}-${p.definition[1] ?? "?"} — the body is not delivered`,

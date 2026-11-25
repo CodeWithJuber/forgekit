@@ -4,17 +4,22 @@
 // (a cheap, zero-LLM hallucination signal). It emits a provenance stamp so a
 // reviewer reads WHAT was checked, not the authoring transcript.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   readlinkSync,
+  readSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
@@ -23,7 +28,9 @@ import { dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { duplicateGate } from "./duplicate_gate.js";
+import { workspaceEvidence } from "./harness_tools.js";
 import { readForgeConfig } from "./repo_config.js";
+import { hasSecret, redactSecrets } from "./secrets.js";
 import {
   analyzeRecursiveTestRun,
   detectRunners,
@@ -32,6 +39,7 @@ import {
   reachesWorkspace,
   scriptShellProblem,
 } from "./stack.js";
+import { countVerdict, observedTestCounts, passingSuiteEvidence } from "./test_counts.js";
 import { assessTestIntegrity } from "./test_integrity.js";
 import { userStateDir } from "./util.js";
 
@@ -62,13 +70,13 @@ export function withVerificationGit(binary, path, verify) {
   return verificationGit.run({ binary, env: { ...process.env, PATH: path } }, verify);
 }
 
-function gitStrict(args, cwd) {
+function gitStrict(args, cwd, maxBuffer = GIT_MAX_BUFFER) {
   return execFileSync(verificationGit.getStore()?.binary ?? "git", [...GIT_SAFE, ...args], {
     env: verificationGit.getStore()?.env,
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: GIT_MAX_BUFFER,
+    maxBuffer,
   });
 }
 
@@ -153,7 +161,14 @@ export const provenanceMac = (prov) =>
     prov?.codeState?.dirtyHash,
     prov?.codeState?.head,
     prov?.event?.runId ?? "",
+    ...(prov?.receiptVersion === 2
+      ? ["counted-suites/v1", JSON.stringify(prov.event?.suites ?? [])]
+      : []),
   ]);
+
+/** New PASS receipts bind the execution counts themselves to the signed stamp. */
+export const hasPassingReceipt = (prov) =>
+  prov?.receiptVersion === 2 && passingSuiteEvidence(prov.event?.suites);
 
 /** Sign a provenance object in place (no-op when no key is available). */
 export function signProvenance(prov) {
@@ -247,6 +262,14 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
       tree,
       claim,
       reason: `tree changed since ${where} — the claim cannot be confirmed or refuted from this receipt; re-run \`forge verify\``,
+    };
+  if (claim.tests === "PASS" && !hasPassingReceipt(prov))
+    return {
+      verdict: "UNVERIFIABLE",
+      signature,
+      tree,
+      claim,
+      reason: "This receipt has no authenticated passing execution counts. Run forge verify again.",
     };
   if (signature === "UNAVAILABLE")
     return {
@@ -383,8 +406,34 @@ function manifestRecord(cwd, rel, depth, config) {
   if (!st.isFile()) return { record: ["other", rel], unbound: [rel] };
   // git tracks only the executable bit; on Windows it is not meaningful at all.
   const mode = platform() === "win32" ? "-" : st.mode & 0o111 ? "755" : "644";
-  const digest = createHash("sha256").update(readFileSync(abs)).digest("hex");
-  return { record: ["file", rel, mode, st.size, digest] };
+  const fd = openSync(
+    abs,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const matches = (current) =>
+      current.isFile() &&
+      current.dev === st.dev &&
+      current.ino === st.ino &&
+      current.size === st.size &&
+      current.mtimeMs === st.mtimeMs &&
+      current.ctimeMs === st.ctimeMs;
+    if (!matches(fstatSync(fd))) throw new Error("File changed before hashing");
+    const hash = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, st.size)));
+    let bytes = 0;
+    while (bytes < st.size) {
+      const n = readSync(fd, chunk, 0, Math.min(chunk.length, st.size - bytes), null);
+      if (!n) throw new Error("File ended while hashing");
+      hash.update(chunk.subarray(0, n));
+      bytes += n;
+    }
+    if (!matches(fstatSync(fd)) || !matches(lstatSync(abs)))
+      throw new Error("File changed during hashing");
+    return { record: ["file", rel, mode, st.size, hash.digest("hex")] };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -665,28 +714,6 @@ function isExecutable(r, cwd) {
 }
 
 /**
- * Node's test runner emits this ordered summary in TAP and spec reporters. Only
- * complete, consistent counts are reportable. A successful exit alone supplies
- * no count, and other runner formats keep their count field empty.
- */
-function observedTestCounts(stdout) {
-  if (typeof stdout !== "string") return null;
-  const tail = stdout.slice(-4096).replaceAll("\r\n", "\n").trimEnd();
-  const match =
-    /^(?:#|ℹ) tests (\d+)\n(?:#|ℹ) suites \d+\n(?:#|ℹ) pass (\d+)\n(?:#|ℹ) fail (\d+)\n(?:#|ℹ) cancelled (\d+)\n(?:#|ℹ) skipped (\d+)\n(?:#|ℹ) todo (\d+)\n(?:#|ℹ) duration_ms [\d.]+$/m.exec(
-      tail,
-    );
-  if (!match || match.index + match[0].length !== tail.length) return null;
-  const [total, pass, fail, cancelled, skipped, todo] = match.slice(1).map(Number);
-  if (
-    ![total, pass, fail, cancelled, skipped, todo].every(Number.isSafeInteger) ||
-    total !== pass + fail + cancelled + skipped + todo
-  )
-    return null;
-  return { total, pass, fail, cancelled, skipped, todo };
-}
-
-/**
  * Classify ONE suite's spawn failure — pure, so every branch is testable without a real
  * signal (POSIX-only fixtures made the ME-02 case untestable on Windows, where a shebang
  * script cannot self-kill and simply exits with a real code). Only a completed run with a
@@ -720,7 +747,7 @@ export function classifySuiteFailure(e, { label, bin, timeout }) {
       output: `HUNG: "${label}" produced no verdict in ${timeout}ms — killed`,
     };
   }
-  if (typeof e.status === "number") {
+  if (!e.code && !e.signal && typeof e.status === "number" && e.status !== 0) {
     // A real, completed run that exited non-zero — the ONLY true FAIL.
     return {
       label,
@@ -1087,22 +1114,42 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       // (stdout stays machine-readable for --json). The per-suite timeout below is
       // the watchdog; this line is the pulse.
       onProgress?.({ label, phase: "start" });
-      const stdout = execFileSync(r.bin, r.args ?? [], {
+      const proc = spawnSync(r.bin, r.args ?? [], {
         cwd: dir,
         encoding: "utf8",
         stdio: "pipe",
         timeout,
         env: suiteEnv(),
+        maxBuffer: 8 * 1024 * 1024,
       });
+      const output = [proc.stdout, proc.stderr].filter(Boolean).join("\n");
+      const counts = observedTestCounts(output);
+      if (proc.error || proc.signal || proc.status !== 0) {
+        if (r.bin !== "pytest" || proc.status !== 5 || proc.error || proc.signal) {
+          throw Object.assign(proc.error ?? new Error("Suite did not exit successfully"), {
+            status: proc.status,
+            signal: proc.signal,
+            stdout: output,
+          });
+        }
+      }
+      const status = proc.status === 5 ? "INCOMPLETE" : countVerdict(counts);
       executed.push({
         label,
-        status: "PASS",
+        status,
         ...where,
-        exitCode: 0,
+        exitCode: proc.status,
         durationMs: Math.round(performance.now() - startedMs),
-        reportedCounts: observedTestCounts(stdout),
+        reportedCounts: counts,
+        ...(status === "PASS"
+          ? {}
+          : {
+              output: counts
+                ? `runner reported ${counts.pass} passed, ${counts.fail} failed, ${counts.cancelled} cancelled, ${counts.skipped} skipped and ${counts.todo} todo`
+                : "no complete supported test-count summary was reported",
+            }),
       });
-      onProgress?.({ label, phase: "done", status: "PASS" });
+      onProgress?.({ label, phase: "done", status });
     } catch (e) {
       const classified = {
         ...classifySuiteFailure(e, { label, bin: r.bin, timeout }),
@@ -1333,9 +1380,9 @@ export function readVerifyEvents(root) {
  * other evidence (router outcomes, ledger refs) can cite a run by id.
  * @param {{targetRoot?: string, base?: string, onProgress?: (e: {label: string, phase: "start"|"done", status?: string}) => void}} [opts]
  * @returns {{ok: boolean, provenance: object, unknown: string[], tests: VerifyTests,
- *   changedFiles: string[], added: string, duplicates: ReturnType<typeof duplicateGate>, testIntegrity: ReturnType<typeof assessTestIntegrity>}}
+ *   changedFiles: string[], added: string, reviewCoverage: {omitted:{file:string,reason:string}[],secretDetected:boolean}, duplicates: ReturnType<typeof duplicateGate>, testIntegrity: ReturnType<typeof assessTestIntegrity>}}
  *   `ok` is `tests.status === "PASS"` — TRUE only when a real verifier ran and passed, NEVER
- *   when nothing ran. `changedFiles` includes untracked files; `added` includes their contents.
+ *   when nothing ran. `changedFiles` includes untracked files; `added` contains bounded, redacted review text.
  */
 export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress } = {}) {
   // Normalize the ref before it reaches a diff. An explicit missing comparison cannot
@@ -1349,49 +1396,94 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   if (!revision && base !== "HEAD")
     throw new Error("Verification baseline does not resolve to a commit");
   const diffArgs = ["diff", "--no-ext-diff", "--no-textconv"];
-  const diff =
-    (revision && git([...diffArgs, "--unified=0", revision, "--"], targetRoot)) ||
-    git([...diffArgs, "--unified=0", "--cached", "--"], targetRoot);
-  const diffAdded = diff
-    .split("\n")
-    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-    .map((l) => l.slice(1))
-    .join("\n");
-  // Untracked (new, not-yet-added) files are part of the change too — a brand-new source file
-  // and its call sites would be invisible to `git diff`. Fold their paths into changedFiles and
-  // their contents into `added` so provenance and the hallucination check both see them (P0-09).
-  // Forge's own state dir is not the change under verification (the fingerprint excludes it
-  // too): verify's outputs — provenance.json, verify-events.jsonl — never count as changed.
-  const untracked = git(["ls-files", "--others", "--exclude-standard"], targetRoot)
-    .split("\n")
-    .filter((f) => f && !f.startsWith(".forge/"));
-  // Mirror the diff's --cached fallback so the base file list is derived from the SAME diff that
-  // produced `added` (a base whose worktree matches HEAD but whose index differs would otherwise
-  // yield `added` from --cached while changedFiles stayed empty, weakening impact/docsdrift).
-  const changedFiles = [
-    ...new Set([
-      ...(
-        (revision && git([...diffArgs, "--name-only", revision, "--"], targetRoot)) ||
-        git([...diffArgs, "--name-only", "--cached", "--"], targetRoot)
-      )
-        .split("\n")
-        .filter(Boolean),
-      ...untracked,
-    ]),
-  ];
-  let added = diffAdded;
-  for (const f of untracked) {
-    try {
-      added += `\n${readFileSync(join(targetRoot, f), "utf8")}`;
-    } catch {}
+  // Inspect names before requesting a patch. The fingerprint independently covers the full
+  // worktree. Content supplied to advisory lenses has a smaller, guarded evidence budget.
+  const names = (args) =>
+    git(args, targetRoot)
+      .split("\0")
+      .filter((f) => f && !f.startsWith(".forge/"));
+  let scope = revision ? [revision] : ["--cached"];
+  let tracked = names([...diffArgs, "--name-only", "-z", ...scope, "--"]);
+  if (revision && !tracked.length) {
+    scope = ["--cached"];
+    tracked = names([...diffArgs, "--name-only", "-z", ...scope, "--"]);
   }
+  const untracked = names(["ls-files", "--others", "--exclude-standard", "-z"]);
+  const changedFiles = [...new Set([...tracked, ...untracked])];
+  const omitted = [];
+  const fragments = [];
+  const reviewLimit = 1024 * 1024;
+  let usedBytes = 0;
+  const append = (text, files) => {
+    const size = Buffer.byteLength(text) + 1;
+    if (usedBytes + size > reviewLimit) {
+      for (const file of files) omitted.push({ file, reason: "review-budget" });
+    } else {
+      fragments.push(text);
+      usedBytes += size;
+    }
+  };
+  const allowed = [];
+  for (const file of tracked) {
+    const input = workspaceEvidence(targetRoot, file, { inspectOnly: true });
+    if (input.available) allowed.push(file);
+    else if (input.reason !== "missing" || scope.includes("--cached"))
+      omitted.push({ file, reason: input.reason });
+  }
+  for (let i = 0; i < allowed.length; i += 32) {
+    const files = allowed.slice(i, i + 32);
+    if (usedBytes >= reviewLimit) {
+      for (const file of files) omitted.push({ file, reason: "review-budget" });
+      continue;
+    }
+    try {
+      const patch = gitStrict(
+        [
+          "--literal-pathspecs",
+          ...diffArgs,
+          "--no-renames",
+          "--unified=0",
+          ...scope,
+          "--",
+          ...files,
+        ],
+        targetRoot,
+        2 * reviewLimit,
+      );
+      append(
+        patch
+          .split("\n")
+          .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+          .map((l) => l.slice(1))
+          .join("\n"),
+        files,
+      );
+    } catch {
+      for (const file of files) omitted.push({ file, reason: "diff-limit-or-unavailable" });
+    }
+  }
+  for (const file of untracked) {
+    if (usedBytes >= reviewLimit) {
+      omitted.push({ file, reason: "review-budget" });
+      continue;
+    }
+    const input = workspaceEvidence(targetRoot, file);
+    if (!input.available) {
+      omitted.push({ file, reason: input.reason });
+      continue;
+    }
+    append(input.text, [file]);
+  }
+  const added = fragments.join("\n");
+  const delivered = redactSecrets(added);
+  const reviewCoverage = { omitted, secretDetected: delivered !== added && hasSecret(added) };
 
   // Verify runs AFTER edits — a cached, stale atlas would miss newly-added-but-undefined symbols
   // (false negatives) or flag just-defined ones (false positives). Rebuild when stale; the
   // incremental build only re-parses the files that changed, so this stays cheap.
   const cached = loadAtlas(targetRoot);
   const atlas = cached && !isStale(targetRoot, cached) ? cached : buildAtlas({ root: targetRoot });
-  const symbols = extractCalledSymbols(added);
+  const symbols = extractCalledSymbols(delivered);
   // When the graph was capped (huge repo, files dropped), "defined nowhere" is unreliable — a
   // symbol may live in a dropped file — so don't assert hallucinations.
   const unknown = atlas.capped ? [] : findUnknownSymbols(atlas, symbols);
@@ -1497,6 +1589,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
     environment: environmentDigest(),
   };
   const provenance = {
+    receiptVersion: 2,
     base,
     changedFiles,
     untracked,
@@ -1528,5 +1621,15 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   const ok = tests.status === "PASS";
   // `added` (added diff lines + untracked file bodies) rides along for the deep lenses
   // (consensus.js: secrets + reviewer read the same bytes this pass already parsed).
-  return { ok, provenance, unknown, tests, changedFiles, added, duplicates, testIntegrity };
+  return {
+    ok,
+    provenance,
+    unknown,
+    tests,
+    changedFiles,
+    added: delivered,
+    reviewCoverage,
+    duplicates,
+    testIntegrity,
+  };
 }

@@ -335,6 +335,30 @@ const VERDICT_LABEL = {
 
 HANDLERS.uicheck = async (argv) => {
   const sub = argv[1];
+  if (sub === "journey") {
+    const args = argv.slice(2),
+      i = args.indexOf("--spec");
+    if (i < 0 || !args[i + 1])
+      throw new Error(
+        "usage: forge uicheck journey <target> --spec <journey.json> [--remote] [--json]",
+      );
+    const specPath = args.splice(i, 2)[1],
+      targets = args.filter((a) => !a.startsWith("--"));
+    if (targets.length !== 1) throw new Error("Provide one journey target");
+    const { readFileSync, statSync } = await import("node:fs");
+    if (statSync(specPath).size > 32768) throw new Error("Journey spec exceeds 32 KiB");
+    const { runJourney } = await import("../uijourney.js");
+    const result = await runJourney(targets[0], JSON.parse(readFileSync(specPath, "utf8")), {
+      remote: args.includes("--remote"),
+    });
+    console.log(
+      args.includes("--json")
+        ? JSON.stringify(result, null, 2)
+        : `Journey ${result.status} · ${result.receipt}`,
+    );
+    if (result.status !== "pass") process.exitCode = 1;
+    return;
+  }
   if (sub === "visual") {
     // The Playwright visual loop (spec §5): render in a real browser, fingerprint
     // the COMPUTED styles, run the same design gate. Playwright is an optional
@@ -673,6 +697,31 @@ HANDLERS.uicheck = async (argv) => {
 };
 
 HANDLERS.demo = async (argv) => {
+  if (argv[1] === "workshop") {
+    if (argv.slice(2).some((arg) => arg !== "--json"))
+      throw new Error("Use forge demo workshop [--json]");
+    const { execFileSync } = await import("node:child_process");
+    const { join } = await import("node:path");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [join(BRAND.root, "examples", "workshop-planner", "demo.mjs")],
+        { encoding: "utf8", timeout: 90000 },
+      ),
+    );
+    if (argv.includes("--json")) return console.log(JSON.stringify(result, null, 2));
+    console.log(`Workshop planning · ${result.dataset}
+`);
+    for (const slot of result.options)
+      console.log(`  ${slot.slot}: ${slot.requested} RSVPs, ${slot.seats} seats`);
+    console.log(`
+${result.chosen} fits every RSVP.
+Sources: ${result.evidence.locators.join(" and ")}
+Checked revision: ${result.evidence.revision}
+Reuse with unchanged evidence: ${result.reuse.match}. After changing the source: ${result.reuse.changedSourceAction}.
+Prepared two handoffs and started ${result.workersStarted} model workers.`);
+    return;
+  }
   // The README hero as a runnable: green → broken → green, with forge verify
   // watching. Exits 0 only if the defect was actually caught (the middle step
   // FAILED) and the fix verified — a demo that never fails proves nothing.

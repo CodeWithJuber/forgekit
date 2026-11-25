@@ -94,9 +94,9 @@ export function claimToLesson(claim, nowDay = 0) {
 
 /** Every lesson claim of the repo ledger, mapped to legacy shape. [] when there is no
  *  ledger or it is unreadable (best-effort — hooks call this on every event). */
-export function ledgerLessons(root, nowDay = 0) {
+export function ledgerLessons(root, nowDay = 0, candidates = undefined) {
   try {
-    return loadClaims(repoLedger(root))
+    return (candidates ?? loadClaims(repoLedger(root)))
       .filter((c) => c.kind === "lesson")
       .map((c) => claimToLesson(c, nowDay));
   } catch {
@@ -124,12 +124,12 @@ const preferred = (a, b) => {
  * @param {number} [nowDay]
  * @returns {object[]}
  */
-export function mergedLessons(root, nowDay = 0) {
+export function mergedLessons(root, nowDay = 0, candidates = undefined) {
   // Legacy-store retirement: with no legacy files, the merged view is the ledger alone.
   const legacy = ledgerOnly() ? [] : load(root);
   const local = new Set(legacy.map((l) => l.id));
   const byId = new Map();
-  for (const l of ledgerLessons(root, nowDay)) {
+  for (const l of ledgerLessons(root, nowDay, candidates)) {
     if (local.has(l.id)) continue; // legacy wins — the local file is canonical
     const prev = byId.get(l.id);
     byId.set(l.id, prev ? preferred(prev, l) : l);
@@ -151,6 +151,27 @@ export function ledgerFacts(dir) {
   } catch {
     return [];
   }
+}
+
+/** Deterministic multi-value register for independent same-name edits. Retain every
+ * distinct live value until a human chooses one with forge remember. */
+export function factConflicts(dir) {
+  const groups = new Map();
+  for (const f of ledgerFacts(dir)) {
+    if (!groups.has(f.slug)) groups.set(f.slug, new Map());
+    groups.get(f.slug).set(JSON.stringify([f.name, f.text]), f);
+  }
+  return new Map(
+    [...groups]
+      .filter(([, values]) => values.size > 1)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, values]) => [
+        name,
+        [...values.values()].sort(
+          (a, b) => a.text.localeCompare(b.text) || a.name.localeCompare(b.name),
+        ),
+      ]),
+  );
 }
 
 /** Slugs of fact claims the evidence has SUNK below the dormancy floor — facts the ledger no
@@ -184,5 +205,6 @@ export function dormantFactSlugs(dir, nowDay = 0) {
 export function mergeFactSlugs(fileSlugs, dir) {
   const seen = new Set(fileSlugs);
   for (const f of ledgerFacts(dir)) seen.add(f.slug);
+  for (const key of factConflicts(dir).keys()) seen.delete(key);
   return [...seen].sort();
 }

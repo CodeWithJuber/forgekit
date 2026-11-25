@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { build } from "../src/atlas.js";
 import { COMMANDS } from "../src/commands.js";
 import {
   blastRadius,
@@ -146,4 +147,33 @@ test("forge test-select --json on a clean fixture reports tier none", () => {
 test("mapToTests: convention mapping finds the real test file", () => {
   const found = mapToTests(ROOT, ["src/atlas.js"]);
   assert.ok(found.includes("test/atlas_resolve.test.js") || found.length > 0);
+});
+
+test("executable assets and unmapped source changes retain required verification", async () => {
+  assert.equal(classifyDeterministic(["landing/app.js"]).tier, "high");
+  assert.equal(classifyDeterministic(["docs/interactive.js"]).tier, "high");
+  const root = mkdtempSync(join(tmpdir(), "forge-selector-unmapped-"));
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src", "orphan.js"), "export const orphan = 1;");
+  const plan = await selectTests({ root, files: ["src/orphan.js"] });
+  assert.equal(plan.fullSuite, true);
+  assert.equal(plan.typecheck, true);
+});
+
+test("a computed module dependency in an AST index escalates an otherwise mapped change", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-select-ast-"));
+  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "test"));
+  writeFileSync(join(root, "src", "invoice.js"), "export const price = 1;");
+  writeFileSync(
+    join(root, "test", "invoice.test.js"),
+    'import { price } from "../src/invoice.js";',
+  );
+  build({ root, parser: "ast" });
+  assert.equal((await selectTests({ root, files: ["src/invoice.js"] })).tier, "medium");
+  writeFileSync(
+    join(root, "src", "loader.js"),
+    "export function load(name) { return import(name); }",
+  );
+  assert.equal((await selectTests({ root, files: ["src/invoice.js"] })).fullSuite, true);
 });

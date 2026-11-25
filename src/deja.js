@@ -15,9 +15,11 @@
 //
 // Kill switch FORGE_DEJA=0 (read here and in the cortex hook). Best-effort everywhere:
 // a failure to summarize or look up must never break a Stop hook or a CLI command.
+import { existsSync, mkdirSync } from "node:fs";
 import { BRAND } from "./brand.js";
 import { claimText, mintClaim, outcomeRecord, retrieve, val } from "./ledger.js";
 import {
+  ambientLookup,
   appendEvidence,
   loadClaims,
   pruneLedger,
@@ -26,6 +28,7 @@ import {
   reindex,
   repoLedger,
 } from "./ledger_store.js";
+import { privateMemoryDir } from "./private_memory.js";
 import { redactSecrets } from "./secrets.js";
 import { epochDay, gitAuthor } from "./util.js";
 
@@ -115,7 +118,8 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
   try {
     const s = buildSummary(events);
     if (!s) return { ok: false, reason: "nothing to summarize" };
-    const dir = repoLedger(root);
+    const dir = privateMemoryDir(root, "summaries");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     const minted = mintClaim({
       kind: "summary",
       body: { files: s.files, text: s.text },
@@ -173,7 +177,13 @@ export function dejaLookup(claims, task, { nowDay = 0, budget = 5 } = {}) {
  *  dejaLookup). Best-effort: an unreadable ledger yields no hits, never a throw. */
 export function dejaFromLedger(root, task, { nowDay = epochDay(), budget = 5 } = {}) {
   try {
-    return dejaLookup(loadClaims(repoLedger(root)), task, { nowDay, budget });
+    const shared = loadClaims(repoLedger(root));
+    const privateDir = privateMemoryDir(root, "summaries");
+    const personal = existsSync(privateDir) ? loadClaims(privateDir) : [];
+    return dejaLookup([...new Map([...shared, ...personal].map((c) => [c.id, c])).values()], task, {
+      nowDay,
+      budget,
+    });
   } catch {
     return [];
   }
@@ -216,10 +226,23 @@ export function dejaAdvisory(root, task, nowDay = epochDay()) {
   if (process.env.FORGE_DEJA === "0") return "";
   if (!task || !String(task).trim() || isHarnessPrompt(task)) return "";
   try {
-    const hits = dejaFromLedger(root, task, { nowDay, budget: 3 });
+    const teamDir = repoLedger(root);
+    const personalDir = privateMemoryDir(root, "summaries");
+    const shared = ambientLookup(teamDir, task).claims;
+    const personal = existsSync(personalDir) ? ambientLookup(personalDir, task).claims : [];
+    const hits = dejaLookup(
+      [...new Map([...shared, ...personal].map((c) => [c.id, c])).values()],
+      task,
+      { nowDay, budget: 3 },
+    );
     const line = dejaLine(hits[0], nowDay);
-    // Only a surfaced hit counts as use; a hit below the relevance floor was never shown.
-    if (line) recordUse(repoLedger(root), [hits[0].claim.id], { via: "deja", t: nowDay });
+    if (line) {
+      const id = hits[0].claim.id;
+      recordUse(personal.some((c) => c.id === id) ? personalDir : teamDir, [id], {
+        via: "deja",
+        t: nowDay,
+      });
+    }
     return line;
   } catch {
     return "";

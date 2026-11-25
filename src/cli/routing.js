@@ -8,6 +8,13 @@ import { BRAND, bar, heading, paint } from "./shared.js";
 const HANDLERS = {};
 
 HANDLERS.cost = async (argv) => {
+  if (argv[1] === "pilot") {
+    const { rolloutCommand } = await import("../rollout_eval.js");
+    return rolloutCommand(
+      argv.slice(2).filter((arg) => arg !== "--json"),
+      "cost",
+    );
+  }
   // `--stages` is the P8 measured report (per-stage factors from .forge/metrics.jsonl);
   // the default path stays the ccusage per-day spend view, untouched.
   if (argv.includes("--stages")) {
@@ -65,6 +72,63 @@ HANDLERS.cost = async (argv) => {
 };
 
 HANDLERS.models = async (argv) => {
+  const value = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
+  const schema = value("--schema");
+  const valued = ["--profile", "--workload", "--capability", "--availability", "--max-age"];
+  const filters = ["--refresh", "--offline", ...valued].some((flag) => argv.includes(flag));
+  if (
+    (argv.includes("--schema") && !["1", "2"].includes(schema)) ||
+    (schema === "1" && filters) ||
+    (argv.includes("--refresh") && argv.includes("--offline")) ||
+    valued.some((flag) => argv.includes(flag) && (!value(flag) || value(flag).startsWith("--")))
+  )
+    throw new Error("Use --schema 1 or 2, one refresh mode, and a value for each filter");
+  if (schema === "2" || filters || (!argv.includes("--json") && schema !== "1")) {
+    const { modelInventory } = await import("../model_inventory.js");
+    const inv = modelInventory(process.cwd(), {
+      profile: value("--profile"),
+      workload: value("--workload"),
+      capability: value("--capability"),
+      availability: value("--availability"),
+      maxAge: value("--max-age"),
+      refresh: argv.includes("--offline") ? false : argv.includes("--refresh") ? true : undefined,
+    });
+    if (argv.includes("--json")) return console.log(JSON.stringify(inv, null, 2));
+    heading(`${BRAND.brand} models — provider inventory (${inv.workload})\n`);
+    for (const p of inv.profiles) {
+      console.log(`  ${p.profile}  ${p.status}${p.checkedAt ? `  ${p.checkedAt}` : ""}`);
+      for (const band of ["high", "medium", "low", "unrated"]) {
+        const group = p.models.filter((m) => m.rating.band === band);
+        if (!group.length) continue;
+        console.log(`    ${band}`);
+        for (const m of group) {
+          const ops = m.capabilities?.join(", ") || "unknown";
+          const price = m.price
+            ? `USD ${m.price.input}/${m.price.output} per million input/output tokens (${m.price.source})`
+            : "unknown";
+          const last = m.lastCall ? `${m.lastCall.latencyMs} ms at ${m.lastCall.at}` : "unknown";
+          const cost =
+            m.lastCall?.costUsd != null ? `USD ${m.lastCall.costUsd} (provider report)` : "unknown";
+          console.log(
+            `      ${m.id}  ${m.availability}  checked ${m.availabilityEvidence.checkedAt ?? "unknown"}`,
+          );
+          console.log(
+            `        capabilities ${ops} · price ${price} · last call latency ${last} · last call cost ${cost}`,
+          );
+          if (m.workloadAttemptCost)
+            console.log(
+              `        workload mean USD ${m.workloadAttemptCost.meanUsd} over ${m.workloadAttemptCost.n} operator-reported attempts`,
+            );
+        }
+      }
+      if (!p.models.length) console.log("    No matching model rows.");
+    }
+    for (const h of inv.nativeHosts)
+      console.log(
+        `  ${h.host}  host-managed  reported model ${h.reportedModel ?? "unknown"}${h.observedAt ? " at " + h.observedAt : ""}`,
+      );
+    return;
+  }
   // What each tier resolves to RIGHT NOW: family → newest model in the active provider's live
   // catalog (else the shipped snapshot), priced from OpenRouter's catalog (else the snapshot).
   const { describeResolution, PRICING_VERIFIED, resolveTiers } = await import("../model_tiers.js");
@@ -72,7 +136,7 @@ HANDLERS.models = async (argv) => {
   const root = process.cwd();
   const provider = activeProvider(root);
   const tiers = resolveTiers({ root, provider });
-  const override = envModelOverride();
+  const override = envModelOverride(provider) || provider.selectedModel;
   if (argv.includes("--json"))
     return console.log(
       JSON.stringify(
@@ -113,7 +177,7 @@ HANDLERS.models = async (argv) => {
   );
   console.log(
     paint(
-      "  cache: .forge/cache/ — reused while the response's own Cache-Control/Expires says fresh, else revalidated (ETag); FORGE_NO_CATALOG_FETCH=1 stays offline",
+      "  cache: private user state — reused while the response's own Cache-Control/Expires says fresh, else revalidated (ETag); FORGE_NO_CATALOG_FETCH=1 stays offline",
       "dim",
     ),
   );
@@ -121,6 +185,17 @@ HANDLERS.models = async (argv) => {
 };
 
 HANDLERS.route = async (argv) => {
+  if (argv[1] === "monitor") {
+    const args = argv.slice(2).filter((a) => a !== "--json");
+    if (args.length !== 1 || args[0].startsWith("-"))
+      throw new Error("Usage: forge route monitor <observations.json> [--json]");
+    const { resolve } = await import("node:path");
+    const { readBounded } = await import("../harness_verify.js");
+    const { monitorModel } = await import("../model_monitor.js");
+    const data = readBounded(resolve(args[0]), 16 * 1024 * 1024).bytes;
+    console.log(JSON.stringify(monitorModel(JSON.parse(data.toString("utf8"))), null, 2));
+    return;
+  }
   const r = await import("../route.js");
   if (argv[1] === "gateway") {
     const result = r.emitGatewayConfig(process.cwd());
@@ -223,22 +298,34 @@ HANDLERS.route = async (argv) => {
     await import("../model_tiers.js");
   const { activeProvider } = await import("../providers.js");
   const opts = { root: process.cwd(), provider: activeProvider(process.cwd()) };
-  const resolved = withSnapshotStaleness(resolveTierModel(rec.key, opts), rec.key, opts);
+  /** @type {import("../model_tiers.js").ResolvedModel|null} */
+  const resolved = rec.modelOverride
+    ? { id: rec.modelOverride, source: /** @type {const} */ ("config"), family: rec.key }
+    : withSnapshotStaleness(resolveTierModel(rec.key, opts), rec.key, opts);
   const price = resolveTierPrice(rec.key, { ...opts, resolved });
+  const { nativeModelControls } = await import("../model_inventory.js");
+  const control = {
+    provider: opts.provider.name,
+    transport: "forge-http",
+    nativeHosts: nativeModelControls(process.cwd()),
+  };
   if (json) {
     // `model` stays the snapshot row (its shape is public); `resolved` is what would be called.
-    console.log(JSON.stringify({ ...rec, policy: routing, resolved, price }, null, 2));
+    console.log(JSON.stringify({ ...rec, policy: routing, resolved, price, control }, null, 2));
   } else {
     heading(`${BRAND.brand} route — cheapest capable model\n`);
-    const name =
-      resolved?.source === "catalog" && resolved.displayName
-        ? resolved.displayName
-        : rec.model.name;
+    const name = rec.modelOverride || resolved?.displayName || resolved?.id || rec.model.name;
     console.log(
       `  → ${paint(name, "accent")}  (${rec.tier}, ${price ? `${price.inCost}/${price.outCost} per M tok, ${price.source === "catalog" ? "live price" : "current effective"}` : "price unknown"})`,
     );
+    console.log(`    provider: ${control.provider} (Forge HTTP selection)`);
+    for (const host of control.nativeHosts)
+      console.log(
+        `    ${host.host}: host-managed, last reported model ${host.reportedModel ?? "unknown"}`,
+      );
     if (resolved) console.log(`    model: ${resolved.id} — ${describeResolution(resolved)}`);
-    console.log(`    ${rec.model.use}`);
+    if (opts.provider.type === "anthropic" && !rec.modelOverride)
+      console.log(`    ${rec.model.use}`);
     console.log(
       `    complexity ${bar(rec.score, 8)} ${rec.score.toFixed(2)}${rec.reasons.length ? ` · driven by: ${rec.reasons.join(", ")}` : ""}`,
     );
@@ -250,8 +337,13 @@ HANDLERS.route = async (argv) => {
     );
   }
   if (apply) {
-    const { applyRoute } = await import("../providers.js");
-    const ar = applyRoute(rec.key);
+    const { applyRoute, setProfileModel } = await import("../providers.js");
+    if (opts.provider.type !== "anthropic") {
+      setProfileModel(process.cwd(), opts.provider.name, resolved.id);
+      if (!json) console.log(`    configured ${opts.provider.name} model ${resolved.id}`);
+      return;
+    }
+    const ar = applyRoute(rec.key, { exactId: resolved.id });
     if (ar.ok) {
       if (!json) console.log(`\n  applied: model set to ${ar.model} (${ar.modelId}) in ${ar.path}`);
     } else {
@@ -283,6 +375,8 @@ async function routeUniversalCli(argv) {
     "--depth",
     "--attempt",
     "--verify-run",
+    "--band",
+    "--workload",
   ]);
   const words = argv
     .slice(1)
@@ -337,6 +431,7 @@ async function routeUniversalCli(argv) {
     try {
       const row = U.recordOutcome(root, {
         task,
+        workload: val("--workload"),
         model: val("--model"),
         passed,
         cost,
@@ -358,11 +453,25 @@ async function routeUniversalCli(argv) {
   }
   let rec;
   try {
-    rec = U.routeUniversal(root, task, {
-      objective: val("--objective"),
-      provider: val("--provider") ?? "any",
-      maxDepth: val("--depth") ? Number(val("--depth")) : undefined,
-    });
+    const objective = val("--objective");
+    const maxDepth = val("--depth") ? Number(val("--depth")) : undefined;
+    if (argv.includes("--band")) {
+      const { inventoryRoute } = await import("../model_inventory.js");
+      rec = inventoryRoute(root, task, {
+        profile: val("--provider"),
+        band: val("--band"),
+        workload: val("--workload"),
+        refresh: true,
+        objective,
+        maxDepth,
+      });
+    } else {
+      rec = U.routeUniversal(root, task, {
+        provider: val("--provider") ?? "any",
+        objective,
+        maxDepth,
+      });
+    }
   } catch (e) {
     console.error(`  ${e.message}`);
     process.exitCode = 1;

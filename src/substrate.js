@@ -24,6 +24,7 @@ import { matchingLessons } from "./cortex.js";
 import { recordGate } from "./cost_report.js";
 import { leanRepo } from "./lean.js";
 import { mergedLessons } from "./ledger_read.js";
+import { ambientLookup, repoLedger } from "./ledger_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { rankReport } from "./rank.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
@@ -324,7 +325,12 @@ export function substrateCheck(
   }
   // Reuse the gap preflight already computed — routeTask would otherwise recompute it (and, with
   // FORGE_LLM on, fire a second, redundant assumption model call whose result it discards).
-  const route = routeTask(root, text, { ...llmOpts, ambiguity: preflight.gap });
+  const shortlist = allowBuild ? null : ambientLookup(repoLedger(root), text);
+  const route = routeTask(root, text, {
+    ...llmOpts,
+    ambiguity: preflight.gap,
+    lessonCandidates: shortlist?.claims,
+  });
   // P8 route metering, same write contract as recordGate above: the explicit gate
   // meters, the ambient hook path (allowBuild:false) never appends. meterRoute is
   // itself best-effort (try/catch inside), so measurement can never block routing.
@@ -399,7 +405,7 @@ export function substrateCheck(
       const opts = { atlas, nowDay: epochDay() };
       const r = allowBuild
         ? reuseQuery(root, text, opts)
-        : reusePeek(root, text, { ...opts, offline: true });
+        : reusePeek(root, text, { ...opts, offline: true, candidates: shortlist?.claims });
       return {
         tier: r.tier,
         artifact: r.artifact
@@ -438,12 +444,19 @@ export function substrateCheck(
     ? decompose(root, scopedFiles)
     : { clusters: [], independentGroups: 0 };
   // Merged view (P2 read flip): a teammate's merged lesson counts in the advisory too.
-  const lessons = matchingLessons(mergedLessons(root, epochDay()), {
+  const lessons = matchingLessons(mergedLessons(root, epochDay(), shortlist?.claims), {
     files: scopedFiles,
     symbols: entities.symbols,
   });
   const result = {
     okToProceed: !preflight.assumption.shouldAsk,
+    ...(shortlist && {
+      memoryLookup: {
+        examined: shortlist.examined,
+        limit: shortlist.maxCandidates,
+        exhaustive: false,
+      },
+    }),
     task: text,
     assumption: preflight.assumption,
     clarify: clarifyBlock(preflight),

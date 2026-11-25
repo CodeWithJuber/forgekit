@@ -2,9 +2,11 @@
 // runs, user prompts) into the correction episodes the orchestrator consumes, with zero
 // commands from the developer. Signal detection is PURE (over a normalized event log) so
 // it's unit-testable; the shell hooks just append events and call processSession on Stop.
+import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
+import { privateMemoryDir } from "./private_memory.js";
 import { redactSecrets } from "./secrets.js";
 import { contentHash, slug } from "./util.js";
 
@@ -15,6 +17,8 @@ export const sessionPath = (root, sid, ext = "jsonl") =>
   join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.${ext}`);
 
 const sessionFile = (root, sid) => sessionPath(root, sid);
+const promptFile = (root, sid) =>
+  join(privateMemoryDir(root, "prompts"), basename(sessionFile(root, sid)));
 
 /** Every string leaf of an event, secret-redacted; structure and non-strings untouched. */
 const redactEvent = (v) =>
@@ -34,12 +38,29 @@ const redactEvent = (v) =>
 export function appendSessionEvent(root, sid, event) {
   if (!event) return;
   const path = sessionFile(root, sid);
-  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(redactEvent(event))}\n`);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  let stored = redactEvent(event);
+  if (event.type === "prompt") {
+    stored = { type: "prompt", negative: NEG_RE.test(event.text ?? "") };
+    if (process.env.FORGE_DEJA === "1") {
+      const privatePath = promptFile(root, sid);
+      mkdirSync(dirname(privatePath), { recursive: true, mode: 0o700 });
+      stored.ref = randomUUID();
+      appendFileSync(
+        privatePath,
+        `${JSON.stringify({ ref: stored.ref, text: redactSecrets(event.text ?? "") })}\n`,
+        { mode: 0o600 },
+      );
+    }
+  }
+  appendFileSync(path, `${JSON.stringify(stored)}\n`, { mode: 0o600 });
 }
 
 export function readSession(root, sid) {
-  const path = sessionFile(root, sid);
+  return readLines(sessionFile(root, sid));
+}
+
+function readLines(path) {
   if (!existsSync(path)) return [];
   const out = [];
   for (const line of readFileSync(path, "utf8").split("\n")) {
@@ -51,9 +72,19 @@ export function readSession(root, sid) {
   return out;
 }
 
+export function summaryEvents(root, sid, events) {
+  const prompts = new Map(readLines(promptFile(root, sid)).map((p) => [p.ref, p.text]));
+  return events.map((e) => (e.type === "prompt" ? { ...e, text: prompts.get(e.ref) } : e));
+}
+
 export function clearSession(root, sid) {
   const path = sessionFile(root, sid);
   if (existsSync(path)) rmSync(path);
+  try {
+    rmSync(promptFile(root, sid), { force: true });
+  } catch {
+    /* A private-state misconfiguration must not break Stop. */
+  }
 }
 
 const REVERT_RE = /\bgit\s+(revert|reset\s+--hard|checkout\s+--|restore)\b/;
@@ -195,7 +226,7 @@ export function detectEpisodes(events, { nowDay = 0 } = {}) {
         }
       }
       if (REVERT_RE.test(e.command)) contradictions.push({ files: recentEdits.slice(-3) });
-    } else if (e.type === "prompt" && NEG_RE.test(e.text)) {
+    } else if (e.type === "prompt" && (e.negative === true || NEG_RE.test(e.text ?? ""))) {
       const f = recentEdits.at(-1);
       if (f) add(f, "S5"); // weak; never fires alone (gate), needs a co-occurring signal
     }

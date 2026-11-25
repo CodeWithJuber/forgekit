@@ -589,6 +589,7 @@ export function complexityJev(task, { llm, root, call } = {}) {
  * @param {ReturnType<typeof resolveRoutePolicy>} [opts.policy] routing policy (default: resolved
  *   from the user-level + repo config; see src/orchestration.js)
  * @param {"conservative"|"unattended"} [opts.mode] overrides the policy's mode for this call
+ * @param {any[]} [opts.lessonCandidates] bounded ambient ledger candidates
  * @param {boolean} [opts.writesCode] unattended: the task writes code (default true)
  * @param {boolean} [opts.allowTop] unattended: explicit opt-in to the top tier
  */
@@ -604,6 +605,7 @@ export function routeTask(
     bidirectional = true,
     minConfidence = ROUTE_MIN_CONFIDENCE,
     signalFloor = 0.4,
+    lessonCandidates,
     ambiguity,
     policy,
     mode,
@@ -615,7 +617,7 @@ export function routeTask(
   const fanout = symbols.reduce((m, sym) => Math.max(m, grepFanout(root, sym)), 0);
   const churn = files.reduce((m, f) => Math.max(m, gitChurn(root, f)), 0);
   // Merged view (P2 read flip): teammate lessons raise past-mistake density here too.
-  const pastMistakes = matchingLessons(mergedLessons(root, epochDay()), {
+  const pastMistakes = matchingLessons(mergedLessons(root, epochDay(), lessonCandidates), {
     files,
     symbols,
   }).length;
@@ -690,7 +692,8 @@ export function routeTask(
     if (escalateTo && TIER_ORDER.indexOf(escalateTo) <= TIER_ORDER.indexOf(applied.key))
       escalateTo = undefined;
   }
-  const modelOvr = envModelOverride();
+  const profile = activeProvider(root ?? process.cwd());
+  const modelOvr = envModelOverride(profile) || profile.selectedModel;
   return {
     score,
     repoScore,

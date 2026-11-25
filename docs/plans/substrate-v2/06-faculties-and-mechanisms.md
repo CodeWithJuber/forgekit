@@ -7,9 +7,7 @@
 
 ## §1 Impact-awareness — harden the atlas, make the gate mandatory
 
-**Today:** `src/atlas.js` builds a regex-approximate symbol graph (not conservative: it can miss dependents);
-`impact()` traverses reverse edges with hop-decay; the gate only blocks under
-`FORGE_ENFORCE=1`.
+**Implementation status, November 2026.** `forge atlas build --ast` enables optional TypeScript compiler syntax parsing and Python standard-library AST parsing. Inspect reported coverage before using inferred edges. Runtime dependencies and cross-language effects can remain unresolved. The distributed pre-action gate is advisory by default. An operator can enable supported enforcement with `FORGE_ENFORCE=1`. The mandatory gate and `FORGE_GATE` below describe the original proposal.
 
 **Plan:**
 

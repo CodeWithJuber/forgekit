@@ -27,28 +27,24 @@ jobs:
       tier: ${{ steps.select.outputs.tier }}
       tests: ${{ steps.select.outputs.tests }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22
       - id: select
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-          else
-            BASE="${{ github.event.before }}"
-          fi
-          CHANGED=$(git diff --name-only "$BASE"...HEAD | tr '\n' ',' | sed 's/,$//')
-          echo "Changed files: $CHANGED"
-          RESULT=$(node scripts/smart-test-select.mjs --changed "$CHANGED")
-          echo "$RESULT"
-          TIER=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['tier'])")
-          TESTS=$(echo "$RESULT" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['tests']))")
-          echo "tier=$TIER" >> $GITHUB_OUTPUT
-          echo "tests=$TESTS" >> $GITHUB_OUTPUT
+          RESULT=$(node scripts/smart-test-select.mjs --base "$BASE" --head HEAD)
+          printf '%s\n' "$RESULT"
+          printf '%s' "$RESULT" | node -e '
+            const plan = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+            console.log("tier=" + plan.tier);
+            console.log("tests=" + JSON.stringify(plan.tests));
+          ' >> "$GITHUB_OUTPUT"
 
   test:
     name: Test (Node ${{ matrix.node }})
@@ -67,9 +63,9 @@ jobs:
       - name: Skip matrix for cosmetic changes
         if: needs.smart-select.outputs.tier == 'cosmetic'
         run: echo "Cosmetic (docs-only) change — test matrix skipped; biome check in quality-gate covers it."
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: needs.smart-select.outputs.tier != 'cosmetic'
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         if: needs.smart-select.outputs.tier != 'cosmetic'
         with:
           package-manager-cache: false
@@ -79,14 +75,19 @@ jobs:
         run: npm ci
       - name: Run selected tests
         if: needs.smart-select.outputs.tier != 'cosmetic'
+        env:
+          TEST_TIER: ${{ needs.smart-select.outputs.tier }}
+          SELECTED_TESTS: ${{ needs.smart-select.outputs.tests }}
         run: |
-          TIER="${{ needs.smart-select.outputs.tier }}"
-          TESTS="${{ needs.smart-select.outputs.tests }}"
-          if [ "$TIER" = "low" ] && [ -n "$TESTS" ]; then
-            echo "Running selected tests: $TESTS"
-            node --test --import ./test/_setup.js $TESTS
+          if [ "$TEST_TIER" = low ] || [ "$TEST_TIER" = medium ]; then
+            node -e '
+              const files = JSON.parse(process.env.SELECTED_TESTS);
+              if (!files.length) process.exit(1);
+              require("node:child_process").execFileSync(process.execPath,
+                ["--test", "--import", "./test/_setup.js", "--", ...files], {stdio: "inherit"});
+            '
+            if [ "$TEST_TIER" = medium ]; then npm run typecheck; fi
           else
-            echo "Running full suite (tier: $TIER)"
             npm test
           fi
 
@@ -101,8 +102,8 @@ jobs:
     if: needs.smart-select.outputs.tier != 'cosmetic'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22
@@ -129,8 +130,8 @@ jobs:
     name: Research (Python prototypes + recomputation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
       - name: Install prototype test dependencies
@@ -162,8 +163,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v7
-      # Advisory: needs the repo's Dependency graph enabled (Settings → Security & analysis).
-      # continue-on-error keeps the CHECK green until then — this project has zero runtime deps.
-      - uses: actions/dependency-review-action@v5
-        continue-on-error: true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Requires Dependency graph in the repository security settings.
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5

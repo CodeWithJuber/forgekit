@@ -376,7 +376,9 @@ export function verifyDeep({
     symbolsLens(core.unknown, core.provenance?.symbolsChecked),
     impactLens(atlas, changed),
     docsDriftLens(changed),
-    secretsLens(added),
+    core.reviewCoverage?.secretDetected
+      ? { lens: "secrets", ran: true, examined: true, s: 1 }
+      : secretsLens(added),
     speclockLens(targetRoot),
     reviewerLens({ files: changed, added, n: reviewers, llm, run }),
   ];

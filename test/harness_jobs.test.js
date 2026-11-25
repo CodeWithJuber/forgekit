@@ -312,3 +312,27 @@ test("queue rejects linked private database and aliased worktree namespaces", {
     /Linked/,
   );
 });
+
+test("queue defers pre-dispatch outages without exhausting model attempts", async (t) => {
+  const root = workspace(t);
+  enqueueJob(
+    root,
+    {
+      key: "wait-for-provider",
+      maxAttempts: 1,
+      request: { task: "Resume after the provider is ready" },
+    },
+    { now: 10 },
+  );
+  const outage = async () => ({
+    status: "provider_unavailable",
+    reason: "route_credential_missing",
+  });
+  const first = await dispatchNext(root, outage, { now: 10 });
+  assert.deepEqual([first.state, first.attempts, first.availableAt], ["queued", 0, 1010]);
+  const second = await dispatchNext(root, outage, { now: 1010 });
+  assert.deepEqual([second.state, second.attempts, second.availableAt], ["queued", 0, 3010]);
+  assert.equal(await dispatchNext(root, outage, { now: 3009 }), null);
+  const result = await dispatchNext(root, async () => ({ status: "done" }), { now: 3010 });
+  assert.deepEqual([result.state, result.attempts], ["done", 1]);
+});
