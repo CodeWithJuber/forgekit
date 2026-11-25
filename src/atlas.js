@@ -1694,6 +1694,7 @@ const round4 = (x) => Number(x.toFixed(4));
  * @param {number} [opts.threshold]
  * @param {number} [opts.maxHops] reverse-dependency hop cap
  * @param {number} [opts.decay]
+ * @param {Record<string, number>} [opts.edgeWeights] edge priors for comparative evaluation
  * @param {readonly string[]} [opts.relations] subset of IMPACT_RELATIONS
  *   (default: DEFAULT_IMPACT_RELATIONS — reverse only; pass IMPACT_RELATIONS for the wide walk)
  * @param {boolean} [opts.llm]
@@ -1709,6 +1710,7 @@ export function impact(
     threshold = 0.1,
     maxHops = 6,
     decay = 0.85,
+    edgeWeights = EDGE_WEIGHT,
     relations = DEFAULT_IMPACT_RELATIONS,
     llm,
     run,
@@ -1717,13 +1719,24 @@ export function impact(
     hazards,
   } = {},
 ) {
+  if (
+    edgeWeights !== EDGE_WEIGHT &&
+    (!edgeWeights ||
+      !Object.values(edgeWeights).every(
+        (weight) => Number.isFinite(weight) && weight >= 0 && weight <= 1,
+      ))
+  )
+    throw new RangeError("Impact edge weights must be finite probabilities");
   const starts = targetIds(atlas, target);
   const startSet = new Set(starts);
   const { nodeById, incoming, outgoing, ambiguousByName, nodesByFile, fileIndegree } =
     adjacency(atlas);
   const wanted = new Set(relations);
   const step = (conf, edge) =>
-    conf * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
+    conf *
+    (edgeWeights[edge.kind] ?? EDGE_WEIGHT[edge.kind] ?? 0.5) *
+    (edge.confidence ?? 1) *
+    decay;
   const visited = new Map();
   const queue = wanted.has("reverse")
     ? starts.map((id) => ({
