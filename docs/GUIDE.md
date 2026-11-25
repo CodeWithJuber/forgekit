@@ -1181,7 +1181,7 @@ $ forge recall list
 
 ### `forge cortex` and correction review
 
-`forge cortex status` reports project lessons, confirmed and contradicted outcomes, and the number of private proposals. `forge cortex review --json` lists this checkout's pending proposals and their observed source signals. Use `forge cortex confirm LESSON_ID` to accept one and `forge cortex why <symbol-or-file>` to inspect what a host would receive.
+`forge cortex status` reports project lessons, confirmed and contradicted outcomes, and the number of private proposals. `forge cortex review --json` lists this checkout's pending proposals and their observed source signals. Use `forge cortex confirm LESSON_ID` to accept one and `forge cortex why <symbol-or-file>` to inspect what a host would receive. To adopt an incoming v2 correction, inspect `forge ledger show FULL_CLAIM_HASH` and run `forge cortex confirm FULL_CLAIM_HASH` in the receiving checkout.
 
 A repeated edit plus recovery of the same command can create a private proposal. A second independent episode can publish the observed correction. Model-reworded proposals require operator confirmation. Receipts and lifecycle details are documented in the [memory guide](MEMORY.md).
 

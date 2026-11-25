@@ -1,6 +1,8 @@
 // Project the content-addressed ledger into the lesson and fact shapes used by all hosts.
 import { existsSync } from "node:fs";
+import { trustedCorrectionOutcome } from "./correction_receipt.js";
 import {
+  claimId,
   DEFAULT_HALF_LIFE_DAYS,
   evidenceEvents,
   isDormant,
@@ -19,7 +21,7 @@ import { slug } from "./util.js";
  * the legacy lesson id rides in provenance.task (it is excluded from the content
  * address so teammates converge on one claim id).
  *
- * Version 2 uses deduplicated supporting and opposing receipts. The historical shape
+ * Version 2 counts distinct local receipts authenticated for this content and checkout. The historical shape
  * below retains the earlier rules.
  * The legacy lifecycle (candidate/active/quarantined/retired) is local mutable state
  * the ledger deliberately does not store, so status is DERIVED from evidence:
@@ -48,12 +50,18 @@ import { slug } from "./util.js";
 export const LESSON_ACTIVE_VAL = 0.6;
 export const LESSON_KEEP_VAL = 0.55;
 
-export function claimToLesson(claim, nowDay = 0) {
+export function claimToLesson(claim, nowDay = 0, root = undefined) {
   const body = claim.body ?? {};
   const observed = body.correctionVersion === 2;
-  const evidence = observed
-    ? evidenceEvents(claim.evidence)
-    : (claim.evidence ?? []).filter(validOutcome);
+  const id = String(claim.provenance?.task || "") || `lsn_${claim.id.slice(0, 8)}`;
+  // Filter before event deduplication. An unsigned copy of a receipt may have an earlier date.
+  let evidence = (claim.evidence ?? []).filter(validOutcome);
+  if (observed) {
+    evidence =
+      root && claim.id === claimId(claim.kind, body, claim.scope)
+        ? evidenceEvents(evidence.filter((e) => trustedCorrectionOutcome(root, claim.id, id, e)))
+        : [];
+  }
   const confirms = evidence.filter((e) => e.result === "confirm");
   const contradictions = evidence.length - confirms.length;
   const createdDay = claim.provenance?.t ?? 0;
@@ -66,7 +74,7 @@ export function claimToLesson(claim, nowDay = 0) {
     status = "active";
   else if (contradictions && val(claim, nowDay) < 0.45) status = "quarantined";
   return {
-    id: String(claim.provenance?.task || "") || `lsn_${claim.id.slice(0, 8)}`,
+    id,
     trigger: {
       files: body.trigger?.files ?? [],
       symbols: body.trigger?.symbols ?? [],
@@ -110,7 +118,7 @@ export function ledgerLessons(root, nowDay = 0, candidates = undefined) {
     if (!candidates && !existsSync(repoLedger(root))) return [];
     return (candidates ?? loadClaims(repoLedger(root)))
       .filter((c) => c.kind === "lesson")
-      .map((c) => claimToLesson(c, nowDay));
+      .map((c) => claimToLesson(c, nowDay, root));
   } catch {
     return [];
   }
