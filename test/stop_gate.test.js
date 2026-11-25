@@ -60,7 +60,19 @@ const stopGate = (root, sid, extra = {}, env = {}) =>
 function writeProvenance(root, status, { offsetMs = 5000, codeState = true } = {}) {
   mkdirSync(join(root, ".forge"), { recursive: true });
   const p = join(root, ".forge", "provenance.json");
-  const stamp = { tests: { status } };
+  const stamp = {
+    tests: { status },
+    receiptVersion: 2,
+    event: {
+      suites: [
+        {
+          status: "PASS",
+          exitCode: 0,
+          reportedCounts: { total: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 },
+        },
+      ],
+    },
+  };
   if (codeState) stamp.codeState = computeCodeState(root);
   // Signed exactly as `forge verify` signs it (B7) — an UNSIGNED stamp is what an agent can
   // hand-write, and its own test below pins that the gate refuses it.
@@ -407,7 +419,20 @@ test("B7: a hand-written provenance stamp is not test evidence", () => {
   start(second, "b7a2");
   writeFileSync(join(second, "a.js"), "export const one = 71;\n");
   writeFileSync(join(second, ".forge", "state.md"), "# state\n");
-  const signed = signProvenance({ tests: { status: "PASS" }, codeState: computeCodeState(second) });
+  const signed = signProvenance({
+    tests: { status: "PASS" },
+    receiptVersion: 2,
+    event: {
+      suites: [
+        {
+          status: "PASS",
+          exitCode: 0,
+          reportedCounts: { total: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 },
+        },
+      ],
+    },
+    codeState: computeCodeState(second),
+  });
   const p2 = join(second, ".forge", "provenance.json");
   writeFileSync(p2, JSON.stringify(signed));
   utimesSync(p2, new Date(Date.now() + 30000), new Date(Date.now() + 30000));

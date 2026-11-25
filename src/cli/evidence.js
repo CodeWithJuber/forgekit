@@ -34,12 +34,13 @@ async function develop(argv) {
   const { positionals, values } = parse(argv.slice(1), {
     web: { type: "string" },
     verify: { type: "boolean" },
+    mode: { type: "string" },
   });
   const task = required(positionals.join(" "), "a development task");
   const { runEvidence } = await import("../evidence.js");
   const { sourceWorkspaceRoot } = await import("../sources.js");
   const root = sourceWorkspaceRoot(process.cwd());
-  const evidence = await runEvidence(task, { root, web: values.web });
+  const evidence = await runEvidence(task, { root, web: values.web, mode: values.mode });
   const { development, ...sources } = evidence;
   let verification = null;
   if (values.verify) {
@@ -230,17 +231,22 @@ async function team(argv) {
     run: { type: "string" },
     handoff: { type: "string" },
     brief: { type: "string" },
+    review: { type: "boolean" },
+    model: { type: "string" },
     "host-billing": { type: "boolean" },
     "timeout-seconds": { type: "string" },
     "max-workers": { type: "string" },
     "budget-usd": { type: "string" },
   });
+  if (values.model !== undefined && (values.run ?? values.handoff) !== "claude")
+    throw new Error("--model requires --run claude or --handoff claude");
   const task = required(positionals.join(" "), "a task");
   const { teamPlan, runTeam } = await import("../evidence_team.js");
   const { buildEvidence } = await import("../evidence.js");
   const { sourceWorkspaceRoot } = await import("../sources.js");
   const root = sourceWorkspaceRoot(process.cwd());
-  let decomposition;
+  if (values.review && values.brief) throw new Error("Use --review or --brief");
+  let decomposition = values.review ? { mode: "review" } : undefined;
   if (values.brief) {
     const { readFileSync, statSync } = await import("node:fs");
     const stat = statSync(values.brief);
@@ -251,6 +257,8 @@ async function team(argv) {
   const options = {
     root,
     decomposition,
+    host: values.handoff ?? values.run,
+    model: values.model,
     maxWorkers: values["max-workers"] === undefined ? undefined : Number(values["max-workers"]),
     budgetUsd: values["budget-usd"] === undefined ? undefined : Number(values["budget-usd"]),
     evidence: buildEvidence(task, { root }),
@@ -267,6 +275,7 @@ async function team(argv) {
         "Use --host-billing for this CLI's configured provider, or use --handoff <host> for a local plan. This client has no dollar cap.",
       );
     const report = await runPortableTeam(root, host, briefs, {
+      maxWorkers: plan.parallelCap,
       timeoutMs:
         values["timeout-seconds"] === undefined ? 90000 : Number(values["timeout-seconds"]) * 1000,
     });
@@ -275,7 +284,7 @@ async function team(argv) {
     return;
   }
   if (!values.run) return print(teamPlan(task, options));
-  const report = await runTeam(root, task, { ...options, host: values.run });
+  const report = await runTeam(root, task, { ...options, host: values.run, model: values.model });
   print(report);
   if (!report.ok) process.exitCode = 1;
 }

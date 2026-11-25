@@ -1,34 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { applyDistillation, recordContradiction, recordMistake } from "../src/cortex.js";
+import {
+  applyDistillation,
+  confirmCorrection,
+  pendingCorrections,
+  recordContradiction,
+  recordMistake,
+} from "../src/cortex.js";
 import { val } from "../src/ledger.js";
 import {
   equivalentLesson,
   factClaim,
-  importLegacy,
   lessonClaim,
-  reconcileFacts,
   recordLessonEvent,
   shadowFact,
   supersedeLessonClaim,
 } from "../src/ledger_bridge.js";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
 import { newLesson } from "../src/lessons.js";
-import { save } from "../src/lessons_store.js";
-import { readFact, add as recallAdd } from "../src/recall.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { parseStoredFact, add as recallAdd } from "../src/recall.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-bridge-"));
 const ctx = { symbols: ["computeTax"], files: ["src/tax.ts"], keywords: [] };
 const strongSignals = [{ signal: "S1" }, { signal: "S6" }];
 
-test("cortex dual-write: created lesson mints a claim with ZERO evidence (val = prior)", () => {
+test("a first correction only creates a private proposal", () => {
   const root = tmp();
   const r = recordMistake(root, {
     signals: strongSignals,
@@ -37,16 +36,11 @@ test("cortex dual-write: created lesson mints a claim with ZERO evidence (val = 
     episodeId: "e1",
   });
   assert.equal(r.action, "created");
-  const claims = loadClaims(repoLedger(root));
-  assert.equal(claims.length, 1);
-  assert.equal(claims[0].kind, "lesson");
-  assert.equal(claims[0].provenance.task, r.id, "legacy id rides in provenance, NOT the body");
-  assert.equal(claims[0].body.legacyId, undefined, "body is pure content — teammates converge");
-  assert.equal(claims[0].evidence.length, 0, "creation is not confirmation");
-  assert.equal(val(claims[0], 1), 0.5);
+  assert.equal(pendingCorrections(root)[0].id, r.id);
+  assert.deepEqual(loadClaims(repoLedger(root)), []);
 });
 
-test("cortex dual-write: recurrence confirms at bridge weight; reversal contradicts conservatively", () => {
+test("cortex ledger: recurrence confirms at bridge weight; reversal contradicts conservatively", () => {
   const root = tmp();
   recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 1, episodeId: "e1" });
   const r2 = recordMistake(root, {
@@ -65,7 +59,7 @@ test("cortex dual-write: recurrence confirms at bridge weight; reversal contradi
       result: claim.evidence[0].result,
       ref: claim.evidence[0].ref,
     },
-    { oracle: "cortex.episode", result: "confirm", ref: "episode:e2#n1" },
+    { oracle: "cortex.episode", result: "confirm", ref: "episode:e2" },
   );
   const before = val(claim, 2);
   assert.ok(before > 0.5);
@@ -76,24 +70,27 @@ test("cortex dual-write: recurrence confirms at bridge weight; reversal contradi
   assert.equal(
     claim.evidence[1].oracle,
     "cortex.episode",
-    "regex-detected reverts are NOT the full-weight human oracle",
+    "a verified commit reversal is recorded as an observation",
   );
   assert.ok(val(claim, 3) < before, "the reversal pulled confidence down");
   assert.ok(val(claim, 3) > 0.35, "one noisy revert cannot instantly bury a confirmed lesson");
 });
 
-test("cortex dual-write: same-day sessions with colliding episode ids stay distinct evidence", () => {
+test("Cortex counts distinct same-day receipts and ignores replays on later days", () => {
   const root = tmp();
-  recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 1, episodeId: "ep_m0_x" });
-  // Two later sessions the same day — detectEpisodes resets its counter, so both emit
-  // the same episode id. The evidence counter in the ref keeps them distinct.
-  recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 5, episodeId: "ep_m0_x" });
-  recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 5, episodeId: "ep_m0_x" });
+  const record = (episodeId, nowDay) =>
+    recordMistake(root, { signals: strongSignals, context: ctx, nowDay, episodeId });
+  record("first", 1);
+  record("second", 1);
+  record("third", 1);
+  assert.equal(record("second", 2).action, "duplicate");
   const claim = loadClaims(repoLedger(root))[0];
-  assert.equal(claim.evidence.length, 2, "both real confirmations recorded, none deduped away");
+  assert.equal(claim.evidence.length, 2);
+  assert.equal(claim.body.correctionVersion, 2);
+  assert.equal(claim.provenance.task, record("third", 2).id);
 });
 
-test("applyDistillation supersedes: a changed meaning links history but inherits no trust (F07)", () => {
+test("a late distillation stays private until explicit review and retains parent history (F07)", () => {
   const root = tmp();
   recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 1, episodeId: "e1" });
   recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 2, episodeId: "e2" });
@@ -101,18 +98,35 @@ test("applyDistillation supersedes: a changed meaning links history but inherits
   const beforeClaim = loadClaims(dir)[0];
   assert.equal(beforeClaim.evidence.length, 1);
 
-  const ok = applyDistillation(root, "lsn_computetax", {
+  const ok = applyDistillation(root, beforeClaim.provenance.task, {
     whatWentWrong: "computeTax was edited without checking its callers.",
     correctedBehavior: "Query the atlas for computeTax dependents before editing.",
   });
   assert.equal(ok, true);
+  assert.equal(loadClaims(dir).length, 1);
+  assert.equal(loadClaims(dir)[0].tombstone, undefined);
+  assert.equal(pendingCorrections(root)[0].review.operatorRequired, true);
+  assert.equal(
+    recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 3, episodeId: "e3" })
+      .action,
+    "pending-review",
+  );
+  assert.equal(confirmCorrection(root, beforeClaim.provenance.task, 4).status, "active");
   const claims = loadClaims(dir);
   assert.equal(claims.length, 2);
   const old = claims.find((c) => c.id === beforeClaim.id);
   const distilled = claims.find((c) => c.id !== beforeClaim.id);
   assert.match(old.tombstone.reason, new RegExp(`superseded-by:${distilled.id}`));
-  assert.equal(distilled.evidence.length, 0, "a new proposition earns its own evidence");
-  assert.equal(val(distilled, 2), 0.5, "the rewrite starts at the prior, below every bar");
+  assert.deepEqual(
+    distilled.evidence.map((e) => e.oracle),
+    ["human.accept"],
+  );
+  assert.equal(
+    recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 5, episodeId: "e4" })
+      .action,
+    "observed",
+  );
+  assert.equal(loadClaims(dir).find((c) => c.id === distilled.id).evidence.length, 1);
   assert.equal(old.evidence.length, 1, "the parent's history stays inspectable");
   assert.equal(distilled.provenance.supersedes, beforeClaim.id, "lineage is recorded");
   assert.equal(distilled.provenance.rewrite, "unverified");
@@ -229,9 +243,7 @@ test("shadowFact (C4): restoring a superseded value (v1 → v2 → v1) leaves a 
   // Idempotent: re-remembering the current value changes nothing.
   assert.equal(shadowFact(dir, "api-base", "https://api.v1.example", 4).id, back.id);
   assert.deepEqual(live(), ["https://api.v1.example"]);
-  // And the store/ledger reconciliation still recognises the restored claim as backed.
   recallAdd(store, "api-base", "https://api.v1.example");
-  assert.equal(reconcileFacts(store, dir, 5).removed, 0);
   assert.deepEqual(live(), ["https://api.v1.example"]);
 });
 
@@ -241,126 +253,11 @@ test("factClaim: trims name/text so the shadow path and the file-parse path mint
   assert.equal(a.claim.id, b.claim.id);
 });
 
-test("readFact: CRLF files parse identically to LF files (no Windows fork of the format)", () => {
-  const store = tmp();
-  recallAdd(store, "API Style", "REST with cursor pagination");
-  const lf = readFact(store, "api-style");
-  // Simulate a core.autocrlf checkout of the same fact file:
-  writeFileSync(
-    join(store, "facts", "api-style.md"),
-    "# API Style\r\n\r\nREST with cursor pagination\r\n",
-  );
-  const crlf = readFact(store, "api-style");
+test("historical LF and CRLF facts produce the same ledger claim", () => {
+  const lf = parseStoredFact("api-style", "# API Style\n\nREST with cursor pagination\n");
+  const crlf = parseStoredFact("api-style", "# API Style\r\n\r\nREST with cursor pagination\r\n");
   assert.deepEqual(lf, crlf);
   assert.equal(factClaim(lf.name, lf.text).claim.id, factClaim(crlf.name, crlf.text).claim.id);
-});
-
-test("reconcileFacts: a fact deleted from the store is tombstoned in the ledger", () => {
-  const store = tmp();
-  const dir = join(store, "ledger");
-  recallAdd(store, "keep", "this fact stays");
-  recallAdd(store, "extra", "this fact stays too");
-  shadowFact(dir, "keep", "this fact stays", 1);
-  shadowFact(dir, "gone", "this was deleted from the store", 1);
-  const r = reconcileFacts(store, dir, 2);
-  assert.equal(r.ok, true);
-  assert.equal(r.removed, 1);
-  const claims = loadClaims(dir);
-  assert.equal(claims.find((c) => c.body.name === "gone").tombstone.reason, "removed-from-store");
-  assert.equal(claims.find((c) => c.body.name === "keep").tombstone, undefined);
-});
-
-test("reconcileFacts spares a merged teammate fact (only locally-authored claims reconcile)", () => {
-  const store = tmp();
-  const dir = join(store, "ledger");
-  const prev = process.env.FORGE_AUTHOR;
-  try {
-    process.env.FORGE_AUTHOR = "Me <me@example.com>";
-    recallAdd(store, "keep", "this fact stays");
-    shadowFact(dir, "keep", "this fact stays", 1);
-    shadowFact(dir, "gone", "a consolidated-away duplicate", 1); // mine, file deleted
-    process.env.FORGE_AUTHOR = "Teammate <team@example.com>";
-    shadowFact(dir, "team wisdom", "arrived via forge ledger merge", 1); // theirs, never had a file
-    process.env.FORGE_AUTHOR = "Me <me@example.com>";
-    const r = reconcileFacts(store, dir, 2);
-    assert.equal(r.ok, true);
-    assert.equal(r.removed, 1, "only MY fileless claim is removed-from-store");
-    const claims = loadClaims(dir);
-    assert.equal(claims.find((c) => c.body.name === "gone").tombstone.reason, "removed-from-store");
-    assert.equal(
-      claims.find((c) => c.body.name === "team wisdom").tombstone,
-      undefined,
-      "a teammate's merged fact must survive my consolidate (it IS the read path now)",
-    );
-  } finally {
-    if (prev === undefined) delete process.env.FORGE_AUTHOR;
-    else process.env.FORGE_AUTHOR = prev;
-  }
-});
-
-test("importLegacy: back-fills pre-ledger history; skips claims already tracked live", () => {
-  const root = tmp();
-  // A legacy lesson with history that predates the ledger: 3 confirmations, 1 contradiction.
-  const lesson = {
-    ...newLesson(
-      {
-        id: "lsn_computetax",
-        trigger: { symbols: ["computeTax"], files: [], keywords: [] },
-        scope: "symbol",
-        whatWentWrong: "Edited computeTax without checking callers.",
-        correctedBehavior: "Check callers and tests before editing computeTax.",
-      },
-      10,
-    ),
-    evidenceCount: 3,
-    contradictionCount: 1,
-    lastConfirmedDay: 20,
-    status: "active",
-  };
-  assert.equal(save(root, lesson).ok, true);
-  const brainStore = join(root, ".forge", "brain");
-  assert.equal(
-    recallAdd(brainStore, "deploy order", "run migrations before the app roll").ok,
-    true,
-  );
-
-  const r = importLegacy(root, {
-    recallStore: brainStore,
-    recallLedger: repoLedger(root),
-    nowDay: 20,
-  });
-  assert.deepEqual(
-    { lessons: r.lessons, facts: r.facts, outcomes: r.outcomes, refused: r.refused },
-    { lessons: 1, facts: 1, outcomes: 4, refused: [] },
-  );
-  const claims = loadClaims(repoLedger(root));
-  assert.equal(claims.length, 2);
-  const imported = claims.find((c) => c.kind === "lesson");
-  assert.equal(imported.evidence.length, 4);
-  const v = val(imported, 20);
-  assert.ok(v > 0.5, `3 confirms vs 1 contradiction should trust the lesson (val=${v})`);
-
-  // Re-run — even after the legacy counters move — is a no-op for tracked claims:
-  save(root, { ...lesson, evidenceCount: 4, lastConfirmedDay: 25 });
-  const again = importLegacy(root, {
-    recallStore: brainStore,
-    recallLedger: repoLedger(root),
-    nowDay: 25,
-  });
-  assert.deepEqual({ l: again.lessons, f: again.facts, o: again.outcomes }, { l: 0, f: 0, o: 0 });
-  assert.equal(loadClaims(repoLedger(root)).find((c) => c.kind === "lesson").evidence.length, 4);
-});
-
-test("importLegacy: a lesson already shadow-written live never gets synthetic double-counts", () => {
-  const root = tmp();
-  recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 1, episodeId: "e1" });
-  recordMistake(root, { signals: strongSignals, context: ctx, nowDay: 2, episodeId: "e2" });
-  const before = loadClaims(repoLedger(root))[0];
-  assert.equal(before.evidence.length, 1, "one live confirm");
-  const r = importLegacy(root, { nowDay: 3 });
-  assert.equal(r.lessons, 0, "claim already tracked");
-  assert.equal(r.outcomes, 0, "no synthetic evidence for a live-tracked claim");
-  assert.equal(loadClaims(repoLedger(root))[0].evidence.length, 1, "evidence unchanged");
 });
 
 test("lessonClaim: id is stable under count/status churn — confirms don't re-mint", () => {

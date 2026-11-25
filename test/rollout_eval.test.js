@@ -76,3 +76,24 @@ test("routing needs lower cost at equal quality; context needs fewer tokens at e
     assert.equal(evaluateRollout(frozen, r).verdict, "keep-baseline");
   }
 });
+
+test("release decisions bind operator targets before data collection and expose exact paired signs", () => {
+  const raw = { ...suite(), version: 2, targets: { speedGainPct: 25, qualityGainPoints: 3 } };
+  const f = freezeSuite(raw);
+  const r = run(f);
+  let result = evaluateRollout(f, r);
+  assert.equal(result.verdict, "keep-baseline");
+  assert.deepEqual(result.pairedSigns.speed, { wins: 20, losses: 0, ties: 0, pOneSided: 2 ** -20 });
+  assert.equal(result.pairedSigns.quality.pOneSided, null);
+  assert.notEqual(
+    f.hash,
+    freezeSuite({ ...raw, targets: { ...raw.targets, speedGainPct: 19 } }).hash,
+  );
+  assert.throws(
+    () => freezeSuite({ ...raw, targets: { speedGainPct: 0, qualityGainPoints: 0 } }),
+    /targets/,
+  );
+  for (const row of r.runs) row.candidate.quality += 3;
+  result = evaluateRollout(f, r);
+  assert.equal(result.verdict, "eligible");
+});

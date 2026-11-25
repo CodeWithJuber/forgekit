@@ -66,7 +66,11 @@ export async function handleHarnessJobs(root, group, argv, { config, run }) {
   const [action, ...args] = argv;
   const json = (name) => JSON.parse(input(root, name).toString("utf8"));
   if (group === "council") {
-    if (action === "run" && args.length === 1) return runDelegation(root, json(args[0]), run);
+    if (action === "run" && args.length === 1) {
+      const outcome = await runDelegation(root, json(args[0]), run);
+      if (outcome.ok === false) process.exitCode = 1;
+      return outcome;
+    }
     if (action === "plan" && args.length === 1) return delegationPlan(root, json(args[0]));
     if (action === "convene" && args.length === 1) return conveneCouncil(root, json(args[0]), run);
     if (action === "synthesize" && args.length === 1) return synthesizeCouncil(root, json(args[0]));

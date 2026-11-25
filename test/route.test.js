@@ -4,158 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { read as readMetrics } from "../src/metrics.js";
+import { MODELS, TIER_ORDER } from "../src/model_tiers.js";
+import { setSetting } from "../src/orchestration.js";
+import { setProfileModel } from "../src/providers.js";
 import {
-  BANDS,
-  bandOf,
-  complexity,
-  complexityLLM,
-  contentGrams,
-  EXEMPLARS,
+  calibrateRouting,
+  describeRoute,
   emitGatewayConfig,
   meterRoute,
-  RUBRIC,
-  recommend,
-  reconcileRoute,
   routeTask,
-  rubricComplexity,
 } from "../src/route.js";
 import { anthropicPage, ok, stubTransport } from "./_catalog_stub.js";
-
-test("contentGrams: stopwords dropped, unigrams+bigrams kept", () => {
-  const g = contentGrams("Implement a rate limiter with the token bucket");
-  assert.ok(g.has("rate") && g.has("limiter") && g.has("token") && g.has("bucket"));
-  assert.ok(g.has("rate limiter") && g.has("token bucket"), "bigrams bridge stopwords");
-  assert.ok(!g.has("a") && !g.has("the") && !g.has("with"), "stopwords carry no topic");
-});
-
-test("rubric: no lexical match at all falls back to the prior (abstains)", () => {
-  const r = rubricComplexity("zzz qqq xxx");
-  assert.equal(r.confidence, 0);
-  assert.ok(Math.abs(r.score - RUBRIC.prior) < 0.05, "score stays at the no-signal prior");
-  assert.equal(r.band, "cheap");
-});
-
-test("rubric: an UNSEEN phrasing routes by resemblance, not by literal keywords", () => {
-  // No old keyword ("race condition", "mutex") appears — the k-NN must still find
-  // the concurrency neighborhood through shared vocabulary.
-  const r = rubricComplexity("two threads deadlock when the queue is full, fix the locking");
-  assert.equal(r.band, "premium", `expected premium, got ${r.band} (score ${r.score})`);
-  assert.ok(r.neighbors.length > 0, "neighbors are returned, every score is attributable");
-});
-
-test("rubric: strongTopicSignal fires on confident hard matches only", () => {
-  const hard = rubricComplexity("implement a rate limiter with a token bucket algorithm");
-  assert.equal(hard.strongTopicSignal, true);
-  const easy = rubricComplexity("fix a typo in the readme");
-  assert.equal(easy.strongTopicSignal, false);
-  const moderate = rubricComplexity("add a small in-memory cache with get and set");
-  assert.equal(moderate.strongTopicSignal, false, "moderate work is safe to route down");
-});
-
-test("rubric: confidence shrinks weak matches toward the prior", () => {
-  const strong = rubricComplexity("implement dijkstra shortest path algorithm");
-  const weak = rubricComplexity("the dijkstra approach discussion notes");
-  assert.ok(strong.score > weak.score, "a full exemplar match outranks one shared token");
-  assert.ok(strong.confidence > weak.confidence);
-});
-
-test("rubric: one shared word is not a match (deep review D1)", () => {
-  // "add a comment" reduces to the single gram {comment}, so the overlap coefficient read 1.00
-  // against any prose containing "comment" — and a concurrency bug was routed as a trivial one.
-  const r = rubricComplexity(
-    "resolve the deadlock between the comment writer and the comment indexer threads",
-  );
-  assert.ok(
-    !r.neighbors.some((n) => n.text === "add a comment"),
-    `a one-word coincidence is not a neighbor: ${JSON.stringify(r.neighbors)}`,
-  );
-  assert.equal(r.band, "premium", `deadlock work stays premium (score ${r.score})`);
-  for (const n of r.neighbors) assert.ok(n.shared >= 2, "every neighbor shares at least 2 grams");
-  // A task whose whole footprint IS one gram still matches on it — that is all the evidence there is.
-  assert.equal(rubricComplexity("fix the deadlock").band, "premium");
-  // ...and an incidental single-word overlap falls back to the no-signal prior.
-  const weak = rubricComplexity("the dijkstra approach discussion notes");
-  assert.equal(weak.neighbors.length, 0);
-  assert.ok(Math.abs(weak.score - RUBRIC.prior) < 1e-9);
-});
-
-test("rubric: task size is weighted once, by the repo facet — not again here (D1)", () => {
-  // Both terms saturate on real issue prose, which floored every long task near the cheap/mid
-  // line. Padding a task with function words must not move its rubric score at all now.
-  const task = "add validation to user input";
-  const padded = `${task} ${"the ".repeat(200)}`;
-  assert.equal(rubricComplexity(padded).score, rubricComplexity(task).score);
-  assert.equal(RUBRIC.struct.length, undefined, "no length weight in the struct table");
-  // The repo facet still counts size, so the signal is not lost.
-  assert.ok(complexity({ sizeWords: 90 }).score > complexity({ sizeWords: 4 }).score);
-});
-
-test("EXEMPLARS: no label reaches the fable band — model_tiers routes architecture to Opus", () => {
-  for (const e of EXEMPLARS)
-    assert.notEqual(
-      recommend(e.y).key,
-      "fable",
-      `${e.text} (y ${e.y}) must not label into the fable band`,
-    );
-  assert.ok(
-    EXEMPLARS.some((e) => /architecture|module boundaries|cross-module/.test(e.text)),
-    "architectural rows are still in the bank",
-  );
-});
-
-test("EXEMPLARS: labels are valid and every band is represented", () => {
-  for (const e of EXEMPLARS) {
-    assert.ok(typeof e.text === "string" && e.text.length > 0);
-    assert.ok(e.y >= 0 && e.y <= 1, `label in range: ${e.text}`);
-  }
-  const ys = new Set(EXEMPLARS.map((e) => (e.y < 0.3 ? "cheap" : e.y <= 0.6 ? "mid" : "premium")));
-  assert.deepEqual([...ys].sort(), ["cheap", "mid", "premium"]);
-});
-
-test("complexity is monotonic and bounded", () => {
-  const trivial = complexity({ files: 0, fanout: 0, sizeWords: 4 }).score;
-  const heavy = complexity({
-    files: 8,
-    fanout: 20,
-    churn: 15,
-    pastMistakes: 4,
-    ambiguity: 0.8,
-    sizeWords: 80,
-  }).score;
-  assert.ok(trivial >= 0 && trivial < 0.25, "a trivial task is 'simple'");
-  assert.ok(heavy > 0.8 && heavy <= 1, "a heavy task is near the top");
-  assert.ok(heavy > trivial);
-});
-
-test("recommend: a prime-finder gets Haiku, not Fable", () => {
-  const { score } = complexity({ files: 0, fanout: 0, sizeWords: 5 });
-  assert.equal(recommend(score).key, "haiku");
-});
-
-test("recommend: a cross-module, high-fanout, buggy task escalates to Opus/Fable", () => {
-  const { score, norm } = complexity({
-    files: 8,
-    fanout: 20,
-    churn: 15,
-    pastMistakes: 4,
-    ambiguity: 0.9,
-    sizeWords: 90,
-  });
-  const r = recommend(score, norm);
-  assert.ok(["opus", "fable"].includes(r.key), `escalated (${r.key})`);
-  assert.ok(
-    r.reasons.includes("fanout") && r.reasons.includes("files"),
-    "reasons name the drivers",
-  );
-});
-
-test("routeTask runs against a real repo and returns a model + reasons", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const r = routeTask(root, "write a function to check if a number is prime");
-  assert.ok(r.model?.id, "picked a concrete model");
-  assert.equal(r.key, "haiku", "trivial task → cheapest tier");
-  assert.ok(typeof r.score === "number");
-});
 
 test("emitGatewayConfig writes a LiteLLM config that never pins @latest", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-route-"));
@@ -252,194 +111,42 @@ test("emitGatewayConfig: a catalog string can never splice a second entry into t
     assert.match(l, /litellm_params: \{ model: "[^"]*" \}$/, l);
 });
 
-test("complexityLLM: parses a band into a score floor, rejects junk", () => {
-  const cheap = complexityLLM("x", { run: () => '{"band":"cheap","reason":"trivial"}' });
-  assert.equal(cheap.band, "cheap");
-  const premium = complexityLLM("x", { run: () => '{"band":"premium","reason":"distributed"}' });
-  assert.ok(premium.score > cheap.score, "premium floors higher than cheap");
-  assert.equal(complexityLLM("x", { run: () => '{"band":"???"}' }), null);
-  assert.equal(complexityLLM("x", { run: () => "not json" }), null);
-});
-
-test("routeTask (llm on): a higher-band vote is deferred to the verifier, never applied (§5.1)", () => {
+test("routing abstains for every prompt wording without verified evidence and meters no guessed tier", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task = "write a function to check if a number is prime";
-  const base = routeTask(root, task);
-  const up = routeTask(root, task, { llm: true, run: () => '{"band":"premium","reason":"x"}' });
-  assert.equal(up.key, base.key, "the model's own judgment does not buy a bigger tier");
-  assert.equal(up.provenance.path, "llm-raise-deferred");
-  assert.equal(up.llm.direction, "raise-deferred");
-  assert.equal(up.llm.escalateTo, "opus", "the premium floor is kept as the escalation target");
-});
-
-test("routeTask (bidirectional): a text vote carries no p(band), so it lowers only with the gate off", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  // A moderate task with no strong algorithmic/architectural signal — safe to route down.
-  const task = "add a small in-memory cache with get and set";
-  const base = routeTask(root, task);
-  const run = () => '{"band":"cheap","reason":"trivial"}';
-  const gated = routeTask(root, task, { llm: true, run });
-  assert.equal(gated.score, base.score, "no reported confidence → the rubric stands");
-  assert.equal(gated.llm.overruledBy, "confidence");
-  const down = routeTask(root, task, { llm: true, run, minConfidence: 0 });
-  assert.equal(down.provenance.path, "llm-lowered");
-  assert.equal(down.score, BANDS.cheap.ceiling, "lowered to the voted band's ceiling");
-  assert.equal(down.key, "haiku");
-});
-
-test("routeTask (bidirectional): a strong-signal task holds the floor even on a 'cheap' vote", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task =
-    "Design and implement a thread-safe distributed rate limiter with a token-bucket algorithm";
-  const base = routeTask(root, task);
-  const down = routeTask(root, task, {
-    llm: true,
-    minConfidence: 0,
-    run: () => '{"band":"cheap","reason":"looks easy"}',
-  });
-  assert.ok(down.score >= 0.4, "algorithmic/architectural floor keeps it off the cheap tier");
-  assert.ok(down.score <= base.score);
-});
-
-test("routeTask (bidirectional:false): conservative mode — a 'cheap' vote can't lower", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task = "add a small in-memory cache with get and set";
-  const base = routeTask(root, task);
-  const down = routeTask(root, task, {
-    llm: true,
-    bidirectional: false,
-    minConfidence: 0,
-    run: () => '{"band":"cheap","reason":"trivial"}',
-  });
-  assert.equal(down.score, base.score, "conservative mode never routes below deterministic");
-  assert.equal(down.llm.overruledBy, "bidirectional-off");
-});
-
-// --- reconcileRoute: band-to-band, confidence-gated, lower-only (deep review D2–D5) ---
-
-test("bandOf reads recommend()'s cutoffs; each band ceiling stays inside its band", () => {
-  assert.equal(bandOf(0.24), "cheap");
-  assert.equal(bandOf(0.25), "mid");
-  assert.equal(bandOf(0.55), "premium");
-  for (const [band, { floor, ceiling }] of Object.entries(BANDS)) {
-    assert.equal(bandOf(floor), band);
-    assert.equal(bandOf(ceiling), band);
+  for (const task of ["fix typo", "auth money migrations secrets", "सुरक्षा प्रणाली में सुधार करें"]) {
+    const rec = routeTask(root, task, { mode: "unattended", allowTop: true });
+    assert.equal(rec.status, "unrated");
+    assert.equal(rec.model, null);
+    assert.equal(rec.score, null);
+    assert.match(describeRoute(rec), /No model recommendation/);
+    meterRoute(root, task, rec);
   }
-  assert.equal(recommend(BANDS.cheap.ceiling).key, "haiku");
-  assert.equal(recommend(BANDS.mid.ceiling).key, "sonnet");
+  assert.deepEqual(readMetrics(root, { stage: "route" }), []);
+  assert.equal(calibrateRouting(root).status, "unrated");
 });
 
-test("reconcileRoute: agreement keeps the point score — a premium vote on fable stays fable", () => {
-  const fable = reconcileRoute(0.887, { band: "premium", confidence: 0.99 });
-  assert.deepEqual(fable, { score: 0.887, path: "llm-agreed" });
-  assert.equal(recommend(fable.score).key, "fable");
-  const mid = reconcileRoute(0.431, { band: "mid", confidence: 0.99 });
-  assert.deepEqual(mid, { score: 0.431, path: "llm-agreed" });
-});
-
-test("reconcileRoute: a confident lower vote moves to that band's ceiling, any distance", () => {
-  assert.deepEqual(reconcileRoute(0.53, { band: "cheap", confidence: 0.95 }), {
-    score: BANDS.cheap.ceiling,
-    path: "llm-lowered",
-  });
-  assert.equal(reconcileRoute(0.9, { band: "mid", confidence: 0.95 }).score, BANDS.mid.ceiling);
-  assert.equal(reconcileRoute(0.9, { band: "cheap", confidence: 0.95 }).score, BANDS.cheap.ceiling);
-});
-
-test("reconcileRoute: p(band) from the distribution outranks the scalar confidence", () => {
-  const r = reconcileRoute(0.5, {
-    band: "cheap",
-    confidence: 0.99,
-    probabilities: { cheap: 0.4, mid: 0.35, premium: 0.25 },
-  });
-  assert.equal(r.path, "llm-overruled");
-  assert.equal(r.overruledBy, "confidence");
-  assert.equal(r.score, 0.5);
-  assert.equal(
-    reconcileRoute(0.5, { band: "cheap", confidence: 0.99 }, { minConfidence: 0.995 }).overruledBy,
-    "confidence",
-    "the threshold is configurable",
-  );
-});
-
-test("reconcileRoute: a higher vote is deferred with its escalation target", () => {
-  assert.deepEqual(reconcileRoute(0.1, { band: "premium", confidence: 1 }), {
-    score: 0.1,
-    path: "llm-raise-deferred",
-    escalateTo: "opus",
-  });
-  assert.equal(reconcileRoute(0.1, { band: "mid", confidence: 1 }).escalateTo, "sonnet");
-});
-
-test("reconcileRoute: the strong-signal floor bounds a lower, and can veto it inside the band", () => {
-  const opts = { strongSignal: true, signalFloor: 0.4 };
-  assert.deepEqual(reconcileRoute(0.78, { band: "cheap", confidence: 0.99 }, opts), {
-    score: 0.4,
-    path: "llm-lowered",
-    floored: true,
-  });
-  assert.deepEqual(reconcileRoute(0.45, { band: "cheap", confidence: 0.99 }, opts), {
-    score: 0.45,
-    path: "llm-overruled",
-    overruledBy: "signal-floor",
-  });
-  assert.equal(reconcileRoute(0.45, null).path, "deterministic");
-});
-
-test("routeTask (llm on): a failing model call falls back to deterministic", () => {
+test("an explicit model selection is returned exactly and carries no inferred quality or price", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task = "write a function to check if a number is prime";
-  const throwing = routeTask(root, task, {
-    llm: true,
-    run: () => {
-      throw new Error("no cli");
-    },
-  });
-  const base = routeTask(root, task);
-  assert.equal(throwing.key, base.key, "fell back to deterministic tier");
-  assert.equal(throwing.provenance.path, "deterministic");
-});
-
-test("routeTask (llm on): fires exactly ONE model call — no redundant inner assumption call", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  let calls = 0;
-  const run = (prompt) => {
-    calls++;
-    // only the complexity proposer should reach the model here
-    assert.match(prompt, /complexity/i, "the single call is the routing/complexity proposer");
-    return '{"band":"mid","reason":"x"}';
-  };
-  routeTask(root, "refactor the password reset flow in auth.js", { llm: true, run });
-  assert.equal(calls, 1, "routeTask must not also run an assumption model call");
-});
-
-test("meterRoute: one route metrics event lands with the chosen tier; routeTask itself never writes", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task = "write a function to check if a number is prime";
+  setProfileModel(root, "anthropic", "operator-chosen-model");
+  const task = "private project phrase";
   const rec = routeTask(root, task);
-  assert.deepEqual(readMetrics(root, { stage: "route" }), [], "routing alone is write-free");
+  assert.equal(rec.status, "configured");
+  assert.equal(rec.model.id, "operator-chosen-model");
+  assert.equal(rec.provenance.path, "operator-selection");
+  assert.equal(rec.availability, "configured-only");
+  assert.equal(rec.score, null);
+  assert.equal(rec.expectedCost, null);
   meterRoute(root, task, rec);
   const events = readMetrics(root, { stage: "route" });
-  assert.equal(events.length, 1, "the explicit caller meters exactly once");
-  assert.equal(events[0].tier, rec.tier, "the event carries the chosen tier");
-  assert.match(events[0].ref, /^[0-9a-f]{12}$/, "ref is a short task hash, not the task text");
-  assert.ok(!JSON.stringify(events[0]).includes("prime"), "task text never leaks into metrics");
+  assert.equal(events[0].tier, rec.model.id);
+  assert.ok(!JSON.stringify(events).includes(task));
 });
 
-test("routeTask: a precomputed ambiguity matches computing it internally", () => {
+test("an exact pin still respects an operator's explicit top-tier prohibition", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-route-"));
-  const task = "add a validation helper";
-  const a = routeTask(root, task).score;
-  const b = routeTask(root, task, { ambiguity: 0 }).score;
-  assert.equal(typeof a, "number");
-  assert.equal(typeof b, "number");
-});
-
-test("E5: a non-finite complexity score routes to the default tier, never to fable", () => {
-  for (const s of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, undefined]) {
-    const r = recommend(/** @type {number} */ (s));
-    assert.equal(r.key, "sonnet", `recommend(${s}) → default tier`);
-    assert.ok(r.reasons.includes("unknown-score"), "and says why");
-  }
-  assert.equal(recommend(0.9).key, "fable", "finite scores are unaffected");
+  const id = MODELS[TIER_ORDER.at(-1)].id;
+  setProfileModel(root, "anthropic", id);
+  assert.equal(routeTask(root, "work").model.id, id);
+  assert.equal(setSetting(root, "route.topTier", "never").ok, true);
+  assert.equal(routeTask(root, "work", { allowTop: true }).model, null);
 });

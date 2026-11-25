@@ -1,32 +1,30 @@
-// forge cortex — orchestration that ties the pure core (lessons.js) to storage
-// (lessons_store.js). This is what the hooks (Layer 0) call: a scored signal-cluster
-// becomes a created/confirmed lesson; an independent human reversal becomes a
-// contradiction. Kept fs-thin and deterministic (day + ids passed in) so it's testable
-// without any hook wiring.
+// Turn observed corrections into private proposals, and corroborated proposals into ledger evidence.
+import { pendingCorrections, withCorrection } from "./cortex_observations.js";
+
+export { pendingCorrections } from "./cortex_observations.js";
 
 import { equivalentLesson, recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
-import { ledgerLessons, mergedLessons } from "./ledger_read.js";
-import { recordUse, repoLedger } from "./ledger_store.js";
+import { mergedLessons } from "./ledger_read.js";
+import { readEvidence, recordUse, repoLedger } from "./ledger_store.js";
 import {
   confidenceOf,
-  confirm,
-  contradict,
   matchScore,
   newLesson,
+  SIGNALS,
   scoreMistake,
   selectForInjection,
 } from "./lessons.js";
-import { appendEpisode, load, readEpisodes, save } from "./lessons_store.js";
-import { ledgerOnly, slug } from "./util.js";
+import { lessonIsSafe } from "./lessons_store.js";
+import { sourceWorkspaceRoot } from "./sources.js";
+import { contentHash, slug } from "./util.js";
 
-// The lesson set the confirm-vs-create dedup compares against. Normally the legacy
-// files (canonical local state); under FORGE_LEDGER_ONLY there are none, so the ledger's
-// own materialized lessons (same legacy ids via provenance.task) are the dedup source —
-// a recurring local mistake then appends confirm evidence to its existing claim instead
-// of minting a duplicate.
-const localLessons = (root, nowDay) => (ledgerOnly() ? ledgerLessons(root, nowDay) : load(root));
-
-const lessonIdFor = (ctx) => `lsn_${slug(ctx.symbols?.[0] || ctx.files?.[0] || "ctx") || "ctx"}`;
+const sorted = (values = []) =>
+  [...new Set(values.filter((v) => typeof v === "string" && v))].sort();
+const lessonIdFor = (ctx) => {
+  const locations = [sorted(ctx.files), sorted(ctx.symbols), ctx.check ?? ""];
+  const label = slug(locations[1][0] || locations[0][0]) || "correction";
+  return `lsn_${label.slice(0, 48)}_${contentHash(JSON.stringify(locations)).slice(0, 16)}`;
+};
 
 /** Two contexts overlap if they share any file or symbol. */
 const overlaps = (a, b) => {
@@ -44,148 +42,212 @@ export function matchingLessons(
   return lessons.filter((l) => statuses.includes(l.status) && matchScore(l, context) > 0);
 }
 
-// Deterministic fallback when no LLM distiller ran (the Stop-hook distiller replaces this).
-function templateDistill(context) {
-  const sym = context.symbols?.[0];
-  const where = sym ? `\`${sym}\`` : context.files?.[0] ? `\`${context.files[0]}\`` : "this code";
-  return {
-    whatWentWrong: `An edit to ${where} was corrected (repeated / reverted / broke a check).`,
-    correctedBehavior: sym
-      ? `Before editing ${where}, check its callers and tests first.`
-      : `Slow down on ${where}: re-read and check impact before editing.`,
-  };
-}
-
-/**
- * Record a correction episode. If the signals clear the mistake bar, create a new
- * candidate lesson (first occurrence) or confirm the matching one (a recurrence — the
- * only thing that promotes a lesson toward `active`). Always logs the episode.
- * @param {string} root
- * @param {{signals:{signal:string}[], context:object, nowDay:number, episodeId:string, distilled?:{whatWentWrong:string, correctedBehavior:string}}} opts
- * @returns {{action:string, id?:string, status?:string, p:number, fires:boolean}}
- */
-export function recordMistake(root, { signals, context, nowDay, episodeId, distilled }) {
-  const { p, fires } = scoreMistake(signals);
-  // A weak-but-firing episode (0.4–0.7) only earns a lesson if the same context already
-  // misfired before — recurrence, not a single shot. Check BEFORE logging this episode.
-  const recurredWeak = readEpisodes(root).some(
-    (e) => e.kind === "mistake" && overlaps(e.context ?? {}, context),
-  );
-  appendEpisode(root, {
-    id: episodeId,
-    kind: "mistake",
-    signals: signals.map((s) => s.signal),
-    p,
-    context,
-    day: nowDay,
-  });
-  const strong = fires && p >= 0.7;
-  const accumulated = fires && p >= 0.4 && recurredWeak;
-  if (!strong && !accumulated) return { action: "logged", p, fires };
-
-  // Deliberately LEGACY-ONLY (not mergedLessons): this lookup decides confirm-vs-create
-  // for a LOCAL write. A teammate's merged ledger claim has no local file, and letting it
-  // match would swallow a fresh local mistake into confirm() — which edits a legacy file
-  // that doesn't exist — and hang the shadow evidence ref (#n<count>) off counters this
-  // repo never owned. Creating locally is correct AND convergent: the new lesson's shadow
-  // claim content-addresses to the teammate's claim, so both sides' evidence lands on ONE
-  // claim at the next `forge ledger merge`.
-  const existing = matchingLessons(localLessons(root, nowDay), context)[0];
-  if (existing) {
-    const c = confirm(existing, nowDay);
-    const updated = {
-      ...c,
-      provenance: {
-        ...c.provenance,
-        episodes: [...(c.provenance?.episodes ?? []), episodeId],
-      },
-    };
-    if (!save(root, updated).ok) return { action: "refused", p, fires };
-    // Shadow the confirmation into the PCM ledger (best-effort by design, never blocks
-    // the hook — reads are merged via ledger_read.js since P2). The evidence counter
-    // rides in the ref because episode ids reset per session (ep_m0_…) — without it,
-    // two same-day sessions confirming via the same file would hash identically and
-    // the second real confirmation would be silently deduped away.
-    recordLessonEvent(root, updated, {
-      result: "confirm",
-      ref: `episode:${episodeId}#n${updated.evidenceCount}`,
-      t: nowDay,
-    });
-    return {
-      action: "confirmed",
-      id: updated.id,
-      status: updated.status,
-      p,
-      fires,
-    };
-  }
-
-  const d = distilled ?? templateDistill(context);
-  const lesson = newLesson(
+// Stable evidence references make retries and cross-checkout ledger merges idempotent.
+const receiptKey = (kind, id) => contentHash(JSON.stringify([kind, id]));
+const validReceipt = (id) => typeof id === "string" && /^[a-zA-Z0-9_.-]{1,160}$/.test(id);
+function propose(id, context, observed, episodeId, nowDay, distilled) {
+  const location = context.symbols?.[0] || context.files?.[0];
+  const descriptions = observed.signals
+    .filter((s) => SIGNALS[s].family !== "inferred")
+    .map((s) => SIGNALS[s].label);
+  return newLesson(
     {
-      id: lessonIdFor(context),
+      id,
+      scope: context.symbols?.length ? "symbol" : "repo",
       trigger: {
-        symbols: context.symbols ?? [],
-        files: context.files ?? [],
-        keywords: context.keywords ?? [],
+        files: sorted(context.files),
+        symbols: sorted(context.symbols),
+        keywords: sorted(context.keywords),
         action: "edit",
       },
-      scope: context.symbols?.length ? "symbol" : "repo",
-      whatWentWrong: d.whatWentWrong,
-      correctedBehavior: d.correctedBehavior,
+      whatWentWrong:
+        distilled?.whatWentWrong ?? `At \`${location}\`, ${descriptions.join(" and ")}.`,
+      correctedBehavior:
+        distilled?.correctedBehavior ??
+        `Review the previous correction when editing \`${location}\`.`,
       provenance: {
+        correctionVersion: 2,
+        ...(distilled ? { operatorText: true } : {}),
         episodes: [episodeId],
-        signals: signals.map((s) => s.signal),
+        signals: observed.signals,
+        ...(context.check ? { check: context.check } : {}),
       },
     },
     nowDay,
   );
-  // Report "created" only when the write actually landed — a refused save (e.g. secret-bearing
-  // body) must not make the hook believe a lesson exists and try to distill a phantom.
-  if (!save(root, lesson).ok) return { action: "refused", p, fires };
-  // Mint-only shadow: a freshly created lesson has zero evidence (creation is not
-  // confirmation — the ledger's val starts at the 0.5 prior, same as newLesson).
-  recordLessonEvent(root, lesson, { t: nowDay });
-  return { action: "created", id: lesson.id, status: lesson.status, p, fires };
 }
 
-/**
- * An independent human reversal (e.g. `git revert` of what a lesson advised) contradicts
- * every matching active/quarantined lesson — the anti-self-reinforcement path.
- */
+// If a process stopped between writing the ledger and replacing its private file, retrying
+// finds the same receipt, even on a later day. A retired or superseded claim stays retired.
+function publishReceipt(root, lesson, nowDay, result, oracle, ref) {
+  const known = mergedLessons(root, nowDay).find((l) => l.id === lesson.id);
+  if (known && (known.status === "retired" || !equivalentLesson(known, lesson))) return null;
+  const evidence = known ? readEvidence(repoLedger(root), known.provenance.claim) : [];
+  if (!evidence.some((e) => e.oracle === oracle && e.result === result && e.ref === ref)) {
+    if (
+      !lessonIsSafe(lesson) ||
+      !recordLessonEvent(root, lesson, { t: nowDay, result, oracle, ref }).ok
+    )
+      return null;
+  }
+  return mergedLessons(root, nowDay).find((l) => l.id === lesson.id);
+}
+
+/** The first supported episode proposes a lesson locally. Another distinct recovery in
+ * the same context, or the operator confirming the specific text, can publish it. */
+export function recordMistake(
+  root,
+  { signals, context, nowDay, episodeId, distilled = undefined },
+) {
+  root = sourceWorkspaceRoot(root);
+  const observed = scoreMistake(signals);
+  if (
+    !observed.fires ||
+    !validReceipt(episodeId) ||
+    !Number.isSafeInteger(nowDay) ||
+    (!context?.files?.length && !context?.symbols?.length)
+  )
+    return { action: "abstained", observed };
+  const id = lessonIdFor(context);
+  const proposed = propose(id, context, observed, episodeId, nowDay, distilled);
+  if (!lessonIsSafe(proposed)) return { action: "refused", observed };
+  return withCorrection(root, id, (row) => {
+    const key = receiptKey("mistake", episodeId);
+    const observation = {
+      day: nowDay,
+      signals: observed.signals,
+      ...(context.versions ? { versions: context.versions } : {}),
+    };
+    if (row.observations[key]) return { action: "duplicate", id, observed };
+    const shared = mergedLessons(root, nowDay).find((l) => l.id === id);
+    if (shared?.status === "retired" || (row.published && !shared))
+      return { action: "abstained", id, observed };
+    if (!row.lesson && !shared) {
+      row.lesson = proposed;
+      row.needsReview = Boolean(distilled);
+      row.observations[key] = observation;
+      return { action: "created", id, status: "candidate", visibility: "private", observed };
+    }
+    if (row.needsReview) {
+      row.observations[key] = observation;
+      return { action: "pending-review", id, status: "candidate", visibility: "private", observed };
+    }
+    const lesson = shared ?? row.lesson;
+    if (lesson.provenance.episodes.includes(episodeId)) {
+      if (shared?.status === "active") row.published = true;
+      return { action: "duplicate", id, observed };
+    }
+    if (lesson.provenance.operatorText) {
+      row.observations[key] = observation;
+      return { action: "observed", id, status: lesson.status, observed };
+    }
+    const published = publishReceipt(
+      root,
+      lesson,
+      nowDay,
+      "confirm",
+      "cortex.episode",
+      `episode:${episodeId}`,
+    );
+    if (!published) return { action: "refused", id, observed };
+    row.published = true;
+    row.observations[key] = observation;
+    return { action: "confirmed", id, status: published.status, visibility: "project", observed };
+  });
+}
+
+export function confirmCorrection(root, id, nowDay) {
+  root = sourceWorkspaceRoot(root);
+  if (!pendingCorrections(root).some((l) => l.id === id)) {
+    const shared = mergedLessons(root, nowDay).find((l) => l.id === id);
+    if (shared?.provenance.correctionVersion === 2 && shared.status === "active")
+      return { ok: true, action: "already-published", id };
+    return { ok: false, reason: "No pending correction with that ID in this checkout" };
+  }
+  return withCorrection(root, id, (row) => {
+    if (row.published) return { ok: true, action: "already-published", id };
+    const lesson = row.lesson;
+    if (row.previousClaim) {
+      const current = mergedLessons(root, nowDay).find((l) => l.id === id);
+      if (!current || current.status === "retired")
+        return { ok: false, reason: "The reviewed parent was retired" };
+      if (current.provenance.claim === row.previousClaim) {
+        lesson.createdDay = nowDay;
+        if (!supersedeLessonClaim(root, current, lesson, nowDay).ok)
+          return { ok: false, reason: "The reviewed revision could not supersede its parent" };
+      } else if (!equivalentLesson(current, lesson)) {
+        return {
+          ok: false,
+          reason: "The published lesson changed; review the new parent before confirming",
+        };
+      }
+    }
+    const receipt = receiptKey("operator-confirmation", [
+      id,
+      lesson.whatWentWrong,
+      lesson.correctedBehavior,
+    ]);
+    const published = publishReceipt(
+      root,
+      lesson,
+      nowDay,
+      "confirm",
+      "human.accept",
+      `human:operator@${receipt}`,
+    );
+    if (!published) return { ok: false, reason: "The reviewed correction could not be published" };
+    row.needsReview = false;
+    row.published = true;
+    delete row.previousClaim;
+    return { ok: true, action: "confirmed", id, status: published.status, visibility: "project" };
+  });
+}
+
+/** Only an observed reversal on a matching target contributes contradictory evidence. */
 export function recordContradiction(root, { context, nowDay, episodeId }) {
-  appendEpisode(root, {
-    id: episodeId,
-    kind: "contradiction",
-    context,
-    day: nowDay,
-  });
-  // Legacy-only for the same reason as recordMistake: contradict() saves the legacy
-  // file, so only lessons that HAVE one are targets. A teammate's claim still converges
-  // — the same reversal, recurring locally, mints the local twin whose evidence merges.
-  const targets = matchingLessons(localLessons(root, nowDay), context, ["active", "quarantined"]);
-  const results = targets.map((l) => {
-    const updated = contradict(l, nowDay);
-    const saved = save(root, updated).ok;
-    // Shadowed at the conservative bridge weight, NOT human.revert (w=1.0): the hook's
-    // revert detection is regex-based and matches routine `git restore`s, and a
-    // full-weight contradiction would permanently anchor the claim near dormancy in an
-    // append-only log. The counter in the ref keeps distinct same-day events distinct.
-    if (saved)
-      recordLessonEvent(root, updated, {
-        result: "contradict",
-        ref: `episode:${episodeId}#c${updated.contradictionCount}`,
-        t: nowDay,
-      });
-    return { id: updated.id, status: updated.status, saved };
-  });
-  return { action: "contradicted", results };
+  root = sourceWorkspaceRoot(root);
+  if (!validReceipt(episodeId) || !Number.isSafeInteger(nowDay))
+    return { action: "abstained", results: [] };
+  const targets = mergedLessons(root, nowDay).filter(
+    (l) => ["active", "quarantined"].includes(l.status) && overlaps(l.trigger, context),
+  );
+  const results = targets.map((lesson) =>
+    withCorrection(root, lesson.id, (row) => {
+      const key = receiptKey("contradict", episodeId);
+      if (context.reversedVersions) {
+        const matched = lesson.trigger.files.some(
+          (file) =>
+            context.reversedVersions[file] &&
+            Object.values(row.observations).some((e) =>
+              e.versions?.includes(context.reversedVersions[file]),
+            ),
+        );
+        if (!matched) return null;
+      }
+      if (row.observations[key])
+        return { id: lesson.id, status: lesson.status, saved: false, duplicate: true };
+      const published = publishReceipt(
+        root,
+        lesson,
+        nowDay,
+        "contradict",
+        "cortex.episode",
+        `episode:${episodeId}`,
+      );
+      if (!published) return { id: lesson.id, status: lesson.status, saved: false };
+      row.observations[key] = { day: nowDay, signals: ["S4"] };
+      return { id: lesson.id, status: published.status, saved: true };
+    }),
+  );
+  const attributed = results.filter(Boolean);
+  return { action: attributed.length ? "contradicted" : "abstained", results: attributed };
 }
 
 /** The injection block for the current context — what a SessionStart/PreToolUse hook emits.
  *  Reads the MERGED view (P2 read flip): teammate lessons that arrived via
  *  `forge ledger merge` inject alongside local ones. */
 export function lessonsForContext(root, context, opts = {}) {
+  root = sourceWorkspaceRoot(root);
   return selectForInjection(mergedLessons(root, opts.nowDay ?? 0), context, opts);
 }
 
@@ -210,11 +272,18 @@ export function recordServedLessons(root, lessons, { via, t }) {
  *  @param {number} [budget]
  *  @param {{record?: boolean}} [opts] */
 export function startupBlock(root, nowDay = 0, budget = 8, { record = false } = {}) {
+  root = sourceWorkspaceRoot(root);
   const active = mergedLessons(root, nowDay).filter((l) => l.status === "active");
   if (!active.length) return "";
   const ranked = active
     .map((l) => ({ lesson: l, conf: confidenceOf(l, nowDay) }))
-    .sort((a, b) => b.conf - a.conf);
+    .sort(
+      (a, b) =>
+        b.conf - a.conf ||
+        b.lesson.evidenceCount - a.lesson.evidenceCount ||
+        b.lesson.lastConfirmedDay - a.lesson.lastConfirmedDay ||
+        a.lesson.id.localeCompare(b.lesson.id),
+    );
   const shown = ranked.slice(0, budget);
   if (record)
     recordServedLessons(
@@ -239,11 +308,42 @@ export function startupBlock(root, nowDay = 0, budget = 8, { record = false } = 
 /** Replace a lesson's body with a model-distilled version (false if not found or the save was
  *  refused — e.g. the distilled text tripped secret-refusal). */
 export function applyDistillation(root, lessonId, distilled) {
+  root = sourceWorkspaceRoot(root);
   if (!distilled) return false;
-  // Normally EDITS the legacy file, so read the file-backed lessons; under
-  // FORGE_LEDGER_ONLY there are none, so resolve the target from the ledger and let the
-  // supersede below rewrite it there (save() is a ledger-only no-op that still succeeds).
-  const lesson = localLessons(root, 0).find((l) => l.id === lessonId);
+  const lesson = mergedLessons(root, 0).find((l) => l.id === lessonId);
+  if (
+    lesson?.provenance.correctionVersion === 2 ||
+    pendingCorrections(root).some((l) => l.id === lessonId)
+  ) {
+    return withCorrection(root, lessonId, (row) => {
+      const shared = mergedLessons(root, 0).find((l) => l.id === lessonId);
+      if (shared?.status === "retired" || (row.published && !shared)) return false;
+      const before = (!row.published && row.lesson) || shared;
+      if (!before) return false;
+      const updated = {
+        ...before,
+        whatWentWrong: distilled.whatWentWrong,
+        correctedBehavior: distilled.correctedBehavior,
+      };
+      if (!lessonIsSafe(updated)) return false;
+      if (equivalentLesson(before, updated)) {
+        if (shared && row.published) return true;
+      } else {
+        row.needsReview = true;
+        updated.provenance = { ...updated.provenance, operatorText: true };
+      }
+      if (shared) {
+        row.previousClaim = shared.provenance.claim;
+        row.published = false;
+        updated.status = "candidate";
+        updated.evidenceCount = 0;
+        updated.contradictionCount = 0;
+        updated.provenance = { ...updated.provenance, episodes: [] };
+      }
+      row.lesson = updated;
+      return true;
+    });
+  }
   if (!lesson) return false;
   const rewritten = {
     ...lesson,
@@ -280,12 +380,7 @@ export function applyDistillation(root, lessonId, distilled) {
             },
           },
         };
-  const ok = save(root, updated).ok;
-  // A body rewrite changes the content-addressed claim id — supersede in the ledger (mint
-  // the distilled claim, tombstone the template claim as its parent; evidence carries over
-  // only for an equivalent rewrite) so the lesson's history stays linked, not split.
-  if (ok) supersedeLessonClaim(root, lesson, updated);
-  return ok;
+  return lessonIsSafe(updated) && supersedeLessonClaim(root, lesson, updated).ok;
 }
 
 /** The lessons block to inline into AGENTS.md so non-Claude tools see them (empty if none). */
@@ -294,13 +389,15 @@ export function cortexBlock(targetRoot = process.cwd()) {
 }
 
 /** Auditable snapshot for `forge cortex status` — merged view, like every read surface. */
-export function summary(root, nowDay = 0) {
+export function summary(root, nowDay = 0, { includePrivate = false } = {}) {
+  root = sourceWorkspaceRoot(root);
   const lessons = mergedLessons(root, nowDay);
   const by = (s) => lessons.filter((l) => l.status === s).length;
   return {
     total: lessons.length,
     active: by("active"),
     candidate: by("candidate"),
+    ...(includePrivate ? { provisional: pendingCorrections(root).length } : {}),
     quarantined: by("quarantined"),
     retired: by("retired"),
     topActive: lessons
@@ -308,6 +405,8 @@ export function summary(root, nowDay = 0) {
       .map((l) => ({
         id: l.id,
         confidence: Number(confidenceOf(l, nowDay).toFixed(2)),
+        confirmed: l.evidenceCount,
+        contradicted: l.contradictionCount,
       }))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 10),

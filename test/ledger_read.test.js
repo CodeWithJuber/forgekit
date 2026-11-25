@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -16,12 +16,8 @@ import {
 } from "../src/ledger_read.js";
 import { mergeDirs, putClaim, repoLedger, tombstone } from "../src/ledger_store.js";
 import { newLesson } from "../src/lessons.js";
-import { load, save } from "../src/lessons_store.js";
+import { lessonsDir, serialize } from "../src/lessons_store.js";
 import { add as recallAdd, list as recallList, reindex as recallReindex } from "../src/recall.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "forge-readflip-"));
 
@@ -126,7 +122,7 @@ test("claimToLesson: no provenance.task → deterministic lsn_<id8> fallback; ju
 
 // --- merge / dedupe semantics --------------------------------------------------------
 
-test("mergedLessons: dedupes by legacy id with the legacy FILE winning", () => {
+test("mergedLessons: a stale file cannot replace a ledger lesson with the same ID", () => {
   const root = tmp();
   const legacy = newLesson(
     {
@@ -138,16 +134,20 @@ test("mergedLessons: dedupes by legacy id with the legacy FILE winning", () => {
     },
     1,
   );
-  assert.equal(save(root, legacy).ok, true);
+  mkdirSync(lessonsDir(root), { recursive: true });
+  writeFileSync(join(lessonsDir(root), `${legacy.id}.md`), serialize(legacy));
   putClaim(repoLedger(root), mkClaim({ task: "lsn_parsecfg" })); // same legacy id, other wording
   putClaim(repoLedger(root), mkClaim({ task: "lsn_other", symbols: ["otherFn"] }));
   const merged = mergedLessons(root, 1);
   assert.deepEqual(
     merged.map((l) => l.id),
-    ["lsn_parsecfg", "lsn_other"],
-    "legacy first, then ledger-only sorted by id",
+    ["lsn_other", "lsn_parsecfg"],
+    "current lessons sorted by ID",
   );
-  assert.equal(merged[0].correctedBehavior, "local fix wording", "the local file is canonical");
+  assert.equal(
+    merged[1].correctedBehavior,
+    mkClaim({ task: "lsn_parsecfg" }).body.correctedBehavior,
+  );
   assert.equal(merged[1].provenance.claim.length, 64, "the extra one came from the ledger");
 });
 
@@ -164,21 +164,17 @@ test("mergedLessons: within the ledger, the live claim beats its superseded (tom
   assert.equal(merged[0].correctedBehavior, "distilled wording");
 });
 
-test("mergedLessons: a corrupt ledger degrades to legacy-only (best-effort, hooks call this)", () => {
+test("mergedLessons: an unreadable ledger cannot surface unverified files", () => {
   const root = tmp();
-  save(
-    root,
-    newLesson(
-      { id: "lsn_x", trigger: { symbols: ["x"] }, whatWentWrong: "w", correctedBehavior: "c" },
-      1,
-    ),
+  mkdirSync(lessonsDir(root), { recursive: true });
+  writeFileSync(
+    join(lessonsDir(root), "lsn_x.md"),
+    serialize(newLesson({ id: "lsn_x", whatWentWrong: "w", correctedBehavior: "c" }, 1)),
   );
   mkdirSync(repoLedger(root), { recursive: true });
-  writeFileSync(join(repoLedger(root), "claims"), "not a directory"); // readdir throws ENOTDIR
+  writeFileSync(join(repoLedger(root), "claims"), "not a directory");
   assert.deepEqual(ledgerLessons(root, 1), []);
-  const merged = mergedLessons(root, 1);
-  assert.equal(merged.length, 1);
-  assert.equal(merged[0].id, "lsn_x");
+  assert.deepEqual(mergedLessons(root, 1), []);
 });
 
 test("write-loop: a local lesson's own shadow claim is invisible in the merged view", () => {
@@ -189,7 +185,11 @@ test("write-loop: a local lesson's own shadow claim is invisible in the merged v
   recordMistake(root, { signals: strong, context: ctx, nowDay: 2, episodeId: "e2" }); // → active + shadow claim
   const merged = mergedLessons(root, 2);
   assert.equal(merged.length, 1, "shadow claim (provenance.task = legacy id) deduped away");
-  assert.deepEqual(merged[0].provenance.episodes, ["e1", "e2"], "it IS the legacy file");
+  assert.deepEqual(
+    merged[0].provenance.episodes,
+    ["e1", "e2"],
+    "the ledger preserves observed episodes",
+  );
   assert.equal(summary(root, 2).total, 1);
 });
 
@@ -234,7 +234,7 @@ test("a teammate lesson claim injects after `forge ledger merge` (no local file 
   assert.match(hit.block, /Check parseCfg callers and tests before editing\./);
   assert.match(startupBlock(local, 5), /lsn_parsecfg/);
   assert.equal(summary(local, 5).active, 1);
-  assert.equal(load(local).length, 0, "the read flip does NOT materialize legacy files");
+  assert.equal(existsSync(lessonsDir(local)), false, "a merged claim needs no legacy file");
 });
 
 // --- facts: recall + brain merged reads ----------------------------------------------
@@ -249,11 +249,11 @@ test("ledgerFacts: live fact claims only (tombstoned/superseded values are skipp
   assert.deepEqual(ledgerFacts(join(dir, "nope")), [], "missing ledger → []");
 });
 
-test("recall.list merges ledger facts; a file wins on slug collision; MEMORY.md keeps its format", () => {
+test("recall.list deduplicates ledger facts and MEMORY.md keeps its format", () => {
   const store = tmp();
   recallAdd(store, "db port", "5433 here, not 5432");
   shadowFact(join(store, "ledger"), "Team Endpoint", "staging lives at stg.example.com", 1);
-  shadowFact(join(store, "ledger"), "db port", "ledger value must NOT shadow the file", 1);
+  shadowFact(join(store, "ledger"), "db port", "new value", 1);
   assert.deepEqual(recallList(store), ["db-port", "team-endpoint"], "merged, deduped, sorted");
   recallReindex(store);
   const memory = readFileSync(join(store, "MEMORY.md"), "utf8");

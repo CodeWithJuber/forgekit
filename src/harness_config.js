@@ -273,7 +273,7 @@ export function harnessBudget(config, priority, override = {}) {
   ]) {
     const cap = limits[key],
       n = Object.hasOwn(override, key) ? override[key] : cap;
-    const min = key === "costUsd" || key === "repairs" ? 0 : 1;
+    const min = ["costUsd", "repairs", "toolCalls"].includes(key) ? 0 : 1;
     if (
       !Number.isFinite(cap) ||
       !Number.isFinite(n) ||

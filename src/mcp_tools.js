@@ -39,7 +39,7 @@ export const TOOLS = [
   {
     name: "preflight_check",
     description:
-      "BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME. Returns a clarify list or an all-clear. Ask instead of assuming.",
+      "Check named symbols and files before starting a task. Reports missing references, unchecked names and partial index coverage. All clear means every named reference resolved.",
     inputSchema: {
       type: "object",
       properties: { task: { type: "string", description: "the task/prompt" } },
@@ -47,12 +47,34 @@ export const TOOLS = [
     },
   },
   {
-    name: "route_task",
+    name: "forge_models",
     description:
-      "Recommend the cheapest CAPABLE model for a task by code-task complexity (files, fan-out, churn, past mistakes, ambiguity). Advisory — don't burn a top model on a trivial task.",
+      "Read the local provider model inventory, listing freshness, model control and measured workload bands. Reads cached metadata without contacting a provider.",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     inputSchema: {
       type: "object",
-      properties: { task: { type: "string" } },
+      properties: {
+        profile: { type: "string" },
+        workload: { type: "string" },
+        capability: { type: "string" },
+        availability: { type: "string" },
+        maxAge: { type: "string", description: "seconds or duration such as 30m" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "route_task",
+    description:
+      "Recommend a model for a task. Supply a provider profile to use its current cached inventory and cost/quality fit; an optional band filters by verified workload outcomes. Native hosts manage their own models.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string" },
+        profile: { type: "string" },
+        workload: { type: "string" },
+        band: { type: "string", enum: ["low", "medium", "high"] },
+      },
       required: ["task"],
     },
   },
@@ -60,10 +82,17 @@ export const TOOLS = [
   {
     name: "assumption_gate",
     description:
-      "Score specification completeness before work starts. Returns shouldAsk, risk, missing dimensions, and concrete questions.",
+      "Check explicitly required workspace files. Returns the observed fraction present, missing files and concrete questions. Without requirements the result is unknown.",
     inputSchema: {
       type: "object",
-      properties: { task: { type: "string", description: "the task/prompt" } },
+      properties: {
+        task: { type: "string", description: "the task/prompt" },
+        requiredFiles: {
+          type: "array",
+          items: { type: "string" },
+          description: "files that must already exist in the workspace",
+        },
+      },
       required: ["task"],
     },
   },
@@ -178,7 +207,7 @@ export const TOOLS = [
   {
     name: "forge_remember",
     description:
-      "Store a durable fact in this repo's portable memory (.forge/brain/). Use for non-obvious, lasting knowledge (env quirks, decisions, gotchas).",
+      "When requested, submit a private memory proposal for human review. Approval through forge brain is required to share it.",
     inputSchema: {
       type: "object",
       properties: {

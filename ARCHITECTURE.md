@@ -45,7 +45,7 @@ The four layers, brand-named and emitted cross-tool:
   (scout / verifier / frontend-verifier / independent-reviewer / doc-sync).
 - **guards** (`~/.forge/guards/` → `settings.json` hooks) — deterministic checks at lifecycle events supported by a trusted host. The supervised executor also checks its own tool calls.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 36 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
+  exposing 37 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
   ledger ratify/retract), and operations and health checks. [Tool reference](docs/GUIDE.md#mcp-tools)
 
@@ -677,16 +677,16 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>245 files"]
-  test["test<br/>215 files"]
+  src["src<br/>261 files"]
+  test["test<br/>224 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>17 files"]
   global["global<br/>7 files"]
   bench["bench<br/>6 files"]
+  examples["examples<br/>2 files"]
   docs["docs<br/>1 file"]
-  examples["examples<br/>1 file"]
-  test -- 483 --> src
+  test -- 538 --> src
   scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global

@@ -22,6 +22,33 @@ HANDLERS.ledger = async (argv) => {
   const sub = args[1] || "stats";
   const json = argv.includes("--json");
   const nowDay = epochDay();
+  async function refreshFacts() {
+    const recall = await import("../recall.js");
+    if (personal) {
+      recall.reindex(recall.defaultStore());
+      return;
+    }
+    const brain = await import("../brain.js");
+    const store = brain.brainStore(root);
+    if (
+      brain.list(store).length ||
+      (await import("node:fs")).existsSync(store) ||
+      (await import("../ledger_read.js")).factConflicts(dir).size
+    ) {
+      recall.reindex(store);
+      brain.buildIndex(store);
+    }
+  }
+  if (sub === "index") {
+    const r = ls.rebuildAmbientIndex(dir);
+    if (!r.ok) process.exitCode = 1;
+    console.log(
+      json
+        ? JSON.stringify(r)
+        : `Indexed ${r.claims} claim(s) for prompt lookup, ${r.failed} failed.`,
+    );
+    return;
+  }
   if (sub === "stats") {
     const s = ls.stats(dir, nowDay);
     if (json) return console.log(JSON.stringify(s, null, 2));
@@ -97,6 +124,7 @@ HANDLERS.ledger = async (argv) => {
       return;
     }
     const r = ls.mergeDirs(dir, src);
+    await refreshFacts();
     if (json) return console.log(JSON.stringify(r, null, 2));
     console.log(`  merged: ${r.claims} new claim(s), ${r.records} new record(s) — conflict-free`);
     if (r.quarantined)
@@ -194,6 +222,8 @@ HANDLERS.ledger = async (argv) => {
       process.exitCode = 1;
       return;
     }
+    ls.reindex(dir);
+    if (hit.kind === "fact") await refreshFacts();
     if (json) return console.log(JSON.stringify({ ...r, id: hit.id }, null, 2));
     console.log(
       `  retracted ${hit.id.slice(0, 12)} — ${reason}${r.deduped ? " (already retracted with this record)" : ""}`,
@@ -205,6 +235,7 @@ HANDLERS.ledger = async (argv) => {
   if (sub === "compact") {
     const dryRun = argv.includes("--dry-run");
     const r = ls.compactLedger(dir, nowDay, { dryRun });
+    if (!dryRun) await refreshFacts();
     if (json) return console.log(JSON.stringify(r, null, 2));
     const rt = r.retention;
     const d = r.duplicates;
@@ -265,7 +296,7 @@ HANDLERS.ledger = async (argv) => {
       process.exitCode = 1;
       return;
     }
-    const { retrieve, claimText } = await import("../ledger.js");
+    const { retrieve, claimText, LEDGER_RANKING } = await import("../ledger.js");
     // The embeddings tier (ADR-0005) is assembled HERE, not in ledger.js — the pure
     // core stays provider-free. No FORGE_EMBED (or a failing provider) → sim is
     // null and retrieval is the stock MinHash path.
@@ -282,6 +313,7 @@ HANDLERS.ledger = async (argv) => {
       return console.log(
         JSON.stringify(
           {
+            ranking: LEDGER_RANKING,
             sim: simLabel(sim),
             results: ranked.map((r) => ({
               id: r.claim.id,
@@ -380,7 +412,7 @@ HANDLERS.ledger = async (argv) => {
   }
   if (sub === "root") {
     const lg = await import("../ledger.js");
-    const r = lg.stateRoot(ls.loadState(dir));
+    const r = lg.stateRoot(ls.loadSyncState(dir));
     if (json) return console.log(JSON.stringify(r, null, 2));
     console.log(r.root); // bare hex on stdout — scriptable ("are we in sync?" is one diff)
     return;
@@ -398,6 +430,8 @@ HANDLERS.ledger = async (argv) => {
       remote: re >= 0 ? args[re + 1] : undefined,
       ref: rf >= 0 ? args[rf + 1] : undefined,
     });
+    if (r.ok) await refreshFacts();
+    else process.exitCode = 1;
     if (json) return console.log(JSON.stringify(r, null, 2));
     heading(`${BRAND.brand} ledger sync\n`);
     if (!r.ok) {
@@ -437,32 +471,35 @@ HANDLERS.ledger = async (argv) => {
       console.log(paint("\n  synced through a git ref — CRDT, converges in any order", "dim"));
     return;
   }
-  if (sub === "import") {
-    const b = await import("../ledger_bridge.js");
-    let r;
-    if (personal) {
-      // Personal import: facts from the global recall store into the personal ledger.
-      const { defaultStore } = await import("../recall.js");
-      r = {
-        lessons: 0,
-        outcomes: 0,
-        ...b.importFacts(defaultStore(), dir, nowDay),
-      };
-    } else {
-      const { brainStore } = await import("../brain.js");
-      r = b.importLegacy(root, {
-        recallStore: brainStore(root),
-        recallLedger: dir,
-        nowDay,
-      });
+  if (sub === "migrate" || sub === "import" || sub === "restore-legacy") {
+    const { migrateLegacy, restoreLegacy } = await import("../ledger_migration.js");
+    if (sub === "restore-legacy") {
+      const [, , destination, flag, snapshot] = args;
+      if (
+        !destination ||
+        destination.startsWith("--") ||
+        (args.length !== 3 && !(args.length === 5 && flag === "--snapshot" && snapshot))
+      )
+        throw new Error(
+          "Use forge ledger restore-legacy <new-directory> [--snapshot <id>] [--personal]",
+        );
+      const result = restoreLegacy(root, destination, { personal, snapshot });
+      return console.log(
+        json
+          ? JSON.stringify(result, null, 2)
+          : `Restored and verified ${result.files} file(s) in ${result.destination}`,
+      );
     }
-    if (json) return console.log(JSON.stringify(r, null, 2));
-    console.log(`  imported: ${r.lessons} lesson(s), ${r.facts} fact(s), ${r.outcomes} outcome(s)`);
-    for (const x of r.refused) console.log(`    refused: ${x}`);
-    return;
+    if (args.length !== 2) throw new Error("Use forge ledger migrate [--personal] [--json]");
+    const result = migrateLegacy(root, { personal });
+    return console.log(
+      json
+        ? JSON.stringify(result, null, 2)
+        : `Verified backup ${result.snapshot}: ${result.lessons} lesson(s), ${result.facts} fact(s), ${result.outcomes} outcome(s) imported. ${result.retained} already tracked.`,
+    );
   }
   console.error(
-    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | at <date> | diff <since> [<until>] | root | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
+    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | at <date> | diff <since> [<until>] | root | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | migrate | import | restore-legacy <new-directory> [--snapshot <id>]) [--personal] [--json]`,
   );
   process.exitCode = 1;
   return;

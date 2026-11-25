@@ -33,6 +33,9 @@ test("personal settings inherit globally, isolate repos, reset and honor explici
   const root = workspace(t);
   const other = join(root, "../other");
   mkdirSync(other);
+  assert.equal(advisorSettings(root).recommendations, false);
+  assert.equal(advisorSettings(root, { FORGE_EVIDENCE_WEB: "1" }).recommendations, true);
+  assert.equal(advisorSettings(root, { FORGE_EVIDENCE_WEB: "0" }).recommendations, false);
   assert.equal(advisorSettings(root).decisions, false);
   const saved = configureAdvisor(root, { decisions: true, search: "serper" }, { global: true });
   assert.equal(advisorSettings(other).decisions, true);
@@ -111,11 +114,11 @@ test("saved Jev setup reaches routing and preflight without enabling the text mo
   const run = () => assert.fail("saved Jev preference must not enable the text LLM");
   routeTask(root, "Implement a cache with tests", { jevCall, run });
   preflightRepo(root, "Implement a cache with tests", { jevCall, run, allowBuild: false });
-  assert.equal(payloads.length, 2);
+  assert.equal(payloads.length, 1);
   assert.ok(payloads.every((p) => p.model === "jev-test"));
   configureAdvisor(root, { decisions: false });
   routeTask(root, "Implement a cache with tests", { jevCall, run });
-  assert.equal(payloads.length, 2);
+  assert.equal(payloads.length, 1);
 });
 
 test("planning and diagnosis send only signals; model advice cannot pass checks or cancel thrash", (t) => {

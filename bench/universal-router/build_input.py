@@ -42,7 +42,7 @@ ROOT = HERE.parent.parent
 REL_HERE = HERE.relative_to(ROOT).as_posix()
 # Files the text features depend on: the feature code, and the rubric (with its exemplars) that
 # it calls. Hashed after normalising CRLF to LF, so a Windows checkout records the same value.
-FEATURE_CODE = ["src/router/features.js", "src/route.js"]
+FEATURE_CODE = ["src/router/features.js"]
 
 
 def sha256_hex(data):

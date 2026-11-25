@@ -4,12 +4,25 @@
 // (never appended) snapshot injected at every session start: bounded compression, so the
 // loader's token cost stays constant over the project's life while total knowledge grows.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { sessionEventsDir } from "./cortex_hook.js";
+import { listDecisions } from "./decide.js";
 import { getGoal } from "./goal.js";
+import { workspaceFileDigest } from "./harness_tools.js";
 import { hasSecret } from "./secrets.js";
-import { git } from "./util.js";
+import { contentHash, git } from "./util.js";
 
 export const statePath = (root) => join(root, ".forge", "state.md");
 
@@ -24,6 +37,9 @@ export const statePath = (root) => join(root, ".forge", "state.md");
  * writer wrote. 8192 is the synthesis's A5 cap (roughly 2k tokens per session start).
  */
 export const STATE_BUDGET_BYTES = 8192;
+
+const packetDigest = (text, revision, evidence) =>
+  contentHash(JSON.stringify([1, text, revision, evidence]));
 
 const byteLen = (s) => Buffer.byteLength(s, "utf8");
 /** Bytes of `lines` joined by newlines — the measure both sides apply. */
@@ -50,15 +66,24 @@ export function gatherGitFacts(root, { statusCap = 20 } = {}) {
  *  Empty-safe when no session log exists. */
 export function gatherAssumptions(root, { cap = 5 } = {}) {
   try {
-    const dir = join(root, ".forge", "sessions");
-    const newest = readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => ({ f, m: statSync(join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.m - a.m)[0];
+    const dirs = [sessionEventsDir(root), join(root, ".forge", "sessions")];
+    // Pre-upgrade assumption markers remain readable for handoff. The correction
+    // learner reads only private captures and cannot promote an old checkout log.
+    const newest = dirs
+      .flatMap((dir) => {
+        if (!existsSync(dir)) return [];
+        return readdirSync(dir, { withFileTypes: true })
+          .filter((f) => f.isFile() && f.name.endsWith(".jsonl"))
+          .map((f) => {
+            const path = join(dir, f.name);
+            return { path, m: statSync(path).mtimeMs };
+          });
+      })
+      .sort((a, b) => b.m - a.m || a.path.localeCompare(b.path))[0];
     if (!newest) return [];
     const seen = new Set();
     const out = [];
-    for (const line of readFileSync(join(dir, newest.f), "utf8").split("\n")) {
+    for (const line of readFileSync(newest.path, "utf8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const e = JSON.parse(line);
@@ -131,7 +156,7 @@ export function selectSnapshot(sections, budget = STATE_BUDGET_BYTES) {
  * so the next session reads back exactly what was written.
  * @param {string} root
  * @param {{done?:string[]|string, next?:string[]|string, gotchas?:string[]|string,
- *          criteria?:string[]|string, goal?:string, phase?:string}} fields
+ *          criteria?:string[]|string, evidence?:string[]|string, goal?:string, phase?:string}} fields
  * @param {{t?: number, budget?: number}} [opts]
  */
 export function writeState(
@@ -158,6 +183,20 @@ export function writeState(
     };
   const goal = fields.goal || getGoal(root) || `(none set — \`${BRAND.cli} anchor set "…"\`)`;
   const facts = gatherGitFacts(root);
+  const paths = [...new Set(arr(fields.evidence))].sort();
+  if (paths.length > 16) return { ok: false, reason: "A packet accepts at most 16 evidence files" };
+  const evidence = [];
+  try {
+    for (const path of paths) {
+      if (!git(root, ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", path]))
+        throw new Error("Evidence must name a tracked file in this checkout");
+      evidence.push({ path, sha256: workspaceFileDigest(root, path) });
+    }
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
+  const decisions = listDecisions(root);
+
   const assumptions = gatherAssumptions(root).map(
     (a) =>
       `proceeded without asking — missing: ${(a.missing || []).join(", ") || "?"}${
@@ -179,7 +218,8 @@ export function writeState(
       { title: "Next steps", rows: next },
       {
         title: "Decisions",
-        rows: [`append-only log: \`.forge/decisions.md\` (\`${BRAND.cli} decide\`)`],
+        rows: decisions.map((d) => `${d.id} ${d.text}`),
+        fallback: "- append-only log: `.forge/decisions.md`",
       },
       { title: "Gotchas", rows: gotchas },
       { title: "Open assumptions", rows: assumptions },
@@ -192,13 +232,29 @@ export function writeState(
     facts.branch ? ` on ${facts.branch}` : ""
   } -->`;
   mkdirSync(join(root, ".forge"), { recursive: true });
-  writeFileSync(statePath(root), [...kept, provenance, ""].join("\n"));
-  return { ok: true, path: statePath(root), lines: kept.length + 1, bytes: bodyBytes(kept) };
+  const revision = git(root, ["rev-parse", "--verify", "HEAD"]) || null;
+  const packet = {
+    version: 1,
+    revision,
+    digest: packetDigest(kept.join("\n").trim(), revision, evidence),
+    evidence,
+  };
+  const marker = `<!-- forge-handoff-v1 ${Buffer.from(JSON.stringify(packet)).toString("base64url")} -->`;
+  const dest = statePath(root),
+    temp = `${dest}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, [...kept, marker, provenance, ""].join("\n"), { flag: "wx", mode: 0o600 });
+    renameSync(temp, dest);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+  return { ok: true, path: dest, lines: kept.length + 2, bytes: bodyBytes(kept) };
 }
 
 // Only the EXACT provenance line is stripped — a naive slice at the first "<!--" would
 // silently truncate a snapshot whose rows mention HTML comments ("strip <!-- markers
 // from templates"), losing every later section from the next session's injection.
+const PACKET_PREFIX = "<!-- forge-handoff-v1 ";
 const PROVENANCE_RE = /^<!-- written .* -->\s*$/;
 
 /** The snapshot text minus provenance, or null when none exists. */
@@ -208,12 +264,85 @@ export function readState(root) {
   try {
     const text = readFileSync(p, "utf8")
       .split("\n")
-      .filter((l) => !PROVENANCE_RE.test(l))
+      .filter((l) => !PROVENANCE_RE.test(l) && !l.startsWith(PACKET_PREFIX))
       .join("\n")
       .trim();
     return text || null;
   } catch {
     return null;
+  }
+}
+
+/** Resume an explicitly recorded handoff on any host; never execute its evidence. */
+export function resumeState(root) {
+  const text = readState(root);
+  if (!text) return { ok: false, status: "missing", reason: "No handoff in this checkout." };
+  const sections = new Map();
+  let section;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("## ")) {
+      section = [];
+      sections.set(line.slice(3), section);
+    } else if (section && line.startsWith("- ") && line !== "- (none)") section.push(line.slice(2));
+  }
+  const state = {
+    goal: sections.get("Goal / Phase") ?? [],
+    decisions: (sections.get("Decisions") ?? []).filter((line) => /^D-\d+ /.test(line)),
+    pending: sections.get("Next steps") ?? [],
+    criteria: sections.get("Acceptance criteria") ?? [],
+    text,
+  };
+  const raw = readFileSync(statePath(root), "utf8");
+  const markers = raw.split("\n").filter((l) => l.startsWith(PACKET_PREFIX));
+  if (!markers.length)
+    return { ok: true, ...state, status: "legacy", revision: null, evidence: [] };
+  try {
+    const [marker] = markers;
+    if (markers.length !== 1 || marker.length > 32768 || !marker.endsWith(" -->"))
+      throw new Error();
+    const packet = JSON.parse(
+      Buffer.from(marker.slice(PACKET_PREFIX.length, -4), "base64url").toString("utf8"),
+    );
+    if (
+      packet.version !== 1 ||
+      packet.digest !== packetDigest(text, packet.revision, packet.evidence) ||
+      !(packet.revision === null || /^[a-f0-9]{40,64}$/.test(packet.revision)) ||
+      !Array.isArray(packet.evidence) ||
+      packet.evidence.length > 16
+    )
+      throw new Error();
+    const evidence = packet.evidence.map((e) => {
+      if (!e || typeof e.path !== "string" || !/^[0-9a-f]{64}$/.test(e.sha256)) throw new Error();
+      try {
+        const sha256 = workspaceFileDigest(root, e.path);
+        return { ...e, status: sha256 === e.sha256 ? "current" : "changed" };
+      } catch {
+        return { ...e, status: "unavailable" };
+      }
+    });
+    const revision = git(root, ["rev-parse", "--verify", "HEAD"]) || null;
+    const status = evidence.some((e) => e.status !== "current")
+      ? "evidence-changed"
+      : revision !== packet.revision
+        ? "revision-changed"
+        : !revision
+          ? "unversioned"
+          : "current";
+    return {
+      ok: true,
+      ...state,
+      status,
+      revision: packet.revision,
+      currentRevision: revision,
+      digest: packet.digest,
+      evidence,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: "invalid",
+      reason: "Handoff metadata or snapshot digest is invalid.",
+    };
   }
 }
 
@@ -226,8 +355,10 @@ export function readState(root) {
  * @param {{budget?: number}} [opts]
  */
 export function stateBlock(root, { budget = STATE_BUDGET_BYTES } = {}) {
-  const text = readState(root);
-  if (!text) return "";
+  const packet = resumeState(root);
+  if (!("text" in packet))
+    return packet.status === "missing" ? "" : `Handoff skipped: ${packet.reason}`;
+  const text = packet.text;
   const all = text.split("\n");
   /** @type {string[]} */
   let kept = all;
@@ -248,6 +379,9 @@ export function stateBlock(root, { budget = STATE_BUDGET_BYTES } = {}) {
   return [
     `## Session state (${BRAND.brand} Handoff)`,
     ...capped,
+    ...(packet.status === "evidence-changed" || packet.status === "revision-changed"
+      ? [`Source status: ${packet.status}. Recheck evidence with forge handoff --resume --json.`]
+      : []),
     `Keep it current: \`${BRAND.cli} handoff "<done>" --next "<next>"\` before stopping.`,
     "",
   ].join("\n");

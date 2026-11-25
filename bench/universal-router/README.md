@@ -13,6 +13,19 @@ Raw per-task results are not redistributed here, only the fitted parameters and 
 The scripts below download them from the pinned public sources into a work directory outside the
 repository. Do not commit what they write.
 
+## Current input features and replay (2026-11-25)
+
+The public inputs are the same pinned 500 tasks and 11 model runs. The feature vector now contains log character count, log newline count and half the number of Markdown code fences. The all-task fit selected one latent dimension and prior scale 4. The fit and the seeded replay were rerun from the inputs downloaded and verified by `build_input.py`. A second all-task fit reproduced all 162 values compared by `compare_priors.mjs --strict`, excluding the timestamp.
+
+| Held-out policy | Solved | Mean reported cost per task |
+| --- | ---: | ---: |
+| Three-feature router | 80.0% | $0.128 |
+| Fixed cascade selected on development tasks | 80.6% | $0.136 |
+| Best single model selected on development tasks | 76.0% | $0.768 |
+| Cheapest single model selected on development tasks | 57.4% | $0.047 |
+
+The replay used 150 development and 350 held-out tasks, seed 20260926 and 10,000 paired bootstrap draws. Against the fixed cascade the difference was −0.6 percentage points (95% interval −1.4 to 0.0) and −$0.009 per task (−$0.013 to −$0.004). The September results below are historical measurements of the earlier feature set.
+
 ## Reproduction status (2026-09-26)
 
 | What | Status | Evidence |
@@ -65,7 +78,7 @@ What goes into the input, and why:
 - **Task text:** `problem_statement`, verbatim (252 statements keep their CRLF line endings). The builder reads only the `instance_id` and `problem_statement` columns. The parquet also holds the gold patch, the test patch and the evaluation fields, and none of them leave the builder. Keep that evaluator/agent boundary: `universal_all.json` carries outcome labels and costs, so it is training data for the fitter and must never be given to a coding agent as a prompt.
 - **Order:** tasks by `instance_id` ascending (also the parquet's row order and the key order of every run file), models by registry id ascending. Bit-for-bit equality depends on both: feature means are summed in task order, and cross-validation folds are assigned by task index.
 - **Models and runs:** `sources.json` maps each registry id to its run. The builder stops if `data/models.json` names a different `benchmark_run`.
-- **Feature version:** the sha256 of `src/router/features.js` and of `src/route.js` (which holds the rubric and its exemplars), with CRLF read as LF. It is written to `source.build.featureVersion`, which a refit carries into `provenance.build`.
+- **Feature version:** the sha256 of `src/router/features.js`, with CRLF read as LF. It is written to `source.build.featureVersion`, which a refit carries into `provenance.build`.
 - **Zero-cost attempts:** Gemini 3 Flash's failed attempts on `django__django-15731` and `django__django-15814` are recorded at cost 0. They stay in the input as failures, which the ability model uses. The cost model uses only positive costs, so `cost.n` is 5,498 of 5,500.
 
 If a refit ever disagrees, look at `features` and `cost` first. Neither depends on the MIRT

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "pathBase": "Resolve team-guide relative to this template directory when invoking commands from the workspace root.",
+  "adapters": [
+    {
+      "id": "harness-reference-plugin",
+      "manifest": "team-guide/plugin.json",
+      "permissions": "The tool reads its reviewed reference. The project's harness policy controls tool access.",
+      "inspect": ["forge","harness","extensions","inspect","team-guide"],
+      "activate": ["forge","harness","extensions","pin","team-guide","--digest","REVIEWED_SHA256"],
+      "remove": ["forge","harness","extensions","remove","team-guide"]
+    },
+    {
+      "id": "local-cli",
+      "permissions": "The selected ForgeKit command runs locally with the invoking user's access. This example reads ledger statistics.",
+      "invoke": ["forge","skills","run","forge-ledger","--json"],
+      "schema": ["forge","skills","show","forge-ledger","--json"]
+    },
+    {
+      "id": "stdio-mcp",
+      "permissions": "The client grants the tools it enables. An external local MCP executable runs with the invoking user's OS access. Pinning its bytes confirms identity.",
+      "server": {"command":"forge","args":["cortex-mcp"]},
+      "connectExternal": ["forge","integrations","local","team-tools","--binary","/opt/team/bin/team-mcp"],
+      "environment": "Pass individual required variables with --pass-env NAME."
+    },
+    {
+      "id": "streamable-http-mcp",
+      "permissions": "The service enforces token scopes and ACLs. Supply a read-only credential for the intended service, workspace and data.",
+      "connect": ["forge","integrations","connect","team-docs","--url","https://docs.example.org/mcp","--token-env","TEAM_DOCS_READ_TOKEN"],
+      "discovery": "Append --probe to negotiate and list tools without calling them.",
+      "remove": ["forge","integrations","remove","team-docs"]
+    }
+  ]
+}

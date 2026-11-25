@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { BRAND } from "../src/brand.js";
-import { load } from "../src/lessons_store.js";
+import { pendingCorrections } from "../src/cortex.js";
+import { mergedLessons as load } from "../src/ledger_read.js";
 import { TOOLS } from "../src/mcp_tools.js";
 import {
   ORIENT_CREW,
@@ -15,10 +17,7 @@ import {
   ORIENT_TOOLS,
   orientationBlock,
 } from "../src/orient.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { epochDay } from "../src/util.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 const feed = (mode, payload, env = {}) =>
@@ -28,10 +27,8 @@ const feed = (mode, payload, env = {}) =>
     env: { ...process.env, ...env },
   });
 
-const sid = "sess-1";
-
 // Replays one "session" of hook events, then Stop, through the real entrypoint over stdin.
-function replaySession(root) {
+function replaySession(root, sid = randomUUID()) {
   const cap = (payload) => feed("capture", { session_id: sid, cwd: root, ...payload });
   cap({ tool_name: "Bash", tool_input: { command: "npm test" }, exitCode: 1 });
   cap({ tool_name: "Edit", tool_input: { file_path: "src/tax.ts" } });
@@ -52,9 +49,13 @@ test("entrypoint is fail-safe on garbage input (exit 0, no throw)", () => {
 test("full ambient loop over stdin: capture → stop learns; a recurrence goes active", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-entry-"));
   replaySession(root);
-  assert.equal(load(root)[0]?.status, "candidate", "first session distills a candidate");
+  assert.equal(
+    pendingCorrections(root)[0]?.status,
+    "candidate",
+    "first session distills a candidate",
+  );
   replaySession(root);
-  assert.equal(load(root)[0]?.status, "active", "the recurrence promotes it");
+  assert.equal(load(root, epochDay())[0]?.status, "active", "the recurrence promotes it");
 });
 
 test("session-start injects learned lessons as additionalContext", () => {

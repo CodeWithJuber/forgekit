@@ -3,12 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { add, consolidate, list } from "../src/recall.js";
+import { add, consolidate, list, readFact } from "../src/recall.js";
 import { fakeGithubPat } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 const store = () => mkdtempSync(join(tmpdir(), "forge-recall-"));
 
@@ -78,6 +74,6 @@ test("add: a fact stored under an older, lossier slug is migrated, not duplicate
   assert.equal(add(s, "مفتاح الواجهة", "the api base is https://new.example").ok, true);
   const slugs = list(s);
   assert.equal(slugs.length, 1, `one entry per name, got: ${slugs.join(", ")}`);
-  assert.ok(!existsSync(join(dir, "fact.md")), "the pre-upgrade file is gone");
-  assert.match(readFileSync(join(dir, `${slugs[0]}.md`), "utf8"), /new\.example/);
+  assert.ok(existsSync(join(dir, "fact.md")), "the original is retained for migration");
+  assert.match(readFact(s, slugs[0]).text, /new\.example/);
 });

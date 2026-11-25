@@ -125,12 +125,6 @@
         "label": "Mythos 5.1"
       }
     ],
-    "suggest": {
-      "haiku": "opus",
-      "sonnet": "opus",
-      "opus": "opus",
-      "fable": "fable",
-      "mythos": "mythos"
-    }
+    "aliases": ["sonnet", "opus", "fable"]
   }
 }

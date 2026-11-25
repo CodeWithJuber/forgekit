@@ -2,9 +2,17 @@
 // and both configurations. Neither a template nor a simulation is a measured run.
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  blankCostSuite,
+  costMetadata,
+  costTask,
+  costWorksheet,
+  evaluateCostPilot,
+} from "./cost_pilot.js";
 import { hasSecret } from "./secrets.js";
 
-const VERSION = 1;
+// The v1 thresholds remain part of the hash-compatible historical protocol.
+const legacyTargets = { speedGainPct: 20, qualityGainPoints: 10 };
 const MIN_TASKS = 20;
 const fields = [
   "seconds",
@@ -31,13 +39,14 @@ function value(s, name, max = 500) {
 // Canonical reconstruction makes whitespace and JSON key order immaterial.
 export function freezeSuite(raw) {
   if (
-    raw?.version !== VERSION ||
+    ![1, 2].includes(raw?.version) ||
     !Array.isArray(raw.tasks) ||
     raw.tasks.length < MIN_TASKS ||
     raw.tasks.length > 1000
   )
-    throw new Error("A frozen suite must have 20–1000 tasks and version 1");
+    throw new Error("A frozen suite must have 20–1000 tasks and a supported protocol version");
   const ids = new Set();
+  const cost = raw.purpose === "cost";
   const tasks = raw.tasks
     .map((t) => {
       const id = value(t?.id, "task ID", 80);
@@ -46,20 +55,37 @@ export function freezeSuite(raw) {
       return {
         id,
         repo: value(t.repo, "repository"),
-        revision: value(t.revision, "frozen revision"),
+        revision: cost ? t.revision : value(t.revision, "frozen revision"),
+        ...(cost ? costTask(t) : {}),
         task: value(t.task, "task"),
         acceptance: value(t.acceptance, "executable acceptance or grading rubric"),
       };
     })
     .sort((a, b) => (a.id < b.id ? -1 : 1));
-  if (!["parallel", "routing", "context"].includes(raw.purpose))
-    throw new Error("Choose a parallel, routing or context evaluation");
+  if (
+    cost &&
+    new Set(tasks.map((t) => JSON.stringify([t.repo, t.revision, t.task, t.acceptance]))).size !==
+      tasks.length
+  )
+    throw new Error("Duplicate frozen cost workload");
+  if (!["parallel", "routing", "context", "cost"].includes(raw.purpose))
+    throw new Error("Choose a parallel, routing, context or cost evaluation");
+  let targets;
+  if (raw.version === 2 && raw.purpose === "parallel") {
+    const { speedGainPct, qualityGainPoints } = raw.targets ?? {};
+    if (![speedGainPct, qualityGainPoints].every((n) => Number.isFinite(n) && n > 0 && n <= 100))
+      throw new Error("Freeze positive speedGainPct and qualityGainPoints targets of at most 100");
+    targets = { speedGainPct, qualityGainPoints };
+  } else if (raw.targets !== undefined)
+    throw new Error("Custom targets require a version 2 parallel study");
   const spec = {
-    version: VERSION,
+    version: raw.version,
     purpose: raw.purpose,
+    ...(targets ? { targets } : {}),
     baseline: value(raw.baseline, "baseline configuration"),
     candidate: value(raw.candidate, "candidate configuration"),
     controls: value(raw.controls, "fixed host, model, permissions and test conditions"),
+    ...(cost ? { pilot: costMetadata(raw, value) } : {}),
     tasks,
   };
   if (spec.baseline === spec.candidate) throw new Error("The two named configurations must differ");
@@ -97,8 +123,22 @@ function checkFrozen(frozen) {
   return result;
 }
 
+// Exact one-sided paired sign test under independent, exchangeable non-tied pairs.
+// Summing binomial mass by recurrence avoids factorial overflow.
+function pairedSigns(wins, losses, total) {
+  const n = wins + losses;
+  let mass = 2 ** -n,
+    upper = 0;
+  for (let k = 0; k <= n - wins; k++) {
+    upper += mass;
+    mass *= (n - k) / (k + 1);
+  }
+  return { wins, losses, ties: total - n, pOneSided: n ? Math.min(1, upper) : null };
+}
+
 export function evaluateRollout(frozen, result) {
   const { spec, hash } = checkFrozen(frozen);
+  if (spec.purpose === "cost") return evaluateCostPilot(spec, hash, result, value);
   if (result?.suiteHash !== hash)
     throw new Error("Run measurements belong to a different frozen suite");
   if (
@@ -117,7 +157,9 @@ export function evaluateRollout(frozen, result) {
     candidate = totals(),
     regressions = [];
   let faster = 0,
-    higherQuality = 0;
+    higherQuality = 0,
+    slower = 0,
+    lowerQuality = 0;
   for (const { id } of spec.tasks) {
     const row = byId.get(id);
     if (!row) throw new Error(`Missing measurements for ${id}`);
@@ -136,6 +178,8 @@ export function evaluateRollout(frozen, result) {
     if (a.accepted && !b.accepted) regressions.push(id);
     if (b.seconds < a.seconds) faster++;
     if (b.quality > a.quality) higherQuality++;
+    if (b.seconds > a.seconds) slower++;
+    if (b.quality < a.quality) lowerQuality++;
   }
   const n = spec.tasks.length,
     timeSavedPct = (100 * (baseline.seconds - candidate.seconds)) / baseline.seconds;
@@ -143,9 +187,10 @@ export function evaluateRollout(frozen, result) {
   baseline.quality /= n;
   candidate.quality /= n;
   const qualityHeld = qualityDelta >= 0 && !regressions.length;
+  const targets = spec.targets ?? legacyTargets;
   const checks = {
-    speedThreshold: timeSavedPct >= 20,
-    qualityThreshold: qualityDelta >= 10,
+    speedThreshold: timeSavedPct >= targets.speedGainPct,
+    qualityThreshold: qualityDelta >= targets.qualityGainPoints,
     qualityHeld,
     costReduced: candidate.costUsd < baseline.costUsd,
     tokenVolumeReduced: candidate.tokens < baseline.tokens,
@@ -173,13 +218,18 @@ export function evaluateRollout(frozen, result) {
     candidate,
     timeSavedPct,
     qualityDelta,
+    pairedSigns: {
+      speed: pairedSigns(faster, slower, n),
+      quality: pairedSigns(higherQuality, lowerQuality, n),
+    },
+    ...(spec.purpose === "parallel" ? { targets } : {}),
     fasterTasks: faster,
     higherQualityTasks: higherQuality,
   };
 }
 
 const blankSpec = () => ({
-  version: VERSION,
+  version: 1,
   purpose: "parallel",
   baseline: "single lead",
   candidate: "lead plus specialists",
@@ -204,16 +254,28 @@ function load(path) {
   }
 }
 function save(path, data) {
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   console.log(path);
 }
 
-export function rolloutCommand(args) {
+export function rolloutCommand(args, purpose = "parallel") {
   const [action, input, output] = args;
-  if (action === "init" && args.length === 2) return save(input, blankSpec());
-  if (action === "freeze" && args.length === 3) return save(output, freezeSuite(load(input)));
+  if (action === "init" && args.length === 2)
+    return save(
+      input,
+      purpose === "cost"
+        ? blankCostSuite(blankSpec())
+        : { ...blankSpec(), version: 2, targets: { speedGainPct: null, qualityGainPoints: null } },
+    );
+  if (action === "freeze" && args.length === 3) {
+    const raw = load(input);
+    if (purpose === "cost" && raw.purpose !== "cost") throw new Error("Use a frozen cost pilot");
+    return save(output, freezeSuite(raw));
+  }
   if (action === "template" && args.length === 3) {
     const { spec, hash } = checkFrozen(load(input));
+    if (spec.purpose === "cost") return save(output, costWorksheet({ spec, hash }));
+    if (purpose === "cost") throw new Error("Use a frozen cost pilot");
     const blank = Object.fromEntries([...fields, "accepted", "evidence"].map((f) => [f, null]));
     return save(output, {
       suiteHash: hash,
@@ -222,10 +284,14 @@ export function rolloutCommand(args) {
     });
   }
   if (action === "compare" && args.length === 3) {
-    console.log(JSON.stringify(evaluateRollout(load(input), load(output)), null, 2));
+    const frozen = load(input);
+    if (purpose === "cost" && frozen?.spec?.purpose !== "cost")
+      throw new Error("Use a frozen cost pilot");
+    console.log(JSON.stringify(evaluateRollout(frozen, load(output)), null, 2));
     return;
   }
+  const command = purpose === "cost" ? "forge cost pilot" : "forge team evaluate";
   throw new Error(
-    "Use forge team evaluate init <suite>, freeze <suite> <frozen>, template <frozen> <runs>, or compare <frozen> <runs>",
+    `Use ${command} init <suite>, freeze <suite> <frozen>, template <frozen> <runs>, or compare <frozen> <runs>`,
   );
 }

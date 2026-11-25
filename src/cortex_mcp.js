@@ -2,6 +2,7 @@
 // newline-delimited) that exposes this repo's LEARNED LESSONS to any MCP-capable tool
 // (Cursor, Codex, Gemini, Zed…). Claude gets lessons live via hooks; this is how the other
 // tools query them on demand. Launched as `forge cortex-mcp`, so the path resolves anywhere.
+
 import { readFileSync } from "node:fs";
 import { argv } from "node:process";
 import { createInterface } from "node:readline";
@@ -12,9 +13,10 @@ import { dashData, dashSummary } from "./dash.js";
 import { diagnose } from "./diagnose.js";
 import { doctor } from "./doctor.js";
 import { EVIDENCE_TOOLS, evidenceTool } from "./evidence_tools.js";
+import { negotiateStdio } from "./mcp_protocol.js";
 import { mcpInstructions } from "./orient.js";
-import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
-import { routeTask } from "./route.js";
+import { preflightRepo, preflightReport } from "./preflight.js";
+import { describeRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
 import { epochDay } from "./util.js";
@@ -64,27 +66,44 @@ async function callTool(name, args = {}, host = undefined) {
     return block || "No lessons recorded for these files/symbols yet.";
   }
   if (name === "cortex_status") return JSON.stringify(summary(root, today()), null, 2);
+  if (name === "forge_models") {
+    const { modelInventory } = await import("./model_inventory.js");
+    return JSON.stringify(
+      modelInventory(root, {
+        profile: args.profile,
+        workload: args.workload,
+        capability: args.capability,
+        availability: args.availability,
+        maxAge: args.maxAge,
+        refresh: false,
+      }),
+    );
+  }
   if (name === "preflight_check") {
     const r = preflightRepo(root, String(args.task ?? ""));
-    return clarifyBlock(r) || "All clear — everything this task names is grounded in the codebase.";
+    return preflightReport(r);
   }
   if (name === "route_task") {
-    const rec = routeTask(root, String(args.task ?? ""));
-    // routeTask names a tier; the concrete id is resolved here, as `forge route` does, so an
-    // agent is told the model it would actually call rather than the shipped snapshot.
-    // Best-effort: the resolver falls back to the snapshot when no catalog answers.
-    let model = rec.model.name;
-    try {
-      const { describeResolution, resolveTierModel } = await import("./model_tiers.js");
-      const { activeProvider } = await import("./providers.js");
-      const resolved = resolveTierModel(rec.key, { root, provider: activeProvider(root) });
-      if (resolved) model = `${resolved.id} (${describeResolution(resolved)})`;
-    } catch {}
-    return `Recommended: ${model} (${rec.tier}). complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` — ${rec.reasons.join(", ")}` : ""}.`;
+    const rec = routeTask(root, String(args.task ?? ""), {
+      profile: args.profile,
+      band: args.band,
+      workload: args.workload,
+    });
+    if (args.profile !== undefined || args.band !== undefined || args.workload !== undefined)
+      return JSON.stringify(rec.evidence ?? rec);
+    return `${describeRoute(rec)} Native agent model selection is host-managed.`;
   }
 
   if (name === "assumption_gate")
-    return JSON.stringify(assessTask(String(args.task ?? "")), null, 2);
+    return JSON.stringify(
+      preflightRepo(root, String(args.task ?? ""), {
+        allowBuild: false,
+        llm: false,
+        requiredFiles: Array.isArray(args.requiredFiles) ? args.requiredFiles.map(String) : [],
+      }).assumption,
+      null,
+      2,
+    );
   if (name === "predict_impact")
     return JSON.stringify(
       predictImpact(root, String(args.target ?? ""), {
@@ -191,13 +210,10 @@ async function callTool(name, args = {}, host = undefined) {
     );
   }
   if (name === "forge_remember") {
-    const { brainStore, remember } = await import("./brain.js");
-    const store = brainStore(root);
-    // Report what the store actually did: it REFUSES secret-shaped content, and saying
-    // "Remembered" over a refusal taught the caller a fact that was never stored.
-    const r = remember(store, String(args.name ?? ""), String(args.body ?? ""));
-    if (!r.ok) return `Not remembered — ${r.reason ?? "the store refused the write"}.`;
-    return `Remembered "${args.name}" in ${store}.`;
+    const { proposeMemory } = await import("./memory_proposals.js");
+    const result = proposeMemory(root, args.name, args.body);
+    if (!result.ok) return `Not remembered — ${result.reason}`;
+    return `Private proposal ${result.id} awaits human review in forge brain proposals. Shared memory is unchanged.`;
   }
   if (name === "collide_check") {
     const { collideReport } = await import("./collide.js");
@@ -260,6 +276,12 @@ export async function handle(msg, session = { host: undefined }) {
   const { id, method, params } = msg;
   if (id === undefined || String(method).startsWith("notifications/")) return null;
   if (method === "initialize") {
+    let protocolVersion;
+    try {
+      protocolVersion = negotiateStdio(params?.protocolVersion);
+    } catch (error) {
+      return { jsonrpc: "2.0", id, error: { code: -32602, message: error.message } };
+    }
     // Host identity is a compatibility hint only. It grants no permissions.
     const client = String(params?.clientInfo?.name ?? "").toLowerCase();
     const match = /^(kimi|codex|claude|gemini|cursor|copilot)(?:$|[- _])/i.exec(client);
@@ -270,12 +292,15 @@ export async function handle(msg, session = { host: undefined }) {
     let instructions = "";
     try {
       instructions = mcpInstructions((await listedTools()).map((t) => t.name));
+      if (client && !session.host)
+        instructions +=
+          " ForgeKit is connected through MCP. This client controls its native tools and permissions. Verify hook support separately before relying on pre-tool guards or output redaction.";
     } catch {}
     return {
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: "2024-11-05",
+        protocolVersion,
         capabilities: { tools: {} },
         serverInfo: { name: "forge-cortex", version: PKG_VERSION },
         ...(instructions ? { instructions } : {}),
@@ -331,7 +356,10 @@ export function serve(input = process.stdin, output = process.stdout) {
     try {
       msg = JSON.parse(trimmed);
     } catch {
-      return; // ignore malformed frames
+      output.write(
+        `${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } })}\n`,
+      );
+      return;
     }
     handle(msg, session)
       .then((res) => {

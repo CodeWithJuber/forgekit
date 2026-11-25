@@ -1,6 +1,5 @@
 // forge lessons — the self-correcting core. PURE logic only (no fs/hooks here, so it's
-// fully unit-testable): a mistake scorer that won't fire on normal iteration, a
-// confidence lifecycle that lets wrong lessons die faster than right ones grow, and an
+// fully unit-testable): observed correction sources, versioned lesson lifecycles, and an
 // injection selector that never overflows a tool's context cap.
 //
 // Design invariants (why this isn't just Reflexion):
@@ -10,54 +9,46 @@
 //  - A mistake is defined by a BAD OUTCOME, not by "differs from a lesson", so a
 //    developer changing their mind retires a lesson instead of fighting it.
 
-/** Signal taxonomy: weight = prior that a real mistake occurred; family gates false positives. */
-// `solo: true` = trustworthy enough to fire a lesson on its own (only an explicit human
-// undo qualifies). Everything else needs a second signal from a different family — this is
-// what stops a stray "no problem" (S5) or a lone thrash (S3) from minting a false lesson.
-export const SIGNALS = {
-  S1: { weight: 0.45, family: "outcome" }, // test-fail then pass on same files
-  S2: { weight: 0.25, family: "behavioral" }, // agent edits code it just wrote
-  S3: { weight: 0.3, family: "behavioral" }, // repeated edits to same symbol
-  S4: { weight: 0.4, family: "outcome" }, // file/hunk reverted
-  S5: { weight: 0.35, family: "human" }, // user negative utterance (weak, noisy — never solo)
-  S6: { weight: 0.5, family: "human", solo: true }, // explicit undo (git revert/checkout) — trusted solo
-  S7: { weight: 0.35, family: "outcome" }, // lint/type/build regression introduced
-};
+// S1–S7 are existing event identifiers. Their source describes what an event
+// can attest to. Repetition in one source does not create independent evidence.
+export const SIGNALS = Object.freeze({
+  S1: { family: "outcome", label: "the same command failed before the edit and later succeeded" },
+  S2: { family: "behavioral", label: "the file was edited more than once" },
+  S3: { family: "behavioral", label: "the file received repeated edits" },
+  S4: { family: "outcome", label: "a change to the file was reverted" },
+  S5: { family: "inferred", label: "a possible concern was inferred from wording" },
+  S6: { family: "human", label: "a user explicitly recorded a correction" },
+  S7: { family: "outcome", label: "a check reported a regression" },
+});
 
-// One source of truth for scope weighting — the PCM ledger core owns it now, so the
-// legacy injection path and Eq.-3 retrieval can never rank the same memory with
-// silently different weights during the bridge window.
-import { SCOPE_WEIGHT } from "./ledger.js";
 import { setOverlap } from "./math.js";
 
-export { SCOPE_WEIGHT };
+export { SCOPE_WEIGHT } from "./ledger.js";
 
-/**
- * Score whether a cluster of signals reflects a real mistake.
- * noisy-OR (bounded in [0,1)) so three weak signals can't fake one strong one; a
- * cross-family gate so a lone behavioral signal (thrash) never fires a lesson.
- * @param {{signal:string, anti?:number}[]} events - anti in [0,1] scales a signal down.
- * @returns {{p:number, fires:boolean, families:string[]}}
- */
+/** Return observed signals and their distinct sources. A damped legacy event
+ * was marked ambiguous. It can remain in an old audit log without contributing proof. */
 export function scoreMistake(events) {
-  const valid = events.filter((e) => SIGNALS[e.signal]);
-  const product = valid.reduce((acc, e) => {
-    const w = SIGNALS[e.signal].weight * (e.anti ?? 1);
-    return acc * (1 - w);
-  }, 1);
-  const p = 1 - product;
-  const families = [...new Set(valid.map((e) => SIGNALS[e.signal].family))];
-  const soloOk = valid.some((e) => SIGNALS[e.signal].solo);
-  const fires = families.length >= 2 || soloOk;
-  return { p, fires, families };
+  const signals = [
+    ...new Set(
+      (Array.isArray(events) ? events : [])
+        .filter(
+          (e) => e && Object.hasOwn(SIGNALS, e.signal) && (e.anti === undefined || e.anti === 1),
+        )
+        .map((e) => e.signal),
+    ),
+  ].sort();
+  const families = [
+    ...new Set(signals.map((s) => SIGNALS[s].family).filter((f) => f !== "inferred")),
+  ].sort();
+  const explicit = families.includes("human");
+  const corroborated = families.includes("outcome") && families.includes("behavioral");
+  return { signals, families, explicit, corroborated, fires: explicit || corroborated };
 }
 
-/** Route a scored cluster: distill a lesson now, accumulate for later, or discard as variation. */
 export function classify(events) {
-  const { p, fires } = scoreMistake(events);
-  if (fires && p >= 0.7) return "distill";
-  if (p >= 0.4) return "accumulate";
-  return "discard";
+  const observation = scoreMistake(events);
+  if (observation.fires) return "distill";
+  return observation.families.length ? "accumulate" : "discard";
 }
 
 /** A fresh lesson candidate. confidence starts at 0.5 (evidence 0, contradiction 0 → α=β=1). */
@@ -97,12 +88,17 @@ export function freshness(lesson, nowDay) {
   return 0.5 ** (age / lesson.halfLifeDays);
 }
 
-/** Time-decayed Beta posterior mean = freshness × validity. Unconfirmed lessons fade out. */
+/** Observed corrections report the share of independent receipts that confirmed the lesson.
+ * Earlier lessons use their historical time-decayed posterior. */
 export function confidenceOf(lesson, nowDay) {
+  if (lesson.provenance?.correctionVersion === 2) {
+    const total = lesson.evidenceCount + lesson.contradictionCount;
+    return total ? lesson.evidenceCount / total : 0;
+  }
   return freshness(lesson, nowDay) * validity(lesson);
 }
 
-/** Independent outcome re-confirmed this lesson. Raises confidence with diminishing returns. */
+/** Historical v1 lifecycle, retained for evaluating pre-receipt lesson records. */
 export function confirm(lesson, nowDay) {
   const next = {
     ...lesson,
@@ -145,42 +141,38 @@ export const globToRe = (glob) => {
   return re;
 };
 
-// Tokens every path shares — matching on them would make a lesson keyed to
-// src/auth/login.js "relevant" to every .js file under src/ (review-verified bug:
-// the shared {src, js} tokens alone scored 0.15, injecting unrelated lessons and
-// mis-attributing outcomes). Extensions and layout boilerplate carry no topic.
-const GENERIC_PATH_TOKENS = new Set(
-  "src lib app test tests spec specs index main utils util js ts jsx tsx mjs cjs py go rs java rb php md json yml yaml".split(
-    " ",
-  ),
-);
-
-/** Content-token footprint of a keyword list ("src/auth/login.js" → {auth, login})
- *  so two keywords about the same module overlap even when the strings differ. */
+/** Represent paths by adjacent components, so a shared layout root or extension alone
+ * cannot match unrelated files. Prose contributes its observed Unicode word tokens. */
 const keywordGrams = (words) => {
   const grams = new Set();
-  for (const w of words ?? []) {
-    for (const t of String(w)
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)) {
-      if (t.length > 1 && !GENERIC_PATH_TOKENS.has(t)) grams.add(t);
-    }
+  for (const word of words ?? []) {
+    const value = String(word).normalize("NFC").toLowerCase().replaceAll("\\", "/");
+    const parts = value.split("/").filter(Boolean);
+    if (parts.length > 1) {
+      for (let i = 1; i < parts.length; i++) grams.add(JSON.stringify([parts[i - 1], parts[i]]));
+    } else if (value.includes(".") && !/\s/.test(value)) grams.add(JSON.stringify([value]));
+    else for (const term of value.match(/[\p{L}\p{N}]+/gu) ?? []) grams.add(term);
   }
   return grams;
 };
 
-/**
- * Trigger overlap with the current context, in [0,1]: symbol hit beats file-glob
- * beats keyword. The keyword tier is GRADED — 0.3 × token-overlap coefficient —
- * so an exact keyword match keeps its historical 0.3 while a same-module partial
- * match ("src/auth/login.js" vs "src/auth/session.js") earns partial credit
- * instead of the old all-or-nothing string equality.
- */
+/** Fraction of a recorded trigger matched on the best available channel. */
 export function matchScore(lesson, context) {
   const t = lesson.trigger;
-  if (t.symbols?.some((s) => context.symbols?.includes(s))) return 1.0;
-  if (t.files?.some((g) => context.files?.some((f) => globToRe(g).test(f)))) return 0.6;
-  return 0.3 * setOverlap(keywordGrams(t.keywords), keywordGrams(context.keywords));
+  const matches = [];
+  const symbols = new Set(context.symbols ?? []);
+  if (symbols.size)
+    matches.push(
+      (t.symbols ?? []).filter((s) => symbols.has(s)).length / Math.max(1, t.symbols?.length ?? 0),
+    );
+  if (context.files?.length)
+    matches.push(
+      (t.files ?? []).filter((g) => context.files.some((f) => globToRe(g).test(f))).length /
+        Math.max(1, t.files?.length ?? 0),
+    );
+  if (context.keywords?.length)
+    matches.push(setOverlap(keywordGrams(t.keywords), keywordGrams(context.keywords)));
+  return Math.max(0, ...matches);
 }
 
 /**
@@ -194,25 +186,22 @@ export function selectForInjection(lessons, context, { budget = 12, nowDay = 0 }
     .map((l) => ({ lesson: l, m: matchScore(l, context) }))
     .filter((x) => x.m > 0)
     .map((x) => {
-      // The paper's retrieval score, decomposed into named terms: relevance (match) ×
-      // freshness (rec) × validity (val, ground-truth outcomes) × scope, with a small recency
-      // boost. Making `val` explicit ranks outcome-confirmed lessons above merely-recent ones.
-      const rel = x.m;
-      const rec = freshness(x.lesson, nowDay);
-      const val = validity(x.lesson);
-      const scopeW = SCOPE_WEIGHT[x.lesson.scope] ?? 0.5;
-      const recencyBoost = 1 + (nowDay - x.lesson.lastConfirmedDay <= 14 ? 0.2 : 0);
-      return {
-        lesson: x.lesson,
-        score: rel * rec * val * scopeW * recencyBoost,
-      };
+      const score = x.m * confidenceOf(x.lesson, nowDay);
+      return { lesson: x.lesson, score };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.lesson.evidenceCount - a.lesson.evidenceCount ||
+        b.lesson.lastConfirmedDay - a.lesson.lastConfirmedDay ||
+        (a.lesson.id < b.lesson.id ? -1 : a.lesson.id > b.lesson.id ? 1 : 0),
+    );
 
   const selected = ranked.slice(0, budget).map((x) => x.lesson);
   const overflow = Math.max(0, ranked.length - selected.length);
   const rows = selected.map((l) => `- **${l.id}** — ${l.correctedBehavior}`.slice(0, 200));
-  if (overflow) rows.push(`- _(+${overflow} more matched lessons in .forge/lessons/ — not shown)_`);
+  if (overflow)
+    rows.push(`- _(+${overflow} more matched lessons in the project ledger — see forge cortex)_`);
   const block = selected.length
     ? [
         "## Lessons for the files in play (Forge Cortex)",

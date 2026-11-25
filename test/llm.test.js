@@ -114,7 +114,7 @@ test("resolveHttpProvider: OPENAI_API_KEY → OpenAI-compatible chat/completions
     assert.equal(p.baseUrl, "https://api.openai.com/v1");
     assert.equal(p.path, "/chat/completions");
     assert.equal(p.key, "sk-oai");
-    assert.equal(p.defaultModel, "gpt-5-mini");
+    assert.equal(p.defaultModel, null);
   });
 });
 
@@ -123,7 +123,7 @@ test("resolveHttpProvider: GEMINI_API_KEY → Gemini OpenAI-compatible endpoint"
     const p = resolveHttpProvider();
     assert.equal(p.format, "openai");
     assert.equal(p.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai");
-    assert.equal(p.defaultModel, "gemini-2.5-flash");
+    assert.equal(p.defaultModel, null);
   });
 });
 

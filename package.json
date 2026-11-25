@@ -62,9 +62,12 @@
     "scripts",
     "docs/CLOUD.md",
     "docs/CORE-CONTRACT.md",
+    "docs/MEMORY.md",
+    "docs/MODELS-AND-COMPONENTS.md",
     "docs/UNIVERSAL_ROUTING.md",
     "docs/UI-JOURNEYS.md",
-    "reports/cost-eval.md"
+    "reports/cost-eval.md",
+    "examples/workshop-planner"
   ],
   "scripts": {
     "test": "node --test --import ./test/_setup.js test/*.test.js",

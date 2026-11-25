@@ -43,6 +43,19 @@ export function cascadeStats(P, w, costs, seq) {
   return { p: 1 - pf, cost };
 }
 
+// Estimated work is proportional to the number of ordered sequences, depth and
+// observations per replay. This bounds exact enumeration independently of its scores.
+export function cascadeSearchSize(models, depth, observations) {
+  let ordered = 1;
+  let count = 0;
+  for (let i = 0; i < depth; i++) {
+    ordered *= models - i;
+    count += ordered;
+    if (count * observations * depth > 10_000_000) return null;
+  }
+  return count;
+}
+
 /** All ordered cascades of distinct candidates up to `maxDepth` models long. */
 export function* cascades(candidates, maxDepth) {
   function* rec(prefix, used) {
@@ -60,8 +73,9 @@ export function* cascades(candidates, maxDepth) {
 export function parseObjective(spec) {
   if (!spec || spec === "match-best-single" || spec === "match")
     return { kind: "match-best-single" };
-  const [kind, raw] = String(spec).split(":");
-  const v = Number(raw);
+  const [kind, raw, ...extra] = String(spec).split(":");
+  const number = Number(raw);
+  const v = !extra.length && Number.isFinite(number) ? number : NaN;
   if (kind === "target" && v > 0 && v < 1) return { kind, target: v };
   if (kind === "value" && v > 0) return { kind, value: v };
   if (kind === "budget" && v > 0) return { kind, budget: v };

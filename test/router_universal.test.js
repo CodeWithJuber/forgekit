@@ -91,11 +91,11 @@ test("routeUniversal: returns a cascade within the provider's models, with proba
     assert.match(any.reason, /infeasible/);
   }
   assert.ok(got.cascade.length <= 3);
-  // A model the fit has never seen enters cold, at the population mean.
+  // Unobserved registry IDs cannot enter a benchmark recommendation.
   const cold = routeUniversal(d, TASK, {
     candidates: reg.models.filter((m) => !m.evidence).map((m) => m.id),
   });
-  assert.ok(!cold.ok || cold.cascade.every((c) => c.status === "cold"));
+  assert.equal(cold.ok, false);
 });
 
 test("recordOutcome stores features and a hash, never the task text", () => {
@@ -106,7 +106,7 @@ test("recordOutcome stores features and a hash, never the task text", () => {
     model,
     passed: true,
     cost: 0.12,
-    features: new Array(12).fill(0),
+    features: new Array(3).fill(0),
   });
   const raw = readFileSync(join(d, ".forge", "route_outcomes.jsonl"), "utf8");
   assert.doesNotMatch(raw, /zeta/);
@@ -119,12 +119,12 @@ test("recordOutcome stores features and a hash, never the task text", () => {
 test("A04: recordOutcome refuses unknown models, bad costs and wrong feature dimensions", () => {
   const d = project();
   const model = loadRegistry(d).models[0].id;
-  const feats = new Array(12).fill(0);
+  const feats = new Array(3).fill(0);
   const base = { task: "t", model, passed: true, features: feats };
   assert.throws(() => recordOutcome(d, { ...base, model: "no-such-model" }), /unknown model/);
   assert.throws(() => recordOutcome(d, { ...base, cost: -1 }), /cost/);
   assert.throws(() => recordOutcome(d, { ...base, cost: Number.NaN }), /cost/);
-  assert.throws(() => recordOutcome(d, { ...base, features: [1, 2, 3] }), /features/);
+  assert.throws(() => recordOutcome(d, { ...base, features: [1, 2] }), /features/);
   assert.throws(() => recordOutcome(d, { ...base, verifyRunId: "not-a-run" }), /no verify run/);
   const row = recordOutcome(d, { ...base, cost: 0.1 });
   assert.equal(row.provenance, "self-reported", "a caller's boolean is self-reported evidence");
@@ -134,7 +134,7 @@ test("A04: recordOutcome refuses unknown models, bad costs and wrong feature dim
 test("A01: an attempt id makes recording idempotent; replayed/corrupt rows never multiply evidence", () => {
   const d = project();
   const model = loadRegistry(d).models[0].id;
-  const feats = new Array(12).fill(0);
+  const feats = new Array(3).fill(0);
   const first = recordOutcome(d, {
     task: "t",
     model,
@@ -205,6 +205,13 @@ const logEvent = (d, event, { sign = true } = {}) => {
     v: VERIFY_EVENT_VERSION,
     verifier: "forge verify",
     checkout: checkoutId(d),
+    suites: [
+      {
+        status: "PASS",
+        exitCode: 0,
+        reportedCounts: { total: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 },
+      },
+    ],
     pre: { scheme: s.scheme, head: s.head, dirtyHash: s.dirtyHash },
     post: { head: s.head, dirtyHash: s.dirtyHash },
     ...event,
@@ -218,7 +225,7 @@ const logEvent = (d, event, { sign = true } = {}) => {
 const outcome = (d, extra = {}) => ({
   task: "t",
   model: loadRegistry(d).models[0].id,
-  features: new Array(12).fill(0),
+  features: new Array(3).fill(0),
   ...extra,
 });
 
@@ -366,7 +373,7 @@ test("N07 round 2: a legacy row's content key and an attemptId never alias one a
       task: "0123456789abcdef",
       model,
       passed: true,
-      features: new Array(12).fill(0),
+      features: new Array(3).fill(0),
       verifyRunId: "run-1",
       codeState,
     };
@@ -433,25 +440,48 @@ test("A07: a recommended model no provider serves is labeled advice only, never 
 });
 
 test("fitRouter: local outcomes move a model's ability in their direction (Bayesian update)", () => {
-  const d = project();
+  const d = gitProject();
   const prior = loadRouterModel(d);
   const target = prior.models[0];
   const before = prior.mirt.a[0];
   const feats = new Array(prior.features.mean.length).fill(0).map((_, i) => prior.features.mean[i]);
-  for (let i = 0; i < 40; i++)
+  recordOutcome(d, { task: "unverified claim", model: target, passed: true, cost: 0.1 });
+  assert.throws(() => fitRouter(d), /authenticated verifier outcomes/);
+  for (let i = 0; i < 6; i++) {
+    const verifyRunId = `failure-${i}`;
+    logEvent(d, { runId: verifyRunId, status: "FAIL" });
     recordOutcome(d, {
+      verifyRunId,
       task: `task ${i}`,
       model: target,
       passed: false,
       cost: 0.2,
       features: feats,
     });
+  }
   const fitted = fitRouter(d);
   const after = fitted.mirt.a[fitted.models.indexOf(target)];
   assert.ok(
     after < before - 0.3,
-    `ability should fall after 40 verified failures: ${before} -> ${after}`,
+    `ability should fall after verified failures: ${before} -> ${after}`,
   );
   assert.equal(loadRouterModel(d).origin, ".forge/router_model.json");
-  assert.equal(fitted.provenance.local.outcomes, 40);
+  assert.equal(fitted.provenance.local.outcomes, 6);
+});
+
+test("legacy outcome vectors retain their recorded measurements and an old local fit is ignored", () => {
+  const root = project();
+  const model = loadRegistry(root).models[0].id;
+  const row = recordOutcome(root, { task: "legacy task", model, passed: true, cost: 1 });
+  writeFileSync(
+    join(root, ".forge", "route_outcomes.jsonl"),
+    JSON.stringify({ ...row, features: [4, 2, 1, ...Array(9).fill(99)] }) + "\n",
+  );
+  assert.deepEqual(readOutcomes(root)[0].features, [4, 2, 1]);
+  const old = loadRouterModel(root);
+  writeFileSync(
+    join(root, ".forge", "router_model.json"),
+    JSON.stringify({ ...old, features: { ...old.features, names: ["old legacy axes"] } }),
+  );
+  assert.equal(loadRouterModel(root).origin, "data/router_prior.json");
 });

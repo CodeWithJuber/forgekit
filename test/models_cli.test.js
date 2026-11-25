@@ -18,8 +18,8 @@ const run = (args) =>
     env: { ...process.env, FORGE_NO_HINT: "1", NO_COLOR: "1" },
   });
 
-test("forge models --json: every tier, its resolved id, price and where both came from", () => {
-  const r = run(["models", "--json"]);
+test("forge models --schema 1 --json: every tier, its resolved id, price and where both came from", () => {
+  const r = run(["models", "--schema", "1", "--json"]);
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.deepEqual(
@@ -38,7 +38,7 @@ test("forge models --json: every tier, its resolved id, price and where both cam
 });
 
 test("forge models: a readable table plus one provenance line per family", () => {
-  const r = run(["models"]);
+  const r = run(["models", "--schema", "1"]);
   assert.equal(r.status, 0, r.stderr);
   for (const tier of TIER_ORDER) {
     assert.ok(r.stdout.includes(MODELS[tier].id), `${tier} id shown`);
@@ -47,11 +47,19 @@ test("forge models: a readable table plus one provenance line per family", () =>
   assert.match(r.stdout, /prices: shipped snapshot, verified/);
 });
 
-test("forge route shows the concrete model the tier resolves to, and where it came from", () => {
+test("default model JSON shows profiles and native hosts with their availability", () => {
+  const r = run(["models", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  const inventory = JSON.parse(r.stdout);
+  assert.equal(inventory.schemaVersion, 2);
+  assert.ok(Array.isArray(inventory.profiles));
+  assert.ok(Array.isArray(inventory.nativeHosts));
+  assert.equal(inventory.profiles[0].status, "credential-missing");
+});
+
+test("forge route returns an honest cold-start message through the normal CLI", () => {
   const r = run(["route", "write an is_prime function"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(
-    r.stdout.includes(`model: ${MODELS.haiku.id} — shipped snapshot, pricing verified`),
-    r.stdout,
-  );
+  assert.match(r.stdout, /No model recommendation.*verified task outcomes/);
+  assert.doesNotMatch(r.stdout, /Haiku|claude/i);
 });

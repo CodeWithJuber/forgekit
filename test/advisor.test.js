@@ -25,7 +25,6 @@ import {
   resolveAdvisor,
   setAdvisorModel,
   setAdvisorRule,
-  suggestAdvisor,
   validateAdvisorModel,
   writeAdvisorSetting,
 } from "../src/advisor.js";
@@ -228,7 +227,7 @@ test("outside the table: older models cannot pair, newer ones are unverified, un
   assert.equal(none.main, null);
 });
 
-test("acceptedAdvisors lists the rows at or above the main model, newest first; suggestions follow the docs", () => {
+test("acceptedAdvisors lists documented compatibility and abstains on unobserved versions", () => {
   const a = acceptedAdvisors("claude-opus-4-8");
   assert.deepEqual(
     a.rows.map((r) => r.label),
@@ -248,11 +247,12 @@ test("acceptedAdvisors lists the rows at or above the main model, newest first; 
   assert.deepEqual(acceptedAdvisors("claude-opus-5-5").aliases, ["opus", "fable"]);
   assert.deepEqual(acceptedAdvisors("claude-fable-5-1").aliases, ["fable"]);
   assert.ok(!acceptedAdvisors().rows.some((r) => r.family === "haiku"), "haiku is never offered");
-  assert.equal(suggestAdvisor("claude-haiku-4-5"), "opus");
-  assert.equal(suggestAdvisor("sonnet"), "opus");
-  assert.equal(suggestAdvisor("claude-opus-5-5"), "opus");
-  assert.equal(suggestAdvisor("fable"), "fable");
-  assert.equal(suggestAdvisor("gpt-5"), null);
+  for (const main of ["claude-opus-4-9", "claude-opus-6", "gpt-5"]) {
+    assert.deepEqual(acceptedAdvisors(main), { rows: [], aliases: [] });
+    assert.equal(checkPairing(main, "sonnet").ok, null);
+  }
+  assert.equal(rankModel("claude-opus-4-9").status, "unlisted");
+  assert.equal(checkPairing("fable", "claude-sonnet-6").ok, null);
 });
 
 test("validateAdvisorModel refuses haiku, pre-advisor models and garbage; accepts aliases, ids and newer versions with a note", () => {
@@ -586,7 +586,11 @@ test("doctor: not configured is neutral; a valid pairing is ok; a refused pairin
 test("hook nudges: one line at a decision point only, silent otherwise and under a kill switch", () => {
   freshHome();
   const root = fixture();
-  const quiet = { assumption: { shouldAsk: false }, route: { key: "sonnet" }, risk: false };
+  const quiet = {
+    assumption: { shouldAsk: false },
+    route: { status: "unrated", tier: null },
+    risk: false,
+  };
   assert.equal(advisorNudge(root, quiet, { env: NO_ENV }), "", "no advisor configured");
   setAdvisorModel(root, "opus");
   assert.equal(
@@ -597,8 +601,8 @@ test("hook nudges: one line at a decision point only, silent otherwise and under
   const ask = advisorNudge(root, { ...quiet, assumption: { shouldAsk: true } }, { env: NO_ENV });
   assert.match(ask, /^- Advisor: `opus` is configured and the task is under-specified/);
   assert.match(
-    advisorNudge(root, { ...quiet, route: { key: "opus" } }, { env: NO_ENV }),
-    /premium tier/,
+    advisorNudge(root, { ...quiet, route: { status: "measured", tier: "high" } }, { env: NO_ENV }),
+    /high verified workload band/,
   );
   assert.match(advisorNudge(root, { ...quiet, risk: true }, { env: NO_ENV }), /risk area/);
   assert.equal(
@@ -623,7 +627,7 @@ test("hook nudges: one line at a decision point only, silent otherwise and under
   assert.doesNotMatch(doomLoopAdvisory([fail, fail, fail]), /advisor/);
 });
 
-test("preflight hook: a risky prompt in a repo with an advisor carries the nudge; a routine one does not", () => {
+test("preflight hook: a prompt containing risk vocabulary cannot trigger an advisor by itself", () => {
   freshHome();
   const root = fixture();
   setAdvisorModel(root, "opus");
@@ -635,8 +639,7 @@ test("preflight hook: a risky prompt in a repo with an advisor carries the nudge
     });
   const risky = feed("add a refund endpoint for payments in src/billing.js");
   assert.equal(risky.status, 0, risky.stderr);
-  const ctx = JSON.parse(risky.stdout).hookSpecificOutput.additionalContext;
-  assert.match(ctx, /Advisor: `opus` is configured/);
+  assert.doesNotMatch(risky.stdout, /Advisor: `opus`/);
   // Whether a prompt is a decision point is the substrate's call; what this pins is the wiring:
   // the same prompt with the advisor off carries no nudge.
   setAdvisorModel(root, "off");
@@ -657,6 +660,7 @@ test("cli: status, set (runs sync), off, reset, rule, pairings, check and --json
   let r = run(["advisor"]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /advisor: not configured/);
+  assert.doesNotMatch(r.stdout, /advisor set opus/);
   assert.match(r.stdout, /advisor\.before-approach/);
   r = run(["advisor", "set", "haiku"]);
   assert.equal(r.status, 1);
@@ -694,7 +698,9 @@ test("cli: status, set (runs sync), off, reset, rule, pairings, check and --json
   r = run(["advisor", "pairings", "claude-sonnet-5"]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /main model: Sonnet 5\n/);
-  assert.match(r.stdout, /suggested: opus/);
+  assert.match(r.stdout, /accepted advisors:/);
+  r = run(["advisor", "pairings", "claude-sonnet-5", "--json"]);
+  assert.equal(JSON.parse(r.stdout).suggest, null);
   r = run(["advisor", "pairings", "--json"]);
   const table = JSON.parse(r.stdout);
   assert.equal(

@@ -18,7 +18,7 @@ export const ORIENT_MAX_BYTES = 900;
  *  live registry, so a renamed tool drops out instead of being advertised (and the test fails).
  *  @type {Array<[string, string[]]>} */
 export const ORIENT_TOOLS = [
-  ["memory", ["forge_ledger_query", "cortex_lessons", "forge_remember"]],
+  ["memory", ["forge_ledger_query", "cortex_lessons"]],
   ["before edits", ["preflight_check", "substrate_check", "predict_impact", "collide_check"]],
   ["repeat failure", ["forge_diagnose"]],
 ];
@@ -53,13 +53,7 @@ export const ORIENT_SKILLS = [
 export const MCP_TOOL_GUIDE = [
   [
     "memory",
-    [
-      "forge_ledger_query",
-      "cortex_lessons",
-      "forge_remember",
-      "forge_brain",
-      "forge_hikmah_recall",
-    ],
+    ["forge_ledger_query", "cortex_lessons", "forge_brain", "forge_hikmah_recall"],
     "auto",
   ],
   [
@@ -99,11 +93,16 @@ export const MCP_TOOL_GUIDE = [
       "forge_dash_summary",
       "forge_dash_data",
       "forge_provider_status",
+      "forge_models",
     ],
     "auto",
   ],
   ["installing a reviewed tool", ["forge_tool_install"], "ask"],
-  ["proposing a ledger change", ["forge_ledger_ratify", "forge_ledger_retract"], "ask"],
+  [
+    "proposing a ledger change",
+    ["forge_remember", "forge_ledger_ratify", "forge_ledger_retract"],
+    "ask",
+  ],
   ["supervised runs", ["forge_harness_run", "forge_harness_status"], "ask"],
 ];
 

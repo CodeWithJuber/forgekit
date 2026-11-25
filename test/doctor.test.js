@@ -16,10 +16,7 @@ import { processSession } from "../src/cortex_hook.js";
 import { doctor, repairFailure } from "../src/doctor.js";
 import { mergeSettings } from "../src/init.js";
 import { writeForgeConfig } from "../src/repo_config.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { epochDay } from "../src/util.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-"));
 
@@ -33,6 +30,19 @@ test("doctor reports subsystem health in the standard vocabulary (P1-06)", () =>
   }
   // node is present in this runtime, so redaction is ACTIVE (not silently missing).
   assert.equal(health["secret-redaction"], "ACTIVE");
+});
+
+test("doctor identifies a missing hook executable independently of a working MCP launcher", (t) => {
+  const root = fixture();
+  const old = process.env.FORGE_CLI;
+  t.after(() => {
+    if (old === undefined) delete process.env.FORGE_CLI;
+    else process.env.FORGE_CLI = old;
+  });
+  process.env.FORGE_CLI = join(root, "absent-forge");
+  const result = doctor({ targetRoot: root }).results.find((row) => row.label === "hook launcher");
+  assert.equal(result.status, "warn");
+  assert.match(result.note, /FORGE_CLI/);
 });
 
 test("doctor warns when a repo has more than ~6 MCP servers", () => {
@@ -69,8 +79,8 @@ test("doctor reports 'no lessons yet' on a fresh repo, and counts once learning 
     { type: "edit", file: "src/a.ts" },
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
-  processSession(learned, s(), 1);
-  processSession(learned, s(), 2); // → active lesson
+  processSession(learned, s(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(learned, s(), epochDay(), { sessionId: "second-session" }); // → active lesson
   const c1 = doctor({ targetRoot: learned }).results.find((r) => r.label === "cortex");
   assert.match(c1.note, /1 active/);
 });

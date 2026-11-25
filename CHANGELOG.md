@@ -12,6 +12,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Context packets account for bytes and missing spans. The optional compiler workers resolve local code dependencies.
 - The shared ledger preserves retractions and concurrent writes. Private storage supports local observations.
 - Signed verification requires counted passing checks. Git enrollment and required edit review now use explicit selection.
+- Model inventory uses profile and call evidence. Routing compares exact decimal cost totals and paired task outcomes.
 
 ## [1.19.2] - 2026-11-22
 

@@ -1,0 +1,25 @@
+{
+  "mode": "parallel",
+  "owner": "workshop coordinator",
+  "merge": "Choose a slot that fits all RSVPs. Report spare seats and cite the source rows.",
+  "streams": [
+    {
+      "id": "demand",
+      "role": "researcher",
+      "paths": [
+        "inputs/rsvps.csv"
+      ],
+      "estimatedMinutes": 35,
+      "acceptance": "Report the RSVP totals for each slot and the number of rows checked."
+    },
+    {
+      "id": "capacity",
+      "role": "planner",
+      "paths": [
+        "inputs/rooms.csv"
+      ],
+      "estimatedMinutes": 30,
+      "acceptance": "Report the seat limit for each room with a source locator."
+    }
+  ]
+}
