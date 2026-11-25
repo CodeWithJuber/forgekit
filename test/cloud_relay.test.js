@@ -42,17 +42,21 @@ function scopedEnv(t, values) {
   }
 }
 
-async function startRelay(t, dataDir, principals, env) {
+async function startRelay(t, dataDir, principals, env, port = 0) {
   const server = cloudService({ dataDir, principals, transport: "relay" }, env);
-  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
-  t.after(
-    () =>
-      new Promise((done) => {
-        server.closeAllConnections();
-        server.close(done);
-      }),
-  );
-  return "http://127.0.0.1:" + server.address().port;
+  await new Promise((done, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => done(undefined));
+  });
+  const close = async () => {
+    if (!server.listening) return;
+    await new Promise((done, reject) => {
+      server.close((err) => (err ? reject(err) : done(undefined)));
+      server.closeAllConnections();
+    });
+  };
+  t.after(close);
+  return { origin: "http://127.0.0.1:" + server.address().port, close };
 }
 
 test("encrypted snapshots authenticate manifest, tenant, revision, names and artifact bytes", async (t) => {
@@ -161,7 +165,7 @@ test("relay clients retry an encrypted outbox, verify another device's receipt a
     tokenEnv: name,
     role: { READ: "reader", WRITE: "writer", OTHER: "reader", ADMIN: "admin" }[name],
   }));
-  const origin = await startRelay(t, dataDir, principals, env);
+  const { origin } = await startRelay(t, dataDir, principals, env);
   const path = "/v1/relay/first/demo";
   const call = (suffix, secret, base = path) =>
     fetch(origin + base + suffix, { headers: { authorization: "Bearer " + secret } });
@@ -304,7 +308,7 @@ test("relay clients retry an encrypted outbox, verify another device's receipt a
     join(dataDir, "cloud.sqlite"),
     join(restoredDir, "cloud.sqlite"),
   ]);
-  const restoredOrigin = await startRelay(t, restoredDir, principals, env);
+  const { origin: restoredOrigin } = await startRelay(t, restoredDir, principals, env);
   const recoveredPeer = join(folder, "restored-reader");
   mkdirSync(recoveredPeer);
   await configureCloud(recoveredPeer, { ...config, url: restoredOrigin }, "relay");
@@ -355,4 +359,68 @@ test("durable relay retries authenticate saved bytes and accept the previous que
   const old = createHmac("sha256", keys.outbox).update(JSON.stringify(change)).digest("hex");
   assert.deepEqual(pendingRelayChange(keys, { tag: old, change }), change);
   assert.throws(() => pendingRelayChange(keys, { tag, change }), /authentication/);
+});
+
+test("a revoked offline writer can publish its local edits only after enrollment in a new key generation", async (t) => {
+  const dir = mkdtempSync(join(realpathSync.native(tmpdir()), "forge-generation-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const root = join(dir, "writer"),
+    reader = join(dir, "reader"),
+    data = join(dir, "service");
+  mkdirSync(root);
+  mkdirSync(reader);
+  const oldKey = credential(),
+    newKey = credential();
+  const env = { PREVIOUS: credential(), CURRENT: credential(), READER: credential() };
+  scopedEnv(t, { FORGE_HOME: join(dir, "state"), [keyEnv]: oldKey, [tokenEnv]: env.PREVIOUS });
+  const principal = (workspace, role, tokenEnv) => ({ tenant: "team", workspace, role, tokenEnv });
+  const previous = await startRelay(t, data, [principal("one", "writer", "PREVIOUS")], env);
+  const opts = {
+    url: previous.origin,
+    tenant: "team",
+    workspace: "one",
+    tokenEnv,
+    keyEnv,
+    fullWorkspace: true,
+  };
+  await configureCloud(root, opts, "relay");
+  writeFileSync(join(root, "notes.txt"), "published");
+  const first = await pushCloud(root, {}, "relay");
+  await previous.close();
+  writeFileSync(join(root, "notes.txt"), "edited offline");
+  await assert.rejects(pushCloud(root, {}, "relay"));
+  assert.equal((await cloudStatus(root, false, "relay")).pending, true);
+
+  const next = await startRelay(
+    t,
+    data,
+    [principal("two", "writer", "CURRENT"), principal("two", "reader", "READER")],
+    env,
+    Number(new URL(previous.origin).port),
+  );
+  assert.equal(next.origin, previous.origin);
+  await assert.rejects(pushCloud(root, {}, "relay"), /HTTP 403/);
+  assert.equal((await cloudStatus(root, false, "relay")).pending, true);
+  const nextOpts = { ...opts, workspace: "two" };
+  await assert.rejects(configureCloud(root, nextOpts, "relay"), /logout/i);
+  await removeCloud(root, false, false, "relay");
+  process.env[tokenEnv] = env.CURRENT;
+  process.env[keyEnv] = newKey;
+  await configureCloud(root, nextOpts, "relay");
+  assert.equal((await cloudStatus(root, false, "relay")).pending, false);
+  const cutover = await pushCloud(root, {}, "relay");
+  assert.notEqual(cutover.revision, first.revision);
+
+  process.env[tokenEnv] = env.READER;
+  process.env[keyEnv] = oldKey;
+  await configureCloud(reader, nextOpts, "relay");
+  await assert.rejects(readRelay(reader, "notes.txt", cutover.revision), /authentication/);
+  await removeCloud(reader, false, false, "relay");
+  process.env[keyEnv] = newKey;
+  await configureCloud(reader, nextOpts, "relay");
+  await assert.rejects(readRelay(reader, "notes.txt", first.revision), /expected relay revision/);
+  assert.equal(
+    (await readRelay(reader, "notes.txt", cutover.revision)).sha256,
+    sha(Buffer.from("edited offline")),
+  );
 });
