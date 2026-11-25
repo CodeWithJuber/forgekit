@@ -11,8 +11,8 @@ import {
 } from "node:fs";
 import { extname, isAbsolute, join } from "node:path";
 import { ATLAS_VERSION, CODE_EXTS, indexedText } from "./atlas.js";
-import { INTENT_STOP, intentGrams } from "./intent.js";
 import { setOverlap } from "./math.js";
+import { INTENT_STOP, intentGrams } from "./text_grams.js";
 
 const MAX_ATLAS_BYTES = 12 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 256 * 1024;

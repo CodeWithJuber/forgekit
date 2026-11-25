@@ -11,7 +11,9 @@
 // writes REFUSE (`{ok:false, reason}`) rather than replace bytes a human may still want
 // to fix. When no config exists the primary tool is auto-detected from which agent
 // folders/files are present (mirrors autoDetectProvider in providers.js).
+import { randomUUID } from "node:crypto";
 import {
+  constants,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -231,6 +233,10 @@ export function readForgeConfig(root = process.cwd()) {
  */
 export function writeForgeConfig(root, mutator) {
   const path = forgeConfigPath(root);
+  return withConfigLock(path, () => updateConfig(path, mutator, legacyConfigPath(root)));
+}
+
+function updateConfig(path, mutator, legacyPath = undefined) {
   const unified = readConfigFile(path);
   if (unified.status === "corrupt") {
     warnCorrupt(path);
@@ -240,8 +246,8 @@ export function writeForgeConfig(root, mutator) {
       reason: `${path} is not valid JSON — refusing to overwrite (fix or delete it)`,
     };
   }
-  const legacy = readConfigFile(legacyConfigPath(root));
-  if (legacy.status === "corrupt") warnCorrupt(legacyConfigPath(root));
+  const legacy = legacyPath ? readConfigFile(legacyPath) : { status: "missing", data: {} };
+  if (legacy.status === "corrupt") warnCorrupt(legacyPath);
   const draft = { ...legacy.data, ...unified.data };
   const next = mutator(draft) ?? draft;
   atomicWriteConfig(path, next, unified.status === "ok");
@@ -258,10 +264,45 @@ export function writeForgeConfig(root, mutator) {
  */
 function atomicWriteConfig(path, next, hadValid) {
   mkdirSync(dirname(path), { recursive: true });
-  if (hadValid && existsSync(path)) copyFileSync(path, `${path}.forge-bak-${stamp()}`);
-  const tmp = `${path}.forge-tmp-${process.pid}`;
-  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
-  renameSync(tmp, path);
+  const nonce = randomUUID();
+  if (hadValid && existsSync(path))
+    copyFileSync(path, `${path}.forge-bak-${stamp()}-${nonce}`, constants.COPYFILE_EXCL);
+  const tmp = `${path}.forge-tmp-${nonce}`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    renameSync(tmp, path);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+// Hold an exclusive marker across reading, merging and replacing the file. A writer
+// that cannot acquire it must never fall back to writing an out-of-date snapshot.
+// An interrupted process leaves an inspectable PID for manual recovery.
+export function withConfigLock(path, operation) {
+  const lock = path + ".lock";
+  mkdirSync(dirname(path), { recursive: true });
+  const deadline = Date.now() + 4000;
+  const sleep = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: "wx", mode: 0o600 });
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Config busy: ${lock}. If its recorded PID has exited, clear the stale lock and retry.`,
+        );
+      }
+      Atomics.wait(sleep, 0, 0, 12);
+    }
+  }
+  try {
+    return operation();
+  } finally {
+    rmSync(lock);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,19 +336,7 @@ export function readUserConfig() {
  */
 export function writeUserConfig(mutator) {
   const path = userConfigPath();
-  const file = readConfigFile(path);
-  if (file.status === "corrupt") {
-    warnCorrupt(path);
-    return {
-      ok: false,
-      path,
-      reason: `${path} is not valid JSON — refusing to overwrite (fix or delete it)`,
-    };
-  }
-  const draft = { ...file.data };
-  const next = mutator(draft) ?? draft;
-  atomicWriteConfig(path, next, file.status === "ok");
-  return { ok: true, path, config: next };
+  return withConfigLock(path, () => updateConfig(path, mutator));
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +444,12 @@ export function setPrimaryTool(root, tool) {
  * @returns {{cleared:boolean, path:string}}
  */
 export function clearRepoConfig(root) {
+  if (!existsSync(dirname(forgeConfigPath(root))))
+    return { cleared: false, path: forgeConfigPath(root) };
+  return withConfigLock(forgeConfigPath(root), () => clearPrimaryTool(root));
+}
+
+function clearPrimaryTool(root) {
   let had = false;
   for (const file of [forgeConfigPath(root), legacyConfigPath(root)]) {
     const { status, data } = readConfigFile(file);
@@ -427,7 +462,7 @@ export function clearRepoConfig(root) {
     had = true;
     delete data.primaryTool;
     if (Object.keys(data).length === 0) rmSync(file, { force: true });
-    else writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
+    else atomicWriteConfig(file, data, true);
   }
   return { cleared: had, path: forgeConfigPath(root) };
 }

@@ -602,27 +602,58 @@ HANDLERS.reuse = async (argv) => {
 
 HANDLERS.context = async (argv) => {
   const { assemble, renderContext } = await import("../context.js");
-  const { load: loadAtlas } = await import("../atlas.js");
+  const { build, isStale, load: loadAtlas } = await import("../atlas.js");
   const { epochDay } = await import("../util.js");
   const json = argv.includes("--json");
+  const ei = argv.indexOf("--encoding");
+  const encoding = ei >= 0 ? argv[ei + 1] : undefined;
+  if (ei >= 0 && (!encoding || encoding.startsWith("-")))
+    throw new Error("--encoding requires a tokenizer name");
+  const { contextCounter } = await import("../token_count.js");
+  const counter = contextCounter(encoding, process.cwd());
+  const ai = argv.indexOf("--ack");
+  const packet = argv.includes("--packet") || ai >= 0;
+  const ack = ai < 0 ? undefined : argv[ai + 1];
+  if (ai >= 0 && (!ack || ack.startsWith("--"))) {
+    console.error("--ack requires a previously retained packet revision");
+    process.exitCode = 1;
+    return;
+  }
   const bi = argv.indexOf("--budget");
-  const budget = bi >= 0 ? Number(argv[bi + 1]) || undefined : undefined;
+  const rawBudget = bi >= 0 ? argv[bi + 1] : undefined;
+  const budget = bi >= 0 ? Number(rawBudget) : undefined;
+  if (bi >= 0 && (!/^\d+$/.test(rawBudget ?? "") || !Number.isSafeInteger(budget))) {
+    console.error("--budget must be a nonnegative integer token count");
+    process.exitCode = 1;
+    return;
+  }
   const task = argv
-    .filter((a, i) => i > 0 && !a.startsWith("--") && argv[i - 1] !== "--budget")
+    .filter(
+      (a, i) =>
+        i > 0 && !a.startsWith("--") && !["--budget", "--ack", "--encoding"].includes(argv[i - 1]),
+    )
     .join(" ");
   if (!task) {
     console.error('usage: forge context "<task>" [--budget <tokens>] [--json]');
     process.exitCode = 1;
     return;
   }
-  const r = assemble(process.cwd(), task, {
-    atlas: loadAtlas(process.cwd()),
+  const root = process.cwd();
+  let atlas = loadAtlas(root);
+  if (packet && (!atlas || isStale(root, atlas))) atlas = build({ root });
+  const r = assemble(root, task, {
+    atlas,
+    counter,
+    includeSegments: packet,
     nowDay: epochDay(),
-    ...(budget ? { budget } : {}),
+    ...(budget !== undefined ? { budget } : {}),
   });
   // --block delivers the assembled context itself — the spans the summary talks about (R13).
   const withBlock = argv.includes("--block");
-  if (json) {
+  if (packet) {
+    const { createContextPacket } = await import("../context_packet.js");
+    console.log(JSON.stringify(createContextPacket(root, task, r, ack, counter)));
+  } else if (json) {
     const { block, ...rest } = r;
     console.log(JSON.stringify(withBlock ? r : rest, null, 2));
   } else if (withBlock) {

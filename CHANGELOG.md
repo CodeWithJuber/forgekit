@@ -9,6 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Workspace cloud and encrypted relay sync use explicit enrollment. Git ignores apply by default. Chromium can record UI journeys and preview dashboard artifacts.
+- Context packets account for bytes and missing spans. The optional compiler workers resolve local code dependencies.
 
 ## [1.19.2] - 2026-11-22
 

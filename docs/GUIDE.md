@@ -2538,3 +2538,5 @@ The optional PDF layout reader uses the internal `FORGE_DOCLING_SANDBOXED` marke
 ## Options added during this rollout
 
 Cloud transfer deadlines use the encoded request size and `FORGE_CLOUD_MIN_BYTES_PER_SECOND` (65,536 by default). Set `CHROME_BIN` and `FORGE_PLAYWRIGHT` to select an installed browser for visual checks.
+
+Set `FORGE_TYPESCRIPT_PATH` to a trusted external TypeScript compiler.

@@ -9,62 +9,50 @@
 // asked as a derived M2 question when not. "Covered" means DELIVERED in the block: a
 // pointer to a file is a pending read, not coverage (review F03), and a block that cannot
 // fit the budget says so instead of claiming completion (review F02).
-import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
-import { claimText, jaccard, sketch, val } from "./ledger.js";
+import { workspaceEvidence } from "./harness_tools.js";
+import {
+  claimText,
+  evidenceEvents,
+  jaccard,
+  refStrength,
+  retrieve,
+  sketch,
+  val,
+} from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { referencedEntities } from "./preflight.js";
+import { hasSecret } from "./secrets.js";
+import { mapToTests } from "./test_select.js";
+import { byteCounter } from "./token_count.js";
 
-/** chars → tokens ESTIMATE (chars/3.6, consistent with the reuse estimator). It is not a
- *  model tokenizer: a hard window limit needs the target model's own tokenizer, so treat
- *  every budget here as an estimate with that stated basis. */
-export const tokensOf = (text) => Math.ceil(String(text).length / 3.6);
-/** How `tokens` is measured — reported with every assembly so nobody mistakes it for exact. */
-export const TOKEN_ESTIMATE = "chars/3.6 estimate of the rendered block";
+export const tokensOf = byteCounter.count;
+export const TOKEN_ESTIMATE = byteCounter.label;
 /** Items are joined with this separator; its cost is budgeted like any other text. */
 const SEP = "\n\n";
-/** Direct dependents listed by name before the rest are summarized as omitted. */
-const DEPS_SHOWN = 12;
-/** Lines of source shown after a definition's line in a symbol-span variant. */
-const SPAN_AFTER = 40;
-const SPAN_BEFORE = 2;
-const HEAD_LINES = 25;
-
-/** Lessons must be THIS trusted to enter the required set (spec §3: lessons*(S)). */
-export const LESSON_REQUIRED_VAL = 0.8;
-/** Per-source diminishing returns for optional items (spec §2): the j-th item taken from
- *  one source is worth δ^(j−1). Once that falls below the floor the source's value has
- *  decayed away — with δ = 0.7 that is the 4th item (δ³ ≈ 0.34), so each source adds at
- *  most three optional items. */
-const SOURCE_DISCOUNT = 0.7;
-const SOURCE_VALUE_FLOOR = 0.4;
 /** Default assembly budget in tokens (callers pass the real per-tool cap). */
 export const DEFAULT_BUDGET = 6000;
 
-const readRel = (root, rel) => {
-  try {
-    return readFileSync(join(root, rel), "utf8");
-  } catch {
-    return null;
+// Context pointers may also use resolved imports by discovered test files. Only
+// the independently measured graph can authorize executing a smaller test suite.
+function relatedTests(root, targets, atlas) {
+  if (!targets.size) return [];
+  const tests = new Set(mapToTests(root, [...targets]));
+  const files = new Map((atlas?.nodes ?? []).map((n) => [n.id, n.file]));
+  for (const edge of atlas?.edges ?? []) {
+    const consumer = files.get(edge.source);
+    if (
+      edge.kind === "imports" &&
+      edge.resolved &&
+      targets.has(files.get(edge.target)) &&
+      typeof consumer === "string" &&
+      /(?:[._](?:test|spec)\.[^/]+$|(?:^|\/)(?:tests?|__tests__)\/)/.test(consumer)
+    )
+      tests.add(consumer);
   }
-};
-
-// Sibling-test detection (same heuristics family as substrate's predictFailingTests,
-// local here to keep the import graph one-directional: substrate → context, never back).
-const isTestFile = (f) => /(\.|_)(test|spec)\.[jt]sx?$|(^|\/)(tests?|__tests__)\//.test(f);
-function siblingTests(root, file) {
-  const dir = dirname(file);
-  const base = basename(file).replace(/\.[^.]+$/, "");
-  const ext = file.match(/\.[^.]+$/)?.[0] ?? ".js";
-  const candidates = [
-    join(dir, `${base}.test${ext}`),
-    join(dir, `${base}.spec${ext}`),
-    join(dir, "__tests__", `${base}.test${ext}`),
-    join("test", `${base}.test${ext}`),
-    join("tests", `${base}.test${ext}`),
-  ];
-  return candidates.filter((c) => existsSync(join(root, c)));
+  return [...tests].sort();
 }
 
 /**
@@ -73,8 +61,9 @@ function siblingTests(root, file) {
  * Each entry: { key, kind, name, resolvable } — unresolvable entries are exactly the
  * derived clarifying questions.
  */
-export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 } = {}) {
+export function requiredSet(root, task, { atlas = null, claims = [] } = {}) {
   const entities = referencedEntities(String(task || ""));
+  /** @type {{key:string, kind:string, name:string, resolvable:boolean, withheld?:string}[]} */
   const R = [];
   const targetFiles = new Set();
 
@@ -87,20 +76,33 @@ export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 
     if (known) R.push({ key: `deps:${s}`, kind: "deps", name: s, resolvable: true });
   }
   for (const f of entities.files) {
-    const onDisk = existsSync(join(root, f));
-    R.push({ key: `file:${f}`, kind: "file", name: f, resolvable: onDisk });
-    if (onDisk) targetFiles.add(f);
+    const access = workspaceEvidence(root, f, { inspectOnly: true });
+    R.push({
+      key: `file:${f}`,
+      kind: "file",
+      name: f,
+      resolvable: access.available,
+      ...(access.reason && access.reason !== "missing" ? { withheld: access.reason } : {}),
+    });
+    if (access.available) targetFiles.add(f);
   }
-  for (const f of targetFiles) {
-    if (isTestFile(f)) continue;
-    for (const t of siblingTests(root, f))
-      R.push({ key: `tests:${t}`, kind: "tests", name: t, resolvable: true });
-  }
-  // Team lessons trusted past the floor, scope-matching the targets — required context:
-  // an agent editing without them repeats a mistake the ledger already paid for.
+  for (const t of relatedTests(root, targetFiles, atlas))
+    R.push({ key: `tests:${t}`, kind: "tests", name: t, resolvable: true });
+  // A directly relevant, independently confirmed lesson remains required while uncontested.
   const names = new Set([...entities.symbols, ...entities.files.map((f) => basename(f))]);
   for (const c of claims) {
-    if (c.kind !== "lesson" || c.tombstone || val(c, nowDay) < LESSON_REQUIRED_VAL) continue;
+    if (c.kind !== "lesson" || c.tombstone) continue;
+    const observations = evidenceEvents(c.evidence);
+    if (
+      observations.some((e) => e.result !== "confirm") ||
+      !observations.some(
+        (e) =>
+          refStrength(e.ref, e.oracle) === "resolved" &&
+          String(e.ref).startsWith("git:") &&
+          !String(e.author ?? "").startsWith("agent:"),
+      )
+    )
+      continue;
     const trig = [...(c.body.trigger?.symbols ?? []), ...(c.body.trigger?.files ?? [])];
     if (trig.some((t) => names.has(t) || names.has(basename(String(t)))))
       R.push({ key: `lesson:${c.id.slice(0, 8)}`, kind: "lesson", name: c.id, resolvable: true });
@@ -127,15 +129,17 @@ export function requiredSet(root, task, { atlas = null, claims = [], nowDay = 0 
 /** One variant: its rendered text, estimated tokens, the keys it satisfies, the keys it only
  *  points at (pending reads), what it truncated, and the definitions it shows only in part
  *  (`{key, shown, definition}` line ranges — a partial key is also pending). */
-const variant = (gran, text, covers, pending = [], truncated = null, partial = []) => ({
-  gran,
-  text,
-  tokens: tokensOf(text),
-  covers,
-  pending,
-  ...(truncated ? { truncated } : {}),
-  ...(partial.length ? { partial } : {}),
-});
+const makeVariant =
+  (count) =>
+  (gran, text, covers, pending = [], truncated = null, partial = []) => ({
+    gran,
+    text,
+    tokens: count(text),
+    covers,
+    pending,
+    ...(truncated ? { truncated } : {}),
+    ...(partial.length ? { partial } : {}),
+  });
 
 /** Split definition needs by what a [from, to] line window shows of them: `covers` — the whole
  *  definition; `partial` — the declaration line but not its end (or an unknown end). */
@@ -160,9 +164,7 @@ function windowCoverage(defs, from, to) {
  * {key, kind: "def"|"file"|"tests", line?, endLine?}. Ordered largest → smallest; a variant
  * that is not smaller than the previous one is skipped.
  */
-function fileItem(root, rel, { needs, source, score }, atlas = null) {
-  const text = readRel(root, rel);
-  if (text === null) return null;
+function fileItem(text, rel, { needs, source }, atlas, variant) {
   const lines = text.split("\n");
   const total = lines.length;
   const keys = needs.map((n) => n.key);
@@ -183,31 +185,21 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
       partial,
     );
   };
-  if (defs.length) {
-    const from = Math.max(1, Math.min(...defs.map((d) => d.line)) - SPAN_BEFORE);
-    // Whole definitions, when the atlas knows where every requested one ends.
-    if (defs.every((d) => Number.isFinite(d.endLine))) {
-      const to = Math.min(total, Math.max(...defs.map((d) => /** @type {number} */ (d.endLine))));
-      if (from > 1 || to < total) variants.push(windowed("span", "whole definitions", from, to));
-    }
-    // The declaration and the start of the body: a smaller rung, partial for long bodies.
-    const to = Math.min(total, Math.max(...defs.map((d) => d.line)) + SPAN_AFTER);
-    if (from > 1 || to < total) variants.push(windowed("span", "definition span", from, to));
-  }
-  if (total > HEAD_LINES) {
-    // The head covers a definition only if the WHOLE definition is inside it; a whole file or
-    // test file is never "covered" by its first 25 lines.
-    const { covers, partial } = windowCoverage(defs, 1, HEAD_LINES);
-    variants.push(
-      variant(
-        "head",
-        `// ${rel} (first ${HEAD_LINES} of ${total} lines)\n${lines.slice(0, HEAD_LINES).join("\n")}`,
-        covers,
-        keys.filter((k) => !covers.includes(k)),
-        { shownLines: [1, HEAD_LINES], totalLines: total },
-        partial,
-      ),
-    );
+  const from = defs.length ? Math.min(...defs.map((d) => d.line)) : 1;
+  const lastKnown =
+    defs.length && defs.every((d) => Number.isFinite(d.endLine))
+      ? Math.min(total, Math.max(...defs.map((d) => Number(d.endLine))))
+      : total;
+  if (defs.length && (from > 1 || lastKnown < total))
+    variants.push(windowed("span", "requested definitions", from, lastKnown));
+  // Halve the remaining range, giving the allocator successively smaller windows.
+  for (
+    let length = Math.floor((lastKnown - from + 1) / 2);
+    length;
+    length = Math.floor(length / 2)
+  ) {
+    const to = from + length - 1;
+    variants.push(windowed(defs.length ? "span" : "head", "source excerpt", from, to));
   }
   variants.push(variant("pointer", `- read ${rel}`, [], keys));
   // The whole file is always the top rung; every lower rung is strictly smaller (a window
@@ -217,7 +209,7 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
   const ladder = [full];
   for (const v of smaller.sort((a, b) => b.tokens - a.tokens))
     if (v.tokens < ladder[ladder.length - 1].tokens) ladder.push(v);
-  return { id: `${source}:${rel}`, source, covers: keys, score, variants: ladder };
+  return { id: `${source}:${rel}`, source, covers: keys, score: keys.length, variants: ladder };
 }
 
 /**
@@ -226,7 +218,7 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
  *
  * Honesty contract (review F02/F03/N04):
  *   - `tokens` is measured on the RENDERED block (labels and separators included) with the
- *     chars/3.6 estimate (`tokenEstimate` says so). The block never exceeds `budget` by that
+ *     selected tokenizer or the reported UTF-8 byte bound. The block never exceeds `budget` by that
  *     measure: when even pointers cannot fit, required items are DROPPED (lowest score first)
  *     and reported, with `overflow: true`.
  *   - `covered` holds only keys whose content was actually delivered — for a definition, the
@@ -238,34 +230,42 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
  *   - `ok` means every required key was DELIVERED within budget: no missing, no pending (so
  *     no partial definition), no overflow. It is syntactic delivery, not semantic
  *     sufficiency.
- *   - Optional items are chosen greedily by value density (score per token) with per-source
- *     diminishing returns — a heuristic, with no knapsack or set-cover guarantee (the
- *     per-source discount breaks the preconditions those guarantees need).
+ *   - Optional items are chosen greedily by value density (score per token) discounted by overlap
+ *     with already selected evidence. There is no fixed quota on facts from a source.
  * @param {string} root
  * @param {string} task
- * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number}} [opts]
+ * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number, includeSegments?:boolean, counter?:import("./token_count.js").ContextCounter}} [opts]
  */
 export function assemble(
   root,
   task,
-  { budget = DEFAULT_BUDGET, atlas = null, claims, nowDay = 0 } = {},
+  {
+    budget = DEFAULT_BUDGET,
+    atlas = null,
+    claims,
+    nowDay = 0,
+    includeSegments = false,
+    counter = byteCounter,
+  } = {},
 ) {
+  if (!Number.isSafeInteger(budget) || budget < 0)
+    throw new RangeError("context budget must be a nonnegative integer");
+  const variant = makeVariant(counter.count);
   const ledgerDir = repoLedger(root);
   const allClaims = claims ?? (existsSync(join(ledgerDir, "claims")) ? loadClaims(ledgerDir) : []);
-  const required = requiredSet(root, task, { atlas, claims: allClaims, nowDay });
+  const required = requiredSet(root, task, { atlas, claims: allClaims });
+  const withheld = required
+    .filter((r) => r.withheld)
+    .map((r) => ({ source: r.name, reason: r.withheld, keys: [r.key] }));
 
   // --- build candidate items, keyed by what they cover -------------------------------
   // File-backed keys are grouped per file first, so one file is one item whose variants
   // know exactly which of its keys each one delivers.
-  /** @type {Map<string, {needs: {key:string, kind:string, line?:number, endLine?:number}[], source:string, score:number}>} */
+  /** @type {Map<string, {needs: {key:string, kind:string, line?:number, endLine?:number}[], source:string}>} */
   const files = new Map();
-  const need = (rel, n, source, score) => {
-    const f = files.get(rel) ?? { needs: [], source, score };
+  const need = (rel, n, source) => {
+    const f = files.get(rel) ?? { needs: [], source };
     f.needs.push(n);
-    if (score > f.score) {
-      f.score = score;
-      f.source = source;
-    }
     files.set(rel, f);
   };
   const items = [];
@@ -276,48 +276,56 @@ export function assemble(
     if (r.kind === "def") {
       const hit = atlasQuery(atlas, r.name).find((s) => s.name === r.name || s.qname === r.name);
       if (hit?.file)
-        need(hit.file, { key: r.key, kind: "def", line: hit.line, endLine: hit.endLine }, "def", 1);
+        need(hit.file, { key: r.key, kind: "def", line: hit.line, endLine: hit.endLine }, "def");
     } else if (r.kind === "file") {
-      need(r.name, { key: r.key, kind: "file" }, "def", 1);
+      need(r.name, { key: r.key, kind: "file" }, "def");
     } else if (r.kind === "tests") {
-      need(r.name, { key: r.key, kind: "tests" }, "tests", 0.9);
+      need(r.name, { key: r.key, kind: "tests" }, "tests");
     } else if (r.kind === "deps" && atlas) {
       const hop1 = impact(atlas, r.name, { maxHops: 1 }).impacted.filter(
         (x) => x.hopDistance === 1,
       );
-      const shown = hop1.slice(0, DEPS_SHOWN);
-      const omitted = hop1.slice(DEPS_SHOWN).map((x) => `${x.node.name} (${x.node.file})`);
-      if (omitted.length)
-        truncated.push({ id: `deps:${r.name}`, shown: shown.length, total: hop1.length, omitted });
-      const text = hop1.length
-        ? [
-            `direct dependents of ${r.name} (edit these with it or verify them):`,
-            ...shown.map((x) => `  - ${x.node.name} (${x.node.file}, via ${x.edgeKinds[0]})`),
-            ...(omitted.length
-              ? [`  … and ${omitted.length} more, omitted here (\`forge impact ${r.name}\`)`]
-              : []),
-          ].join("\n")
+      const lines = hop1.map((x) => `${x.node.name} (${x.node.file}, via ${x.edgeKinds[0]})`);
+      const heading = `direct dependents of ${r.name} (edit these with it or verify them):`;
+      const text = lines.length
+        ? [heading, ...lines.map((x) => `  - ${x}`)].join("\n")
         : `no direct dependents of ${r.name} found in the atlas`;
-      items.push({
-        id: `deps:${r.name}`,
-        source: "deps",
-        covers: [r.key],
-        score: 1,
-        variants: [
-          variant("full", text, [r.key]),
-          variant("pointer", `- dependents: \`forge impact ${r.name}\``, [], [r.key]),
-        ],
-      });
+      const variants = [variant("full", text, [r.key])];
+      for (let n = Math.floor(lines.length / 2); n; n = Math.floor(n / 2)) {
+        const part = [
+          heading,
+          ...lines.slice(0, n).map((x) => `  - ${x}`),
+          `  … ${lines.length - n} omitted (forge impact ${r.name})`,
+        ].join("\n");
+        if (counter.count(part) < variants.at(-1).tokens)
+          variants.push(
+            variant("partial", part, [], [r.key], {
+              shown: n,
+              total: lines.length,
+              omitted: lines.slice(n),
+            }),
+          );
+      }
+      variants.push(variant("pointer", `- dependents: \`forge impact ${r.name}\``, [], [r.key]));
+      items.push({ id: `deps:${r.name}`, source: "deps", covers: [r.key], score: 1, variants });
     } else if (r.kind === "lesson") {
       const c = allClaims.find((x) => x.id === r.name);
       if (c) {
+        if (hasSecret(c.body.correctedBehavior)) {
+          withheld.push({
+            source: "ledger lesson",
+            reason: "secret-shaped-content",
+            keys: [r.key],
+          });
+          continue;
+        }
         const text = `lesson (val ${val(c, nowDay).toFixed(2)}): ${c.body.correctedBehavior}`;
         const id8 = c.id.slice(0, 8);
         items.push({
           id: `lesson:${id8}`,
           source: "lesson",
           covers: [r.key],
-          score: 0.95,
+          score: 1,
           variants: [
             variant("full", text, [r.key]),
             variant("pointer", `- lesson: \`forge ledger show ${id8}\``, [], [r.key]),
@@ -327,20 +335,32 @@ export function assemble(
     }
   }
   for (const [rel, f] of files) {
-    const it = fileItem(root, rel, f, atlas);
-    if (it) items.push(it);
+    const input = workspaceEvidence(root, rel);
+    if (!input.available || hasSecret(input.text)) {
+      withheld.push({
+        source: rel,
+        reason: input.reason ?? "secret-shaped-content",
+        keys: f.needs.map((n) => n.key),
+      });
+      continue;
+    }
+    items.push(fileItem(input.text, rel, f, atlas, variant));
   }
-  // Optional extras: trusted scope-matching facts (nice-to-have, never required).
-  for (const c of allClaims) {
-    if (c.kind !== "fact" || c.tombstone) continue;
-    const v = val(c, nowDay);
-    if (v < 0.5) continue;
-    const text = `fact: ${claimText(c)}`;
+  // A free slot alone is no reason to send a fact to a model.
+  const facts = allClaims.filter((c) => c.kind === "fact" && !c.tombstone);
+  for (const { claim: c, rel, score } of retrieve(task, facts, { nowDay, budget: facts.length })) {
+    if (!(rel > 0)) continue;
+    const fact = claimText(c);
+    if (hasSecret(fact)) {
+      withheld.push({ source: "ledger fact", reason: "secret-shaped-content", keys: [] });
+      continue;
+    }
+    const text = `fact: ${fact}`;
     items.push({
       id: `fact:${c.id.slice(0, 8)}`,
       source: "fact",
       covers: [],
-      score: 0.3 + 0.4 * v,
+      score: score * rel,
       variants: [variant("full", text, [])],
     });
   }
@@ -349,11 +369,13 @@ export function assemble(
   const pinned = items.filter((i) => i.covers.length).sort((a, b) => (a.id < b.id ? -1 : 1));
   const optional = items.filter((i) => !i.covers.length);
   let chosen = pinned.map((i) => ({ item: i, v: 0 })); // v = variant index
-  const sepTokens = tokensOf(SEP);
-  // Per-piece ceilings plus separators bound the rendered block's estimate from above.
+  const sepTokens = counter.count(SEP);
+  // BPE merges can change at join boundaries. Measure the rendered text with the same encoder.
   const used = () =>
-    chosen.reduce((n, c) => n + c.item.variants[c.v].tokens, 0) +
-    Math.max(0, chosen.length - 1) * sepTokens;
+    counter.descriptor.kind === "utf8-bytes"
+      ? chosen.reduce((n, c) => n + c.item.variants[c.v].tokens, 0) +
+        Math.max(0, chosen.length - 1) * sepTokens
+      : counter.count(chosen.map((c) => c.item.variants[c.v].text).join(SEP));
   // Downgrade the largest pinned item one rung at a time until the pins fit the budget.
   while (used() > budget) {
     const cand = chosen
@@ -374,7 +396,7 @@ export function assemble(
   while (used() > budget && chosen.length) {
     const worst = [...chosen].sort(
       (a, b) =>
-        a.item.score - b.item.score ||
+        a.item.variants[a.v].covers.length - b.item.variants[b.v].covers.length ||
         b.item.variants[b.v].tokens - a.item.variants[a.v].tokens ||
         (a.item.id < b.item.id ? 1 : -1),
     )[0];
@@ -385,10 +407,11 @@ export function assemble(
   // Choose optional evidence by marginal value per estimated token. Exact repeats
   // have zero marginal information; related evidence pays a Jaccard penalty. Only
   // compare against optional records: required material retains its coverage rights.
-  const perSource = new Map();
   const available = budget - used() - (chosen.length ? sepTokens : 0);
   const candidates = optional
-    .filter((item) => item.variants[0].tokens <= available)
+    .filter(
+      (item) => counter.descriptor.kind !== "utf8-bytes" || item.variants[0].tokens <= available,
+    )
     .map((item) => ({
       item,
       sketch: sketch(item.variants[0].text),
@@ -401,9 +424,9 @@ export function assemble(
     for (const [index, candidate] of candidates.entries()) {
       const { item, similarity } = candidate;
       const v = item.variants[0];
-      const discount = SOURCE_DISCOUNT ** (perSource.get(item.source) ?? 0);
-      if (similarity === 1 || discount < SOURCE_VALUE_FLOOR || v.tokens > remaining) continue;
-      const density = ((item.score - 0.5 * similarity) * discount) / Math.max(1, v.tokens);
+      if (similarity === 1 || (counter.descriptor.kind === "utf8-bytes" && v.tokens > remaining))
+        continue;
+      const density = (item.score * (1 - similarity)) / Math.max(1, v.tokens);
       if (
         density > highest ||
         (best >= 0 && density === highest && item.id < candidates[best].item.id)
@@ -415,7 +438,10 @@ export function assemble(
     if (best < 0) break;
     const [selected] = candidates.splice(best, 1);
     chosen.push({ item: selected.item, v: 0 });
-    perSource.set(selected.item.source, (perSource.get(selected.item.source) ?? 0) + 1);
+    if (counter.descriptor.kind !== "utf8-bytes" && used() > budget) {
+      chosen.pop();
+      continue;
+    }
     for (const candidate of candidates)
       candidate.similarity = Math.max(
         candidate.similarity,
@@ -423,7 +449,8 @@ export function assemble(
       );
   }
 
-  const block = chosen.map((c) => c.item.variants[c.v].text).join(SEP);
+  const segments = chosen.map((c) => c.item.variants[c.v].text);
+  const block = segments.join(SEP);
   const covered = new Set(chosen.flatMap((c) => c.item.variants[c.v].covers));
   const pending = new Set(
     chosen.flatMap((c) => c.item.variants[c.v].pending).filter((k) => !covered.has(k)),
@@ -438,7 +465,7 @@ export function assemble(
     .filter((p) => !covered.has(p.key))
     .sort((a, b) => (a.key < b.key ? -1 : 1));
   const questions = missing
-    .filter((r) => !r.resolvable)
+    .filter((r) => !r.resolvable && !r.withheld)
     .map((r) =>
       r.kind === "def"
         ? `The task names \`${r.name}\` but the repo doesn't define it — which file implements it (or is it new)?`
@@ -452,8 +479,10 @@ export function assemble(
   return {
     ok: missing.length === 0 && pending.size === 0 && !overflow,
     budget,
-    tokens: tokensOf(block),
-    tokenEstimate: TOKEN_ESTIMATE,
+    tokens: counter.count(block),
+    tokenizer: counter.descriptor,
+    tokenEstimate: counter.label,
+    ...(withheld.length ? { withheld } : {}),
     overflow,
     ...(overflow ? { dropped } : {}),
     required: required.map((r) => r.key),
@@ -471,6 +500,7 @@ export function assemble(
       covers: c.item.variants[c.v].covers,
     })),
     block,
+    ...(includeSegments ? { segments } : {}),
   };
 }
 
@@ -479,7 +509,7 @@ export function renderContext(r) {
   const lines = ["Forge context — budgeted assembly + completeness gate", ""];
   const state = r.ok ? "COMPLETE" : r.overflow ? "OVER BUDGET — INCOMPLETE" : "INCOMPLETE";
   lines.push(
-    `  budget: ${r.tokens}/${r.budget} tokens (${r.tokenEstimate ?? TOKEN_ESTIMATE}) · required ${r.required.length} · ${state}`,
+    `  budget: ${r.tokens}/${r.budget} units (${r.tokenEstimate ?? TOKEN_ESTIMATE}) · required ${r.required.length} · ${state}`,
   );
   for (const s of r.selection) lines.push(`    + ${s.id} [${s.gran}] ${s.tokens}t`);
   if (r.overflow)
@@ -491,6 +521,7 @@ export function renderContext(r) {
     lines.push("", "  pending reads (pointed at, not delivered — read before acting):");
     for (const p of r.pending) lines.push(`    - ${p}`);
   }
+  for (const w of r.withheld ?? []) lines.push(`    withheld ${w.source} (${w.reason})`);
   for (const p of r.partial ?? [])
     lines.push(
       `    ~ ${p.key}: only lines ${p.shown[0]}-${p.shown[1]} shown of a definition spanning ${p.definition[0]}-${p.definition[1] ?? "?"} — the body is not delivered`,
