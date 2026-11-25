@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +15,13 @@ import {
   readRelay,
   removeCloud,
 } from "../src/cloud_client.js";
-import { inspectRelay, relayChange, relayKeys } from "../src/cloud_relay.js";
+import {
+  inspectRelay,
+  pendingRelayChange,
+  queueRelayChange,
+  relayChange,
+  relayKeys,
+} from "../src/cloud_relay.js";
 import { cloudService } from "../src/cloud_server.js";
 import { sha } from "../src/cloud_snapshot.js";
 import { installedHarnessPython } from "../src/harness_python.js";
@@ -213,7 +219,7 @@ test("relay clients retry an encrypted outbox, verify another device's receipt a
   const pending = join(dir, "pending.json");
   const saved = readFileSync(pending);
   const edited = JSON.parse(saved.toString());
-  edited.change.trace = "local-only data";
+  edited.payload = JSON.stringify({ ...JSON.parse(edited.payload), trace: "local-only data" });
   writeFileSync(pending, JSON.stringify(edited));
   let transmitted = false;
   globalThis.fetch = async () => {
@@ -335,4 +341,18 @@ test("relay clients retry an encrypted outbox, verify another device's receipt a
   await assert.rejects(pushCloud(peer, {}, "relay"), /409/);
   const initial = await pushCloud(peer, { replaceRemote: true, confirmed: true }, "relay");
   assert.equal((await readRelay(peer, undefined, initial.revision)).authenticated, true);
+});
+
+test("durable relay retries authenticate saved bytes and accept the previous queue format", () => {
+  const keys = { outbox: randomBytes(32) };
+  const change = { removed: [], files: [], label: "café", parent: null };
+  const { version, tag, payload } = queueRelayChange(keys, change);
+  assert.deepEqual(pendingRelayChange(keys, { tag, version, payload }), change);
+  assert.throws(
+    () => pendingRelayChange(keys, { tag, version, payload: payload + " " }),
+    /authentication/,
+  );
+  const old = createHmac("sha256", keys.outbox).update(JSON.stringify(change)).digest("hex");
+  assert.deepEqual(pendingRelayChange(keys, { tag: old, change }), change);
+  assert.throws(() => pendingRelayChange(keys, { tag, change }), /authentication/);
 });
