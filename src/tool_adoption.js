@@ -20,6 +20,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { vetPackages } from "./depgate.js";
 import { addIntegration, stableVersion } from "./integrations.js";
+import { npmCliPath } from "./npm_runtime.js";
 import { researchPointers } from "./public_research.js";
 import { heuristicScan } from "./skillgate.js";
 import { userStateDir } from "./util.js";
@@ -220,37 +221,6 @@ export function unregisterCatalogTool(root, id) {
   });
 }
 
-// npm already ships node-semver. Resolve from the npm installation paired with the
-// current Node executable, never from project-controlled node_modules or PATH.
-function npmCliPath(root) {
-  const override = process.env.FORGE_NPM_PATH;
-  if (override) {
-    if (!isAbsolute(override))
-      throw new Error("FORGE_NPM_PATH requires an absolute npm-cli.js path");
-    const cli = realpathSync(override);
-    const pkgDir = dirname(dirname(cli));
-    if (inside(realpathSync(root), cli) || !statSync(cli).isFile())
-      throw new Error("FORGE_NPM_PATH must point to npm outside the workspace");
-    const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
-    if (
-      pkg.name !== "npm" ||
-      pkg.bin?.npm !== "bin/npm-cli.js" ||
-      cli !== join(pkgDir, pkg.bin.npm)
-    )
-      throw new Error("FORGE_NPM_PATH must identify the installed npm package's CLI");
-    return cli;
-  }
-  const dir = dirname(process.execPath);
-  const paths = [
-    join(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-    join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
-    join(dir, "..", "share", "nodejs", "npm", "bin", "npm-cli.js"),
-  ];
-  const path = paths.find((p) => existsSync(p));
-  if (!path)
-    throw new Error("Install npm alongside Node or set FORGE_NPM_PATH to the installed npm-cli.js");
-  return realpathSync(path);
-}
 function nodeFits(range, runtime, root) {
   if (!range || range === "*") return true;
   const npmRequire = createRequire(npmCliPath(root));

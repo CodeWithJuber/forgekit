@@ -30,6 +30,7 @@ import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js
 import { BRAND } from "./brand.js";
 import { duplicateGate } from "./duplicate_gate.js";
 import { workspaceEvidence } from "./harness_tools.js";
+import { npmCliPath } from "./npm_runtime.js";
 import { readForgeConfig } from "./repo_config.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import {
@@ -780,7 +781,7 @@ export function classifySuiteFailure(e, { label, bin, timeout }) {
       status: "INCOMPLETE",
       exitCode: null,
       code: "ENOENT",
-      output: `executor unavailable (${bin ?? label} not on PATH)`,
+      output: `executor unavailable (${bin ?? label} could not be located)`,
     };
   }
   if (e.code === "ETIMEDOUT" || e.signal === "SIGTERM") {
@@ -1163,7 +1164,9 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       // (stdout stays machine-readable for --json). The per-suite timeout below is
       // the watchdog; this line is the pulse.
       onProgress?.({ label, phase: "start" });
-      const proc = spawnSync(r.bin, r.args ?? [], {
+      const windowsNpm = r.bin === "npm" && process.platform === "win32";
+      const args = windowsNpm ? [npmCliPath(cwd), ...(r.args ?? [])] : (r.args ?? []);
+      const proc = spawnSync(windowsNpm ? process.execPath : r.bin, args, {
         cwd: dir,
         encoding: "utf8",
         stdio: "pipe",

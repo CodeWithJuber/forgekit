@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -48,6 +56,47 @@ test("classifyEvent normalizes edits, bash, and prompts", () => {
   assert.equal(classifyEvent({ tool_name: "Read", tool_input: {} }), null);
 });
 
+test("an aliased checkout accepts either host spelling of a target, including a new nested file", () => {
+  const outer = realpathSync.native(fixture());
+  const project = join(outer, "project"),
+    alias = join(outer, "directory-alias");
+  mkdirSync(project);
+  symlinkSync(project, alias, process.platform === "win32" ? "junction" : "dir");
+  execFileSync("git", ["init", "-q"], { cwd: project });
+  mkdirSync(join(project, "pkg"));
+  writeFileSync(join(project, "pkg", "a"), "exact bytes");
+  const edit = (cwd, file_path) =>
+    classifyEvent({ cwd, tool_name: "Edit", tool_input: { file_path } });
+  const regular = edit(project, join(project, "pkg", "a"));
+  assert.equal(regular.file, "pkg/a");
+  assert.ok(regular.versions.length);
+  for (const cwd of [project, alias, join(project, "pkg"), join(alias, "pkg")]) {
+    assert.deepEqual(edit(cwd, join(alias, "pkg", "a")), regular);
+    assert.deepEqual(edit(cwd, join(project, "pkg", "a")), regular);
+  }
+  assert.deepEqual(edit(join(alias, "pkg"), "new/missing.js"), {
+    type: "edit",
+    file: "pkg/new/missing.js",
+  });
+  symlinkSync(outer, join(project, "external"), process.platform === "win32" ? "junction" : "dir");
+  symlinkSync(
+    project,
+    join(project, "nested-link"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  for (const outside of [
+    join(outer, "other"),
+    join(alias, "external", "other"),
+    join(alias, "nested-link", "pkg", "a"),
+  ]) {
+    assert.equal(edit(alias, outside), null);
+  }
+  assert.deepEqual(
+    detectEpisodes([null, ...recovery(), null]).map((e) => e.kind),
+    ["mistake"],
+  );
+});
+
 test("test-fail → edit → pass on a repeatedly-edited file fires a mistake episode", () => {
   const events = [
     { type: "bash", command: "npm test", exitCode: 1 },
@@ -84,16 +133,21 @@ test("only a successful revert with a matching reported Git object can contradic
   git("init", "-q");
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.org");
-  writeFileSync(join(root, "real.js"), "one");
-  git("add", "real.js");
+  git("config", "core.autocrlf", "false");
+  writeFileSync(join(root, ".gitattributes"), "real.js text eol=crlf\n");
+  writeFileSync(join(root, "real.js"), "one\r\n");
+  git("add", ".gitattributes", "real.js");
   git("commit", "-qm", "one");
-  writeFileSync(join(root, "real.js"), "two");
-  git("commit", "-qam", "two");
+  writeFileSync(join(root, "real.js"), "two\r\n");
   const performed = classifyEvent({
     tool_name: "Edit",
     cwd: root,
     tool_input: { file_path: "real.js" },
   });
+  assert.equal(readFileSync(join(root, "real.js"), "utf8"), "two\r\n");
+  git("commit", "-qam", "two");
+  assert.equal(git("show", "HEAD:real.js"), "two\n");
+  assert.ok(performed.versions.includes(git("rev-parse", "HEAD:real.js").trim()));
   const actual = [
     { type: "bash", command: "check observed", exitCode: 1 },
     performed,
@@ -135,6 +189,51 @@ test("only a successful revert with a matching reported Git object can contradic
   ]) {
     assert.equal(detectEpisodes([classifyEvent({ ...run, ...changed })]).length, 0);
   }
+});
+
+test("only Git-authorized text conversions contribute a normalized blob", () => {
+  const root = fixture();
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  git("init", "-q");
+  git("config", "core.autocrlf", "true");
+  const binary = Buffer.from([0x80, 0xff, 0x0d, 0x0a]);
+  const file = join(root, "data.file");
+  const normalized = execFileSync("git", ["hash-object", "--stdin"], {
+    cwd: root,
+    input: Buffer.from([0x80, 0xff, 0x0a]),
+  })
+    .toString()
+    .trim();
+  const raw = execFileSync("git", ["hash-object", "--stdin"], { cwd: root, input: binary })
+    .toString()
+    .trim();
+  writeFileSync(file, binary);
+  const capture = () =>
+    classifyEvent({ tool_name: "Edit", cwd: root, tool_input: { file_path: "data.file" } })
+      .versions;
+  for (const attrs of [
+    "data.file -text",
+    "data.file text ident",
+    "data.file text filter=custom",
+    "data.file text working-tree-encoding=UTF-16",
+  ]) {
+    writeFileSync(join(root, ".gitattributes"), `${attrs}\n`);
+    const versions = capture();
+    assert.ok(versions.includes(raw));
+    assert.equal(versions.includes(normalized), false, attrs);
+  }
+  writeFileSync(join(root, ".gitattributes"), "");
+  assert.ok(capture().includes(normalized), "built-in core.autocrlf preserves every other byte");
+  git("config", "core.autocrlf", "false");
+  assert.equal(
+    capture().includes(normalized),
+    false,
+    "literal CRLF and LF are distinct when conversion is disabled",
+  );
+  writeFileSync(join(root, ".gitattributes"), "data.file text eol=lf\n");
+  git("config", "core.safecrlf", "true");
+  assert.equal(capture().includes(normalized), false, "Git would refuse this round trip");
 });
 
 const recovery = (command = "npm test") => [

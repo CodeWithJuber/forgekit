@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { npmCliPath } from "../src/npm_runtime.js";
 import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
@@ -28,6 +29,25 @@ import {
   verify,
 } from "../src/verify.js";
 import { fakeGithubPat } from "./_fixtures.js";
+
+test("the npm JS launcher runs a suite in a path with spaces and rejects a project-owned launcher", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "forge npm runtime "));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  writeFileSync(join(root, "runtime.test.cjs"), 'require("node:test")("counted", () => {});\n');
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const output = execFileSync(process.execPath, [npmCliPath(root), "test"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+  assert.match(output, /(?:#|ℹ) pass 1\b/);
+  const local = join(root, "bin", "npm-cli.js");
+  mkdirSync(join(root, "bin"));
+  writeFileSync(local, "");
+  assert.throws(() => npmCliPath(root, local), /outside the workspace/);
+});
 
 // A fake executable so a suite's exit code (and thus verify's verdict) is deterministic,
 // regardless of what npm/pytest do on this machine.

@@ -3,11 +3,19 @@
 // commands from the developer. Signal detection is PURE (over a normalized event log) so
 // it's unit-testable; the shell hooks just append events and call processSession on Stop.
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
 import { privateMemoryDir } from "./private_memory.js";
-import { readBounded } from "./private_paths.js";
+import { containsPath, physicalPath, readBounded } from "./private_paths.js";
 import { redactSecrets } from "./secrets.js";
 import { sourceWorkspaceRoot } from "./sources.js";
 import { contentHash, git } from "./util.js";
@@ -155,6 +163,93 @@ function outputSignature(text) {
   return norm ? contentHash(norm).slice(0, 12) : "";
 }
 
+/** An OS alias for a checkout can appear on either side of a hook. Anchor both
+ * spellings at the same native root before checking the repository's own path segments. */
+function editTarget(cwd, input) {
+  const root = realpathSync.native(sourceWorkspaceRoot(realpathSync.native(cwd)));
+  const target = resolve(cwd, input);
+  let anchor = containsPath(root, target) ? root : null;
+  if (!anchor) {
+    // Keep the outermost spelling of this root. A nested symlink pointing back
+    // to the checkout must still be inspected as part of the edit, not an alias.
+    for (let dir = dirname(target); ; dir = dirname(dir)) {
+      if (lstatSync(dir, { throwIfNoEntry: false }) && realpathSync.native(dir) === root)
+        anchor = dir;
+      if (dir === dirname(dir)) break;
+    }
+  }
+  if (!anchor || target === anchor) return null;
+  let candidate = root;
+  for (const part of relative(anchor, target).split(sep)) {
+    candidate = join(candidate, part);
+    if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink()) return null;
+  }
+  const path = physicalPath(candidate);
+  if (path === root || !containsPath(root, path)) return null;
+  return { root, path, file: relative(root, path).split(sep).join("/") };
+}
+
+const blobIds = (bytes) =>
+  ["sha1", "sha256"].map((algorithm) =>
+    createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex"),
+  );
+
+/** Git's observed text classification and effective attributes determine whether its
+ * built-in clean conversion removes CR before LF. No external filter is invoked. */
+function convertsCrlf(root, file) {
+  const columns = git(root, [
+    "--no-optional-locks",
+    "-c",
+    "core.fsmonitor=false",
+    "--literal-pathspecs",
+    "ls-files",
+    "--eol",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "-z",
+    "--",
+    file,
+  ]);
+  const row = /^i\/(\S*)\s+w\/crlf\s+attr\/([^\t]*)\t/.exec(columns);
+  if (!row || columns.slice(row[0].length) !== `${file}\0`) return false;
+  const attrs = git(root, [
+    "--no-optional-locks",
+    "-c",
+    "core.fsmonitor=false",
+    "check-attr",
+    "-z",
+    "filter",
+    "ident",
+    "working-tree-encoding",
+    "--",
+    file,
+  ]).split("\0");
+  if (
+    attrs.length !== 10 ||
+    [0, 3, 6].some((i) => attrs[i] !== file || !["unspecified", "unset"].includes(attrs[i + 2]))
+  )
+    return false;
+  const policy = row[2].trim();
+  // safecrlf rejects a round trip that would lose the observed CRLF bytes.
+  if (
+    !policy.endsWith("eol=crlf") &&
+    git(root, ["config", "--bool", "--get", "core.safecrlf"]) === "true" &&
+    (policy.endsWith("eol=lf") ||
+      git(root, ["config", "--bool", "--get", "core.autocrlf"]) !== "true")
+  )
+    return false;
+  if (/^(?:text(?: eol=(?:crlf|lf))?|eol=(?:crlf|lf))$/.test(policy)) return true;
+  // Automatic conversion preserves a previously binary or CRLF/mixed index blob.
+  if (!["", "lf", "none"].includes(row[1])) return false;
+  if (/^text=auto(?: eol=(?:crlf|lf))?$/.test(policy)) return true;
+  if (policy) return false;
+  return (
+    git(root, ["config", "--get", "core.autocrlf"]).toLowerCase() === "input" ||
+    git(root, ["config", "--bool", "--get", "core.autocrlf"]) === "true"
+  );
+}
+
 /** Normalize a raw hook payload into a compact event, or null if it carries no signal. */
 export function classifyEvent(hook) {
   const eventId =
@@ -168,17 +263,29 @@ export function classifyEvent(hook) {
     let file = inp.file_path;
     let versions;
     if (hook.cwd) {
-      const target = resolve(hook.cwd, file);
-      file = relative(sourceWorkspaceRoot(hook.cwd), target);
-      if (!file || isAbsolute(file) || file === ".." || file.startsWith(`..${sep}`)) return null;
-      file = file.split(sep).join("/");
-      // Capture only Git blob identities. If bounded or no-follow reading fails,
-      // a later reversal cannot be attributed to this version of the file.
+      let target;
       try {
-        const { bytes } = readBounded(target, 1024 * 1024);
-        versions = ["sha1", "sha256"].map((algorithm) =>
-          createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex"),
-        );
+        target = editTarget(hook.cwd, file);
+      } catch {
+        return null;
+      }
+      if (!target) return null;
+      file = target.file;
+      // A linked, oversized or unreadable file supplies no content identity.
+      try {
+        const { bytes } = readBounded(target.path, 1024 * 1024);
+        versions = blobIds(bytes);
+        if (
+          bytes.includes(Buffer.from("\r\n")) &&
+          convertsCrlf(target.root, file) &&
+          readBounded(target.path, 1024 * 1024).bytes.equals(bytes)
+        ) {
+          const cleanBytes = Buffer.from(
+            bytes.toString("latin1").replaceAll("\r\n", "\n"),
+            "latin1",
+          );
+          versions.push(...blobIds(cleanBytes));
+        }
       } catch {}
     }
     return { type: "edit", file, ...(versions ? { versions } : {}), ...eventId };
@@ -266,6 +373,7 @@ export function detectEpisodes(events, { nowDay = 0, sessionId = "" } = {}) {
   const episodes = [];
   const digest = (parts) => contentHash(JSON.stringify(parts));
   for (const event of events) {
+    if (!event || typeof event !== "object") continue;
     if (event.eventId) {
       const receipt = JSON.stringify([event.eventId, event.type, event.file]);
       if (seen.has(receipt)) continue;

@@ -2362,7 +2362,7 @@ Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name
 
 Use `FORGE_TYPESCRIPT_PATH` to select an installed compiler outside the indexed project when running `forge atlas build --ast`.
 
-Tool adoption on a split Node/npm installation accepts `FORGE_NPM_PATH` set to the installed npm package's absolute `bin/npm-cli.js` path outside the repository. An embedding command accepts a JSON argument array in `FORGE_EMBED=cmd:[...]`, including paths with spaces.
+On Windows, `forge verify` launches npm's JavaScript entry point with the current Node executable. For a split Node/npm installation, both Windows verification and tool adoption accept `FORGE_NPM_PATH` pointing to the installed npm package's absolute `bin/npm-cli.js` outside the repository. An embedding command accepts a JSON argument array in `FORGE_EMBED=cmd:[...]`, including paths with spaces.
 
 The complete env contract (`forge docs check` keeps this table honest — a variable the
 code reads but this table misses fails CI on the forge repo):
