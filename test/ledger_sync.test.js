@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { canonicalize, mintClaim, stateRoot } from "../src/ledger.js";
-import { loadClaims, loadState, putClaim } from "../src/ledger_store.js";
+import {
+  getClaimByPrefix,
+  loadClaims,
+  loadState,
+  loadSyncState,
+  pruneToAttic,
+  putClaim,
+  stats,
+  tombstone,
+  verify,
+} from "../src/ledger_store.js";
 import { defaultRun, ledgerSync, stateBytes, syncDir, syncTarget } from "../src/ledger_sync.js";
 
 const tmp = (p = "forge-sync-") => mkdtempSync(join(tmpdir(), p));
@@ -352,4 +362,38 @@ test("ref sync: a record one replica quarantines survives on the shared ref for 
     "bob's push merged into the remote instead of replacing it with his verified view",
   );
   assert.equal(readEvidence(ledgerOf(alice), c.id).length, 1, "alice still has it");
+});
+
+test("a locally archived retraction converges through a git ref, including an idle archived peer", () => {
+  const bare = initBare(),
+    a = initRepo(),
+    b = initRepo();
+  for (const repo of [a, b]) git(repo, "remote", "add", "origin", bare);
+  const ad = ledgerOf(a),
+    bd = ledgerOf(b);
+  const { id } = mint(ad, "Endpoint", "First address");
+  const sync = (root) => {
+    const r = ledgerSync({ dir: ledgerOf(root), root });
+    assert.equal(r.ok, true);
+  };
+  sync(a);
+  sync(b);
+  assert.equal(pruneToAttic(ad, id).ok, true);
+  assert.equal(tombstone(bd, id, { author: "maintainer", reason: "retired", t: 2 }).ok, true);
+  assert.equal(pruneToAttic(bd, id).ok, true);
+  sync(b);
+  sync(a);
+  const received = getClaimByPrefix(ad, id, { attic: true });
+  assert.ok(received.tombstone);
+  assert.equal(stateRoot(loadSyncState(ad)).root, stateRoot(loadSyncState(bd)).root);
+  assert.equal(ledgerSync({ dir: ad, root: a }).upToDate, true);
+});
+
+test("non-shard metadata in a claims directory does not affect stats or verify", () => {
+  const dir = tmp();
+  mint(dir, "key", "value");
+  writeFileSync(join(dir, "claims", ".DS_Store"), "unrelated");
+  mkdirSync(join(dir, "claims", "misc"));
+  assert.equal(stats(dir).total, 1);
+  assert.equal(verify(dir).ok, true);
 });

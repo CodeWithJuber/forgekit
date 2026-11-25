@@ -128,6 +128,7 @@ export const IMPACT_CASES = [
   {
     target: "claimText",
     expected: [
+      "src/ambient_memory.js",
       "src/cli.js",
       "src/cli/memory.js",
       "src/context.js",
@@ -145,10 +146,12 @@ export const IMPACT_CASES = [
   {
     target: "contentHash",
     expected: [
+      "src/ambient_memory.js",
       "src/atlas.js",
       "src/auto_adoption.js",
       "src/context_packet.js",
       "src/cortex_hook.js",
+      "src/cortex_observations.js",
       "src/cost_report.js",
       "src/diagnose.js",
       "src/discovery.js",
@@ -162,6 +165,7 @@ export const IMPACT_CASES = [
       "src/http_cache.js",
       "src/ledger.js",
       "src/ledger_store.js",
+      "src/private_memory.js",
       "src/public_lookup.js",
       "src/reuse.js",
       "src/source_local.js",

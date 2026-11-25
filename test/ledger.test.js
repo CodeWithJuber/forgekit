@@ -913,8 +913,48 @@ test("retrieve (C5): one similarity scale per ranking — cosine and Jaccard are
   assert.equal(both[0].rel, 0.9, "a complete embedding ranks by cosine");
 });
 
-test("EQ3_WEIGHTS: defaults are the spec's (a, b, g) plus a small scope term — not 'calibrated'", () => {
-  assert.deepEqual(EQ3_WEIGHTS, { a: 0.55, b: 0.15, g: 0.3, s: 0.1 });
+test("default retrieval ranks measured query scope while versioned Eq. 3 reproduces historic scores", () => {
+  const scoped = mintClaim({
+    kind: "fact",
+    scope: { level: "dir", dir: "payments" },
+    body: { name: "deploy", text: "Use the weekday window" },
+  }).claim;
+  const other = mintClaim({
+    kind: "fact",
+    scope: { level: "symbol", symbol: "unrelated" },
+    body: { name: "deploy", text: "Use the weekday window" },
+  }).claim;
+  const current = retrieve("payments", [other, scoped]);
+  assert.equal(current[0].claim.id, scoped.id);
+  assert.equal(current[1].score, 0);
+  assert.ok(current[0].score > 0);
+  assert.deepEqual(retrieve("payments", [scoped, other]), current);
+  const old = retrieve("payments", [other, scoped], { ranking: "eq3-v1" });
+  assert.equal(old[0].claim.id, other.id);
+  assert.deepEqual(old, retrieve("payments", [scoped, other], { weights: EQ3_WEIGHTS }));
+  assert.equal(old[0].score, score("payments", other));
+  assert.throws(
+    () => retrieve("payments", [scoped], { ranking: "unknown" }),
+    /Unknown ledger ranking/,
+  );
+});
+
+test("tied observations share a midrank and stronger independent evidence wins deterministically", () => {
+  const high = factAt("deployment upgrade", "repo", [ev("confirm", 20)], 20);
+  const lowA = factAt("deployment alpha", "repo", [], 2);
+  const lowB = factAt("deployment beta", "repo", [], 2);
+  const rows = retrieve("deployment", [lowB, high, lowA], { nowDay: 20 });
+  assert.equal(rows[0].claim.id, high.id);
+  assert.ok(rows[0].score > rows[1].score);
+  assert.equal(rows[1].score, rows[2].score);
+  assert.deepEqual(
+    rows.slice(1).map((r) => r.claim.id),
+    [lowA.id, lowB.id].sort(),
+  );
+  assert.deepEqual(
+    retrieve("deployment", [lowA, lowB, high], { nowDay: 20, budget: 2 }),
+    rows.slice(0, 2),
+  );
 });
 
 test("isDormant (C7): dormancy latches — decay alone never revives a refuted claim", () => {

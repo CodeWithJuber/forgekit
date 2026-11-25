@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { BRAND } from "./brand.js";
 import { canonicalize, mergeStates, stateRoot } from "./ledger.js";
-import { importState, loadState, mergeDirs } from "./ledger_store.js";
+import { importState, loadSyncState, mergeDirs } from "./ledger_store.js";
 import { gitAuthor } from "./util.js";
 
 const STATE_FILE = "state.json";
@@ -75,7 +75,7 @@ export function defaultRun(args, { cwd = process.cwd(), input, env } = {}) {
  *  keys, NFC) so the same on-disk state hashes to the same blob on every replica —
  *  which is what makes the idempotence check (tree-SHA equality) exact. */
 export function stateBytes(dir) {
-  return `${canonicalize(loadState(dir))}\n`;
+  return `${canonicalize(loadSyncState(dir))}\n`;
 }
 
 /** Committer/author identity for the sync commit, parsed from a `Name <email>`
@@ -159,7 +159,7 @@ export function syncDir(localDir, otherDir) {
   // so equal-modulo-garbage dirs skip the merge without quarantining that garbage —
   // `ledger merge` still does. (The ref transport's tree-SHA equality already IS this
   // check; only the dir transport lacked one.)
-  if (stateRoot(loadState(localDir)).root === stateRoot(loadState(otherDir)).root)
+  if (stateRoot(loadSyncState(localDir)).root === stateRoot(loadSyncState(otherDir)).root)
     return {
       ok: true,
       mode: "dir",
@@ -213,7 +213,7 @@ function pullRef(localDir, root, ref, run, notes) {
  *  (review C3). The join is the same semilattice merge, so this stays order-independent
  *  and monotone: the remote only ever grows. */
 function pushBytes(localDir, root, ref, run) {
-  const local = loadState(localDir);
+  const local = loadSyncState(localDir);
   const remote = refCommit(root, ref, run) ? readRemoteState(root, ref, run) : null;
   return `${canonicalize(remote ? mergeStates(remote, local) : local)}\n`;
 }
