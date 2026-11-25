@@ -877,7 +877,7 @@ const toolsValue = (tools) => (tools === null ? "all" : tools);
  * hooks + permissions into ~/.claude/settings.json without ever touching the user's repo.
  * `onSettingsNotice(target)` is forwarded to `mergeSettings` so the GLOBAL-settings
  * disclosure is emitted BEFORE the merge mutates ~/.claude/settings.json (ME-22).
- * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void, tools?: string|string[], warm?: boolean}} [opts]
+ * @param {{targetRoot?: string, noSettings?: boolean, profile?: string, settingsOnly?: boolean, settingsPath?: string, onSettingsNotice?: (target: string) => void, tools?: string|string[], reviewEdits?: boolean, warm?: boolean}} [opts]
  */
 export function init({
   targetRoot = process.cwd(),
@@ -887,6 +887,7 @@ export function init({
   settingsPath,
   onSettingsNotice,
   tools,
+  reviewEdits = undefined,
   warm = true,
 } = {}) {
   // The plugin may be enabled in the project or local settings, not the file merged into: its
@@ -919,6 +920,13 @@ export function init({
   // A config that cannot record the selection still gets it for THIS run; the result says
   // that later syncs fall back to every tool rather than failing the whole init.
   const unrecorded = profileResult ? null : recordTools(targetRoot, selection.tools);
+  if (reviewEdits !== undefined) {
+    const saved = writeForgeConfig(targetRoot, (cfg) => {
+      cfg.hooks = { ...cfg.hooks, reviewEdits };
+      return cfg;
+    });
+    if (saved.ok === false) return { toolsResult: { error: saved.reason } };
+  }
   const r = sync({ targetRoot, tools: selection.tools ?? "all" });
   // A tool that just joined the set got the recorded integrations too: own those copies the
   // way `integrations add` would have, so spec updates and `remove` reach them (ME-08).

@@ -81,7 +81,7 @@ def verify(kimi, folder, server, version):
     shim.write_text(f'#!/bin/sh\nexec {shlex.quote(str(node))} {shlex.quote(str(cli))} "$@"\n')
     shim.chmod(0o700)
     url = f"http://127.0.0.1:{server.server_port}/v1"
-    env = {"HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+    env = {"FORGE_REVIEW_EDITS": "1", "HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
            "FORGE_HOME": str(state), "KIMI_CODE_HOME": str(khome), "FORGE_EVIDENCE_WEB": "0",
            "FORGE_NO_CATALOG_FETCH": "1", "KIMI_CODE_TRUST_WORKSPACE": "1",
            "KIMI_DISABLE_TELEMETRY": "1", "KIMI_CODE_NO_AUTO_UPDATE": "1",

@@ -237,6 +237,11 @@ HANDLERS.init = async (argv) => {
       settingsPath,
       onSettingsNotice: consentLine,
       tools,
+      reviewEdits: argv.includes("--no-review-edits")
+        ? false
+        : argv.includes("--review-edits")
+          ? true
+          : undefined,
       warm: !argv.includes("--no-warm"),
     })
   );

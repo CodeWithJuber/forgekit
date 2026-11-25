@@ -14,6 +14,7 @@ import {
 import { join } from "node:path";
 import {
   inspectRelay,
+  manifestFiles,
   pendingRelayChange,
   queueRelayChange,
   RELAY_MANIFEST,
@@ -22,7 +23,9 @@ import {
   remoteRelayIndex,
 } from "./cloud_relay.js";
 import {
+  cloudDeadline,
   cloudSnapshotPaths,
+  ignoredWorkspacePaths,
   MAX_FILE,
   sha,
   workspaceId,
@@ -132,6 +135,7 @@ function publicConfig(config) {
     workspace: config.workspace,
     tokenEnv: config.tokenEnv,
     scope: "full-workspace",
+    includeIgnored: config.includeIgnored === true,
     ...(config.transport === "relay"
       ? { transport: "relay", tenant: config.tenant, keyEnv: config.keyEnv }
       : {}),
@@ -139,7 +143,15 @@ function publicConfig(config) {
 }
 export async function configureCloud(
   root,
-  { url, workspace, tokenEnv, fullWorkspace, tenant = undefined, keyEnv = undefined },
+  {
+    url,
+    workspace,
+    tokenEnv,
+    fullWorkspace,
+    includeIgnored = false,
+    tenant = undefined,
+    keyEnv = undefined,
+  },
   transport = "cloud",
 ) {
   if (!fullWorkspace)
@@ -167,6 +179,7 @@ export async function configureCloud(
       throw new Error("Workspace already enrolled. Use logout before changing enrollment.");
     const config = {
       endpoint: endpoint(url),
+      includeIgnored: includeIgnored === true,
       workspace,
       tokenEnv,
       ...(transport === "relay" ? { transport, tenant, keyEnv } : {}),
@@ -192,15 +205,16 @@ async function request(config, method, sub = "", body = undefined) {
   const relay = config.transport === "relay";
   if (relay) relayKeys(config);
   const prefix = relay ? "/v1/relay/" + config.tenant + "/" : "/v1/workspaces/";
+  const encoded = body === undefined ? undefined : JSON.stringify(body);
   const r = await fetch(`${config.endpoint}${prefix}${config.workspace}${sub}`, {
     method,
     headers: {
       Authorization: `Bearer ${authorization(config)}`,
       "Content-Type": "application/json",
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: encoded,
     redirect: "error",
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(cloudDeadline(encoded ? Buffer.byteLength(encoded) : 0)),
   });
   if (!r.ok) {
     await r.body?.cancel();
@@ -234,7 +248,7 @@ async function request(config, method, sub = "", body = undefined) {
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-export function previewCloud(root, transport = "cloud") {
+export function previewCloud(root, transport = "cloud", { includeIgnored = false } = {}) {
   const dir = directory(root, transport),
     config = get(join(dir, "config.json"));
   const token = config ? process.env[config.tokenEnv] : undefined;
@@ -243,10 +257,13 @@ export function previewCloud(root, transport = "cloud") {
     relayKeys(config);
     secrets.push(process.env[config.keyEnv]);
   }
-  const snapshot = workspaceSnapshot(root, secrets);
+  const snapshot = workspaceSnapshot(root, secrets, {
+    includeIgnored: includeIgnored || config?.includeIgnored === true,
+  });
   return {
     bytes: snapshot.bytes,
     skipped: snapshot.skipped,
+    ignoredPaths: snapshot.ignoredPaths,
     files: snapshot.files.map(({ content, ...meta }) => meta),
   };
 }
@@ -278,6 +295,14 @@ export async function cloudStatus(root, remote = false, transport = "cloud") {
     ...(remote ? { remote: remoteState } : {}),
   };
 }
+function checkPendingScope(root, config, paths) {
+  if (config.includeIgnored === true) return;
+  const names = paths.filter((name) => !name.startsWith(".forge-cloud-export/"));
+  if (ignoredWorkspacePaths(root, names).size)
+    throw new Error(
+      `Pending upload includes files now ignored by Git. Run forge ${config.transport ?? "cloud"} preview, then push --replace-remote --confirm to rebuild the batch.`,
+    );
+}
 export async function pushCloud(
   root,
   { replaceRemote = false, confirmed = false } = {},
@@ -303,11 +328,20 @@ export async function pushCloud(
       }
       const stored = get(queued);
       let change = stored && pendingRelayChange(keys, stored);
+      if (change) {
+        const manifest = change.files.find((file) => file.path === RELAY_MANIFEST);
+        const names = manifestFiles(keys, { revision: change.id, manifest }).map(
+          (file) => file.path,
+        );
+        checkPendingScope(root, config, names);
+      }
       if (change && change.id !== base.revision && change.parent !== base.revision)
         throw new Error("Pending relay upload has a different parent revision");
       let skipped = {};
       if (!change) {
-        const snapshot = workspaceSnapshot(root, [token, process.env[config.keyEnv]]);
+        const snapshot = workspaceSnapshot(root, [token, process.env[config.keyEnv]], {
+          includeIgnored: config.includeIgnored === true,
+        });
         skipped = snapshot.skipped;
         change = relayChange(keys, base, snapshot);
         if (!change) return { revision: base.revision, modified: 0, removed: 0, skipped };
@@ -335,10 +369,18 @@ export async function pushCloud(
       rmSync(queued, { force: true });
     }
     let change = get(queued);
+    if (change)
+      checkPendingScope(
+        root,
+        config,
+        change.files.map((file) => file.path),
+      );
     const prior = get(cursor) ?? { revision: null, files: {} };
     let skipped = {};
     if (!change) {
-      const snapshot = workspaceSnapshot(root, [token]);
+      const snapshot = workspaceSnapshot(root, [token], {
+        includeIgnored: config.includeIgnored === true,
+      });
       skipped = snapshot.skipped;
       const old = new Map(Object.entries(prior.files));
       const files = [];

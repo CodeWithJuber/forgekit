@@ -21,8 +21,11 @@ export function routeTask(root, task, options = {}) {
 export function defaultDispatchModel(root, prompt, profile) {
   const rec = chooseRoute(root, prompt, { profile });
   if (!rec.model)
-    throw new Error(
-      `${rec.reasons.join(". ")}. Configure an exact model with forge config model --exact <id> --profile <name> or FORGE_MODEL.`,
+    throw Object.assign(
+      new Error(
+        `${rec.reasons.join(". ")}. Configure an exact model with forge config model --exact <id> --profile <name> or FORGE_MODEL.`,
+      ),
+      { code: "FORGE_MODEL_REQUIRED" },
     );
   return rec.model.id;
 }

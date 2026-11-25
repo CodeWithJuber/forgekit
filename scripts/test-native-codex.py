@@ -148,7 +148,7 @@ def verify(codex, folder, version):
         raise SystemExit("Node is required")
     forge.write_text(f'#!/bin/sh\nexec {shlex.quote(node)} {shlex.quote(str(ROOT / "src/cli.js"))} "$@"\n')
     forge.chmod(0o700)
-    env = {"PATH": os.pathsep.join([str(bin_dir), str(Path(node).parent), os.defpath]),
+    env = {"FORGE_REVIEW_EDITS": "1", "PATH": os.pathsep.join([str(bin_dir), str(Path(node).parent), os.defpath]),
            "HOME": str(home), "CODEX_HOME": str(code_home), "FORGE_HOME": str(home / "forge"),
            "FORGE_EVIDENCE_WEB": "0",
            "FORGE_NO_CATALOG_FETCH": "1", "FORGE_NO_HINT": "1", "NO_COLOR": "1",

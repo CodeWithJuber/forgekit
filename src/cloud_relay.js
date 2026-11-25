@@ -124,7 +124,7 @@ function unseal(keys, path, revision, artifact, expected) {
   }
 }
 
-function manifestFiles(keys, state) {
+export function manifestFiles(keys, state) {
   if (!state.manifest) return [];
   const raw = unseal(keys, RELAY_MANIFEST, state.revision, state.manifest, state.manifest.sha256);
   let index;

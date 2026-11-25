@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- A signed verification PASS requires a complete report with passing checks. A successful process with uncounted checks reports INCOMPLETE. Native Go uses test events and Gradle uses freshly generated JUnit reports.
+- Required impact review before edits uses explicit enrollment through `forge init --review-edits`. Existing guard installations read this setting on their next callback. Plain init leaves Git verification enrollment to an explicit tool selection.
+- `forge models --json` returns the provider inventory in schema 2. Consumers of the original tiers can request `--schema 1`.
+- Cloud and relay enrollment now honor Git ignore rules by default. To share ignored files, preview the extra paths and re-enroll with `--include-ignored`.
+
+### Fixed
+
+- Workspace verification counts interleaved pnpm reports by package and reads the terminal report of the enclosing test program. Git ignores the checkout-local verifier journal.
+- Dashboard authentication works on CRLF checkouts. Cloud transfer deadlines scale with the bytes sent. Model discovery retains served aliases, budget comparisons use exact decimal totals and preflight identifies unchecked symbols.
+- npm can reside in a different installation from Node. Optional model checks explain a missing model configuration. Impact reviews use cached code dependencies and print a launcher that works in plugin-only installs.
+
 ### Changed
 
 - Verification receipts require observed passing checks. A selected test run records its scope. Context and file reads report missing coverage within the configured budget.

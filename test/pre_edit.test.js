@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { build as buildAtlas } from "../src/atlas.js";
 import { commitGate } from "../src/commit_gate.js";
 import { hooksStatus } from "../src/emit/hooks.js";
 import { harden } from "../src/harden.js";
@@ -28,9 +29,30 @@ const fixture = (t) => {
   return { root, git };
 };
 const requestId = (reply) =>
-  (reply.stderr + reply.stdout).match(/forge impact --review ([a-f0-9]{64})/)?.[1];
-const send = (host, event, input, env = process.env) =>
+  (reply.stderr + reply.stdout).match(/impact --review ([a-f0-9]{64})/)?.[1];
+const send = (host, event, input, env = { ...process.env, FORGE_REVIEW_EDITS: "1" }) =>
   runHook({ host, event, input: JSON.stringify(input), env, claim: null, manifest });
+
+test("ordinary edits pass until init explicitly enables an impact review", async (t) => {
+  const { root } = fixture(t);
+  const body = {
+    cwd: root,
+    session_id: "scope",
+    tool_name: "Write",
+    tool_input: { file_path: join(root, "one.js"), content: "hello" },
+  };
+  const deliver = () => send("codex", "PreToolUse", body, process.env);
+  assert.equal((await deliver()).exit, 0);
+  for (const flag of ["--review-edits", "--no-review-edits"]) {
+    execFileSync(process.execPath, [cli, "init", flag, "--no-warm", "--no-settings"], {
+      cwd: root,
+      stdio: "pipe",
+    });
+    const reply = await deliver();
+    if (flag === "--review-edits") assert.ok(requestId(reply));
+    else assert.equal(reply.exit, 0);
+  }
+});
 
 test("each callback dialect binds a named file edit to an actual review", async (t) => {
   const { root } = fixture(t);
@@ -70,6 +92,7 @@ test("one CLI review covers all moved/added paths; a changed operation, checkout
   writeFileSync(join(root, "b.js"), 'import { a } from "./a.js";\nexport const b = a;\n');
   git("add", "-A");
   git("commit", "-qm", "baseline");
+  buildAtlas({ root, parser: "ast" });
   const patch =
     "*** Begin Patch\n*** Update File: a.js\n*** Move to: moved.js\n@@\n-export const a = 1;\n+export const a = 2;\n*** Add File: note.md\n+hello-from-user\n*** End Patch";
   const body = {

@@ -2163,7 +2163,7 @@ The stdio server starts with `forge cortex-mcp`. In ordinary mode it advertises 
 | `forge_table_aggregate` | Compute an aggregate from the complete local CSV/TSV/XLS/XLSX table and return groups and counts.                                                                                                                                                                                   |
 | `cortex_lessons`        | Lessons Forge Cortex learned from past mistakes on THIS repo, for the given files/symbols.                                                                                                                                                                                          |
 | `cortex_status`         | Summary of learned lessons on this repo (counts by state, top by confidence).                                                                                                                                                                                                       |
-| `preflight_check`       | BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME.                                                                                                                                                                       |
+| `preflight_check`       | Check named symbols and files before starting a task.                                                                                                                                                                                                                               |
 | `forge_models`          | Read the local provider model inventory, listing freshness, model control and measured workload bands.                                                                                                                                                                              |
 | `route_task`            | Recommend a model for a task.                                                                                                                                                                                                                                                       |
 | `assumption_gate`       | Check explicitly required workspace files.                                                                                                                                                                                                                                          |
@@ -2359,6 +2359,11 @@ Edit the brand token in `brand.json`, the `bin` key in `package.json`, and `name
 `.claude-plugin/plugin.json`. The whole CLI, banner, and emitted headers follow.
 
 ### Environment variables
+
+`FORGE_REVIEW_EDITS=1` enables impact review for the current session. Run `forge init --review-edits` to remember the choice for a project. `FORGE_EDIT_REVIEW_TIMEOUT_MS` sets the time available to an enrolled edit check. Its default is 60,000 milliseconds.
+
+Cloud and relay exclude Git-ignored files by default. Inspect the additional paths with `preview --include-ignored` before enabling the same flag at enrollment. `FORGE_CLOUD_MIN_BYTES_PER_SECOND` sets the minimum upload rate used to calculate the deadline from the request size. The default is 65,536 bytes per second.
+
 
 Use `FORGE_TYPESCRIPT_PATH` to select an installed compiler outside the indexed project when running `forge atlas build --ast`.
 

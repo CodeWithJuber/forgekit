@@ -8,12 +8,14 @@ import {
   existsSync,
   fstatSync,
   lstatSync,
+  mkdtempSync,
   openSync,
   readdirSync,
   readSync,
   realpathSync,
+  rmSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installedHarnessProgram, installedHarnessPython } from "./harness_python.js";
@@ -24,6 +26,15 @@ import { userStateDir } from "./util.js";
 export const MAX_FILE = 24 * 1024 * 1024;
 export const MAX_TOTAL = 128 * 1024 * 1024;
 export const MAX_FILES = 20000;
+// Allow connection/setup time plus transfer time at the configured minimum rate.
+export function cloudDeadline(
+  bytes,
+  rate = Number(process.env.FORGE_CLOUD_MIN_BYTES_PER_SECOND ?? 65536),
+) {
+  if (!Number.isFinite(rate) || rate <= 0)
+    throw new Error("FORGE_CLOUD_MIN_BYTES_PER_SECOND must be positive");
+  return Math.min(2147483647, 45000 + Math.ceil((bytes * 1000) / rate));
+}
 export const sha = (value) => createHash("sha256").update(value).digest("hex");
 export const workspaceId = (s) => typeof s === "string" && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(s);
 export const validPath = (s) =>
@@ -76,21 +87,74 @@ export function cloudSnapshotPaths(root) {
   return { root, privateHome };
 }
 
-export function workspaceSnapshot(workspace, secrets = []) {
+// Use Git's matcher for nested ignore files, negation, escaped names and local
+// excludes. A plain folder uses an empty index outside the workspace.
+export function ignoredWorkspacePaths(root, paths = undefined) {
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env[key];
+  const git = (args, input = undefined) =>
+    spawnSync("git", ["-c", "core.fsmonitor=false", ...args], {
+      cwd: root,
+      encoding: "utf8",
+      env,
+      input,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  let temp;
+  try {
+    const probe = git(["rev-parse", "--is-inside-work-tree"]);
+    const where = [];
+    if (probe.status !== 0 || probe.stdout.trim() !== "true") {
+      temp = mkdtempSync(join(tmpdir(), "forge-cloud-ignore-"));
+      if (git(["init", "--bare", "-q", temp]).status !== 0)
+        throw new Error("Git is required to determine which workspace files may be shared.");
+      where.push("--git-dir=" + temp, "--work-tree=" + root, "-c", "core.bare=false");
+    }
+    if (paths && !paths.length) return new Set();
+    const result = paths
+      ? git([...where, "check-ignore", "--no-index", "-z", "--stdin"], paths.join("\0") + "\0")
+      : git([
+          ...where,
+          "ls-files",
+          "--cached",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory",
+          "-z",
+          "--",
+          ".",
+        ]);
+    if (result.status !== 0 && !(paths && result.status === 1))
+      throw new Error("Git could not determine the workspace ignore policy.");
+    return new Set(result.stdout.split("\0").filter(Boolean));
+  } finally {
+    if (temp) rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+export function workspaceSnapshot(workspace, secrets = [], { includeIgnored = false } = {}) {
   const { root, privateHome } = cloudSnapshotPaths(workspace);
   const files = [];
+  const ignored = ignoredWorkspacePaths(root);
+  const ignoredPaths = [];
   const skipped = {};
   let bytes = 0;
   const skip = (reason) => {
     skipped[reason] = (skipped[reason] || 0) + 1;
   };
-  function walk(dir, prefix) {
+  function walk(dir, prefix, parentIgnored = false) {
     // Visit each database before any sidecars that share its name.
     const databaseNames = new Set();
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const path = join(dir, entry.name);
       const rel = prefix + entry.name;
+      const isIgnored = parentIgnored || ignored.has(rel) || ignored.has(rel + "/");
+      if (isIgnored && !includeIgnored) {
+        skip("git-ignored");
+        continue;
+      }
       if (
         !validPath(rel) ||
         secrets.some((s) => s && rel.includes(s)) ||
@@ -108,7 +172,7 @@ export function workspaceSnapshot(workspace, secrets = []) {
       if (realpathSync.native(path) !== path)
         throw new Error("Workspace changed while taking snapshot");
       if (entry.isDirectory()) {
-        walk(path, `${rel}/`);
+        walk(path, `${rel}/`, isIgnored);
         continue;
       }
       if (!entry.isFile()) {
@@ -171,7 +235,9 @@ export function workspaceSnapshot(workspace, secrets = []) {
       } finally {
         closeSync(fd);
       }
+      const beforeCount = files.length;
       addFile(rel, data);
+      if (isIgnored && files.length > beforeCount) ignoredPaths.push(rel);
     }
   }
   function addFile(rel, data) {
@@ -270,5 +336,5 @@ export function workspaceSnapshot(workspace, secrets = []) {
       throw new Error(`Workspace harness ${name} export incomplete`);
     addFile(`${reserved}harness-${name}.json`, result.stdout);
   }
-  return { files, bytes, skipped };
+  return { files, bytes, skipped, ignoredPaths };
 }

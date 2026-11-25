@@ -1,5 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 
+import { terminalReport } from "./runner_reports.js";
+
 // Count only complete runner summaries. Exit zero alone can also mean skip or no discovery.
 /** @typedef {{total:number, pass:number, fail:number, cancelled:number, skipped:number, todo:number}} Counts */
 /** @typedef {Counts & {incompleteReports?:number}} EvidenceCounts */
@@ -29,7 +31,7 @@ const summaryTerms = {
   skipped: "skipped",
   pending: "skipped",
   xfailed: "skipped",
-  xpassed: "skipped",
+  xpassed: "pass",
   todo: "todo",
   todos: "todo",
   cancelled: "cancelled",
@@ -51,8 +53,12 @@ function terms(summary, expectedTotal) {
 }
 
 /** Read complete reports from one output stream. A partial report contributes no pass.
- * @param {string} text @param {(Counts|null)[]} summaries */
-function collectReports(text, summaries) {
+ * @param {string} output @param {(Counts|null)[]} summaries @param {string} [reporter] */
+function collectReports(output, summaries, reporter = "") {
+  const terminal = terminalReport(output, reporter);
+  summaries.push(...terminal.reports);
+  const text = terminal.text;
+  if (!text) return;
   const node =
     /^(?:#|ℹ) tests (\d+)\n(?:#|ℹ) suites \d+\n(?:#|ℹ) pass (\d+)\n(?:#|ℹ) fail (\d+)\n(?:#|ℹ) cancelled (\d+)\n(?:#|ℹ) skipped (\d+)\n(?:#|ℹ) todo (\d+)\n(?:#|ℹ) duration_ms [\d.]+$/gm;
   let nodeReports = 0;
@@ -79,8 +85,8 @@ function collectReports(text, summaries) {
 /** Parse terminal summaries emitted by Node TAP/spec, pytest, Jest and Vitest.
  * pnpm multiplexes workspace lifecycle output by project. Never join parts of two
  * different packages' reports or let a passing package cover a silent sibling.
- * @param {unknown} output @param {string[]} [pnpmProjects] @returns {EvidenceCounts|null} */
-export function observedTestCounts(output, pnpmProjects = []) {
+ * @param {unknown} output @param {string[]} [pnpmProjects] @param {string} [reporter] @returns {EvidenceCounts|null} */
+export function observedTestCounts(output, pnpmProjects = [], reporter = "") {
   if (!output) return null;
   const text = stripVTControlCharacters(String(output)).replaceAll("\r\n", "\n");
   /** @type {(Counts|null)[]} */
@@ -108,16 +114,16 @@ export function observedTestCounts(output, pnpmProjects = []) {
       }
       if (scope[2] === ":") lines.push(scope[3]);
     }
-    collectReports(outer.join("\n"), summaries);
+    collectReports(outer.join("\n"), summaries, reporter);
     for (const lines of streams.values()) {
       const before = summaries.length;
-      collectReports(lines.join("\n"), summaries);
+      collectReports(lines.join("\n"), summaries, reporter);
       if (summaries.length === before) summaries.push(null);
     }
     if (streams.size || expected.size > 1)
       for (const name of expected) if (!streams.has(name)) summaries.push(null);
   } else {
-    collectReports(text, summaries);
+    collectReports(text, summaries, reporter);
     if (pnpmProjects.length > 1) summaries.push(null);
   }
   if (!summaries.length) return null;

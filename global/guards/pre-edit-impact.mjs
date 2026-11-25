@@ -1,6 +1,6 @@
 // Claude invokes this for one named edit. Host adapters supply the complete patch
 // inventory after the path guards have approved each target.
-import { checkPreEdit, editIntent } from "../../src/pre_edit.js";
+import { checkPreEdit, editIntent, editReviewEnabled } from "../../src/pre_edit.js";
 
 if (process.env.FORGE_GATE !== "advisory") {
   try {
@@ -12,6 +12,7 @@ if (process.env.FORGE_GATE !== "advisory") {
       chunks.push(chunk);
     }
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if (!editReviewEnabled(body.cwd ?? process.cwd())) process.exit(0);
     const batch = process.argv[2] === "--batch";
     const result = await checkPreEdit({
       cwd: body.cwd ?? process.cwd(),

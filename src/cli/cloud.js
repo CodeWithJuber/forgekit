@@ -10,15 +10,15 @@ import {
 import { cloudService } from "../cloud_server.js";
 
 const cloudUsage = [
-  "forge cloud configure --full-workspace --url <origin> --workspace <id> --token-env <variable>",
-  "forge cloud preview [--json] | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote]",
+  "forge cloud configure --full-workspace [--include-ignored] --url <origin> --workspace <id> --token-env <variable>",
+  "forge cloud preview [--include-ignored] [--json] | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote]",
   "forge cloud logout | delete --confirm",
   "forge cloud serve --config <server.json>",
 ].join("\n");
 
 const relayUsage = [
-  "forge relay configure --full-workspace --url <origin> --tenant <id> --workspace <id> --token-env <variable> --key-env <variable>",
-  "forge relay preview | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote]",
+  "forge relay configure --full-workspace [--include-ignored] --url <origin> --tenant <id> --workspace <id> --token-env <variable> --key-env <variable>",
+  "forge relay preview [--include-ignored] | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote]",
   "forge relay list [--revision <id>] | read <path>|--path=<path> [--revision <id>] [--json]",
   "forge relay logout | delete --confirm | serve --config <server.json>",
 ].join("\n");
@@ -50,13 +50,16 @@ async function runCloud(args, transport) {
           workspace: flag(args, "--workspace"),
           tokenEnv: flag(args, "--token-env"),
           fullWorkspace: true,
+          includeIgnored: args.includes("--include-ignored"),
           ...(relay ? { tenant: flag(args, "--tenant"), keyEnv: flag(args, "--key-env") } : {}),
         },
         transport,
       );
       break;
     case "preview":
-      result = previewCloud(root, transport);
+      result = previewCloud(root, transport, {
+        includeIgnored: args.includes("--include-ignored"),
+      });
       break;
     case "status":
       result = await cloudStatus(root, args.includes("--remote"), transport);

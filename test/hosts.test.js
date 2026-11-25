@@ -935,6 +935,7 @@ test("runHook checks every target of a multi-file patch", async () => {
   const seen = [];
   const r = await hook(
     {
+      env: { FORGE_REVIEW_EDITS: "1" },
       host: "codex",
       event: "PreToolUse",
       input: {

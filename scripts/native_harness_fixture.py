@@ -65,7 +65,7 @@ class NativeEditReview:
     def next_edit(self, messages):
         self.calls += 1
         if self.calls == 2:
-            match = re.search(r"forge impact --review ([0-9a-f]{64})", json.dumps(messages))
+            match = re.search(r"impact --review ([0-9a-f]{64})", json.dumps(messages))
             if self.file.exists() or not match:
                 self.error = "native callback did not stop the pending edit with a review ID"
                 return False

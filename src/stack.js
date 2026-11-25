@@ -161,7 +161,12 @@ function detectPython(root, add) {
   for (const f of hasAny(blob, PY_FRAMEWORKS)) add.framework(f);
   if (blob.includes("pytest") || existsSync(join(root, "pytest.ini")))
     add.runner({ bin: "pytest", args: ["-q"], label: "pytest -q" });
-  else add.runner({ label: "python -m unittest" });
+  else
+    add.runner({
+      bin: "python3",
+      args: ["-m", "unittest", "discover"],
+      label: "python -m unittest",
+    });
   if (blob.includes("ruff")) add.tool("ruff");
   if (blob.includes("[tool.uv]") || existsSync(join(root, "uv.lock"))) add.pm("uv");
   else if (pipfile) add.pm("pipenv");

@@ -12,7 +12,15 @@ import {
   RELAY_VERSION,
   isRevision as uuid,
 } from "./cloud_relay.js";
-import { MAX_FILE, MAX_FILES, MAX_TOTAL, sha, validPath, workspaceId } from "./cloud_snapshot.js";
+import {
+  cloudDeadline,
+  MAX_FILE,
+  MAX_FILES,
+  MAX_TOTAL,
+  sha,
+  validPath,
+  workspaceId,
+} from "./cloud_snapshot.js";
 import { installedHarnessProgram } from "./harness_python.js";
 
 const worker = fileURLToPath(new URL("./cloud_store.py", import.meta.url));
@@ -263,7 +271,8 @@ export function cloudService({ dataDir, principals, transport = "cloud" }, env =
         json(e.status || 500, { error: e.status ? e.message : "Cloud operation failed" });
     }
   });
-  server.requestTimeout = 60000;
+  server.requestTimeout = cloudDeadline(2 * MAX_TOTAL);
+  server.setTimeout(45000, (socket) => socket.destroy());
   server.headersTimeout = 15000;
   return server;
 }

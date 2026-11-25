@@ -1,10 +1,12 @@
 // Runs against the archive and launcher that a consumer would receive on this OS.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { npmCliPath } from "../../src/npm_runtime.js";
 
 const source = fileURLToPath(new URL("../../", import.meta.url));
 const temp = mkdtempSync(join(tmpdir(), "forge packed consumer "));
@@ -20,15 +22,7 @@ const run = (exe, args, cwd) => execFileSync(exe, args, { cwd, env, encoding: "u
 try {
   mkdirSync(consumer);
   // npm's JS launcher works on Windows without invoking a shell with user data.
-  const binDir = dirname(process.execPath);
-  const npmPath = [
-    process.env.npm_execpath,
-    process.env.FORGE_NPM_PATH,
-    join(binDir, "node_modules", "npm", "bin", "npm-cli.js"),
-    join(binDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-    join(binDir, "..", "share", "nodejs", "npm", "bin", "npm-cli.js"),
-  ].find((path) => path && existsSync(path));
-  if (!npmPath) throw new Error("Install npm with Node or set FORGE_NPM_PATH");
+  const npmPath = npmCliPath(source);
   const npm = (args, cwd) => run(process.execPath, [npmPath, ...args], cwd);
   const [{ filename }] = JSON.parse(npm(["pack", "--json", "--pack-destination", temp], source));
   npm(

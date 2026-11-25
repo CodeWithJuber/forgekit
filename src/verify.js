@@ -25,13 +25,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { arch, availableParallelism, platform } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { duplicateGate } from "./duplicate_gate.js";
 import { workspaceEvidence } from "./harness_tools.js";
+import { countedGradleReports, gradleReports } from "./junit_reports.js";
 import { npmCliPath } from "./npm_runtime.js";
 import { readForgeConfig } from "./repo_config.js";
+import { reporterFor } from "./runner_reports.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import {
   analyzeRecursiveTestRun,
@@ -43,7 +45,7 @@ import {
 } from "./stack.js";
 import { countVerdict, observedTestCounts, passingSuiteEvidence } from "./test_counts.js";
 import { assessTestIntegrity } from "./test_integrity.js";
-import { userStateDir } from "./util.js";
+import { readJsonSafe, userStateDir } from "./util.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -724,6 +726,16 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  */
 // Bins forge is willing to execute directly. Everything else stays report-only.
 const EXECUTORS = new Set(["npm", "pnpm", "yarn", "bun", "pytest"]);
+const nativeExecutors = new Set([
+  "go",
+  "cargo",
+  "bundle",
+  "./vendor/bin/phpunit",
+  "mvn",
+  "./gradlew",
+  "dotnet",
+  "python3",
+]);
 // Fallback when a detectStack result has no `testRunners` field (older shape):
 // rebuild descriptors from the command strings.
 /** @param {string[]} cmds @returns {import("./stack.js").TestRunner[]} */
@@ -756,6 +768,28 @@ export function maskedTestScript(cwd) {
 /** Is this descriptor one forge can execute directly (whitelisted bin, and a
  *  package.json present for the package-manager runners)? Pure. */
 function isExecutable(r, cwd) {
+  if (nativeExecutors.has(r?.bin)) {
+    // Several systems also ship a non-Go executable named "go".
+    if (r.bin === "go") {
+      const version = spawnSync("go", ["version"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 5000,
+        maxBuffer: 8192,
+      });
+      return version.status === 0 && /^go version go\S+ /.test(version.stdout);
+    }
+    if (r.bin.startsWith("./")) return existsSync(join(cwd, r.bin));
+    return (process.env.PATH || "")
+      .split(delimiter)
+      .some(
+        (dir) =>
+          dir &&
+          [r.bin, ...(process.platform === "win32" ? [r.bin + ".exe"] : [])].some((name) =>
+            existsSync(join(dir, name)),
+          ),
+      );
+  }
   return !!(
     r?.bin &&
     EXECUTORS.has(r.bin) &&
@@ -1159,6 +1193,10 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       continue;
     }
     const startedMs = performance.now();
+    const command = isScriptRunner(r)
+      ? readJsonSafe(join(dir, "package.json"))?.scripts?.test
+      : r.label;
+    const reporter = reporterFor(typeof command === "string" ? command : r.label);
     const pnpmProjects =
       rel === "." && plan.coverage.rootRun?.tool === "pnpm" && isScriptRunner(r)
         ? covers.filter((pkg) => pkg !== ".")
@@ -1169,7 +1207,14 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       // the watchdog; this line is the pulse.
       onProgress?.({ label, phase: "start" });
       const windowsNpm = r.bin === "npm" && process.platform === "win32";
-      const args = windowsNpm ? [npmCliPath(cwd), ...(r.args ?? [])] : (r.args ?? []);
+      const args = windowsNpm
+        ? [npmCliPath(cwd), ...(r.args ?? [])]
+        : r.bin === "go"
+          ? ["test", "-json", ...r.args.slice(1)]
+          : r.bin === "./gradlew"
+            ? ["--rerun-tasks", ...r.args]
+            : (r.args ?? []);
+      const gradleBefore = reporter === "gradle" ? gradleReports(dir) : null;
       const proc = spawnSync(windowsNpm ? process.execPath : r.bin, args, {
         cwd: dir,
         encoding: "utf8",
@@ -1179,8 +1224,19 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         maxBuffer: 8 * 1024 * 1024,
       });
       const output = [proc.stdout, proc.stderr].filter(Boolean).join("\n");
-      const counts = observedTestCounts(output, pnpmProjects);
-      if (proc.error || proc.signal || proc.status !== 0) {
+      const counts =
+        (gradleBefore && countedGradleReports(dir, gradleBefore)) ??
+        observedTestCounts(output, pnpmProjects, reporter) ??
+        (proc.stdout && proc.stderr
+          ? observedTestCounts(proc.stdout, pnpmProjects, reporter)
+          : null);
+      const noGoPackages =
+        r.bin === "go" &&
+        !proc.stdout?.trim() &&
+        /^(?:go: warning: .* matched no packages\s*)?no packages to test\s*$/.test(
+          proc.stderr?.trim() ?? "",
+        );
+      if (proc.error || proc.signal || (proc.status !== 0 && !noGoPackages)) {
         if (r.bin !== "pytest" || proc.status !== 5 || proc.error || proc.signal) {
           throw Object.assign(proc.error ?? new Error("Suite did not exit successfully"), {
             status: proc.status,
@@ -1202,7 +1258,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
           : {
               output: counts
                 ? `runner reported ${counts.pass} passed, ${counts.fail} failed, ${counts.cancelled} cancelled, ${counts.skipped} skipped and ${counts.todo} todo`
-                : "no complete supported test-count summary was reported",
+                : "Runner exited successfully (uncounted). No complete supported test-count summary was reported. Enable the runner’s count or JUnit reporter.",
             }),
       });
       onProgress?.({ label, phase: "done", status });
@@ -1211,7 +1267,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         ...classifySuiteFailure(e, { label, bin: r.bin, timeout }),
         ...where,
         durationMs: Math.round(performance.now() - startedMs),
-        reportedCounts: observedTestCounts(e.stdout, pnpmProjects),
+        reportedCounts: observedTestCounts(e.stdout, pnpmProjects, reporter),
       };
       executed.push(classified);
       onProgress?.({ label, phase: "done", status: classified.status });
@@ -1246,7 +1302,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
   const parts = [];
   if (notExecuted.length)
     parts.push(
-      `detected "${notExecuted.join('", "')}" — no built-in executor; run it yourself and re-verify`,
+      `detected "${notExecuted.join('", "')}" — no available executor; install the runner or configure an executable test script`,
     );
   for (const s of executed) {
     if (s.status === "INCOMPLETE") parts.push(`"${s.label}" ${s.output ?? "did not execute"}`);

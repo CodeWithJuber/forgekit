@@ -43,8 +43,12 @@ export const COMMANDS = {
     summary:
       "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
-      "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
+      "forge init [--tools <list|all>] [--review-edits | --no-review-edits] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
+      {
+        flag: "--review-edits | --no-review-edits",
+        desc: "Enable or disable a required impact review before each edit in this workspace.",
+      },
       {
         flag: "--tools <list|all>",
         desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi, opencode) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",

@@ -21,8 +21,32 @@ import {
   removeCloud,
 } from "../src/cloud_client.js";
 import { cloudService } from "../src/cloud_server.js";
-import { sha } from "../src/cloud_snapshot.js";
+import { cloudDeadline, sha, workspaceSnapshot } from "../src/cloud_snapshot.js";
 import { installedHarnessPython } from "../src/harness_python.js";
+
+test("cloud snapshots use Git ignore rules and preview the explicit expansion", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "forge-cloud-ignore-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "docs"));
+  writeFileSync(join(root, ".gitignore"), "*.private\n!public.private\n");
+  writeFileSync(join(root, "docs", ".gitignore"), "local.txt\n");
+  for (const name of ["operator.private", "public.private", "docs/local.txt", "normal.txt"])
+    writeFileSync(join(root, name), "synthetic fixture");
+  for (const asGitRepo of [false, true]) {
+    if (asGitRepo) execFileSync("git", ["init", "-q"], { cwd: root });
+    const normal = workspaceSnapshot(root);
+    assert.deepEqual(normal.files.map((f) => f.path).sort(), [
+      ".gitignore",
+      "docs/.gitignore",
+      "normal.txt",
+      "public.private",
+    ]);
+    const expanded = workspaceSnapshot(root, [], { includeIgnored: true });
+    assert.deepEqual(expanded.ignoredPaths.sort(), ["docs/local.txt", "operator.private"]);
+  }
+  assert.ok(cloudDeadline(145 * 1024 * 1024) > (145 * 1024 * 1024 * 8) / 20000);
+  assert.equal(cloudDeadline(0), 45000);
+});
 
 test("enrolled workspace snapshots isolate credentials, retry pending bytes, compare revisions and delete", async (t) => {
   const dir = mkdtempSync(join(realpathSync.native(tmpdir()), "forge-cloud-"));

@@ -103,7 +103,7 @@ def verify(claude, folder, server, mode, version):
     shim.write_text(f'#!/bin/sh\nexec {shlex.quote(str(node))} {shlex.quote(str(ROOT / "src/cli.js"))} "$@"\n')
     shim.chmod(0o700)
     url = f"http://127.0.0.1:{server.server_port}"
-    env = {"HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+    env = {"FORGE_REVIEW_EDITS": "1", "HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
            "FORGE_HOME": str(state), "CLAUDE_CONFIG_DIR": str(config),
            "FORGE_EVIDENCE_WEB": "0", "FORGE_NO_CATALOG_FETCH": "1",
            "ANTHROPIC_BASE_URL": url, "ANTHROPIC_API_KEY": "sk-ant-local-fixture",

@@ -89,8 +89,11 @@ export function buildHttpRunner({
   return (prompt) => {
     const provider = resolveHttpProvider({ root, profile });
     if (!provider)
-      throw new Error(
-        "no LLM provider configured — set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY",
+      throw Object.assign(
+        new Error(
+          "no LLM provider configured. Configure a provider credential for the requested model check.",
+        ),
+        { code: "FORGE_PROVIDER_REQUIRED" },
       );
     const child = provider.format === "openai" ? HTTP_CHILD_OPENAI : HTTP_CHILD_ANTHROPIC;
     const chosenModel = !model

@@ -36,7 +36,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
-import { GUARD_POLICY } from "../global/guards/run.mjs";
+import { editReviewTimeout, GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
 import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
 import { readForgeConfig, recordedTools } from "./repo_config.js";
@@ -1221,10 +1221,12 @@ export async function runHook({
       if (verdict.decision === "deny") return render(as, event, verdict);
     }
     const [impactStep] = impactSteps;
-    if (impactStep && env.FORGE_GATE !== "advisory") {
-      const timeoutMs = Math.ceil(deadline - performance.now());
-      if (timeoutMs <= 0)
-        return deny("The deadline elapsed before the edit impact could be checked.");
+    if (
+      impactStep &&
+      env.FORGE_GATE !== "advisory" &&
+      (await import("./pre_edit.js")).editReviewEnabled(first.cwd, env)
+    ) {
+      const timeoutMs = editReviewTimeout(env);
       const { editIntent } = await import("./pre_edit.js");
       const rawName = def.tool ?? pick(payload, FIELDS.tool_name);
       const rawInput = def.tool ? first.tool_input : pick(payload, FIELDS.tool_input);

@@ -14,15 +14,33 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { secretKind } from "../global/guards/protect-paths.mjs";
 import { canonicalize } from "./ledger.js";
 import { containsPath, outsideWorkspace, physicalPath, readBounded } from "./private_paths.js";
+import { readForgeConfig } from "./repo_config.js";
 import { sourceWorkspaceRoot } from "./sources.js";
 import { dependencyState } from "./test_dependencies.js";
 import { contentHash } from "./util.js";
 import { evidenceMac } from "./verify.js";
 import { privateWorkspaceFile } from "./workspace_preference.js";
+
+export function editReviewEnabled(cwd, env = process.env) {
+  if (env.FORGE_GATE === "advisory") return false;
+  if (env.FORGE_REVIEW_EDITS !== undefined) return env.FORGE_REVIEW_EDITS === "1";
+  return readForgeConfig(sourceWorkspaceRoot(cwd)).hooks?.reviewEdits === true;
+}
+
+function reviewCommand(id) {
+  const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
+  if (process.platform === "win32") {
+    const quote = (s) => "'" + s.replaceAll("'", "''") + "'";
+    return `& ${quote(process.execPath)} ${quote(cli)} impact --review ${id}`;
+  }
+  const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
+  return `${quote(process.execPath)} ${quote(cli)} impact --review ${id}`;
+}
 
 const digest = (value) => contentHash(canonicalize(value, (s) => s));
 export const editIntent = (tool, input) => digest([tool, input]);
@@ -114,13 +132,21 @@ function fingerprint(root, files) {
 
 // Reverse reachability over all recorded edges. A partial static graph provides
 // locators for inspection. Only the independently enrolled selector may narrow tests.
-function observedDependents(atlas, targets) {
+function observedDependents(atlas, targets, sourceRules) {
   const owner = new Map(atlas.nodes.map((node) => [node.id, node.file]));
   const callers = new Map();
   for (const edge of atlas.edges) {
+    if (edge.kind !== "imports" && edge.kind !== "calls") continue;
     const dependency = owner.get(edge.target);
     const consumer = owner.get(edge.source);
-    if (!dependency || !consumer || dependency === consumer) continue;
+    if (
+      !dependency ||
+      !consumer ||
+      dependency === consumer ||
+      !sourceRules[extname(dependency)] ||
+      !sourceRules[extname(consumer)]
+    )
+      continue;
     if (!callers.has(dependency)) callers.set(dependency, new Set());
     callers.get(dependency).add(consumer);
   }
@@ -155,8 +181,10 @@ async function impactPlan(root, files, checkout, inspectGraph = false) {
   };
   if (inspectGraph && checkout.bound) {
     try {
-      const { build } = await import("./atlas.js");
-      impact = observedDependents(build({ root, parser: "ast", persist: false }), files);
+      const { load, isStale, RULES } = await import("./atlas.js");
+      const graph = load(root);
+      if (graph && !isStale(root, graph)) impact = observedDependents(graph, files, RULES);
+      else impact.reason = "Run forge atlas build to add a current static dependency graph.";
     } catch {
       // Even a graph that cannot be built still has a conservative upper bound.
     }
@@ -230,10 +258,7 @@ export async function checkPreEdit({ cwd, session, paths, intent }) {
   return {
     allow: false,
     id,
-    reason:
-      "Review the affected test scope with forge impact --review " +
-      id +
-      " and retry the same edit.",
+    reason: `Review the affected test scope with ${reviewCommand(id)} and retry the same edit.`,
   };
 }
 

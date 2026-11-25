@@ -630,8 +630,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>260 files"]
-  test["test<br/>225 files"]
+  src["src<br/>262 files"]
+  test["test<br/>226 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>18 files"]
@@ -639,8 +639,8 @@ flowchart LR
   bench["bench<br/>6 files"]
   examples["examples<br/>2 files"]
   docs["docs<br/>1 file"]
-  test -- 538 --> src
-  scripts -- 15 --> src
+  test -- 543 --> src
+  scripts -- 16 --> src
   bench -- 12 --> src
   test -- 8 --> global
   src -- 7 --> global

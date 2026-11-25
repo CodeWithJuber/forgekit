@@ -116,6 +116,7 @@ export const IMPACT_CASES = [
   {
     target: "isStale",
     expected: [
+      "src/pre_edit.js",
       "src/cli/memory.js",
       "src/atlas.js",
       "src/verify.js",

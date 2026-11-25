@@ -139,10 +139,10 @@ export function extractJson(text) {
  * Run one adjudication: send `prompt`, parse+validate the reply, refuse secrets both ways.
  * The proposer half only — the caller must still verify the returned value against ground truth.
  * @template T
- * @param {{prompt:string, parse:(obj:any)=>(T|null), run?:(p:string)=>string}} spec
+ * @param {{prompt:string, parse:(obj:any)=>(T|null), run?:(p:string)=>string, onUnavailable?:(message:string)=>void}} spec
  * @returns {T|null} the validated proposal, or null on ANY failure (caller keeps deterministic).
  */
-export function adjudicate({ prompt, parse, run = buildRunner() }) {
+export function adjudicate({ prompt, parse, run = buildRunner(), onUnavailable }) {
   try {
     if (hasSecret(prompt)) return null; // never send a secret to the model
     const raw = run(prompt);
@@ -152,7 +152,10 @@ export function adjudicate({ prompt, parse, run = buildRunner() }) {
     const parsed = parse(obj);
     return parsed ?? null;
   } catch (err) {
-    if (process.env.FORGE_DEBUG === "1")
+    if (err?.code === "FORGE_MODEL_REQUIRED" || err?.code === "FORGE_PROVIDER_REQUIRED") {
+      if (onUnavailable) onUnavailable(err.message);
+      else process.stderr.write(`ForgeKit model check unavailable. ${err.message}\n`);
+    } else if (process.env.FORGE_DEBUG === "1")
       process.stderr.write(`forge adjudicate: ${err?.message ?? err}\n`);
     return null;
   }

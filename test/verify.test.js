@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { npmCliPath } from "../src/npm_runtime.js";
 import { countVerdict, observedTestCounts } from "../src/test_counts.js";
@@ -88,6 +88,37 @@ test("the npm JS launcher runs a suite in a path with spaces and rejects a proje
   mkdirSync(join(root, "bin"));
   writeFileSync(local, "");
   assert.throws(() => npmCliPath(root, local), /outside the workspace/);
+});
+
+test("a split Node/npm installation resolves a validated external npm CLI", (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "forge-split-npm-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const root = join(outside, "repo");
+  mkdirSync(root);
+  const target = npmCliPath(root);
+  const noNearbyNode = join(outside, "isolated", "bin", "node");
+  assert.equal(
+    npmCliPath(root, undefined, {
+      execPath: noNearbyNode,
+      env: { npm_execpath: target, PATH: "" },
+    }),
+    target,
+  );
+  const system = join(outside, "system");
+  mkdirSync(system);
+  try {
+    symlinkSync(target, join(system, "npm"));
+  } catch (e) {
+    if (e.code === "EPERM") return t.skip("symlinks unavailable");
+    throw e;
+  }
+  assert.equal(
+    npmCliPath(root, undefined, {
+      execPath: noNearbyNode,
+      env: { PATH: [root, system].join(delimiter) },
+    }),
+    target,
+  );
 });
 
 // A fake executable so a suite's exit code (and thus verify's verdict) is deterministic,
@@ -292,15 +323,15 @@ test("verify: pnpm repo targets pnpm — with pnpm off PATH it is INCOMPLETE, ne
   assert.ok(r.tests.output.includes("executor unavailable"), r.tests.output);
 });
 
-test("verify: go-only repo is INCOMPLETE with the real label — no built-in executor", () => {
+test("verify: a Go declaration with no runnable checks cannot earn a receipt", () => {
   const root = gitRepo();
   writeFileSync(join(root, "go.mod"), "module example.com/app\n\ngo 1.22\n");
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "INCOMPLETE");
-  assert.equal(r.tests.ran, false, "go test is detected but never executed by forge");
+  assert.notEqual(r.tests.passed, true);
   assert.equal(r.ok, false);
   assert.ok(r.tests.output.includes("go test ./..."), r.tests.output);
-  assert.ok(r.tests.output.includes("no built-in executor"), r.tests.output);
+  assert.ok(r.tests.executed.length || r.tests.notExecuted.length);
   assert.deepEqual(r.tests.detected, ["go test ./..."]);
 });
 
@@ -354,7 +385,8 @@ test("verify: polyglot — passing Node suite + non-executable go suite ⇒ INCO
     "the Node suite ran and passed",
   );
   assert.ok(
-    r.tests.notExecuted.some((l) => l.includes("go test")),
+    r.tests.notExecuted.some((l) => l.includes("go test")) ||
+      r.tests.executed.some((s) => s.label.includes("go test") && s.status === "INCOMPLETE"),
     "the go suite is recorded as not executed",
   );
 });
@@ -1107,7 +1139,10 @@ test("F08: a nested suite forge cannot execute leaves its package uncovered → 
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "INCOMPLETE");
   assert.deepEqual(r.tests.coverage.uncovered, ["services/api"]);
-  assert.ok(r.tests.notExecuted.some((l) => l.includes("services/api")));
+  assert.ok(
+    r.tests.notExecuted.some((l) => l.includes("services/api")) ||
+      r.tests.executed.some((s) => s.cwd === "services/api" && s.status === "INCOMPLETE"),
+  );
 });
 
 test("F09: an explicit passing script + a runner devDependency is a complete PASS", {
@@ -1318,7 +1353,7 @@ test("a zero exit requires measured passing tests, including when the runner rep
     ["Tests: 2 passed, 2 total", "PASS"],
     ["Tests: 2 passed, 2 total\nTests: 0 total", "INCOMPLETE"],
     ["Tests: 2 passed, 2 total\nTests: 1 total", "INCOMPLETE"],
-    ["Tests: 1 failed, 1 total\n# tests 1", "FAIL"],
+    ["Tests: 1 failed, 1 total\n# tests 1", "INCOMPLETE"],
   ]) {
     writeFileSync(report, `console.log(${JSON.stringify(summary)});`);
     const result = verify({ targetRoot: root });

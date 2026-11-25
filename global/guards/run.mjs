@@ -124,6 +124,11 @@ export function resolveBash({
  */
 const toPosix = (p) => String(p).replaceAll("\\", "/");
 
+export function editReviewTimeout(env = process.env) {
+  const ms = Number(env.FORGE_EDIT_REVIEW_TIMEOUT_MS ?? 60000);
+  return Number.isSafeInteger(ms) && ms > 0 && ms <= 2147483647 ? ms : 60000;
+}
+
 /**
  * Guards the launcher treats specially, keyed by basename.
  *  - `node`: the `.sh` is only a thin launcher over this same-directory Node twin, so the twin
@@ -347,7 +352,12 @@ export function runGuard(
   const rewrite = guard.toLowerCase() === "secret-redact.sh";
   const r = spawn(cmd, cmdArgs, {
     stdio: ["inherit", rewrite ? "inherit" : "pipe", "inherit"],
-    timeout: failClosed ? 4_000 : 24_000,
+    timeout:
+      guard.toLowerCase() === "pre-edit-impact.sh"
+        ? editReviewTimeout(env)
+        : failClosed
+          ? 4_000
+          : 24_000,
     killSignal: "SIGKILL",
     env,
     windowsHide: true,
