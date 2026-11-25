@@ -1,12 +1,12 @@
 // Gradle's console often prints only BUILD SUCCESSFUL. Count JUnit reports
 // generated during this invocation, including reports from nested projects.
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { readBounded } from "./private_paths.js";
 
 export function gradleReports(root) {
   const files = new Map();
-  const dirs = [root];
+  const dirs = [realpathSync.native(root)];
   let entries = 0;
   while (dirs.length) {
     const dir = dirs.pop();
