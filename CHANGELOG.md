@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Pages uploads the site before starting a separate deployment job, so a failed deployment can reuse the uploaded site.
+- The documentation renderer runs its pinned Chromium with sandboxing on hosted Ubuntu runners.
+
 ## [1.19.3] - 2026-11-25
 
 ### Changed
